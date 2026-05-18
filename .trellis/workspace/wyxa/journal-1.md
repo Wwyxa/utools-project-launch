@@ -40,3 +40,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: UI refinement and theme polish
+
+**Date**: 2026-05-18
+**Task**: UI refinement and theme polish
+**Branch**: `master`
+
+### Summary
+
+Refined the uTools plugin UI for compact window usage, simplified navigation, added settings and theme switching, polished dark theme surfaces, and recorded frontend UI guidance.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8092d5b` | (see git log) |
+| `abe7f1e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
