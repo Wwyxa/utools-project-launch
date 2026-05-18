@@ -143,3 +143,37 @@ Refined the uTools plugin UI for compact window usage, simplified navigation, ad
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 实现新增项目功能
+
+**Date**: 2026-05-19
+**Task**: 实现新增项目功能
+**Branch**: `master`
+
+### Summary
+
+实现新增项目的 uTools 持久化、路径选择、自动识别、多目录脚本、导入导出和脚本状态处理，并记录相关前端约定。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a8c9a75` | (see git log) |
+| `b8acb6f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
