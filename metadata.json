@@ -1,0 +1,8 @@
+{
+  "name": "uTools PM",
+  "description": "A powerful developer project manager with integrated script execution, git staging, and memo tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
