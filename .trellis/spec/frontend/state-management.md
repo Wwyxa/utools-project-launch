@@ -6,46 +6,51 @@
 
 ## Overview
 
-<!--
-Document your project's state management conventions here.
+Pinia is the only global state layer in the app. `src/store/useStore.ts` owns the current project catalog, selected project id, terminal logs, staged file data, todos, and memo content.
 
-Questions to answer:
-- What state management solution do you use?
-- How is local vs global state decided?
-- How do you handle server state?
-- What are the patterns for derived state?
--->
-
-(To be filled by the team)
+Local UI state stays inside components when it only affects one panel or one interaction, such as the active tab in `ProjectDetails.vue` or the copied state in `Terminal.vue`.
 
 ---
 
 ## State Categories
 
-<!-- Local state, global state, server state, URL state -->
+Current categories:
 
-(To be filled by the team)
+- local UI state: tab selection, copied flags, scroll references, input text
+- global app state: selected project, project list, logs, staged files, todo list, memo content
+- derived state: `selectedProject` getter in the store
+- server state: none today
+- URL state: none today
 
 ---
 
 ## When to Use Global State
 
-<!-- Criteria for promoting state to global -->
+Promote state to the store when multiple views need the same data or one view must update another view immediately.
 
-(To be filled by the team)
+Good candidates in the current app include:
+
+- selected project id
+- project status changes
+- log output visible in the terminal panel
+- memo and todo content shared across tabs
+
+Do not move purely visual state into the store if a component can manage it locally.
 
 ---
 
 ## Server State
 
-<!-- How server data is cached and synchronized -->
+There is no server state cache today. All data is in-memory and seeded in the store.
 
-(To be filled by the team)
+If the app later talks to a real backend or file system adapter, keep the fetched data behind a store action or composable so the UI does not need to care where it came from.
 
 ---
 
 ## Common Mistakes
 
-<!-- State management mistakes your team has made -->
-
-(To be filled by the team)
+- Duplicating the same project data in multiple components
+- Storing view-only toggles in the global store
+- Assuming store data persists across reloads
+- Mutating nested records in ad hoc ways outside the store actions
+- Letting derived state drift instead of reading from a getter

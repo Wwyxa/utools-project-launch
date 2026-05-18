@@ -6,46 +6,49 @@
 
 ## Overview
 
-<!--
-Document your project's quality standards here.
+There is no backend implementation today, so the current quality baseline is mostly about not inventing one accidentally.
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
+The repository currently validates the frontend with `npm run lint` (`tsc --noEmit`) and `npm run build`. If a backend is added later, it must come with its own checks and not rely on the UI build to catch server bugs.
 
 ---
 
 ## Forbidden Patterns
 
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
+- Mixing backend concerns into Vue components
+- Adding persistence or process control code without a dedicated boundary
+- Logging secrets or masked values incorrectly
+- Returning backend-style payloads before there is a backend contract
+- Adding a server just because the feature sounds system-like; the current plugin works as a frontend app
 
 ---
 
 ## Required Patterns
 
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
+- Keep UI state in the Pinia store or local component state
+- Keep shared domain types in `src/types.ts`
+- Keep semantic colors and spacing tokens in `src/index.css`
+- Keep component composition clear and domain-driven
+- Keep any future backend isolated from the Vue presentation layer
 
 ---
 
 ## Testing Requirements
 
-<!-- What level of testing is expected -->
+Today the project has no automated backend test suite.
 
-(To be filled by the team)
+Minimum validation for this repo is:
+
+- `npm run lint`
+- `npm run build`
+
+If backend code is introduced later, add focused tests around command execution, process lifecycle handling, and any persistence or Git integration before depending on the new layer.
 
 ---
 
 ## Code Review Checklist
 
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- No backend code was added by accident
+- Status fields still reflect the real UI state
+- Secrets remain masked
+- No hard dependency on a server exists unless the task explicitly introduces one
+- New files follow the current directory and naming conventions

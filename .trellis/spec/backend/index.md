@@ -6,19 +6,21 @@
 
 ## Overview
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+This project is currently frontend-only. There is no checked-in backend runtime, API layer, database schema, or migration system yet.
+
+Use these docs to capture the rules we want to keep if a backend is added later, but document the current state honestly: project management, memo editing, terminal output, and Git actions are all modeled in the Vue app and Pinia store today.
 
 ---
 
 ## Guidelines Index
 
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| Guide                                           | Description                                         | Status     |
+| ----------------------------------------------- | --------------------------------------------------- | ---------- |
+| [Directory Structure](./directory-structure.md) | Current layout and future backend boundaries        | Documented |
+| [Database Guidelines](./database-guidelines.md) | No database today; future persistence notes         | Documented |
+| [Error Handling](./error-handling.md)           | UI-state error conventions and future backend rules | Documented |
+| [Quality Guidelines](./quality-guidelines.md)   | Backend-specific guardrails and no-backend baseline | Documented |
+| [Logging Guidelines](./logging-guidelines.md)   | Current UI log shape and secret handling            | Documented |
 
 ---
 

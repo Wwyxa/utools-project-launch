@@ -6,46 +6,49 @@
 
 ## Overview
 
-<!--
-Document your project's database conventions here.
+There is no database layer in the current project. Project data is stored in memory inside `src/store/useStore.ts` and resets when the page reloads.
 
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
+The repository does include an `express` dependency in `package.json`, but there is no checked-in ORM, migration tool, schema file, or database adapter in the source tree.
 
-(To be filled by the team)
+If persistence is added later, it must be introduced explicitly and documented here before code starts depending on it.
 
 ---
 
 ## Query Patterns
 
-<!-- How should queries be written? Batch operations? -->
+No database queries exist today. Current state reads and writes are direct Pinia store mutations.
 
-(To be filled by the team)
+Example:
+
+```ts
+updateMemo(projectId: string, content: string) {
+	this.memoContent[projectId] = content;
+}
+```
+
+When a real persistence layer is introduced, prefer explicit repository methods over ad hoc component-side reads and writes.
 
 ---
 
 ## Migrations
 
-<!-- How to create and run migrations -->
+No migrations are configured today.
 
-(To be filled by the team)
+If a database is added later, migrations should live in a dedicated folder and be runnable from the command line without opening the UI. Document the exact command and storage location here before shipping any schema change.
 
 ---
 
 ## Naming Conventions
 
-<!-- Table names, column names, index names -->
+No tables, columns, or indexes exist yet.
 
-(To be filled by the team)
+If persistence is added later, keep entity names aligned with the existing project concepts: `projects`, `logs`, `todos`, `memo_content`, and similar domain terms are clearer than generic storage names.
 
 ---
 
 ## Common Mistakes
 
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+- Treating the current in-memory store as persistent data
+- Adding schema-dependent logic inside Vue components before the persistence layer exists
+- Forgetting to mask secrets before writing them into any future storage layer
+- Inventing migration steps before the project actually has a database

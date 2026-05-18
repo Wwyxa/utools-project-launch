@@ -6,46 +6,63 @@
 
 ## Overview
 
-<!--
-Document your project's type safety conventions here.
+The project uses TypeScript throughout the Vue app. `tsconfig.json` is configured for modern ESM bundling, `noEmit`, and Vue SFC support.
 
-Questions to answer:
-- What type system do you use?
-- How are types organized?
-- What validation library do you use?
-- How do you handle type inference?
--->
-
-(To be filled by the team)
+Shared domain types live in `src/types.ts`; Vue ambient types live in `src/env.d.ts`. Components import the shared types rather than redefining the same shapes locally.
 
 ---
 
 ## Type Organization
 
-<!-- Where types are defined, shared types vs local types -->
+Current organization:
 
-(To be filled by the team)
+- `src/types.ts` owns the domain model for projects, scripts, logs, staged files, and todos
+- `src/env.d.ts` declares the Vue SFC module shim
+- component-local literal unions are acceptable for very small UI-only states when they do not belong in the shared model
+
+Example shared types already in use:
+
+```ts
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  type: string;
+  status: ProjectStatus;
+  scripts: ProjectScript[];
+  env: Record<string, string>;
+}
+```
 
 ---
 
 ## Validation
 
-<!-- Runtime validation patterns (Zod, Yup, io-ts, etc.) -->
+There is no runtime validation library configured today.
 
-(To be filled by the team)
+Validate external or user-entered data at the boundary before it enters the store. If a schema library is added later, document the exact validation path here instead of scattering ad hoc checks across components.
 
 ---
 
 ## Common Patterns
 
-<!-- Type utilities, generics, type guards -->
+Common patterns already in the codebase:
 
-(To be filled by the team)
+- `defineProps<{ project: Project }>()` for typed component props
+- `defineEmits<{ (e: 'select', id: string): void }>()` for event contracts
+- `Record<string, T>` for project-scoped maps such as logs, todos, and memo content
+- enums for stable status values such as `ProjectStatus`
+
+Use inferred literals and shared interfaces first. Reach for type guards only when external data needs to be narrowed.
 
 ---
 
 ## Forbidden Patterns
 
-<!-- any, type assertions, etc. -->
+- New `any` types in application code
+- Broad `as any` casts when a narrower union would work
+- Duplicating the same domain shape in multiple files
+- Widening a status field to `string` when the project already has a closed enum or union
+- Relying on runtime assumptions without a type or validation check
 
-(To be filled by the team)
+One current escape hatch exists in `src/components/project/ProjectDetails.vue` where a template selection uses `as any`; future code should prefer a typed tab-id union instead.
