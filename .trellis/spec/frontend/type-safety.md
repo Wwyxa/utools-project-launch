@@ -18,6 +18,7 @@ Current organization:
 
 - `src/types.ts` owns the domain model for projects, scripts, logs, staged files, and todos
 - `src/env.d.ts` declares the Vue SFC module shim
+- `src/global.d.ts` declares `window.projectBridge` for the uTools preload boundary
 - component-local literal unions are acceptable for very small UI-only states when they do not belong in the shared model
 
 Example shared types already in use:
@@ -64,5 +65,6 @@ Use inferred literals and shared interfaces first. Reach for type guards only wh
 - Duplicating the same domain shape in multiple files
 - Widening a status field to `string` when the project already has a closed enum or union
 - Relying on runtime assumptions without a type or validation check
+- Leaving global `window` APIs untyped when adding preload integrations
 
-One current escape hatch exists in `src/components/project/ProjectDetails.vue` where a template selection uses `as any`; future code should prefer a typed tab-id union instead.
+Preload bridge contracts should be represented in `src/types.ts` and consumed through `src/lib/projectBridge.ts`, not duplicated in components.

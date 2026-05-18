@@ -58,6 +58,7 @@ store.addLog(projectId, {
 - Git-related activity that should be visible to the user
 - terminal messages and warnings that help explain what happened
 - recoverable validation or runtime issues that affect a project surface
+- uTools preload process events emitted through `project-bridge-event`
 
 ---
 
@@ -69,3 +70,13 @@ store.addLog(projectId, {
 - implementation details that are only useful in a console, not the UI
 
 The current store already masks secrets such as `API_KEY` in the seeded `env` object in `src/store/useStore.ts`.
+
+## Preload Event Logs
+
+The uTools preload bridge emits process lifecycle events to the UI with this event name:
+
+```ts
+window.dispatchEvent(new CustomEvent("project-bridge-event", { detail }));
+```
+
+`detail.type` is one of `started`, `stdout`, `stderr`, `exit`, or `error`. The store converts these events into user-visible `LogEntry` rows and status updates. Do not log environment payloads or full command secrets from preload events.

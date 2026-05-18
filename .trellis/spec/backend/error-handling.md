@@ -51,6 +51,13 @@ For the current frontend-only setup:
 
 If an async backend or process-control API is added later, wrap it in a narrow adapter that returns a typed success/failure result to the store or component layer.
 
+For the uTools preload boundary, failures must be surfaced through the existing UI state model:
+
+- process stderr -> append a `LogEntry` with `type: "ERROR"`
+- process close with non-zero code -> set script status to `ERROR` and project status to `ProjectStatus.ERROR`
+- Git unavailable / not a repository -> return an empty `ProjectGitSnapshot` with a user-facing `statusText`
+- package script parsing failure -> return an empty script list and preserve manually configured commands
+
 ---
 
 ## API Error Responses
@@ -67,3 +74,4 @@ If a backend is introduced later, document the exact error payload shape here be
 - Logging a generic error without updating the related status field
 - Reusing success styling for error output
 - Adding API-style error handling before there is an API
+- Throwing raw preload errors into Vue components instead of converting them into typed store state

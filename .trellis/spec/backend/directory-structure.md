@@ -6,12 +6,14 @@
 
 ## Overview
 
-There is no backend source tree in the repository today. The app is a Vite + Vue frontend that mounts from `src/main.ts` and renders the project manager UI from `src/App.vue`.
+There is no backend source tree in the repository today. The app is a Vite + Vue frontend that mounts from `src/main.ts` and renders the project manager UI from `src/App.vue`. For uTools packaging, local native capabilities live in the readable CommonJS preload file under `public/preload.js`, which is copied to `dist/preload.js` during Vite build.
 
 Current project-management behavior lives in the client store and components:
 
 - shared domain state in `src/store/useStore.ts`
 - shared types in `src/types.ts`
+- local command/Git/file-system boundary in `public/preload.js`, exposed to the UI as `window.projectBridge`
+- frontend fallback adapter in `src/lib/projectBridge.ts`
 - layout and feature views in `src/components/**`
 - theme tokens and global CSS in `src/index.css`
 
@@ -51,6 +53,42 @@ There are no backend modules yet. The current organization is feature-first on t
 - `src/store/useStore.ts` for shared in-memory project data and actions
 
 If backend code is introduced later, use dedicated folders for command execution, external adapters, and persistence. Keep process control, Git orchestration, and file-system work out of the Vue components.
+
+## uTools Preload Boundary
+
+`public/preload.js` is the current native boundary. Keep it small, readable, and CommonJS-based because uTools requires preload code and any preload-side dependencies to remain clear and unbundled.
+
+- `plugin.json` declares `preload: "preload.js"` and `main: "index.html"`.
+- `preload.js` exposes local functions through `window.projectBridge`.
+- Vue components must not call Node.js modules directly; call store actions, which call `src/lib/projectBridge.ts`, which delegates to `window.projectBridge` or a browser fallback.
+- Runtime process output is emitted as browser `CustomEvent("project-bridge-event")` events and handled by `src/App.vue` / `src/store/useStore.ts`.
+
+### Current preload signatures
+
+```ts
+window.projectBridge.readPackageScripts(projectPath): Promise<{ scripts: { name: string; command: string }[]; packagePath: string | null }>;
+window.projectBridge.readGitSnapshot(projectPath): Promise<ProjectGitSnapshot>;
+window.projectBridge.runCommand({ projectId, scriptId, command, cwd, env, label }): Promise<{ pid: number; startedAt: string; command: string; cwd: string }>;
+window.projectBridge.stopProcess(pid): Promise<void>;
+window.projectBridge.openPath(path): Promise<void>;
+window.projectBridge.showItemInFolder(path): Promise<void>;
+```
+
+### Wrong vs Correct
+
+Wrong:
+
+```ts
+// Vue component imports Node APIs directly.
+import { spawn } from "node:child_process";
+```
+
+Correct:
+
+```ts
+// Component calls the store; the store uses the project bridge boundary.
+await store.launchScript(project.id, script.id);
+```
 
 ---
 

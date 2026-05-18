@@ -34,6 +34,8 @@ Good candidates in the current app include:
 - project status changes
 - log output visible in the terminal panel
 - memo and todo content shared across tabs
+- project form drafts, because create/edit flows update multiple panels and store-owned domain state
+- preload bridge results such as Git snapshots and running process metadata
 
 Do not move purely visual state into the store if a component can manage it locally.
 
@@ -45,6 +47,8 @@ There is no server state cache today. All data is in-memory and seeded in the st
 
 If the app later talks to a real backend or file system adapter, keep the fetched data behind a store action or composable so the UI does not need to care where it came from.
 
+The current uTools integration follows this rule: UI components call store actions, store actions call `src/lib/projectBridge.ts`, and the bridge delegates to `window.projectBridge` from `public/preload.js` when running inside uTools.
+
 ---
 
 ## Common Mistakes
@@ -54,3 +58,4 @@ If the app later talks to a real backend or file system adapter, keep the fetche
 - Assuming store data persists across reloads
 - Mutating nested records in ad hoc ways outside the store actions
 - Letting derived state drift instead of reading from a getter
+- Calling `window.projectBridge` directly from feature components instead of going through store actions
