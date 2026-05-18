@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 
 @theme {
@@ -21,58 +21,125 @@
   --color-outline: #6d7a72;
   --color-outline-variant: #bccac0;
   --color-surface-tint: #006c49;
-  
+
   --color-primary: #006c49;
   --color-on-primary: #ffffff;
   --color-primary-container: #2eaf7d;
   --color-on-primary-container: #003b26;
   --color-inverse-primary: #63dca6;
-  
+
   --color-secondary: #3b57b8;
   --color-on-secondary: #ffffff;
   --color-secondary-container: #7d98fe;
   --color-on-secondary-container: #002a8b;
-  
+
   --color-tertiary: #a03e41;
   --color-on-tertiary: #ffffff;
   --color-tertiary-container: #ec7879;
   --color-on-tertiary-container: #651119;
-  
+
   --color-error: #ba1a1a;
   --color-on-error: #ffffff;
   --color-error-container: #ffdad6;
   --color-on-error-container: #93000a;
-  
+
   --color-primary-fixed: #81f9c1;
   --color-primary-fixed-dim: #63dca6;
   --color-on-primary-fixed: #002113;
   --color-on-primary-fixed-variant: #005236;
-  
+
   --color-secondary-fixed: #dce1ff;
   --color-secondary-fixed-dim: #b7c4ff;
   --color-on-secondary-fixed: #001551;
   --color-on-secondary-fixed-variant: #1e3e9f;
-  
+
   --color-tertiary-fixed: #ffdad8;
   --color-tertiary-fixed-dim: #ffb3b2;
   --color-on-tertiary-fixed: #410008;
   --color-on-tertiary-fixed-variant: #81262b;
-  
+
   --color-background: #fbf9f8;
   --color-on-background: #1b1c1c;
   --color-surface-variant: #e4e2e1;
-  
-  --color-status-running: #2EAF7D;
-  --color-status-stopped: #8E8E93;
-  --color-status-error: #FF453A;
-  
-  --color-bg-soft-gray: #F6F6F7;
-  --color-border-subtle: #E2E2E3;
+
+  --color-status-running: #2eaf7d;
+  --color-status-stopped: #8e8e93;
+  --color-status-error: #ff453a;
+
+  --color-bg-soft-gray: #f6f6f7;
+  --color-border-subtle: #e2e2e3;
 }
 
 @layer base {
+  .dark {
+    --color-surface: #181a1b;
+    --color-surface-dim: #101112;
+    --color-surface-bright: #242728;
+    --color-surface-container-lowest: #0d0e0f;
+    --color-surface-container-low: #151718;
+    --color-surface-container: #1b1e1f;
+    --color-surface-container-high: #222526;
+    --color-surface-container-highest: #2a2d2e;
+    --color-on-surface: #e4e2e1;
+    --color-on-surface-variant: #bccac0;
+    --color-inverse-surface: #e4e2e1;
+    --color-inverse-on-surface: #303030;
+    --color-outline: #707a73;
+    --color-outline-variant: #303735;
+    --color-surface-tint: #63dca6;
+
+    --color-primary: #63dca6;
+    --color-on-primary: #003824;
+    --color-primary-container: #005236;
+    --color-on-primary-container: #81f9c1;
+    --color-inverse-primary: #006c49;
+
+    --color-secondary: #b7c4ff;
+    --color-on-secondary: #00287d;
+    --color-secondary-container: #1e3e9f;
+    --color-on-secondary-container: #dce1ff;
+
+    --color-tertiary: #ffb3b2;
+    --color-on-tertiary: #651119;
+    --color-tertiary-container: #81262b;
+    --color-on-tertiary-container: #ffdad8;
+
+    --color-background: #131516;
+    --color-on-background: #e4e2e1;
+    --color-surface-variant: #252b29;
+
+    --color-bg-soft-gray: #1d2021;
+    --color-border-subtle: #2b3030;
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-background text-on-surface font-sans antialiased;
+  }
+
+  input,
+  textarea,
+  select {
+    @apply text-on-surface placeholder:text-on-surface-variant;
+    color-scheme: light dark;
+  }
+
+  .dark input,
+  .dark textarea,
+  .dark select {
+    background-color: var(--color-surface-container-lowest);
+    border-color: var(--color-border-subtle);
+    color: var(--color-on-surface);
+  }
+
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: color-mix(in srgb, var(--color-on-surface-variant) 72%, transparent);
+  }
+
+  .dark select option {
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
   }
 }
 

@@ -53,7 +53,7 @@ const handleRefresh = async (event: MouseEvent) => {
 <template>
   <div
     @click="handleCardSelect"
-    class="group relative border border-border-subtle rounded-xl p-5 bg-surface hover:bg-bg-soft-gray transition-all cursor-pointer flex flex-col h-full overflow-hidden"
+    class="group relative border border-border-subtle rounded-xl p-5 bg-surface hover:bg-surface-container transition-all cursor-pointer flex flex-col h-full overflow-hidden"
   >
     <div class="flex justify-between items-start mb-4 gap-3">
       <div class="min-w-0">
@@ -96,7 +96,7 @@ const handleRefresh = async (event: MouseEvent) => {
               ? 'bg-status-running/10 text-status-running'
               : isError
                 ? 'bg-status-error/10 text-status-error'
-                : 'bg-bg-soft-gray text-status-stopped border border-border-subtle',
+                : 'bg-surface-container text-status-stopped border border-border-subtle',
           )
         "
       >

@@ -89,7 +89,7 @@ const handleOpenFolder = async () => {
         :key="group.group"
         class="bg-surface border border-border-subtle rounded-xl overflow-hidden group/card shadow-sm"
       >
-        <div class="bg-bg-soft-gray p-4 border-b border-border-subtle flex justify-between items-center">
+        <div class="bg-surface-container-low p-4 border-b border-border-subtle flex justify-between items-center">
           <div class="flex items-center gap-2 min-w-0">
             <TerminalIcon :size="18" class="text-on-surface-variant" />
             <h3 class="font-bold text-on-surface">{{ groupLabel(group.group) }}</h3>
@@ -120,7 +120,7 @@ const handleOpenFolder = async () => {
             <div
               v-for="script in group.scripts"
               :key="script.id"
-              class="flex items-start justify-between gap-3 p-3 bg-bg-soft-gray/50 rounded border border-border-subtle hover:border-primary/30 transition-colors"
+              class="flex items-start justify-between gap-3 p-3 bg-surface-container-low rounded border border-border-subtle hover:bg-surface-container hover:border-primary/30 transition-colors"
             >
               <div class="flex items-start gap-3 min-w-0">
                 <div class="font-mono text-xs font-bold text-on-surface w-20 shrink-0 truncate">{{ script.name }}</div>
@@ -179,7 +179,7 @@ const handleOpenFolder = async () => {
 
     <div class="space-y-6">
       <div class="bg-surface border border-border-subtle rounded-xl overflow-hidden shadow-sm">
-        <div class="bg-bg-soft-gray p-4 border-b border-border-subtle flex justify-between items-center">
+        <div class="bg-surface-container-low p-4 border-b border-border-subtle flex justify-between items-center">
           <h3 class="font-bold text-on-surface">{{ t.common.status }}</h3>
           <button class="text-on-surface-variant hover:text-primary transition-colors">
             <AlertCircle :size="18" />
@@ -189,7 +189,7 @@ const handleOpenFolder = async () => {
           <div
             v-for="(value, key) in project.env"
             :key="key"
-            class="p-3 hover:bg-bg-soft-gray/50 transition-colors group"
+            class="p-3 hover:bg-surface-container transition-colors group"
           >
             <div class="flex justify-between items-start mb-1">
               <span class="font-mono text-xs font-bold text-secondary">{{ key }}</span>
@@ -199,7 +199,7 @@ const handleOpenFolder = async () => {
                 </button>
               </div>
             </div>
-            <div class="font-mono text-xs text-on-surface-variant bg-bg-soft-gray/30 p-2 rounded truncate">
+            <div class="font-mono text-xs text-on-surface-variant bg-surface-container-low p-2 rounded truncate">
               {{ value }}
             </div>
           </div>

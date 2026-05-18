@@ -52,7 +52,9 @@ const handleSubmit = () => {
       <div
         class="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-xl bg-surface border border-border-subtle shadow-2xl flex flex-col"
       >
-        <header class="px-6 py-4 border-b border-border-subtle flex items-center justify-between bg-bg-soft-gray">
+        <header
+          class="px-6 py-4 border-b border-border-subtle flex items-center justify-between bg-surface-container-low"
+        >
           <h2 class="text-lg font-bold text-on-surface">{{ title }}</h2>
           <button
             @click="store.closeProjectForm"
@@ -123,7 +125,7 @@ const handleSubmit = () => {
               <div
                 v-for="script in form.scripts"
                 :key="script.id"
-                class="grid grid-cols-1 md:grid-cols-12 gap-3 p-4 rounded-xl border border-border-subtle bg-bg-soft-gray/60"
+                class="grid grid-cols-1 md:grid-cols-12 gap-3 p-4 rounded-xl border border-border-subtle bg-surface-container-low"
               >
                 <input
                   :value="script.name"
@@ -225,7 +227,7 @@ const handleSubmit = () => {
                 />
                 <button
                   @click="store.removeEnvironmentEntry(entry.id)"
-                  class="rounded-lg border border-border-subtle px-3 text-on-surface-variant hover:text-status-error hover:bg-bg-soft-gray"
+                  class="rounded-lg border border-border-subtle px-3 text-on-surface-variant hover:text-status-error hover:bg-surface-container"
                 >
                   <Trash2 :size="16" />
                 </button>
@@ -244,7 +246,7 @@ const handleSubmit = () => {
           </section>
         </div>
 
-        <footer class="px-6 py-4 border-t border-border-subtle bg-bg-soft-gray flex justify-end gap-3">
+        <footer class="px-6 py-4 border-t border-border-subtle bg-surface-container-low flex justify-end gap-3">
           <button
             @click="store.closeProjectForm"
             class="px-4 py-2 rounded-lg border border-border-subtle bg-surface text-sm font-semibold text-on-surface hover:bg-surface-variant"

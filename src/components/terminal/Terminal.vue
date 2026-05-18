@@ -37,7 +37,9 @@ onMounted(scrollToBottom);
 
 <template>
   <div class="mt-8 border border-border-subtle rounded-xl overflow-hidden flex flex-col h-64 shadow-sm">
-    <div class="bg-bg-soft-gray px-4 py-2 flex items-center justify-between border-b border-border-subtle gap-4">
+    <div
+      class="bg-surface-container-low px-4 py-2 flex items-center justify-between border-b border-border-subtle gap-4"
+    >
       <div class="flex items-center gap-3 min-w-0">
         <div class="flex items-center gap-2 min-w-0">
           <TerminalIcon :size="14" class="text-on-surface-variant shrink-0" />

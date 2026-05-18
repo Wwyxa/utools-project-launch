@@ -304,6 +304,8 @@ function createBlankProjectForm(): ProjectFormValue {
 export const useStore = defineStore("app", {
   state: () => ({
     locale: "zh-CN" as Locale,
+    activeTab: "projects" as "projects" | "plugins" | "memos" | "settings",
+    theme: "auto" as "light" | "dark" | "auto",
     supportsBridge: supportsRealProjectBridge(),
     projectFormOpen: false,
     projectFormMode: "create" as "create" | "edit",
@@ -352,8 +354,18 @@ export const useStore = defineStore("app", {
     setLocale(locale: Locale) {
       this.locale = locale;
     },
+    setTheme(theme: "light" | "dark" | "auto") {
+      this.theme = theme;
+    },
+    setActiveTab(tab: "projects" | "plugins" | "memos" | "settings") {
+      this.activeTab = tab;
+      this.selectedProjectId = null;
+    },
     setSelectedProject(id: string | null) {
       this.selectedProjectId = id;
+      if (id) {
+        this.activeTab = "projects";
+      }
     },
     openCreateProjectForm() {
       this.projectFormMode = "create";
@@ -458,7 +470,6 @@ export const useStore = defineStore("app", {
       }
 
       this.memoContent[projectId] = payload.memo;
-      this.projectForms[projectId] = payload;
       this.selectedProjectId = projectId;
       this.projectFormOpen = false;
       this.projectFormDraft = createBlankProjectForm();

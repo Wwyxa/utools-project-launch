@@ -29,7 +29,7 @@ const handleAddTodo = () => {
     class="flex flex-col lg:flex-row border border-border-subtle rounded-xl bg-surface overflow-hidden shadow-sm h-[600px]"
   >
     <div class="flex-1 flex flex-col min-w-0">
-      <div class="p-2 border-b border-border-subtle bg-bg-soft-gray flex items-center justify-between">
+      <div class="p-2 border-b border-border-subtle bg-surface-container-low flex items-center justify-between">
         <div class="flex items-center gap-1">
           <button
             v-for="Icon in [Bold, Italic, List, CheckSquare, Code]"
@@ -52,13 +52,15 @@ const handleAddTodo = () => {
           @input="(event) => store.updateMemo(project.id, (event.target as HTMLTextAreaElement).value)"
           :placeholder="t.memo.placeholder"
         />
-        <div class="flex-1 p-6 overflow-y-auto prose prose-sm prose-stone scrollbar-hide bg-surface-container-lowest">
+        <div
+          class="flex-1 p-6 overflow-y-auto prose prose-sm max-w-none scrollbar-hide bg-surface-container-lowest text-on-surface prose-headings:text-on-surface prose-p:text-on-surface prose-strong:text-on-surface prose-code:text-primary prose-a:text-primary prose-li:text-on-surface-variant"
+        >
           <VueMarkdown :source="content" />
         </div>
       </div>
     </div>
 
-    <div class="w-full lg:w-[280px] bg-bg-soft-gray p-6 flex flex-col gap-6 overflow-y-auto">
+    <div class="w-full lg:w-[280px] bg-surface-container-low p-6 flex flex-col gap-6 overflow-y-auto">
       <h3 class="font-bold text-on-surface flex items-center gap-2">
         <CheckSquare :size="18" class="text-primary" />
         {{ t.memo.taskList }}

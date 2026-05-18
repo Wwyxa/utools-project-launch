@@ -32,7 +32,7 @@ const fileLabel = (status: string) => {
 
 <template>
   <div class="flex flex-col gap-6">
-    <div class="bg-bg-soft-gray border border-border-subtle rounded-xl overflow-hidden shadow-sm">
+    <div class="bg-surface-container-low border border-border-subtle rounded-xl overflow-hidden shadow-sm">
       <div class="p-4 border-b border-border-subtle flex items-center justify-between gap-4">
         <div class="flex flex-col gap-1 min-w-0">
           <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">{{ t.git.branch }}</span>
@@ -92,7 +92,7 @@ const fileLabel = (status: string) => {
           <div
             v-for="(file, idx) in files"
             :key="`${file.path}-${idx}`"
-            class="group flex items-center justify-between p-3 border border-border-subtle rounded-lg hover:bg-bg-soft-gray transition-all"
+            class="group flex items-center justify-between p-3 border border-border-subtle rounded-lg hover:bg-surface-container transition-all"
           >
             <div class="flex items-center gap-4 overflow-hidden min-w-0">
               <div
@@ -148,7 +148,7 @@ const fileLabel = (status: string) => {
           <div
             v-for="commit in commits"
             :key="commit.hash"
-            class="p-3 border border-border-subtle rounded-lg bg-bg-soft-gray/50"
+            class="p-3 border border-border-subtle rounded-lg bg-surface-container-low"
           >
             <div class="flex items-center justify-between gap-2">
               <div class="font-mono text-xs font-bold text-on-surface">{{ commit.hash }}</div>
