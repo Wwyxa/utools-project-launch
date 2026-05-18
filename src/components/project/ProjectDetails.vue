@@ -34,11 +34,16 @@ const statusLabel = computed(() => {
   }
   return t.value.common.stopped;
 });
+const isUnavailable = computed(() => props.project.pathExists === false);
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
-const handleRefresh = () => store.refreshGitSnapshot(props.project.id);
+const handleRefresh = () => {
+  if (!isUnavailable.value) {
+    void store.refreshGitSnapshot(props.project.id);
+  }
+};
 const handleDelete = () => {
   store.requestDeleteProject(props.project.id);
 };
@@ -73,6 +78,7 @@ const handleDelete = () => {
       <div class="flex items-center gap-2 shrink-0">
         <button
           @click="handleRefresh"
+          :disabled="isUnavailable"
           class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-xl transition-colors shadow-sm bg-surface border border-border-subtle"
           :title="t.common.refresh"
         >
@@ -80,6 +86,7 @@ const handleDelete = () => {
         </button>
         <button
           @click="handleOpenFolder"
+          :disabled="isUnavailable"
           class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-xl transition-all shadow-sm"
           :title="t.projectDetails.openProject"
         >

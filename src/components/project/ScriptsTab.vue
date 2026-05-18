@@ -14,39 +14,35 @@ const store = useStore();
 const t = useI18n();
 
 const groups = computed(() => {
-  const buckets = new Map<string, Project["scripts"]>();
-
-  props.project.scripts.forEach((script) => {
-    const group = script.group || "main";
-    if (!buckets.has(group)) {
-      buckets.set(group, []);
-    }
-    buckets.get(group)?.push(script);
-  });
-
-  return Array.from(buckets.entries()).map(([group, scripts]) => ({ group, scripts }));
+  return [{ group: "commands", scripts: props.project.scripts }];
 });
-
-const groupLabel = (group: string) => {
-  if (group === "frontend") return t.value.scripts.frontend;
-  if (group === "backend") return t.value.scripts.backend;
-  if (group === "utility") return t.value.scripts.utility;
-  return t.value.scripts.main;
-};
+const isUnavailable = computed(() => props.project.pathExists === false);
 
 const handleRefresh = async () => {
+  if (isUnavailable.value) {
+    return;
+  }
   await store.refreshProjectScripts(props.project.id);
 };
 
 const handleStart = async (scriptId: string) => {
+  if (isUnavailable.value) {
+    return;
+  }
   await store.launchScript(props.project.id, scriptId);
 };
 
 const handleStop = async (scriptId: string) => {
+  if (isUnavailable.value) {
+    return;
+  }
   await store.stopScript(props.project.id, scriptId);
 };
 
 const handleOpenFolder = async () => {
+  if (isUnavailable.value) {
+    return;
+  }
   await store.openProjectFolder(props.project.id);
 };
 </script>
@@ -64,12 +60,14 @@ const handleOpenFolder = async () => {
         <div class="flex items-center gap-2 shrink-0 flex-wrap justify-end">
           <button
             @click="handleRefresh"
+            :disabled="isUnavailable"
             class="h-9 px-4 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors"
           >
             <RefreshCcw :size="14" /> {{ t.scripts.refreshScripts }}
           </button>
           <button
             @click="handleOpenFolder"
+            :disabled="isUnavailable"
             class="h-9 px-4 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors"
           >
             <FolderOpen :size="14" /> {{ t.common.openFolder }}
@@ -92,7 +90,7 @@ const handleOpenFolder = async () => {
         <div class="bg-surface-container-low p-4 border-b border-border-subtle flex justify-between items-center">
           <div class="flex items-center gap-2 min-w-0">
             <TerminalIcon :size="18" class="text-on-surface-variant" />
-            <h3 class="font-bold text-on-surface">{{ groupLabel(group.group) }}</h3>
+            <h3 class="font-bold text-on-surface">{{ t.scripts.manual }}</h3>
           </div>
           <span
             class="px-2 py-0.5 rounded-full bg-status-running/10 text-status-running text-[10px] font-bold uppercase tracking-wider"
@@ -145,7 +143,6 @@ const handleOpenFolder = async () => {
                   <div class="mt-2 font-mono text-xs text-on-surface-variant break-all">{{ script.command }}</div>
                   <div class="mt-1 text-[10px] text-on-surface-variant">
                     {{ t.scripts.cwd }}: {{ script.cwd || "." }}
-                    <span v-if="script.stopCommand"> · {{ t.scripts.stopCommand }}: {{ script.stopCommand }}</span>
                   </div>
                 </div>
               </div>
@@ -159,6 +156,7 @@ const handleOpenFolder = async () => {
                 <button
                   v-if="script.status === 'RUNNING'"
                   @click="handleStop(script.id)"
+                  :disabled="isUnavailable"
                   class="bg-status-error text-white text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90"
                 >
                   <Square :size="12" fill="currentColor" /> {{ t.scripts.stopScript }}
@@ -166,6 +164,7 @@ const handleOpenFolder = async () => {
                 <button
                   v-else
                   @click="handleStart(script.id)"
+                  :disabled="isUnavailable || !script.command.trim()"
                   class="bg-primary text-on-primary text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90"
                 >
                   <Play :size="12" fill="currentColor" /> {{ t.scripts.startScript }}

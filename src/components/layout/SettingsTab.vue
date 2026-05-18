@@ -1,5 +1,16 @@
 <script setup lang="ts">
-import { Languages, Info, Github, Moon, Sun, Monitor, TerminalSquare, ArrowLeft } from "lucide-vue-next";
+import {
+  Languages,
+  Info,
+  Github,
+  Moon,
+  Sun,
+  Monitor,
+  TerminalSquare,
+  ArrowLeft,
+  Upload,
+  Download,
+} from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import type { DefaultTerminalKind } from "../../types";
@@ -135,6 +146,34 @@ const terminalOptions: DefaultTerminalKind[] = ["builtin", "windows-terminal", "
             />
             <p class="mt-2 text-xs text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
           </div>
+        </div>
+      </section>
+
+      <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm lg:col-span-2">
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <div class="flex items-center gap-2 text-primary">
+            <Download :size="18" />
+            <h3 class="text-sm font-semibold text-on-surface">项目配置</h3>
+          </div>
+          <p v-if="store.projectStorageMessage" class="text-xs text-on-surface-variant truncate">
+            {{ store.projectStorageMessage }}
+          </p>
+        </div>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <button
+            @click="store.importProjectConfig"
+            class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
+          >
+            <Upload :size="16" />
+            导入项目配置
+          </button>
+          <button
+            @click="store.exportProjectConfig"
+            class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
+          >
+            <Download :size="16" />
+            导出项目配置
+          </button>
         </div>
       </section>
 

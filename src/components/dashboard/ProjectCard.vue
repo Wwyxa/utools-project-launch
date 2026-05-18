@@ -1,15 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import {
-  Play,
-  Square,
-  Clock,
-  AlertTriangle,
-  FolderOpen,
-  Pencil,
-  TerminalSquare,
-  Trash2,
-} from "lucide-vue-next";
+import { Play, Square, Clock, AlertTriangle, FolderOpen, Pencil, TerminalSquare, Trash2 } from "lucide-vue-next";
 import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -28,17 +19,23 @@ const t = useI18n();
 
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
+const isUnavailable = computed(() => props.project.pathExists === false);
 const runningScripts = computed(() => props.project.scripts.filter((script) => script.status === "RUNNING"));
 const visibleScripts = computed(() => {
   const runningIds = new Set(runningScripts.value.map((script) => script.id));
   return [...runningScripts.value, ...props.project.scripts.filter((script) => !runningIds.has(script.id))].slice(0, 3);
 });
 const hiddenRunningCount = computed(
-  () => runningScripts.value.filter((script) => !visibleScripts.value.some((visible) => visible.id === script.id)).length,
+  () =>
+    runningScripts.value.filter((script) => !visibleScripts.value.some((visible) => visible.id === script.id)).length,
 );
 const hiddenScriptCount = computed(() => props.project.scripts.length - visibleScripts.value.length);
 
 const handleCardSelect = () => {
+  if (isUnavailable.value) {
+    store.openEditProjectForm(props.project.id);
+    return;
+  }
   emit("select", props.project.id);
 };
 
@@ -49,16 +46,25 @@ const handleEdit = (event: MouseEvent) => {
 
 const handleOpenFolder = async (event: MouseEvent) => {
   event.stopPropagation();
+  if (isUnavailable.value) {
+    return;
+  }
   await store.openProjectFolder(props.project.id);
 };
 
 const handleOpenTerminal = async (event: MouseEvent) => {
   event.stopPropagation();
+  if (isUnavailable.value) {
+    return;
+  }
   await store.openProjectInTerminal(props.project.id);
 };
 
 const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: string) => {
   event.stopPropagation();
+  if (isUnavailable.value) {
+    return;
+  }
   if (status === "RUNNING") {
     await store.stopScript(props.project.id, scriptId);
     return;
@@ -114,13 +120,18 @@ const handleDelete = (event: MouseEvent) => {
             "
           />
           <span class="truncate">
-            {{ isRunning ? t.common.running : project.status === ProjectStatus.ERROR ? t.common.error : t.common.stopped }}
+            {{
+              isRunning ? t.common.running : project.status === ProjectStatus.ERROR ? t.common.error : t.common.stopped
+            }}
           </span>
         </div>
       </div>
 
       <p v-if="project.description" class="text-xs text-on-surface-variant mt-2 line-clamp-1">
         {{ project.description }}
+      </p>
+      <p v-if="isUnavailable" class="text-xs text-status-warning mt-2 line-clamp-1">
+        {{ project.unavailableReason || "当前设备无法访问该路径" }}
       </p>
 
       <div class="flex gap-1 mt-2 flex-wrap min-h-6">
@@ -129,9 +140,10 @@ const handleDelete = (event: MouseEvent) => {
           :key="script.id"
           :title="script.command"
           @click="handleScriptToggle($event, script.id, script.status)"
+          :disabled="isUnavailable"
           :class="
             cn(
-              'inline-flex max-w-[9rem] items-center gap-1 text-[10px] uppercase font-bold px-2 py-1 rounded border truncate transition-colors',
+              'inline-flex max-w-[9rem] items-center gap-1 text-[10px] font-bold px-2 py-1 rounded border truncate transition-colors',
               script.status === 'RUNNING'
                 ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
                 : 'text-on-surface-variant bg-surface-variant border-transparent hover:text-on-surface hover:bg-surface-container-high',
@@ -145,7 +157,11 @@ const handleDelete = (event: MouseEvent) => {
         <span
           v-if="hiddenScriptCount > 0"
           class="text-[10px] font-bold text-on-surface-variant bg-surface-variant px-2 py-1 rounded"
-          :title="hiddenRunningCount > 0 ? t.projectActions.moreRunning.replace('{count}', String(hiddenRunningCount)) : undefined"
+          :title="
+            hiddenRunningCount > 0
+              ? t.projectActions.moreRunning.replace('{count}', String(hiddenRunningCount))
+              : undefined
+          "
         >
           +{{ hiddenScriptCount }}
         </span>
@@ -164,6 +180,7 @@ const handleDelete = (event: MouseEvent) => {
           <button
             @click.stop="handleOpenTerminal"
             class="p-1 text-on-surface-variant hover:text-status-running rounded hover:bg-surface transition-colors"
+            :disabled="isUnavailable"
             :title="t.projectActions.openInTerminal"
             :aria-label="t.projectActions.openInTerminal"
           >
@@ -172,6 +189,7 @@ const handleDelete = (event: MouseEvent) => {
           <button
             @click.stop="handleOpenFolder"
             class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
+            :disabled="isUnavailable"
             :title="t.common.openFolder"
             :aria-label="t.common.openFolder"
           >

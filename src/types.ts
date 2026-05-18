@@ -16,22 +16,15 @@ export interface TerminalPreferences {
   customCommand: string;
 }
 
-export type ProjectScriptGroup = "main" | "frontend" | "backend" | "utility";
-
-export type ProjectScriptKind = "npm-script" | "command" | "executable";
-
 export interface ProjectScript {
   id: string;
   name: string;
   command: string;
   status: "IDLE" | "RUNNING" | "ERROR" | "STOPPED";
-  group?: ProjectScriptGroup;
-  kind?: ProjectScriptKind;
   cwd?: string;
   pid?: number;
   note?: string;
   source?: "manual" | "package-json" | "preset";
-  stopCommand?: string;
 }
 
 export interface ProjectGitFileChange {
@@ -63,11 +56,8 @@ export interface ProjectScriptFormValue {
   id: string;
   name: string;
   command: string;
-  group: ProjectScriptGroup;
-  kind: ProjectScriptKind;
   cwd: string;
   note: string;
-  stopCommand: string;
   source: "manual" | "package-json" | "preset";
 }
 
@@ -105,6 +95,35 @@ export interface Project {
   memo?: string;
   todos?: TodoItem[];
   git?: ProjectGitSnapshot | null;
+  pathExists?: boolean;
+  unavailableReason?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProjectConfigFile {
+  schemaVersion: 1;
+  exportedAt: string;
+  projects: Project[];
+}
+
+export interface ProjectPathInspection {
+  pathExists: boolean;
+  name?: string;
+  kind?: ProjectKind;
+  type?: string;
+  branch?: string;
+  scripts: ProjectBridgePackageScript[];
+  packagePath: string | null;
+  git?: ProjectBridgeGitSnapshot | null;
+  message?: string;
+}
+
+export interface ProjectImportResult {
+  imported: number;
+  skipped: number;
+  projects: Project[];
+  message?: string;
 }
 
 export interface LogEntry {
@@ -136,6 +155,9 @@ export interface ProjectBridgeRunResult {
 export interface ProjectBridgePackageScript {
   name: string;
   command: string;
+  cwd?: string;
+  note?: string;
+  source?: "manual" | "package-json" | "preset";
 }
 
 export interface ProjectBridgeGitSnapshot extends ProjectGitSnapshot {}
@@ -148,9 +170,17 @@ export interface ProjectBridgeEvent {
   message?: string;
   code?: number | null;
   signal?: string | null;
+  stoppedByUser?: boolean;
 }
 
 export interface ProjectBridge {
+  loadProjects(): Promise<Project[]>;
+  saveProjects(projects: Project[]): Promise<void>;
+  inspectProjectPath(projectPath: string): Promise<ProjectPathInspection>;
+  pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
+  pathExists(projectPath: string): Promise<boolean>;
+  exportProjects(config: ProjectConfigFile): Promise<{ canceled?: boolean; path?: string }>;
+  importProjects(): Promise<{ canceled?: boolean; config?: ProjectConfigFile; message?: string }>;
   readPackageScripts(
     projectPath: string,
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;

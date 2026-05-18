@@ -38,6 +38,7 @@ watch(theme, updateTheme);
 
 onMounted(() => {
   updateTheme();
+  void store.loadProjects();
   window.addEventListener("project-bridge-event", handleBridgeEvent);
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", updateTheme);
 });
@@ -82,7 +83,11 @@ onUnmounted(() => {
             {{ store.pendingDeleteProject ? store.pendingDeleteProject.path : "" }}
           </p>
           <p class="mt-4 text-sm text-on-surface-variant">
-            {{ store.pendingDeleteProject ? storeMessages.projectActions.deleteConfirm.replace("{name}", store.pendingDeleteProject.name) : "" }}
+            {{
+              store.pendingDeleteProject
+                ? storeMessages.projectActions.deleteConfirm.replace("{name}", store.pendingDeleteProject.name)
+                : ""
+            }}
           </p>
           <div class="mt-5 flex justify-end gap-2">
             <button

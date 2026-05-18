@@ -3,16 +3,25 @@ import { computed, ref } from "vue";
 import { useStore } from "../../store/useStore";
 import ProjectCard from "./ProjectCard.vue";
 import { useI18n } from "../../lib/i18n";
-import { Search, RefreshCw, Plus, Settings } from "lucide-vue-next";
+import { Search, RefreshCw, Plus, Settings, ChevronDown } from "lucide-vue-next";
 
 const store = useStore();
 const t = useI18n();
 
 const searchQuery = ref("");
 const projects = computed(() => {
-  if (!searchQuery.value) return store.projects;
+  const source = store.availableProjects;
+  if (!searchQuery.value) return source;
   const q = searchQuery.value.toLowerCase();
-  return store.projects.filter(
+  return source.filter(
+    (p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q) || p.type.toLowerCase().includes(q),
+  );
+});
+const unavailableProjects = computed(() => {
+  const source = store.unavailableProjects;
+  if (!searchQuery.value) return source;
+  const q = searchQuery.value.toLowerCase();
+  return source.filter(
     (p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q) || p.type.toLowerCase().includes(q),
   );
 });
@@ -64,7 +73,14 @@ const handleRefreshAll = () => {
       </div>
     </div>
 
-    <div v-if="projects.length === 0" class="m-6 border border-dashed border-border-subtle rounded-xl p-8 text-center">
+    <p v-if="store.projectStorageMessage" class="px-6 pt-3 text-xs text-on-surface-variant">
+      {{ store.projectStorageMessage }}
+    </p>
+
+    <div
+      v-if="projects.length === 0 && unavailableProjects.length === 0"
+      class="m-6 border border-dashed border-border-subtle rounded-xl p-8 text-center"
+    >
       <p class="text-sm text-on-surface-variant mb-4">{{ t.dashboard.empty }}</p>
       <button
         @click="store.openCreateProjectForm"
@@ -82,5 +98,25 @@ const handleRefreshAll = () => {
         @select="store.setSelectedProject"
       />
     </div>
+
+    <details
+      v-if="unavailableProjects.length > 0"
+      class="mx-6 mb-6 rounded-lg border border-border-subtle bg-surface-container-low"
+    >
+      <summary
+        class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-bold text-on-surface [&::-webkit-details-marker]:hidden"
+      >
+        <span>需要重新定位的项目（{{ unavailableProjects.length }}）</span>
+        <ChevronDown :size="16" class="text-on-surface-variant" />
+      </summary>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 border-t border-border-subtle p-3">
+        <ProjectCard
+          v-for="project in unavailableProjects"
+          :key="project.id"
+          :project="project"
+          @select="store.openEditProjectForm"
+        />
+      </div>
+    </details>
   </div>
 </template>

@@ -6,6 +6,7 @@ import type {
   Locale,
   LogEntry,
   Project,
+  ProjectConfigFile,
   ProjectBridgeEvent,
   ProjectEnvironmentEntry,
   ProjectFormValue,
@@ -23,6 +24,64 @@ const bridge = getProjectBridge();
 const createScriptId = (projectId: string, index: number) => `${projectId}-script-${index + 1}`;
 const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
+const createProjectId = () => `project-${Date.now()}`;
+
+function toPersistedProject(project: Project): Project {
+  const persistedStatus = project.pathExists === false ? ProjectStatus.WARNING : ProjectStatus.STOPPED;
+
+  return {
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    type: project.type,
+    kind: project.kind,
+    description: project.description || "",
+    status: persistedStatus,
+    lastUpdated: project.lastUpdated || "",
+    scripts: project.scripts.map((script) => ({
+      id: script.id,
+      name: script.name,
+      command: script.command,
+      cwd: script.cwd || ".",
+      note: script.note || "",
+      source: script.source || "manual",
+      status: "IDLE",
+    })),
+    env: project.env || {},
+    branch: project.branch || "main",
+    memo: project.memo || "",
+    todos: project.todos || [],
+    git: null,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  };
+}
+
+function isImportableProject(project: Project): boolean {
+  return Boolean(
+    project &&
+    typeof project.id === "string" &&
+    typeof project.name === "string" &&
+    project.name.trim() &&
+    typeof project.path === "string" &&
+    project.path.trim() &&
+    Array.isArray(project.scripts) &&
+    project.scripts.every((script) => typeof script.name === "string" && typeof script.command === "string"),
+  );
+}
+
+function resolveScriptCwd(projectPath: string, scriptCwd: string | undefined): string {
+  const cwd = scriptCwd?.trim();
+  if (!cwd || cwd === ".") {
+    return projectPath;
+  }
+
+  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(cwd)) {
+    return cwd;
+  }
+
+  return `${projectPath.replace(/[\\/]$/, "")}/${cwd}`;
+}
 
 function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): ProjectGitSnapshot | null {
   if (!snapshot) {
@@ -44,15 +103,12 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
 function scriptFromForm(projectId: string, script: ProjectScriptFormValue, index: number): ProjectScript {
   return {
     id: script.id || createScriptId(projectId, index),
-    name: script.name,
-    command: script.command,
+    name: script.name.trim(),
+    command: script.command.trim(),
     status: "IDLE",
-    group: script.group,
-    kind: script.kind,
-    cwd: script.cwd,
-    note: script.note,
+    cwd: script.cwd.trim() || ".",
+    note: script.note.trim(),
     source: script.source,
-    stopCommand: script.stopCommand,
   };
 }
 
@@ -75,11 +131,8 @@ function formFromProject(project: Project): ProjectFormValue {
       id: script.id,
       name: script.name,
       command: script.command,
-      group: script.group || "main",
-      kind: script.kind || "command",
       cwd: script.cwd || ".",
       note: script.note || "",
-      stopCommand: script.stopCommand || "",
       source: script.source || "manual",
     })),
   };
@@ -103,17 +156,33 @@ function hydrateProject(project: Project): Project {
     memo: project.memo || "",
     todos: project.todos || [],
     git: normalizeGitSnapshot(project.git),
+    pathExists: project.pathExists ?? true,
+    unavailableReason: project.unavailableReason || "",
+    createdAt: project.createdAt || new Date().toISOString(),
+    updatedAt: project.updatedAt || new Date().toISOString(),
     scripts: project.scripts.map((script, index) => ({
-      ...script,
       id: script.id || createScriptId(project.id, index),
-      group: script.group || "main",
-      kind: script.kind || "command",
+      name: script.name || "start",
+      command: script.command || "",
+      status: script.status || "IDLE",
       cwd: script.cwd || ".",
       note: script.note || "",
-      stopCommand: script.stopCommand || "",
       source: script.source || "manual",
     })),
   };
+}
+
+function deriveProjectStatus(project: Project): ProjectStatus {
+  if (project.pathExists === false) {
+    return ProjectStatus.WARNING;
+  }
+  if (project.scripts.some((script) => script.status === "RUNNING")) {
+    return ProjectStatus.RUNNING;
+  }
+  if (project.scripts.some((script) => script.status === "ERROR")) {
+    return ProjectStatus.ERROR;
+  }
+  return ProjectStatus.STOPPED;
 }
 
 function demoProject(id: string, project: Project): Project {
@@ -140,8 +209,6 @@ const demoProjects: Project[] = [
         name: "dev",
         command: "npm run dev",
         status: "RUNNING",
-        group: "frontend",
-        kind: "npm-script",
         cwd: ".",
         source: "package-json",
         note: "frontend dev server",
@@ -151,8 +218,6 @@ const demoProjects: Project[] = [
         name: "server",
         command: "npm run server",
         status: "IDLE",
-        group: "backend",
-        kind: "npm-script",
         cwd: ".",
         source: "package-json",
         note: "backend api",
@@ -200,8 +265,6 @@ const demoProjects: Project[] = [
         name: "run",
         command: "python main.py",
         status: "IDLE",
-        group: "main",
-        kind: "command",
         cwd: ".",
         source: "manual",
       },
@@ -210,8 +273,6 @@ const demoProjects: Project[] = [
         name: "test",
         command: "pytest",
         status: "IDLE",
-        group: "utility",
-        kind: "command",
         cwd: ".",
         source: "manual",
       },
@@ -244,8 +305,6 @@ const demoProjects: Project[] = [
         name: "run",
         command: "go run main.go",
         status: "ERROR",
-        group: "main",
-        kind: "command",
         cwd: ".",
         source: "manual",
       },
@@ -254,8 +313,6 @@ const demoProjects: Project[] = [
         name: "build",
         command: "go build -o bin/finance-app",
         status: "IDLE",
-        group: "utility",
-        kind: "command",
         cwd: ".",
         source: "manual",
       },
@@ -292,11 +349,8 @@ function createBlankProjectForm(): ProjectFormValue {
         id: `script-${Date.now()}`,
         name: "dev",
         command: "npm run dev",
-        group: "main",
-        kind: "npm-script",
         cwd: ".",
         note: "",
-        stopCommand: "",
         source: "manual",
       },
     ],
@@ -313,11 +367,15 @@ export const useStore = defineStore("app", {
       customCommand: "",
     } as TerminalPreferences,
     supportsBridge: supportsRealProjectBridge(),
+    projectsLoaded: false,
+    projectStorageMessage: "",
+    projectFormInspectionMessage: "",
+    projectFormInspecting: false,
     projectFormOpen: false,
     projectFormMode: "create" as "create" | "edit",
     projectFormDraft: createBlankProjectForm() as ProjectFormValue,
     pendingDeleteProjectId: null as string | null,
-    projects: demoProjects,
+    projects: supportsRealProjectBridge() ? [] : demoProjects,
     selectedProjectId: null as string | null,
     logs: {
       "project-node-1": [
@@ -352,6 +410,8 @@ export const useStore = defineStore("app", {
   }),
 
   getters: {
+    availableProjects: (state): Project[] => state.projects.filter((project) => project.pathExists !== false),
+    unavailableProjects: (state): Project[] => state.projects.filter((project) => project.pathExists === false),
     selectedProject: (state): Project | undefined =>
       state.projects.find((project) => project.id === state.selectedProjectId),
     pendingDeleteProject: (state): Project | undefined =>
@@ -360,6 +420,55 @@ export const useStore = defineStore("app", {
   },
 
   actions: {
+    async loadProjects() {
+      try {
+        const storedProjects = await bridge.loadProjects();
+        if (this.supportsBridge || storedProjects.length > 0) {
+          this.projects = storedProjects.map(hydrateProject);
+          this.selectedProjectId = storedProjects.some((project) => project.id === this.selectedProjectId)
+            ? this.selectedProjectId
+            : null;
+        }
+      } catch (error) {
+        this.projectStorageMessage = "项目配置读取失败，已保留当前会话数据";
+      }
+
+      this.projectsLoaded = true;
+      await this.refreshProjectAvailability();
+      this.projects.forEach((project) => {
+        this.memoContent[project.id] = project.memo || this.memoContent[project.id] || "";
+        this.todos[project.id] = project.todos || this.todos[project.id] || [];
+        this.logs[project.id] = this.logs[project.id] || [];
+        this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
+      });
+    },
+    async persistProjects() {
+      try {
+        await bridge.saveProjects(this.projects.map((project) => toPersistedProject(project)));
+        this.projectStorageMessage = "";
+      } catch (error) {
+        this.projectStorageMessage = "项目配置保存失败，请稍后重试";
+      }
+    },
+    async refreshProjectAvailability() {
+      await Promise.all(
+        this.projects.map(async (project) => {
+          const exists = await bridge.pathExists(project.path);
+          project.pathExists = exists;
+          project.unavailableReason = exists ? "" : "当前设备无法访问该路径";
+          if (exists && project.status === ProjectStatus.WARNING) {
+            project.status = ProjectStatus.STOPPED;
+          }
+          if (!exists) {
+            project.status = ProjectStatus.WARNING;
+            project.scripts.forEach((script) => {
+              script.status = "IDLE";
+              script.pid = undefined;
+            });
+          }
+        }),
+      );
+    },
     setLocale(locale: Locale) {
       this.locale = locale;
     },
@@ -385,6 +494,7 @@ export const useStore = defineStore("app", {
     openCreateProjectForm() {
       this.projectFormMode = "create";
       this.projectFormDraft = createBlankProjectForm();
+      this.projectFormInspectionMessage = "";
       this.projectFormOpen = true;
     },
     openEditProjectForm(projectId: string) {
@@ -395,17 +505,66 @@ export const useStore = defineStore("app", {
 
       this.projectFormMode = "edit";
       this.projectFormDraft = formFromProject(project);
+      this.projectFormInspectionMessage =
+        project.pathExists === false ? project.unavailableReason || "当前路径不可用" : "";
       this.projectFormOpen = true;
     },
     closeProjectForm() {
       this.projectFormOpen = false;
       this.projectFormDraft = createBlankProjectForm();
+      this.projectFormInspectionMessage = "";
     },
     updateProjectForm(patch: Partial<ProjectFormValue>) {
       this.projectFormDraft = {
         ...this.projectFormDraft,
         ...patch,
       };
+    },
+    async inspectCurrentProjectPath() {
+      const projectPath = this.projectFormDraft.path.trim();
+      if (!projectPath) {
+        this.projectFormInspectionMessage = "";
+        return;
+      }
+
+      this.projectFormInspecting = true;
+      const currentName = this.projectFormDraft.name.trim();
+      try {
+        const result = await bridge.inspectProjectPath(projectPath);
+        const scripts = result.scripts.map((script, index) => ({
+          id: `script-${Date.now()}-${index}`,
+          name: script.name,
+          command: script.command,
+          cwd: script.cwd || ".",
+          note: script.note || (result.packagePath ? `package.json: ${result.packagePath}` : ""),
+          source: script.source || "package-json",
+        })) satisfies ProjectScriptFormValue[];
+
+        this.projectFormDraft = {
+          ...this.projectFormDraft,
+          name: currentName || result.name || this.projectFormDraft.name,
+          kind: result.kind || this.projectFormDraft.kind,
+          type: result.type || this.projectFormDraft.type,
+          branch: result.branch || this.projectFormDraft.branch,
+          scripts: scripts.length > 0 ? scripts : this.projectFormDraft.scripts,
+        };
+        this.projectFormInspectionMessage =
+          result.message || (result.pathExists ? "已识别路径信息" : "当前路径不可用，可保存后重新定位");
+      } finally {
+        this.projectFormInspecting = false;
+      }
+    },
+    async pickProjectPath() {
+      const result = await bridge.pickProjectPath();
+      if (result.path) {
+        this.updateProjectForm({ path: result.path });
+        await this.inspectCurrentProjectPath();
+        return;
+      }
+
+      if (result.message) {
+        this.projectFormInspectionMessage = result.message;
+      }
     },
     addEnvironmentEntry() {
       this.projectFormDraft.envEntries.push({
@@ -428,11 +587,8 @@ export const useStore = defineStore("app", {
         id: `script-${Date.now()}`,
         name: "start",
         command: "",
-        group: "main",
-        kind: "command",
         cwd: ".",
         note: "",
-        stopCommand: "",
         source: "manual",
       });
     },
@@ -445,33 +601,64 @@ export const useStore = defineStore("app", {
     removeScriptEntry(scriptId: string) {
       this.projectFormDraft.scripts = this.projectFormDraft.scripts.filter((item) => item.id !== scriptId);
     },
-    saveProjectForm() {
+    moveScriptEntry(scriptId: string, direction: "up" | "down") {
+      const currentIndex = this.projectFormDraft.scripts.findIndex((item) => item.id === scriptId);
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= this.projectFormDraft.scripts.length) {
+        return;
+      }
+
+      const scripts = [...this.projectFormDraft.scripts];
+      const [script] = scripts.splice(currentIndex, 1);
+      scripts.splice(targetIndex, 0, script);
+      this.projectFormDraft.scripts = scripts;
+    },
+    async saveProjectForm() {
       const current = this.projectFormDraft;
       const payload: ProjectFormValue = {
         ...current,
         envEntries: current.envEntries.filter((entry) => entry.key.trim()),
       };
-      const projectId = payload.id || `project-${Date.now()}`;
+      const projectId = payload.id || createProjectId();
+      const now = new Date().toISOString();
       const env = envFromEntries(payload.envEntries);
-      const scripts = payload.scripts.map((script, index) => scriptFromForm(projectId, script, index));
+      const scripts = payload.scripts
+        .filter((script) => script.name.trim() && script.command.trim())
+        .map((script, index) => scriptFromForm(projectId, script, index));
+      if (scripts.length === 0) {
+        this.projectFormInspectionMessage = "请至少填写一个可运行脚本。";
+        return null;
+      }
+      const pathExists = await bridge.pathExists(payload.path);
+      const existingProject = this.projects.find((item) => item.id === projectId);
       const project: Project = hydrateProject({
         id: projectId,
-        name: payload.name,
-        path: payload.path,
+        name: payload.name.trim(),
+        path: payload.path.trim(),
         type: payload.type,
         kind: payload.kind,
         description: payload.description,
         status:
           this.projectFormMode === "edit"
-            ? this.projects.find((item) => item.id === projectId)?.status || ProjectStatus.STOPPED
-            : ProjectStatus.STOPPED,
+            ? pathExists
+              ? existingProject?.status === ProjectStatus.RUNNING
+                ? ProjectStatus.RUNNING
+                : ProjectStatus.STOPPED
+              : ProjectStatus.WARNING
+            : pathExists
+              ? ProjectStatus.STOPPED
+              : ProjectStatus.WARNING,
         lastUpdated: new Date().toLocaleString(),
         scripts,
         env,
         branch: payload.branch,
         memo: payload.memo,
-        todos: this.todos[projectId] || [],
-        git: this.projects.find((item) => item.id === projectId)?.git || null,
+        todos: this.todos[projectId] || existingProject?.todos || [],
+        git: existingProject?.git || null,
+        pathExists,
+        unavailableReason: pathExists ? "" : "当前设备无法访问该路径",
+        createdAt: existingProject?.createdAt || now,
+        updatedAt: now,
       });
 
       const existingIndex = this.projects.findIndex((item) => item.id === projectId);
@@ -488,9 +675,10 @@ export const useStore = defineStore("app", {
       this.selectedProjectId = projectId;
       this.projectFormOpen = false;
       this.projectFormDraft = createBlankProjectForm();
+      await this.persistProjects();
       return projectId;
     },
-    deleteProject(projectId: string) {
+    async deleteProject(projectId: string) {
       const existingIndex = this.projects.findIndex((item) => item.id === projectId);
       if (existingIndex < 0) {
         return false;
@@ -511,6 +699,7 @@ export const useStore = defineStore("app", {
         this.closeProjectForm();
       }
 
+      await this.persistProjects();
       return true;
     },
     requestDeleteProject(projectId: string) {
@@ -521,7 +710,7 @@ export const useStore = defineStore("app", {
     cancelDeleteProject() {
       this.pendingDeleteProjectId = null;
     },
-    confirmDeleteProject() {
+    async confirmDeleteProject() {
       const projectId = this.pendingDeleteProjectId;
       if (!projectId) {
         return false;
@@ -532,7 +721,7 @@ export const useStore = defineStore("app", {
     },
     async refreshProjectScripts(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
-      if (!project) {
+      if (!project || project.pathExists === false) {
         return;
       }
 
@@ -543,17 +732,24 @@ export const useStore = defineStore("app", {
           name: script.name,
           command: script.command,
           status: "IDLE",
-          group: "main",
-          kind: "npm-script",
-          cwd: ".",
-          note: result.packagePath ? `package.json: ${result.packagePath}` : "",
-          source: "package-json",
+          cwd: script.cwd || ".",
+          note: script.note || (result.packagePath ? `package.json: ${result.packagePath}` : ""),
+          source: script.source || "package-json",
         }));
+        await this.persistProjects();
       }
+    },
+    async refreshProjects() {
+      await this.refreshProjectAvailability();
+      await Promise.all(
+        this.projects
+          .filter((project) => project.pathExists !== false)
+          .map((project) => this.refreshGitSnapshot(project.id)),
+      );
     },
     async refreshGitSnapshot(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
-      if (!project) {
+      if (!project || project.pathExists === false) {
         return;
       }
 
@@ -563,11 +759,18 @@ export const useStore = defineStore("app", {
         project.branch = project.git.branch;
         this.stagedFiles[projectId] = project.git.files;
       }
+      await this.persistProjects();
     },
     async launchScript(projectId: string, scriptId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const script = project?.scripts.find((item) => item.id === scriptId);
-      if (!project || !script) {
+      if (
+        !project ||
+        !script ||
+        project.pathExists === false ||
+        script.status === "RUNNING" ||
+        !script.command.trim()
+      ) {
         return null;
       }
 
@@ -575,7 +778,7 @@ export const useStore = defineStore("app", {
         projectId,
         scriptId,
         command: script.command,
-        cwd: script.cwd || project.path,
+        cwd: resolveScriptCwd(project.path, script.cwd),
         env: project.env,
         label: `${project.name} / ${script.name}`,
       });
@@ -589,18 +792,21 @@ export const useStore = defineStore("app", {
     async stopScript(projectId: string, scriptId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const script = project?.scripts.find((item) => item.id === scriptId);
-      if (!project || !script || !script.pid) {
+      if (!project || !script || script.status !== "RUNNING") {
         return;
       }
 
-      await bridge.stopProcess(script.pid);
+      if (script.pid) {
+        await bridge.stopProcess(script.pid);
+      }
       script.status = "STOPPED";
-      project.status = ProjectStatus.STOPPED;
+      script.pid = undefined;
+      project.status = deriveProjectStatus(project);
       project.lastUpdated = new Date().toLocaleString();
     },
     async openProjectFolder(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
-      if (!project) {
+      if (!project || project.pathExists === false) {
         return;
       }
 
@@ -608,7 +814,7 @@ export const useStore = defineStore("app", {
     },
     async openProjectInTerminal(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
-      if (!project) {
+      if (!project || project.pathExists === false) {
         return;
       }
 
@@ -650,7 +856,58 @@ export const useStore = defineStore("app", {
       const project = this.projects.find((item) => item.id === projectId);
       if (project) {
         project.memo = content;
+        project.updatedAt = new Date().toISOString();
+        void this.persistProjects();
       }
+    },
+    async exportProjectConfig() {
+      const config: ProjectConfigFile = {
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        projects: this.projects.map((project) => toPersistedProject(project)),
+      };
+      const result = await bridge.exportProjects(config);
+      this.projectStorageMessage = result.canceled
+        ? "已取消导出"
+        : result.path
+          ? `已导出到 ${result.path}`
+          : "已导出项目配置";
+    },
+    async importProjectConfig() {
+      const result = await bridge.importProjects();
+      if (result.canceled || !result.config) {
+        this.projectStorageMessage = result.message || "已取消导入";
+        return;
+      }
+
+      const existingKeys = new Set(
+        this.projects.map((project) => `${project.path.toLowerCase()}::${project.name.toLowerCase()}`),
+      );
+      if (result.config.schemaVersion !== 1 || !Array.isArray(result.config.projects)) {
+        this.projectStorageMessage = "配置文件格式不受支持";
+        return;
+      }
+
+      const incoming = result.config.projects
+        .filter(isImportableProject)
+        .map((project) => hydrateProject(toPersistedProject(project)));
+      const accepted: Project[] = [];
+      let skipped = result.config.projects.length - incoming.length;
+
+      incoming.forEach((project) => {
+        const key = `${project.path.toLowerCase()}::${project.name.toLowerCase()}`;
+        if (this.projects.some((item) => item.id === project.id) || existingKeys.has(key)) {
+          skipped += 1;
+          return;
+        }
+        existingKeys.add(key);
+        accepted.push({ ...project, id: project.id || createProjectId() });
+      });
+
+      this.projects = [...accepted, ...this.projects];
+      await this.refreshProjectAvailability();
+      await this.persistProjects();
+      this.projectStorageMessage = `已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`;
     },
     handleBridgeEvent(event: ProjectBridgeEvent) {
       if (event.type === "stdout" || event.type === "stderr") {
@@ -664,12 +921,14 @@ export const useStore = defineStore("app", {
       if (event.type === "exit") {
         const project = this.projects.find((item) => item.id === event.projectId);
         const script = project?.scripts.find((item) => item.id === event.scriptId);
+        const isStopped = Boolean(event.stoppedByUser);
+        const isSuccess = event.code === 0;
         if (script) {
-          script.status = event.code === 0 ? "IDLE" : "ERROR";
+          script.status = isStopped ? "STOPPED" : isSuccess ? "IDLE" : "ERROR";
           script.pid = undefined;
         }
         if (project) {
-          project.status = event.code === 0 ? ProjectStatus.STOPPED : ProjectStatus.ERROR;
+          project.status = deriveProjectStatus(project);
           project.lastUpdated = new Date().toLocaleString();
         }
       }

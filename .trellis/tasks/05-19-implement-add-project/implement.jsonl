@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend task entry point and guideline index for Vue, Pinia, Tailwind, and shared types."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Project form, dashboard, and unavailable-project UI changes must follow existing component patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"新增项目 persistence, detection state, import/export, and project availability belong in Pinia/bridge state boundaries."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Project persistence schema, bridge contracts, and import/export JSON need strong TypeScript types."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Implementation must preserve project quality, avoid unsafe patterns, and pass build checks."}

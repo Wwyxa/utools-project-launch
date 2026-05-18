@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Check frontend work against the project guideline index."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review UI changes for consistency with existing Vue component patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review persistence and project availability state for store-boundary correctness."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review bridge contracts and JSON import/export schema typing."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run final quality review against project standards and build requirements."}
