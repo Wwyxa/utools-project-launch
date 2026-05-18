@@ -1,0 +1,16 @@
+{
+  "main": "index.html",
+  "logo": "logo.png",
+  "preload": "preload.js",
+  "pluginSetting": {
+    "single": true,
+    "height": 760
+  },
+  "features": [
+    {
+      "code": "project-manager",
+      "explain": "打开项目管理器",
+      "cmds": ["项目管理", "项目启动器", "项目管理器", "project manager"]
+    }
+  ]
+}

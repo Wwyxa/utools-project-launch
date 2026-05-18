@@ -1,13 +1,28 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useStore } from './store/useStore';
-import Sidebar from './components/layout/Sidebar.vue';
-import TopBar from './components/layout/TopBar.vue';
-import Dashboard from './components/dashboard/Dashboard.vue';
-import ProjectDetails from './components/project/ProjectDetails.vue';
+import { computed, onMounted, onUnmounted } from "vue";
+import { useStore } from "./store/useStore";
+import Sidebar from "./components/layout/Sidebar.vue";
+import TopBar from "./components/layout/TopBar.vue";
+import Dashboard from "./components/dashboard/Dashboard.vue";
+import ProjectDetails from "./components/project/ProjectDetails.vue";
+import ProjectFormModal from "./components/project/ProjectFormModal.vue";
+import type { ProjectBridgeEvent } from "./types";
 
 const store = useStore();
 const selectedProject = computed(() => store.selectedProject);
+
+const handleBridgeEvent = (event: Event) => {
+  const customEvent = event as CustomEvent<ProjectBridgeEvent>;
+  store.handleBridgeEvent(customEvent.detail);
+};
+
+onMounted(() => {
+  window.addEventListener("project-bridge-event", handleBridgeEvent);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("project-bridge-event", handleBridgeEvent);
+});
 </script>
 
 <template>
@@ -26,13 +41,16 @@ const selectedProject = computed(() => store.selectedProject);
         </Transition>
       </main>
     </div>
+    <ProjectFormModal />
   </div>
 </template>
 
 <style scoped>
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .fade-enter-from {
