@@ -187,6 +187,29 @@
   background: var(--scrollbar-track);
 }
 
+.themed-scrollbar::-webkit-scrollbar-track-piece,
+*::-webkit-scrollbar-track-piece,
+.themed-scrollbar::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
+
+.dark .themed-scrollbar,
+.dark * {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.dark .themed-scrollbar::-webkit-scrollbar,
+.dark *::-webkit-scrollbar,
+.dark .themed-scrollbar::-webkit-scrollbar-track,
+.dark *::-webkit-scrollbar-track,
+.dark .themed-scrollbar::-webkit-scrollbar-track-piece,
+.dark *::-webkit-scrollbar-track-piece,
+.dark .themed-scrollbar::-webkit-scrollbar-corner,
+.dark *::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
+
 .themed-scrollbar::-webkit-scrollbar-thumb,
 *::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);

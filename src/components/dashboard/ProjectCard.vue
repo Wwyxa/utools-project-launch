@@ -77,54 +77,47 @@ const handleDelete = (event: MouseEvent) => {
     @click="handleCardSelect"
     class="group relative border border-border-subtle rounded-lg bg-surface hover:bg-surface-container transition-all cursor-pointer overflow-hidden"
   >
-    <div class="p-4 pr-16">
-      <div class="min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-          <h3 class="text-base font-bold text-on-surface group-hover:text-primary transition-colors truncate">
-            {{ project.name }}
-          </h3>
-          <span
-            class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-surface-variant text-on-surface-variant"
-          >
-            {{ t.projectKinds[project.kind] }}
-          </span>
-        </div>
-          <p class="font-mono text-xs text-on-surface-variant mt-1 max-w-full truncate">{{ project.path }}</p>
+    <div class="p-3">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 min-w-0">
+            <h3 class="min-w-0 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
+              {{ project.name }}
+            </h3>
+            <span
+              class="shrink-0 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-surface-variant text-on-surface-variant"
+            >
+              {{ t.projectKinds[project.kind] }}
+            </span>
+          </div>
+          <p class="font-mono text-[11px] text-on-surface-variant mt-1 max-w-full truncate">{{ project.path }}</p>
         </div>
 
-          <div
-            class="absolute right-4 top-4 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
-            @click.stop
-          >
-            <button
-              @click.stop="handleOpenTerminal"
-              class="p-1 text-on-surface-variant hover:text-status-running rounded hover:bg-surface transition-colors"
-              :title="t.projectActions.openInTerminal"
-            >
-              <TerminalSquare :size="15" />
-            </button>
-            <button
-              @click.stop="handleOpenFolder"
-              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
-              :title="t.common.openFolder"
-            >
-              <FolderOpen :size="15" />
-            </button>
-            <button
-              @click.stop="handleEdit"
-              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-colors"
-              :title="t.common.edit"
-            >
-              <Pencil :size="15" />
-            </button>
-            <button
-              @click.stop="handleDelete"
-              class="p-1 text-on-surface-variant hover:text-status-error rounded hover:bg-surface transition-colors"
-              :title="t.projectActions.deleteProject"
-            >
-              <Trash2 :size="15" />
-            </button>
-          </div>
+        <div
+          :class="
+            cn(
+              'shrink-0 inline-flex max-w-[5rem] items-center gap-1 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap',
+              isRunning
+                ? 'bg-status-running/10 text-status-running'
+                : isError
+                  ? 'bg-status-error/10 text-status-error'
+                  : 'bg-surface-container text-status-stopped border border-border-subtle',
+            )
+          "
+        >
+          <span
+            :class="
+              cn(
+                'w-1.5 h-1.5 rounded-full',
+                isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'bg-status-stopped',
+              )
+            "
+          />
+          <span class="truncate">
+            {{ isRunning ? t.common.running : project.status === ProjectStatus.ERROR ? t.common.error : t.common.stopped }}
+          </span>
+        </div>
+      </div>
 
       <p v-if="project.description" class="text-xs text-on-surface-variant mt-2 line-clamp-1">
         {{ project.description }}
@@ -158,37 +151,50 @@ const handleDelete = (event: MouseEvent) => {
         </span>
       </div>
 
-      <div class="mt-2 flex items-center gap-1.5 text-xs text-on-surface-variant min-w-0">
-        <span v-if="isError" class="flex items-center gap-1 text-status-error truncate">
-          <AlertTriangle :size="12" /> {{ project.git?.statusText || "Exit code 1" }}
-        </span>
-        <span v-else class="flex items-center gap-1 truncate">
-          <Clock :size="12" /> {{ project.lastUpdated || project.git?.lastRefreshedAt || "--" }}
-        </span>
+      <div class="mt-2 flex items-center justify-between gap-2 border-t border-border-subtle pt-2">
+        <div class="flex items-center gap-1.5 text-xs text-on-surface-variant min-w-0">
+          <span v-if="isError" class="flex items-center gap-1 text-status-error truncate">
+            <AlertTriangle :size="12" class="shrink-0" /> {{ project.git?.statusText || "Exit code 1" }}
+          </span>
+          <span v-else class="flex items-center gap-1 truncate">
+            <Clock :size="12" class="shrink-0" /> {{ project.lastUpdated || project.git?.lastRefreshedAt || "--" }}
+          </span>
+        </div>
+        <div class="shrink-0 flex items-center gap-0.5" @click.stop>
+          <button
+            @click.stop="handleOpenTerminal"
+            class="p-1 text-on-surface-variant hover:text-status-running rounded hover:bg-surface transition-colors"
+            :title="t.projectActions.openInTerminal"
+            :aria-label="t.projectActions.openInTerminal"
+          >
+            <TerminalSquare :size="15" />
+          </button>
+          <button
+            @click.stop="handleOpenFolder"
+            class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
+            :title="t.common.openFolder"
+            :aria-label="t.common.openFolder"
+          >
+            <FolderOpen :size="15" />
+          </button>
+          <button
+            @click.stop="handleEdit"
+            class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-colors"
+            :title="t.common.edit"
+            :aria-label="t.common.edit"
+          >
+            <Pencil :size="15" />
+          </button>
+          <button
+            @click.stop="handleDelete"
+            class="p-1 text-on-surface-variant hover:text-status-error rounded hover:bg-surface transition-colors"
+            :title="t.projectActions.deleteProject"
+            :aria-label="t.projectActions.deleteProject"
+          >
+            <Trash2 :size="15" />
+          </button>
+        </div>
       </div>
-    </div>
-
-    <div
-      :class="
-        cn(
-          'pointer-events-none absolute right-4 top-4 inline-flex items-center gap-1.5 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-opacity group-hover:opacity-0',
-          isRunning
-            ? 'bg-status-running/10 text-status-running'
-            : isError
-              ? 'bg-status-error/10 text-status-error'
-              : 'bg-surface-container text-status-stopped border border-border-subtle',
-        )
-      "
-    >
-      <span
-        :class="
-          cn(
-            'w-1.5 h-1.5 rounded-full',
-            isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'bg-status-stopped',
-          )
-        "
-      />
-      {{ isRunning ? t.common.running : project.status === ProjectStatus.ERROR ? t.common.error : t.common.stopped }}
     </div>
 
     <div

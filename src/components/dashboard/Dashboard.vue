@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 import { useStore } from "../../store/useStore";
 import ProjectCard from "./ProjectCard.vue";
 import { useI18n } from "../../lib/i18n";
-import { Search, RefreshCw, Plus } from "lucide-vue-next";
+import { Search, RefreshCw, Plus, Settings } from "lucide-vue-next";
 
 const store = useStore();
 const t = useI18n();
@@ -37,9 +37,18 @@ const handleRefreshAll = () => {
         </div>
         <div class="flex items-center gap-2">
           <button
+            @click="store.setActiveTab('settings')"
+            class="toolbar-icon-button p-1.5 rounded-lg transition-colors"
+            :title="t.sidebar.settings"
+            :aria-label="t.sidebar.settings"
+          >
+            <Settings :size="18" />
+          </button>
+          <button
             @click="handleRefreshAll"
             class="toolbar-icon-button p-1.5 rounded-lg transition-colors"
             :title="t.common.refresh"
+            :aria-label="t.common.refresh"
           >
             <RefreshCw :size="18" />
           </button>
@@ -47,6 +56,7 @@ const handleRefreshAll = () => {
             @click="store.openCreateProjectForm"
             class="toolbar-primary-button p-1.5 rounded-lg flex items-center justify-center transition-colors"
             :title="t.dashboard.createHint"
+            :aria-label="t.dashboard.createHint"
           >
             <Plus :size="18" />
           </button>

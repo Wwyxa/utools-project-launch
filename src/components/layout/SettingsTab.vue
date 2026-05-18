@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Languages, Info, Github, Moon, Sun, Monitor, TerminalSquare } from "lucide-vue-next";
+import { Languages, Info, Github, Moon, Sun, Monitor, TerminalSquare, ArrowLeft } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import type { DefaultTerminalKind } from "../../types";
@@ -12,8 +12,16 @@ const terminalOptions: DefaultTerminalKind[] = ["builtin", "windows-terminal", "
 
 <template>
   <div class="p-6 max-w-5xl">
-    <header class="mb-5">
+    <header class="mb-5 flex items-center justify-between gap-4">
       <h2 class="text-xl font-bold text-on-surface tracking-tight">{{ t.sidebar.settings }}</h2>
+      <button
+        @click="store.setActiveTab('projects')"
+        class="toolbar-icon-button p-1.5 rounded-lg transition-colors"
+        :title="t.sidebar.projects"
+        :aria-label="t.sidebar.projects"
+      >
+        <ArrowLeft :size="18" />
+      </button>
     </header>
 
     <div class="grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">

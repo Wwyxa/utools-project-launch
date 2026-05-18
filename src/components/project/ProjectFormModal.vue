@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { X, Plus, Trash2, Save } from "lucide-vue-next";
+import { ChevronDown, X, Plus, Trash2, Save } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import type { ProjectKind, ProjectScriptGroup, ProjectScriptKind } from "../../types";
@@ -37,6 +37,10 @@ const updateKind = (kind: ProjectKind) => {
   }
 };
 
+const closeDropdown = (event: MouseEvent) => {
+  (event.currentTarget as HTMLElement).closest("details")?.removeAttribute("open");
+};
+
 const handleSubmit = () => {
   if (!form.value.name.trim() || !form.value.path.trim()) {
     return;
@@ -64,7 +68,7 @@ const handleSubmit = () => {
           </button>
         </header>
 
-        <div class="p-6 overflow-y-auto space-y-6">
+        <div class="themed-scrollbar bg-surface p-6 overflow-y-auto space-y-6 [color-scheme:inherit]">
           <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="space-y-2">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.name }}</span>
@@ -84,13 +88,33 @@ const handleSubmit = () => {
             </label>
             <label class="space-y-2">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.type }}</span>
-              <select
-                :value="form.kind"
-                @change="(event) => updateKind((event.target as HTMLSelectElement).value as ProjectKind)"
-                class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
-              >
-                <option v-for="kind in projectKinds" :key="kind" :value="kind">{{ t.kinds[kind] }}</option>
-              </select>
+              <details class="relative group/dropdown">
+                <summary
+                  class="flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm transition-colors hover:bg-surface-container-low focus:outline-none focus:border-primary [&::-webkit-details-marker]:hidden"
+                >
+                  <span class="truncate">{{ t.kinds[form.kind] }}</span>
+                  <ChevronDown
+                    :size="16"
+                    class="shrink-0 text-on-surface-variant transition-transform group-open/dropdown:rotate-180"
+                  />
+                </summary>
+                <div
+                  class="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-xl"
+                >
+                  <button
+                    v-for="kind in projectKinds"
+                    :key="kind"
+                    type="button"
+                    @click="(event) => { updateKind(kind); closeDropdown(event); }"
+                    :class="[
+                      'block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-container-high hover:text-on-surface',
+                      form.kind === kind ? 'bg-primary text-on-primary' : 'text-on-surface',
+                    ]"
+                  >
+                    {{ t.kinds[kind] }}
+                  </button>
+                </div>
+              </details>
             </label>
             <label class="space-y-2">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.branch }}</span>
@@ -143,30 +167,60 @@ const handleSubmit = () => {
                   :placeholder="t.modal.scriptCommand"
                   class="md:col-span-4 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
                 />
-                <select
-                  :value="script.group"
-                  @change="
-                    (event) =>
-                      store.updateScriptEntry(script.id, {
-                        group: (event.target as HTMLSelectElement).value as ProjectScriptGroup,
-                      })
-                  "
-                  class="md:col-span-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
-                >
-                  <option v-for="group in scriptGroups" :key="group" :value="group">{{ t.groups[group] }}</option>
-                </select>
-                <select
-                  :value="script.kind"
-                  @change="
-                    (event) =>
-                      store.updateScriptEntry(script.id, {
-                        kind: (event.target as HTMLSelectElement).value as ProjectScriptKind,
-                      })
-                  "
-                  class="md:col-span-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
-                >
-                  <option v-for="kind in scriptKinds" :key="kind" :value="kind">{{ kind }}</option>
-                </select>
+                <details class="relative md:col-span-2 group/dropdown">
+                  <summary
+                    class="flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm transition-colors hover:bg-surface-container-low focus:outline-none focus:border-primary [&::-webkit-details-marker]:hidden"
+                  >
+                    <span class="truncate">{{ t.groups[script.group] }}</span>
+                    <ChevronDown
+                      :size="16"
+                      class="shrink-0 text-on-surface-variant transition-transform group-open/dropdown:rotate-180"
+                    />
+                  </summary>
+                  <div
+                    class="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-xl"
+                  >
+                    <button
+                      v-for="group in scriptGroups"
+                      :key="group"
+                      type="button"
+                      @click="(event) => { store.updateScriptEntry(script.id, { group }); closeDropdown(event); }"
+                      :class="[
+                        'block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-container-high hover:text-on-surface',
+                        script.group === group ? 'bg-primary text-on-primary' : 'text-on-surface',
+                      ]"
+                    >
+                      {{ t.groups[group] }}
+                    </button>
+                  </div>
+                </details>
+                <details class="relative md:col-span-2 group/dropdown">
+                  <summary
+                    class="flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm transition-colors hover:bg-surface-container-low focus:outline-none focus:border-primary [&::-webkit-details-marker]:hidden"
+                  >
+                    <span class="truncate">{{ script.kind }}</span>
+                    <ChevronDown
+                      :size="16"
+                      class="shrink-0 text-on-surface-variant transition-transform group-open/dropdown:rotate-180"
+                    />
+                  </summary>
+                  <div
+                    class="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-xl"
+                  >
+                    <button
+                      v-for="kind in scriptKinds"
+                      :key="kind"
+                      type="button"
+                      @click="(event) => { store.updateScriptEntry(script.id, { kind }); closeDropdown(event); }"
+                      :class="[
+                        'block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-container-high hover:text-on-surface',
+                        script.kind === kind ? 'bg-primary text-on-primary' : 'text-on-surface',
+                      ]"
+                    >
+                      {{ kind }}
+                    </button>
+                  </div>
+                </details>
                 <input
                   :value="script.cwd"
                   @input="

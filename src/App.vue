@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from "vue";
 import { useStore } from "./store/useStore";
-import Sidebar from "./components/layout/Sidebar.vue";
 import Dashboard from "./components/dashboard/Dashboard.vue";
 import ProjectDetails from "./components/project/ProjectDetails.vue";
 import ProjectFormModal from "./components/project/ProjectFormModal.vue";
@@ -51,8 +50,7 @@ onUnmounted(() => {
 
 <template>
   <div class="flex min-h-screen bg-background">
-    <Sidebar />
-    <div class="ml-[64px] flex-1 flex flex-col h-screen overflow-hidden">
+    <div class="flex-1 flex flex-col h-screen overflow-hidden">
       <main class="flex-1 overflow-hidden">
         <Transition name="fade" mode="out-in">
           <div v-if="activeTab === 'projects'" key="projects" class="h-full overflow-hidden">
