@@ -68,3 +68,55 @@ Use inferred literals and shared interfaces first. Reach for type guards only wh
 - Leaving global `window` APIs untyped when adding preload integrations
 
 Preload bridge contracts should be represented in `src/types.ts` and consumed through `src/lib/projectBridge.ts`, not duplicated in components.
+
+## Scenario: Import/Export JSON Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: project configuration enters the app from an external JSON file and leaves the app as a portable backup file.
+
+### 2. Signatures
+
+- `ProjectExportPayload` is the top-level export shape.
+- `ProjectImportPayload` is the parsed import shape accepted by the store.
+- `ProjectPathInspection` is the preload/fallback response for project path detection.
+
+### 3. Contracts
+
+- Export payloads must include a top-level `schemaVersion` and a project list.
+- Imported data must be narrowed at the bridge/store boundary before it is merged into state.
+- Bridge API additions must be declared in `src/types.ts` and reflected in `src/global.d.ts` through the shared `ProjectBridge` interface.
+
+### 4. Validation & Error Matrix
+
+- Missing or non-numeric `schemaVersion` -> reject import.
+- Missing project array -> reject import.
+- Project missing required strings such as `id`, `name`, or `path` -> skip that project.
+- Script missing required `name` or `command` -> skip or normalize that script before storing.
+
+### 5. Good/Base/Bad Cases
+
+- Good: import validates the top-level payload, filters invalid project records, and reports imported/skipped counts.
+- Base: unknown optional fields are ignored unless a schema migration explicitly handles them.
+- Bad: casting parsed JSON directly to `Project[]` and pushing it into the store.
+
+### 6. Tests Required
+
+- Type-check the bridge contract and store import path.
+- Manual import smoke test with valid JSON, duplicate projects, and malformed JSON.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const projects = parsed as Project[];
+```
+
+#### Correct
+
+```ts
+const payload = normalizeProjectImportPayload(parsed);
+```
+
+External JSON must pass through runtime validation before store merge.
