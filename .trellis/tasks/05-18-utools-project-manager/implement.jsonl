@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend app shell and Vue component conventions for the current Vite + Pinia implementation."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Current src layout and ownership rules for shell, store, and feature components."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Component structure, props, styling, and accessibility conventions for the Vue UI."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Pinia store patterns for project catalog, selection, logs, memos, and derived state."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Shared types, typed props, and store state shape constraints for the app."}
+{"file":".trellis/tasks/05-18-utools-project-manager/research/utools-plugin-structure.md","reason":"uTools packaging and preload constraints needed to implement the plugin correctly."}

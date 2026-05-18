@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend quality and scope baseline for reviewing the Vue app changes."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Type-check, build, and accessibility checks to validate UI changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Component structure and accessibility rules for review."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review store-driven state changes for correctness and consistency."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check typed props, shared types, and store model changes."}
+{"file":".trellis/tasks/05-18-utools-project-manager/research/utools-plugin-structure.md","reason":"Validate packaging layout and preload constraints against the implementation."}
