@@ -73,6 +73,12 @@ Semantic elements are preferred: buttons for actions, inputs for search and edit
 
 Current UI already uses those patterns in places like `src/components/layout/TopBar.vue` and `src/components/project/MemoTab.vue`. When adding icon-only controls, give them an accessible name instead of relying on the icon itself.
 
+## Interaction Safety
+
+- For clickable cards that also contain action buttons, stop event propagation on the action area and on each icon button so card-level navigation does not fire accidentally.
+- If an action is meant to stay in the current view, do not let the card root click handler override it.
+- Keep action buttons visually and structurally separated from card navigation affordances so users can tell whether they are opening a detail view or running a direct command.
+
 ---
 
 ## Common Mistakes
@@ -82,6 +88,7 @@ Current UI already uses those patterns in places like `src/components/layout/Top
 - Using raw SVGs when the same icon already exists in `lucide-vue-next`
 - Adding local CSS files for patterns already covered by Tailwind and theme tokens
 - Leaving icon-only actions without an accessible name
+- Letting nested action buttons bubble to the card root and trigger unintended navigation
 
 ### 布局与间距
 
