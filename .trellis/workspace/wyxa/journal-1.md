@@ -109,3 +109,37 @@ Refined the uTools plugin UI for compact window usage, simplified navigation, ad
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: 无侧边栏项目布局优化
+
+**Date**: 2026-05-19
+**Task**: 无侧边栏项目布局优化
+**Branch**: `master`
+
+### Summary
+
+移除项目侧边栏，将设置入口迁移到右上角；压缩项目卡片布局；优化编辑项目弹窗的暗色滚动条和自绘下拉菜单，并记录任务需求。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d544daa` | (see git log) |
+| `2c14b93` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
