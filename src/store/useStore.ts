@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
 import { ProjectStatus } from "../types";
 import type {
+  DefaultTerminalKind,
   Locale,
   LogEntry,
   Project,
@@ -13,6 +14,7 @@ import type {
   ProjectKind,
   ProjectScript,
   ProjectScriptFormValue,
+  TerminalPreferences,
   TodoItem,
 } from "../types";
 
@@ -304,12 +306,17 @@ function createBlankProjectForm(): ProjectFormValue {
 export const useStore = defineStore("app", {
   state: () => ({
     locale: "zh-CN" as Locale,
-    activeTab: "projects" as "projects" | "plugins" | "memos" | "settings",
+    activeTab: "projects" as "projects" | "settings",
     theme: "auto" as "light" | "dark" | "auto",
+    terminalPreferences: {
+      kind: "builtin",
+      customCommand: "",
+    } as TerminalPreferences,
     supportsBridge: supportsRealProjectBridge(),
     projectFormOpen: false,
     projectFormMode: "create" as "create" | "edit",
     projectFormDraft: createBlankProjectForm() as ProjectFormValue,
+    pendingDeleteProjectId: null as string | null,
     projects: demoProjects,
     selectedProjectId: null as string | null,
     logs: {
@@ -347,6 +354,8 @@ export const useStore = defineStore("app", {
   getters: {
     selectedProject: (state): Project | undefined =>
       state.projects.find((project) => project.id === state.selectedProjectId),
+    pendingDeleteProject: (state): Project | undefined =>
+      state.projects.find((project) => project.id === state.pendingDeleteProjectId),
     currentMessages: (state) => (state.locale === "zh-CN" ? "zh-CN" : "en-US"),
   },
 
@@ -357,7 +366,13 @@ export const useStore = defineStore("app", {
     setTheme(theme: "light" | "dark" | "auto") {
       this.theme = theme;
     },
-    setActiveTab(tab: "projects" | "plugins" | "memos" | "settings") {
+    setDefaultTerminal(kind: DefaultTerminalKind) {
+      this.terminalPreferences.kind = kind;
+    },
+    setDefaultTerminalCustomCommand(command: string) {
+      this.terminalPreferences.customCommand = command;
+    },
+    setActiveTab(tab: "projects" | "settings") {
       this.activeTab = tab;
       this.selectedProjectId = null;
     },
@@ -475,6 +490,46 @@ export const useStore = defineStore("app", {
       this.projectFormDraft = createBlankProjectForm();
       return projectId;
     },
+    deleteProject(projectId: string) {
+      const existingIndex = this.projects.findIndex((item) => item.id === projectId);
+      if (existingIndex < 0) {
+        return false;
+      }
+
+      this.projects.splice(existingIndex, 1);
+      delete this.logs[projectId];
+      delete this.stagedFiles[projectId];
+      delete this.todos[projectId];
+      delete this.memoContent[projectId];
+
+      if (this.selectedProjectId === projectId) {
+        this.selectedProjectId = null;
+        this.activeTab = "projects";
+      }
+
+      if (this.projectFormDraft.id === projectId) {
+        this.closeProjectForm();
+      }
+
+      return true;
+    },
+    requestDeleteProject(projectId: string) {
+      if (this.projects.some((item) => item.id === projectId)) {
+        this.pendingDeleteProjectId = projectId;
+      }
+    },
+    cancelDeleteProject() {
+      this.pendingDeleteProjectId = null;
+    },
+    confirmDeleteProject() {
+      const projectId = this.pendingDeleteProjectId;
+      if (!projectId) {
+        return false;
+      }
+
+      this.pendingDeleteProjectId = null;
+      return this.deleteProject(projectId);
+    },
     async refreshProjectScripts(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project) {
@@ -550,6 +605,24 @@ export const useStore = defineStore("app", {
       }
 
       await bridge.showItemInFolder(project.path);
+    },
+    async openProjectInTerminal(projectId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return;
+      }
+
+      this.addLog(projectId, {
+        timestamp: new Date().toLocaleTimeString(),
+        message: `Open terminal (${this.terminalPreferences.kind}) at ${project.path}`,
+        type: "INFO",
+      });
+
+      if (this.terminalPreferences.kind === "builtin") {
+        return;
+      }
+
+      await bridge.openPath(project.path);
     },
     addLog(projectId: string, log: LogEntry) {
       if (!this.logs[projectId]) {

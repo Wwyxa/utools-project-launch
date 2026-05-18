@@ -6,9 +6,11 @@ import Dashboard from "./components/dashboard/Dashboard.vue";
 import ProjectDetails from "./components/project/ProjectDetails.vue";
 import ProjectFormModal from "./components/project/ProjectFormModal.vue";
 import SettingsTab from "./components/layout/SettingsTab.vue";
+import { useI18n } from "./lib/i18n";
 import type { ProjectBridgeEvent } from "./types";
 
 const store = useStore();
+const storeMessages = useI18n();
 const selectedProject = computed(() => store.selectedProject);
 const activeTab = computed(() => store.activeTab);
 const theme = computed(() => store.theme);
@@ -55,7 +57,7 @@ onUnmounted(() => {
         <Transition name="fade" mode="out-in">
           <div v-if="activeTab === 'projects'" key="projects" class="h-full overflow-hidden">
             <Transition name="fade" mode="out-in">
-              <div v-if="!store.selectedProjectId" key="dashboard" class="h-full overflow-y-auto">
+              <div v-if="!store.selectedProjectId" key="dashboard" class="themed-scrollbar h-full overflow-y-auto">
                 <Dashboard />
               </div>
               <div v-else key="details" class="h-full overflow-hidden">
@@ -63,21 +65,44 @@ onUnmounted(() => {
               </div>
             </Transition>
           </div>
-          <div v-else-if="activeTab === 'plugins'" key="plugins" class="h-full p-8 overflow-y-auto">
-            <h2 class="text-2xl font-bold mb-4 text-on-surface">{{ t.sidebar.plugins }}</h2>
-            <p class="text-on-surface-variant">{{ t.common.comingSoon }}</p>
-          </div>
-          <div v-else-if="activeTab === 'memos'" key="memos" class="h-full p-8 overflow-y-auto">
-            <h2 class="text-2xl font-bold mb-4 text-on-surface">{{ t.sidebar.memos }}</h2>
-            <p class="text-on-surface-variant">{{ t.common.comingSoon }}</p>
-          </div>
-          <div v-else-if="activeTab === 'settings'" key="settings" class="h-full overflow-y-auto">
+          <div v-else-if="activeTab === 'settings'" key="settings" class="themed-scrollbar h-full overflow-y-auto">
             <SettingsTab />
           </div>
         </Transition>
       </main>
     </div>
     <ProjectFormModal />
+    <Teleport to="body">
+      <div
+        v-if="store.pendingDeleteProject"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+        @click.self="store.cancelDeleteProject"
+      >
+        <div class="w-full max-w-sm rounded-xl border border-border-subtle bg-surface p-5 shadow-2xl">
+          <h2 class="text-base font-bold text-on-surface">{{ store.pendingDeleteProject.name }}</h2>
+          <p class="mt-2 text-sm text-on-surface-variant">
+            {{ store.pendingDeleteProject ? store.pendingDeleteProject.path : "" }}
+          </p>
+          <p class="mt-4 text-sm text-on-surface-variant">
+            {{ store.pendingDeleteProject ? storeMessages.projectActions.deleteConfirm.replace("{name}", store.pendingDeleteProject.name) : "" }}
+          </p>
+          <div class="mt-5 flex justify-end gap-2">
+            <button
+              @click="store.cancelDeleteProject"
+              class="rounded-lg border border-border-subtle bg-surface px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-variant"
+            >
+              {{ storeMessages.common.cancel }}
+            </button>
+            <button
+              @click="store.confirmDeleteProject"
+              class="rounded-lg bg-status-error px-4 py-2 text-sm font-bold text-white hover:bg-status-error/90"
+            >
+              {{ storeMessages.common.delete }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 

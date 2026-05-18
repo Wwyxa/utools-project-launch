@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ExternalLink, Folder, Pencil, ArrowLeft, RefreshCw } from "lucide-vue-next";
+import { ExternalLink, Folder, Pencil, ArrowLeft, RefreshCw, Trash2 } from "lucide-vue-next";
 import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -39,6 +39,9 @@ const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
 const handleRefresh = () => store.refreshGitSnapshot(props.project.id);
+const handleDelete = () => {
+  store.requestDeleteProject(props.project.id);
+};
 </script>
 
 <template>
@@ -84,10 +87,17 @@ const handleRefresh = () => store.refreshGitSnapshot(props.project.id);
         </button>
         <button
           @click="handleEdit"
-          class="bg-primary text-white p-2 rounded-xl transition-all hover:bg-primary/90 shadow-sm"
+          class="bg-primary text-on-primary p-2 rounded-xl transition-all hover:bg-primary/90 shadow-sm"
           :title="t.common.edit"
         >
           <Pencil :size="18" />
+        </button>
+        <button
+          @click="handleDelete"
+          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-2 rounded-xl transition-all shadow-sm"
+          :title="t.projectActions.deleteProject"
+        >
+          <Trash2 :size="18" />
         </button>
       </div>
     </div>

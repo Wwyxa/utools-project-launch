@@ -166,7 +166,7 @@ const handleOpenFolder = async () => {
                 <button
                   v-else
                   @click="handleStart(script.id)"
-                  class="bg-primary text-white text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90"
+                  class="bg-primary text-on-primary text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90"
                 >
                   <Play :size="12" fill="currentColor" /> {{ t.scripts.startScript }}
                 </button>

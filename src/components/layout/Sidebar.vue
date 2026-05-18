@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { FolderOpen, GitBranch, StickyNote, Settings, FileText, Plus, Terminal as TerminalIcon } from "lucide-vue-next";
+import { FolderOpen, Settings, Terminal as TerminalIcon } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { cn } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
@@ -16,20 +16,9 @@ const navItems = computed(() => [
     active: store.activeTab === "projects",
     action: () => store.setActiveTab("projects"),
   },
-  {
-    id: "plugins",
-    icon: GitBranch,
-    label: t.value.sidebar.plugins,
-    active: store.activeTab === "plugins",
-    action: () => store.setActiveTab("plugins"),
-  },
-  {
-    id: "memos",
-    icon: StickyNote,
-    label: t.value.sidebar.memos,
-    active: store.activeTab === "memos",
-    action: () => store.setActiveTab("memos"),
-  },
+]);
+
+const utilityItems = computed(() => [
   {
     id: "settings",
     icon: Settings,
@@ -39,7 +28,6 @@ const navItems = computed(() => [
   },
 ]);
 
-const footerItems = computed(() => [{ icon: FileText, label: t.value.sidebar.docs }]);
 </script>
 
 <template>
@@ -52,17 +40,9 @@ const footerItems = computed(() => [{ icon: FileText, label: t.value.sidebar.doc
       >
         <TerminalIcon :size="22" />
       </div>
-
-      <button
-        @click="store.openCreateProjectForm"
-        class="w-10 h-10 bg-primary-container text-on-primary rounded-full flex items-center justify-center hover:bg-primary transition-all active:scale-95 shadow-sm"
-        :title="t.sidebar.newProject"
-      >
-        <Plus :size="20" />
-      </button>
     </div>
 
-    <nav class="flex-1 px-2 space-y-4">
+    <nav class="flex-1 px-2 space-y-3">
       <button
         v-for="item in navItems"
         :key="item.id"
@@ -83,15 +63,25 @@ const footerItems = computed(() => [{ icon: FileText, label: t.value.sidebar.doc
       </button>
     </nav>
 
-    <div class="mt-auto px-2 pt-4 border-t border-border-subtle space-y-4">
+    <nav class="px-2 space-y-3">
       <button
-        v-for="item in footerItems"
-        :key="item.label"
+        v-for="item in utilityItems"
+        :key="item.id"
+        @click="item.action"
         :title="item.label"
-        class="w-full flex items-center justify-center py-2 rounded-lg text-on-surface-variant hover:bg-surface-variant hover:text-on-surface transition-colors"
+        :class="
+          cn(
+            'w-full flex flex-col items-center justify-center py-2 rounded-lg transition-all relative group',
+            item.active ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-variant',
+          )
+        "
       >
-        <component :is="item.icon" :size="22" />
+        <component :is="item.icon" :size="22" :fill="item.active ? 'currentColor' : 'none'" />
+        <div
+          v-if="item.active"
+          class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full"
+        ></div>
       </button>
-    </div>
+    </nav>
   </aside>
 </template>

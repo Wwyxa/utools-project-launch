@@ -3,8 +3,7 @@
   "logo": "logo.png",
   "preload": "preload.js",
   "pluginSetting": {
-    "single": true,
-    "height": 760
+    "single": true
   },
   "features": [
     {

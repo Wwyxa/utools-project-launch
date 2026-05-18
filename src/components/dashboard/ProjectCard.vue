@@ -3,12 +3,12 @@ import { computed } from "vue";
 import {
   Play,
   Square,
-  RotateCcw,
-  Terminal as TerminalIcon,
   Clock,
   AlertTriangle,
   FolderOpen,
   Pencil,
+  TerminalSquare,
+  Trash2,
 } from "lucide-vue-next";
 import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
@@ -28,7 +28,15 @@ const t = useI18n();
 
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
-const visibleScripts = computed(() => props.project.scripts.slice(0, 2));
+const runningScripts = computed(() => props.project.scripts.filter((script) => script.status === "RUNNING"));
+const visibleScripts = computed(() => {
+  const runningIds = new Set(runningScripts.value.map((script) => script.id));
+  return [...runningScripts.value, ...props.project.scripts.filter((script) => !runningIds.has(script.id))].slice(0, 3);
+});
+const hiddenRunningCount = computed(
+  () => runningScripts.value.filter((script) => !visibleScripts.value.some((visible) => visible.id === script.id)).length,
+);
+const hiddenScriptCount = computed(() => props.project.scripts.length - visibleScripts.value.length);
 
 const handleCardSelect = () => {
   emit("select", props.project.id);
@@ -44,129 +52,143 @@ const handleOpenFolder = async (event: MouseEvent) => {
   await store.openProjectFolder(props.project.id);
 };
 
-const handleRefresh = async (event: MouseEvent) => {
+const handleOpenTerminal = async (event: MouseEvent) => {
   event.stopPropagation();
-  await store.refreshGitSnapshot(props.project.id);
+  await store.openProjectInTerminal(props.project.id);
+};
+
+const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: string) => {
+  event.stopPropagation();
+  if (status === "RUNNING") {
+    await store.stopScript(props.project.id, scriptId);
+    return;
+  }
+  await store.launchScript(props.project.id, scriptId);
+};
+
+const handleDelete = (event: MouseEvent) => {
+  event.stopPropagation();
+  store.requestDeleteProject(props.project.id);
 };
 </script>
 
 <template>
   <div
     @click="handleCardSelect"
-    class="group relative border border-border-subtle rounded-xl p-5 bg-surface hover:bg-surface-container transition-all cursor-pointer flex flex-col h-full overflow-hidden"
+    class="group relative border border-border-subtle rounded-lg bg-surface hover:bg-surface-container transition-all cursor-pointer overflow-hidden"
   >
-    <div class="flex justify-between items-start mb-4 gap-3">
+    <div class="p-4 pr-16">
       <div class="min-w-0">
-        <div class="flex items-center gap-2 flex-wrap">
-          <h3 class="text-lg font-bold text-on-surface group-hover:text-primary transition-colors truncate">
+          <div class="flex items-center gap-2 flex-wrap">
+          <h3 class="text-base font-bold text-on-surface group-hover:text-primary transition-colors truncate">
             {{ project.name }}
           </h3>
           <span
-            class="text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-full bg-surface-variant text-on-surface-variant"
+            class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-surface-variant text-on-surface-variant"
           >
             {{ t.projectKinds[project.kind] }}
           </span>
         </div>
-        <p class="font-mono text-xs text-on-surface-variant mt-1 truncate">{{ project.path }}</p>
-        <p v-if="project.description" class="text-xs text-on-surface-variant mt-2 line-clamp-2">
-          {{ project.description }}
-        </p>
-        <div class="flex gap-1 mt-2 flex-wrap">
-          <span
-            v-for="script in visibleScripts"
-            :key="script.id"
-            class="text-[10px] uppercase font-bold text-on-surface-variant bg-surface-variant px-1.5 py-0.5 rounded"
-          >
-            {{ script.name }}
-          </span>
-          <span
-            v-if="project.scripts.length > 2"
-            class="text-[10px] font-bold text-on-surface-variant bg-surface-variant px-1.5 py-0.5 rounded"
-          >
-            +{{ project.scripts.length - 2 }}
-          </span>
+          <p class="font-mono text-xs text-on-surface-variant mt-1 max-w-full truncate">{{ project.path }}</p>
         </div>
-      </div>
 
-      <div
-        :class="
-          cn(
-            'flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap',
-            isRunning
-              ? 'bg-status-running/10 text-status-running'
-              : isError
-                ? 'bg-status-error/10 text-status-error'
-                : 'bg-surface-container text-status-stopped border border-border-subtle',
-          )
-        "
-      >
-        <span
+          <div
+            class="absolute right-4 top-4 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+            @click.stop
+          >
+            <button
+              @click.stop="handleOpenTerminal"
+              class="p-1 text-on-surface-variant hover:text-status-running rounded hover:bg-surface transition-colors"
+              :title="t.projectActions.openInTerminal"
+            >
+              <TerminalSquare :size="15" />
+            </button>
+            <button
+              @click.stop="handleOpenFolder"
+              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
+              :title="t.common.openFolder"
+            >
+              <FolderOpen :size="15" />
+            </button>
+            <button
+              @click.stop="handleEdit"
+              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-colors"
+              :title="t.common.edit"
+            >
+              <Pencil :size="15" />
+            </button>
+            <button
+              @click.stop="handleDelete"
+              class="p-1 text-on-surface-variant hover:text-status-error rounded hover:bg-surface transition-colors"
+              :title="t.projectActions.deleteProject"
+            >
+              <Trash2 :size="15" />
+            </button>
+          </div>
+
+      <p v-if="project.description" class="text-xs text-on-surface-variant mt-2 line-clamp-1">
+        {{ project.description }}
+      </p>
+
+      <div class="flex gap-1 mt-2 flex-wrap min-h-6">
+        <button
+          v-for="script in visibleScripts"
+          :key="script.id"
+          :title="script.command"
+          @click="handleScriptToggle($event, script.id, script.status)"
           :class="
             cn(
-              'w-1.5 h-1.5 rounded-full',
-              isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'bg-status-stopped',
+              'inline-flex max-w-[9rem] items-center gap-1 text-[10px] uppercase font-bold px-2 py-1 rounded border truncate transition-colors',
+              script.status === 'RUNNING'
+                ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
+                : 'text-on-surface-variant bg-surface-variant border-transparent hover:text-on-surface hover:bg-surface-container-high',
             )
           "
-        />
-        {{ isRunning ? t.common.running : project.status === ProjectStatus.ERROR ? t.common.error : t.common.stopped }}
+        >
+          <Square v-if="script.status === 'RUNNING'" :size="8" class="shrink-0" fill="currentColor" />
+          <Play v-else :size="9" class="shrink-0" fill="currentColor" />
+          <span class="truncate">{{ script.name }}</span>
+        </button>
+        <span
+          v-if="hiddenScriptCount > 0"
+          class="text-[10px] font-bold text-on-surface-variant bg-surface-variant px-2 py-1 rounded"
+          :title="hiddenRunningCount > 0 ? t.projectActions.moreRunning.replace('{count}', String(hiddenRunningCount)) : undefined"
+        >
+          +{{ hiddenScriptCount }}
+        </span>
       </div>
-    </div>
 
-    <div class="mt-auto pt-4 flex items-center justify-between border-t border-border-subtle gap-3">
-      <div class="flex items-center gap-1.5 text-xs text-on-surface-variant min-w-0">
-        <span v-if="isError" class="flex items-center gap-1 text-status-error">
+      <div class="mt-2 flex items-center gap-1.5 text-xs text-on-surface-variant min-w-0">
+        <span v-if="isError" class="flex items-center gap-1 text-status-error truncate">
           <AlertTriangle :size="12" /> {{ project.git?.statusText || "Exit code 1" }}
         </span>
         <span v-else class="flex items-center gap-1 truncate">
           <Clock :size="12" /> {{ project.lastUpdated || project.git?.lastRefreshedAt || "--" }}
         </span>
       </div>
+    </div>
 
-      <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          v-if="isRunning"
-          @click.stop="store.selectedProjectId === project.id ? null : null"
-          class="p-1.5 text-on-surface-variant hover:text-status-error rounded hover:bg-surface transition-colors"
-          :title="t.common.stop"
-        >
-          <Square :size="16" fill="currentColor" />
-        </button>
-        <button
-          v-else
-          @click.stop="store.selectedProjectId = project.id"
-          class="p-1.5 text-on-surface-variant hover:text-status-running rounded hover:bg-surface transition-colors"
-          :title="t.common.start"
-        >
-          <Play :size="16" fill="currentColor" />
-        </button>
-        <button
-          @click="handleRefresh"
-          class="p-1.5 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-colors"
-          :title="t.git.refresh"
-        >
-          <RotateCcw :size="16" />
-        </button>
-        <button
-          @click="handleOpenFolder"
-          class="p-1.5 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
-          :title="t.common.openFolder"
-        >
-          <FolderOpen :size="16" />
-        </button>
-        <button
-          @click="handleEdit"
-          class="p-1.5 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-colors"
-          :title="t.common.edit"
-        >
-          <Pencil :size="16" />
-        </button>
-        <button
-          class="p-1.5 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
-          :title="t.projectDetails.scripts"
-        >
-          <TerminalIcon :size="16" />
-        </button>
-      </div>
+    <div
+      :class="
+        cn(
+          'pointer-events-none absolute right-4 top-4 inline-flex items-center gap-1.5 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-opacity group-hover:opacity-0',
+          isRunning
+            ? 'bg-status-running/10 text-status-running'
+            : isError
+              ? 'bg-status-error/10 text-status-error'
+              : 'bg-surface-container text-status-stopped border border-border-subtle',
+        )
+      "
+    >
+      <span
+        :class="
+          cn(
+            'w-1.5 h-1.5 rounded-full',
+            isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'bg-status-stopped',
+          )
+        "
+      />
+      {{ isRunning ? t.common.running : project.status === ProjectStatus.ERROR ? t.common.error : t.common.stopped }}
     </div>
 
     <div

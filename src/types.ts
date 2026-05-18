@@ -9,6 +9,13 @@ export type Locale = "zh-CN" | "en-US";
 
 export type ProjectKind = "node" | "python" | "go" | "executable" | "custom";
 
+export type DefaultTerminalKind = "builtin" | "windows-terminal" | "powershell" | "cmd" | "custom";
+
+export interface TerminalPreferences {
+  kind: DefaultTerminalKind;
+  customCommand: string;
+}
+
 export type ProjectScriptGroup = "main" | "frontend" | "backend" | "utility";
 
 export type ProjectScriptKind = "npm-script" | "command" | "executable";
