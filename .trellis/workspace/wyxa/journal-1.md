@@ -74,3 +74,38 @@ Refined the uTools plugin UI for compact window usage, simplified navigation, ad
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 整体细节调整
+
+**Date**: 2026-05-19
+**Task**: 整体细节调整
+**Branch**: `master`
+
+### Summary
+
+优化项目管理首页卡片、暗色主题、侧边栏、设置页默认终端和项目删除交互，并补充前端交互规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ddb8bba` | (see git log) |
+| `ad6c2f1` | (see git log) |
+| `a4e84e8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
