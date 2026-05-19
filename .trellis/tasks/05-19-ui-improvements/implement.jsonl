@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend task in Vue/Pinia UI; provides spec index and required guideline map."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Changes touch Vue components, UI states, and component interaction patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Project ordering requires Pinia store updates and persisted project array behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"May require type-safe additions for sorting actions and UI state."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Keep implementation scoped, lint-clean, and consistent with frontend standards."}

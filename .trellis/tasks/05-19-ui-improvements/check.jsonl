@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Verify frontend changes against the project spec index."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review component/UI interaction changes for consistency."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review persisted project ordering and Pinia action changes."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Ensure new code remains type-safe."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run and assess lint/build quality expectations."}
