@@ -9,7 +9,7 @@
     {
       "code": "project-manager",
       "explain": "打开项目管理器",
-      "cmds": ["项目管理", "项目启动器", "项目管理器", "project manager"]
+      "cmds": ["PM", "project manager"]
     }
   ]
 }
