@@ -155,6 +155,19 @@ export interface ProjectBridgeRunResult {
   cwd: string;
 }
 
+export interface ProjectBridgeTerminalLaunchPayload {
+  projectPath: string;
+  terminal: TerminalPreferences;
+}
+
+export interface ProjectBridgeTerminalLaunchResult {
+  launched: boolean;
+  command: string;
+  cwd: string;
+  kind: DefaultTerminalKind;
+  message?: string;
+}
+
 export interface ProjectBridgePackageScript {
   name: string;
   command: string;
@@ -179,6 +192,8 @@ export interface ProjectBridgeEvent {
 export interface ProjectBridge {
   loadProjects(): Promise<Project[]>;
   saveProjects(projects: Project[]): Promise<void>;
+  loadTerminalPreferences(): TerminalPreferences;
+  saveTerminalPreferences(preferences: TerminalPreferences): void;
   inspectProjectPath(projectPath: string): Promise<ProjectPathInspection>;
   pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pathExists(projectPath: string): Promise<boolean>;
@@ -188,6 +203,7 @@ export interface ProjectBridge {
     projectPath: string,
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;
   readGitSnapshot(projectPath: string): Promise<ProjectBridgeGitSnapshot>;
+  openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult>;
   runCommand(payload: {
     projectId: string;
     scriptId: string;

@@ -145,10 +145,11 @@ const messages = {
       repository: "仓库",
       defaultTerminal: "默认终端",
       defaultTerminalHint: "该偏好会用于后续在终端中打开项目或执行外部启动命令。",
+      builtinTerminalHint: "仅保留为兼容旧配置，不会打开系统终端。",
       customCommand: "自定义命令",
       customCommandPlaceholder: "例如 wt.exe -d {path}",
       terminals: {
-        builtin: "内置终端",
+        builtin: "内置（不启动外部终端）",
         "windows-terminal": "Windows Terminal",
         powershell: "PowerShell",
         cmd: "CMD",
@@ -331,11 +332,12 @@ const messages = {
       repository: "Repository",
       defaultTerminal: "Default Terminal",
       defaultTerminalHint:
-        "This preference will be used later when opening projects in a terminal or running external launch commands.",
+        "This preference will be used when opening projects in a terminal or running external launch commands.",
+      builtinTerminalHint: "Kept for compatibility; it does not launch a system terminal.",
       customCommand: "Custom Command",
       customCommandPlaceholder: "Example: wt.exe -d {path}",
       terminals: {
-        builtin: "Built-in Terminal",
+        builtin: "Built-in (no external terminal)",
         "windows-terminal": "Windows Terminal",
         powershell: "PowerShell",
         cmd: "CMD",

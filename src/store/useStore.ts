@@ -381,10 +381,7 @@ export const useStore = defineStore("app", {
     locale: "zh-CN" as Locale,
     activeTab: "projects" as "projects" | "settings",
     theme: "auto" as "light" | "dark" | "auto",
-    terminalPreferences: {
-      kind: "builtin",
-      customCommand: "",
-    } as TerminalPreferences,
+    terminalPreferences: bridge.loadTerminalPreferences(),
     supportsBridge: supportsRealProjectBridge(),
     projectsLoaded: false,
     projectStorageMessage: "",
@@ -455,6 +452,7 @@ export const useStore = defineStore("app", {
 
   actions: {
     async loadProjects() {
+      this.terminalPreferences = bridge.loadTerminalPreferences();
       try {
         const storedProjects = await bridge.loadProjects();
         if (this.supportsBridge || storedProjects.length > 0) {
@@ -512,9 +510,11 @@ export const useStore = defineStore("app", {
     },
     setDefaultTerminal(kind: DefaultTerminalKind) {
       this.terminalPreferences.kind = kind;
+      bridge.saveTerminalPreferences(this.terminalPreferences);
     },
     setDefaultTerminalCustomCommand(command: string) {
       this.terminalPreferences.customCommand = command;
+      bridge.saveTerminalPreferences(this.terminalPreferences);
     },
     setActiveTab(tab: "projects" | "settings") {
       this.activeTab = tab;
@@ -856,17 +856,44 @@ export const useStore = defineStore("app", {
       if (!project || project.pathExists === false) {
         return;
       }
+      const terminalPreferences = { ...this.terminalPreferences };
 
-      this.addLog(
-        projectId,
-        createLogEntry(`Open terminal (${this.terminalPreferences.kind}) at ${project.path}`, "INFO"),
-      );
-
-      if (this.terminalPreferences.kind === "builtin") {
+      if (terminalPreferences.kind === "builtin") {
+        this.addLog(
+          projectId,
+          createLogEntry(`No external terminal selected; external launch skipped for ${project.path}.`, "INFO"),
+        );
+        project.lastUpdated = new Date().toLocaleString();
         return;
       }
 
-      await bridge.openPath(project.path);
+      try {
+        const result = await bridge.openTerminal({
+          projectPath: project.path,
+          terminal: terminalPreferences,
+        });
+
+        project.lastUpdated = new Date().toLocaleString();
+
+        if (result.launched) {
+          this.addLog(projectId, createLogEntry(`Open terminal (${result.kind}): ${result.command}`, "INFO"));
+          return;
+        }
+
+        this.addLog(
+          projectId,
+          createLogEntry(`Failed to open terminal (${result.kind}): ${result.message || "unknown error"}`, "ERROR"),
+        );
+      } catch (error) {
+        project.lastUpdated = new Date().toLocaleString();
+        this.addLog(
+          projectId,
+          createLogEntry(
+            `Failed to open terminal (${terminalPreferences.kind}): ${error instanceof Error ? error.message : String(error)}`,
+            "ERROR",
+          ),
+        );
+      }
     },
     addLog(projectId: string, log: LogEntry, scriptId?: string) {
       if (!this.logs[projectId]) {

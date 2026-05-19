@@ -19,6 +19,55 @@ const handleBridgeEvent = (event: Event) => {
   store.handleBridgeEvent(customEvent.detail);
 };
 
+const isTextEntryTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+
+const consumeEscape = (event: KeyboardEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+};
+
+const handleGlobalEscape = (event: KeyboardEvent) => {
+  if (event.key !== "Escape") {
+    return;
+  }
+
+  consumeEscape(event);
+
+  if (isTextEntryTarget(event.target)) {
+    return;
+  }
+
+  if (event.type !== "keydown") {
+    return;
+  }
+
+  if (store.projectFormOpen) {
+    store.closeProjectForm();
+    return;
+  }
+
+  if (store.pendingDeleteProject) {
+    store.cancelDeleteProject();
+    return;
+  }
+
+  if (store.selectedProjectId) {
+    store.setSelectedProject(null);
+    return;
+  }
+
+  if (store.activeTab === "settings") {
+    store.setActiveTab("projects");
+    return;
+  }
+
+  if (store.activeTab === "projects" && !store.selectedProjectId) {
+    window.utools?.outPlugin?.();
+  }
+};
+
 const updateTheme = () => {
   let isDark = false;
   if (theme.value === "auto") {
@@ -40,11 +89,15 @@ onMounted(() => {
   updateTheme();
   void store.loadProjects();
   window.addEventListener("project-bridge-event", handleBridgeEvent);
+  window.addEventListener("keydown", handleGlobalEscape, true);
+  window.addEventListener("keyup", handleGlobalEscape, true);
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", updateTheme);
 });
 
 onUnmounted(() => {
   window.removeEventListener("project-bridge-event", handleBridgeEvent);
+  window.removeEventListener("keydown", handleGlobalEscape, true);
+  window.removeEventListener("keyup", handleGlobalEscape, true);
   window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", updateTheme);
 });
 </script>

@@ -8,9 +8,11 @@ const { shell } = require("electron");
 const activeProcesses = new Map();
 const userStoppedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
+const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
 const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api"];
+const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 
 function createLegacyWindowsDecoder() {
   if (process.platform !== "win32") {
@@ -48,6 +50,271 @@ function expandPath(inputPath) {
   }
 
   return path.resolve(inputPath);
+}
+
+function getDefaultTerminalPreferences() {
+  return {
+    kind: process.platform === "win32" ? "windows-terminal" : "builtin",
+    customCommand: "",
+  };
+}
+
+function normalizeTerminalPreferences(value) {
+  const defaults = getDefaultTerminalPreferences();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+
+  return {
+    kind: terminalKinds.has(value.kind) ? value.kind : defaults.kind,
+    customCommand: typeof value.customCommand === "string" ? value.customCommand : "",
+  };
+}
+
+function readTerminalPreferences() {
+  try {
+    if (window.utools?.dbStorage) {
+      return normalizeTerminalPreferences(window.utools.dbStorage.getItem(terminalPreferencesStorageKey));
+    }
+
+    const raw = window.localStorage?.getItem(terminalPreferencesStorageKey);
+    if (!raw) {
+      return getDefaultTerminalPreferences();
+    }
+
+    return normalizeTerminalPreferences(JSON.parse(raw));
+  } catch (error) {
+    return getDefaultTerminalPreferences();
+  }
+}
+
+function saveTerminalPreferences(preferences) {
+  const normalized = normalizeTerminalPreferences(preferences);
+
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(terminalPreferencesStorageKey, normalized);
+      return;
+    }
+
+    window.localStorage?.setItem(terminalPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+}
+
+function getDirectoryStatus(targetPath) {
+  if (!targetPath) {
+    return { exists: false, isDirectory: false };
+  }
+
+  try {
+    const stats = fs.statSync(targetPath);
+    return { exists: true, isDirectory: stats.isDirectory() };
+  } catch (error) {
+    return { exists: false, isDirectory: false };
+  }
+}
+
+function isSupportedTerminalKind(kind) {
+  return terminalKinds.has(kind);
+}
+
+function splitCommandLine(commandLine) {
+  const tokens = [];
+  let current = "";
+  let quote = null;
+
+  for (let index = 0; index < commandLine.length; index += 1) {
+    const character = commandLine[index];
+
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+        continue;
+      }
+
+      current += character;
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+
+    if (/\s/.test(character)) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += character;
+  }
+
+  if (current) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+function formatCommandLine(executable, args) {
+  return [executable, ...args].join(" ");
+}
+
+function launchDetachedProcess(executable, args, cwd) {
+  return new Promise((resolve) => {
+    let child;
+
+    try {
+      child = spawn(executable, args, {
+        cwd,
+        detached: true,
+        stdio: "ignore",
+      });
+    } catch (error) {
+      resolve({
+        launched: false,
+        command: formatCommandLine(executable, args),
+        cwd,
+        kind: "custom",
+        message: error?.message || "无法启动终端。",
+      });
+      return;
+    }
+
+    let settled = false;
+
+    child.once("spawn", () => {
+      settled = true;
+      child.unref();
+      resolve({
+        launched: true,
+        command: formatCommandLine(executable, args),
+        cwd,
+      });
+    });
+
+    child.once("error", (error) => {
+      if (settled) {
+        return;
+      }
+
+      resolve({
+        launched: false,
+        command: formatCommandLine(executable, args),
+        cwd,
+        message: error?.message || "无法启动终端。",
+      });
+    });
+  });
+}
+
+async function openTerminal(payload) {
+  const resolvedPath = expandPath(typeof payload?.projectPath === "string" ? payload.projectPath : "");
+  const rawTerminalKind = payload?.terminal?.kind || "builtin";
+  const terminalKind = isSupportedTerminalKind(rawTerminalKind) ? rawTerminalKind : "builtin";
+  const customCommand =
+    typeof payload?.terminal?.customCommand === "string" ? payload.terminal.customCommand.trim() : "";
+  const directoryStatus = getDirectoryStatus(resolvedPath);
+
+  if (!isSupportedTerminalKind(rawTerminalKind)) {
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      kind: terminalKind,
+      message: "未知终端偏好，无法打开终端。",
+    };
+  }
+
+  if (!directoryStatus.exists) {
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      kind: terminalKind,
+      message: "项目路径不存在，无法打开终端。",
+    };
+  }
+
+  if (!directoryStatus.isDirectory) {
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      kind: terminalKind,
+      message: "项目路径不是文件夹，无法打开终端。",
+    };
+  }
+
+  if (terminalKind === "builtin") {
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      kind: terminalKind,
+      message: "内置终端偏好暂不启动外部进程。",
+    };
+  }
+
+  if (terminalKind === "windows-terminal") {
+    return launchDetachedProcess("wt.exe", ["-d", resolvedPath], resolvedPath).then((result) => ({
+      ...result,
+      kind: terminalKind,
+    }));
+  }
+
+  if (terminalKind === "powershell") {
+    return launchDetachedProcess(
+      "powershell.exe",
+      ["-NoExit", "-Command", `Set-Location -LiteralPath '${resolvedPath.replace(/'/g, "''")}'`],
+      resolvedPath,
+    ).then((result) => ({
+      ...result,
+      kind: terminalKind,
+    }));
+  }
+
+  if (terminalKind === "cmd") {
+    return launchDetachedProcess("cmd.exe", ["/k", "pushd", resolvedPath], resolvedPath).then((result) => ({
+      ...result,
+      kind: terminalKind,
+    }));
+  }
+
+  if (!customCommand) {
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      kind: terminalKind,
+      message: "自定义终端命令为空。",
+    };
+  }
+
+  const commandTokens = splitCommandLine(customCommand).map((token) =>
+    token.replace(/\{path\}|\{projectPath\}/g, () => resolvedPath),
+  );
+  const [executable, ...args] = commandTokens;
+
+  if (!executable) {
+    return {
+      launched: false,
+      command: customCommand,
+      cwd: resolvedPath,
+      kind: terminalKind,
+      message: "自定义终端命令无效。",
+    };
+  }
+
+  return launchDetachedProcess(executable, args, resolvedPath).then((result) => ({
+    ...result,
+    kind: terminalKind,
+  }));
 }
 
 function emit(detail) {
@@ -672,10 +939,13 @@ window.projectBridge = {
   inspectProjectPath,
   pickProjectPath,
   pathExists,
+  loadTerminalPreferences: readTerminalPreferences,
+  saveTerminalPreferences: saveTerminalPreferences,
   exportProjects,
   importProjects,
   readPackageScripts,
   readGitSnapshot,
+  openTerminal,
   runCommand,
   stopProcess,
   openPath: (targetPath) => shell.openPath(expandPath(targetPath)),

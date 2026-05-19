@@ -18,21 +18,21 @@ import type { DefaultTerminalKind } from "../../types";
 const store = useStore();
 const t = useI18n();
 
-const terminalOptions: DefaultTerminalKind[] = ["builtin", "windows-terminal", "powershell", "cmd", "custom"];
+const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
 </script>
 
 <template>
   <div class="p-6 max-w-5xl">
-    <header class="mb-5 flex items-center justify-between gap-4">
-      <h2 class="text-xl font-bold text-on-surface tracking-tight">{{ t.sidebar.settings }}</h2>
+    <header class="mb-5 flex items-center gap-3">
       <button
         @click="store.setActiveTab('projects')"
-        class="toolbar-icon-button p-1.5 rounded-lg transition-colors"
-        :title="t.sidebar.projects"
-        :aria-label="t.sidebar.projects"
+        class="p-2 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
+        :title="t.common.back"
+        :aria-label="t.common.back"
       >
-        <ArrowLeft :size="18" />
+        <ArrowLeft :size="20" />
       </button>
+      <h2 class="text-xl font-bold text-on-surface tracking-tight">{{ t.sidebar.settings }}</h2>
     </header>
 
     <div class="grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
@@ -145,6 +145,9 @@ const terminalOptions: DefaultTerminalKind[] = ["builtin", "windows-terminal", "
               class="w-full rounded-lg border border-border-subtle bg-surface-container-lowest px-3 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
             />
             <p class="mt-2 text-xs text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
+            <p v-if="store.terminalPreferences.kind === 'builtin'" class="mt-1 text-xs text-on-surface-variant">
+              {{ t.settings.builtinTerminalHint }}
+            </p>
           </div>
         </div>
       </section>

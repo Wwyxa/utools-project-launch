@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ExternalLink, Folder, Pencil, ArrowLeft, RefreshCw, Trash2 } from "lucide-vue-next";
+import { ExternalLink, Folder, Pencil, ArrowLeft, RefreshCw, TerminalSquare, Trash2 } from "lucide-vue-next";
 import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -36,6 +36,7 @@ const statusLabel = computed(() => {
 const isUnavailable = computed(() => props.project.pathExists === false);
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
+const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
 const handleRefresh = () => {
@@ -80,14 +81,25 @@ const handleDelete = () => {
           :disabled="isUnavailable"
           class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-lg transition-colors shadow-sm bg-surface border border-border-subtle"
           :title="t.common.refresh"
+          :aria-label="t.common.refresh"
         >
           <RefreshCw :size="18" />
+        </button>
+        <button
+          @click="handleOpenTerminal"
+          :disabled="isUnavailable"
+          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
+          :title="t.projectActions.openInTerminal"
+          :aria-label="t.projectActions.openInTerminal"
+        >
+          <TerminalSquare :size="18" class="group-hover:text-primary" />
         </button>
         <button
           @click="handleOpenFolder"
           :disabled="isUnavailable"
           class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
           :title="t.projectDetails.openProject"
+          :aria-label="t.projectDetails.openProject"
         >
           <ExternalLink :size="18" class="group-hover:text-primary" />
         </button>
@@ -95,6 +107,7 @@ const handleDelete = () => {
           @click="handleEdit"
           class="bg-primary text-on-primary p-2 rounded-lg transition-all hover:bg-primary/90 shadow-sm"
           :title="t.common.edit"
+          :aria-label="t.common.edit"
         >
           <Pencil :size="18" />
         </button>
@@ -102,6 +115,7 @@ const handleDelete = () => {
           @click="handleDelete"
           class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-2 rounded-lg transition-all shadow-sm"
           :title="t.projectActions.deleteProject"
+          :aria-label="t.projectActions.deleteProject"
         >
           <Trash2 :size="18" />
         </button>

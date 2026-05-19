@@ -1,13 +1,75 @@
 import type {
+  DefaultTerminalKind,
   ProjectBridge,
   ProjectConfigFile,
   ProjectBridgeGitSnapshot,
   ProjectBridgePackageScript,
+  ProjectBridgeTerminalLaunchPayload,
+  ProjectBridgeTerminalLaunchResult,
   ProjectBridgeRunResult,
   ProjectPathInspection,
+  TerminalPreferences,
 } from "../types";
 
 const fallbackStorageKey = "utools-project-launch.projects.v1";
+const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
+
+const isWindowsPlatform = () => /win/i.test(window.navigator?.platform || window.navigator?.userAgent || "");
+
+const defaultTerminalPreferences = (): TerminalPreferences => ({
+  kind: isWindowsPlatform() ? "windows-terminal" : "builtin",
+  customCommand: "",
+});
+
+const terminalKinds = new Set<DefaultTerminalKind>(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
+
+const isTerminalKind = (kind: unknown): kind is DefaultTerminalKind =>
+  typeof kind === "string" && terminalKinds.has(kind as DefaultTerminalKind);
+
+const normalizeTerminalPreferences = (value: unknown): TerminalPreferences => {
+  const defaults = defaultTerminalPreferences();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+
+  const candidate = value as Partial<TerminalPreferences>;
+  return {
+    kind: isTerminalKind(candidate.kind) ? candidate.kind : defaults.kind,
+    customCommand: typeof candidate.customCommand === "string" ? candidate.customCommand : "",
+  };
+};
+
+const readStoredTerminalPreferences = (): TerminalPreferences => {
+  try {
+    if (window.utools?.dbStorage) {
+      return normalizeTerminalPreferences(window.utools.dbStorage.getItem(terminalPreferencesStorageKey));
+    }
+
+    const raw = window.localStorage?.getItem(terminalPreferencesStorageKey);
+    if (!raw) {
+      return defaultTerminalPreferences();
+    }
+
+    return normalizeTerminalPreferences(JSON.parse(raw));
+  } catch (error) {
+    return defaultTerminalPreferences();
+  }
+};
+
+const writeStoredTerminalPreferences = (preferences: TerminalPreferences) => {
+  const normalized = normalizeTerminalPreferences(preferences);
+
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(terminalPreferencesStorageKey, normalized);
+      return;
+    }
+
+    window.localStorage?.setItem(terminalPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+};
 
 const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   branch: "main",
@@ -44,6 +106,12 @@ const fallbackBridge: ProjectBridge = {
     } catch (error) {
       // Browser preview can continue with in-memory Pinia state if storage is unavailable.
     }
+  },
+  loadTerminalPreferences() {
+    return readStoredTerminalPreferences();
+  },
+  saveTerminalPreferences(preferences) {
+    writeStoredTerminalPreferences(preferences);
   },
   async inspectProjectPath(projectPath: string): Promise<ProjectPathInspection> {
     const name = projectPath.split(/[\\/]/).filter(Boolean).pop() || "";
@@ -83,6 +151,15 @@ const fallbackBridge: ProjectBridge = {
   },
   async readGitSnapshot(): Promise<ProjectBridgeGitSnapshot> {
     return emptyGitSnapshot();
+  },
+  async openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult> {
+    return {
+      launched: false,
+      command: "",
+      cwd: payload.projectPath,
+      kind: payload.terminal.kind,
+      message: "浏览器预览暂不支持打开外部终端。",
+    };
   },
   async runCommand(payload): Promise<ProjectBridgeRunResult> {
     return {
