@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Play, Square, RefreshCcw, FolderOpen } from "lucide-vue-next";
+import { Play, Square } from "lucide-vue-next";
 import { Project } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -17,13 +17,6 @@ const t = useI18n();
 const scripts = computed(() => props.project.scripts);
 const isUnavailable = computed(() => props.project.pathExists === false);
 
-const handleRefresh = async () => {
-  if (isUnavailable.value) {
-    return;
-  }
-  await store.refreshProjectScripts(props.project.id);
-};
-
 const handleStart = async (scriptId: string) => {
   if (isUnavailable.value) {
     return;
@@ -37,36 +30,10 @@ const handleStop = async (scriptId: string) => {
   }
   await store.stopScript(props.project.id, scriptId);
 };
-
-const handleOpenFolder = async () => {
-  if (isUnavailable.value) {
-    return;
-  }
-  await store.openProjectFolder(props.project.id);
-};
 </script>
 
 <template>
   <div class="flex flex-col gap-3 min-h-full">
-    <div class="flex justify-end items-center gap-2">
-      <button
-        @click="handleRefresh"
-        :disabled="isUnavailable"
-        class="h-8 px-3 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
-        :title="t.scripts.refreshScripts"
-      >
-        <RefreshCcw :size="14" />
-      </button>
-      <button
-        @click="handleOpenFolder"
-        :disabled="isUnavailable"
-        class="h-8 px-3 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
-        :title="t.common.openFolder"
-      >
-        <FolderOpen :size="14" />
-      </button>
-    </div>
-
     <div
       v-if="scripts.length === 0"
       class="border border-dashed border-border-subtle rounded-lg p-6 text-sm text-on-surface-variant bg-surface"

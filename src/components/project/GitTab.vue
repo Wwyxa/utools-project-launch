@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { GitBranch, RefreshCw, Minus, PlusCircle, Trash2 } from "lucide-vue-next";
+import { computed, nextTick, ref } from "vue";
+import { ArrowDownToLine, ArrowUpToLine, GitBranch, RefreshCw, Minus, PlusCircle, Trash2 } from "lucide-vue-next";
 import { Project } from "../../types";
-import { cn } from "../../lib/utils";
+import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 
@@ -12,6 +12,8 @@ const props = defineProps<{
 
 const store = useStore();
 const t = useI18n();
+const filesScrollRef = ref<HTMLDivElement | null>(null);
+const graphScrollRef = ref<HTMLDivElement | null>(null);
 
 const files = computed(() => store.stagedFiles[props.project.id] || props.project.git?.files || []);
 const commits = computed(() => props.project.git?.commits || []);
@@ -20,6 +22,15 @@ const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.pr
 
 const handleRefresh = async () => {
   await store.refreshGitSnapshot(props.project.id);
+};
+
+const scrollGitPanel = async (target: "files" | "graph", boundary: "top" | "bottom") => {
+  await nextTick();
+  scrollToBoundary(target === "files" ? filesScrollRef.value : graphScrollRef.value, boundary);
+};
+
+const handlePanelWheel = (event: WheelEvent, target: "files" | "graph") => {
+  transferWheelAtScrollBoundary(event, target === "files" ? filesScrollRef.value : graphScrollRef.value);
 };
 
 const refsForCommit = (refs?: string) =>
@@ -70,14 +81,47 @@ const fileLabel = (status: string) => {
       </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-[minmax(16rem,0.75fr)_minmax(0,1.25fr)] gap-3 min-h-0">
-      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0">
-        <div class="px-3 py-2 border-b border-border-subtle flex items-center justify-between">
+    <div class="grid grid-cols-1 items-start lg:grid-cols-[minmax(14rem,0.65fr)_minmax(0,1.35fr)] gap-3 min-h-0">
+      <div
+        :class="
+          cn(
+            'bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col',
+            files.length > 0 ? 'h-[26rem] max-h-[56vh]' : 'self-start',
+          )
+        "
+      >
+        <div
+          class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
+        >
           <h3 class="text-sm font-bold text-on-surface">{{ t.git.files }}</h3>
-          <span class="text-[10px] font-bold text-on-surface-variant">{{ files.length }}</span>
+          <div class="flex items-center gap-1 shrink-0">
+            <span class="mr-1 text-[10px] font-bold text-on-surface-variant">{{ files.length }}</span>
+            <button
+              @click="scrollGitPanel('files', 'top')"
+              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="files.length === 0"
+              :title="t.git.scrollFilesToTop"
+              :aria-label="t.git.scrollFilesToTop"
+            >
+              <ArrowUpToLine :size="12" />
+            </button>
+            <button
+              @click="scrollGitPanel('files', 'bottom')"
+              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="files.length === 0"
+              :title="t.git.scrollFilesToBottom"
+              :aria-label="t.git.scrollFilesToBottom"
+            >
+              <ArrowDownToLine :size="12" />
+            </button>
+          </div>
         </div>
 
-        <div class="max-h-[520px] overflow-y-auto">
+        <div
+          ref="filesScrollRef"
+          @wheel="handlePanelWheel($event, 'files')"
+          class="min-h-0 flex-1 overflow-y-auto [overscroll-behavior-y:contain]"
+        >
           <div
             v-for="(file, idx) in files"
             :key="`${file.path}-${idx}`"
@@ -123,25 +167,53 @@ const fileLabel = (status: string) => {
         </div>
       </div>
 
-      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0">
-        <div class="px-3 py-2 border-b border-border-subtle flex items-center justify-between">
+      <div
+        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col h-[26rem] max-h-[56vh]"
+      >
+        <div
+          class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
+        >
           <h3 class="text-sm font-bold text-on-surface">{{ t.git.graph }}</h3>
+          <div class="flex items-center gap-1 shrink-0">
+            <button
+              @click="scrollGitPanel('graph', 'top')"
+              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="commits.length === 0"
+              :title="t.git.scrollGraphToTop"
+              :aria-label="t.git.scrollGraphToTop"
+            >
+              <ArrowUpToLine :size="12" />
+            </button>
+            <button
+              @click="scrollGitPanel('graph', 'bottom')"
+              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="commits.length === 0"
+              :title="t.git.scrollGraphToBottom"
+              :aria-label="t.git.scrollGraphToBottom"
+            >
+              <ArrowDownToLine :size="12" />
+            </button>
+          </div>
         </div>
-        <div class="max-h-[520px] overflow-auto bg-[#1E1E1E] text-[#D4D4D4] p-2">
+        <div
+          ref="graphScrollRef"
+          @wheel="handlePanelWheel($event, 'graph')"
+          class="min-h-0 flex-1 overflow-auto bg-surface-container-lowest text-on-surface p-2 [overscroll-behavior-y:contain]"
+        >
           <div class="min-w-[40rem] space-y-0.5">
             <div
               v-for="commit in commits"
               :key="commit.hash"
-              class="flex items-start gap-3 rounded px-2 py-1.5 hover:bg-white/5"
+              class="flex items-start gap-3 rounded px-2 py-1.5 hover:bg-surface-container-high"
             >
-              <div class="w-14 shrink-0 font-mono text-xs leading-4 whitespace-pre text-[#9CDCFE] select-none pt-0.5">
+              <div class="w-14 shrink-0 font-mono text-xs leading-4 whitespace-pre text-secondary select-none pt-0.5">
                 {{ commit.graph || "*" }}
               </div>
 
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 min-w-0 font-mono text-xs leading-5">
-                  <span class="text-[#C586C0] font-bold shrink-0">{{ commit.hash }}</span>
-                  <span class="text-[#D4D4D4] truncate" :title="commit.message">{{ commit.message }}</span>
+                  <span class="text-primary font-bold shrink-0">{{ commit.hash }}</span>
+                  <span class="text-on-surface truncate" :title="commit.message">{{ commit.message }}</span>
                 </div>
 
                 <div v-if="refsForCommit(commit.refs).length" class="mt-1 flex flex-wrap gap-1">
@@ -156,14 +228,14 @@ const fileLabel = (status: string) => {
                 </div>
               </div>
 
-              <div class="shrink-0 text-[10px] text-white/45 whitespace-nowrap text-right leading-4 pt-0.5">
+              <div class="shrink-0 text-[10px] text-on-surface-variant whitespace-nowrap text-right leading-4 pt-0.5">
                 <div>{{ commit.date }}</div>
                 <div class="truncate max-w-40" :title="commit.author">{{ commit.author }}</div>
                 <div>{{ commit.hash }}</div>
               </div>
             </div>
 
-            <div v-if="commits.length === 0" class="text-sm text-white/45 p-3">{{ t.git.empty }}</div>
+            <div v-if="commits.length === 0" class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
           </div>
         </div>
       </div>

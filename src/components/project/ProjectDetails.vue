@@ -140,7 +140,7 @@ const handleDelete = () => {
       </button>
     </nav>
 
-    <div class="flex-1 overflow-y-auto scrollbar-hide pr-1 space-y-4">
+    <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto pr-1 space-y-4 [color-scheme:inherit]">
       <div v-if="activeTab === 'info'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="lg:col-span-2 bg-surface border border-border-subtle rounded-lg p-4 space-y-3 shadow-sm">
           <div>

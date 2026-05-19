@@ -785,6 +785,61 @@ export const useStore = defineStore("app", {
           .map((project) => this.refreshGitSnapshot(project.id)),
       );
     },
+    async moveProject(projectId: string, direction: "top" | "up" | "down", scopeProjectIds?: string[]) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return false;
+      }
+
+      const isUnavailable = project.pathExists === false;
+      const isSameSection = (item: Project) => (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+      const sectionProjects = this.projects.filter(isSameSection);
+      const sectionProjectIds = new Set(sectionProjects.map((item) => item.id));
+      const scopedSectionProjects = (scopeProjectIds || [])
+        .filter((id) => sectionProjectIds.has(id))
+        .map((id) => sectionProjects.find((item) => item.id === id))
+        .filter((item): item is Project => Boolean(item));
+      const activeSectionProjects = scopedSectionProjects.length > 0 ? scopedSectionProjects : sectionProjects;
+      const currentSectionIndex = activeSectionProjects.findIndex((item) => item.id === projectId);
+      const targetSectionIndex =
+        direction === "top" ? 0 : direction === "up" ? currentSectionIndex - 1 : currentSectionIndex + 1;
+
+      if (
+        currentSectionIndex < 0 ||
+        currentSectionIndex === targetSectionIndex ||
+        targetSectionIndex < 0 ||
+        targetSectionIndex >= activeSectionProjects.length
+      ) {
+        return false;
+      }
+
+      const anchorProject = activeSectionProjects[targetSectionIndex];
+      const reorderedSectionProjects = [...sectionProjects];
+      const movedProjectIndex = reorderedSectionProjects.findIndex((item) => item.id === projectId);
+      if (movedProjectIndex < 0) {
+        return false;
+      }
+
+      const [movedProject] = reorderedSectionProjects.splice(movedProjectIndex, 1);
+      const anchorIndex = reorderedSectionProjects.findIndex((item) => item.id === anchorProject.id);
+      if (anchorIndex < 0) {
+        return false;
+      }
+
+      reorderedSectionProjects.splice(direction === "down" ? anchorIndex + 1 : anchorIndex, 0, movedProject);
+      let sectionIndex = 0;
+      this.projects = this.projects.map((item) => {
+        if (!isSameSection(item)) {
+          return item;
+        }
+
+        const nextProject = reorderedSectionProjects[sectionIndex];
+        sectionIndex += 1;
+        return nextProject;
+      });
+      await this.persistProjects();
+      return true;
+    },
     async refreshGitSnapshot(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {

@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Play, Square, Clock, AlertTriangle, FolderOpen, Pencil, TerminalSquare, Trash2 } from "lucide-vue-next";
+import {
+  Play,
+  Square,
+  Clock,
+  AlertTriangle,
+  FolderOpen,
+  Pencil,
+  TerminalSquare,
+  Trash2,
+  ArrowUpToLine,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-vue-next";
 import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -8,10 +20,15 @@ import { useI18n } from "../../lib/i18n";
 
 const props = defineProps<{
   project: Project;
+  isSorting?: boolean;
+  canMoveTop?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "select", id: string): void;
+  (e: "move", id: string, direction: "top" | "up" | "down"): void;
 }>();
 
 const store = useStore();
@@ -32,6 +49,9 @@ const hiddenRunningCount = computed(
 const hiddenScriptCount = computed(() => props.project.scripts.length - visibleScripts.value.length);
 
 const handleCardSelect = () => {
+  if (props.isSorting) {
+    return;
+  }
   if (isUnavailable.value) {
     store.openEditProjectForm(props.project.id);
     return;
@@ -76,12 +96,22 @@ const handleDelete = (event: MouseEvent) => {
   event.stopPropagation();
   store.requestDeleteProject(props.project.id);
 };
+
+const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
+  event.stopPropagation();
+  emit("move", props.project.id, direction);
+};
 </script>
 
 <template>
   <div
     @click="handleCardSelect"
-    class="group relative border border-border-subtle rounded-lg bg-surface hover:bg-surface-container transition-all cursor-pointer overflow-hidden"
+    :class="
+      cn(
+        'group relative self-start border border-border-subtle rounded-lg bg-surface hover:bg-surface-container transition-all overflow-hidden',
+        isSorting ? 'cursor-default ring-1 ring-primary/30 border-primary/60' : 'cursor-pointer',
+      )
+    "
   >
     <div class="p-3">
       <div class="flex items-start justify-between gap-2">
@@ -134,7 +164,7 @@ const handleDelete = (event: MouseEvent) => {
         {{ project.unavailableReason || "当前设备无法访问该路径" }}
       </p>
 
-      <div class="flex gap-1 mt-2 flex-wrap min-h-6">
+      <div v-if="visibleScripts.length > 0 || hiddenScriptCount > 0" class="flex gap-1 mt-2 flex-wrap">
         <button
           v-for="script in visibleScripts"
           :key="script.id"
@@ -177,40 +207,71 @@ const handleDelete = (event: MouseEvent) => {
           </span>
         </div>
         <div class="shrink-0 flex items-center gap-0.5" @click.stop>
-          <button
-            @click.stop="handleOpenTerminal"
-            class="p-1 text-on-surface-variant hover:text-status-running rounded hover:bg-surface transition-colors"
-            :disabled="isUnavailable"
-            :title="t.projectActions.openInTerminal"
-            :aria-label="t.projectActions.openInTerminal"
-          >
-            <TerminalSquare :size="15" />
-          </button>
-          <button
-            @click.stop="handleOpenFolder"
-            class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
-            :disabled="isUnavailable"
-            :title="t.common.openFolder"
-            :aria-label="t.common.openFolder"
-          >
-            <FolderOpen :size="15" />
-          </button>
-          <button
-            @click.stop="handleEdit"
-            class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-colors"
-            :title="t.common.edit"
-            :aria-label="t.common.edit"
-          >
-            <Pencil :size="15" />
-          </button>
-          <button
-            @click.stop="handleDelete"
-            class="p-1 text-on-surface-variant hover:text-status-error rounded hover:bg-surface transition-colors"
-            :title="t.projectActions.deleteProject"
-            :aria-label="t.projectActions.deleteProject"
-          >
-            <Trash2 :size="15" />
-          </button>
+          <template v-if="isSorting">
+            <button
+              @click.stop="handleMove($event, 'top')"
+              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-all active:scale-95 active:bg-surface-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-on-surface-variant disabled:active:scale-100 disabled:focus-visible:ring-0"
+              :disabled="!canMoveTop"
+              :title="t.projectActions.moveToTop"
+              :aria-label="t.projectActions.moveToTop"
+            >
+              <ArrowUpToLine :size="15" />
+            </button>
+            <button
+              @click.stop="handleMove($event, 'up')"
+              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-all active:scale-95 active:bg-surface-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-on-surface-variant disabled:active:scale-100 disabled:focus-visible:ring-0"
+              :disabled="!canMoveUp"
+              :title="t.projectActions.moveUp"
+              :aria-label="t.projectActions.moveUp"
+            >
+              <ArrowUp :size="15" />
+            </button>
+            <button
+              @click.stop="handleMove($event, 'down')"
+              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-all active:scale-95 active:bg-surface-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-on-surface-variant disabled:active:scale-100 disabled:focus-visible:ring-0"
+              :disabled="!canMoveDown"
+              :title="t.projectActions.moveDown"
+              :aria-label="t.projectActions.moveDown"
+            >
+              <ArrowDown :size="15" />
+            </button>
+          </template>
+          <template v-else>
+            <button
+              @click.stop="handleOpenTerminal"
+              class="p-1 text-on-surface-variant hover:text-status-running rounded hover:bg-surface transition-colors"
+              :disabled="isUnavailable"
+              :title="t.projectActions.openInTerminal"
+              :aria-label="t.projectActions.openInTerminal"
+            >
+              <TerminalSquare :size="15" />
+            </button>
+            <button
+              @click.stop="handleOpenFolder"
+              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
+              :disabled="isUnavailable"
+              :title="t.common.openFolder"
+              :aria-label="t.common.openFolder"
+            >
+              <FolderOpen :size="15" />
+            </button>
+            <button
+              @click.stop="handleEdit"
+              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-colors"
+              :title="t.common.edit"
+              :aria-label="t.common.edit"
+            >
+              <Pencil :size="15" />
+            </button>
+            <button
+              @click.stop="handleDelete"
+              class="p-1 text-on-surface-variant hover:text-status-error rounded hover:bg-surface transition-colors"
+              :title="t.projectActions.deleteProject"
+              :aria-label="t.projectActions.deleteProject"
+            >
+              <Trash2 :size="15" />
+            </button>
+          </template>
         </div>
       </div>
     </div>

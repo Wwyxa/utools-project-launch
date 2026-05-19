@@ -218,9 +218,9 @@ const handleSubmit = async () => {
                     type="button"
                     @click="store.moveScriptEntry(script.id, 'up')"
                     :disabled="index === 0"
-                    class="rounded-md border border-border-subtle p-1.5 text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40"
-                    title="上移"
-                    aria-label="上移命令"
+                    class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all hover:border-primary/60 hover:bg-surface-container hover:text-primary active:scale-95 active:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-surface-container-low disabled:text-on-surface-variant disabled:opacity-40 disabled:shadow-none disabled:hover:border-border-subtle disabled:hover:bg-surface-container-low disabled:hover:text-on-surface-variant disabled:active:scale-100"
+                    :title="t.modal.moveScriptUp"
+                    :aria-label="t.modal.moveScriptUp"
                   >
                     <ArrowUp :size="14" />
                   </button>
@@ -228,9 +228,9 @@ const handleSubmit = async () => {
                     type="button"
                     @click="store.moveScriptEntry(script.id, 'down')"
                     :disabled="index === form.scripts.length - 1"
-                    class="rounded-md border border-border-subtle p-1.5 text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40"
-                    title="下移"
-                    aria-label="下移命令"
+                    class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all hover:border-primary/60 hover:bg-surface-container hover:text-primary active:scale-95 active:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-surface-container-low disabled:text-on-surface-variant disabled:opacity-40 disabled:shadow-none disabled:hover:border-border-subtle disabled:hover:bg-surface-container-low disabled:hover:text-on-surface-variant disabled:active:scale-100"
+                    :title="t.modal.moveScriptDown"
+                    :aria-label="t.modal.moveScriptDown"
                   >
                     <ArrowDown :size="14" />
                   </button>

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { Search, Terminal as TerminalIcon, Trash2, X } from "lucide-vue-next";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { ArrowDownToLine, ArrowUpToLine, Search, Terminal as TerminalIcon, Trash2, X } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import { cn } from "../../lib/utils";
+import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import type { ProjectScript } from "../../types";
 
 const props = defineProps<{
@@ -17,6 +17,12 @@ const scrollRef = ref<HTMLDivElement | null>(null);
 const query = ref("");
 const selectedScriptId = ref("");
 const closedAt = ref<Record<string, number>>({});
+const shouldFollowLogs = ref(true);
+
+const logFollowThreshold = 32;
+
+const isNearBottom = (element: HTMLDivElement) =>
+  element.scrollHeight - element.scrollTop - element.clientHeight <= logFollowThreshold;
 
 const logTargets = computed(() =>
   (props.scripts || [])
@@ -38,12 +44,30 @@ const filteredLogs = computed(() => {
   return projectLogs.value.filter((log) => log.message.toLowerCase().includes(normalized));
 });
 
-const scrollToBottom = () => {
-  setTimeout(() => {
-    if (scrollRef.value) {
-      scrollRef.value.scrollTop = scrollRef.value.scrollHeight;
-    }
-  }, 0);
+const scrollToTop = async () => {
+  await nextTick();
+  if (scrollRef.value) {
+    scrollToBoundary(scrollRef.value, "top");
+    shouldFollowLogs.value = false;
+  }
+};
+
+const scrollToBottom = async () => {
+  await nextTick();
+  if (scrollRef.value) {
+    scrollToBoundary(scrollRef.value, "bottom");
+    shouldFollowLogs.value = true;
+  }
+};
+
+const handleLogScroll = () => {
+  if (scrollRef.value) {
+    shouldFollowLogs.value = isNearBottom(scrollRef.value);
+  }
+};
+
+const handleLogWheel = (event: WheelEvent) => {
+  transferWheelAtScrollBoundary(event, scrollRef.value);
 };
 
 const closeTarget = (scriptId: string) => {
@@ -59,7 +83,17 @@ const handleClear = () => {
   selectedScriptId.value = "";
 };
 
-watch(projectLogs, scrollToBottom, { deep: true });
+watch(
+  () => filteredLogs.value.length,
+  () => {
+    if (shouldFollowLogs.value) {
+      void scrollToBottom();
+    }
+  },
+);
+watch(selectedScriptId, () => {
+  void scrollToBottom();
+});
 watch(
   logTargets,
   (targets) => {
@@ -69,11 +103,15 @@ watch(
   },
   { immediate: true },
 );
-onMounted(scrollToBottom);
+onMounted(() => {
+  void scrollToBottom();
+});
 </script>
 
 <template>
-  <div class="border border-border-subtle rounded-lg overflow-hidden flex flex-col min-h-72 flex-1 shadow-sm">
+  <div
+    class="border border-border-subtle rounded-lg overflow-hidden flex flex-col h-[26rem] min-h-[22rem] max-h-[52vh] bg-surface shadow-sm"
+  >
     <div
       class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3"
     >
@@ -114,11 +152,33 @@ onMounted(scrollToBottom);
               <span class="max-w-28 truncate">{{ target.name }}</span>
               <span class="text-[9px] opacity-70">{{ target.count }}</span>
             </button>
-            <button @click="closeTarget(target.id)" class="h-full px-1.5 hover:bg-black/10" :title="t.common.close">
+            <button
+              @click="closeTarget(target.id)"
+              class="h-full px-1.5 hover:bg-on-surface/10"
+              :title="t.common.close"
+            >
               <X :size="10" />
             </button>
           </div>
         </div>
+        <button
+          @click="scrollToTop"
+          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="filteredLogs.length === 0"
+          :title="t.terminal.scrollToTop"
+          :aria-label="t.terminal.scrollToTop"
+        >
+          <ArrowUpToLine :size="12" />
+        </button>
+        <button
+          @click="scrollToBottom"
+          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="filteredLogs.length === 0"
+          :title="t.terminal.scrollToBottom"
+          :aria-label="t.terminal.scrollToBottom"
+        >
+          <ArrowDownToLine :size="12" />
+        </button>
         <button
           @click="handleClear"
           class="flex items-center gap-1.5 px-2 py-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface-variant transition-colors shrink-0"
@@ -139,37 +199,43 @@ onMounted(scrollToBottom);
             class="bg-surface border border-border-subtle rounded px-7 py-1 text-[10px] w-32 focus:outline-none focus:border-primary"
           />
         </div>
-        <button @click="query = ''" class="text-on-surface-variant hover:text-on-surface" :title="t.common.close">
-          <X :size="14" />
-        </button>
       </div>
     </div>
 
-    <div ref="scrollRef" class="bg-[#1E1E1E] flex-1 p-4 overflow-y-auto font-mono text-xs leading-relaxed">
-      <div v-for="(log, index) in filteredLogs" :key="index" class="flex mb-1 group">
-        <span class="w-20 text-right mr-4 shrink-0 text-white/30 select-none">
-          {{ log.timestamp }}
-        </span>
-        <span
-          :class="
-            cn(
-              'break-all',
-              log.type === 'SUCCESS'
-                ? 'text-status-running'
-                : log.type === 'ERROR'
-                  ? 'text-status-error'
-                  : log.type === 'WARN'
-                    ? 'text-[#f59e0b]'
-                    : 'text-[#D4D4D4]',
-            )
-          "
-        >
-          {{ log.message }}
-        </span>
+    <div class="min-h-0 flex-1 bg-surface-container-lowest">
+      <div
+        ref="scrollRef"
+        @scroll="handleLogScroll"
+        @wheel="handleLogWheel"
+        class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-on-surface [overscroll-behavior-y:contain]"
+      >
+        <div v-for="(log, index) in filteredLogs" :key="index" class="flex mb-1 group">
+          <span class="w-20 text-right mr-4 shrink-0 text-on-surface-variant/60 select-none">
+            {{ log.timestamp }}
+          </span>
+          <span
+            :class="
+              cn(
+                'break-all',
+                log.type === 'SUCCESS'
+                  ? 'text-status-running'
+                  : log.type === 'ERROR'
+                    ? 'text-status-error'
+                    : log.type === 'WARN'
+                      ? 'text-tertiary'
+                      : 'text-on-surface',
+              )
+            "
+          >
+            {{ log.message }}
+          </span>
+        </div>
+        <div v-if="logTargets.length === 0" class="text-on-surface-variant/70 italic">{{ t.terminal.ready }}</div>
+        <div v-else-if="filteredLogs.length === 0" class="text-on-surface-variant/70 italic">
+          {{ t.terminal.empty }}
+        </div>
+        <div class="animate-pulse text-primary mt-1">_</div>
       </div>
-      <div v-if="logTargets.length === 0" class="text-white/20 italic">{{ t.terminal.ready }}</div>
-      <div v-else-if="filteredLogs.length === 0" class="text-white/20 italic">{{ t.terminal.empty }}</div>
-      <div class="animate-pulse text-primary mt-1">_</div>
     </div>
   </div>
 </template>

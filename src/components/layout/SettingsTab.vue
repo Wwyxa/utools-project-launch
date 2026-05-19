@@ -141,8 +141,14 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
               :value="store.terminalPreferences.customCommand"
               @input="store.setDefaultTerminalCustomCommand(($event.target as HTMLInputElement).value)"
               type="text"
+              :disabled="store.terminalPreferences.kind !== 'custom'"
               :placeholder="t.settings.customCommandPlaceholder"
-              class="w-full rounded-lg border border-border-subtle bg-surface-container-lowest px-3 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              :title="
+                store.terminalPreferences.kind === 'custom'
+                  ? t.settings.customCommand
+                  : t.settings.customCommandDisabled
+              "
+              class="w-full rounded-lg border border-border-subtle bg-surface-container-lowest px-3 py-2 text-sm transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant disabled:opacity-70 disabled:placeholder:text-on-surface-variant/60"
             />
             <p class="mt-2 text-xs text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
             <p v-if="store.terminalPreferences.kind === 'builtin'" class="mt-1 text-xs text-on-surface-variant">
@@ -156,7 +162,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
         <div class="flex items-center justify-between gap-3 mb-3">
           <div class="flex items-center gap-2 text-primary">
             <Download :size="18" />
-            <h3 class="text-sm font-semibold text-on-surface">项目配置</h3>
+            <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.projectConfig }}</h3>
           </div>
           <p v-if="store.projectStorageMessage" class="text-xs text-on-surface-variant truncate">
             {{ store.projectStorageMessage }}
@@ -168,14 +174,14 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
           >
             <Upload :size="16" />
-            导入项目配置
+            {{ t.settings.importProjectConfig }}
           </button>
           <button
             @click="store.exportProjectConfig"
             class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
           >
             <Download :size="16" />
-            导出项目配置
+            {{ t.settings.exportProjectConfig }}
           </button>
         </div>
       </section>
