@@ -117,6 +117,8 @@ const isTextEntryTarget = (target: EventTarget | null) =>
 - For clickable cards that also contain action buttons, stop event propagation on the action area and on each icon button so card-level navigation does not fire accidentally.
 - If an action is meant to stay in the current view, do not let the card root click handler override it.
 - Keep action buttons visually and structurally separated from card navigation affordances so users can tell whether they are opening a detail view or running a direct command.
+- For nested scroll panels such as runtime logs, provide direct top/bottom controls and avoid forcing auto-scroll while the user is reading history.
+- When a nested scroll panel reaches its top or bottom boundary, pass wheel movement to the nearest outer scroll container so users can leave the panel naturally.
 
 ---
 

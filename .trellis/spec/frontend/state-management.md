@@ -122,6 +122,67 @@ Normalize projects before crossing the persistence boundary.
 - Letting derived state drift instead of reading from a getter
 - Calling `window.projectBridge` directly from feature components instead of going through store actions
 - Persisting device-local runtime state, such as script `pid` or `RUNNING` status, into synced project catalog storage
+- Sorting `projects` ad hoc in components. The project array order is user-controlled metadata and must be changed through store actions that persist the catalog.
+
+## Scenario: Manual Project Ordering
+
+### 1. Scope / Trigger
+
+- Trigger: dashboard project ordering is user-visible state and crosses the store plus project catalog persistence boundary.
+
+### 2. Signatures
+
+- `moveProject(projectId: string, direction: "top" | "up" | "down", scopeProjectIds?: string[]): Promise<boolean>`
+- `ProjectBridge.saveProjects(projects: Project[]): Promise<void>`
+
+### 3. Contracts
+
+- The `projects` array order is the persisted manual dashboard order.
+- Reorder projects only through store actions, then call `persistProjects()` so reloads preserve the order.
+- Keep available and unavailable project sections separated when moving cards; moving an unavailable project must not insert it into the available section.
+- When a filtered dashboard list provides `scopeProjectIds`, move only relative to visible projects in the same section while preserving non-visible projects in their original relative order.
+- Do not introduce a separate order field unless the storage contract changes deliberately.
+
+### 4. Validation & Error Matrix
+
+- Unknown `projectId` -> return `false` and leave `projects` unchanged.
+- Move beyond the section boundary -> return `false` and leave `projects` unchanged.
+- Empty or invalid `scopeProjectIds` -> fall back to the full available/unavailable section order.
+- Persistence failure -> surface the existing project storage message through `persistProjects()`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: moving the second visible available project up swaps it with the previous visible available project and persists the new array order.
+- Base: newly created projects still enter the front of the catalog through the existing create flow.
+- Bad: sorting `store.availableProjects` alphabetically in the component, which hides the user's manual order and is not persisted.
+
+### 6. Tests Required
+
+- `npm run lint` should verify store action signatures and component event types.
+- Manual smoke test: move a project to top, reload the plugin, and confirm the same order appears.
+- Manual smoke test: search/filter projects, move a visible item, clear search, and confirm hidden items kept their relative order.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const projects = computed(() => store.availableProjects.sort((a, b) => a.name.localeCompare(b.name)));
+```
+
+This mutates or masks the persisted manual order.
+
+#### Correct
+
+```ts
+await store.moveProject(
+  projectId,
+  "up",
+  visibleProjects.map((project) => project.id),
+);
+```
+
+Let the store own project order changes and persistence.
 
 ## Scenario: Script Runtime Status
 
