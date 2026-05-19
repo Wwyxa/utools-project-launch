@@ -385,3 +385,38 @@ Implemented detail page file browsing and lightweight editing, improved Git hist
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Plugin functionality improvements
+
+**Date**: 2026-05-20
+**Task**: Plugin functionality improvements
+**Branch**: `master`
+
+### Summary
+
+Implemented editor launch actions on project cards and details, editor preferences, process cleanup on plugin exit, settings/detail tab layout refinements, light-mode terminal styling, and improved SVG Git tree rendering; recorded bridge and cleanup contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8f78e95` | (see git log) |
+| `73c93f3` | (see git log) |
+| `75654c7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
