@@ -173,14 +173,14 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             @click="store.importProjectConfig"
             class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
           >
-            <Upload :size="16" />
+            <Download :size="16" />
             {{ t.settings.importProjectConfig }}
           </button>
           <button
             @click="store.exportProjectConfig"
             class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
           >
-            <Download :size="16" />
+            <Upload :size="16" />
             {{ t.settings.exportProjectConfig }}
           </button>
         </div>
