@@ -73,6 +73,45 @@ Semantic elements are preferred: buttons for actions, inputs for search and edit
 
 Current UI already uses those patterns in places like `src/components/layout/TopBar.vue` and `src/components/project/MemoTab.vue`. When adding icon-only controls, give them an accessible name instead of relying on the icon itself.
 
+### Convention: Left-Side Back Buttons
+
+**What**: Detail and settings headers place the return action on the left with an `ArrowLeft` icon button.
+
+**Why**: The detail view and settings view should share a consistent back affordance in a compact uTools window.
+
+**Example**:
+
+```vue
+<header class="mb-5 flex items-center gap-3">
+  <button
+    @click="store.setActiveTab('projects')"
+    class="p-2 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
+    :title="t.common.back"
+    :aria-label="t.common.back"
+  >
+    <ArrowLeft :size="20" />
+  </button>
+  <h2 class="text-xl font-bold text-on-surface tracking-tight">{{ t.sidebar.settings }}</h2>
+</header>
+```
+
+**Related**: `src/components/project/ProjectDetails.vue`, `src/components/layout/SettingsTab.vue`.
+
+### Convention: Global Escape Back Handling
+
+**What**: `src/App.vue` owns a capture-phase `keydown` listener that closes the project form first, then dismisses delete confirmation, then returns from project details, then returns from settings.
+
+**Why**: Escape should feel like a consistent exit path without overriding typing inside inputs, textareas, selects, or contenteditable regions.
+
+**Example**:
+
+```ts
+const isTextEntryTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+```
+
+**Related**: `src/App.vue`.
+
 ## Interaction Safety
 
 - For clickable cards that also contain action buttons, stop event propagation on the action area and on each icon button so card-level navigation does not fire accidentally.

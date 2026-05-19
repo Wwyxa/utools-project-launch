@@ -58,6 +58,60 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 - Git unavailable / not a repository -> return an empty `ProjectGitSnapshot` with a user-facing `statusText`
 - package script parsing failure -> return an empty script list and preserve manually configured commands
 
+### Scenario: External terminal launch failures
+
+#### 1. Scope / Trigger
+
+- Trigger: the preload bridge launches an external terminal for the current project path.
+
+#### 2. Signatures
+
+- `ProjectBridge.openTerminal(payload: { projectPath: string; terminal: TerminalPreferences }) -> Promise<{ launched: boolean; command: string; cwd: string; kind: DefaultTerminalKind; message?: string }>`
+
+#### 3. Contracts
+
+- `projectPath` must exist and point to a readable directory before the bridge tries to launch.
+- `terminal.kind` selects `builtin`, `windows-terminal`, `powershell`, `cmd`, or `custom` behavior.
+- `terminal.customCommand` is required only for `custom` mode.
+- `launched: true` means the detached terminal process spawned successfully.
+- `launched: false` means the store should treat the result as a user-visible failure and log `message` when present.
+
+#### 4. Validation & Error Matrix
+
+- Missing or missing-directory path -> return `launched: false` with a path error message.
+- `builtin` kind -> return `launched: false` and skip external spawn.
+- Empty custom command -> return `launched: false` with an input error message.
+- Unknown terminal kind or spawn failure -> return `launched: false` with a launch error message.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: the bridge spawns the configured terminal and the store logs the command used.
+- Base: `builtin` remains a valid preference but does not start an external terminal yet.
+- Bad: calling `shell.openPath` and treating the folder reveal as a terminal launch.
+
+#### 6. Tests Required
+
+- Type-check the bridge contract in `src/types.ts` and `src/lib/projectBridge.ts`.
+- Manual smoke test on uTools with each terminal kind and a custom command using `{path}`.
+- Verify a missing path produces an error log instead of a silent no-op.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```ts
+await bridge.openPath(project.path);
+```
+
+##### Correct
+
+```ts
+const result = await bridge.openTerminal({
+  projectPath: project.path,
+  terminal: this.terminalPreferences,
+});
+```
+
 ---
 
 ## API Error Responses
