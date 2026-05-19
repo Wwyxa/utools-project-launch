@@ -1,0 +1,9 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Vue app structure and frontend guideline index"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component layout and styling conventions for settings and detail tabs"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia store conventions for editor preferences and project actions"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Type contracts for bridge and Git graph data"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality guardrails before implementation"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Preload bridge is the closest backend-like runtime boundary"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Process cleanup and external command error behavior"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Runtime log behavior and secret safety"}
