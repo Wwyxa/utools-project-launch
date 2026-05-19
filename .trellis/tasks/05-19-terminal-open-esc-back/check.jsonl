@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Check frontend implementation against project conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Verify interaction and layout consistency."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify bridge typings stay centralized and narrow."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify required frontend checks and forbidden patterns."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify preload errors are surfaced through existing UI state."}

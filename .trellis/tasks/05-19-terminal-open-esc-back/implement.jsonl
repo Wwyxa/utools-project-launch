@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend app shell, component, state, and quality conventions for this interaction task."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Back button placement, icon button accessibility, and component interaction rules."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Bridge contract additions must live in shared TypeScript types."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required lint/build checks and UI quality expectations."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Preload boundary failures should surface through existing UI log state."}

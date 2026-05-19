@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend app shell, state, and component conventions for persistence and navigation changes."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Default terminal preferences need durable store-backed state and bridge persistence."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Project details needs a new action button and navigation consistency."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Validate layout and required lint/build checks after UI changes."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Any bridge contract or shared type additions must stay centralized."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Esc/navigation and terminal preference failures should use the existing UI-state model."}

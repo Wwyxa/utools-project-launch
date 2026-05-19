@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Check frontend scope and component conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify store-backed persistence boundaries for terminal preferences."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Verify the project details action and navigation affordances."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify lint/build expectations and layout quality."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify shared types and bridge contracts remain centralized."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify UI-state error handling for escape and terminal launch paths."}
