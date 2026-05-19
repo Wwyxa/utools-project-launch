@@ -49,6 +49,120 @@ If the app later talks to a real backend or file system adapter, keep the fetche
 
 The current uTools integration follows this rule: UI components call store actions, store actions call `src/lib/projectBridge.ts`, and the bridge delegates to `window.projectBridge` from `public/preload.js` when running inside uTools.
 
+## Scenario: Project File Browser Bridge
+
+### 1. Scope / Trigger
+
+- Trigger: project file browsing and lightweight editing cross the Vue component, Pinia store, browser fallback bridge, and uTools preload filesystem boundary.
+
+### 2. Signatures
+
+- `ProjectBridge.listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileTreeEntry[]>`
+- `ProjectBridge.readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>`
+- `ProjectBridge.writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>`
+
+### 3. Contracts
+
+- UI components must call store actions for file operations; they must not call `window.projectBridge` directly.
+- `listProjectFiles` loads only one directory level per call. Directory expansion in the UI should request the next level on demand instead of recursively scanning a whole project.
+- The preload layer must resolve file paths under the project root and reject path traversal attempts that escape the root.
+- The file tree must hide heavyweight or generated directories by default, including `node_modules`, `.git`, `.venv`, build output, and cache directories.
+- Text files may be read and written as UTF-8. Lightweight binary previews such as small images may return a preview payload; unknown binary files should return an unsupported result rather than being exposed as editable text.
+- Browser fallback must return safe empty/unsupported results and keep the same async API shape so the UI can render in preview mode.
+
+### 4. Validation & Error Matrix
+
+- Empty or missing `projectPath` -> return an empty tree or unsupported read result.
+- Missing path on disk -> return an empty tree or a file read/write failure result; do not crash the UI.
+- Relative path escapes the project root -> reject the operation.
+- Directory is ignored -> omit it from tree results.
+- File is too large or binary/unsupported -> return a non-editable preview/error state instead of decoding as text.
+
+### 5. Good/Base/Bad Cases
+
+- Good: opening the file tab loads only root-level entries, then expanding `src` loads just `src` children.
+- Good: double-clicking a text file enters edit mode and saving goes through the store action, bridge, and preload boundary.
+- Base: browser preview shows an empty or unavailable file browser without throwing.
+- Bad: recursively scanning the whole project tree on tab mount.
+- Bad: reading an unknown binary file as UTF-8 and enabling save.
+
+### 6. Tests Required
+
+- `npm run lint` should verify shared bridge types across `src/types.ts`, `src/lib/projectBridge.ts`, store actions, and components.
+- `npm run build` should verify the Vue file-browser components compile.
+- Manual smoke test: open file tab, expand a nested directory, preview a text file, edit/save it, and confirm ignored directories do not appear.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const entries = await window.projectBridge.listProjectFiles(project.path, "src");
+```
+
+This bypasses the store boundary and makes fallback/error behavior inconsistent.
+
+#### Correct
+
+```ts
+const entries = await store.listProjectFiles(project.id, "src");
+```
+
+Let the store own bridge calls and normalize errors before the component renders them.
+
+## Scenario: Git History Pagination
+
+### 1. Scope / Trigger
+
+- Trigger: Git history crosses the Vue component, Pinia store, browser fallback bridge, and uTools preload Git command boundary.
+
+### 2. Signatures
+
+- `ProjectBridge.readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>`
+- `loadMoreGitCommits(projectId: string): Promise<void>`
+
+### 3. Contracts
+
+- Initial Git refresh should request a bounded page of commits, currently `limit: 80` and `skip: 0`.
+- Loading more commits must request the next page using `skip: project.git.commits.length`, then append the returned commits in the store.
+- The preload bridge should request `limit + 1` commits from `git log` to derive `hasMoreCommits`, then trim the returned page to `limit`.
+- UI components should use `hasMoreCommits` to show an explicit load-more affordance instead of rendering the full repository history.
+
+### 4. Validation & Error Matrix
+
+- Missing Git repository -> return an empty snapshot with `hasMoreCommits: false`.
+- Invalid `limit` or `skip` -> clamp to a safe bounded page in preload.
+- Loading more with no existing snapshot -> no-op.
+
+### 5. Good/Base/Bad Cases
+
+- Good: the Git tab shows the first page quickly and appends another page only when the user asks for more.
+- Base: a small repository returns fewer than `limit` commits and hides the load-more control.
+- Bad: running `git log --all` without a max count and rendering every commit.
+
+### 6. Tests Required
+
+- `npm run lint` should verify the bridge option signature across types, fallback bridge, store, and components.
+- `npm run build` should verify the Git tab compiles with the pagination UI.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const snapshot = await bridge.readGitSnapshot(project.path);
+```
+
+This depends on bridge defaults and can drift toward unbounded history reads.
+
+#### Correct
+
+```ts
+const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: project.git?.commits.length || 0 });
+```
+
+Always make the intended page size and offset explicit at the store boundary.
+
 ## Scenario: Project Catalog Persistence
 
 ### 1. Scope / Trigger
