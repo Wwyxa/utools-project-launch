@@ -15,9 +15,10 @@ const props = defineProps<{
 
 const store = useStore();
 const t = useI18n();
-const activeTab = ref<"info" | "scripts" | "git" | "memo">("scripts");
+type TabId = "info" | "scripts" | "git" | "memo";
+const activeTab = ref<TabId>("scripts");
 
-const tabs = computed(() => [
+const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
   { id: "info", label: t.value.projectDetails.overview },
   { id: "scripts", label: t.value.projectDetails.scripts },
   { id: "git", label: t.value.projectDetails.git },
