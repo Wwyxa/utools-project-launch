@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec index for Vue/Pinia/Tailwind implementation guidance."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Component structure, interaction safety, accessibility, and styling conventions for UI changes."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Store and bridge ownership rules for Run All and directory suggestion state."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Shared type and preload bridge contract rules for new APIs."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required lint/build and frontend quality standards."}

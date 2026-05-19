@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec index for verification."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Verify component interaction, accessibility, and styling conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify store/bridge ownership and persistence boundaries."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify bridge and shared type changes remain typed."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify lint/build and quality expectations."}
