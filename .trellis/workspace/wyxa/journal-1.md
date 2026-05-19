@@ -177,3 +177,37 @@ Refined the uTools plugin UI for compact window usage, simplified navigation, ad
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 优化详情页脚本日志与 Git 树
+
+**Date**: 2026-05-19
+**Task**: 优化详情页脚本日志与 Git 树
+**Branch**: `master`
+
+### Summary
+
+完成详情页启动脚本日志的脚本级展示与清洗，压缩脚本列表布局，并将 Git 页调整为变更列表与全部分支提交树。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `da94452` | (see git log) |
+| `43e7cfc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

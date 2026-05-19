@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-05-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~179 | Active |
+| `journal-1.md` | ~213 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-05-19 | 优化详情页脚本日志与 Git 树 | `da94452`, `43e7cfc` | `master` |
 | 5 | 2026-05-19 | 实现新增项目功能 | `a8c9a75`, `b8acb6f` | `master` |
 | 4 | 2026-05-19 | 无侧边栏项目布局优化 | `d544daa`, `2c14b93` | `master` |
 | 3 | 2026-05-19 | 整体细节调整 | `ddb8bba`, `ad6c2f1`, `a4e84e8` | `master` |
