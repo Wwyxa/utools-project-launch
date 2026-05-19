@@ -71,6 +71,65 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 
 ## Scenario: Import/Export JSON Boundary
 
+## Scenario: Editor Launch Bridge Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: opening a project in an external editor crosses Vue components, Pinia state, browser fallback, and uTools preload process spawning.
+
+### 2. Signatures
+
+- `EditorPreferences = { kind: "vscode" | "cursor" | "custom"; customCommand: string }`
+- `ProjectBridge.loadEditorPreferences(): EditorPreferences`
+- `ProjectBridge.saveEditorPreferences(preferences: EditorPreferences): void`
+- `ProjectBridge.openEditor(payload: { projectPath: string; editor: EditorPreferences }): Promise<{ launched: boolean; command: string; cwd: string; kind: EditorKind; message?: string }>`
+
+### 3. Contracts
+
+- Editor preference contracts belong in `src/types.ts`; components must not define local copies.
+- `vscode` and `cursor` are built-in editor kinds. `custom` requires a command template.
+- Custom command templates may use `{path}` or `{projectPath}` placeholders, both resolved to the project path by the bridge.
+- Browser fallback must keep the same method names and return safe failure results.
+
+### 4. Validation & Error Matrix
+
+- Unknown editor kind -> normalize to the default editor before saving or launching.
+- Missing project path -> return `launched: false` with a message.
+- Empty custom command -> return `launched: false` with a message.
+- Spawn failure -> return `launched: false` with the bridge error message.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a detail-page button calls a store action, which passes stored editor preferences to the bridge.
+- Base: VS Code is the default editor preference and works without user configuration.
+- Bad: hard-coding `code` in a component or bypassing `ProjectBridge.openEditor`.
+
+### 6. Tests Required
+
+- `npm run lint` should verify type consistency across `src/types.ts`, `src/lib/projectBridge.ts`, store actions, and components.
+- `npm run build` should verify the settings and project detail UI compile with the shared bridge contract.
+- Manual smoke test: open a valid project with VS Code, Cursor, and an invalid custom command.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await window.projectBridge.openEditor({ projectPath: project.path, editor: { kind: "vscode", customCommand: "" } });
+```
+
+#### Correct
+
+```ts
+await store.openProjectInEditor(project.id);
+```
+
+Keep editor launch behavior behind store actions so fallback and error logging stay consistent.
+
+---
+
+## Scenario: Import/Export JSON Boundary
+
 ### 1. Scope / Trigger
 
 - Trigger: project configuration enters the app from an external JSON file and leaves the app as a portable backup file.

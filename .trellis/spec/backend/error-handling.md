@@ -60,6 +60,66 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 
 ### Scenario: External terminal launch failures
 
+### Scenario: External editor launch and process cleanup failures
+
+#### 1. Scope / Trigger
+
+- Trigger: the preload bridge launches external editor processes and owns cleanup for app-started script processes.
+
+#### 2. Signatures
+
+- `ProjectBridge.openEditor(payload: { projectPath: string; editor: EditorPreferences }) -> Promise<{ launched: boolean; command: string; cwd: string; kind: EditorKind; message?: string }>`
+- `ProjectBridge.stopAllProcesses() -> Promise<void>`
+
+#### 3. Contracts
+
+- Editor launches follow the same typed success/failure shape as terminal launches.
+- `launched: false` means the store should log an error message; the component should not throw.
+- `stopAllProcesses` is best-effort cleanup for processes started by this plugin session. It must not promise to handle hard OS or host crashes that do not run JavaScript lifecycle hooks.
+- Cleanup should be attached to every controllable lifecycle available in preload, such as page unload and uTools/plugin lifecycle hooks when present.
+
+#### 4. Validation & Error Matrix
+
+- Missing project path -> return `launched: false` with a path message.
+- Empty custom editor command -> return `launched: false` with an input message.
+- Unknown editor kind -> return `launched: false` or normalize before launch; do not spawn an arbitrary command.
+- Process already exited during cleanup -> ignore and continue stopping the remaining processes.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: editor spawn failures become project log entries and do not break the detail page.
+- Good: plugin/page exit attempts to stop every tracked child process before teardown.
+- Base: no active child processes makes `stopAllProcesses` a no-op.
+- Bad: leaving active child processes running because only manual stop buttons call `stopProcess(pid)`.
+
+#### 6. Tests Required
+
+- Type-check the bridge contract in `src/types.ts`, fallback bridge, and store actions.
+- Manual smoke test: start a script, close/reload the plugin view, and confirm the tracked process is stopped where the host lifecycle fires.
+- Manual smoke test: invalid custom editor command returns a visible project log error.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```js
+window.addEventListener("beforeunload", () => activeProcesses.clear());
+```
+
+##### Correct
+
+```js
+window.addEventListener("beforeunload", () => {
+  stopAllProcesses();
+});
+```
+
+Clearing the registry is not cleanup; the bridge must signal the child processes first.
+
+---
+
+### Scenario: External terminal launch failures
+
 #### 1. Scope / Trigger
 
 - Trigger: the preload bridge launches an external terminal for the current project path.

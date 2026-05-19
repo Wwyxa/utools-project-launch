@@ -51,6 +51,63 @@ The current uTools integration follows this rule: UI components call store actio
 
 ## Scenario: Project File Browser Bridge
 
+## Scenario: External Tool Preferences
+
+### 1. Scope / Trigger
+
+- Trigger: user-configured external tools such as terminals and editors are shared by settings UI, project detail actions, store persistence, and preload bridge launch behavior.
+
+### 2. Signatures
+
+- `terminalPreferences` and `editorPreferences` live in the Pinia store.
+- Store actions own updates: `setDefaultTerminal(...)`, `setDefaultEditor(...)`, and custom command setters.
+- Project actions own launches: `openProjectInTerminal(projectId)` and `openProjectInEditor(projectId)`.
+
+### 3. Contracts
+
+- Settings components update preferences only through store actions.
+- Project detail components launch external tools only through project-id store actions.
+- Store actions must clone current preferences before passing them to the bridge to avoid accidental mutation during async work.
+- Failed launches should append a project log entry instead of throwing into the component.
+
+### 4. Validation & Error Matrix
+
+- Project id missing -> no-op.
+- Project path unavailable -> no-op and leave controls disabled in the component.
+- Bridge returns `launched: false` -> append an `ERROR` log with the bridge message.
+- Bridge throws -> catch in the store and append an `ERROR` log.
+
+### 5. Good/Base/Bad Cases
+
+- Good: settings selects Cursor, the store persists the preference, and the detail-page editor button uses it.
+- Base: browser preview keeps the action safe and records unsupported behavior through fallback results.
+- Bad: settings writes localStorage directly or a component spawns an editor command.
+
+### 6. Tests Required
+
+- `npm run lint` should verify store action and bridge types.
+- Manual smoke test should cover changing editor settings, reloading, and launching from a project detail page.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+store.editorPreferences.kind = "cursor";
+```
+
+#### Correct
+
+```ts
+store.setDefaultEditor("cursor");
+```
+
+Let store actions persist preferences and keep bridge state synchronized.
+
+---
+
+## Scenario: Project File Browser Bridge
+
 ### 1. Scope / Trigger
 
 - Trigger: project file browsing and lightweight editing cross the Vue component, Pinia store, browser fallback bridge, and uTools preload filesystem boundary.
