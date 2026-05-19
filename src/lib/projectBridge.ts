@@ -7,6 +7,9 @@ import type {
   ProjectBridgeTerminalLaunchPayload,
   ProjectBridgeTerminalLaunchResult,
   ProjectBridgeRunResult,
+  ProjectFileListResult,
+  ProjectFileReadResult,
+  ProjectFileWriteResult,
   ProjectPathInspection,
   TerminalPreferences,
 } from "../types";
@@ -77,6 +80,7 @@ const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   behind: 0,
   files: [],
   commits: [],
+  hasMoreCommits: false,
   repositoryPath: "",
   lastRefreshedAt: new Date().toISOString(),
   statusText: "离线预览",
@@ -154,6 +158,26 @@ const fallbackBridge: ProjectBridge = {
   },
   async readGitSnapshot(): Promise<ProjectBridgeGitSnapshot> {
     return emptyGitSnapshot();
+  },
+  async listProjectFiles(projectPath: string, relativePath = ""): Promise<ProjectFileListResult> {
+    return { rootPath: projectPath, relativePath, entries: [] };
+  },
+  async readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult> {
+    const name = relativePath.split(/[\\/]/).filter(Boolean).pop() || projectPath;
+    return {
+      path: `${projectPath}/${relativePath}`,
+      relativePath,
+      name,
+      size: 0,
+      extension: "",
+      mime: "application/octet-stream",
+      previewKind: "none",
+      editable: false,
+      message: "浏览器预览无法读取本地文件。",
+    };
+  },
+  async writeProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileWriteResult> {
+    return { path: `${projectPath}/${relativePath}`, relativePath, savedAt: new Date().toISOString() };
   },
   async openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult> {
     return {

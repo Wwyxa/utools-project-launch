@@ -8,6 +8,7 @@ import { useI18n } from "../../lib/i18n";
 import ScriptsTab from "./ScriptsTab.vue";
 import GitTab from "./GitTab.vue";
 import MemoTab from "./MemoTab.vue";
+import FilesTab from "./FilesTab.vue";
 
 const props = defineProps<{
   project: Project;
@@ -15,12 +16,13 @@ const props = defineProps<{
 
 const store = useStore();
 const t = useI18n();
-type TabId = "info" | "scripts" | "git" | "memo";
+type TabId = "info" | "scripts" | "files" | "git" | "memo";
 const activeTab = ref<TabId>("scripts");
 
 const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
   { id: "info", label: t.value.projectDetails.overview },
   { id: "scripts", label: t.value.projectDetails.scripts },
+  { id: "files", label: t.value.projectDetails.files },
   { id: "git", label: t.value.projectDetails.git },
   { id: "memo", label: t.value.projectDetails.memo },
 ]);
@@ -149,7 +151,14 @@ const handleDelete = () => {
       </button>
     </nav>
 
-    <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto pr-1 space-y-4 [color-scheme:inherit]">
+    <div
+      :class="
+        cn(
+          'themed-scrollbar min-h-0 flex-1 pr-1 [color-scheme:inherit]',
+          activeTab === 'files' ? 'overflow-hidden' : 'space-y-4 overflow-y-auto',
+        )
+      "
+    >
       <div v-if="activeTab === 'info'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="lg:col-span-2 bg-surface border border-border-subtle rounded-lg p-4 space-y-3 shadow-sm">
           <div>
@@ -202,8 +211,9 @@ const handleDelete = () => {
       </div>
 
       <ScriptsTab v-if="activeTab === 'scripts'" :project="project" />
+      <FilesTab v-if="activeTab === 'files'" :project="project" />
       <GitTab v-if="activeTab === 'git'" :project="project" />
-      <MemoTab v-if="activeTab === 'memo'" :project="project" />
+      <MemoTab v-if="activeTab === 'memo'" :project="project" :active="activeTab === 'memo'" />
     </div>
   </div>
 </template>

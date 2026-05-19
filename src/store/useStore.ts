@@ -12,6 +12,9 @@ import type {
   ProjectFormValue,
   ProjectGitFileChange,
   ProjectGitSnapshot,
+  ProjectFileListResult,
+  ProjectFileReadResult,
+  ProjectFileWriteResult,
   ProjectKind,
   ProjectScript,
   ProjectScriptFormValue,
@@ -96,6 +99,7 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
     behind: snapshot.behind || 0,
     files: snapshot.files || [],
     commits: snapshot.commits || [],
+    hasMoreCommits: snapshot.hasMoreCommits || false,
     repositoryPath: snapshot.repositoryPath || "",
     lastRefreshedAt: snapshot.lastRefreshedAt || new Date().toISOString(),
     statusText: snapshot.statusText || "OK",
@@ -957,13 +961,58 @@ export const useStore = defineStore("app", {
         return;
       }
 
-      const snapshot = await bridge.readGitSnapshot(project.path);
+      const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: 0 });
       project.git = normalizeGitSnapshot(snapshot);
       if (project.git) {
         project.branch = project.git.branch;
         this.stagedFiles[projectId] = project.git.files;
       }
       await this.persistProjects();
+    },
+    async loadMoreGitCommits(projectId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false || !project.git) {
+        return;
+      }
+
+      const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: project.git.commits.length });
+      project.git = normalizeGitSnapshot({
+        ...snapshot,
+        commits: [...project.git.commits, ...(snapshot.commits || [])],
+      });
+      if (project.git) {
+        project.branch = project.git.branch;
+        this.stagedFiles[projectId] = project.git.files;
+      }
+      await this.persistProjects();
+    },
+    async listProjectFiles(projectId: string, relativePath = ""): Promise<ProjectFileListResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return bridge.listProjectFiles(project.path, relativePath);
+    },
+    async readProjectFile(projectId: string, relativePath: string): Promise<ProjectFileReadResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return bridge.readProjectFile(project.path, relativePath);
+    },
+    async writeProjectFile(
+      projectId: string,
+      relativePath: string,
+      content: string,
+    ): Promise<ProjectFileWriteResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return bridge.writeProjectFile(project.path, relativePath, content);
     },
     async launchScript(projectId: string, scriptId: string) {
       const project = this.projects.find((item) => item.id === projectId);
@@ -1103,11 +1152,31 @@ export const useStore = defineStore("app", {
         this.todos[projectId] = [];
       }
       this.todos[projectId].push({ id: createTodoId(), text, completed: false });
+      this.todos[projectId] = [...this.todos[projectId]].sort(
+        (left, right) => Number(left.completed) - Number(right.completed),
+      );
+      this.syncProjectTodos(projectId);
     },
     toggleTodo(projectId: string, todoId: string) {
       const todo = this.todos[projectId]?.find((item) => item.id === todoId);
       if (todo) {
         todo.completed = !todo.completed;
+        this.todos[projectId] = [...this.todos[projectId]].sort(
+          (left, right) => Number(left.completed) - Number(right.completed),
+        );
+        this.syncProjectTodos(projectId);
+      }
+    },
+    deleteTodo(projectId: string, todoId: string) {
+      this.todos[projectId] = (this.todos[projectId] || []).filter((item) => item.id !== todoId);
+      this.syncProjectTodos(projectId);
+    },
+    syncProjectTodos(projectId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (project) {
+        project.todos = this.todos[projectId] || [];
+        project.updatedAt = new Date().toISOString();
+        void this.persistProjects();
       }
     },
     updateMemo(projectId: string, content: string) {

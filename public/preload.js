@@ -13,6 +13,49 @@ const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
 const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api", "src"];
 const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
+const ignoredFileTreeDirs = new Set([
+  "node_modules",
+  ".git",
+  ".venv",
+  "venv",
+  "dist",
+  "build",
+  ".next",
+  ".nuxt",
+  ".cache",
+  ".turbo",
+  "coverage",
+  "target",
+  "vendor",
+]);
+const textFileExtensions = new Set([
+  ".txt",
+  ".md",
+  ".json",
+  ".js",
+  ".ts",
+  ".vue",
+  ".css",
+  ".html",
+  ".xml",
+  ".yml",
+  ".yaml",
+  ".toml",
+  ".ini",
+  ".env",
+  ".sh",
+  ".ps1",
+  ".py",
+  ".go",
+  ".rs",
+  ".java",
+  ".c",
+  ".cpp",
+  ".h",
+  ".sql",
+]);
+const textFileNamePatterns = [/^\.env(?:\..+)?$/i, /^dockerfile$/i, /^makefile$/i, /^procfile$/i];
+const imageFileExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"]);
 
 function createLegacyWindowsDecoder() {
   if (process.platform !== "win32") {
@@ -637,6 +680,169 @@ function pathExists(projectPath) {
   }
 }
 
+function resolveProjectChild(projectPath, relativePath) {
+  const rootPath = expandPath(projectPath);
+  const normalizedRelativePath = typeof relativePath === "string" ? relativePath : "";
+  const targetPath = path.resolve(rootPath, normalizedRelativePath || ".");
+  const relative = path.relative(rootPath, targetPath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("目标路径不在项目目录内。");
+  }
+  return { rootPath, targetPath, relativePath: relative === "" ? "" : relative.replace(/\\/g, "/") };
+}
+
+function listProjectFiles(projectPath, relativePath = "") {
+  const resolved = resolveProjectChild(projectPath, relativePath);
+  const stats = fs.statSync(resolved.targetPath);
+  if (!stats.isDirectory()) {
+    throw new Error("目标路径不是目录。");
+  }
+
+  const entries = fs
+    .readdirSync(resolved.targetPath, { withFileTypes: true })
+    .filter((entry) => !ignoredFileTreeDirs.has(entry.name))
+    .map((entry) => {
+      const childPath = path.join(resolved.targetPath, entry.name);
+      const childStats = fs.statSync(childPath);
+      const childRelativePath = path.relative(resolved.rootPath, childPath).replace(/\\/g, "/");
+      return {
+        name: entry.name,
+        path: childPath,
+        relativePath: childRelativePath,
+        kind: entry.isDirectory() ? "directory" : "file",
+        size: childStats.size,
+        extension: path.extname(entry.name).toLowerCase(),
+        hidden: entry.name.startsWith("."),
+      };
+    })
+    .sort((left, right) => {
+      if (left.kind !== right.kind) {
+        return left.kind === "directory" ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name);
+    });
+
+  return { rootPath: resolved.rootPath, relativePath: resolved.relativePath, entries };
+}
+
+function getMime(extension) {
+  if (extension === ".svg") return "image/svg+xml";
+  if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".gif") return "image/gif";
+  if (extension === ".webp") return "image/webp";
+  if (extension === ".bmp") return "image/bmp";
+  return textFileExtensions.has(extension) ? "text/plain" : "application/octet-stream";
+}
+
+function isKnownTextFileName(fileName) {
+  return textFileNamePatterns.some((pattern) => pattern.test(fileName));
+}
+
+function isLikelyTextBuffer(buffer) {
+  if (buffer.length === 0) return true;
+  let replacementCount = 0;
+  for (let index = 0; index < buffer.length; index += 1) {
+    if (buffer[index] === 0) return false;
+  }
+
+  const decoded = buffer.toString("utf8");
+  for (const char of decoded) {
+    if (char === "\uFFFD") {
+      replacementCount += 1;
+    }
+  }
+  return replacementCount / decoded.length < 0.02;
+}
+
+function readProjectFile(projectPath, relativePath) {
+  const resolved = resolveProjectChild(projectPath, relativePath);
+  const stats = fs.statSync(resolved.targetPath);
+  const name = path.basename(resolved.targetPath);
+  const extension = path.extname(name).toLowerCase();
+  const mime = getMime(extension);
+
+  if (!stats.isFile()) {
+    return {
+      path: resolved.targetPath,
+      relativePath: resolved.relativePath,
+      name,
+      size: stats.size,
+      extension,
+      mime,
+      previewKind: "none",
+      editable: false,
+      message: "请选择文件预览。",
+    };
+  }
+
+  if (imageFileExtensions.has(extension) && stats.size <= 1024 * 1024 * 2) {
+    return {
+      path: resolved.targetPath,
+      relativePath: resolved.relativePath,
+      name,
+      size: stats.size,
+      extension,
+      mime,
+      previewKind: "image",
+      editable: false,
+      dataUrl: `data:${mime};base64,${fs.readFileSync(resolved.targetPath).toString("base64")}`,
+    };
+  }
+
+  const isKnownTextFile = textFileExtensions.has(extension) || isKnownTextFileName(name);
+  const isSmallUnknownTextFile =
+    !isKnownTextFile && stats.size <= 1024 * 64 && isLikelyTextBuffer(fs.readFileSync(resolved.targetPath));
+  if (isKnownTextFile || isSmallUnknownTextFile) {
+    if (stats.size > 1024 * 512) {
+      return {
+        path: resolved.targetPath,
+        relativePath: resolved.relativePath,
+        name,
+        size: stats.size,
+        extension,
+        mime,
+        previewKind: "none",
+        editable: false,
+        message: "文件过大，已跳过轻量预览。",
+      };
+    }
+    return {
+      path: resolved.targetPath,
+      relativePath: resolved.relativePath,
+      name,
+      size: stats.size,
+      extension,
+      mime,
+      previewKind: "text",
+      editable: true,
+      content: fs.readFileSync(resolved.targetPath, "utf8"),
+    };
+  }
+
+  return {
+    path: resolved.targetPath,
+    relativePath: resolved.relativePath,
+    name,
+    size: stats.size,
+    extension,
+    mime,
+    previewKind: "none",
+    editable: false,
+    message: "此文件类型暂不支持轻量预览。",
+  };
+}
+
+function writeProjectFile(projectPath, relativePath, content) {
+  const resolved = resolveProjectChild(projectPath, relativePath);
+  const stats = fs.statSync(resolved.targetPath);
+  if (!stats.isFile()) {
+    throw new Error("只能保存文件。");
+  }
+  fs.writeFileSync(resolved.targetPath, String(content), "utf8");
+  return { path: resolved.targetPath, relativePath: resolved.relativePath, savedAt: new Date().toISOString() };
+}
+
 function listProjectSubdirectories(projectPath) {
   const resolvedPath = expandPath(projectPath);
   const preferred = new Set(commonProjectDirs);
@@ -766,9 +972,11 @@ async function importProjects() {
   }
 }
 
-function readGitSnapshot(projectPath) {
+function readGitSnapshot(projectPath, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   const now = new Date().toISOString();
+  const limit = Math.min(100, Math.max(20, Number(options.limit) || 80));
+  const skip = Math.max(0, Number(options.skip) || 0);
 
   if (!repositoryPath) {
     return {
@@ -777,6 +985,7 @@ function readGitSnapshot(projectPath) {
       behind: 0,
       files: [],
       commits: [],
+      hasMoreCommits: false,
       repositoryPath: "",
       lastRefreshedAt: now,
       statusText: "未检测到 Git 仓库",
@@ -790,8 +999,9 @@ function readGitSnapshot(projectPath) {
     "--all",
     "--graph",
     "--decorate=short",
-    "--max-count=200",
-    "--pretty=format:%h\t%P\t%an\t%ad\t%D\t%s",
+    `--max-count=${limit + 1}`,
+    `--skip=${skip}`,
+    "--pretty=format:%h\t%p\t%an\t%ad\t%D\t%s",
     "--date=short",
   ]);
   const numstatOutput = collectNumstat(repositoryPath, ["diff", "--numstat"]);
@@ -856,6 +1066,11 @@ function readGitSnapshot(projectPath) {
     });
   }
 
+  const hasMoreCommits = commits.length > limit;
+  if (hasMoreCommits) {
+    commits.length = limit;
+  }
+
   const branchLine = branchOutput ? branchOutput.split(/\r?\n/)[0] : "";
   const branchMatch = branchLine.match(/^##\s+([^\.\s]+)(?:\.\.\.(?:[^\s]+))?(?:\s+\[(.+)\])?/);
   const branch = branchMatch?.[1] || "main";
@@ -869,6 +1084,7 @@ function readGitSnapshot(projectPath) {
     behind: behindMatch ? Number(behindMatch[1]) : 0,
     files: Array.from(fileMap.values()),
     commits,
+    hasMoreCommits,
     repositoryPath,
     lastRefreshedAt: now,
     statusText: fileMap.size === 0 ? "工作区干净" : `${fileMap.size} 个文件变更`,
@@ -972,6 +1188,9 @@ window.projectBridge = {
   readPackageScripts,
   listProjectSubdirectories,
   readGitSnapshot,
+  listProjectFiles,
+  readProjectFile,
+  writeProjectFile,
   openTerminal,
   runCommand,
   stopProcess,

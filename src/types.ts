@@ -50,6 +50,7 @@ export interface ProjectGitSnapshot {
   behind: number;
   files: ProjectGitFileChange[];
   commits: ProjectGitCommitSummary[];
+  hasMoreCommits?: boolean;
   repositoryPath: string;
   lastRefreshedAt: string;
   statusText: string;
@@ -178,6 +179,45 @@ export interface ProjectBridgePackageScript {
 
 export interface ProjectBridgeGitSnapshot extends ProjectGitSnapshot {}
 
+export type ProjectFileKind = "file" | "directory";
+
+export interface ProjectFileTreeEntry {
+  name: string;
+  path: string;
+  relativePath: string;
+  kind: ProjectFileKind;
+  size: number;
+  extension: string;
+  hidden?: boolean;
+  ignored?: boolean;
+}
+
+export interface ProjectFileListResult {
+  rootPath: string;
+  relativePath: string;
+  entries: ProjectFileTreeEntry[];
+}
+
+export interface ProjectFileReadResult {
+  path: string;
+  relativePath: string;
+  name: string;
+  size: number;
+  extension: string;
+  mime: string;
+  previewKind: "text" | "image" | "none";
+  editable: boolean;
+  content?: string;
+  dataUrl?: string;
+  message?: string;
+}
+
+export interface ProjectFileWriteResult {
+  path: string;
+  relativePath: string;
+  savedAt: string;
+}
+
 export interface ProjectBridgeEvent {
   type: "started" | "stdout" | "stderr" | "exit" | "error";
   projectId: string;
@@ -203,7 +243,10 @@ export interface ProjectBridge {
     projectPath: string,
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;
   listProjectSubdirectories(projectPath: string): Promise<string[]>;
-  readGitSnapshot(projectPath: string): Promise<ProjectBridgeGitSnapshot>;
+  readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>;
+  listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileListResult>;
+  readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
+  writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;
   openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult>;
   runCommand(payload: {
     projectId: string;

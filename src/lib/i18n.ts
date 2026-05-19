@@ -68,6 +68,7 @@ const messages = {
     projectDetails: {
       overview: "概览",
       scripts: "脚本",
+      files: "文件",
       git: "Git",
       memo: "备忘",
       openProject: "打开项目目录",
@@ -274,6 +275,7 @@ const messages = {
     projectDetails: {
       overview: "Overview",
       scripts: "Scripts",
+      files: "Files",
       git: "Git",
       memo: "Memo",
       openProject: "Open Folder",

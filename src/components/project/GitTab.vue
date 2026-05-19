@@ -19,9 +19,20 @@ const files = computed(() => store.stagedFiles[props.project.id] || props.projec
 const commits = computed(() => props.project.git?.commits || []);
 const snapshot = computed(() => props.project.git);
 const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.project.path);
+const isLoadingMore = ref(false);
 
 const handleRefresh = async () => {
   await store.refreshGitSnapshot(props.project.id);
+};
+
+const handleLoadMore = async () => {
+  if (isLoadingMore.value || !snapshot.value?.hasMoreCommits) return;
+  isLoadingMore.value = true;
+  try {
+    await store.loadMoreGitCommits(props.project.id);
+  } finally {
+    isLoadingMore.value = false;
+  }
 };
 
 const scrollGitPanel = async (target: "files" | "graph", boundary: "top" | "bottom") => {
@@ -41,13 +52,73 @@ const refsForCommit = (refs?: string) =>
 
 const refClass = (refName: string) =>
   cn(
-    "max-w-40 truncate rounded px-1.5 py-0.5 text-[9px] font-bold",
+    "max-w-40 truncate rounded border px-1.5 py-0.5 text-[9px] font-bold",
     refName.startsWith("tag:")
-      ? "bg-secondary-fixed text-secondary"
+      ? "border-secondary/25 bg-secondary/10 text-secondary"
       : refName.includes("HEAD")
-        ? "bg-primary text-on-primary"
-        : "bg-status-running/10 text-status-running",
+        ? "border-primary/70 bg-primary/10 text-primary"
+        : /(?:^|\s|\/)main$/.test(refName)
+          ? "border-status-running/35 bg-status-running/10 text-status-running"
+          : "border-border-subtle bg-surface-container-low text-on-surface-variant",
   );
+
+const graphStrokeColors = ["#2eaf7d", "#f59e0b", "#0ea5e9", "#f87171", "#a78bfa", "#22c55e"];
+const graphColor = (lane: number) => graphStrokeColors[lane % graphStrokeColors.length];
+const isHeadCommit = (refs?: string) => Boolean(refs?.includes("HEAD"));
+const laneWidth = 14;
+const rowHeight = 28;
+
+const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2;
+
+const graphRows = computed(() => {
+  const lanes: string[] = [];
+  let maxLane = 0;
+
+  return commits.value.map((commit) => {
+    let lane = lanes.indexOf(commit.hash);
+    if (lane < 0) {
+      lane = lanes.findIndex((item) => !item);
+      if (lane < 0) lane = lanes.length;
+      lanes[lane] = commit.hash;
+    }
+
+    const parents = commit.parents || [];
+    const activeLanes = lanes
+      .map((hash, index) => ({ hash, index }))
+      .filter((item) => Boolean(item.hash));
+    const parentLanes = parents.map((parentHash, parentIndex) => {
+      let parentLane = parentIndex === 0 ? lane : lanes.indexOf(parentHash);
+      if (parentLane < 0) {
+        parentLane = lanes.findIndex((hash, index) => !hash && index !== lane);
+        if (parentLane < 0) parentLane = lanes.length;
+      }
+      return { hash: parentHash, lane: parentLane };
+    });
+
+    lanes[lane] = parentLanes[0]?.hash || "";
+    parentLanes.slice(1).forEach((parent) => {
+      lanes[parent.lane] = parent.hash;
+    });
+
+    while (lanes.length && !lanes[lanes.length - 1]) {
+      lanes.pop();
+    }
+    maxLane = Math.max(maxLane, lanes.length, lane + 1, ...parentLanes.map((parent) => parent.lane + 1));
+
+    return {
+      commit,
+      lane,
+      activeLanes,
+      nextActiveLanes: lanes
+        .map((hash, index) => ({ hash, index }))
+        .filter((item) => Boolean(item.hash)),
+      connections: parentLanes.length
+        ? parentLanes.filter((parent) => parent.lane !== lane).map((parent) => ({ from: lane, to: parent.lane }))
+        : [],
+      width: Math.max(42, maxLane * laneWidth + laneWidth),
+    };
+  });
+});
 
 const fileLabel = (status: string) => {
   if (status === "ADDED") return t.value.git.added;
@@ -83,12 +154,7 @@ const fileLabel = (status: string) => {
 
     <div class="grid grid-cols-1 items-start lg:grid-cols-[minmax(14rem,0.65fr)_minmax(0,1.35fr)] gap-3 min-h-0">
       <div
-        :class="
-          cn(
-            'bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col',
-            files.length > 0 ? 'h-[26rem] max-h-[56vh]' : 'self-start',
-          )
-        "
+        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col self-start"
       >
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
@@ -118,6 +184,7 @@ const fileLabel = (status: string) => {
         </div>
 
         <div
+          v-if="files.length > 0"
           ref="filesScrollRef"
           @wheel="handlePanelWheel($event, 'files')"
           class="min-h-0 flex-1 overflow-y-auto [overscroll-behavior-y:contain]"
@@ -163,12 +230,11 @@ const fileLabel = (status: string) => {
               </div>
             </div>
           </div>
-          <div v-if="files.length === 0" class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
         </div>
       </div>
 
       <div
-        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col h-[26rem] max-h-[56vh]"
+        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col h-[32rem] max-h-[68vh]"
       >
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
@@ -200,42 +266,89 @@ const fileLabel = (status: string) => {
           @wheel="handlePanelWheel($event, 'graph')"
           class="min-h-0 flex-1 overflow-auto bg-surface-container-lowest text-on-surface p-2 [overscroll-behavior-y:contain]"
         >
-          <div class="min-w-[40rem] space-y-0.5">
+          <div class="min-w-[44rem] space-y-0.5">
             <div
-              v-for="commit in commits"
-              :key="commit.hash"
-              class="flex items-start gap-3 rounded px-2 py-1.5 hover:bg-surface-container-high"
+              v-for="row in graphRows"
+              :key="row.commit.hash"
+              class="grid h-7 grid-cols-[4.25rem_4.25rem_minmax(0,1fr)_minmax(7rem,12rem)_minmax(5rem,8rem)_5.5rem] items-center gap-2 rounded px-2 text-xs hover:bg-surface-container-high"
             >
-              <div class="w-14 shrink-0 font-mono text-xs leading-4 whitespace-pre text-secondary select-none pt-0.5">
-                {{ commit.graph || "*" }}
+              <div class="h-7 overflow-hidden" :title="row.commit.graph || '*'">
+                <svg class="h-7 overflow-visible" :width="row.width" :height="rowHeight" :viewBox="`0 0 ${row.width} ${rowHeight}`">
+                  <line
+                    v-for="activeLane in row.activeLanes"
+                    :key="`v-${row.commit.hash}-${activeLane.index}`"
+                    :x1="laneCenter(activeLane.index)"
+                    y1="0"
+                    :x2="laneCenter(activeLane.index)"
+                    :y2="rowHeight / 2"
+                    :stroke="graphColor(activeLane.index)"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    opacity="0.78"
+                  />
+                  <line
+                    v-for="activeLane in row.nextActiveLanes"
+                    :key="`nv-${row.commit.hash}-${activeLane.index}`"
+                    :x1="laneCenter(activeLane.index)"
+                    :y1="rowHeight / 2"
+                    :x2="laneCenter(activeLane.index)"
+                    :y2="rowHeight"
+                    :stroke="graphColor(activeLane.index)"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    opacity="0.78"
+                  />
+                  <line
+                    v-for="connection in row.connections"
+                    :key="`c-${row.commit.hash}-${connection.from}-${connection.to}`"
+                    :x1="laneCenter(connection.from)"
+                    :y1="rowHeight / 2"
+                    :x2="laneCenter(connection.to)"
+                    :y2="rowHeight"
+                    :stroke="graphColor(connection.to)"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    opacity="0.95"
+                  />
+                  <circle
+                    :cx="laneCenter(row.lane)"
+                    :cy="rowHeight / 2"
+                    :r="isHeadCommit(row.commit.refs) ? 4.8 : 4.2"
+                    :fill="isHeadCommit(row.commit.refs) ? 'var(--color-surface)' : graphColor(row.lane)"
+                    :stroke="graphColor(row.lane)"
+                    :stroke-width="isHeadCommit(row.commit.refs) ? 2.4 : 1.4"
+                  />
+                </svg>
               </div>
 
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2 min-w-0 font-mono text-xs leading-5">
-                  <span class="text-primary font-bold shrink-0">{{ commit.hash }}</span>
-                  <span class="text-on-surface truncate" :title="commit.message">{{ commit.message }}</span>
-                </div>
-
-                <div v-if="refsForCommit(commit.refs).length" class="mt-1 flex flex-wrap gap-1">
-                  <span
-                    v-for="refName in refsForCommit(commit.refs)"
-                    :key="`${commit.hash}-${refName}`"
-                    :class="refClass(refName)"
-                    :title="refName"
-                  >
-                    {{ refName }}
-                  </span>
-                </div>
+              <span class="truncate font-mono font-semibold text-on-surface-variant" :title="row.commit.hash">{{
+                row.commit.hash
+              }}</span>
+              <span class="truncate text-on-surface" :title="row.commit.message">{{ row.commit.message }}</span>
+              <div class="flex min-w-0 gap-1 overflow-hidden">
+                <span
+                  v-for="refName in refsForCommit(row.commit.refs)"
+                  :key="`${row.commit.hash}-${refName}`"
+                  :class="refClass(refName)"
+                  :title="refName"
+                >
+                  {{ refName }}
+                </span>
               </div>
-
-              <div class="shrink-0 text-[10px] text-on-surface-variant whitespace-nowrap text-right leading-4 pt-0.5">
-                <div>{{ commit.date }}</div>
-                <div class="truncate max-w-40" :title="commit.author">{{ commit.author }}</div>
-                <div>{{ commit.hash }}</div>
-              </div>
+              <span class="truncate text-left text-on-surface-variant" :title="row.commit.author">{{ row.commit.author }}</span>
+              <span class="text-right text-[10px] tabular-nums text-on-surface-variant">{{ row.commit.date }}</span>
             </div>
 
             <div v-if="commits.length === 0" class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
+            <button
+              v-if="snapshot?.hasMoreCommits"
+              type="button"
+              class="mx-auto my-3 flex h-8 items-center rounded border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+              :disabled="isLoadingMore"
+              @click="handleLoadMore"
+            >
+              {{ isLoadingMore ? "加载中..." : "加载更多提交" }}
+            </button>
           </div>
         </div>
       </div>
