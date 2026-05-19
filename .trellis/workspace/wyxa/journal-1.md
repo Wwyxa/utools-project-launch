@@ -211,3 +211,72 @@ Refined the uTools plugin UI for compact window usage, simplified navigation, ad
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 终端偏好持久化与 Esc 返回修正
+
+**Date**: 2026-05-19
+**Task**: 终端偏好持久化与 Esc 返回修正
+**Branch**: `master`
+
+### Summary
+
+补齐默认终端偏好的独立持久化，新增详情页“在终端中打开”入口，并修正 Esc 在主界面与插件内的返回/关闭边界行为。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `44c6ec2` | feat: 终端偏好持久化、详情页终端入口与 Esc 返回优化 |
+| `08fbe0e` | docs: update frontend and backend specs for terminal and esc behavior |
+
+### Testing
+
+- [OK] `npm run lint`
+- [OK] `npm run build`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 7: 终端偏好持久化与 Esc 返回修正
+
+**Date**: 2026-05-19
+**Task**: 终端偏好持久化与 Esc 返回修正
+**Branch**: `master`
+
+### Summary
+
+补齐默认终端偏好独立持久化、详情页终端入口与 Esc 主界面关闭/插件内返回边界，并记录本次会话。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `44c6ec2` | (see git log) |
+| `08fbe0e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
