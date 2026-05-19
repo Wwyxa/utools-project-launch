@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { ChevronDown, X, Plus, Trash2, Save, WandSparkles, FolderOpen, ArrowUp, ArrowDown } from "lucide-vue-next";
+import { computed, ref } from "vue";
+import { ChevronDown, X, Plus, Trash2, Save, WandSparkles, FolderOpen, GripVertical } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import type { ProjectKind } from "../../types";
@@ -10,6 +10,7 @@ const t = useI18n();
 
 const form = computed(() => store.projectFormDraft);
 const title = computed(() => (store.projectFormMode === "edit" ? t.value.modal.editTitle : t.value.modal.createTitle));
+const draggedScriptId = ref<string | null>(null);
 
 const projectKinds: ProjectKind[] = ["node", "python", "go", "executable", "custom"];
 
@@ -47,6 +48,21 @@ const handleSubmit = async () => {
 
   await store.saveProjectForm();
 };
+
+const handleScriptDragStart = (event: DragEvent, scriptId: string) => {
+  draggedScriptId.value = scriptId;
+  event.dataTransfer?.setData("text/plain", scriptId);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+};
+
+const handleScriptDrop = (targetScriptId: string) => {
+  if (draggedScriptId.value) {
+    store.reorderScriptEntry(draggedScriptId.value, targetScriptId);
+  }
+  draggedScriptId.value = null;
+};
 </script>
 
 <template>
@@ -60,16 +76,19 @@ const handleSubmit = async () => {
         >
           <h2 class="text-lg font-bold text-on-surface">{{ title }}</h2>
           <button
+            type="button"
             @click="store.closeProjectForm"
             class="p-2 rounded-lg text-on-surface-variant hover:bg-surface-variant hover:text-on-surface"
+            :title="t.common.close"
+            :aria-label="t.common.close"
           >
             <X :size="18" />
           </button>
         </header>
 
-        <div class="themed-scrollbar bg-surface p-4 overflow-y-auto space-y-4 [color-scheme:inherit]">
-          <section class="grid grid-cols-1 md:grid-cols-12 gap-3">
-            <label class="space-y-1 md:col-span-4">
+        <div class="themed-scrollbar bg-surface p-5 overflow-y-auto space-y-6 [color-scheme:inherit]">
+          <section class="grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-4">
+            <label class="space-y-1.5 md:col-span-4">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.name }}</span>
               <input
                 :value="form.name"
@@ -77,7 +96,7 @@ const handleSubmit = async () => {
                 class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
               />
             </label>
-            <label class="space-y-1 md:col-span-8">
+            <label class="space-y-1.5 md:col-span-8">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.path }}</span>
               <div class="flex gap-2">
                 <input
@@ -109,7 +128,7 @@ const handleSubmit = async () => {
                 <WandSparkles :size="14" /> {{ store.projectFormInspecting ? "识别中" : "识别" }}
               </button>
             </div>
-            <label class="space-y-1 md:col-span-3">
+            <label class="space-y-1.5 md:col-span-3">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.type }}</span>
               <details class="relative group/dropdown">
                 <summary
@@ -144,7 +163,7 @@ const handleSubmit = async () => {
                 </div>
               </details>
             </label>
-            <label class="space-y-1 md:col-span-3">
+            <label class="space-y-1.5 md:col-span-3">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.branch }}</span>
               <input
                 :value="form.branch"
@@ -152,7 +171,7 @@ const handleSubmit = async () => {
                 class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
               />
             </label>
-            <label class="space-y-1 md:col-span-6">
+            <label class="space-y-1.5 md:col-span-6">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.description }}</span>
               <textarea
                 :value="form.description"
@@ -171,16 +190,37 @@ const handleSubmit = async () => {
                 <h3 class="text-sm font-bold text-on-surface">{{ t.modal.scripts }}</h3>
                 <p class="text-xs text-on-surface-variant">{{ t.modal.packageHint }}</p>
               </div>
-              <button @click="store.addScriptEntry" class="text-primary text-xs font-bold flex items-center gap-1.5">
+              <button
+                type="button"
+                @click="store.addScriptEntry"
+                class="text-primary text-xs font-bold flex items-center gap-1.5"
+              >
                 <Plus :size="14" /> {{ t.modal.addScript }}
               </button>
             </div>
             <div class="space-y-2">
               <div
-                v-for="(script, index) in form.scripts"
+                v-for="script in form.scripts"
                 :key="script.id"
-                class="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-lg border border-border-subtle bg-surface-container-low p-2"
+                @dragover.prevent
+                @drop="handleScriptDrop(script.id)"
+                @dragend="draggedScriptId = null"
+                :class="[
+                  'grid grid-cols-1 md:grid-cols-[auto_repeat(12,minmax(0,1fr))] gap-2 rounded-lg border border-border-subtle bg-surface-container-low p-2 transition-all',
+                  draggedScriptId === script.id ? 'opacity-55 ring-1 ring-primary/40' : '',
+                ]"
               >
+                <div
+                  class="hidden md:flex items-center justify-center text-on-surface-variant cursor-grab active:cursor-grabbing"
+                  draggable="true"
+                  @dragstart="handleScriptDragStart($event, script.id)"
+                  @dragend="draggedScriptId = null"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="`拖拽排序 ${script.name || t.modal.scriptName}`"
+                >
+                  <GripVertical :size="16" />
+                </div>
                 <input
                   :value="script.name"
                   @input="
@@ -203,8 +243,12 @@ const handleSubmit = async () => {
                     (event) => store.updateScriptEntry(script.id, { cwd: (event.target as HTMLInputElement).value })
                   "
                   :placeholder="t.modal.scriptCwd"
+                  list="project-cwd-suggestions"
                   class="md:col-span-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
                 />
+                <datalist id="project-cwd-suggestions">
+                  <option v-for="suggestion in store.projectFormCwdSuggestions" :key="suggestion" :value="suggestion" />
+                </datalist>
                 <input
                   :value="script.note"
                   @input="
@@ -216,25 +260,6 @@ const handleSubmit = async () => {
                 <div class="md:col-span-1 flex min-h-8 items-center justify-end gap-1">
                   <button
                     type="button"
-                    @click="store.moveScriptEntry(script.id, 'up')"
-                    :disabled="index === 0"
-                    class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all hover:border-primary/60 hover:bg-surface-container hover:text-primary active:scale-95 active:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-surface-container-low disabled:text-on-surface-variant disabled:opacity-40 disabled:shadow-none disabled:hover:border-border-subtle disabled:hover:bg-surface-container-low disabled:hover:text-on-surface-variant disabled:active:scale-100"
-                    :title="t.modal.moveScriptUp"
-                    :aria-label="t.modal.moveScriptUp"
-                  >
-                    <ArrowUp :size="14" />
-                  </button>
-                  <button
-                    type="button"
-                    @click="store.moveScriptEntry(script.id, 'down')"
-                    :disabled="index === form.scripts.length - 1"
-                    class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all hover:border-primary/60 hover:bg-surface-container hover:text-primary active:scale-95 active:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-surface-container-low disabled:text-on-surface-variant disabled:opacity-40 disabled:shadow-none disabled:hover:border-border-subtle disabled:hover:bg-surface-container-low disabled:hover:text-on-surface-variant disabled:active:scale-100"
-                    :title="t.modal.moveScriptDown"
-                    :aria-label="t.modal.moveScriptDown"
-                  >
-                    <ArrowDown :size="14" />
-                  </button>
-                  <button
                     @click="store.removeScriptEntry(script.id)"
                     class="rounded-md border border-border-subtle p-1.5 text-on-surface-variant hover:text-status-error hover:bg-surface"
                     :title="t.modal.removeScript"
@@ -251,6 +276,7 @@ const handleSubmit = async () => {
             <div class="flex items-center justify-between">
               <h3 class="text-sm font-bold text-on-surface">{{ t.modal.env }}</h3>
               <button
+                type="button"
                 @click="store.addEnvironmentEntry"
                 class="text-primary text-xs font-bold flex items-center gap-1.5"
               >
@@ -279,6 +305,7 @@ const handleSubmit = async () => {
                   class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
                 />
                 <button
+                  type="button"
                   @click="store.removeEnvironmentEntry(entry.id)"
                   class="rounded-lg border border-border-subtle px-3 text-on-surface-variant hover:text-status-error hover:bg-surface-container"
                   :title="t.common.delete"
@@ -303,12 +330,14 @@ const handleSubmit = async () => {
 
         <footer class="px-5 py-3 border-t border-border-subtle bg-surface-container-low flex justify-end gap-3">
           <button
+            type="button"
             @click="store.closeProjectForm"
             class="px-4 py-2 rounded-lg border border-border-subtle bg-surface text-sm font-semibold text-on-surface hover:bg-surface-variant"
           >
             {{ t.common.cancel }}
           </button>
           <button
+            type="button"
             @click="handleSubmit"
             class="px-4 py-2 rounded-lg bg-primary-container text-on-primary text-sm font-bold hover:bg-primary flex items-center gap-2"
           >

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Play, Square } from "lucide-vue-next";
+import { ListStart, Play, Square } from "lucide-vue-next";
 import { Project } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -16,6 +16,7 @@ const t = useI18n();
 
 const scripts = computed(() => props.project.scripts);
 const isUnavailable = computed(() => props.project.pathExists === false);
+const canRunAll = computed(() => scripts.value.some((script) => script.status !== "RUNNING" && script.command.trim()));
 
 const handleStart = async (scriptId: string) => {
   if (isUnavailable.value) {
@@ -30,10 +31,28 @@ const handleStop = async (scriptId: string) => {
   }
   await store.stopScript(props.project.id, scriptId);
 };
+
+const handleRunAll = async () => {
+  if (isUnavailable.value || !canRunAll.value) {
+    return;
+  }
+  await store.launchAllScripts(props.project.id);
+};
 </script>
 
 <template>
   <div class="flex flex-col gap-3 min-h-full">
+    <div v-if="scripts.length > 0" class="flex justify-end">
+      <button
+        type="button"
+        @click="handleRunAll"
+        :disabled="isUnavailable || !canRunAll"
+        class="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary-container px-3 py-1.5 text-xs font-bold text-on-primary shadow-sm transition-all hover:bg-primary disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-surface-container disabled:text-on-surface-variant disabled:shadow-none"
+      >
+        <ListStart :size="14" /> {{ t.scripts.startAll }}
+      </button>
+    </div>
+
     <div
       v-if="scripts.length === 0"
       class="border border-dashed border-border-subtle rounded-lg p-6 text-sm text-on-surface-variant bg-surface"
@@ -76,6 +95,7 @@ const handleStop = async (scriptId: string) => {
         <div class="flex items-center gap-2 justify-end shrink-0">
           <button
             v-if="script.status === 'RUNNING'"
+            type="button"
             @click="handleStop(script.id)"
             :disabled="isUnavailable"
             class="bg-status-error text-white text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90 disabled:opacity-50"
@@ -84,6 +104,7 @@ const handleStop = async (scriptId: string) => {
           </button>
           <button
             v-else
+            type="button"
             @click="handleStart(script.id)"
             :disabled="isUnavailable || !script.command.trim()"
             class="bg-primary text-on-primary text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90 disabled:opacity-50"

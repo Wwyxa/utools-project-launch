@@ -11,6 +11,7 @@ const t = useI18n();
 
 const searchQuery = ref("");
 const isSortingProjects = ref(false);
+const draggingProjectId = ref<string | null>(null);
 const projects = computed(() => {
   const source = store.availableProjects;
   if (!searchQuery.value) return source;
@@ -36,24 +37,46 @@ const handleRefreshAll = () => {
 const toggleSortingProjects = () => {
   if (hasVisibleProjects.value) {
     isSortingProjects.value = !isSortingProjects.value;
+    draggingProjectId.value = null;
   }
 };
 
-const getProjectOrderState = (projectId: string, source: { id: string }[]) => {
-  const index = source.findIndex((project) => project.id === projectId);
-  return {
-    canMoveTop: index > 0,
-    canMoveUp: index > 0,
-    canMoveDown: index >= 0 && index < source.length - 1,
-  };
+const handleProjectDragStart = (event: DragEvent, projectId: string) => {
+  if (!isSortingProjects.value || !event.dataTransfer) {
+    return;
+  }
+
+  draggingProjectId.value = projectId;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", projectId);
 };
 
-const handleMoveProject = (projectId: string, direction: "top" | "up" | "down", source: { id: string }[]) => {
-  void store.moveProject(
+const handleProjectDragOver = (event: DragEvent) => {
+  if (isSortingProjects.value && draggingProjectId.value) {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+  }
+};
+
+const handleProjectDrop = (event: DragEvent, targetProjectId: string, source: { id: string }[]) => {
+  event.preventDefault();
+  const projectId = draggingProjectId.value || event.dataTransfer?.getData("text/plain") || "";
+  draggingProjectId.value = null;
+  if (!projectId || projectId === targetProjectId) {
+    return;
+  }
+
+  void store.reorderProject(
     projectId,
-    direction,
+    targetProjectId,
     source.map((project) => project.id),
   );
+};
+
+const handleProjectDragEnd = () => {
+  draggingProjectId.value = null;
 };
 </script>
 
@@ -134,15 +157,19 @@ const handleMoveProject = (projectId: string, direction: "top" | "up" | "down", 
       </button>
     </div>
 
-    <div v-else class="grid grid-cols-1 items-start md:grid-cols-2 lg:grid-cols-3 gap-3 px-6 pt-4 pb-6">
+    <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(15.5rem,1fr))] items-stretch gap-2.5 px-5 pt-3 pb-5">
       <ProjectCard
         v-for="project in projects"
         :key="project.id"
         :project="project"
         :is-sorting="isSortingProjects"
-        v-bind="getProjectOrderState(project.id, projects)"
+        :is-dragging="draggingProjectId === project.id"
+        :draggable="isSortingProjects"
+        @dragstart="handleProjectDragStart($event, project.id)"
+        @dragover="handleProjectDragOver"
+        @drop="handleProjectDrop($event, project.id, projects)"
+        @dragend="handleProjectDragEnd"
         @select="store.setSelectedProject"
-        @move="(projectId, direction) => handleMoveProject(projectId, direction, projects)"
       />
     </div>
 
@@ -156,15 +183,21 @@ const handleMoveProject = (projectId: string, direction: "top" | "up" | "down", 
         <span>{{ t.dashboard.unavailableProjects }} ({{ unavailableProjects.length }})</span>
         <ChevronDown :size="16" class="text-on-surface-variant" />
       </summary>
-      <div class="grid grid-cols-1 items-start md:grid-cols-2 lg:grid-cols-3 gap-3 border-t border-border-subtle p-3">
+      <div
+        class="grid grid-cols-[repeat(auto-fill,minmax(15.5rem,1fr))] items-stretch gap-2.5 border-t border-border-subtle p-3"
+      >
         <ProjectCard
           v-for="project in unavailableProjects"
           :key="project.id"
           :project="project"
           :is-sorting="isSortingProjects"
-          v-bind="getProjectOrderState(project.id, unavailableProjects)"
+          :is-dragging="draggingProjectId === project.id"
+          :draggable="isSortingProjects"
+          @dragstart="handleProjectDragStart($event, project.id)"
+          @dragover="handleProjectDragOver"
+          @drop="handleProjectDrop($event, project.id, unavailableProjects)"
+          @dragend="handleProjectDragEnd"
           @select="store.openEditProjectForm"
-          @move="(projectId, direction) => handleMoveProject(projectId, direction, unavailableProjects)"
         />
       </div>
     </details>

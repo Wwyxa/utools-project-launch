@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import {
   Play,
   Square,
@@ -9,9 +9,8 @@ import {
   Pencil,
   TerminalSquare,
   Trash2,
-  ArrowUpToLine,
-  ArrowUp,
-  ArrowDown,
+  ChevronDown,
+  GripVertical,
 } from "lucide-vue-next";
 import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
@@ -21,18 +20,17 @@ import { useI18n } from "../../lib/i18n";
 const props = defineProps<{
   project: Project;
   isSorting?: boolean;
-  canMoveTop?: boolean;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
+  isDragging?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "select", id: string): void;
-  (e: "move", id: string, direction: "top" | "up" | "down"): void;
 }>();
 
 const store = useStore();
 const t = useI18n();
+const moreScriptsOpen = ref(false);
+const moreScriptsRef = ref<HTMLElement | null>(null);
 
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
@@ -40,13 +38,61 @@ const isUnavailable = computed(() => props.project.pathExists === false);
 const runningScripts = computed(() => props.project.scripts.filter((script) => script.status === "RUNNING"));
 const visibleScripts = computed(() => {
   const runningIds = new Set(runningScripts.value.map((script) => script.id));
-  return [...runningScripts.value, ...props.project.scripts.filter((script) => !runningIds.has(script.id))].slice(0, 3);
+  const prioritizedScripts = [
+    ...runningScripts.value,
+    ...props.project.scripts.filter((script) => !runningIds.has(script.id)),
+  ];
+  const exposedScripts = [];
+  const maxVisibleCount = prioritizedScripts.some((script) => script.name.length > 14) ? 1 : 2;
+
+  for (const script of prioritizedScripts) {
+    if (exposedScripts.length >= maxVisibleCount) {
+      break;
+    }
+    exposedScripts.push(script);
+  }
+
+  return exposedScripts;
 });
 const hiddenRunningCount = computed(
   () =>
     runningScripts.value.filter((script) => !visibleScripts.value.some((visible) => visible.id === script.id)).length,
 );
 const hiddenScriptCount = computed(() => props.project.scripts.length - visibleScripts.value.length);
+const hiddenScripts = computed(() => {
+  const visibleIds = new Set(visibleScripts.value.map((script) => script.id));
+  return props.project.scripts.filter((script) => !visibleIds.has(script.id));
+});
+const stackMeta = computed(() => {
+  const envText = Object.keys(props.project.env || {})
+    .join(" ")
+    .toLowerCase();
+  const scriptText = props.project.scripts
+    .map((script) => `${script.command} ${script.note || ""}`)
+    .join(" ")
+    .toLowerCase();
+  if (props.project.kind === "python") {
+    const envHint =
+      scriptText.includes("uv") || envText.includes("uv")
+        ? "uv"
+        : scriptText.includes("conda") || envText.includes("conda")
+          ? "conda"
+          : "";
+    return envHint ? `Python | ${envHint}` : "Python";
+  }
+  if (props.project.kind === "node") {
+    return "Node.js";
+  }
+  return props.project.type || t.value.projectKinds[props.project.kind];
+});
+const displayPath = computed(() => {
+  const normalizedPath = props.project.path.replace(/\\/g, "/");
+  const segments = normalizedPath.split("/").filter(Boolean);
+  if (segments.length <= 2) {
+    return normalizedPath;
+  }
+  return `.../${segments.slice(-2).join("/")}`;
+});
 
 const handleCardSelect = () => {
   if (props.isSorting) {
@@ -87,19 +133,49 @@ const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: s
   }
   if (status === "RUNNING") {
     await store.stopScript(props.project.id, scriptId);
+    moreScriptsOpen.value = false;
     return;
   }
   await store.launchScript(props.project.id, scriptId);
+  moreScriptsOpen.value = false;
 };
+
+const handleDocumentPointerDown = (event: PointerEvent) => {
+  if (!moreScriptsRef.value?.contains(event.target as Node)) {
+    moreScriptsOpen.value = false;
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    document.removeEventListener("keydown", handleDocumentKeyDown);
+  }
+};
+
+const handleDocumentKeyDown = (event: KeyboardEvent) => {
+  if (event.key === "Escape") {
+    moreScriptsOpen.value = false;
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    document.removeEventListener("keydown", handleDocumentKeyDown);
+  }
+};
+
+const toggleMoreScripts = (event: MouseEvent) => {
+  event.stopPropagation();
+  moreScriptsOpen.value = !moreScriptsOpen.value;
+  if (moreScriptsOpen.value) {
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+  } else {
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    document.removeEventListener("keydown", handleDocumentKeyDown);
+  }
+};
+
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", handleDocumentPointerDown);
+  document.removeEventListener("keydown", handleDocumentKeyDown);
+});
 
 const handleDelete = (event: MouseEvent) => {
   event.stopPropagation();
   store.requestDeleteProject(props.project.id);
-};
-
-const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
-  event.stopPropagation();
-  emit("move", props.project.id, direction);
 };
 </script>
 
@@ -108,63 +184,67 @@ const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
     @click="handleCardSelect"
     :class="
       cn(
-        'group relative self-start border border-border-subtle rounded-lg bg-surface hover:bg-surface-container transition-all overflow-hidden',
-        isSorting ? 'cursor-default ring-1 ring-primary/30 border-primary/60' : 'cursor-pointer',
+        'group relative self-stretch border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
+        isRunning && 'border-status-running/45 shadow-[0_0_0_1px_rgba(46,175,125,0.10)]',
+        isDragging && 'opacity-55 scale-[0.99]',
+        isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
       )
     "
   >
-    <div class="p-3">
+    <div class="p-2.5 min-h-36 h-full flex flex-col">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2 min-w-0">
+          <div class="flex items-center gap-1.5 min-w-0">
             <h3 class="min-w-0 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
               {{ project.name }}
             </h3>
             <span
-              class="shrink-0 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-surface-variant text-on-surface-variant"
+              class="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border border-border-subtle bg-surface-container-high text-on-surface-variant"
             >
-              {{ t.projectKinds[project.kind] }}
+              {{ stackMeta }}
+            </span>
+            <span
+              v-if="isRunning"
+              class="inline-flex shrink-0 items-center gap-1 text-[9px] font-bold uppercase text-status-running"
+            >
+              <span class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse" />
+              Running
             </span>
           </div>
-          <p class="font-mono text-[11px] text-on-surface-variant mt-1 max-w-full truncate">{{ project.path }}</p>
         </div>
 
+        <GripVertical v-if="isSorting" :size="16" class="shrink-0 text-on-surface-variant/55" />
+
         <div
+          v-if="isError && !isSorting"
           :class="
             cn(
               'shrink-0 inline-flex max-w-[5rem] items-center gap-1 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap',
-              isRunning
-                ? 'bg-status-running/10 text-status-running'
-                : isError
-                  ? 'bg-status-error/10 text-status-error'
-                  : 'bg-surface-container text-status-stopped border border-border-subtle',
+              'bg-status-error/10 text-status-error',
             )
           "
         >
-          <span
-            :class="
-              cn(
-                'w-1.5 h-1.5 rounded-full',
-                isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'bg-status-stopped',
-              )
-            "
-          />
+          <span class="w-1.5 h-1.5 rounded-full bg-status-error" />
           <span class="truncate">
-            {{
-              isRunning ? t.common.running : project.status === ProjectStatus.ERROR ? t.common.error : t.common.stopped
-            }}
+            {{ t.common.error }}
           </span>
         </div>
       </div>
 
-      <p v-if="project.description" class="text-xs text-on-surface-variant mt-2 line-clamp-1">
+      <p v-if="project.description" class="text-[11px] text-on-surface-variant/85 mt-1 line-clamp-1">
         {{ project.description }}
       </p>
-      <p v-if="isUnavailable" class="text-xs text-status-warning mt-2 line-clamp-1">
+      <p class="font-mono text-[10px] text-on-surface-variant/75 mt-0.5 max-w-full truncate" :title="project.path">
+        {{ displayPath }}
+      </p>
+      <p v-if="isUnavailable" class="text-[11px] text-status-warning mt-1 line-clamp-1">
         {{ project.unavailableReason || "当前设备无法访问该路径" }}
       </p>
 
-      <div v-if="visibleScripts.length > 0 || hiddenScriptCount > 0" class="flex gap-1 mt-2 flex-wrap">
+      <div
+        v-if="visibleScripts.length > 0 || hiddenScriptCount > 0"
+        class="flex min-w-0 items-center justify-start gap-1.5 mt-3 mb-2 flex-nowrap overflow-visible"
+      >
         <button
           v-for="script in visibleScripts"
           :key="script.id"
@@ -173,7 +253,7 @@ const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
           :disabled="isUnavailable"
           :class="
             cn(
-              'inline-flex max-w-[9rem] items-center gap-1 text-[10px] font-bold px-2 py-1 rounded border truncate transition-colors',
+              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
               script.status === 'RUNNING'
                 ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
                 : 'text-on-surface-variant bg-surface-variant border-transparent hover:text-on-surface hover:bg-surface-container-high',
@@ -182,23 +262,60 @@ const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
         >
           <Square v-if="script.status === 'RUNNING'" :size="8" class="shrink-0" fill="currentColor" />
           <Play v-else :size="9" class="shrink-0" fill="currentColor" />
-          <span class="truncate">{{ script.name }}</span>
+          <span>{{ script.name }}</span>
         </button>
-        <span
-          v-if="hiddenScriptCount > 0"
-          class="text-[10px] font-bold text-on-surface-variant bg-surface-variant px-2 py-1 rounded"
-          :title="
-            hiddenRunningCount > 0
-              ? t.projectActions.moreRunning.replace('{count}', String(hiddenRunningCount))
-              : undefined
-          "
-        >
-          +{{ hiddenScriptCount }}
-        </span>
+        <div v-if="hiddenScriptCount > 0" ref="moreScriptsRef" class="relative shrink-0">
+          <button
+            type="button"
+            @click="toggleMoreScripts"
+            class="inline-flex flex-none items-center justify-center whitespace-nowrap text-[10px] font-bold text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded border border-transparent transition-colors hover:text-on-surface hover:bg-surface-container-high"
+            aria-haspopup="menu"
+            :aria-expanded="moreScriptsOpen"
+            :aria-label="`显示 ${hiddenScriptCount} 个隐藏脚本`"
+            :title="
+              hiddenRunningCount > 0
+                ? t.projectActions.moreRunning.replace('{count}', String(hiddenRunningCount))
+                : undefined
+            "
+          >
+            <ChevronDown :size="10" />
+          </button>
+          <div
+            v-if="moreScriptsOpen"
+            class="absolute right-0 top-[calc(100%+0.25rem)] z-30 w-44 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-xl"
+            @click.stop
+            role="menu"
+          >
+            <button
+              v-for="script in hiddenScripts"
+              :key="script.id"
+              type="button"
+              @click="handleScriptToggle($event, script.id, script.status)"
+              :disabled="isUnavailable"
+              class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface disabled:opacity-50"
+              :title="script.command"
+              :aria-label="
+                script.status === 'RUNNING'
+                  ? `${t.scripts.stopScript}: ${script.name}`
+                  : `${t.scripts.startScript}: ${script.name}`
+              "
+              role="menuitem"
+            >
+              <Square
+                v-if="script.status === 'RUNNING'"
+                :size="9"
+                class="shrink-0 text-status-running"
+                fill="currentColor"
+              />
+              <Play v-else :size="10" class="shrink-0" fill="currentColor" />
+              <span class="truncate">{{ script.name }}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div class="mt-2 flex items-center justify-between gap-2 border-t border-border-subtle pt-2">
-        <div class="flex items-center gap-1.5 text-xs text-on-surface-variant min-w-0">
+      <div class="mt-auto flex items-center gap-2 border-t border-border-subtle pt-2">
+        <div class="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-on-surface-variant">
           <span v-if="isError" class="flex items-center gap-1 text-status-error truncate">
             <AlertTriangle :size="12" class="shrink-0" /> {{ project.git?.statusText || "Exit code 1" }}
           </span>
@@ -206,40 +323,22 @@ const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
             <Clock :size="12" class="shrink-0" /> {{ project.lastUpdated || project.git?.lastRefreshedAt || "--" }}
           </span>
         </div>
-        <div class="shrink-0 flex items-center gap-0.5" @click.stop>
-          <template v-if="isSorting">
-            <button
-              @click.stop="handleMove($event, 'top')"
-              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-all active:scale-95 active:bg-surface-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-on-surface-variant disabled:active:scale-100 disabled:focus-visible:ring-0"
-              :disabled="!canMoveTop"
-              :title="t.projectActions.moveToTop"
-              :aria-label="t.projectActions.moveToTop"
-            >
-              <ArrowUpToLine :size="15" />
-            </button>
-            <button
-              @click.stop="handleMove($event, 'up')"
-              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-all active:scale-95 active:bg-surface-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-on-surface-variant disabled:active:scale-100 disabled:focus-visible:ring-0"
-              :disabled="!canMoveUp"
-              :title="t.projectActions.moveUp"
-              :aria-label="t.projectActions.moveUp"
-            >
-              <ArrowUp :size="15" />
-            </button>
-            <button
-              @click.stop="handleMove($event, 'down')"
-              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-all active:scale-95 active:bg-surface-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-on-surface-variant disabled:active:scale-100 disabled:focus-visible:ring-0"
-              :disabled="!canMoveDown"
-              :title="t.projectActions.moveDown"
-              :aria-label="t.projectActions.moveDown"
-            >
-              <ArrowDown :size="15" />
-            </button>
-          </template>
+        <div
+          :class="
+            cn(
+              'flex shrink-0 items-center gap-0.5 transition-all',
+              isSorting
+                ? 'opacity-100'
+                : 'opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:pointer-events-auto',
+            )
+          "
+          @click.stop
+        >
+          <template v-if="isSorting" />
           <template v-else>
             <button
               @click.stop="handleOpenTerminal"
-              class="p-1 text-on-surface-variant hover:text-status-running rounded hover:bg-surface transition-colors"
+              class="p-1 text-on-surface-variant/70 hover:text-status-running rounded hover:bg-on-surface/5 transition-colors"
               :disabled="isUnavailable"
               :title="t.projectActions.openInTerminal"
               :aria-label="t.projectActions.openInTerminal"
@@ -248,7 +347,7 @@ const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
             </button>
             <button
               @click.stop="handleOpenFolder"
-              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface transition-colors"
+              class="p-1 text-on-surface-variant/70 hover:text-on-surface rounded hover:bg-on-surface/5 transition-colors"
               :disabled="isUnavailable"
               :title="t.common.openFolder"
               :aria-label="t.common.openFolder"
@@ -257,7 +356,7 @@ const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
             </button>
             <button
               @click.stop="handleEdit"
-              class="p-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface transition-colors"
+              class="p-1 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
               :title="t.common.edit"
               :aria-label="t.common.edit"
             >
@@ -265,7 +364,7 @@ const handleMove = (event: MouseEvent, direction: "top" | "up" | "down") => {
             </button>
             <button
               @click.stop="handleDelete"
-              class="p-1 text-on-surface-variant hover:text-status-error rounded hover:bg-surface transition-colors"
+              class="p-1 text-on-surface-variant/70 hover:text-status-error rounded hover:bg-on-surface/5 transition-colors"
               :title="t.projectActions.deleteProject"
               :aria-label="t.projectActions.deleteProject"
             >

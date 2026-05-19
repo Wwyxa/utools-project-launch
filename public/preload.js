@@ -11,7 +11,7 @@ const storageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
-const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api"];
+const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api", "src"];
 const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 
 function createLegacyWindowsDecoder() {
@@ -637,6 +637,32 @@ function pathExists(projectPath) {
   }
 }
 
+function listProjectSubdirectories(projectPath) {
+  const resolvedPath = expandPath(projectPath);
+  const preferred = new Set(commonProjectDirs);
+
+  try {
+    if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isDirectory()) {
+      return ["."];
+    }
+
+    const childDirectories = fs
+      .readdirSync(resolvedPath, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => entry.name);
+    return Array.from(new Set([".", ...commonProjectDirs.slice(1), ...childDirectories])).sort((left, right) => {
+      const leftPreferred = preferred.has(left);
+      const rightPreferred = preferred.has(right);
+      if (leftPreferred !== rightPreferred) {
+        return leftPreferred ? -1 : 1;
+      }
+      return left.localeCompare(right);
+    });
+  } catch (error) {
+    return ["."];
+  }
+}
+
 function inspectProjectPath(projectPath) {
   const resolvedPath = expandPath(projectPath);
   const exists = pathExists(projectPath);
@@ -944,6 +970,7 @@ window.projectBridge = {
   exportProjects,
   importProjects,
   readPackageScripts,
+  listProjectSubdirectories,
   readGitSnapshot,
   openTerminal,
   runCommand,

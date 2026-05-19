@@ -387,6 +387,7 @@ export const useStore = defineStore("app", {
     projectStorageMessage: "",
     projectFormInspectionMessage: "",
     projectFormInspecting: false,
+    projectFormCwdSuggestions: ["."] as string[],
     projectFormOpen: false,
     projectFormMode: "create" as "create" | "edit",
     projectFormDraft: createBlankProjectForm() as ProjectFormValue,
@@ -526,10 +527,32 @@ export const useStore = defineStore("app", {
         this.activeTab = "projects";
       }
     },
+    openProjectByName(query: string) {
+      const normalizedQuery = query.trim().toLowerCase();
+      if (!normalizedQuery) {
+        return false;
+      }
+
+      const matchedProject =
+        this.projects.find((project) => project.name.toLowerCase() === normalizedQuery) ||
+        this.projects.find((project) => project.name.toLowerCase().includes(normalizedQuery));
+      if (!matchedProject) {
+        return false;
+      }
+
+      this.activeTab = "projects";
+      if (matchedProject.pathExists === false) {
+        this.openEditProjectForm(matchedProject.id);
+      } else {
+        this.selectedProjectId = matchedProject.id;
+      }
+      return true;
+    },
     openCreateProjectForm() {
       this.projectFormMode = "create";
       this.projectFormDraft = createBlankProjectForm();
       this.projectFormInspectionMessage = "";
+      this.projectFormCwdSuggestions = ["."];
       this.projectFormOpen = true;
     },
     openEditProjectForm(projectId: string) {
@@ -542,12 +565,14 @@ export const useStore = defineStore("app", {
       this.projectFormDraft = formFromProject(project);
       this.projectFormInspectionMessage =
         project.pathExists === false ? project.unavailableReason || "当前路径不可用" : "";
+      void this.refreshProjectFormCwdSuggestions(project.path);
       this.projectFormOpen = true;
     },
     closeProjectForm() {
       this.projectFormOpen = false;
       this.projectFormDraft = createBlankProjectForm();
       this.projectFormInspectionMessage = "";
+      this.projectFormCwdSuggestions = ["."];
     },
     updateProjectForm(patch: Partial<ProjectFormValue>) {
       this.projectFormDraft = {
@@ -583,10 +608,25 @@ export const useStore = defineStore("app", {
           branch: result.branch || this.projectFormDraft.branch,
           scripts: scripts.length > 0 ? scripts : this.projectFormDraft.scripts,
         };
+        await this.refreshProjectFormCwdSuggestions(projectPath);
         this.projectFormInspectionMessage =
           result.message || (result.pathExists ? "已识别路径信息" : "当前路径不可用，可保存后重新定位");
       } finally {
         this.projectFormInspecting = false;
+      }
+    },
+    async refreshProjectFormCwdSuggestions(projectPath = this.projectFormDraft.path) {
+      const normalizedPath = projectPath.trim();
+      if (!normalizedPath) {
+        this.projectFormCwdSuggestions = ["."];
+        return;
+      }
+
+      try {
+        const suggestions = await bridge.listProjectSubdirectories(normalizedPath);
+        this.projectFormCwdSuggestions = Array.from(new Set([".", ...suggestions.filter(Boolean)]));
+      } catch (error) {
+        this.projectFormCwdSuggestions = ["."];
       }
     },
     async pickProjectPath() {
@@ -644,6 +684,22 @@ export const useStore = defineStore("app", {
       }
 
       const scripts = [...this.projectFormDraft.scripts];
+      const [script] = scripts.splice(currentIndex, 1);
+      scripts.splice(targetIndex, 0, script);
+      this.projectFormDraft.scripts = scripts;
+    },
+    reorderScriptEntry(scriptId: string, targetScriptId: string) {
+      if (scriptId === targetScriptId) {
+        return;
+      }
+
+      const scripts = [...this.projectFormDraft.scripts];
+      const currentIndex = scripts.findIndex((item) => item.id === scriptId);
+      const targetIndex = scripts.findIndex((item) => item.id === targetScriptId);
+      if (currentIndex < 0 || targetIndex < 0) {
+        return;
+      }
+
       const [script] = scripts.splice(currentIndex, 1);
       scripts.splice(targetIndex, 0, script);
       this.projectFormDraft.scripts = scripts;
@@ -840,6 +896,61 @@ export const useStore = defineStore("app", {
       await this.persistProjects();
       return true;
     },
+    async reorderProject(projectId: string, targetProjectId: string, scopeProjectIds?: string[]) {
+      if (projectId === targetProjectId) {
+        return false;
+      }
+
+      const project = this.projects.find((item) => item.id === projectId);
+      const targetProject = this.projects.find((item) => item.id === targetProjectId);
+      if (!project || !targetProject) {
+        return false;
+      }
+
+      const isUnavailable = project.pathExists === false;
+      const isSameSection = (item: Project) => (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+      if (!isSameSection(targetProject)) {
+        return false;
+      }
+
+      const sectionProjects = this.projects.filter(isSameSection);
+      const sectionProjectIds = new Set(sectionProjects.map((item) => item.id));
+      const scopedSectionProjects = (scopeProjectIds || [])
+        .filter((id) => sectionProjectIds.has(id))
+        .map((id) => sectionProjects.find((item) => item.id === id))
+        .filter((item): item is Project => Boolean(item));
+      const activeSectionProjects = scopedSectionProjects.length > 0 ? scopedSectionProjects : sectionProjects;
+      if (!activeSectionProjects.some((item) => item.id === projectId)) {
+        return false;
+      }
+      if (!activeSectionProjects.some((item) => item.id === targetProjectId)) {
+        return false;
+      }
+
+      const reorderedSectionProjects = [...sectionProjects];
+      const movedProjectIndex = reorderedSectionProjects.findIndex((item) => item.id === projectId);
+      const targetIndex = reorderedSectionProjects.findIndex((item) => item.id === targetProjectId);
+      if (movedProjectIndex < 0 || targetIndex < 0) {
+        return false;
+      }
+
+      const [movedProject] = reorderedSectionProjects.splice(movedProjectIndex, 1);
+      const nextTargetIndex = reorderedSectionProjects.findIndex((item) => item.id === targetProjectId);
+      reorderedSectionProjects.splice(nextTargetIndex, 0, movedProject);
+
+      let sectionIndex = 0;
+      this.projects = this.projects.map((item) => {
+        if (!isSameSection(item)) {
+          return item;
+        }
+
+        const nextProject = reorderedSectionProjects[sectionIndex];
+        sectionIndex += 1;
+        return nextProject;
+      });
+      await this.persistProjects();
+      return true;
+    },
     async refreshGitSnapshot(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {
@@ -881,6 +992,24 @@ export const useStore = defineStore("app", {
       project.status = ProjectStatus.RUNNING;
       project.lastUpdated = new Date().toLocaleString();
       return result;
+    },
+    async launchAllScripts(projectId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return [];
+      }
+
+      const launchableScripts = project.scripts.filter(
+        (script) => script.status !== "RUNNING" && script.command.trim(),
+      );
+      const results = [];
+      for (const script of launchableScripts) {
+        const result = await this.launchScript(projectId, script.id);
+        if (result) {
+          results.push(result);
+        }
+      }
+      return results;
     },
     async stopScript(projectId: string, scriptId: string) {
       const project = this.projects.find((item) => item.id === projectId);

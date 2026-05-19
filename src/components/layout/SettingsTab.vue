@@ -25,6 +25,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
   <div class="p-6 max-w-5xl">
     <header class="mb-5 flex items-center gap-3">
       <button
+        type="button"
         @click="store.setActiveTab('projects')"
         class="p-2 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
         :title="t.common.back"
@@ -43,6 +44,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
         </div>
         <div class="grid grid-cols-2 gap-2">
           <button
+            type="button"
             @click="store.setLocale('zh-CN')"
             :class="[
               'px-3 py-2 rounded-lg text-sm font-medium transition-all',
@@ -54,6 +56,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             简体中文
           </button>
           <button
+            type="button"
             @click="store.setLocale('en-US')"
             :class="[
               'px-3 py-2 rounded-lg text-sm font-medium transition-all',
@@ -74,6 +77,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
         </div>
         <div class="grid grid-cols-3 gap-2">
           <button
+            type="button"
             @click="store.setTheme('light')"
             :class="[
               'flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
@@ -86,6 +90,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             {{ t.common.themeLight }}
           </button>
           <button
+            type="button"
             @click="store.setTheme('dark')"
             :class="[
               'flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
@@ -98,6 +103,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             {{ t.common.themeDark }}
           </button>
           <button
+            type="button"
             @click="store.setTheme('auto')"
             :class="[
               'flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
@@ -122,6 +128,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             <button
               v-for="option in terminalOptions"
               :key="option"
+              type="button"
               @click="store.setDefaultTerminal(option)"
               :class="[
                 'px-3 py-2 rounded-lg text-left text-sm font-medium transition-all',
@@ -148,7 +155,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
                   ? t.settings.customCommand
                   : t.settings.customCommandDisabled
               "
-              class="w-full rounded-lg border border-border-subtle bg-surface-container-lowest px-3 py-2 text-sm transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant disabled:opacity-70 disabled:placeholder:text-on-surface-variant/60"
+              class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant disabled:opacity-70 disabled:placeholder:text-on-surface-variant/60"
             />
             <p class="mt-2 text-xs text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
             <p v-if="store.terminalPreferences.kind === 'builtin'" class="mt-1 text-xs text-on-surface-variant">
@@ -170,6 +177,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
         </div>
         <div class="grid gap-2 sm:grid-cols-2">
           <button
+            type="button"
             @click="store.importProjectConfig"
             class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
           >
@@ -177,6 +185,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             {{ t.settings.importProjectConfig }}
           </button>
           <button
+            type="button"
             @click="store.exportProjectConfig"
             class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
           >

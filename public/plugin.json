@@ -10,6 +10,18 @@
       "code": "project-manager",
       "explain": "打开项目管理器",
       "cmds": ["PM", "project manager"]
+    },
+    {
+      "code": "project-direct",
+      "explain": "按项目名称打开启动区",
+      "cmds": [
+        {
+          "type": "regex",
+          "label": "打开项目",
+          "match": "/^.+$/",
+          "minLength": 1
+        }
+      ]
     }
   ]
 }

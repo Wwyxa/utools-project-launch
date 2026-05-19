@@ -149,6 +149,9 @@ const fallbackBridge: ProjectBridge = {
   async readPackageScripts(): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }> {
     return { scripts: [], packagePath: null };
   },
+  async listProjectSubdirectories(): Promise<string[]> {
+    return [".", "frontend", "backend", "client", "server", "api", "src"];
+  },
   async readGitSnapshot(): Promise<ProjectBridgeGitSnapshot> {
     return emptyGitSnapshot();
   },

@@ -14,6 +14,26 @@ const selectedProject = computed(() => store.selectedProject);
 const activeTab = computed(() => store.activeTab);
 const theme = computed(() => store.theme);
 
+const extractPluginSearchText = (action: unknown): string => {
+  if (!action || typeof action !== "object") {
+    return "";
+  }
+
+  const payload = action as Record<string, unknown>;
+  const values = [payload.payload, payload.text, payload.keyword, payload.cmd, payload.option];
+  return values.find((value): value is string => typeof value === "string")?.trim() || "";
+};
+
+const handlePluginEnter = async (action?: unknown) => {
+  const searchText = extractPluginSearchText(action);
+  if (!store.projectsLoaded) {
+    await store.loadProjects();
+  }
+  if (searchText) {
+    store.openProjectByName(searchText);
+  }
+};
+
 const handleBridgeEvent = (event: Event) => {
   const customEvent = event as CustomEvent<ProjectBridgeEvent>;
   store.handleBridgeEvent(customEvent.detail);
@@ -88,6 +108,9 @@ watch(theme, updateTheme);
 onMounted(() => {
   updateTheme();
   void store.loadProjects();
+  window.utools?.onPluginEnter?.((action) => {
+    void handlePluginEnter(action);
+  });
   window.addEventListener("project-bridge-event", handleBridgeEvent);
   window.addEventListener("keydown", handleGlobalEscape, true);
   window.addEventListener("keyup", handleGlobalEscape, true);

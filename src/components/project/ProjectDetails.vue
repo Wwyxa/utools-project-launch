@@ -35,6 +35,7 @@ const statusLabel = computed(() => {
   return t.value.common.stopped;
 });
 const isUnavailable = computed(() => props.project.pathExists === false);
+const hasGitSnapshot = computed(() => Boolean(props.project.git?.repositoryPath));
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
@@ -55,9 +56,11 @@ const handleDelete = () => {
     <div class="mb-4 flex justify-between items-center gap-3">
       <div class="flex items-center gap-4 min-w-0">
         <button
+          type="button"
           @click="handleBack"
           class="p-2 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
           :title="t.common.back"
+          :aria-label="t.common.back"
         >
           <ArrowLeft :size="20" />
         </button>
@@ -78,6 +81,7 @@ const handleDelete = () => {
 
       <div class="flex items-center gap-2 shrink-0">
         <button
+          type="button"
           @click="handleRefresh"
           :disabled="isUnavailable"
           class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-lg transition-colors shadow-sm bg-surface border border-border-subtle"
@@ -87,6 +91,7 @@ const handleDelete = () => {
           <RefreshCw :size="18" />
         </button>
         <button
+          type="button"
           @click="handleOpenTerminal"
           :disabled="isUnavailable"
           class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
@@ -96,6 +101,7 @@ const handleDelete = () => {
           <TerminalSquare :size="18" class="group-hover:text-primary" />
         </button>
         <button
+          type="button"
           @click="handleOpenFolder"
           :disabled="isUnavailable"
           class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
@@ -105,6 +111,7 @@ const handleDelete = () => {
           <ExternalLink :size="18" class="group-hover:text-primary" />
         </button>
         <button
+          type="button"
           @click="handleEdit"
           class="bg-primary text-on-primary p-2 rounded-lg transition-all hover:bg-primary/90 shadow-sm"
           :title="t.common.edit"
@@ -113,6 +120,7 @@ const handleDelete = () => {
           <Pencil :size="18" />
         </button>
         <button
+          type="button"
           @click="handleDelete"
           class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-2 rounded-lg transition-all shadow-sm"
           :title="t.projectActions.deleteProject"
@@ -127,6 +135,7 @@ const handleDelete = () => {
       <button
         v-for="tab in tabs"
         :key="tab.id"
+        type="button"
         @click="activeTab = tab.id"
         :class="
           cn(
@@ -150,9 +159,9 @@ const handleDelete = () => {
             <p class="mt-1 text-sm text-on-surface-variant">{{ project.description || t.projectDetails.noScripts }}</p>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div class="bg-surface-container-low rounded p-3 border border-border-subtle">
+            <div v-if="hasGitSnapshot" class="bg-surface-container-low rounded p-3 border border-border-subtle">
               <div class="text-xs font-bold uppercase text-on-surface-variant">{{ t.git.branch }}</div>
-              <div class="mt-1 font-mono text-on-surface">{{ project.branch || "main" }}</div>
+              <div class="mt-1 font-mono text-on-surface">{{ project.git?.branch || project.branch }}</div>
             </div>
             <div class="bg-surface-container-low rounded p-3 border border-border-subtle">
               <div class="text-xs font-bold uppercase text-on-surface-variant">{{ t.git.statusText }}</div>

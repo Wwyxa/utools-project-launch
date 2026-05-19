@@ -44,6 +44,20 @@ const filteredLogs = computed(() => {
   return projectLogs.value.filter((log) => log.message.toLowerCase().includes(normalized));
 });
 
+const resolveLogTone = (message: string, type: string) => {
+  const normalized = message.toLowerCase();
+  if (type === "ERROR" || /\b(error|failed|exception|fatal)\b/.test(normalized)) {
+    return "text-status-error";
+  }
+  if (type === "WARN" || /\b(warn|warning|deprecated)\b/.test(normalized)) {
+    return "text-yellow-300";
+  }
+  if (type === "SUCCESS" || /\b(info|ready|listening|started|success|vite)\b/.test(normalized)) {
+    return "text-emerald-300";
+  }
+  return "text-slate-300";
+};
+
 const scrollToTop = async () => {
   await nextTick();
   if (scrollRef.value) {
@@ -110,17 +124,15 @@ onMounted(() => {
 
 <template>
   <div
-    class="border border-border-subtle rounded-lg overflow-hidden flex flex-col h-[26rem] min-h-[22rem] max-h-[52vh] bg-surface shadow-sm"
+    class="border border-slate-700/80 rounded-lg overflow-hidden flex flex-col h-[26rem] min-h-[22rem] max-h-[52vh] bg-[#0d1117] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_16px_40px_rgba(0,0,0,0.18)]"
   >
-    <div
-      class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3"
-    >
+    <div class="bg-[#111820] px-3 py-2 flex items-center justify-between border-b border-slate-700/80 gap-3">
       <div class="flex items-center gap-2 min-w-0 flex-1">
         <div class="flex items-center gap-2 min-w-0 shrink-0">
-          <TerminalIcon :size="14" class="text-on-surface-variant" />
-          <span class="text-xs font-semibold text-on-surface">{{ t.terminal.title }}</span>
+          <TerminalIcon :size="14" class="text-slate-400" />
+          <span class="text-xs font-semibold text-slate-100">{{ t.terminal.title }}</span>
         </div>
-        <div class="h-4 w-px bg-border-subtle" />
+        <div class="h-4 w-px bg-slate-700" />
         <div class="flex items-center gap-1 overflow-x-auto min-w-0">
           <div
             v-for="target in logTargets"
@@ -129,8 +141,8 @@ onMounted(() => {
               cn(
                 'h-6 rounded text-[10px] font-semibold whitespace-nowrap border transition-colors flex items-center overflow-hidden',
                 selectedScriptId === target.id
-                  ? 'bg-primary text-on-primary border-primary'
-                  : 'bg-surface text-on-surface-variant border-border-subtle hover:bg-surface-variant',
+                  ? 'bg-emerald-400/15 text-emerald-100 border-emerald-400/50'
+                  : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800',
               )
             "
           >
@@ -143,7 +155,7 @@ onMounted(() => {
                 :class="[
                   'w-1.5 h-1.5 rounded-full shrink-0',
                   target.status === 'RUNNING'
-                    ? 'bg-status-running'
+                    ? 'bg-status-running animate-pulse shadow-[0_0_8px_rgba(46,175,125,0.9)]'
                     : target.status === 'ERROR'
                       ? 'bg-status-error'
                       : 'bg-status-stopped',
@@ -163,7 +175,7 @@ onMounted(() => {
         </div>
         <button
           @click="scrollToTop"
-          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          class="p-1 text-slate-400 hover:text-slate-100 rounded hover:bg-slate-800 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
           :disabled="filteredLogs.length === 0"
           :title="t.terminal.scrollToTop"
           :aria-label="t.terminal.scrollToTop"
@@ -172,7 +184,7 @@ onMounted(() => {
         </button>
         <button
           @click="scrollToBottom"
-          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          class="p-1 text-slate-400 hover:text-slate-100 rounded hover:bg-slate-800 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
           :disabled="filteredLogs.length === 0"
           :title="t.terminal.scrollToBottom"
           :aria-label="t.terminal.scrollToBottom"
@@ -181,7 +193,7 @@ onMounted(() => {
         </button>
         <button
           @click="handleClear"
-          class="flex items-center gap-1.5 px-2 py-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface-variant transition-colors shrink-0"
+          class="flex items-center gap-1.5 px-2 py-1 text-slate-400 hover:text-emerald-200 rounded hover:bg-slate-800 transition-colors shrink-0"
           :title="t.terminal.clear"
         >
           <Trash2 :size="12" />
@@ -196,45 +208,32 @@ onMounted(() => {
             v-model="query"
             type="text"
             :placeholder="t.terminal.filter"
-            class="bg-surface border border-border-subtle rounded px-7 py-1 text-[10px] w-32 focus:outline-none focus:border-primary"
+            class="bg-slate-950 border border-slate-700 rounded px-7 py-1 text-[10px] text-slate-100 placeholder:text-slate-500 w-32 focus:outline-none focus:border-emerald-400"
           />
         </div>
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 bg-surface-container-lowest">
+    <div class="min-h-0 flex-1 bg-[#0d1117]">
       <div
         ref="scrollRef"
         @scroll="handleLogScroll"
         @wheel="handleLogWheel"
-        class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-on-surface [overscroll-behavior-y:contain]"
+        class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-slate-300 [overscroll-behavior-y:contain]"
       >
         <div v-for="(log, index) in filteredLogs" :key="index" class="flex mb-1 group">
-          <span class="w-20 text-right mr-4 shrink-0 text-on-surface-variant/60 select-none">
+          <span class="w-20 text-right mr-4 shrink-0 text-slate-500 select-none">
             {{ log.timestamp }}
           </span>
-          <span
-            :class="
-              cn(
-                'break-all',
-                log.type === 'SUCCESS'
-                  ? 'text-status-running'
-                  : log.type === 'ERROR'
-                    ? 'text-status-error'
-                    : log.type === 'WARN'
-                      ? 'text-tertiary'
-                      : 'text-on-surface',
-              )
-            "
-          >
+          <span :class="cn('break-all', resolveLogTone(log.message, log.type))">
             {{ log.message }}
           </span>
         </div>
-        <div v-if="logTargets.length === 0" class="text-on-surface-variant/70 italic">{{ t.terminal.ready }}</div>
-        <div v-else-if="filteredLogs.length === 0" class="text-on-surface-variant/70 italic">
+        <div v-if="logTargets.length === 0" class="text-slate-500 italic">{{ t.terminal.ready }}</div>
+        <div v-else-if="filteredLogs.length === 0" class="text-slate-500 italic">
           {{ t.terminal.empty }}
         </div>
-        <div class="animate-pulse text-primary mt-1">_</div>
+        <div class="animate-pulse text-emerald-300 mt-1">_</div>
       </div>
     </div>
   </div>

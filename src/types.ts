@@ -202,6 +202,7 @@ export interface ProjectBridge {
   readPackageScripts(
     projectPath: string,
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;
+  listProjectSubdirectories(projectPath: string): Promise<string[]>;
   readGitSnapshot(projectPath: string): Promise<ProjectBridgeGitSnapshot>;
   openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult>;
   runCommand(payload: {
