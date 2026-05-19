@@ -8,7 +8,6 @@ import { useI18n } from "../../lib/i18n";
 import ScriptsTab from "./ScriptsTab.vue";
 import GitTab from "./GitTab.vue";
 import MemoTab from "./MemoTab.vue";
-import Terminal from "../terminal/Terminal.vue";
 
 const props = defineProps<{
   project: Project;
@@ -50,19 +49,19 @@ const handleDelete = () => {
 </script>
 
 <template>
-  <div class="p-6 flex-1 flex flex-col h-full overflow-hidden">
-    <div class="mb-6 flex justify-between items-center gap-4">
+  <div class="p-4 flex-1 flex flex-col h-full overflow-hidden">
+    <div class="mb-4 flex justify-between items-center gap-3">
       <div class="flex items-center gap-4 min-w-0">
         <button
           @click="handleBack"
-          class="p-2 hover:bg-surface-variant rounded-xl text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
+          class="p-2 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
           :title="t.common.back"
         >
           <ArrowLeft :size="20" />
         </button>
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <h2 class="text-xl font-bold text-on-surface truncate">{{ project.name }}</h2>
+            <h2 class="text-lg font-bold text-on-surface truncate">{{ project.name }}</h2>
             <span
               class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-surface-variant text-on-surface-variant"
             >
@@ -79,7 +78,7 @@ const handleDelete = () => {
         <button
           @click="handleRefresh"
           :disabled="isUnavailable"
-          class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-xl transition-colors shadow-sm bg-surface border border-border-subtle"
+          class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-lg transition-colors shadow-sm bg-surface border border-border-subtle"
           :title="t.common.refresh"
         >
           <RefreshCw :size="18" />
@@ -87,21 +86,21 @@ const handleDelete = () => {
         <button
           @click="handleOpenFolder"
           :disabled="isUnavailable"
-          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-xl transition-all shadow-sm"
+          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
           :title="t.projectDetails.openProject"
         >
           <ExternalLink :size="18" class="group-hover:text-primary" />
         </button>
         <button
           @click="handleEdit"
-          class="bg-primary text-on-primary p-2 rounded-xl transition-all hover:bg-primary/90 shadow-sm"
+          class="bg-primary text-on-primary p-2 rounded-lg transition-all hover:bg-primary/90 shadow-sm"
           :title="t.common.edit"
         >
           <Pencil :size="18" />
         </button>
         <button
           @click="handleDelete"
-          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-2 rounded-xl transition-all shadow-sm"
+          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-2 rounded-lg transition-all shadow-sm"
           :title="t.projectActions.deleteProject"
         >
           <Trash2 :size="18" />
@@ -109,14 +108,14 @@ const handleDelete = () => {
       </div>
     </div>
 
-    <nav class="flex gap-6 border-b border-border-subtle mb-6 overflow-x-auto">
+    <nav class="flex gap-5 border-b border-border-subtle mb-4 overflow-x-auto">
       <button
         v-for="tab in tabs"
         :key="tab.id"
         @click="activeTab = tab.id"
         :class="
           cn(
-            'pb-3 text-sm font-bold transition-all relative whitespace-nowrap',
+            'pb-2 text-sm font-bold transition-all relative whitespace-nowrap',
             activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
           )
         "
@@ -126,21 +125,21 @@ const handleDelete = () => {
       </button>
     </nav>
 
-    <div class="flex-1 overflow-y-auto scrollbar-hide pr-1 space-y-6">
-      <div v-if="activeTab === 'info'" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="lg:col-span-2 bg-surface border border-border-subtle rounded-xl p-6 space-y-4 shadow-sm">
+    <div class="flex-1 overflow-y-auto scrollbar-hide pr-1 space-y-4">
+      <div v-if="activeTab === 'info'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 bg-surface border border-border-subtle rounded-lg p-4 space-y-3 shadow-sm">
           <div>
             <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
               {{ t.projectDetails.currentStatus }}
             </div>
-            <p class="mt-2 text-sm text-on-surface-variant">{{ project.description || t.projectDetails.noScripts }}</p>
+            <p class="mt-1 text-sm text-on-surface-variant">{{ project.description || t.projectDetails.noScripts }}</p>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div class="bg-surface-container-low rounded-lg p-4 border border-border-subtle">
+            <div class="bg-surface-container-low rounded p-3 border border-border-subtle">
               <div class="text-xs font-bold uppercase text-on-surface-variant">{{ t.git.branch }}</div>
               <div class="mt-1 font-mono text-on-surface">{{ project.branch || "main" }}</div>
             </div>
-            <div class="bg-surface-container-low rounded-lg p-4 border border-border-subtle">
+            <div class="bg-surface-container-low rounded p-3 border border-border-subtle">
               <div class="text-xs font-bold uppercase text-on-surface-variant">{{ t.git.statusText }}</div>
               <div class="mt-1 text-on-surface">{{ project.git?.statusText || t.git.noRepo }}</div>
             </div>
@@ -157,7 +156,7 @@ const handleDelete = () => {
         </div>
 
         <div class="space-y-4">
-          <div class="bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+          <div class="bg-surface border border-border-subtle rounded-lg p-3 shadow-sm">
             <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">{{ t.common.status }}</div>
             <div class="mt-3 flex items-center gap-2 text-sm font-semibold">
               <span
@@ -169,7 +168,7 @@ const handleDelete = () => {
               {{ statusLabel }}
             </div>
           </div>
-          <div class="bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+          <div class="bg-surface border border-border-subtle rounded-lg p-3 shadow-sm">
             <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
               {{ t.common.lastUpdated }}
             </div>
@@ -181,8 +180,6 @@ const handleDelete = () => {
       <ScriptsTab v-if="activeTab === 'scripts'" :project="project" />
       <GitTab v-if="activeTab === 'git'" :project="project" />
       <MemoTab v-if="activeTab === 'memo'" :project="project" />
-
-      <Terminal :projectId="project.id" />
     </div>
   </div>
 </template>

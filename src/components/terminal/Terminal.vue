@@ -1,25 +1,40 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { Terminal as TerminalIcon, Trash2, ArrowDown, X, Search } from "lucide-vue-next";
+import { Search, Terminal as TerminalIcon, Trash2, X } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
+import type { ProjectScript } from "../../types";
 
 const props = defineProps<{
   projectId: string;
+  scripts?: Pick<ProjectScript, "id" | "name" | "status">[];
 }>();
 
 const store = useStore();
 const t = useI18n();
 const scrollRef = ref<HTMLDivElement | null>(null);
 const query = ref("");
-const projectLogs = computed(() => store.logs[props.projectId] || []);
+const selectedScriptId = ref("");
+const closedAt = ref<Record<string, number>>({});
+
+const logTargets = computed(() =>
+  (props.scripts || [])
+    .map((script) => ({
+      ...script,
+      count: store.scriptLogs[props.projectId]?.[script.id]?.length || 0,
+    }))
+    .filter((script) => script.count > 0 && script.count > (closedAt.value[script.id] ?? -1)),
+);
+const projectLogs = computed(() =>
+  selectedScriptId.value ? store.scriptLogs[props.projectId]?.[selectedScriptId.value] || [] : [],
+);
 const filteredLogs = computed(() => {
-  if (!query.value.trim()) {
+  const normalized = query.value.trim().toLowerCase();
+  if (!normalized) {
     return projectLogs.value;
   }
 
-  const normalized = query.value.toLowerCase();
   return projectLogs.value.filter((log) => log.message.toLowerCase().includes(normalized));
 });
 
@@ -31,49 +46,100 @@ const scrollToBottom = () => {
   }, 0);
 };
 
+const closeTarget = (scriptId: string) => {
+  closedAt.value = {
+    ...closedAt.value,
+    [scriptId]: store.scriptLogs[props.projectId]?.[scriptId]?.length || 0,
+  };
+};
+
+const handleClear = () => {
+  store.clearLogs(props.projectId);
+  closedAt.value = {};
+  selectedScriptId.value = "";
+};
+
 watch(projectLogs, scrollToBottom, { deep: true });
+watch(
+  logTargets,
+  (targets) => {
+    if (!targets.some((target) => target.id === selectedScriptId.value)) {
+      selectedScriptId.value = targets[0]?.id || "";
+    }
+  },
+  { immediate: true },
+);
 onMounted(scrollToBottom);
 </script>
 
 <template>
-  <div class="mt-8 border border-border-subtle rounded-xl overflow-hidden flex flex-col h-64 shadow-sm">
+  <div class="border border-border-subtle rounded-lg overflow-hidden flex flex-col min-h-72 flex-1 shadow-sm">
     <div
-      class="bg-surface-container-low px-4 py-2 flex items-center justify-between border-b border-border-subtle gap-4"
+      class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3"
     >
-      <div class="flex items-center gap-3 min-w-0">
-        <div class="flex items-center gap-2 min-w-0">
-          <TerminalIcon :size="14" class="text-on-surface-variant shrink-0" />
-          <span class="text-xs font-semibold text-on-surface truncate"
-            >{{ t.terminal.title }} - {{ store.selectedProject?.name }}</span
-          >
+      <div class="flex items-center gap-2 min-w-0 flex-1">
+        <div class="flex items-center gap-2 min-w-0 shrink-0">
+          <TerminalIcon :size="14" class="text-on-surface-variant" />
+          <span class="text-xs font-semibold text-on-surface">{{ t.terminal.title }}</span>
         </div>
         <div class="h-4 w-px bg-border-subtle" />
+        <div class="flex items-center gap-1 overflow-x-auto min-w-0">
+          <div
+            v-for="target in logTargets"
+            :key="target.id"
+            :class="
+              cn(
+                'h-6 rounded text-[10px] font-semibold whitespace-nowrap border transition-colors flex items-center overflow-hidden',
+                selectedScriptId === target.id
+                  ? 'bg-primary text-on-primary border-primary'
+                  : 'bg-surface text-on-surface-variant border-border-subtle hover:bg-surface-variant',
+              )
+            "
+          >
+            <button
+              @click="selectedScriptId = target.id"
+              class="h-full pl-2 pr-1 flex items-center gap-1.5 min-w-0"
+              :title="target.name"
+            >
+              <span
+                :class="[
+                  'w-1.5 h-1.5 rounded-full shrink-0',
+                  target.status === 'RUNNING'
+                    ? 'bg-status-running'
+                    : target.status === 'ERROR'
+                      ? 'bg-status-error'
+                      : 'bg-status-stopped',
+                ]"
+              />
+              <span class="max-w-28 truncate">{{ target.name }}</span>
+              <span class="text-[9px] opacity-70">{{ target.count }}</span>
+            </button>
+            <button @click="closeTarget(target.id)" class="h-full px-1.5 hover:bg-black/10" :title="t.common.close">
+              <X :size="10" />
+            </button>
+          </div>
+        </div>
         <button
-          @click="store.clearLogs(projectId)"
-          class="flex items-center gap-1.5 px-2 py-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface-variant transition-colors"
+          @click="handleClear"
+          class="flex items-center gap-1.5 px-2 py-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface-variant transition-colors shrink-0"
+          :title="t.terminal.clear"
         >
           <Trash2 :size="12" />
           <span class="text-[10px] font-medium">{{ t.terminal.clear }}</span>
         </button>
-        <button
-          class="flex items-center gap-1.5 px-2 py-1 text-primary bg-primary/10 rounded hover:bg-primary/20 transition-colors"
-        >
-          <ArrowDown :size="12" />
-          <span class="text-[10px] font-medium">{{ t.terminal.autoScroll }}</span>
-        </button>
       </div>
 
-      <div class="flex items-center gap-3 shrink-0">
+      <div class="flex items-center gap-2 shrink-0">
         <div class="relative">
           <Search :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/50" />
           <input
             v-model="query"
             type="text"
             :placeholder="t.terminal.filter"
-            class="bg-surface border border-border-subtle rounded px-7 py-1 text-[10px] w-40 focus:outline-none focus:border-primary"
+            class="bg-surface border border-border-subtle rounded px-7 py-1 text-[10px] w-32 focus:outline-none focus:border-primary"
           />
         </div>
-        <button @click="query = ''" class="text-on-surface-variant hover:text-on-surface">
+        <button @click="query = ''" class="text-on-surface-variant hover:text-on-surface" :title="t.common.close">
           <X :size="14" />
         </button>
       </div>
@@ -101,7 +167,8 @@ onMounted(scrollToBottom);
           {{ log.message }}
         </span>
       </div>
-      <div v-if="filteredLogs.length === 0" class="text-white/20 italic">{{ t.terminal.empty }}</div>
+      <div v-if="logTargets.length === 0" class="text-white/20 italic">{{ t.terminal.ready }}</div>
+      <div v-else-if="filteredLogs.length === 0" class="text-white/20 italic">{{ t.terminal.empty }}</div>
       <div class="animate-pulse text-primary mt-1">_</div>
     </div>
   </div>

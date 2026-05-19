@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { spawn, spawnSync, execFileSync } = require("node:child_process");
+const { TextDecoder } = require("node:util");
 const { shell } = require("electron");
 
 const activeProcesses = new Map();
@@ -10,6 +11,32 @@ const storageKey = "utools-project-launch.projects.v1";
 const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
 const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api"];
+
+function createLegacyWindowsDecoder() {
+  if (process.platform !== "win32") {
+    return null;
+  }
+
+  try {
+    return new TextDecoder("gb18030");
+  } catch (error) {
+    return null;
+  }
+}
+
+function createProcessOutputDecoder() {
+  const utf8Decoder = new TextDecoder("utf-8");
+  const legacyWindowsDecoder = createLegacyWindowsDecoder();
+
+  return (chunk) => {
+    const utf8Text = utf8Decoder.decode(chunk, { stream: true });
+    if (!legacyWindowsDecoder || !utf8Text.includes("�")) {
+      return utf8Text;
+    }
+
+    return legacyWindowsDecoder.decode(chunk, { stream: true });
+  };
+}
 
 function expandPath(inputPath) {
   if (!inputPath) {
@@ -465,7 +492,15 @@ function readGitSnapshot(projectPath) {
 
   const branchOutput = runGit(repositoryPath, ["status", "--short", "--branch"]);
   const statusOutput = runGit(repositoryPath, ["status", "--short"]);
-  const commitOutput = runGit(repositoryPath, ["log", "-5", "--pretty=format:%h\t%an\t%ad\t%s", "--date=short"]);
+  const commitOutput = runGit(repositoryPath, [
+    "log",
+    "--all",
+    "--graph",
+    "--decorate=short",
+    "--max-count=200",
+    "--pretty=format:%h\t%P\t%an\t%ad\t%D\t%s",
+    "--date=short",
+  ]);
   const numstatOutput = collectNumstat(repositoryPath, ["diff", "--numstat"]);
   const cachedNumstatOutput = collectNumstat(repositoryPath, ["diff", "--cached", "--numstat"]);
   const fileMap = new Map();
@@ -505,12 +540,26 @@ function readGitSnapshot(projectPath) {
   const commits = [];
   if (commitOutput) {
     commitOutput.split(/\r?\n/).forEach((line) => {
-      const [hash, author, date, message] = line.split(/\t/);
+      const hashIndex = line.search(/[0-9a-f]{7,40}\t/);
+      if (hashIndex < 0) {
+        return;
+      }
+
+      const graph = line.slice(0, hashIndex).trimEnd();
+      const [hash, parentText, author, date, refs, ...messageParts] = line.slice(hashIndex).split("\t");
       if (!hash) {
         return;
       }
 
-      commits.push({ hash, author, date, message });
+      commits.push({
+        hash,
+        graph: graph || "*",
+        parents: parentText ? parentText.split(" ").filter(Boolean) : [],
+        author,
+        date,
+        refs,
+        message: messageParts.join("\t"),
+      });
     });
   }
 
@@ -535,6 +584,8 @@ function readGitSnapshot(projectPath) {
 
 function runCommand(payload) {
   const resolvedCwd = expandPath(payload.cwd);
+  const decodeStdout = createProcessOutputDecoder();
+  const decodeStderr = createProcessOutputDecoder();
   const child = spawn(payload.command, {
     cwd: resolvedCwd,
     env: { ...process.env, ...payload.env },
@@ -558,7 +609,7 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: child.pid,
-      message: String(chunk),
+      message: decodeStdout(chunk),
     });
   });
 
@@ -568,7 +619,7 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: child.pid,
-      message: String(chunk),
+      message: decodeStderr(chunk),
     });
   });
 

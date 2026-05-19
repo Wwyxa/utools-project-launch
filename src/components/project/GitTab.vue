@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { GitBranch, RefreshCw, Eye, Minus, PlusCircle, Trash2, Clock3 } from "lucide-vue-next";
+import { GitBranch, RefreshCw, Minus, PlusCircle, Trash2 } from "lucide-vue-next";
 import { Project } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -16,10 +16,27 @@ const t = useI18n();
 const files = computed(() => store.stagedFiles[props.project.id] || props.project.git?.files || []);
 const commits = computed(() => props.project.git?.commits || []);
 const snapshot = computed(() => props.project.git);
+const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.project.path);
 
 const handleRefresh = async () => {
   await store.refreshGitSnapshot(props.project.id);
 };
+
+const refsForCommit = (refs?: string) =>
+  (refs || "")
+    .split(",")
+    .map((refName) => refName.trim())
+    .filter(Boolean);
+
+const refClass = (refName: string) =>
+  cn(
+    "max-w-40 truncate rounded px-1.5 py-0.5 text-[9px] font-bold",
+    refName.startsWith("tag:")
+      ? "bg-secondary-fixed text-secondary"
+      : refName.includes("HEAD")
+        ? "bg-primary text-on-primary"
+        : "bg-status-running/10 text-status-running",
+  );
 
 const fileLabel = (status: string) => {
   if (status === "ADDED") return t.value.git.added;
@@ -31,74 +48,46 @@ const fileLabel = (status: string) => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
-    <div class="bg-surface-container-low border border-border-subtle rounded-xl overflow-hidden shadow-sm">
-      <div class="p-4 border-b border-border-subtle flex items-center justify-between gap-4">
-        <div class="flex flex-col gap-1 min-w-0">
-          <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">{{ t.git.branch }}</span>
-          <div class="flex items-center gap-2 flex-wrap">
-            <GitBranch :size="16" class="text-primary" />
-            <span
-              class="font-mono text-xs font-bold text-on-surface bg-surface border border-border-subtle px-2 py-0.5 rounded shadow-sm"
-            >
-              {{ snapshot?.branch || "main" }}
-            </span>
-            <span class="text-xs text-on-surface-variant"
-              >{{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}</span
-            >
-          </div>
-          <div class="text-xs text-on-surface-variant">{{ snapshot?.statusText || t.git.noRepo }}</div>
-        </div>
-        <div class="flex gap-2 shrink-0">
-          <button
-            @click="handleRefresh"
-            class="h-9 px-4 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors"
-          >
-            <RefreshCw :size="14" /> {{ t.git.refresh }}
-          </button>
-        </div>
+  <div class="flex flex-col gap-3 min-h-full">
+    <div class="border border-border-subtle rounded-lg bg-surface px-3 py-2 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0 text-xs">
+        <GitBranch :size="16" class="text-primary shrink-0" />
+        <span class="font-mono font-bold text-on-surface truncate">{{ snapshot?.branch || "main" }}</span>
+        <span class="text-on-surface-variant whitespace-nowrap">
+          {{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}
+        </span>
+        <span class="text-on-surface-variant truncate">{{ snapshot?.statusText || t.git.noRepo }}</span>
+        <span class="text-on-surface-variant truncate hidden lg:inline">{{ repositoryPath }}</span>
       </div>
-
-      <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-surface rounded-xl border border-border-subtle p-4">
-          <div class="text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">{{ t.git.files }}</div>
-          <div class="mt-2 text-2xl font-bold text-on-surface">{{ files.length }}</div>
-        </div>
-        <div class="bg-surface rounded-xl border border-border-subtle p-4">
-          <div class="text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">{{ t.git.commits }}</div>
-          <div class="mt-2 text-2xl font-bold text-on-surface">{{ commits.length }}</div>
-        </div>
-        <div class="bg-surface rounded-xl border border-border-subtle p-4">
-          <div class="text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">
-            {{ t.git.statusText }}
-          </div>
-          <div class="mt-2 text-sm text-on-surface-variant">{{ snapshot?.repositoryPath || project.path }}</div>
-        </div>
+      <div class="flex gap-2 shrink-0">
+        <button
+          @click="handleRefresh"
+          class="h-8 px-3 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors"
+          :title="t.git.refresh"
+        >
+          <RefreshCw :size="14" />
+        </button>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-surface border border-border-subtle rounded-xl overflow-hidden shadow-sm">
-        <div class="p-4 border-b border-border-subtle flex items-center justify-between">
-          <h3 class="text-lg font-bold text-on-surface">{{ t.git.files }}</h3>
-          <span
-            class="text-[10px] font-bold text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded-full"
-          >
-            {{ files.length }} {{ t.common.noData }}
-          </span>
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(16rem,0.75fr)_minmax(0,1.25fr)] gap-3 min-h-0">
+      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0">
+        <div class="px-3 py-2 border-b border-border-subtle flex items-center justify-between">
+          <h3 class="text-sm font-bold text-on-surface">{{ t.git.files }}</h3>
+          <span class="text-[10px] font-bold text-on-surface-variant">{{ files.length }}</span>
         </div>
 
-        <div class="space-y-2 p-4 max-h-[420px] overflow-y-auto">
+        <div class="max-h-[520px] overflow-y-auto">
           <div
             v-for="(file, idx) in files"
             :key="`${file.path}-${idx}`"
-            class="group flex items-center justify-between p-3 border border-border-subtle rounded-lg hover:bg-surface-container transition-all"
+            class="group flex items-center justify-between px-3 py-2 border-b border-border-subtle last:border-b-0 hover:bg-surface-container-low transition-all"
           >
-            <div class="flex items-center gap-4 overflow-hidden min-w-0">
+            <div class="flex items-center gap-3 overflow-hidden min-w-0">
               <div
                 :class="
                   cn(
-                    'w-8 h-8 rounded flex items-center justify-center shrink-0',
+                    'w-7 h-7 rounded flex items-center justify-center shrink-0',
                     file.status === 'ADDED'
                       ? 'bg-primary-fixed'
                       : file.status === 'DELETED'
@@ -129,35 +118,53 @@ const fileLabel = (status: string) => {
                 </div>
               </div>
             </div>
-
-            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button class="p-1.5 text-on-surface-variant hover:bg-surface-container rounded" :title="t.common.edit">
-                <Eye :size="14" />
-              </button>
-            </div>
           </div>
+          <div v-if="files.length === 0" class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
         </div>
       </div>
 
-      <div class="bg-surface border border-border-subtle rounded-xl overflow-hidden shadow-sm">
-        <div class="p-4 border-b border-border-subtle flex items-center justify-between">
-          <h3 class="text-lg font-bold text-on-surface">{{ t.git.commits }}</h3>
-          <Clock3 :size="16" class="text-on-surface-variant" />
+      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0">
+        <div class="px-3 py-2 border-b border-border-subtle flex items-center justify-between">
+          <h3 class="text-sm font-bold text-on-surface">{{ t.git.graph }}</h3>
         </div>
-        <div class="space-y-2 p-4 max-h-[420px] overflow-y-auto">
-          <div
-            v-for="commit in commits"
-            :key="commit.hash"
-            class="p-3 border border-border-subtle rounded-lg bg-surface-container-low"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <div class="font-mono text-xs font-bold text-on-surface">{{ commit.hash }}</div>
-              <div class="text-[10px] text-on-surface-variant">{{ commit.date }}</div>
+        <div class="max-h-[520px] overflow-auto bg-[#1E1E1E] text-[#D4D4D4] p-2">
+          <div class="min-w-[40rem] space-y-0.5">
+            <div
+              v-for="commit in commits"
+              :key="commit.hash"
+              class="flex items-start gap-3 rounded px-2 py-1.5 hover:bg-white/5"
+            >
+              <div class="w-14 shrink-0 font-mono text-xs leading-4 whitespace-pre text-[#9CDCFE] select-none pt-0.5">
+                {{ commit.graph || "*" }}
+              </div>
+
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 min-w-0 font-mono text-xs leading-5">
+                  <span class="text-[#C586C0] font-bold shrink-0">{{ commit.hash }}</span>
+                  <span class="text-[#D4D4D4] truncate" :title="commit.message">{{ commit.message }}</span>
+                </div>
+
+                <div v-if="refsForCommit(commit.refs).length" class="mt-1 flex flex-wrap gap-1">
+                  <span
+                    v-for="refName in refsForCommit(commit.refs)"
+                    :key="`${commit.hash}-${refName}`"
+                    :class="refClass(refName)"
+                    :title="refName"
+                  >
+                    {{ refName }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="shrink-0 text-[10px] text-white/45 whitespace-nowrap text-right leading-4 pt-0.5">
+                <div>{{ commit.date }}</div>
+                <div class="truncate max-w-40" :title="commit.author">{{ commit.author }}</div>
+                <div>{{ commit.hash }}</div>
+              </div>
             </div>
-            <div class="mt-2 text-sm font-medium text-on-surface">{{ commit.message }}</div>
-            <div class="mt-1 text-xs text-on-surface-variant">{{ commit.author }}</div>
+
+            <div v-if="commits.length === 0" class="text-sm text-white/45 p-3">{{ t.git.empty }}</div>
           </div>
-          <div v-if="commits.length === 0" class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
         </div>
       </div>
     </div>

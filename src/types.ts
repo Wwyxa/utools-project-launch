@@ -39,6 +39,9 @@ export interface ProjectGitCommitSummary {
   message: string;
   author: string;
   date: string;
+  graph?: string;
+  parents?: string[];
+  refs?: string;
 }
 
 export interface ProjectGitSnapshot {

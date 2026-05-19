@@ -25,6 +25,8 @@ const createScriptId = (projectId: string, index: number) => `${projectId}-scrip
 const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
 const createProjectId = () => `project-${Date.now()}`;
+const ansiControlPattern =
+  /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
 function toPersistedProject(project: Project): Project {
   const persistedStatus = project.pathExists === false ? ProjectStatus.WARNING : ProjectStatus.STOPPED;
@@ -183,6 +185,23 @@ function deriveProjectStatus(project: Project): ProjectStatus {
     return ProjectStatus.ERROR;
   }
   return ProjectStatus.STOPPED;
+}
+
+function createLogEntry(message: string, type: LogEntry["type"]): LogEntry {
+  return {
+    timestamp: new Date().toLocaleTimeString(),
+    message,
+    type,
+  };
+}
+
+function normalizeLogLines(message: string): string[] {
+  const normalized = message.replace(ansiControlPattern, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  return normalized
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
 }
 
 function demoProject(id: string, project: Project): Project {
@@ -388,6 +407,21 @@ export const useStore = defineStore("app", {
         { timestamp: "09:12:12", message: "build failed: exit status 1", type: "ERROR" },
       ],
     } as Record<string, LogEntry[]>,
+    scriptLogs: {
+      "project-node-1": {
+        "project-node-1-script-1": [
+          { timestamp: "10:42:01", message: "> npm run dev", type: "INFO" },
+          { timestamp: "10:42:02", message: "VITE v6 ready in 320 ms", type: "SUCCESS" },
+          { timestamp: "10:45:12", message: "[hmr] src/components/project/MemoTab.vue updated.", type: "SUCCESS" },
+        ],
+      },
+      "project-go-1": {
+        "project-go-1-script-1": [
+          { timestamp: "09:12:11", message: "> go run main.go", type: "ERROR" },
+          { timestamp: "09:12:12", message: "build failed: exit status 1", type: "ERROR" },
+        ],
+      },
+    } as Record<string, Record<string, LogEntry[]>>,
     stagedFiles: {
       "project-node-1": [
         { path: "src/components/MemoTab.vue", additions: 12, deletions: 4, status: "MODIFIED" },
@@ -439,6 +473,7 @@ export const useStore = defineStore("app", {
         this.memoContent[project.id] = project.memo || this.memoContent[project.id] || "";
         this.todos[project.id] = project.todos || this.todos[project.id] || [];
         this.logs[project.id] = this.logs[project.id] || [];
+        this.scriptLogs[project.id] = this.scriptLogs[project.id] || {};
         this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
       });
     },
@@ -667,6 +702,7 @@ export const useStore = defineStore("app", {
       } else {
         this.projects.unshift(project);
         this.logs[projectId] = [];
+        this.scriptLogs[projectId] = {};
         this.stagedFiles[projectId] = [];
         this.todos[projectId] = [];
       }
@@ -686,6 +722,7 @@ export const useStore = defineStore("app", {
 
       this.projects.splice(existingIndex, 1);
       delete this.logs[projectId];
+      delete this.scriptLogs[projectId];
       delete this.stagedFiles[projectId];
       delete this.todos[projectId];
       delete this.memoContent[projectId];
@@ -727,8 +764,9 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.readPackageScripts(project.path);
       if (result.scripts.length > 0) {
+        const previousScripts = new Map<string, ProjectScript>(project.scripts.map((script) => [script.name, script]));
         project.scripts = result.scripts.map((script, index) => ({
-          id: `${project.id}-package-${index + 1}`,
+          id: previousScripts.get(script.name)?.id || `${project.id}-package-${index + 1}`,
           name: script.name,
           command: script.command,
           status: "IDLE",
@@ -799,6 +837,7 @@ export const useStore = defineStore("app", {
       if (script.pid) {
         await bridge.stopProcess(script.pid);
       }
+      this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "WARN"), scriptId);
       script.status = "STOPPED";
       script.pid = undefined;
       project.status = deriveProjectStatus(project);
@@ -818,11 +857,10 @@ export const useStore = defineStore("app", {
         return;
       }
 
-      this.addLog(projectId, {
-        timestamp: new Date().toLocaleTimeString(),
-        message: `Open terminal (${this.terminalPreferences.kind}) at ${project.path}`,
-        type: "INFO",
-      });
+      this.addLog(
+        projectId,
+        createLogEntry(`Open terminal (${this.terminalPreferences.kind}) at ${project.path}`, "INFO"),
+      );
 
       if (this.terminalPreferences.kind === "builtin") {
         return;
@@ -830,14 +868,24 @@ export const useStore = defineStore("app", {
 
       await bridge.openPath(project.path);
     },
-    addLog(projectId: string, log: LogEntry) {
+    addLog(projectId: string, log: LogEntry, scriptId?: string) {
       if (!this.logs[projectId]) {
         this.logs[projectId] = [];
       }
       this.logs[projectId].push(log);
+      if (scriptId) {
+        if (!this.scriptLogs[projectId]) {
+          this.scriptLogs[projectId] = {};
+        }
+        if (!this.scriptLogs[projectId][scriptId]) {
+          this.scriptLogs[projectId][scriptId] = [];
+        }
+        this.scriptLogs[projectId][scriptId].push(log);
+      }
     },
     clearLogs(projectId: string) {
       this.logs[projectId] = [];
+      this.scriptLogs[projectId] = {};
     },
     addTodo(projectId: string, text: string) {
       if (!this.todos[projectId]) {
@@ -910,17 +958,32 @@ export const useStore = defineStore("app", {
       this.projectStorageMessage = `已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`;
     },
     handleBridgeEvent(event: ProjectBridgeEvent) {
+      const project = this.projects.find((item) => item.id === event.projectId);
+      const script = project?.scripts.find((item) => item.id === event.scriptId);
+
+      if (event.type === "started") {
+        if (script) {
+          script.status = "RUNNING";
+          script.pid = event.pid;
+        }
+        if (project) {
+          project.status = ProjectStatus.RUNNING;
+          project.lastUpdated = new Date().toLocaleString();
+        }
+        this.addLog(event.projectId, createLogEntry(`started (pid ${event.pid})`, "SUCCESS"), event.scriptId);
+      }
+
       if (event.type === "stdout" || event.type === "stderr") {
-        this.addLog(event.projectId, {
-          timestamp: new Date().toLocaleTimeString(),
-          message: event.message || "",
-          type: event.type === "stderr" ? "ERROR" : "INFO",
+        normalizeLogLines(event.message || "").forEach((line) => {
+          this.addLog(
+            event.projectId,
+            createLogEntry(line, event.type === "stderr" ? "ERROR" : "INFO"),
+            event.scriptId,
+          );
         });
       }
 
       if (event.type === "exit") {
-        const project = this.projects.find((item) => item.id === event.projectId);
-        const script = project?.scripts.find((item) => item.id === event.scriptId);
         const isStopped = Boolean(event.stoppedByUser);
         const isSuccess = event.code === 0;
         if (script) {
@@ -931,6 +994,30 @@ export const useStore = defineStore("app", {
           project.status = deriveProjectStatus(project);
           project.lastUpdated = new Date().toLocaleString();
         }
+        this.addLog(
+          event.projectId,
+          createLogEntry(
+            isStopped ? "stopped" : `exited with code ${event.code ?? "unknown"}`,
+            isSuccess || isStopped ? "SUCCESS" : "ERROR",
+          ),
+          event.scriptId,
+        );
+      }
+
+      if (event.type === "error") {
+        if (script) {
+          script.status = "ERROR";
+          script.pid = undefined;
+        }
+        if (project) {
+          project.status = deriveProjectStatus(project);
+          project.lastUpdated = new Date().toLocaleString();
+        }
+        this.addLog(
+          event.projectId,
+          createLogEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"),
+          event.scriptId,
+        );
       }
     },
   },
