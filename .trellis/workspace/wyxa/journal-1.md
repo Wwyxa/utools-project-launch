@@ -280,3 +280,38 @@ Refined the uTools plugin UI for compact window usage, simplified navigation, ad
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: UI improvements
+
+**Date**: 2026-05-19
+**Task**: UI improvements
+**Branch**: `master`
+
+### Summary
+
+Improved project dashboard ordering, terminal log and Git panel scrolling/theme behavior, settings terminal custom command state, script tab layout, and recorded related frontend conventions.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `28701c5` | (see git log) |
+| `6312f07` | (see git log) |
+| `1003979` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
