@@ -315,3 +315,38 @@ Improved project dashboard ordering, terminal log and Git panel scrolling/theme 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: UI refinement for project launcher
+
+**Date**: 2026-05-20
+**Task**: UI refinement for project launcher
+**Branch**: `master`
+
+### Summary
+
+Refined the project launcher UI with denser dashboard cards, drag sorting, terminal/form polish, uTools quick open, and documented frontend contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d816555` | (see git log) |
+| `b1f0bc3` | (see git log) |
+| `82747c8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

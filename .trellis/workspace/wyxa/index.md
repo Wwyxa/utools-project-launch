@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
-- **Last Active**: 2026-05-19
+- **Total Sessions**: 9
+- **Last Active**: 2026-05-20
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~317 | Active |
+| `journal-1.md` | ~352 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-05-20 | UI refinement for project launcher | `d816555`, `b1f0bc3`, `82747c8` | `master` |
 | 8 | 2026-05-19 | UI improvements | `28701c5`, `6312f07`, `1003979` | `master` |
 | 7 | 2026-05-19 | 终端偏好持久化与 Esc 返回修正 | `44c6ec2`, `08fbe0e` | `master` |
 | 6 | 2026-05-19 | 优化详情页脚本日志与 Git 树 | `da94452`, `43e7cfc` | `master` |
