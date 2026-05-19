@@ -133,12 +133,14 @@ Normalize projects before crossing the persistence boundary.
 ### 2. Signatures
 
 - `moveProject(projectId: string, direction: "top" | "up" | "down", scopeProjectIds?: string[]): Promise<boolean>`
+- `reorderProject(projectId: string, targetProjectId: string, scopeProjectIds?: string[]): Promise<boolean>`
 - `ProjectBridge.saveProjects(projects: Project[]): Promise<void>`
 
 ### 3. Contracts
 
 - The `projects` array order is the persisted manual dashboard order.
 - Reorder projects only through store actions, then call `persistProjects()` so reloads preserve the order.
+- Drag-and-drop dashboard ordering should call `reorderProject()` with the dragged project id and drop-target project id.
 - Keep available and unavailable project sections separated when moving cards; moving an unavailable project must not insert it into the available section.
 - When a filtered dashboard list provides `scopeProjectIds`, move only relative to visible projects in the same section while preserving non-visible projects in their original relative order.
 - Do not introduce a separate order field unless the storage contract changes deliberately.
@@ -148,11 +150,14 @@ Normalize projects before crossing the persistence boundary.
 - Unknown `projectId` -> return `false` and leave `projects` unchanged.
 - Move beyond the section boundary -> return `false` and leave `projects` unchanged.
 - Empty or invalid `scopeProjectIds` -> fall back to the full available/unavailable section order.
+- Dragging onto the same project -> return `false` and leave `projects` unchanged.
+- Dragging between available and unavailable sections -> return `false` and leave `projects` unchanged.
 - Persistence failure -> surface the existing project storage message through `persistProjects()`.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: moving the second visible available project up swaps it with the previous visible available project and persists the new array order.
+- Good: dragging one visible project onto another visible project moves the dragged project before the drop target and persists the new array order.
 - Base: newly created projects still enter the front of the catalog through the existing create flow.
 - Bad: sorting `store.availableProjects` alphabetically in the component, which hides the user's manual order and is not persisted.
 
@@ -160,6 +165,7 @@ Normalize projects before crossing the persistence boundary.
 
 - `npm run lint` should verify store action signatures and component event types.
 - Manual smoke test: move a project to top, reload the plugin, and confirm the same order appears.
+- Manual smoke test: enter dashboard sort mode, drag a card before another card, reload the plugin, and confirm the same order appears.
 - Manual smoke test: search/filter projects, move a visible item, clear search, and confirm hidden items kept their relative order.
 
 ### 7. Wrong vs Correct
@@ -183,6 +189,16 @@ await store.moveProject(
 ```
 
 Let the store own project order changes and persistence.
+
+For drag-and-drop sorting, use the drop target rather than mutating the array in the component:
+
+```ts
+await store.reorderProject(
+  draggedProjectId,
+  targetProjectId,
+  visibleProjects.map((project) => project.id),
+);
+```
 
 ## Scenario: Script Runtime Status
 
@@ -218,6 +234,121 @@ Let the store own project order changes and persistence.
 ### 6. Tests Required
 
 - Type-check event payload changes across `src/types.ts`, store handlers, and preload events.
+
+## Scenario: Project Subdirectory Suggestions
+
+### 1. Scope / Trigger
+
+- Trigger: project form working-directory suggestions cross the Vue component, Pinia store, browser fallback bridge, and uTools preload filesystem boundary.
+
+### 2. Signatures
+
+- `ProjectBridge.listProjectSubdirectories(projectPath: string): Promise<string[]>`
+- Store actions that refresh form directory suggestions should call the bridge, then expose only normalized relative directory names to the form UI.
+
+### 3. Contracts
+
+- The bridge returns one-level child directories relative to the project root.
+- Include `.` as the root working directory option at the UI/store layer when useful for script cwd selection.
+- Prefer common project directories such as `frontend`, `backend`, `client`, `server`, `api`, and `src` before other alphabetically sorted entries.
+- Browser fallback must return a small safe suggestion set and never require local filesystem access.
+- Preload must expand `~`, validate that the path exists and is a directory, and return an empty list on unavailable paths instead of throwing into the UI.
+
+### 4. Validation & Error Matrix
+
+- Empty `projectPath` -> return an empty suggestion list.
+- Path does not exist -> return an empty suggestion list.
+- Path exists but is not a directory -> return an empty suggestion list.
+- Filesystem read fails -> return an empty suggestion list and keep manual cwd entry usable.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a project with `frontend`, `backend`, and `docs` suggests `.`, `frontend`, `backend`, then `docs`.
+- Base: browser preview shows generic suggestions but does not imply filesystem inspection succeeded.
+- Bad: recursively scanning large project trees for cwd suggestions, which makes a simple form interaction slow and noisy.
+
+### 6. Tests Required
+
+- `npm run lint` should verify the bridge contract stays in sync across `src/types.ts`, `src/lib/projectBridge.ts`, store actions, and components.
+- `npm run build` should verify preload-facing type changes do not break the frontend bundle.
+- Manual uTools smoke test should cover selecting a real project folder and seeing one-level cwd suggestions in the script editor.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const suggestions = await window.projectBridge.listProjectSubdirectories(path);
+```
+
+Components should not call the preload bridge directly.
+
+#### Correct
+
+```ts
+await store.refreshProjectDirectorySuggestions();
+```
+
+Keep bridge access behind store actions so fallback behavior, sorting, and error handling remain centralized.
+
+## Scenario: uTools Project Quick Open
+
+### 1. Scope / Trigger
+
+- Trigger: project quick-open behavior crosses `public/plugin.json`, the uTools `onPluginEnter` payload, `src/App.vue`, and the Pinia project store.
+
+### 2. Signatures
+
+- `window.utools.onPluginEnter(callback: (action: UToolsPluginEnterAction) => void): void`
+- `openProjectByName(query: string): boolean`
+
+### 3. Contracts
+
+- `plugin.json` may expose a dynamic search entry for non-empty main-input text so users can open projects from the uTools launcher.
+- `App.vue` owns the uTools enter callback because it coordinates app-level routing after projects load.
+- Project matching belongs in the store. Components should call a store action instead of duplicating project lookup rules.
+- Match project names by exact case-insensitive match first, then by case-insensitive substring match.
+- When the matched project path is unavailable, open the edit form for that project instead of navigating to a broken detail view.
+- The payload parser should tolerate uTools version differences by checking likely text fields such as `payload`, `text`, `keyword`, `cmd`, and `option`.
+
+### 4. Validation & Error Matrix
+
+- Empty query -> return `false` and leave the current view unchanged.
+- No matching project -> return `false` and leave the current view unchanged.
+- Matched unavailable project -> open edit form and return `true`.
+- Matched available project -> select the project, switch to the projects tab, and return `true`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: typing `color` in the uTools launcher opens the matching project detail/launch area.
+- Base: typing a full project name opens the exact project even when another project only contains the same words.
+- Bad: parsing only one payload field and silently failing on a different uTools version.
+
+### 6. Tests Required
+
+- `npm run lint` should verify `src/global.d.ts`, `App.vue`, and store action types remain aligned.
+- `npm run build` should verify the plugin entry integration does not break the frontend bundle.
+- Manual uTools smoke test should cover typing a project name into the main input and pressing Enter.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const project = store.projects.find((item) => item.name === query);
+store.selectedProjectId = project?.id || null;
+```
+
+This duplicates lookup rules and bypasses unavailable-project handling.
+
+#### Correct
+
+```ts
+store.openProjectByName(query);
+```
+
+Keep quick-open matching and fallback behavior centralized in the store.
+
 - Manual smoke test: start a long-running command, stop it, confirm script and card show stopped.
 
 ### 7. Wrong vs Correct
