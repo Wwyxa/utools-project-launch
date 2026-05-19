@@ -161,7 +161,7 @@ onBeforeUnmount(flushMemo);
 
 <template>
   <div
-    class="flex h-[600px] flex-col gap-3 overflow-hidden rounded-lg border border-border-subtle bg-surface p-3 shadow-sm"
+    class="flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-lg border border-border-subtle bg-surface p-3 shadow-sm"
   >
     <section
       class="flex min-h-[10rem] max-h-[18rem] flex-none flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"

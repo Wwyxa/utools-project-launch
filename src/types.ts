@@ -10,9 +10,15 @@ export type Locale = "zh-CN" | "en-US";
 export type ProjectKind = "node" | "python" | "go" | "executable" | "custom";
 
 export type DefaultTerminalKind = "builtin" | "windows-terminal" | "powershell" | "cmd" | "custom";
+export type DefaultEditorKind = "vscode" | "cursor" | "custom";
 
 export interface TerminalPreferences {
   kind: DefaultTerminalKind;
+  customCommand: string;
+}
+
+export interface EditorPreferences {
+  kind: DefaultEditorKind;
   customCommand: string;
 }
 
@@ -169,6 +175,19 @@ export interface ProjectBridgeTerminalLaunchResult {
   message?: string;
 }
 
+export interface ProjectBridgeEditorLaunchPayload {
+  projectPath: string;
+  editor: EditorPreferences;
+}
+
+export interface ProjectBridgeEditorLaunchResult {
+  launched: boolean;
+  command: string;
+  cwd: string;
+  kind: DefaultEditorKind;
+  message?: string;
+}
+
 export interface ProjectBridgePackageScript {
   name: string;
   command: string;
@@ -234,6 +253,8 @@ export interface ProjectBridge {
   saveProjects(projects: Project[]): Promise<void>;
   loadTerminalPreferences(): TerminalPreferences;
   saveTerminalPreferences(preferences: TerminalPreferences): void;
+  loadEditorPreferences(): EditorPreferences;
+  saveEditorPreferences(preferences: EditorPreferences): void;
   inspectProjectPath(projectPath: string): Promise<ProjectPathInspection>;
   pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pathExists(projectPath: string): Promise<boolean>;
@@ -248,6 +269,7 @@ export interface ProjectBridge {
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;
   openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult>;
+  openEditor(payload: ProjectBridgeEditorLaunchPayload): Promise<ProjectBridgeEditorLaunchResult>;
   runCommand(payload: {
     projectId: string;
     scriptId: string;
@@ -257,6 +279,7 @@ export interface ProjectBridge {
     label: string;
   }): Promise<ProjectBridgeRunResult>;
   stopProcess(pid: number): Promise<void>;
+  stopAllProcesses(): Promise<void>;
   openPath(path: string): Promise<void>;
   showItemInFolder(path: string): Promise<void>;
 }

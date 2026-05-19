@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ExternalLink, Folder, Pencil, ArrowLeft, RefreshCw, TerminalSquare, Trash2 } from "lucide-vue-next";
+import { Code2, ExternalLink, Folder, Pencil, ArrowLeft, RefreshCw, TerminalSquare, Trash2 } from "lucide-vue-next";
 import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -41,6 +41,7 @@ const hasGitSnapshot = computed(() => Boolean(props.project.git?.repositoryPath)
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
+const handleOpenEditor = () => store.openProjectInEditor(props.project.id);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
 const handleRefresh = () => {
@@ -104,6 +105,16 @@ const handleDelete = () => {
         </button>
         <button
           type="button"
+          @click="handleOpenEditor"
+          :disabled="isUnavailable"
+          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
+          :title="t.projectActions.openInEditor"
+          :aria-label="t.projectActions.openInEditor"
+        >
+          <Code2 :size="18" class="group-hover:text-primary" />
+        </button>
+        <button
+          type="button"
           @click="handleOpenFolder"
           :disabled="isUnavailable"
           class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
@@ -155,11 +166,13 @@ const handleDelete = () => {
       :class="
         cn(
           'themed-scrollbar min-h-0 flex-1 pr-1 [color-scheme:inherit]',
-          activeTab === 'files' ? 'overflow-hidden' : 'space-y-4 overflow-y-auto',
+          activeTab === 'files' || activeTab === 'scripts' || activeTab === 'git' || activeTab === 'memo'
+            ? 'overflow-hidden'
+            : 'space-y-4 overflow-y-auto',
         )
       "
     >
-      <div v-if="activeTab === 'info'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div v-if="activeTab === 'info'" class="grid min-h-full grid-cols-1 content-start gap-4 lg:grid-cols-3">
         <div class="lg:col-span-2 bg-surface border border-border-subtle rounded-lg p-4 space-y-3 shadow-sm">
           <div>
             <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">

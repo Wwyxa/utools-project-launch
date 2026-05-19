@@ -17,6 +17,13 @@ const t = useI18n();
 const scripts = computed(() => props.project.scripts);
 const isUnavailable = computed(() => props.project.pathExists === false);
 
+const scriptStatusLabel = (status: Project["scripts"][number]["status"]) => {
+  if (status === "RUNNING") return t.value.common.running;
+  if (status === "ERROR") return t.value.common.error;
+  if (status === "STOPPED") return t.value.common.stopped;
+  return t.value.common.idle;
+};
+
 const handleStart = async (scriptId: string) => {
   if (isUnavailable.value) {
     return;
@@ -34,7 +41,7 @@ const handleStop = async (scriptId: string) => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 min-h-full">
+  <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
     <div
       v-if="scripts.length === 0"
       class="border border-dashed border-border-subtle rounded-lg p-6 text-sm text-on-surface-variant bg-surface"
@@ -42,7 +49,7 @@ const handleStop = async (scriptId: string) => {
       {{ t.projectDetails.noScripts }}
     </div>
 
-    <div v-else class="border border-border-subtle rounded-lg overflow-hidden bg-surface shadow-sm">
+    <div v-else class="max-h-[38%] shrink-0 overflow-auto rounded-lg border border-border-subtle bg-surface shadow-sm themed-scrollbar">
       <div
         v-for="script in scripts"
         :key="script.id"
@@ -66,7 +73,7 @@ const handleStop = async (scriptId: string) => {
             )
           "
         >
-          {{ script.status }}
+          {{ scriptStatusLabel(script.status) }}
         </div>
         <div class="font-mono text-xs text-on-surface-variant truncate" :title="script.command">
           {{ script.command }}
@@ -97,6 +104,8 @@ const handleStop = async (scriptId: string) => {
       </div>
     </div>
 
-    <Terminal :projectId="project.id" :scripts="project.scripts" />
+    <div class="min-h-0 flex-1">
+      <Terminal :projectId="project.id" :scripts="project.scripts" />
+    </div>
   </div>
 </template>

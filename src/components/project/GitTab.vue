@@ -62,60 +62,107 @@ const refClass = (refName: string) =>
           : "border-border-subtle bg-surface-container-low text-on-surface-variant",
   );
 
-const graphStrokeColors = ["#2eaf7d", "#f59e0b", "#0ea5e9", "#f87171", "#a78bfa", "#22c55e"];
-const graphColor = (lane: number) => graphStrokeColors[lane % graphStrokeColors.length];
 const isHeadCommit = (refs?: string) => Boolean(refs?.includes("HEAD"));
+const graphStrokeColors = ["#2eaf7d", "#0ea5e9", "#f59e0b", "#d946ef", "#f43f5e", "#06b6d4", "#84cc16", "#8b5cf6"];
 const laneWidth = 14;
 const rowHeight = 28;
+const dotRadius = 4.2;
+const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + 2;
 
-const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2;
+const refsIncludeBranch = (refs: string | undefined, branch: string) =>
+  refsForCommit(refs).some((refName) => {
+    const cleanRef = refName.replace(/^HEAD ->\s*/, "").trim();
+    return cleanRef === branch || cleanRef === `origin/${branch}`;
+  });
 
 const graphRows = computed(() => {
-  const lanes: string[] = [];
+  const lanes: Array<string | null> = [];
+  const laneColors = new Map<number, string>();
+  let colorIndex = 0;
   let maxLane = 0;
+  const currentBranch = snapshot.value?.branch || "";
+
+  const nextColor = () => graphStrokeColors[colorIndex++ % graphStrokeColors.length];
+  const laneColor = (lane: number) => {
+    if (!laneColors.has(lane)) {
+      laneColors.set(lane, nextColor());
+    }
+    return laneColors.get(lane) || graphStrokeColors[0];
+  };
+  const findLane = (hash: string) => lanes.indexOf(hash);
+  const allocLane = () => {
+    const emptyLane = lanes.indexOf(null);
+    if (emptyLane >= 0) return emptyLane;
+    lanes.push(null);
+    return lanes.length - 1;
+  };
+
+  if (currentBranch) {
+    const headCommit = commits.value.find((commit) => refsIncludeBranch(commit.refs, currentBranch));
+    if (headCommit) {
+      lanes[0] = headCommit.hash;
+      laneColors.set(0, nextColor());
+    }
+  }
 
   return commits.value.map((commit) => {
-    let lane = lanes.indexOf(commit.hash);
+    let lane = findLane(commit.hash);
     if (lane < 0) {
-      lane = lanes.findIndex((item) => !item);
-      if (lane < 0) lane = lanes.length;
+      lane = allocLane();
       lanes[lane] = commit.hash;
+      laneColor(lane);
     }
 
-    const parents = commit.parents || [];
+    const color = laneColor(lane);
     const activeLanes = lanes
       .map((hash, index) => ({ hash, index }))
-      .filter((item) => Boolean(item.hash));
-    const parentLanes = parents.map((parentHash, parentIndex) => {
-      let parentLane = parentIndex === 0 ? lane : lanes.indexOf(parentHash);
-      if (parentLane < 0) {
-        parentLane = lanes.findIndex((hash, index) => !hash && index !== lane);
-        if (parentLane < 0) parentLane = lanes.length;
+      .filter((item) => item.hash !== null)
+      .map((item) => item.index);
+    const rowLaneColors = new Map<number, string>();
+    activeLanes.forEach((activeLane) => {
+      rowLaneColors.set(activeLane, laneColor(activeLane));
+    });
+
+    const connections: Array<{ from: number; to: number; color: string }> = [];
+    const parents = commit.parents || [];
+    lanes[lane] = null;
+
+    if (parents.length > 0) {
+      const firstParent = parents[0];
+      const existingFirstParentLane = findLane(firstParent);
+      if (existingFirstParentLane >= 0) {
+        connections.push({ from: lane, to: existingFirstParentLane, color });
+      } else {
+        lanes[lane] = firstParent;
+        laneColors.set(lane, color);
+        connections.push({ from: lane, to: lane, color });
       }
-      return { hash: parentHash, lane: parentLane };
-    });
 
-    lanes[lane] = parentLanes[0]?.hash || "";
-    parentLanes.slice(1).forEach((parent) => {
-      lanes[parent.lane] = parent.hash;
-    });
+      parents.slice(1).forEach((parentHash) => {
+        let parentLane = findLane(parentHash);
+        if (parentLane < 0) {
+          parentLane = allocLane();
+          lanes[parentLane] = parentHash;
+          laneColors.set(parentLane, nextColor());
+        }
+        connections.push({ from: lane, to: parentLane, color });
+      });
+    }
 
-    while (lanes.length && !lanes[lanes.length - 1]) {
+    while (lanes.length && lanes[lanes.length - 1] === null) {
       lanes.pop();
     }
-    maxLane = Math.max(maxLane, lanes.length, lane + 1, ...parentLanes.map((parent) => parent.lane + 1));
+
+    maxLane = Math.max(maxLane, lane, ...activeLanes, ...connections.map((connection) => connection.to));
 
     return {
       commit,
       lane,
+      color,
       activeLanes,
-      nextActiveLanes: lanes
-        .map((hash, index) => ({ hash, index }))
-        .filter((item) => Boolean(item.hash)),
-      connections: parentLanes.length
-        ? parentLanes.filter((parent) => parent.lane !== lane).map((parent) => ({ from: lane, to: parent.lane }))
-        : [],
-      width: Math.max(42, maxLane * laneWidth + laneWidth),
+      laneColors: rowLaneColors,
+      connections,
+      width: Math.max(58, (maxLane + 1) * laneWidth + 16),
     };
   });
 });
@@ -130,7 +177,7 @@ const fileLabel = (status: string) => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 min-h-full">
+  <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
     <div class="border border-border-subtle rounded-lg bg-surface px-3 py-2 flex items-center justify-between gap-3">
       <div class="flex items-center gap-3 min-w-0 text-xs">
         <GitBranch :size="16" class="text-primary shrink-0" />
@@ -152,9 +199,9 @@ const fileLabel = (status: string) => {
       </div>
     </div>
 
-    <div class="grid grid-cols-1 items-start lg:grid-cols-[minmax(14rem,0.65fr)_minmax(0,1.35fr)] gap-3 min-h-0">
+    <div class="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,0.65fr)_minmax(0,1.35fr)]">
       <div
-        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col self-start"
+        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col"
       >
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
@@ -234,7 +281,7 @@ const fileLabel = (status: string) => {
       </div>
 
       <div
-        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col h-[32rem] max-h-[68vh]"
+        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col"
       >
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
@@ -273,49 +320,42 @@ const fileLabel = (status: string) => {
               class="grid h-7 grid-cols-[4.25rem_4.25rem_minmax(0,1fr)_minmax(7rem,12rem)_minmax(5rem,8rem)_5.5rem] items-center gap-2 rounded px-2 text-xs hover:bg-surface-container-high"
             >
               <div class="h-7 overflow-hidden" :title="row.commit.graph || '*'">
-                <svg class="h-7 overflow-visible" :width="row.width" :height="rowHeight" :viewBox="`0 0 ${row.width} ${rowHeight}`">
+                <svg
+                  class="h-7 overflow-visible"
+                  :width="row.width"
+                  :height="rowHeight"
+                  :viewBox="`0 0 ${row.width} ${rowHeight}`"
+                >
                   <line
                     v-for="activeLane in row.activeLanes"
-                    :key="`v-${row.commit.hash}-${activeLane.index}`"
-                    :x1="laneCenter(activeLane.index)"
+                    :key="`${row.commit.hash}-v-${activeLane}`"
+                    :x1="laneCenter(activeLane)"
                     y1="0"
-                    :x2="laneCenter(activeLane.index)"
-                    :y2="rowHeight / 2"
-                    :stroke="graphColor(activeLane.index)"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    opacity="0.78"
-                  />
-                  <line
-                    v-for="activeLane in row.nextActiveLanes"
-                    :key="`nv-${row.commit.hash}-${activeLane.index}`"
-                    :x1="laneCenter(activeLane.index)"
-                    :y1="rowHeight / 2"
-                    :x2="laneCenter(activeLane.index)"
+                    :x2="laneCenter(activeLane)"
                     :y2="rowHeight"
-                    :stroke="graphColor(activeLane.index)"
+                    :stroke="row.laneColors.get(activeLane) || row.color"
                     stroke-width="2"
                     stroke-linecap="round"
-                    opacity="0.78"
+                    opacity="0.42"
                   />
                   <line
-                    v-for="connection in row.connections"
-                    :key="`c-${row.commit.hash}-${connection.from}-${connection.to}`"
+                    v-for="(connection, index) in row.connections"
+                    :key="`${row.commit.hash}-c-${index}`"
                     :x1="laneCenter(connection.from)"
                     :y1="rowHeight / 2"
                     :x2="laneCenter(connection.to)"
                     :y2="rowHeight"
-                    :stroke="graphColor(connection.to)"
+                    :stroke="connection.color"
                     stroke-width="2"
                     stroke-linecap="round"
-                    opacity="0.95"
+                    opacity="0.82"
                   />
                   <circle
                     :cx="laneCenter(row.lane)"
                     :cy="rowHeight / 2"
-                    :r="isHeadCommit(row.commit.refs) ? 4.8 : 4.2"
-                    :fill="isHeadCommit(row.commit.refs) ? 'var(--color-surface)' : graphColor(row.lane)"
-                    :stroke="graphColor(row.lane)"
+                    :r="isHeadCommit(row.commit.refs) ? dotRadius + 0.7 : dotRadius"
+                    :fill="isHeadCommit(row.commit.refs) ? 'var(--color-surface)' : row.color"
+                    :stroke="row.color"
                     :stroke-width="isHeadCommit(row.commit.refs) ? 2.4 : 1.4"
                   />
                 </svg>
@@ -347,7 +387,7 @@ const fileLabel = (status: string) => {
               :disabled="isLoadingMore"
               @click="handleLoadMore"
             >
-              {{ isLoadingMore ? "加载中..." : "加载更多提交" }}
+              {{ isLoadingMore ? t.git.loadingMore : t.git.loadMore }}
             </button>
           </div>
         </div>

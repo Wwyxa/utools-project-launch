@@ -7,22 +7,24 @@ import {
   Sun,
   Monitor,
   TerminalSquare,
+  Code2,
   ArrowLeft,
   Upload,
   Download,
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import type { DefaultTerminalKind } from "../../types";
+import type { DefaultEditorKind, DefaultTerminalKind } from "../../types";
 
 const store = useStore();
 const t = useI18n();
 
 const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
+const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
 </script>
 
 <template>
-  <div class="p-6 max-w-5xl">
+  <div class="h-full overflow-y-auto p-4 max-w-5xl themed-scrollbar">
     <header class="mb-5 flex items-center gap-3">
       <button
         type="button"
@@ -42,15 +44,15 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
           <Languages :size="18" />
           <h3 class="text-sm font-semibold text-on-surface">{{ t.common.language }}</h3>
         </div>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="inline-flex max-w-full flex-wrap rounded-lg border border-border-subtle bg-surface-container-low p-1">
           <button
             type="button"
             @click="store.setLocale('zh-CN')"
             :class="[
-              'px-3 py-2 rounded-lg text-sm font-medium transition-all',
+              'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
               store.locale === 'zh-CN'
                 ? 'bg-primary text-on-primary shadow-sm'
-                : 'bg-surface-variant text-on-surface-variant hover:bg-surface-container',
+                : 'text-on-surface-variant hover:bg-surface-container',
             ]"
           >
             简体中文
@@ -59,10 +61,10 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             type="button"
             @click="store.setLocale('en-US')"
             :class="[
-              'px-3 py-2 rounded-lg text-sm font-medium transition-all',
+              'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
               store.locale === 'en-US'
                 ? 'bg-primary text-on-primary shadow-sm'
-                : 'bg-surface-variant text-on-surface-variant hover:bg-surface-container',
+                : 'text-on-surface-variant hover:bg-surface-container',
             ]"
           >
             English
@@ -75,15 +77,15 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
           <Monitor :size="18" />
           <h3 class="text-sm font-semibold text-on-surface">{{ t.common.theme }}</h3>
         </div>
-        <div class="grid grid-cols-3 gap-2">
+        <div class="inline-flex max-w-full flex-wrap rounded-lg border border-border-subtle bg-surface-container-low p-1">
           <button
             type="button"
             @click="store.setTheme('light')"
             :class="[
-              'flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+              'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all',
               store.theme === 'light'
                 ? 'bg-primary text-on-primary shadow-sm'
-                : 'bg-surface-variant text-on-surface-variant hover:bg-surface-container',
+                : 'text-on-surface-variant hover:bg-surface-container',
             ]"
           >
             <Sun :size="16" />
@@ -93,10 +95,10 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             type="button"
             @click="store.setTheme('dark')"
             :class="[
-              'flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+              'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all',
               store.theme === 'dark'
                 ? 'bg-primary text-on-primary shadow-sm'
-                : 'bg-surface-variant text-on-surface-variant hover:bg-surface-container',
+                : 'text-on-surface-variant hover:bg-surface-container',
             ]"
           >
             <Moon :size="16" />
@@ -106,10 +108,10 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             type="button"
             @click="store.setTheme('auto')"
             :class="[
-              'flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+              'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all',
               store.theme === 'auto'
                 ? 'bg-primary text-on-primary shadow-sm'
-                : 'bg-surface-variant text-on-surface-variant hover:bg-surface-container',
+                : 'text-on-surface-variant hover:bg-surface-container',
             ]"
           >
             <Monitor :size="16" />
@@ -123,18 +125,18 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
           <TerminalSquare :size="18" />
           <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultTerminal }}</h3>
         </div>
-        <div class="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+        <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+          <div class="inline-flex h-fit max-w-full flex-wrap rounded-lg border border-border-subtle bg-surface-container-low p-1">
             <button
               v-for="option in terminalOptions"
               :key="option"
               type="button"
               @click="store.setDefaultTerminal(option)"
               :class="[
-                'px-3 py-2 rounded-lg text-left text-sm font-medium transition-all',
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
                 store.terminalPreferences.kind === option
                   ? 'bg-primary text-on-primary shadow-sm'
-                  : 'bg-surface-variant text-on-surface-variant hover:bg-surface-container',
+                  : 'text-on-surface-variant hover:bg-surface-container',
               ]"
             >
               {{ t.settings.terminals[option] }}
@@ -166,6 +168,50 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
       </section>
 
       <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm lg:col-span-2">
+        <div class="flex items-center gap-2 mb-3 text-primary">
+          <Code2 :size="18" />
+          <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultEditor }}</h3>
+        </div>
+        <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+          <div class="inline-flex h-fit max-w-full flex-wrap rounded-lg border border-border-subtle bg-surface-container-low p-1">
+            <button
+              v-for="option in editorOptions"
+              :key="option"
+              type="button"
+              @click="store.setDefaultEditor(option)"
+              :class="[
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
+                store.editorPreferences.kind === option
+                  ? 'bg-primary text-on-primary shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container',
+              ]"
+            >
+              {{ t.settings.editors[option] }}
+            </button>
+          </div>
+          <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+            <label class="block text-xs font-semibold uppercase text-on-surface-variant mb-2">
+              {{ t.settings.customEditorCommand }}
+            </label>
+            <input
+              :value="store.editorPreferences.customCommand"
+              @input="store.setDefaultEditorCustomCommand(($event.target as HTMLInputElement).value)"
+              type="text"
+              :disabled="store.editorPreferences.kind !== 'custom'"
+              :placeholder="t.settings.customEditorCommandPlaceholder"
+              :title="
+                store.editorPreferences.kind === 'custom'
+                  ? t.settings.customEditorCommand
+                  : t.settings.customCommandDisabled
+              "
+              class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant disabled:opacity-70 disabled:placeholder:text-on-surface-variant/60"
+            />
+            <p class="mt-2 text-xs text-on-surface-variant">{{ t.settings.defaultEditorHint }}</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm lg:col-span-2">
         <div class="flex items-center justify-between gap-3 mb-3">
           <div class="flex items-center gap-2 text-primary">
             <Download :size="18" />
@@ -175,11 +221,11 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
             {{ store.projectStorageMessage }}
           </p>
         </div>
-        <div class="grid gap-2 sm:grid-cols-2">
+        <div class="flex flex-wrap gap-2">
           <button
             type="button"
             @click="store.importProjectConfig"
-            class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
+            class="inline-flex w-auto items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
           >
             <Download :size="16" />
             {{ t.settings.importProjectConfig }}
@@ -187,7 +233,7 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
           <button
             type="button"
             @click="store.exportProjectConfig"
-            class="flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
+            class="inline-flex w-auto items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
           >
             <Upload :size="16" />
             {{ t.settings.exportProjectConfig }}

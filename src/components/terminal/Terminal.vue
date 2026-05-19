@@ -50,12 +50,12 @@ const resolveLogTone = (message: string, type: string) => {
     return "text-status-error";
   }
   if (type === "WARN" || /\b(warn|warning|deprecated)\b/.test(normalized)) {
-    return "text-yellow-300";
+    return "text-amber-700 dark:text-yellow-300";
   }
   if (type === "SUCCESS" || /\b(info|ready|listening|started|success|vite)\b/.test(normalized)) {
-    return "text-emerald-300";
+    return "text-status-running dark:text-emerald-300";
   }
-  return "text-slate-300";
+  return "text-on-surface dark:text-slate-300";
 };
 
 const scrollToTop = async () => {
@@ -124,15 +124,15 @@ onMounted(() => {
 
 <template>
   <div
-    class="border border-slate-700/80 rounded-lg overflow-hidden flex flex-col h-[26rem] min-h-[22rem] max-h-[52vh] bg-[#0d1117] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_16px_40px_rgba(0,0,0,0.18)]"
+    class="h-full min-h-[14rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm dark:border-slate-700/80 dark:bg-[#0d1117] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_16px_40px_rgba(0,0,0,0.18)]"
   >
-    <div class="bg-[#111820] px-3 py-2 flex items-center justify-between border-b border-slate-700/80 gap-3">
+    <div class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3 dark:border-slate-700/80 dark:bg-[#111820]">
       <div class="flex items-center gap-2 min-w-0 flex-1">
         <div class="flex items-center gap-2 min-w-0 shrink-0">
-          <TerminalIcon :size="14" class="text-slate-400" />
-          <span class="text-xs font-semibold text-slate-100">{{ t.terminal.title }}</span>
+          <TerminalIcon :size="14" class="text-on-surface-variant dark:text-slate-400" />
+          <span class="text-xs font-semibold text-on-surface dark:text-slate-100">{{ t.terminal.title }}</span>
         </div>
-        <div class="h-4 w-px bg-slate-700" />
+        <div class="h-4 w-px bg-border-subtle dark:bg-slate-700" />
         <div class="flex items-center gap-1 overflow-x-auto min-w-0">
           <div
             v-for="target in logTargets"
@@ -141,8 +141,8 @@ onMounted(() => {
               cn(
                 'h-6 rounded text-[10px] font-semibold whitespace-nowrap border transition-colors flex items-center overflow-hidden',
                 selectedScriptId === target.id
-                  ? 'bg-emerald-400/15 text-emerald-100 border-emerald-400/50'
-                  : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800',
+                  ? 'bg-primary/10 text-primary border-primary/40 dark:bg-emerald-400/15 dark:text-emerald-100 dark:border-emerald-400/50'
+                  : 'bg-surface text-on-surface-variant border-border-subtle hover:bg-surface-container dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-800',
               )
             "
           >
@@ -150,6 +150,7 @@ onMounted(() => {
               @click="selectedScriptId = target.id"
               class="h-full pl-2 pr-1 flex items-center gap-1.5 min-w-0"
               :title="target.name"
+              :aria-label="target.name"
             >
               <span
                 :class="[
@@ -168,6 +169,7 @@ onMounted(() => {
               @click="closeTarget(target.id)"
               class="h-full px-1.5 hover:bg-on-surface/10"
               :title="t.common.close"
+              :aria-label="t.common.close"
             >
               <X :size="10" />
             </button>
@@ -175,7 +177,7 @@ onMounted(() => {
         </div>
         <button
           @click="scrollToTop"
-          class="p-1 text-slate-400 hover:text-slate-100 rounded hover:bg-slate-800 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
           :disabled="filteredLogs.length === 0"
           :title="t.terminal.scrollToTop"
           :aria-label="t.terminal.scrollToTop"
@@ -184,7 +186,7 @@ onMounted(() => {
         </button>
         <button
           @click="scrollToBottom"
-          class="p-1 text-slate-400 hover:text-slate-100 rounded hover:bg-slate-800 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
           :disabled="filteredLogs.length === 0"
           :title="t.terminal.scrollToBottom"
           :aria-label="t.terminal.scrollToBottom"
@@ -193,8 +195,9 @@ onMounted(() => {
         </button>
         <button
           @click="handleClear"
-          class="flex items-center gap-1.5 px-2 py-1 text-slate-400 hover:text-emerald-200 rounded hover:bg-slate-800 transition-colors shrink-0"
+          class="flex items-center gap-1.5 px-2 py-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface-variant transition-colors shrink-0 dark:text-slate-400 dark:hover:text-emerald-200 dark:hover:bg-slate-800"
           :title="t.terminal.clear"
+          :aria-label="t.terminal.clear"
         >
           <Trash2 :size="12" />
           <span class="text-[10px] font-medium">{{ t.terminal.clear }}</span>
@@ -203,37 +206,37 @@ onMounted(() => {
 
       <div class="flex items-center gap-2 shrink-0">
         <div class="relative">
-          <Search :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/50" />
+          <Search :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60 dark:text-slate-500" />
           <input
             v-model="query"
             type="text"
             :placeholder="t.terminal.filter"
-            class="bg-slate-950 border border-slate-700 rounded px-7 py-1 text-[10px] text-slate-100 placeholder:text-slate-500 w-32 focus:outline-none focus:border-emerald-400"
+            class="bg-surface border border-border-subtle rounded px-7 py-1 text-[10px] text-on-surface placeholder:text-on-surface-variant w-32 focus:outline-none focus:border-primary dark:bg-slate-950 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400"
           />
         </div>
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 bg-[#0d1117]">
+    <div class="min-h-0 flex-1 bg-surface-container-lowest dark:bg-[#0d1117]">
       <div
         ref="scrollRef"
         @scroll="handleLogScroll"
         @wheel="handleLogWheel"
-        class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-slate-300 [overscroll-behavior-y:contain]"
+        class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-on-surface dark:text-slate-300 [overscroll-behavior-y:contain]"
       >
         <div v-for="(log, index) in filteredLogs" :key="index" class="flex mb-1 group">
-          <span class="w-20 text-right mr-4 shrink-0 text-slate-500 select-none">
+          <span class="w-20 text-right mr-4 shrink-0 text-on-surface-variant/70 select-none dark:text-slate-500">
             {{ log.timestamp }}
           </span>
           <span :class="cn('break-all', resolveLogTone(log.message, log.type))">
             {{ log.message }}
           </span>
         </div>
-        <div v-if="logTargets.length === 0" class="text-slate-500 italic">{{ t.terminal.ready }}</div>
-        <div v-else-if="filteredLogs.length === 0" class="text-slate-500 italic">
+        <div v-if="logTargets.length === 0" class="text-on-surface-variant italic dark:text-slate-500">{{ t.terminal.ready }}</div>
+        <div v-else-if="filteredLogs.length === 0" class="text-on-surface-variant italic dark:text-slate-500">
           {{ t.terminal.empty }}
         </div>
-        <div class="animate-pulse text-emerald-300 mt-1">_</div>
+        <div class="animate-pulse text-primary dark:text-emerald-300 mt-1">_</div>
       </div>
     </div>
   </div>

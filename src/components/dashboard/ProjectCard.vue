@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Pencil,
   TerminalSquare,
+  Code2,
   Trash2,
   ChevronDown,
   GripVertical,
@@ -124,6 +125,14 @@ const handleOpenTerminal = async (event: MouseEvent) => {
     return;
   }
   await store.openProjectInTerminal(props.project.id);
+};
+
+const handleOpenEditor = async (event: MouseEvent) => {
+  event.stopPropagation();
+  if (isUnavailable.value) {
+    return;
+  }
+  await store.openProjectInEditor(props.project.id);
 };
 
 const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: string) => {
@@ -344,6 +353,15 @@ const handleDelete = (event: MouseEvent) => {
               :aria-label="t.projectActions.openInTerminal"
             >
               <TerminalSquare :size="15" />
+            </button>
+            <button
+              @click.stop="handleOpenEditor"
+              class="p-1 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+              :disabled="isUnavailable"
+              :title="t.projectActions.openInEditor"
+              :aria-label="t.projectActions.openInEditor"
+            >
+              <Code2 :size="15" />
             </button>
             <button
               @click.stop="handleOpenFolder"

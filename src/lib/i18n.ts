@@ -81,6 +81,7 @@ const messages = {
     projectActions: {
       viewDetails: "查看项目详情",
       openInTerminal: "在终端中打开",
+      openInEditor: "在编辑器中打开",
       deleteProject: "删除项目",
       deleteConfirm: "确定删除项目“{name}”吗？这只会移除启动器中的项目配置，不会删除磁盘目录。",
       runningCommand: "正在运行",
@@ -134,6 +135,8 @@ const messages = {
       scrollFilesToBottom: "变更文件回到底部",
       scrollGraphToTop: "提交树回到顶部",
       scrollGraphToBottom: "提交树回到底部",
+      loadMore: "加载更多提交",
+      loadingMore: "加载中...",
     },
     memo: {
       title: "项目备忘",
@@ -167,11 +170,20 @@ const messages = {
       customCommand: "自定义命令",
       customCommandDisabled: "选择自定义命令后可编辑",
       customCommandPlaceholder: "例如 wt.exe -d {path}",
+      defaultEditor: "默认编辑器",
+      defaultEditorHint: "该偏好会用于项目详情页的在编辑器中打开操作，支持 {path} / {projectPath} 占位符。",
+      customEditorCommand: "自定义编辑器命令",
+      customEditorCommandPlaceholder: "例如 code {path}",
       terminals: {
         builtin: "内置（不启动外部终端）",
         "windows-terminal": "Windows Terminal",
         powershell: "PowerShell",
         cmd: "CMD",
+        custom: "自定义命令",
+      },
+      editors: {
+        vscode: "VS Code",
+        cursor: "Cursor",
         custom: "自定义命令",
       },
     },
@@ -288,6 +300,7 @@ const messages = {
     projectActions: {
       viewDetails: "View project details",
       openInTerminal: "Open in terminal",
+      openInEditor: "Open in editor",
       deleteProject: "Delete project",
       deleteConfirm:
         'Delete "{name}" from the launcher? This only removes the project configuration and does not delete its folder.',
@@ -342,6 +355,8 @@ const messages = {
       scrollFilesToBottom: "Scroll changed files to bottom",
       scrollGraphToTop: "Scroll Git tree to top",
       scrollGraphToBottom: "Scroll Git tree to bottom",
+      loadMore: "Load more commits",
+      loadingMore: "Loading...",
     },
     memo: {
       title: "Project Memo",
@@ -376,11 +391,20 @@ const messages = {
       customCommand: "Custom Command",
       customCommandDisabled: "Select Custom Command to edit",
       customCommandPlaceholder: "Example: wt.exe -d {path}",
+      defaultEditor: "Default Editor",
+      defaultEditorHint: "Used by the project detail editor action. Supports {path} and {projectPath} placeholders.",
+      customEditorCommand: "Custom Editor Command",
+      customEditorCommandPlaceholder: "Example: code {path}",
       terminals: {
         builtin: "Built-in (no external terminal)",
         "windows-terminal": "Windows Terminal",
         powershell: "PowerShell",
         cmd: "CMD",
+        custom: "Custom Command",
+      },
+      editors: {
+        vscode: "VS Code",
+        cursor: "Cursor",
         custom: "Custom Command",
       },
     },

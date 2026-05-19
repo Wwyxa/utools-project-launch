@@ -1,11 +1,15 @@
 import type {
   DefaultTerminalKind,
+  DefaultEditorKind,
+  EditorPreferences,
   ProjectBridge,
   ProjectConfigFile,
   ProjectBridgeGitSnapshot,
   ProjectBridgePackageScript,
   ProjectBridgeTerminalLaunchPayload,
   ProjectBridgeTerminalLaunchResult,
+  ProjectBridgeEditorLaunchPayload,
+  ProjectBridgeEditorLaunchResult,
   ProjectBridgeRunResult,
   ProjectFileListResult,
   ProjectFileReadResult,
@@ -16,6 +20,7 @@ import type {
 
 const fallbackStorageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
+const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 
 const isWindowsPlatform = () => /win/i.test(window.navigator?.platform || window.navigator?.userAgent || "");
 
@@ -25,9 +30,17 @@ const defaultTerminalPreferences = (): TerminalPreferences => ({
 });
 
 const terminalKinds = new Set<DefaultTerminalKind>(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
+const editorKinds = new Set<DefaultEditorKind>(["vscode", "cursor", "custom"]);
 
 const isTerminalKind = (kind: unknown): kind is DefaultTerminalKind =>
   typeof kind === "string" && terminalKinds.has(kind as DefaultTerminalKind);
+const isEditorKind = (kind: unknown): kind is DefaultEditorKind =>
+  typeof kind === "string" && editorKinds.has(kind as DefaultEditorKind);
+
+const defaultEditorPreferences = (): EditorPreferences => ({
+  kind: "vscode",
+  customCommand: "",
+});
 
 const normalizeTerminalPreferences = (value: unknown): TerminalPreferences => {
   const defaults = defaultTerminalPreferences();
@@ -38,6 +51,19 @@ const normalizeTerminalPreferences = (value: unknown): TerminalPreferences => {
   const candidate = value as Partial<TerminalPreferences>;
   return {
     kind: isTerminalKind(candidate.kind) ? candidate.kind : defaults.kind,
+    customCommand: typeof candidate.customCommand === "string" ? candidate.customCommand : "",
+  };
+};
+
+const normalizeEditorPreferences = (value: unknown): EditorPreferences => {
+  const defaults = defaultEditorPreferences();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+
+  const candidate = value as Partial<EditorPreferences>;
+  return {
+    kind: isEditorKind(candidate.kind) ? candidate.kind : defaults.kind,
     customCommand: typeof candidate.customCommand === "string" ? candidate.customCommand : "",
   };
 };
@@ -69,6 +95,32 @@ const writeStoredTerminalPreferences = (preferences: TerminalPreferences) => {
     }
 
     window.localStorage?.setItem(terminalPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+};
+
+const readStoredEditorPreferences = (): EditorPreferences => {
+  try {
+    if (window.utools?.dbStorage) {
+      return normalizeEditorPreferences(window.utools.dbStorage.getItem(editorPreferencesStorageKey));
+    }
+
+    const raw = window.localStorage?.getItem(editorPreferencesStorageKey);
+    return raw ? normalizeEditorPreferences(JSON.parse(raw)) : defaultEditorPreferences();
+  } catch (error) {
+    return defaultEditorPreferences();
+  }
+};
+
+const writeStoredEditorPreferences = (preferences: EditorPreferences) => {
+  const normalized = normalizeEditorPreferences(preferences);
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(editorPreferencesStorageKey, normalized);
+      return;
+    }
+    window.localStorage?.setItem(editorPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
@@ -116,6 +168,12 @@ const fallbackBridge: ProjectBridge = {
   },
   saveTerminalPreferences(preferences) {
     writeStoredTerminalPreferences(preferences);
+  },
+  loadEditorPreferences() {
+    return readStoredEditorPreferences();
+  },
+  saveEditorPreferences(preferences) {
+    writeStoredEditorPreferences(preferences);
   },
   async inspectProjectPath(projectPath: string): Promise<ProjectPathInspection> {
     const name = projectPath.split(/[\\/]/).filter(Boolean).pop() || "";
@@ -188,6 +246,15 @@ const fallbackBridge: ProjectBridge = {
       message: "浏览器预览暂不支持打开外部终端。",
     };
   },
+  async openEditor(payload: ProjectBridgeEditorLaunchPayload): Promise<ProjectBridgeEditorLaunchResult> {
+    return {
+      launched: false,
+      command: "",
+      cwd: payload.projectPath,
+      kind: payload.editor.kind,
+      message: "浏览器预览暂不支持打开外部编辑器。",
+    };
+  },
   async runCommand(payload): Promise<ProjectBridgeRunResult> {
     return {
       pid: Date.now(),
@@ -197,6 +264,9 @@ const fallbackBridge: ProjectBridge = {
     };
   },
   async stopProcess(): Promise<void> {
+    return undefined;
+  },
+  async stopAllProcesses(): Promise<void> {
     return undefined;
   },
   async openPath(): Promise<void> {

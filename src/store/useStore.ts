@@ -3,6 +3,7 @@ import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridg
 import { ProjectStatus } from "../types";
 import type {
   DefaultTerminalKind,
+  DefaultEditorKind,
   Locale,
   LogEntry,
   Project,
@@ -19,6 +20,7 @@ import type {
   ProjectScript,
   ProjectScriptFormValue,
   TerminalPreferences,
+  EditorPreferences,
   TodoItem,
 } from "../types";
 
@@ -386,6 +388,7 @@ export const useStore = defineStore("app", {
     activeTab: "projects" as "projects" | "settings",
     theme: "auto" as "light" | "dark" | "auto",
     terminalPreferences: bridge.loadTerminalPreferences(),
+    editorPreferences: bridge.loadEditorPreferences(),
     supportsBridge: supportsRealProjectBridge(),
     projectsLoaded: false,
     projectStorageMessage: "",
@@ -458,6 +461,7 @@ export const useStore = defineStore("app", {
   actions: {
     async loadProjects() {
       this.terminalPreferences = bridge.loadTerminalPreferences();
+      this.editorPreferences = bridge.loadEditorPreferences();
       try {
         const storedProjects = await bridge.loadProjects();
         if (this.supportsBridge || storedProjects.length > 0) {
@@ -520,6 +524,14 @@ export const useStore = defineStore("app", {
     setDefaultTerminalCustomCommand(command: string) {
       this.terminalPreferences.customCommand = command;
       bridge.saveTerminalPreferences(this.terminalPreferences);
+    },
+    setDefaultEditor(kind: DefaultEditorKind) {
+      this.editorPreferences.kind = kind;
+      bridge.saveEditorPreferences(this.editorPreferences);
+    },
+    setDefaultEditorCustomCommand(command: string) {
+      this.editorPreferences.customCommand = command;
+      bridge.saveEditorPreferences(this.editorPreferences);
     },
     setActiveTab(tab: "projects" | "settings") {
       this.activeTab = tab;
@@ -1123,6 +1135,34 @@ export const useStore = defineStore("app", {
           projectId,
           createLogEntry(
             `Failed to open terminal (${terminalPreferences.kind}): ${error instanceof Error ? error.message : String(error)}`,
+            "ERROR",
+          ),
+        );
+      }
+    },
+    async openProjectInEditor(projectId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return;
+      }
+      const editorPreferences = { ...this.editorPreferences } satisfies EditorPreferences;
+      try {
+        const result = await bridge.openEditor({ projectPath: project.path, editor: editorPreferences });
+        project.lastUpdated = new Date().toLocaleString();
+        if (result.launched) {
+          this.addLog(projectId, createLogEntry(`Open editor (${result.kind}): ${result.command}`, "INFO"));
+          return;
+        }
+        this.addLog(
+          projectId,
+          createLogEntry(`Failed to open editor (${result.kind}): ${result.message || "unknown error"}`, "ERROR"),
+        );
+      } catch (error) {
+        project.lastUpdated = new Date().toLocaleString();
+        this.addLog(
+          projectId,
+          createLogEntry(
+            `Failed to open editor (${editorPreferences.kind}): ${error instanceof Error ? error.message : String(error)}`,
             "ERROR",
           ),
         );

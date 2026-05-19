@@ -9,10 +9,12 @@ const activeProcesses = new Map();
 const userStoppedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
+const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
 const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api", "src"];
 const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
+const editorKinds = new Set(["vscode", "cursor", "custom"]);
 const ignoredFileTreeDirs = new Set([
   "node_modules",
   ".git",
@@ -114,6 +116,21 @@ function normalizeTerminalPreferences(value) {
   };
 }
 
+function getDefaultEditorPreferences() {
+  return { kind: "vscode", customCommand: "" };
+}
+
+function normalizeEditorPreferences(value) {
+  const defaults = getDefaultEditorPreferences();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+  return {
+    kind: editorKinds.has(value.kind) ? value.kind : defaults.kind,
+    customCommand: typeof value.customCommand === "string" ? value.customCommand : "",
+  };
+}
+
 function readTerminalPreferences() {
   try {
     if (window.utools?.dbStorage) {
@@ -141,6 +158,31 @@ function saveTerminalPreferences(preferences) {
     }
 
     window.localStorage?.setItem(terminalPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+}
+
+function readEditorPreferences() {
+  try {
+    if (window.utools?.dbStorage) {
+      return normalizeEditorPreferences(window.utools.dbStorage.getItem(editorPreferencesStorageKey));
+    }
+    const raw = window.localStorage?.getItem(editorPreferencesStorageKey);
+    return raw ? normalizeEditorPreferences(JSON.parse(raw)) : getDefaultEditorPreferences();
+  } catch (error) {
+    return getDefaultEditorPreferences();
+  }
+}
+
+function saveEditorPreferences(preferences) {
+  const normalized = normalizeEditorPreferences(preferences);
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(editorPreferencesStorageKey, normalized);
+      return;
+    }
+    window.localStorage?.setItem(editorPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
@@ -358,6 +400,48 @@ async function openTerminal(payload) {
     ...result,
     kind: terminalKind,
   }));
+}
+
+function isSupportedEditorKind(kind) {
+  return editorKinds.has(kind);
+}
+
+async function openEditor(payload) {
+  const resolvedPath = expandPath(typeof payload?.projectPath === "string" ? payload.projectPath : "");
+  const rawEditorKind = payload?.editor?.kind || "vscode";
+  const editorKind = isSupportedEditorKind(rawEditorKind) ? rawEditorKind : "vscode";
+  const customCommand = typeof payload?.editor?.customCommand === "string" ? payload.editor.customCommand.trim() : "";
+  const directoryStatus = getDirectoryStatus(resolvedPath);
+
+  if (!isSupportedEditorKind(rawEditorKind)) {
+    return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "未知编辑器偏好，无法打开编辑器。" };
+  }
+  if (!directoryStatus.exists) {
+    return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "项目路径不存在，无法打开编辑器。" };
+  }
+  if (!directoryStatus.isDirectory) {
+    return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "项目路径不是文件夹，无法打开编辑器。" };
+  }
+
+  if (editorKind === "vscode") {
+    const executable = process.platform === "win32" ? "code.cmd" : "code";
+    return launchDetachedProcess(executable, [resolvedPath], resolvedPath).then((result) => ({ ...result, kind: editorKind }));
+  }
+  if (editorKind === "cursor") {
+    const executable = process.platform === "win32" ? "cursor.cmd" : "cursor";
+    return launchDetachedProcess(executable, [resolvedPath], resolvedPath).then((result) => ({ ...result, kind: editorKind }));
+  }
+  if (!customCommand) {
+    return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "自定义编辑器命令为空。" };
+  }
+  const commandTokens = splitCommandLine(customCommand).map((token) =>
+    token.replace(/\{path\}|\{projectPath\}/g, () => resolvedPath),
+  );
+  const [executable, ...args] = commandTokens;
+  if (!executable) {
+    return { launched: false, command: customCommand, cwd: resolvedPath, kind: editorKind, message: "自定义编辑器命令无效。" };
+  }
+  return launchDetachedProcess(executable, args, resolvedPath).then((result) => ({ ...result, kind: editorKind }));
 }
 
 function emit(detail) {
@@ -1175,6 +1259,28 @@ function stopProcess(pid) {
   }
 }
 
+function stopAllProcesses() {
+  Array.from(activeProcesses.keys()).forEach((pid) => stopProcess(pid));
+}
+
+function registerProcessCleanupHooks() {
+  window.addEventListener?.("beforeunload", stopAllProcesses);
+  window.addEventListener?.("unload", stopAllProcesses);
+  window.utools?.onPluginOut?.(stopAllProcesses);
+  window.utools?.onPluginDetach?.(stopAllProcesses);
+  process.once?.("exit", stopAllProcesses);
+  process.once?.("SIGINT", () => {
+    stopAllProcesses();
+    process.exit(130);
+  });
+  process.once?.("SIGTERM", () => {
+    stopAllProcesses();
+    process.exit(143);
+  });
+}
+
+registerProcessCleanupHooks();
+
 window.projectBridge = {
   loadProjects: readStoredProjects,
   saveProjects: writeStoredProjects,
@@ -1183,6 +1289,8 @@ window.projectBridge = {
   pathExists,
   loadTerminalPreferences: readTerminalPreferences,
   saveTerminalPreferences: saveTerminalPreferences,
+  loadEditorPreferences: readEditorPreferences,
+  saveEditorPreferences: saveEditorPreferences,
   exportProjects,
   importProjects,
   readPackageScripts,
@@ -1192,8 +1300,10 @@ window.projectBridge = {
   readProjectFile,
   writeProjectFile,
   openTerminal,
+  openEditor,
   runCommand,
   stopProcess,
+  stopAllProcesses,
   openPath: (targetPath) => shell.openPath(expandPath(targetPath)),
   showItemInFolder: (targetPath) => shell.showItemInFolder(expandPath(targetPath)),
 };
