@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend entry point for Vue component and state conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"GitTab, FilesTab, MemoTab, and ProjectDetails component changes must follow local Vue component patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Opening files and switching tabs crosses component/store state boundaries."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Bridge and component callback types may change for file opening and diff retrieval."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"General frontend quality guardrails for focused implementation."}
+{"file":".trellis/spec/backend/index.md","reason":"Bridge preload code acts as the local backend boundary for Git/file operations."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Diff retrieval and file bridge failures should be graceful."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Guardrails for touching public/preload.js bridge code."}
