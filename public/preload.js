@@ -6,6 +6,7 @@ const { TextDecoder } = require("node:util");
 const { shell } = require("electron");
 
 const activeProcesses = new Map();
+const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
@@ -1258,6 +1259,7 @@ function runCommand(payload) {
   });
 
   activeProcesses.set(child.pid, child);
+  launchedProcessIds.add(child.pid);
 
   emit({
     type: "started",
@@ -1309,13 +1311,38 @@ function runCommand(payload) {
   };
 }
 
+function stopWindowsProcessTree(pid) {
+  const script = [
+    "$root = [int]$env:UTOOLS_STOP_PID",
+    "$seen = New-Object 'System.Collections.Generic.HashSet[int]'",
+    "$queue = New-Object 'System.Collections.Generic.Queue[int]'",
+    "$queue.Enqueue($root) | Out-Null",
+    "while ($queue.Count -gt 0) {",
+    "  $current = $queue.Dequeue()",
+    '  Get-CimInstance Win32_Process -Filter "ParentProcessId = $current" | ForEach-Object {',
+    "    $processId = [int]$_.ProcessId",
+    "    if ($seen.Add($processId)) {",
+    "      $queue.Enqueue($processId) | Out-Null",
+    "    }",
+    "  }",
+    "}",
+    "$seen | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }",
+    "Stop-Process -Id $root -Force -ErrorAction SilentlyContinue",
+  ].join("\n");
+
+  spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    env: { ...process.env, UTOOLS_STOP_PID: String(pid) },
+    stdio: "ignore",
+  });
+}
+
 function stopProcess(pid) {
   const child = activeProcesses.get(pid);
 
-  if (child && !child.killed) {
+  if (child) {
     userStoppedProcesses.add(pid);
     if (process.platform === "win32") {
-      spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore" });
+      stopWindowsProcessTree(pid);
     } else {
       try {
         process.kill(pid, "SIGTERM");
@@ -1327,18 +1354,24 @@ function stopProcess(pid) {
 
   if (!child) {
     userStoppedProcesses.delete(pid);
+    if (process.platform === "win32" && launchedProcessIds.has(pid)) {
+      stopWindowsProcessTree(pid);
+    }
   }
 }
 
 function stopAllProcesses() {
-  Array.from(activeProcesses.keys()).forEach((pid) => stopProcess(pid));
+  Array.from(launchedProcessIds.values()).forEach((pid) => stopProcess(pid));
+}
+
+function handlePluginOut(isKill) {
+  if (isKill === true) {
+    stopAllProcesses();
+  }
 }
 
 function registerProcessCleanupHooks() {
-  window.addEventListener?.("beforeunload", stopAllProcesses);
-  window.addEventListener?.("unload", stopAllProcesses);
-  window.utools?.onPluginOut?.(stopAllProcesses);
-  window.utools?.onPluginDetach?.(stopAllProcesses);
+  window.utools?.onPluginOut?.(handlePluginOut);
   process.once?.("exit", stopAllProcesses);
   process.once?.("SIGINT", () => {
     stopAllProcesses();

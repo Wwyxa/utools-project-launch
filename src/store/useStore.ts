@@ -1100,6 +1100,29 @@ export const useStore = defineStore("app", {
       project.status = deriveProjectStatus(project);
       project.lastUpdated = new Date().toLocaleString();
     },
+    stopRunningScriptsForPluginExit() {
+      this.projects.forEach((project) => {
+        let projectUpdated = false;
+        project.scripts.forEach((script) => {
+          if (script.status !== "RUNNING") {
+            return;
+          }
+
+          if (script.pid) {
+            void bridge.stopProcess(script.pid);
+          }
+          this.addLog(project.id, createLogEntry(`[${script.name}] stopped`, "WARN"), script.id);
+          script.status = "STOPPED";
+          script.pid = undefined;
+          projectUpdated = true;
+        });
+
+        if (projectUpdated) {
+          project.status = deriveProjectStatus(project);
+          project.lastUpdated = new Date().toLocaleString();
+        }
+      });
+    },
     async openProjectFolder(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {

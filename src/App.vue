@@ -13,6 +13,7 @@ const storeMessages = useI18n();
 const selectedProject = computed(() => store.selectedProject);
 const activeTab = computed(() => store.activeTab);
 const theme = computed(() => store.theme);
+let pluginOutHookRegistered = false;
 
 const extractPluginSearchText = (action: unknown): string => {
   if (!action || typeof action !== "object") {
@@ -111,6 +112,15 @@ onMounted(() => {
   window.utools?.onPluginEnter?.((action) => {
     void handlePluginEnter(action);
   });
+  if (!pluginOutHookRegistered) {
+    window.utools?.onPluginOut?.((isKill) => {
+      if (isKill === true) {
+        store.stopRunningScriptsForPluginExit();
+        window.projectBridge?.stopAllProcesses?.();
+      }
+    });
+    pluginOutHookRegistered = true;
+  }
   window.addEventListener("project-bridge-event", handleBridgeEvent);
   window.addEventListener("keydown", handleGlobalEscape, true);
   window.addEventListener("keyup", handleGlobalEscape, true);

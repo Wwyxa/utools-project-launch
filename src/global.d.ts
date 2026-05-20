@@ -6,6 +6,7 @@ declare global {
     utools?: {
       isDarkColors(): boolean;
       onPluginEnter(callback: (action?: unknown) => void): void;
+      onPluginOut?(callback: (isKill?: boolean) => void): void;
       outPlugin(isKill?: boolean): boolean;
       showOpenDialog?(options: unknown): Promise<string[] | { filePaths?: string[] } | null>;
       showSaveDialog?(options: unknown): Promise<string | { filePath?: string } | null>;
