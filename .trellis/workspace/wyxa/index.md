@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
+- **Total Sessions**: 13
 - **Last Active**: 2026-05-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~457 | Active |
+| `journal-1.md` | ~491 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-05-20 | Fix plugin exit process cleanup | `3f032bb`, `4553f5f` | `master` |
 | 12 | 2026-05-20 | 改进 git 和文件功能 | `86da463`, `3a92f69`, `446a031` | `master` |
 | 11 | 2026-05-20 | Plugin functionality improvements | `8f78e95`, `73c93f3`, `75654c7` | `master` |
 | 10 | 2026-05-20 | Detail Page Improvements | `db936a1`, `ed4fa65`, `669644c` | `master` |

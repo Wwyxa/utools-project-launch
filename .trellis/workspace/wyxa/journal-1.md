@@ -455,3 +455,37 @@ Implemented editor launch actions on project cards and details, editor preferenc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Fix plugin exit process cleanup
+
+**Date**: 2026-05-20
+**Task**: Fix plugin exit process cleanup
+**Branch**: `master`
+
+### Summary
+
+Resolved plugin exit cleanup behavior, updated lifecycle contracts, and archived both completed Trellis tasks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f032bb` | (see git log) |
+| `4553f5f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
