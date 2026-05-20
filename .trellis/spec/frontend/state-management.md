@@ -220,6 +220,63 @@ const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: p
 
 Always make the intended page size and offset explicit at the store boundary.
 
+## Scenario: Git File Diff Preview
+
+### 1. Scope / Trigger
+
+- Trigger: a Git changed-file diff crosses the Git tab, Pinia store, browser fallback bridge, and uTools preload Git command boundary.
+
+### 2. Signatures
+
+- `ProjectBridge.readGitFileDiff(projectPath: string, relativePath: string): Promise<ProjectGitFileDiffResult>`
+- `ProjectGitFileDiffResult = { path: string; diff: string; message?: string }`
+- `readGitFileDiff(projectId: string, relativePath: string): Promise<ProjectGitFileDiffResult | null>`
+
+### 3. Contracts
+
+- UI components must call the store action, not `window.projectBridge` or Git directly.
+- `relativePath` is project-relative and must be resolved under the Git repository root in preload before running Git.
+- The bridge should combine staged and unstaged diff output for the selected file when both exist.
+- Untracked files may use `git diff --no-index` against `os.devNull`; this command returns exit code `1` when differences exist, so diff-specific command handling must preserve stdout instead of treating all non-zero exits as empty output.
+- Browser fallback must return an empty diff with a user-facing message.
+
+### 4. Validation & Error Matrix
+
+- Missing Git repository -> return `{ path, diff: "", message: "未检测到 Git 仓库" }`.
+- Empty path -> return an empty diff with a choose-file message.
+- Path traversal outside repository -> reject through the existing child-path resolver.
+- No staged/unstaged/untracked diff -> return an empty diff with a user-facing unavailable message.
+
+### 5. Good/Base/Bad Cases
+
+- Good: Git tab asks `store.readGitFileDiff(project.id, file.path)` and renders the returned diff or message.
+- Base: deleted files can show a diff even though they cannot be opened in the Files tab.
+- Bad: using the generic `runGit` helper for `git diff --no-index`, which drops valid diff stdout because the command exits with code `1`.
+
+### 6. Tests Required
+
+- `npm run lint` should verify the bridge contract across `src/types.ts`, fallback bridge, store, and components.
+- `npm run build` should verify the Git diff UI compiles.
+- Manual smoke test: modified, staged, deleted, and untracked files each show either diff text or an explicit unavailable message.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const diff = await window.projectBridge.readGitFileDiff(project.path, file.path);
+```
+
+This bypasses store fallback behavior and makes the component depend on the preload boundary.
+
+#### Correct
+
+```ts
+const diff = await store.readGitFileDiff(project.id, file.path);
+```
+
+Keep Git diff reads behind the store action so fallback, unavailable projects, and UI state stay consistent.
+
 ## Scenario: Project Catalog Persistence
 
 ### 1. Scope / Trigger
