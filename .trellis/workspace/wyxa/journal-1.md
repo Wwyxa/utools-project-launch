@@ -420,3 +420,38 @@ Implemented editor launch actions on project cards and details, editor preferenc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 改进 git 和文件功能
+
+**Date**: 2026-05-20
+**Task**: 改进 git 和文件功能
+**Branch**: `master`
+
+### Summary
+
+完成 Git 树渲染修正、变更文件查看改为按需弹窗、Markdown 文件渲染复用，以及首页项目卡片底部布局修复。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `86da463` | (see git log) |
+| `3a92f69` | (see git log) |
+| `446a031` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
