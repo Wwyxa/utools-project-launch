@@ -1372,7 +1372,6 @@ function handlePluginOut(isKill) {
 
 function registerProcessCleanupHooks() {
   window.utools?.onPluginOut?.(handlePluginOut);
-  process.once?.("exit", stopAllProcesses);
   process.once?.("SIGINT", () => {
     stopAllProcesses();
     process.exit(130);

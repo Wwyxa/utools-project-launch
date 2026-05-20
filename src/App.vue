@@ -115,7 +115,12 @@ onMounted(() => {
   if (!pluginOutHookRegistered) {
     window.utools?.onPluginOut?.((isKill) => {
       if (isKill === true) {
-        store.stopRunningScriptsForPluginExit();
+        const message = "uTools onPluginOut(true) triggered; stopping project processes.";
+        if (window.utools?.showNotification) {
+          window.utools.showNotification(message);
+        } else {
+          window.alert(message);
+        }
         window.projectBridge?.stopAllProcesses?.();
       }
     });
