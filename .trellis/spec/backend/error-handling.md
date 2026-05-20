@@ -76,7 +76,7 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 - Editor launches follow the same typed success/failure shape as terminal launches.
 - `launched: false` means the store should log an error message; the component should not throw.
 - `stopAllProcesses` is best-effort cleanup for processes started by this plugin session. It must not promise to handle hard OS or host crashes that do not run JavaScript lifecycle hooks.
-- Cleanup should be attached to every controllable lifecycle available in preload, such as page unload and uTools/plugin lifecycle hooks when present.
+- Cleanup should be attached only to true runtime shutdown signals or explicit user stop actions. uTools page leave hooks such as ordinary plugin-out/detach can fire during normal panel close/open cycles and must not stop long-running project scripts by default unless the host marks the event as a full kill, such as `onPluginOut(true)`.
 
 #### 4. Validation & Error Matrix
 
@@ -88,33 +88,44 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 #### 5. Good/Base/Bad Cases
 
 - Good: editor spawn failures become project log entries and do not break the detail page.
-- Good: plugin/page exit attempts to stop every tracked child process before teardown.
+- Good: explicit stop actions and true runtime shutdown signals attempt to stop every tracked child process before teardown.
 - Base: no active child processes makes `stopAllProcesses` a no-op.
-- Bad: leaving active child processes running because only manual stop buttons call `stopProcess(pid)`.
+- Bad: binding cleanup to ordinary page leave hooks and killing project scripts when the user only closes the plugin panel.
 
 #### 6. Tests Required
 
 - Type-check the bridge contract in `src/types.ts`, fallback bridge, and store actions.
-- Manual smoke test: start a script, close/reload the plugin view, and confirm the tracked process is stopped where the host lifecycle fires.
+- Manual smoke test: start a script, close the plugin view, and confirm the tracked process keeps running until an explicit stop or true host shutdown.
 - Manual smoke test: invalid custom editor command returns a visible project log error.
 
-#### 7. Wrong vs Correct
+#### 7. Lifecycle Boundary Note
+
+- Do not treat normal webview/page unload as a guarantee of full plugin shutdown.
+- Cleanup hooks that stop tracked project processes should be reserved for real host/plugin exit signals, `onPluginOut(true)`, or explicit user stop actions.
+- If a page-level hook is used, confirm it does not fire during simple panel close/open cycles that should preserve running projects.
+
+#### 8. Wrong vs Correct
 
 ##### Wrong
 
 ```js
-window.addEventListener("beforeunload", () => activeProcesses.clear());
+window.utools?.onPluginOut?.(stopAllProcesses);
 ```
+
+This fires during normal plugin panel leave cycles and can kill long-running scripts unexpectedly.
 
 ##### Correct
 
 ```js
-window.addEventListener("beforeunload", () => {
-  stopAllProcesses();
+window.utools?.onPluginOut?.((isKill) => {
+  if (isKill === true) {
+    stopAllProcesses();
+  }
 });
+process.once?.("exit", stopAllProcesses);
 ```
 
-Clearing the registry is not cleanup; the bridge must signal the child processes first.
+Keep ordinary page/plugin leave separate from process shutdown and explicit stop actions.
 
 ---
 

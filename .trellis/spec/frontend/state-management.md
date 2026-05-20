@@ -468,6 +468,10 @@ await store.reorderProject(
 ### 3. Contracts
 
 - User-initiated stop must set the script to `STOPPED`, even if the operating system reports a non-zero exit code after killing the process tree.
+- Full plugin termination (`onPluginOut(true)`) must reuse the same per-script `pid` stop path as manual stop, then converge running scripts to `STOPPED` before the renderer exits.
+- The preload bridge must keep a session-wide registry of launched PIDs and use it on plugin kill so orphaned child processes from shell/reloader wrappers are still cleaned up even if the UI has already lost the original active-process handle.
+- On Windows, plugin-kill cleanup should traverse and terminate the launched PID tree, not only the immediate parent shell process.
+- The renderer's `onPluginOut(true)` handler must call `window.projectBridge.stopAllProcesses()` synchronously in the same turn after store convergence; do not rely on an async bridge call or a later lifecycle hook to finish backend cleanup.
 - Only non-user-stopped exits with non-zero codes should become `ERROR`.
 - Project card status should be derived from all scripts: any running script -> `RUNNING`; otherwise any error script -> `ERROR`; otherwise stopped/idle scripts -> `STOPPED`.
 - Script order is user-controlled metadata and must be preserved by create/edit forms, persistence, import/export, and details display.
@@ -481,8 +485,13 @@ await store.reorderProject(
 ### 5. Good/Base/Bad Cases
 
 - Good: user clicks stop, the process exits with a kill code, and UI shows stopped.
+- Good: plugin kill calls the store shutdown action, each running script pid is passed to `stopProcess`, and Flask/Next-style reloader processes stop like they do on manual stop.
+- Good: plugin kill can also clean up a detached shell/reloader child that is no longer in the active-process map, because the preload registry remembers every launched PID for the session.
+- Good: plugin kill synchronously invokes preload cleanup after the store marks scripts stopped, so both Go and Flask backends are terminated even if the UI is exiting.
 - Base: one script stops while another keeps running, and the project card remains running.
 - Bad: treating every non-zero exit after `taskkill` as an application error.
+- Bad: plugin kill relies only on a preload-level active process registry and skips the store's current running script pids.
+- Bad: plugin kill only kills the shell wrapper and leaves Flask or similar reloader children bound to the port.
 
 ### 6. Tests Required
 
