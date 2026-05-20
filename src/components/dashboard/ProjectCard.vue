@@ -95,6 +95,86 @@ const displayPath = computed(() => {
   return `.../${segments.slice(-2).join("/")}`;
 });
 
+const latestGitCommitAt = computed(
+  () => props.project.gitLatestCommitAt || props.project.git?.commits?.[0]?.date || "",
+);
+
+const formatAbsoluteTime = (value?: string) => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
+};
+
+const formatRelativeTime = (value?: string) => {
+  if (!value) {
+    return "--";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const diffMs = Date.now() - date.getTime();
+  const absDiff = Math.abs(diffMs);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const month = 30 * day;
+  const year = 365 * day;
+
+  if (absDiff < minute) {
+    return diffMs >= 0 ? "刚刚" : "即将";
+  }
+  if (absDiff < hour) {
+    const minutes = Math.max(1, Math.round(absDiff / minute));
+    return diffMs >= 0 ? `${minutes} 分钟前` : `${minutes} 分钟后`;
+  }
+  if (absDiff < day) {
+    const hours = Math.max(1, Math.round(absDiff / hour));
+    return diffMs >= 0 ? `${hours} 小时前` : `${hours} 小时后`;
+  }
+  if (absDiff < month) {
+    const days = Math.max(1, Math.round(absDiff / day));
+    return diffMs >= 0 ? `${days} 天前` : `${days} 天后`;
+  }
+  if (absDiff < year) {
+    const months = Math.max(1, Math.round(absDiff / month));
+    return diffMs >= 0 ? `${months} 个月前` : `${months} 个月后`;
+  }
+
+  const years = Math.max(1, Math.round(absDiff / year));
+  return diffMs >= 0 ? `${years} 年前` : `${years} 年后`;
+};
+
+const cardTimeMeta = computed(() => {
+  const sourceTime =
+    latestGitCommitAt.value || props.project.updatedAt || props.project.createdAt || props.project.lastUpdated;
+  if (sourceTime) {
+    return {
+      symbol: latestGitCommitAt.value ? "⌁" : "◔",
+      title: formatAbsoluteTime(sourceTime),
+      value: formatRelativeTime(sourceTime),
+    };
+  }
+  return { symbol: "•", title: "", value: "--" };
+});
+
 const handleCardSelect = () => {
   if (props.isSorting) {
     return;
@@ -323,13 +403,20 @@ const handleDelete = (event: MouseEvent) => {
         </div>
       </div>
 
-      <div class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_6.75rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2">
+      <div
+        class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_6.75rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2"
+      >
         <div class="min-w-0 text-[11px] text-on-surface-variant">
           <span v-if="isError" class="flex min-w-0 items-center gap-1 truncate text-status-error">
             <AlertTriangle :size="12" class="shrink-0" /> {{ project.git?.statusText || "Exit code 1" }}
           </span>
-          <span v-else class="flex min-w-0 items-center gap-1 truncate">
-            <Clock :size="12" class="shrink-0" /> {{ project.lastUpdated || project.git?.lastRefreshedAt || "--" }}
+          <span
+            v-else
+            class="flex min-w-0 items-center gap-1 truncate"
+            :title="cardTimeMeta.title || cardTimeMeta.value"
+          >
+            <span class="shrink-0 text-[11px] text-on-surface-variant/85">{{ cardTimeMeta.symbol }}</span>
+            <span class="truncate">{{ cardTimeMeta.value }}</span>
           </span>
         </div>
         <div

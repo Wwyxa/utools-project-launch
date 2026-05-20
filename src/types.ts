@@ -115,6 +115,7 @@ export interface Project {
   unavailableReason?: string;
   createdAt?: string;
   updatedAt?: string;
+  gitLatestCommitAt?: string;
 }
 
 export interface ProjectConfigFile {

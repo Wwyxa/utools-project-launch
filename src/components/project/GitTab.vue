@@ -84,15 +84,16 @@ const closeDiffDialog = () => {
 
 const diffLines = computed(() =>
   (selectedDiff.value?.diff || "").split("\n").map((content, index) => {
-    const kind = content.startsWith("+++") || content.startsWith("---") || content.startsWith("diff --git")
-      ? "meta"
-      : content.startsWith("@@")
-        ? "hunk"
-        : content.startsWith("+")
-          ? "add"
-          : content.startsWith("-")
-            ? "delete"
-            : "context";
+    const kind =
+      content.startsWith("+++") || content.startsWith("---") || content.startsWith("diff --git")
+        ? "meta"
+        : content.startsWith("@@")
+          ? "hunk"
+          : content.startsWith("+")
+            ? "add"
+            : content.startsWith("-")
+              ? "delete"
+              : "context";
     return { id: `${index}-${content}`, number: index + 1, content, kind };
   }),
 );
@@ -224,7 +225,13 @@ const graphRows = computed(() => {
       color: rowLaneColors.get(activeLane) || laneColor(activeLane),
     }));
 
-    maxLane = Math.max(maxLane, lane, ...activeBefore, ...activeAfter, ...connections.map((connection) => connection.to));
+    maxLane = Math.max(
+      maxLane,
+      lane,
+      ...activeBefore,
+      ...activeAfter,
+      ...connections.map((connection) => connection.to),
+    );
 
     return {
       commit,
@@ -245,6 +252,72 @@ const fileLabel = (status: string) => {
   if (status === "UNTRACKED") return t.value.git.untracked;
   return t.value.git.modified;
 };
+
+const formatAbsoluteTime = (value?: string) => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
+};
+
+const formatRelativeTime = (value?: string) => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const diffMs = Date.now() - date.getTime();
+  const absDiff = Math.abs(diffMs);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const month = 30 * day;
+  const year = 365 * day;
+
+  if (absDiff < minute) return diffMs >= 0 ? "刚刚" : "即将";
+  if (absDiff < hour)
+    return diffMs >= 0
+      ? `${Math.max(1, Math.round(absDiff / minute))} 分钟前`
+      : `${Math.max(1, Math.round(absDiff / minute))} 分钟后`;
+  if (absDiff < day)
+    return diffMs >= 0
+      ? `${Math.max(1, Math.round(absDiff / hour))} 小时前`
+      : `${Math.max(1, Math.round(absDiff / hour))} 小时后`;
+  if (absDiff < month)
+    return diffMs >= 0
+      ? `${Math.max(1, Math.round(absDiff / day))} 天前`
+      : `${Math.max(1, Math.round(absDiff / day))} 天后`;
+  if (absDiff < year)
+    return diffMs >= 0
+      ? `${Math.max(1, Math.round(absDiff / month))} 个月前`
+      : `${Math.max(1, Math.round(absDiff / month))} 个月后`;
+  return diffMs >= 0
+    ? `${Math.max(1, Math.round(absDiff / year))} 年前`
+    : `${Math.max(1, Math.round(absDiff / year))} 年后`;
+};
+
+const formatCommitTime = (value?: string) => ({
+  text: formatRelativeTime(value),
+  title: formatAbsoluteTime(value),
+});
 </script>
 
 <template>
@@ -272,9 +345,7 @@ const fileLabel = (status: string) => {
     </div>
 
     <div class="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,0.65fr)_minmax(0,1.35fr)]">
-      <div
-        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col"
-      >
+      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col">
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
         >
@@ -373,9 +444,7 @@ const fileLabel = (status: string) => {
         </div>
       </div>
 
-      <div
-        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col"
-      >
+      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col">
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
         >
@@ -468,8 +537,15 @@ const fileLabel = (status: string) => {
                   {{ refName }}
                 </span>
               </div>
-              <span class="truncate text-left text-on-surface-variant" :title="row.commit.author">{{ row.commit.author }}</span>
-              <span class="text-right text-[10px] tabular-nums text-on-surface-variant">{{ row.commit.date }}</span>
+              <span class="truncate text-left text-on-surface-variant" :title="row.commit.author">{{
+                row.commit.author
+              }}</span>
+              <span
+                class="text-right text-[10px] tabular-nums text-on-surface-variant"
+                :title="formatCommitTime(row.commit.date).title"
+              >
+                {{ formatCommitTime(row.commit.date).text }}
+              </span>
             </div>
 
             <div v-if="commits.length === 0" class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
@@ -491,8 +567,12 @@ const fileLabel = (status: string) => {
       class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
       @click.self="closeDiffDialog"
     >
-      <div class="flex h-[min(42rem,86vh)] w-[min(58rem,92vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl">
-        <div class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4">
+      <div
+        class="flex h-[min(42rem,86vh)] w-[min(58rem,92vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+      >
+        <div
+          class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
+        >
           <div class="min-w-0">
             <h3 class="text-sm font-bold text-on-surface">{{ t.git.diffTitle }}</h3>
             <p v-if="selectedDiff" class="truncate font-mono text-[10px] font-bold text-on-surface-variant">

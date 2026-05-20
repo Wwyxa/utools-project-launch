@@ -414,22 +414,46 @@ async function openEditor(payload) {
   const directoryStatus = getDirectoryStatus(resolvedPath);
 
   if (!isSupportedEditorKind(rawEditorKind)) {
-    return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "未知编辑器偏好，无法打开编辑器。" };
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      kind: editorKind,
+      message: "未知编辑器偏好，无法打开编辑器。",
+    };
   }
   if (!directoryStatus.exists) {
-    return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "项目路径不存在，无法打开编辑器。" };
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      kind: editorKind,
+      message: "项目路径不存在，无法打开编辑器。",
+    };
   }
   if (!directoryStatus.isDirectory) {
-    return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "项目路径不是文件夹，无法打开编辑器。" };
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      kind: editorKind,
+      message: "项目路径不是文件夹，无法打开编辑器。",
+    };
   }
 
   if (editorKind === "vscode") {
     const executable = process.platform === "win32" ? "code.cmd" : "code";
-    return launchDetachedProcess(executable, [resolvedPath], resolvedPath).then((result) => ({ ...result, kind: editorKind }));
+    return launchDetachedProcess(executable, [resolvedPath], resolvedPath).then((result) => ({
+      ...result,
+      kind: editorKind,
+    }));
   }
   if (editorKind === "cursor") {
     const executable = process.platform === "win32" ? "cursor.cmd" : "cursor";
-    return launchDetachedProcess(executable, [resolvedPath], resolvedPath).then((result) => ({ ...result, kind: editorKind }));
+    return launchDetachedProcess(executable, [resolvedPath], resolvedPath).then((result) => ({
+      ...result,
+      kind: editorKind,
+    }));
   }
   if (!customCommand) {
     return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "自定义编辑器命令为空。" };
@@ -439,7 +463,13 @@ async function openEditor(payload) {
   );
   const [executable, ...args] = commandTokens;
   if (!executable) {
-    return { launched: false, command: customCommand, cwd: resolvedPath, kind: editorKind, message: "自定义编辑器命令无效。" };
+    return {
+      launched: false,
+      command: customCommand,
+      cwd: resolvedPath,
+      kind: editorKind,
+      message: "自定义编辑器命令无效。",
+    };
   }
   return launchDetachedProcess(executable, args, resolvedPath).then((result) => ({ ...result, kind: editorKind }));
 }
@@ -569,7 +599,7 @@ function toStoredProject(project) {
     branch: project.branch || "main",
     memo: project.memo || "",
     todos: Array.isArray(project.todos) ? project.todos : [],
-    git: null,
+    gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || "",
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
@@ -703,7 +733,7 @@ function readProjectDocs() {
     .filter((doc) => doc && typeof doc._id === "string" && doc._id.startsWith(projectDocPrefix));
 }
 
-function readStoredProjects() {
+function readProjects() {
   try {
     const docs = readProjectDocs();
     if (docs.length > 0) {
@@ -1004,6 +1034,7 @@ function inspectProjectPath(projectPath) {
     scripts: [],
     packagePath: null,
     git: null,
+    gitLatestCommitAt: "",
   };
 
   if (!exists) {
@@ -1033,6 +1064,7 @@ function inspectProjectPath(projectPath) {
   result.scripts = detectedScripts;
 
   result.git = readGitSnapshot(projectPath);
+  result.gitLatestCommitAt = result.git?.commits?.[0]?.date || "";
   result.branch = result.git?.branch || "main";
   return result;
 }
@@ -1125,7 +1157,7 @@ function readGitSnapshot(projectPath, options = {}) {
     `--max-count=${limit + 1}`,
     `--skip=${skip}`,
     "--pretty=format:%h\t%p\t%an\t%ad\t%D\t%s",
-    "--date=short",
+    "--date=iso-strict",
   ]);
   const numstatOutput = collectNumstat(repositoryPath, ["diff", "--numstat"]);
   const cachedNumstatOutput = collectNumstat(repositoryPath, ["diff", "--cached", "--numstat"]);
@@ -1321,7 +1353,7 @@ function registerProcessCleanupHooks() {
 registerProcessCleanupHooks();
 
 window.projectBridge = {
-  loadProjects: readStoredProjects,
+  loadProjects: readProjects,
   saveProjects: writeStoredProjects,
   inspectProjectPath,
   pickProjectPath,

@@ -60,6 +60,7 @@ function toPersistedProject(project: Project): Project {
     memo: project.memo || "",
     todos: project.todos || [],
     git: null,
+    gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || "",
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
@@ -978,6 +979,7 @@ export const useStore = defineStore("app", {
       project.git = normalizeGitSnapshot(snapshot);
       if (project.git) {
         project.branch = project.git.branch;
+        project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
         this.stagedFiles[projectId] = project.git.files;
       }
       await this.persistProjects();
@@ -995,6 +997,7 @@ export const useStore = defineStore("app", {
       });
       if (project.git) {
         project.branch = project.git.branch;
+        project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
         this.stagedFiles[projectId] = project.git.files;
       }
       await this.persistProjects();
