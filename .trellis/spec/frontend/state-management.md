@@ -297,13 +297,16 @@ Keep Git diff reads behind the store action so fallback, unavailable projects, a
 - When updating existing uTools db documents, read/preserve `_rev` before `put`; when deleting projects, remove only documents under the project prefix that are absent from the current catalog.
 - In a real uTools bridge environment, do not seed `demoProjects` before persistence loading in a way that can mask empty or failed storage reads. Demo data is only for browser/no-bridge preview.
 - Persist only sync-safe project metadata: ids, names, paths, kind/type, descriptions, scripts, environment values, memo, timestamps, and schema version.
+- If a dashboard needs Git recency before the Git tab is opened, persist only a lightweight summary field such as `gitLatestCommitAt`; keep full Git snapshots transient and refresh them through `readGitSnapshot` when the user requests Git details.
 - Do not persist local runtime state such as running script status, process ids, transient logs, or stale Git snapshots.
+- The preload bridge export must point `window.projectBridge.loadProjects` at the same reader that performs the current migration path. If the helper is renamed, update the bridge export in the same change.
 - Treat path availability as device-derived state. A project whose path is missing on the current device remains in the catalog but is classified as unavailable until edited to a valid path.
 
 ### 4. Validation & Error Matrix
 
 - Storage unavailable -> return an empty project list or no-op save in fallback mode; do not crash UI startup.
 - Old single-key `dbStorage` data exists but no project db docs exist -> load the legacy payload once and migrate it into per-project db documents when uTools db is available.
+- `window.projectBridge.loadProjects` points to a missing or stale helper -> new plugin instances fail to load saved projects; fix the export before debugging store hydration.
 - uTools `allDocs` returns rows, docs, ids, or wrapper objects -> normalize to project doc ids and read full docs with `db.get` when needed; skip error-shaped results.
 - Path inspection fails -> preserve manual form editing and show feedback; do not block save only because inspection failed.
 - Imported JSON has unsupported shape -> reject/skip invalid records and report the import result.
@@ -315,11 +318,13 @@ Keep Git diff reads behind the store action so fallback, unavailable projects, a
 - Base: browser preview uses local fallback storage and keeps the same store actions as uTools.
 - Bad: saving the entire synced catalog into one `dbStorage` key, making cloud conflicts overwrite unrelated projects.
 - Bad: saving `RUNNING` script state or `pid` to uTools storage, then restoring it as if the process still existed.
+- Bad: persisting the full `ProjectGitSnapshot` only to drive dashboard timestamps; this bloats startup storage and can make plugin launch feel slow.
 
 ### 6. Tests Required
 
 - Build/type-check should prove the bridge contract stays in sync across `src/types.ts`, `src/lib/projectBridge.ts`, and store actions.
 - Manual uTools smoke test should cover create, reload, import/export, missing-path display, and path restoration.
+- Manual smoke test after Git-related persistence changes: refresh Git once, reload the plugin, and confirm dashboard cards can show the persisted `gitLatestCommitAt` without forcing a full Git refresh on startup.
 
 ### 7. Wrong vs Correct
 
@@ -338,6 +343,26 @@ await bridge.saveProjects(this.projects.map((project) => toPersistedProject(proj
 ```
 
 Normalize projects before crossing the persistence boundary.
+
+#### Wrong
+
+```js
+window.projectBridge = {
+  loadProjects: readStoredProjects,
+};
+```
+
+This silently breaks new plugin loads when `readStoredProjects` is stale or missing.
+
+#### Correct
+
+```js
+window.projectBridge = {
+  loadProjects: readProjects,
+};
+```
+
+Keep the bridge export aligned with the actual reader that handles current storage and legacy migration.
 
 ---
 
