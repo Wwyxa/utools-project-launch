@@ -12,6 +12,7 @@ import type {
   ProjectEnvironmentEntry,
   ProjectFormValue,
   ProjectGitFileChange,
+  ProjectGitFileDiffResult,
   ProjectGitSnapshot,
   ProjectFileListResult,
   ProjectFileReadResult,
@@ -1013,6 +1014,14 @@ export const useStore = defineStore("app", {
       }
 
       return bridge.readProjectFile(project.path, relativePath);
+    },
+    async readGitFileDiff(projectId: string, relativePath: string): Promise<ProjectGitFileDiffResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return bridge.readGitFileDiff(project.path, relativePath);
     },
     async writeProjectFile(
       projectId: string,

@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { Check, Code2, Edit3, FileImage, Folder, Save } from "lucide-vue-next";
 import type { Project, ProjectFileReadResult, ProjectFileTreeEntry } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import { isMarkdownFile, renderMarkdown } from "../../lib/markdown";
 import FileTreeNode, { type TreeNode } from "./FileTreeNode.vue";
 
 const props = defineProps<{
   project: Project;
+  openRelativePath?: string;
+}>();
+
+const emit = defineEmits<{
+  (e: "opened", relativePath: string): void;
 }>();
 
 const store = useStore();
@@ -25,6 +31,12 @@ const isResizing = ref(false);
 const statusMessage = ref("");
 
 const selectedRelativePath = computed(() => selectedFile.value?.relativePath || "");
+const isMarkdownPreview = computed(() =>
+  Boolean(
+    selectedFile.value?.previewKind === "text" &&
+      isMarkdownFile(selectedFile.value.name, selectedFile.value.extension),
+  ),
+);
 const isDirty = computed(
   () => selectedFile.value?.previewKind === "text" && draftContent.value !== (selectedFile.value.content || ""),
 );
@@ -37,6 +49,7 @@ const lineNumbers = computed(() =>
     .map((_, index) => index + 1)
     .join("\n"),
 );
+const renderedMarkdown = computed(() => renderMarkdown(draftContent.value));
 
 const formatSize = (size: number) => {
   if (size < 1024) return `${size} B`;
@@ -93,6 +106,28 @@ const openFile = async (node: TreeNode, edit = false) => {
     selectedFile.value = result;
     draftContent.value = result?.content || "";
     isEditing.value = Boolean(edit && result?.editable);
+    if (result?.relativePath) {
+      emit("opened", result.relativePath);
+    }
+  } finally {
+    isLoadingFile.value = false;
+  }
+};
+
+const openRelativePath = async (relativePath: string) => {
+  const normalizedPath = relativePath.trim();
+  if (!normalizedPath) return;
+  isLoadingFile.value = true;
+  statusMessage.value = "";
+  try {
+    const result = await store.readProjectFile(props.project.id, normalizedPath);
+    selectedFile.value = result;
+    draftContent.value = result?.content || "";
+    isEditing.value = false;
+    if (result?.relativePath) {
+      emit("opened", result.relativePath);
+    }
+    await nextTick();
   } finally {
     isLoadingFile.value = false;
   }
@@ -147,6 +182,9 @@ const endResize = () => {
 
 onMounted(() => {
   void loadChildren();
+  if (props.openRelativePath) {
+    void openRelativePath(props.openRelativePath);
+  }
   window.addEventListener("keydown", handleKeydown);
   window.addEventListener("mousemove", handleResize);
   window.addEventListener("mouseup", endResize);
@@ -157,6 +195,15 @@ onUnmounted(() => {
   window.removeEventListener("mousemove", handleResize);
   window.removeEventListener("mouseup", endResize);
 });
+
+watch(
+  () => props.openRelativePath,
+  (relativePath) => {
+    if (relativePath && relativePath !== selectedRelativePath.value) {
+      void openRelativePath(relativePath);
+    }
+  },
+);
 </script>
 
 <template>
@@ -256,6 +303,15 @@ onUnmounted(() => {
             class="flex h-full items-center justify-center text-sm text-on-surface-variant"
           >
             Select a file to preview.
+          </div>
+          <div
+            v-else-if="selectedFile.previewKind === 'text' && isMarkdownPreview && !isEditing"
+            class="h-full bg-surface-container-lowest"
+          >
+            <div
+              class="memo-rendered themed-scrollbar h-full overflow-auto px-6 py-5 text-on-surface"
+              v-html="renderedMarkdown"
+            />
           </div>
           <div
             v-else-if="selectedFile.previewKind === 'text'"

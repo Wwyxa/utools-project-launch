@@ -217,6 +217,13 @@ const fallbackBridge: ProjectBridge = {
   async readGitSnapshot(): Promise<ProjectBridgeGitSnapshot> {
     return emptyGitSnapshot();
   },
+  async readGitFileDiff(projectPath: string, relativePath: string) {
+    return {
+      path: relativePath,
+      diff: "",
+      message: projectPath ? "浏览器预览无法读取 Git diff。" : "项目路径为空，无法读取 Git diff。",
+    };
+  },
   async listProjectFiles(projectPath: string, relativePath = ""): Promise<ProjectFileListResult> {
     return { rootPath: projectPath, relativePath, entries: [] };
   },

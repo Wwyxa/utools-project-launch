@@ -1,13 +1,28 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
-import { ArrowDownToLine, ArrowUpToLine, GitBranch, RefreshCw, Minus, PlusCircle, Trash2 } from "lucide-vue-next";
-import { Project } from "../../types";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Code2,
+  FileSearch,
+  GitBranch,
+  RefreshCw,
+  Minus,
+  PlusCircle,
+  Trash2,
+  X,
+} from "lucide-vue-next";
+import { Project, type ProjectGitFileChange, type ProjectGitFileDiffResult } from "../../types";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 
 const props = defineProps<{
   project: Project;
+}>();
+
+const emit = defineEmits<{
+  (e: "open-file", relativePath: string): void;
 }>();
 
 const store = useStore();
@@ -20,6 +35,9 @@ const commits = computed(() => props.project.git?.commits || []);
 const snapshot = computed(() => props.project.git);
 const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.project.path);
 const isLoadingMore = ref(false);
+const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
+const isLoadingDiff = ref(false);
+const isDiffDialogOpen = ref(false);
 
 const handleRefresh = async () => {
   await store.refreshGitSnapshot(props.project.id);
@@ -43,6 +61,41 @@ const scrollGitPanel = async (target: "files" | "graph", boundary: "top" | "bott
 const handlePanelWheel = (event: WheelEvent, target: "files" | "graph") => {
   transferWheelAtScrollBoundary(event, target === "files" ? filesScrollRef.value : graphScrollRef.value);
 };
+
+const handleOpenFile = (file: ProjectGitFileChange) => {
+  if (file.status === "DELETED") return;
+  emit("open-file", file.path);
+};
+
+const handleViewDiff = async (file: ProjectGitFileChange) => {
+  isLoadingDiff.value = true;
+  isDiffDialogOpen.value = true;
+  selectedDiff.value = { path: file.path, diff: "" };
+  try {
+    selectedDiff.value = await store.readGitFileDiff(props.project.id, file.path);
+  } finally {
+    isLoadingDiff.value = false;
+  }
+};
+
+const closeDiffDialog = () => {
+  isDiffDialogOpen.value = false;
+};
+
+const diffLines = computed(() =>
+  (selectedDiff.value?.diff || "").split("\n").map((content, index) => {
+    const kind = content.startsWith("+++") || content.startsWith("---") || content.startsWith("diff --git")
+      ? "meta"
+      : content.startsWith("@@")
+        ? "hunk"
+        : content.startsWith("+")
+          ? "add"
+          : content.startsWith("-")
+            ? "delete"
+            : "context";
+    return { id: `${index}-${content}`, number: index + 1, content, kind };
+  }),
+);
 
 const refsForCommit = (refs?: string) =>
   (refs || "")
@@ -81,6 +134,7 @@ const graphRows = computed(() => {
   let colorIndex = 0;
   let maxLane = 0;
   const currentBranch = snapshot.value?.branch || "";
+  const visibleHashes = new Set(commits.value.map((commit) => commit.hash));
 
   const nextColor = () => graphStrokeColors[colorIndex++ % graphStrokeColors.length];
   const laneColor = (lane: number) => {
@@ -106,7 +160,8 @@ const graphRows = computed(() => {
   }
 
   return commits.value.map((commit) => {
-    let lane = findLane(commit.hash);
+    const existingLane = findLane(commit.hash);
+    let lane = existingLane;
     if (lane < 0) {
       lane = allocLane();
       lanes[lane] = commit.hash;
@@ -114,12 +169,12 @@ const graphRows = computed(() => {
     }
 
     const color = laneColor(lane);
-    const activeLanes = lanes
+    const activeBefore = lanes
       .map((hash, index) => ({ hash, index }))
       .filter((item) => item.hash !== null)
       .map((item) => item.index);
     const rowLaneColors = new Map<number, string>();
-    activeLanes.forEach((activeLane) => {
+    activeBefore.forEach((activeLane) => {
       rowLaneColors.set(activeLane, laneColor(activeLane));
     });
 
@@ -129,16 +184,21 @@ const graphRows = computed(() => {
 
     if (parents.length > 0) {
       const firstParent = parents[0];
-      const existingFirstParentLane = findLane(firstParent);
-      if (existingFirstParentLane >= 0) {
-        connections.push({ from: lane, to: existingFirstParentLane, color });
-      } else {
-        lanes[lane] = firstParent;
-        laneColors.set(lane, color);
-        connections.push({ from: lane, to: lane, color });
+      if (visibleHashes.has(firstParent)) {
+        const existingFirstParentLane = findLane(firstParent);
+        if (existingFirstParentLane >= 0) {
+          connections.push({ from: lane, to: existingFirstParentLane, color });
+        } else {
+          lanes[lane] = firstParent;
+          laneColors.set(lane, color);
+          connections.push({ from: lane, to: lane, color });
+        }
       }
 
       parents.slice(1).forEach((parentHash) => {
+        if (!visibleHashes.has(parentHash)) {
+          return;
+        }
         let parentLane = findLane(parentHash);
         if (parentLane < 0) {
           parentLane = allocLane();
@@ -153,13 +213,24 @@ const graphRows = computed(() => {
       lanes.pop();
     }
 
-    maxLane = Math.max(maxLane, lane, ...activeLanes, ...connections.map((connection) => connection.to));
+    const activeAfter = lanes
+      .map((hash, index) => ({ hash, index }))
+      .filter((item) => item.hash !== null)
+      .map((item) => item.index);
+    const verticalSegments = Array.from(new Set([...activeBefore, ...activeAfter])).map((activeLane) => ({
+      lane: activeLane,
+      fromTop: activeBefore.includes(activeLane) && (activeLane !== lane || existingLane >= 0),
+      toBottom: activeAfter.includes(activeLane),
+      color: rowLaneColors.get(activeLane) || laneColor(activeLane),
+    }));
+
+    maxLane = Math.max(maxLane, lane, ...activeBefore, ...activeAfter, ...connections.map((connection) => connection.to));
 
     return {
       commit,
       lane,
       color,
-      activeLanes,
+      verticalSegments,
       laneColors: rowLaneColors,
       connections,
       width: Math.max(58, (maxLane + 1) * laneWidth + 16),
@@ -193,6 +264,7 @@ const fileLabel = (status: string) => {
           @click="handleRefresh"
           class="h-8 px-3 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors"
           :title="t.git.refresh"
+          :aria-label="t.git.refresh"
         >
           <RefreshCw :size="14" />
         </button>
@@ -276,6 +348,27 @@ const fileLabel = (status: string) => {
                 </div>
               </div>
             </div>
+            <div class="ml-2 flex shrink-0 items-center gap-1 opacity-80 transition-opacity group-hover:opacity-100">
+              <button
+                type="button"
+                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                :disabled="file.status === 'DELETED'"
+                :title="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
+                :aria-label="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
+                @click="handleOpenFile(file)"
+              >
+                <FileSearch :size="14" />
+              </button>
+              <button
+                type="button"
+                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-secondary"
+                :title="t.git.viewDiff"
+                :aria-label="t.git.viewDiff"
+                @click="handleViewDiff(file)"
+              >
+                <Code2 :size="14" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -327,13 +420,13 @@ const fileLabel = (status: string) => {
                   :viewBox="`0 0 ${row.width} ${rowHeight}`"
                 >
                   <line
-                    v-for="activeLane in row.activeLanes"
-                    :key="`${row.commit.hash}-v-${activeLane}`"
-                    :x1="laneCenter(activeLane)"
-                    y1="0"
-                    :x2="laneCenter(activeLane)"
-                    :y2="rowHeight"
-                    :stroke="row.laneColors.get(activeLane) || row.color"
+                    v-for="segment in row.verticalSegments"
+                    :key="`${row.commit.hash}-v-${segment.lane}`"
+                    :x1="laneCenter(segment.lane)"
+                    :y1="segment.fromTop ? 0 : rowHeight / 2"
+                    :x2="laneCenter(segment.lane)"
+                    :y2="segment.toBottom ? rowHeight : rowHeight / 2"
+                    :stroke="segment.color"
                     stroke-width="2"
                     stroke-linecap="round"
                     opacity="0.42"
@@ -389,6 +482,57 @@ const fileLabel = (status: string) => {
             >
               {{ isLoadingMore ? t.git.loadingMore : t.git.loadMore }}
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      v-if="isDiffDialogOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+      @click.self="closeDiffDialog"
+    >
+      <div class="flex h-[min(42rem,86vh)] w-[min(58rem,92vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl">
+        <div class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4">
+          <div class="min-w-0">
+            <h3 class="text-sm font-bold text-on-surface">{{ t.git.diffTitle }}</h3>
+            <p v-if="selectedDiff" class="truncate font-mono text-[10px] font-bold text-on-surface-variant">
+              {{ selectedDiff.path }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+            :title="t.common.close"
+            :aria-label="t.common.close"
+            @click="closeDiffDialog"
+          >
+            <X :size="15" />
+          </button>
+        </div>
+        <div class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest">
+          <div v-if="isLoadingDiff" class="p-5 text-sm text-on-surface-variant">{{ t.git.diffLoading }}</div>
+          <div v-else-if="selectedDiff?.diff" class="min-w-max py-3 font-mono text-xs leading-5">
+            <div
+              v-for="line in diffLines"
+              :key="line.id"
+              :class="
+                cn(
+                  'grid grid-cols-[3.25rem_minmax(0,1fr)] whitespace-pre text-on-surface',
+                  line.kind === 'add' && 'bg-status-running/10 text-on-surface',
+                  line.kind === 'delete' && 'bg-status-error/10 text-on-surface',
+                  line.kind === 'hunk' && 'bg-secondary/10 text-secondary',
+                  line.kind === 'meta' && 'bg-surface-container-low text-on-surface-variant',
+                )
+              "
+            >
+              <span class="select-none border-r border-border-subtle px-2 text-right text-on-surface-variant/60">
+                {{ line.number }}
+              </span>
+              <span class="px-3">{{ line.content || " " }}</span>
+            </div>
+          </div>
+          <div v-else class="p-5 text-sm text-on-surface-variant">
+            {{ selectedDiff?.message || t.git.diffEmpty }}
           </div>
         </div>
       </div>

@@ -479,6 +479,19 @@ function runGit(startPath, args) {
   }
 }
 
+function runGitDiff(startPath, args) {
+  const resolvedPath = expandPath(startPath);
+
+  try {
+    return execFileSync("git", ["-C", resolvedPath, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    return error?.stdout ? String(error.stdout) : null;
+  }
+}
+
 function collectNumstat(startPath, args) {
   const output = runGit(startPath, args);
   if (!output) {
@@ -927,6 +940,32 @@ function writeProjectFile(projectPath, relativePath, content) {
   return { path: resolved.targetPath, relativePath: resolved.relativePath, savedAt: new Date().toISOString() };
 }
 
+function readGitFileDiff(projectPath, relativePath) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { path: relativePath || "", diff: "", message: "未检测到 Git 仓库" };
+  }
+
+  const resolved = resolveProjectChild(repositoryPath, relativePath);
+  const diffPath = resolved.relativePath;
+  if (!diffPath) {
+    return { path: "", diff: "", message: "请选择文件查看 diff。" };
+  }
+
+  const headDiff = runGitDiff(repositoryPath, ["diff", "--", diffPath]);
+  const cachedDiff = runGitDiff(repositoryPath, ["diff", "--cached", "--", diffPath]);
+  const untrackedDiff = fs.existsSync(resolved.targetPath)
+    ? runGitDiff(repositoryPath, ["diff", "--no-index", "--", os.devNull, diffPath])
+    : "";
+  const diff = [cachedDiff, headDiff || untrackedDiff].filter(Boolean).join("\n");
+
+  return {
+    path: diffPath,
+    diff,
+    message: diff ? "" : "该文件暂无可显示的 diff。",
+  };
+}
+
 function listProjectSubdirectories(projectPath) {
   const resolvedPath = expandPath(projectPath);
   const preferred = new Set(commonProjectDirs);
@@ -1296,6 +1335,7 @@ window.projectBridge = {
   readPackageScripts,
   listProjectSubdirectories,
   readGitSnapshot,
+  readGitFileDiff,
   listProjectFiles,
   readProjectFile,
   writeProjectFile,

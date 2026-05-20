@@ -323,19 +323,19 @@ const handleDelete = (event: MouseEvent) => {
         </div>
       </div>
 
-      <div class="mt-auto flex items-center gap-2 border-t border-border-subtle pt-2">
-        <div class="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-on-surface-variant">
-          <span v-if="isError" class="flex items-center gap-1 text-status-error truncate">
+      <div class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_6.75rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2">
+        <div class="min-w-0 text-[11px] text-on-surface-variant">
+          <span v-if="isError" class="flex min-w-0 items-center gap-1 truncate text-status-error">
             <AlertTriangle :size="12" class="shrink-0" /> {{ project.git?.statusText || "Exit code 1" }}
           </span>
-          <span v-else class="flex items-center gap-1 truncate">
+          <span v-else class="flex min-w-0 items-center gap-1 truncate">
             <Clock :size="12" class="shrink-0" /> {{ project.lastUpdated || project.git?.lastRefreshedAt || "--" }}
           </span>
         </div>
         <div
           :class="
             cn(
-              'flex shrink-0 items-center gap-0.5 transition-all',
+              'flex w-[6.75rem] shrink-0 items-center justify-end gap-0.5 transition-all',
               isSorting
                 ? 'opacity-100'
                 : 'opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:pointer-events-auto',

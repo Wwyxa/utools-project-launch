@@ -40,6 +40,12 @@ export interface ProjectGitFileChange {
   status: "MODIFIED" | "ADDED" | "DELETED" | "RENAMED" | "UNTRACKED";
 }
 
+export interface ProjectGitFileDiffResult {
+  path: string;
+  diff: string;
+  message?: string;
+}
+
 export interface ProjectGitCommitSummary {
   hash: string;
   message: string;
@@ -265,6 +271,7 @@ export interface ProjectBridge {
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;
   listProjectSubdirectories(projectPath: string): Promise<string[]>;
   readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>;
+  readGitFileDiff(projectPath: string, relativePath: string): Promise<ProjectGitFileDiffResult>;
   listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileListResult>;
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;

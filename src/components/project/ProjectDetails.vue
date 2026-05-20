@@ -18,6 +18,7 @@ const store = useStore();
 const t = useI18n();
 type TabId = "info" | "scripts" | "files" | "git" | "memo";
 const activeTab = ref<TabId>("scripts");
+const fileOpenRequest = ref("");
 
 const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
   { id: "info", label: t.value.projectDetails.overview },
@@ -51,6 +52,17 @@ const handleRefresh = () => {
 };
 const handleDelete = () => {
   store.requestDeleteProject(props.project.id);
+};
+
+const handleOpenGitFile = (relativePath: string) => {
+  fileOpenRequest.value = relativePath;
+  activeTab.value = "files";
+};
+
+const handleFileOpened = (relativePath: string) => {
+  if (fileOpenRequest.value === relativePath) {
+    fileOpenRequest.value = "";
+  }
 };
 </script>
 
@@ -224,8 +236,13 @@ const handleDelete = () => {
       </div>
 
       <ScriptsTab v-if="activeTab === 'scripts'" :project="project" />
-      <FilesTab v-if="activeTab === 'files'" :project="project" />
-      <GitTab v-if="activeTab === 'git'" :project="project" />
+      <FilesTab
+        v-if="activeTab === 'files'"
+        :project="project"
+        :open-relative-path="fileOpenRequest"
+        @opened="handleFileOpened"
+      />
+      <GitTab v-if="activeTab === 'git'" :project="project" @open-file="handleOpenGitFile" />
       <MemoTab v-if="activeTab === 'memo'" :project="project" :active="activeTab === 'memo'" />
     </div>
   </div>
