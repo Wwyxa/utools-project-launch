@@ -489,3 +489,38 @@ Resolved plugin exit cleanup behavior, updated lifecycle contracts, and archived
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: uTools 退出清理链路收敛
+
+**Date**: 2026-05-20
+**Task**: uTools 退出清理链路收敛
+**Branch**: `master`
+
+### Summary
+
+确认 uTools 的运行中按钮不触发 kill 路径，回收 process exit 等额外兜底，仅保留 onPluginOut(true) 作为官方退出清理入口，并补充相关 spec 结论。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0c1a272` | (see git log) |
+| `1eff34c` | (see git log) |
+| `55b4d2e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
