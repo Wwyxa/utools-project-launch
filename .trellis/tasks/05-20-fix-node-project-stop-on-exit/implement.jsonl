@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Store-owned process lifecycle and bridge result handling are central to the exit cleanup flow."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "The fix must preserve frontend type safety and verify the Vue/store layer remains consistent."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "The preload bridge owns process cleanup contracts and lifecycle boundary rules."}
