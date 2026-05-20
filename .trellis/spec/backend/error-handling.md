@@ -77,6 +77,7 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 - `launched: false` means the store should log an error message; the component should not throw.
 - `stopAllProcesses` is best-effort cleanup for processes started by this plugin session. It must not promise to handle hard OS or host crashes that do not run JavaScript lifecycle hooks.
 - Cleanup should be attached only to true runtime shutdown signals or explicit user stop actions. uTools page leave hooks such as ordinary plugin-out/detach can fire during normal panel close/open cycles and must not stop long-running project scripts by default unless the host marks the event as a full kill, such as `onPluginOut(true)`.
+- In this app, the confirmed kill path is `window.utools.onPluginOut(isKill => { if (isKill) window.projectBridge.stopAllProcesses(); })`; do not add extra process-exit or unload-based stop hooks unless uTools behavior is revalidated.
 
 #### 4. Validation & Error Matrix
 
@@ -122,7 +123,6 @@ window.utools?.onPluginOut?.((isKill) => {
     stopAllProcesses();
   }
 });
-process.once?.("exit", stopAllProcesses);
 ```
 
 Keep ordinary page/plugin leave separate from process shutdown and explicit stop actions.

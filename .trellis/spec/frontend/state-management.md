@@ -469,9 +469,8 @@ await store.reorderProject(
 
 - User-initiated stop must set the script to `STOPPED`, even if the operating system reports a non-zero exit code after killing the process tree.
 - Full plugin termination (`onPluginOut(true)`) must reuse the same per-script `pid` stop path as manual stop, then converge running scripts to `STOPPED` before the renderer exits.
-- The preload bridge must keep a session-wide registry of launched PIDs and use it on plugin kill so orphaned child processes from shell/reloader wrappers are still cleaned up even if the UI has already lost the original active-process handle.
-- On Windows, plugin-kill cleanup should traverse and terminate the launched PID tree, not only the immediate parent shell process.
 - The renderer's `onPluginOut(true)` handler must call `window.projectBridge.stopAllProcesses()` synchronously in the same turn after store convergence; do not rely on an async bridge call or a later lifecycle hook to finish backend cleanup.
+- Do not add extra process-exit or unload-based cleanup hooks for plugin kill unless uTools behavior is revalidated; the current contract stays on `onPluginOut(true)` only.
 - Only non-user-stopped exits with non-zero codes should become `ERROR`.
 - Project card status should be derived from all scripts: any running script -> `RUNNING`; otherwise any error script -> `ERROR`; otherwise stopped/idle scripts -> `STOPPED`.
 - Script order is user-controlled metadata and must be preserved by create/edit forms, persistence, import/export, and details display.
