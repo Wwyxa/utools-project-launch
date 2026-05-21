@@ -122,6 +122,8 @@ const laneWidth = 14;
 const rowHeight = 28;
 const dotRadius = 4.2;
 const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + 2;
+const minGraphColumnWidth = 50;
+const maxGraphColumnWidth = 104;
 
 const refsIncludeBranch = (refs: string | undefined, branch: string) =>
   refsForCommit(refs).some((refName) => {
@@ -245,6 +247,14 @@ const graphRows = computed(() => {
   });
 });
 
+const graphColumnWidth = computed(() =>
+  Math.min(maxGraphColumnWidth, Math.max(minGraphColumnWidth, ...graphRows.value.map((row) => row.width))),
+);
+
+const graphRowColumns = computed(
+  () => `${graphColumnWidth.value}px 4rem minmax(0, 1fr) minmax(0, 8rem) minmax(0, 6rem) 5.5rem`,
+);
+
 const fileLabel = (status: string) => {
   if (status === "ADDED") return t.value.git.added;
   if (status === "DELETED") return t.value.git.deleted;
@@ -344,8 +354,12 @@ const formatCommitTime = (value?: string) => ({
       </div>
     </div>
 
-    <div class="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,0.65fr)_minmax(0,1.35fr)]">
-      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col">
+    <div
+      class="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:min-w-0 lg:grid-cols-[minmax(14rem,0.65fr)_minmax(0,1.35fr)]"
+    >
+      <div
+        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
+      >
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
         >
@@ -377,14 +391,14 @@ const formatCommitTime = (value?: string) => ({
           v-if="files.length > 0"
           ref="filesScrollRef"
           @wheel="handlePanelWheel($event, 'files')"
-          class="min-h-0 flex-1 overflow-y-auto [overscroll-behavior-y:contain]"
+          class="min-h-0 flex-1 overflow-x-auto overflow-y-auto [overscroll-behavior-y:contain]"
         >
           <div
             v-for="(file, idx) in files"
             :key="`${file.path}-${idx}`"
-            class="group flex items-center justify-between px-3 py-2 border-b border-border-subtle last:border-b-0 hover:bg-surface-container-low transition-all"
+            class="group flex min-w-max items-center justify-between gap-4 border-b border-border-subtle px-3 py-2 last:border-b-0 hover:bg-surface-container-low transition-all"
           >
-            <div class="flex items-center gap-3 overflow-hidden min-w-0">
+            <div class="flex min-w-0 items-center gap-3 overflow-hidden">
               <div
                 :class="
                   cn(
@@ -444,7 +458,9 @@ const formatCommitTime = (value?: string) => ({
         </div>
       </div>
 
-      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex flex-col">
+      <div
+        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
+      >
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
         >
@@ -473,20 +489,20 @@ const formatCommitTime = (value?: string) => ({
         <div
           ref="graphScrollRef"
           @wheel="handlePanelWheel($event, 'graph')"
-          class="min-h-0 flex-1 overflow-auto bg-surface-container-lowest text-on-surface p-2 [overscroll-behavior-y:contain]"
+          class="min-h-0 flex-1 overflow-auto bg-surface-container-lowest p-2 text-on-surface [overscroll-behavior-y:contain]"
         >
-          <div class="min-w-[44rem] space-y-0.5">
+          <div class="min-w-full space-y-0.5">
             <div
               v-for="row in graphRows"
               :key="row.commit.hash"
-              class="grid h-7 grid-cols-[4.25rem_4.25rem_minmax(0,1fr)_minmax(7rem,12rem)_minmax(5rem,8rem)_5.5rem] items-center gap-2 rounded px-2 text-xs hover:bg-surface-container-high"
+              class="grid h-7 min-w-full items-center gap-2 rounded px-2 text-xs hover:bg-surface-container-high"
+              :style="{ gridTemplateColumns: graphRowColumns }"
             >
-              <div class="h-7 overflow-hidden" :title="row.commit.graph || '*'">
+              <div class="h-7 min-w-0 overflow-hidden" :title="row.commit.graph || '*'">
                 <svg
-                  class="h-7 overflow-visible"
-                  :width="row.width"
-                  :height="rowHeight"
+                  class="block h-7 w-full"
                   :viewBox="`0 0 ${row.width} ${rowHeight}`"
+                  preserveAspectRatio="xMinYMid meet"
                 >
                   <line
                     v-for="segment in row.verticalSegments"
