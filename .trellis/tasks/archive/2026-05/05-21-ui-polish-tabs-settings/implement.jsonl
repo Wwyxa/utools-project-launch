@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec index for the Vue/Tailwind app shell and feature component conventions."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Maps where feature components and shared frontend concerns belong in this repo."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Covers Vue Composition API patterns, icon buttons, and styling conventions used by the tab and settings components."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines how Pinia state and component-local UI state should be split for memo, file, and settings interactions."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Describes the shared type boundary for editor/file settings and other Vue components."}
