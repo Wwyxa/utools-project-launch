@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-05-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~561 | Active |
+| `journal-1.md` | ~594 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-05-21 | UI polish follow-up | `7dcbf88` | `master` |
 | 15 | 2026-05-21 | Git tree layout and UI fixes | `23db684`, `2921480`, `def8d03` | `master` |
 | 14 | 2026-05-20 | uTools 退出清理链路收敛 | `0c1a272`, `1eff34c`, `55b4d2e` | `master` |
 | 13 | 2026-05-20 | Fix plugin exit process cleanup | `3f032bb`, `4553f5f` | `master` |

@@ -559,3 +559,36 @@ Resolved Git tree layout issues, stopped command lag by making stop flow non-blo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: UI polish follow-up
+
+**Date**: 2026-05-21
+**Task**: UI polish follow-up
+**Branch**: `master`
+
+### Summary
+
+Refined project tabs and settings UI, unified memo tab framing, tightened settings spacing, and updated frontend component guidelines.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7dcbf88` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
