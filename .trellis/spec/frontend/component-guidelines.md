@@ -112,6 +112,38 @@ const isTextEntryTarget = (target: EventTarget | null) =>
 
 **Related**: `src/App.vue`.
 
+### Convention: Conditional Advanced Inputs
+
+**What**: Custom command fields in settings are rendered only when the matching `custom` option is selected.
+
+**Why**: Disabled-but-visible inputs make the settings page taller and noisier than necessary. Conditional rendering keeps the control surface compact and makes the active path obvious.
+
+**Example**:
+
+```vue
+<Transition>
+  <div v-if="terminalUsesCustomCommand" class="overflow-hidden rounded-lg border border-border-subtle bg-surface px-3 py-3">
+    <input :value="store.terminalPreferences.customCommand" @input="store.setDefaultTerminalCustomCommand(($event.target as HTMLInputElement).value)" />
+  </div>
+</Transition>
+```
+
+**Related**: `src/components/layout/SettingsTab.vue`.
+
+### Convention: Shared Highlight Styling
+
+**What**: Code previews reuse the same `highlight.js` token classes and theme colors across memo rendering and file previews.
+
+**Why**: Per-component highlight styling tends to drift, and text files can look unhighlighted even when the parser is working. Shared token styles keep markdown and plain code previews visually consistent.
+
+**Example**:
+
+```ts
+const renderedCode = computed(() => highlightCode(draftContent.value, previewLanguage.value));
+```
+
+**Related**: `src/lib/markdown.ts`, `src/index.css`, `src/components/project/FilesTab.vue`.
+
 ## Interaction Safety
 
 - For clickable cards that also contain action buttons, stop event propagation on the action area and on each icon button so card-level navigation does not fire accidentally.
