@@ -626,3 +626,37 @@ Refined project tabs and settings UI, unified memo tab framing, tightened settin
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Polish file preview and Git tree UI
+
+**Date**: 2026-05-22
+**Task**: Polish file preview and Git tree UI
+**Branch**: `master`
+
+### Summary
+
+Optimized the file tab code preview to use themed full-card code surfaces, tightened Git history row spacing, and recorded the related frontend guidance and task context.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7012728` | (see git log) |
+| `c37a86b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
