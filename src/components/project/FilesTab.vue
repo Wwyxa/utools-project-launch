@@ -375,13 +375,12 @@ watch(
             v-else-if="selectedFile.previewKind === 'text'"
             :class="
               cn(
-                'grid h-full grid-cols-[3rem_minmax(0,1fr)] overflow-hidden bg-surface font-mono text-xs leading-5 [font-family:Consolas,\'JetBrains_Mono\',\'Fira_Code\',ui-monospace,SFMono-Regular,Menlo,Monaco,monospace]',
-                !isEditing ? 'bg-surface-container-lowest opacity-90' : '',
+                'grid h-full grid-cols-[3rem_minmax(0,1fr)] overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs leading-5 [font-family:Consolas,\'JetBrains_Mono\',\'Fira_Code\',ui-monospace,SFMono-Regular,Menlo,Monaco,monospace]',
               )
             "
           >
             <pre
-              class="themed-scrollbar select-none overflow-hidden border-r border-border-subtle bg-surface-container-low px-2 py-4 text-right text-on-surface-variant/70"
+              class="themed-scrollbar select-none overflow-hidden border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 py-4 text-right text-on-surface-variant/70"
               >{{ lineNumbers }}</pre
             >
             <textarea
@@ -390,7 +389,7 @@ watch(
               class="themed-scrollbar h-full w-full resize-none bg-transparent p-4 text-on-surface outline-none"
               @dblclick="enterEdit"
             />
-            <pre v-else class="themed-scrollbar min-w-0 overflow-auto p-4 text-on-surface">
+            <pre v-else class="themed-scrollbar min-w-0 overflow-auto bg-[var(--code-preview-bg)] p-4 text-on-surface">
               <code class="hljs" v-html="renderedCode" />
             </pre>
           </div>

@@ -103,7 +103,7 @@ const refsForCommit = (refs?: string) =>
 
 const refClass = (refName: string) =>
   cn(
-    "max-w-40 truncate rounded border px-1.5 py-0.5 text-[9px] font-bold",
+    "max-w-40 truncate rounded border px-1.5 py-px text-[9px] font-bold leading-3",
     refName.startsWith("tag:")
       ? "border-secondary/25 bg-secondary/10 text-secondary"
       : refName.includes("HEAD")
@@ -474,12 +474,12 @@ const formatCommitTime = (value?: string) => ({
             <div
               v-for="row in graphRows"
               :key="row.commit.hash"
-              class="grid h-10 min-w-[30rem] items-center gap-2 rounded px-2 text-xs hover:bg-surface-container-high"
+              class="grid h-8 min-w-[30rem] items-center gap-1.5 rounded px-2 text-xs hover:bg-surface-container-high"
               :style="{ gridTemplateColumns: graphRowColumns }"
             >
-              <div class="h-10 min-w-0 overflow-hidden" :title="row.commit.graph || '*'">
+              <div class="h-8 min-w-0 overflow-hidden" :title="row.commit.graph || '*'">
                 <svg
-                  class="block h-10 w-full"
+                  class="block h-8 w-full"
                   :viewBox="`0 0 ${row.width} ${rowHeight}`"
                   preserveAspectRatio="xMinYMid meet"
                 >
@@ -518,12 +518,12 @@ const formatCommitTime = (value?: string) => ({
                 </svg>
               </div>
 
-              <span class="truncate font-mono font-semibold text-on-surface-variant" :title="row.commit.hash">{{
+              <span class="truncate font-mono text-[10px] font-semibold text-on-surface-variant" :title="row.commit.hash">{{
                 row.commit.hash
               }}</span>
               <div class="min-w-0 overflow-hidden">
-                <div class="flex min-w-0 items-center gap-1.5">
-                  <span class="truncate font-semibold text-on-surface" :title="row.commit.message">{{ row.commit.message }}</span>
+                <div class="flex min-w-0 items-center gap-1.5 leading-4">
+                  <span class="truncate text-[11px] font-semibold text-on-surface" :title="row.commit.message">{{ row.commit.message }}</span>
                   <span
                     v-for="refName in refsForCommit(row.commit.refs)"
                     :key="`${row.commit.hash}-${refName}`"
@@ -533,7 +533,7 @@ const formatCommitTime = (value?: string) => ({
                     {{ refName }}
                   </span>
                 </div>
-                <div class="mt-0.5 truncate text-[10px] text-on-surface-variant/75" :title="`${row.commit.author} · ${formatCommitTime(row.commit.date).title}`">
+                <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75" :title="`${row.commit.author} · ${formatCommitTime(row.commit.date).title}`">
                   {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
                 </div>
               </div>

@@ -80,6 +80,23 @@
   --toolbar-primary-bg: #006c49;
   --toolbar-primary-fg: #ffffff;
   --toolbar-primary-bg-hover: #005236;
+  --code-preview-bg: #ffffff;
+  --code-preview-gutter-bg: #f6f8fa;
+  --code-preview-border: #d0d7de;
+  --syntax-fg: #24292f;
+  --syntax-comment: #6e7781;
+  --syntax-keyword: #cf222e;
+  --syntax-name: #116329;
+  --syntax-string: #0a3069;
+  --syntax-title: #8250df;
+  --syntax-number: #0550ae;
+  --syntax-symbol: #953800;
+  --syntax-meta: #953800;
+  --syntax-subst: #24292f;
+  --syntax-addition-fg: #116329;
+  --syntax-addition-bg: #dafbe1;
+  --syntax-deletion-fg: #82071e;
+  --syntax-deletion-bg: #ffebe9;
 }
 
 @layer base {
@@ -135,6 +152,23 @@
     --toolbar-primary-bg: #005236;
     --toolbar-primary-fg: #81f9c1;
     --toolbar-primary-bg-hover: #006c49;
+    --code-preview-bg: #0d1117;
+    --code-preview-gutter-bg: #161b22;
+    --code-preview-border: #30363d;
+    --syntax-fg: #e6edf3;
+    --syntax-comment: #8b949e;
+    --syntax-keyword: #ff7b72;
+    --syntax-name: #7ee787;
+    --syntax-string: #a5d6ff;
+    --syntax-title: #d2a8ff;
+    --syntax-number: #79c0ff;
+    --syntax-symbol: #ffa657;
+    --syntax-meta: #ffa657;
+    --syntax-subst: #e6edf3;
+    --syntax-addition-fg: #aff5b4;
+    --syntax-addition-bg: rgba(46, 160, 67, 0.18);
+    --syntax-deletion-fg: #ffdcd7;
+    --syntax-deletion-bg: rgba(248, 81, 73, 0.16);
     color-scheme: dark;
   }
 
@@ -338,103 +372,115 @@
 .memo-rendered pre {
   margin: 0.75rem 0;
   overflow: auto;
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--code-preview-border);
   border-radius: 6px;
-  background: var(--color-surface) !important;
+  background: var(--code-preview-bg) !important;
   padding: 0.75rem;
 }
 
 .memo-rendered pre code {
+  background: transparent;
+  color: inherit;
   font-family: var(--font-mono);
   font-size: 0.78rem;
 }
 
-.memo-rendered .hljs {
-  color: #e6edf3;
-  background: #0b1020 !important;
-}
-
-.memo-rendered .hljs-keyword,
-.memo-rendered .hljs-selector-tag,
-.memo-rendered .hljs-built_in,
-.memo-rendered .hljs-name,
-.memo-rendered .hljs-tag {
-  color: #ff7b72;
-}
-
-.memo-rendered .hljs-string,
-.memo-rendered .hljs-attr,
-.memo-rendered .hljs-symbol,
-.memo-rendered .hljs-bullet {
-  color: #a5d6ff;
-}
-
-.memo-rendered .hljs-title,
-.memo-rendered .hljs-section,
-.memo-rendered .hljs-function .hljs-title {
-  color: #d2a8ff;
-}
-
-.memo-rendered .hljs-number,
-.memo-rendered .hljs-literal,
-.memo-rendered .hljs-variable,
-.memo-rendered .hljs-template-variable {
-  color: #79c0ff;
-}
-
-.memo-rendered .hljs-comment,
-.memo-rendered .hljs-quote {
-  color: #8b949e;
-  font-style: italic;
-}
-
-.memo-rendered .hljs-operator,
-.memo-rendered .hljs-punctuation,
-.memo-rendered .hljs-meta {
-  color: #ffa657;
-}
-
 .hljs {
-  color: #e6edf3;
-  background: #0b1020;
+  display: block;
+  color: var(--syntax-fg);
+  background: var(--code-preview-bg);
 }
 
+.memo-rendered .hljs {
+  color: var(--syntax-fg);
+  background: var(--code-preview-bg) !important;
+}
+
+.hljs-subst {
+  color: var(--syntax-subst);
+}
+
+.hljs-doctag,
 .hljs-keyword,
-.hljs-selector-tag,
-.hljs-built_in,
-.hljs-name,
-.hljs-tag {
-  color: #ff7b72;
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  color: var(--syntax-keyword);
 }
 
+.hljs-name,
+.hljs-quote,
+.hljs-selector-tag,
+.hljs-selector-pseudo,
+.hljs-tag {
+  color: var(--syntax-name);
+}
+
+.hljs-regexp,
 .hljs-string,
-.hljs-attr,
-.hljs-symbol,
-.hljs-bullet {
-  color: #a5d6ff;
+.hljs-meta .hljs-string {
+  color: var(--syntax-string);
 }
 
 .hljs-title,
 .hljs-section,
-.hljs-function .hljs-title {
-  color: #d2a8ff;
+.hljs-title.class_,
+.hljs-title.function_,
+.hljs-function .hljs-title,
+.hljs-class .hljs-title {
+  color: var(--syntax-title);
 }
 
+.hljs-attr,
+.hljs-attribute,
 .hljs-number,
 .hljs-literal,
 .hljs-variable,
-.hljs-template-variable {
-  color: #79c0ff;
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--syntax-number);
+}
+
+.hljs-built_in,
+.hljs-bullet,
+.hljs-symbol {
+  color: var(--syntax-symbol);
 }
 
 .hljs-comment,
-.hljs-quote {
-  color: #8b949e;
+.hljs-code,
+.hljs-formula {
+  color: var(--syntax-comment);
   font-style: italic;
 }
 
 .hljs-operator,
-.hljs-punctuation,
 .hljs-meta {
-  color: #ffa657;
+  color: var(--syntax-meta);
+}
+
+.hljs-punctuation {
+  color: var(--syntax-fg);
+}
+
+.hljs-addition {
+  color: var(--syntax-addition-fg);
+  background-color: var(--syntax-addition-bg);
+}
+
+.hljs-deletion {
+  color: var(--syntax-deletion-fg);
+  background-color: var(--syntax-deletion-bg);
+}
+
+.hljs-emphasis {
+  color: var(--syntax-fg);
+  font-style: italic;
+}
+
+.hljs-strong {
+  color: var(--syntax-fg);
+  font-weight: 700;
 }
