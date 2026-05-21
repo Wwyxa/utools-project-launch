@@ -46,16 +46,29 @@ const filteredLogs = computed(() => {
 
 const resolveLogTone = (message: string, type: string) => {
   const normalized = message.toLowerCase();
-  if (type === "ERROR" || /\b(error|failed|exception|fatal)\b/.test(normalized)) {
+  const trueError =
+    !/\b(no errors?|0 errors?|without errors?)\b/.test(normalized) &&
+    /\b(error|failed|failure|exception|fatal|panic|traceback|uncaught|denied|not found|eaddrinuse|enoent)\b|exit code [1-9]/.test(
+      normalized,
+    );
+  const readyOutput =
+    /\b(ready|listening|started|compiled|served|local:|network:|vite|webpack|next|nuxt|dev server|watching|hmr)\b/.test(
+      normalized,
+    );
+
+  if (trueError || (type === "ERROR" && !readyOutput)) {
     return "text-status-error";
   }
   if (type === "WARN" || /\b(warn|warning|deprecated)\b/.test(normalized)) {
-    return "text-amber-700 dark:text-yellow-300";
+    return "text-status-warning";
   }
-  if (type === "SUCCESS" || /\b(info|ready|listening|started|success|vite)\b/.test(normalized)) {
-    return "text-status-running dark:text-emerald-300";
+  if (type === "SUCCESS" || readyOutput || /\b(success|done)\b/.test(normalized)) {
+    return "text-status-running";
   }
-  return "text-on-surface dark:text-slate-300";
+  if (type === "INFO" || /\b(info)\b/.test(normalized)) {
+    return "text-status-info";
+  }
+  return "text-on-surface-variant";
 };
 
 const scrollToTop = async () => {
@@ -126,7 +139,9 @@ onMounted(() => {
   <div
     class="h-full min-h-[14rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm dark:border-slate-700/80 dark:bg-[#0d1117] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_16px_40px_rgba(0,0,0,0.18)]"
   >
-    <div class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3 dark:border-slate-700/80 dark:bg-[#111820]">
+    <div
+      class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3 dark:border-slate-700/80 dark:bg-[#111820]"
+    >
       <div class="flex items-center gap-2 min-w-0 flex-1">
         <div class="flex items-center gap-2 min-w-0 shrink-0">
           <TerminalIcon :size="14" class="text-on-surface-variant dark:text-slate-400" />
@@ -206,7 +221,10 @@ onMounted(() => {
 
       <div class="flex items-center gap-2 shrink-0">
         <div class="relative">
-          <Search :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60 dark:text-slate-500" />
+          <Search
+            :size="12"
+            class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60 dark:text-slate-500"
+          />
           <input
             v-model="query"
             type="text"
@@ -232,7 +250,9 @@ onMounted(() => {
             {{ log.message }}
           </span>
         </div>
-        <div v-if="logTargets.length === 0" class="text-on-surface-variant italic dark:text-slate-500">{{ t.terminal.ready }}</div>
+        <div v-if="logTargets.length === 0" class="text-on-surface-variant italic dark:text-slate-500">
+          {{ t.terminal.ready }}
+        </div>
         <div v-else-if="filteredLogs.length === 0" class="text-on-surface-variant italic dark:text-slate-500">
           {{ t.terminal.empty }}
         </div>

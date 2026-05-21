@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { Bold, Check, CheckSquare, Code, Edit3, Link, List, Plus, Save, Trash2 } from "lucide-vue-next";
+import { Bold, Check, CheckSquare, Code, Edit3, GripVertical, Link, List, Plus, Save, Trash2 } from "lucide-vue-next";
 import { Project } from "../../types";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -18,6 +18,7 @@ const isEditing = ref(false);
 const draftContent = ref(store.memoContent[props.project.id] || "");
 const newTodoText = ref("");
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const draggedTodoId = ref<string | null>(null);
 let saveTimer: number | undefined;
 
 const content = computed(() => store.memoContent[props.project.id] || "");
@@ -56,6 +57,22 @@ const addTodo = () => {
 
 const deleteTodo = (todoId: string) => {
   store.deleteTodo(props.project.id, todoId);
+};
+
+const handleTodoDragStart = (event: DragEvent, todoId: string) => {
+  draggedTodoId.value = todoId;
+  event.dataTransfer?.setData("text/plain", todoId);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+};
+
+const handleTodoDrop = (targetTodoId: string) => {
+  const todoId = draggedTodoId.value;
+  if (todoId) {
+    store.reorderTodo(props.project.id, todoId, targetTodoId);
+  }
+  draggedTodoId.value = null;
 };
 
 const insertMarkdown = (before: string, after = "", fallback = "text") => {
@@ -103,10 +120,8 @@ onBeforeUnmount(flushMemo);
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
-    <section
-      class="flex min-h-[10rem] max-h-[18rem] flex-none flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
-    >
+  <div class="grid h-full min-h-0 grid-cols-[minmax(10.5rem,0.52fr)_minmax(0,1.48fr)] gap-2 overflow-hidden">
+    <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
       <div class="flex h-10 items-center justify-between gap-3 border-b border-border-subtle px-4">
         <h3 class="flex items-center gap-2 text-sm font-bold text-on-surface">
           <CheckSquare :size="16" class="text-primary" />
@@ -115,44 +130,64 @@ onBeforeUnmount(flushMemo);
         <span class="text-[10px] font-bold text-on-surface-variant">{{ projectTodos.length }}</span>
       </div>
 
-      <form class="flex gap-2 border-b border-border-subtle px-4 py-2.5" @submit.prevent="addTodo">
+      <form class="flex gap-1.5 border-b border-border-subtle px-2.5 py-2" @submit.prevent="addTodo">
         <input
           v-model="newTodoText"
-          class="min-w-0 flex-1 rounded border border-outline-variant/70 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary focus:bg-surface-container-lowest"
+          class="min-w-0 flex-1 rounded border border-transparent bg-surface-container-lowest px-2 py-1.5 text-xs text-on-surface outline-none placeholder:text-on-surface-variant transition-colors hover:bg-surface-container-low focus:border-primary/70 focus:bg-surface-container-lowest dark:bg-surface-container-low dark:hover:bg-surface-container dark:focus:bg-surface-container-lowest"
           :placeholder="t.memo.addTask"
         />
         <button
           type="submit"
-          class="flex h-9 items-center gap-1.5 rounded bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+          class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
           :disabled="!newTodoText.trim()"
           :aria-label="t.memo.addTask"
           :title="t.memo.addTask"
         >
           <Plus :size="14" />
-          {{ t.common.add }}
         </button>
       </form>
 
-      <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-2.5">
+      <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
         <div class="space-y-1">
-          <label
+          <div
             v-for="todo in projectTodos"
             :key="todo.id"
-            class="group flex min-h-7 items-start gap-2.5 rounded px-2 py-1 hover:bg-surface-variant"
+            @dragover.prevent
+            @drop="handleTodoDrop(todo.id)"
+            @dragend="draggedTodoId = null"
+            :class="
+              cn(
+                'group flex min-h-7 items-start gap-1.5 rounded px-1 py-1 transition-colors hover:bg-surface-variant',
+                draggedTodoId === todo.id && 'opacity-55 ring-1 ring-primary/30',
+              )
+            "
+            :title="todo.text"
           >
+            <button
+              type="button"
+              draggable="true"
+              class="mt-0.5 hidden h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-variant/60 opacity-0 transition-opacity hover:bg-surface-container-high hover:text-primary group-hover:opacity-100 focus:opacity-100 sm:flex"
+              :aria-label="t.memo.moveTask"
+              :title="t.memo.moveTask"
+              @dragstart="handleTodoDragStart($event, todo.id)"
+              @dragend="draggedTodoId = null"
+            >
+              <GripVertical :size="13" />
+            </button>
             <input
               type="checkbox"
               :checked="todo.completed"
               @change="store.toggleTodo(project.id, todo.id)"
-              class="mt-0.5 h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
+              class="mt-0.5 h-3.5 w-3.5 rounded border-outline-variant text-primary focus:ring-primary"
             />
             <span
               :class="
                 cn(
-                  'min-w-0 flex-1 text-sm font-medium leading-5 transition-colors',
+                  'min-w-0 flex-1 truncate text-xs font-medium leading-5 transition-colors',
                   todo.completed ? 'text-on-surface-variant line-through' : 'text-on-surface group-hover:text-primary',
                 )
               "
+              :title="todo.text"
             >
               {{ todo.text }}
             </span>
@@ -165,8 +200,11 @@ onBeforeUnmount(flushMemo);
             >
               <Trash2 :size="12" />
             </button>
-          </label>
-          <div v-if="projectTodos.length === 0" class="px-2 py-3 text-sm text-on-surface-variant">
+          </div>
+          <div
+            v-if="projectTodos.length === 0"
+            class="rounded border border-dashed border-border-subtle px-2 py-2 text-xs text-on-surface-variant"
+          >
             {{ t.memo.empty }}
           </div>
         </div>

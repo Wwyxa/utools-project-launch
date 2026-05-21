@@ -9,6 +9,24 @@ export type Locale = "zh-CN" | "en-US";
 
 export type ProjectKind = "node" | "python" | "go" | "executable" | "custom";
 
+export type ProjectIconKey =
+  | "node"
+  | "vue"
+  | "react"
+  | "python"
+  | "go"
+  | "rust"
+  | "java"
+  | "docker"
+  | "database"
+  | "browser"
+  | "terminal"
+  | "backend"
+  | "package"
+  | "ai"
+  | "executable"
+  | "custom";
+
 export type DefaultTerminalKind = "builtin" | "windows-terminal" | "powershell" | "cmd" | "custom";
 export type DefaultEditorKind = "vscode" | "cursor" | "custom";
 
@@ -89,6 +107,7 @@ export interface ProjectFormValue {
   path: string;
   type: string;
   kind: ProjectKind;
+  icon: ProjectIconKey;
   description: string;
   branch: string;
   memo: string;
@@ -102,6 +121,7 @@ export interface Project {
   path: string;
   type: string;
   kind: ProjectKind;
+  icon?: ProjectIconKey;
   status: ProjectStatus;
   description?: string;
   lastUpdated?: string;
@@ -127,8 +147,8 @@ export interface ProjectConfigFile {
 export interface ProjectPathInspection {
   pathExists: boolean;
   name?: string;
-  kind?: ProjectKind;
   type?: string;
+  kind?: ProjectKind;
   branch?: string;
   scripts: ProjectBridgePackageScript[];
   packagePath: string | null;

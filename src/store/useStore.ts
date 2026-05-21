@@ -17,6 +17,7 @@ import type {
   ProjectFileListResult,
   ProjectFileReadResult,
   ProjectFileWriteResult,
+  ProjectIconKey,
   ProjectKind,
   ProjectScript,
   ProjectScriptFormValue,
@@ -43,6 +44,7 @@ function toPersistedProject(project: Project): Project {
     path: project.path,
     type: project.type,
     kind: project.kind,
+    icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
     description: project.description || "",
     status: persistedStatus,
     lastUpdated: project.lastUpdated || "",
@@ -129,6 +131,7 @@ function formFromProject(project: Project): ProjectFormValue {
     path: project.path,
     type: project.type,
     kind: project.kind,
+    icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
     description: project.description || "",
     branch: project.branch || "main",
     memo: project.memo || "",
@@ -158,9 +161,29 @@ function envFromEntries(entries: ProjectEnvironmentEntry[]): Record<string, stri
   }, {});
 }
 
+function inferProjectIcon(kind: ProjectKind, type = "", name = ""): ProjectIconKey {
+  const source = `${kind} ${type} ${name}`.toLowerCase();
+  if (/\b(vue|vite|nuxt)\b/.test(source)) return "vue";
+  if (/\b(react|next)\b/.test(source)) return "react";
+  if (/\bpython|py\b/.test(source)) return "python";
+  if (/\bgo(lang)?\b/.test(source)) return "go";
+  if (/\brust|cargo\b/.test(source)) return "rust";
+  if (/\bjava|spring\b/.test(source)) return "java";
+  if (/\bdocker|compose\b/.test(source)) return "docker";
+  if (/\b(db|sql|mysql|postgres|redis|mongo)\b/.test(source)) return "database";
+  if (/\b(browser|web|frontend)\b/.test(source)) return "browser";
+  if (/\b(ai|llm|gpt|claude)\b/.test(source)) return "ai";
+  if (kind === "node") return "node";
+  if (kind === "python") return "python";
+  if (kind === "go") return "go";
+  if (kind === "executable") return "executable";
+  return "custom";
+}
+
 function hydrateProject(project: Project): Project {
   return {
     ...project,
+    icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
     branch: project.branch || project.git?.branch || "main",
     description: project.description || "",
     memo: project.memo || "",
@@ -218,6 +241,28 @@ function normalizeLogLines(message: string): string[] {
     .filter((line) => line.trim().length > 0);
 }
 
+function classifyProcessOutputLine(line: string, source: "stdout" | "stderr"): LogEntry["type"] {
+  const normalized = line.toLowerCase();
+  const benignErrorPattern = /\b(no errors?|0 errors?|without errors?)\b/;
+  const errorPattern =
+    /\b(error|failed|failure|exception|fatal|panic|traceback|uncaught|denied|not found|eaddrinuse|enoent)\b|exit code [1-9]/;
+  const warningPattern = /\b(warn|warning|deprecated)\b/;
+  const readyPattern =
+    /\b(ready|listening|started|compiled|served|local:|network:|vite|webpack|next|nuxt|dev server|watching|hmr)\b/;
+
+  if (!benignErrorPattern.test(normalized) && errorPattern.test(normalized)) {
+    return "ERROR";
+  }
+  if (warningPattern.test(normalized)) {
+    return "WARN";
+  }
+  if (readyPattern.test(normalized)) {
+    return "SUCCESS";
+  }
+
+  return source === "stderr" ? "INFO" : "INFO";
+}
+
 function demoProject(id: string, project: Project): Project {
   return hydrateProject({
     ...project,
@@ -232,6 +277,7 @@ const demoProjects: Project[] = [
     path: "~/projects/ai-portfolio",
     type: "Node.js",
     kind: "node",
+    icon: "node",
     description: "Frontend plus backend app with package scripts.",
     status: ProjectStatus.RUNNING,
     lastUpdated: "2h ago",
@@ -373,6 +419,7 @@ function createBlankProjectForm(): ProjectFormValue {
     path: "",
     type: "Node.js",
     kind: "node",
+    icon: "node",
     description: "",
     branch: "main",
     memo: "",
@@ -629,6 +676,11 @@ export const useStore = defineStore("app", {
           name: currentName || result.name || this.projectFormDraft.name,
           kind: result.kind || this.projectFormDraft.kind,
           type: result.type || this.projectFormDraft.type,
+          icon: inferProjectIcon(
+            result.kind || this.projectFormDraft.kind,
+            result.type || this.projectFormDraft.type,
+            result.name || currentName,
+          ),
           branch: result.branch || this.projectFormDraft.branch,
           scripts: scripts.length > 0 ? scripts : this.projectFormDraft.scripts,
         };
@@ -725,7 +777,8 @@ export const useStore = defineStore("app", {
       }
 
       const [script] = scripts.splice(currentIndex, 1);
-      scripts.splice(targetIndex, 0, script);
+      const insertIndex = currentIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      scripts.splice(insertIndex, 0, script);
       this.projectFormDraft.scripts = scripts;
     },
     async saveProjectForm() {
@@ -752,6 +805,7 @@ export const useStore = defineStore("app", {
         path: payload.path.trim(),
         type: payload.type,
         kind: payload.kind,
+        icon: payload.icon,
         description: payload.description,
         status:
           this.projectFormMode === "edit"
@@ -1257,6 +1311,24 @@ export const useStore = defineStore("app", {
       this.todos[projectId] = (this.todos[projectId] || []).filter((item) => item.id !== todoId);
       this.syncProjectTodos(projectId);
     },
+    reorderTodo(projectId: string, todoId: string, targetTodoId: string) {
+      if (todoId === targetTodoId) {
+        return;
+      }
+
+      const todos = [...(this.todos[projectId] || [])];
+      const currentIndex = todos.findIndex((item) => item.id === todoId);
+      const targetIndex = todos.findIndex((item) => item.id === targetTodoId);
+      if (currentIndex < 0 || targetIndex < 0) {
+        return;
+      }
+
+      const [todo] = todos.splice(currentIndex, 1);
+      const insertIndex = currentIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      todos.splice(insertIndex, 0, todo);
+      this.todos[projectId] = todos;
+      this.syncProjectTodos(projectId);
+    },
     syncProjectTodos(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       if (project) {
@@ -1340,10 +1412,11 @@ export const useStore = defineStore("app", {
       }
 
       if (event.type === "stdout" || event.type === "stderr") {
+        const outputSource = event.type;
         normalizeLogLines(event.message || "").forEach((line) => {
           this.addLog(
             event.projectId,
-            createLogEntry(line, event.type === "stderr" ? "ERROR" : "INFO"),
+            createLogEntry(line, classifyProcessOutputLine(line, outputSource)),
             event.scriptId,
           );
         });

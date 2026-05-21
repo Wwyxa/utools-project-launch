@@ -64,6 +64,8 @@
 
   --color-status-running: #2eaf7d;
   --color-status-stopped: #8e8e93;
+  --color-status-warning: #b26a00;
+  --color-status-info: #3b57b8;
   --color-status-error: #ff453a;
 
   --color-bg-soft-gray: #f6f6f7;
@@ -117,6 +119,9 @@
     --color-background: #131516;
     --color-on-background: #e4e2e1;
     --color-surface-variant: #252b29;
+
+    --color-status-warning: #f4b860;
+    --color-status-info: #b7c4ff;
 
     --color-bg-soft-gray: #1d2021;
     --color-border-subtle: #2b3030;

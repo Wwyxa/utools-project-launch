@@ -1,18 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import {
-  ArrowLeft,
-  Code2,
-  Download,
-  Github,
-  Info,
-  Languages,
-  Monitor,
-  Moon,
-  Sun,
-  TerminalSquare,
-  Upload,
-} from "lucide-vue-next";
+import { ArrowLeft, Download, Github, Monitor, Moon, Sun, Upload } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
@@ -37,7 +25,7 @@ const segmentButtonClass = (active: boolean) =>
 </script>
 
 <template>
-  <div class="themed-scrollbar h-full max-w-5xl overflow-y-auto p-2.5">
+  <div class="themed-scrollbar h-full max-w-5xl overflow-y-auto p-2">
     <header class="mb-3 flex items-center gap-3">
       <button
         type="button"
@@ -51,13 +39,12 @@ const segmentButtonClass = (active: boolean) =>
       <h2 class="text-xl font-bold tracking-tight text-on-surface">{{ t.sidebar.settings }}</h2>
     </header>
 
-    <div class="grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-3 shadow-sm">
-        <div class="mb-3 flex items-center gap-2 text-primary">
-          <Info :size="18" />
+    <div class="grid gap-2.5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-3 shadow-sm">
+        <div class="mb-2.5 flex items-center gap-2">
           <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.general }}</h3>
         </div>
-        <div class="space-y-3">
+        <div class="space-y-2.5">
           <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
             <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.interfaceLanguage }}</div>
             <div
@@ -105,9 +92,8 @@ const segmentButtonClass = (active: boolean) =>
         </div>
       </section>
 
-      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-sm">
-        <div class="mb-3 flex items-center gap-2 text-primary">
-          <TerminalSquare :size="18" />
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex items-center gap-2">
           <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultTerminal }}</h3>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
@@ -157,9 +143,8 @@ const segmentButtonClass = (active: boolean) =>
         </div>
       </section>
 
-      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-sm">
-        <div class="mb-3 flex items-center gap-2 text-primary">
-          <Code2 :size="18" />
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex items-center gap-2">
           <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultEditor }}</h3>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
@@ -206,10 +191,9 @@ const segmentButtonClass = (active: boolean) =>
         </div>
       </section>
 
-      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-sm">
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <div class="flex items-center gap-2 text-primary">
-            <Download :size="18" />
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
             <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.projectConfig }}</h3>
           </div>
           <p v-if="store.projectStorageMessage" class="truncate text-xs text-on-surface-variant">
@@ -236,9 +220,8 @@ const segmentButtonClass = (active: boolean) =>
         </div>
       </section>
 
-      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-sm">
-        <div class="mb-3 flex items-center gap-2 text-primary">
-          <Info :size="18" />
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex items-center gap-2">
           <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.about }}</h3>
         </div>
         <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-container-low px-3 py-2">

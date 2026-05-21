@@ -180,8 +180,6 @@ const fallbackBridge: ProjectBridge = {
     return {
       pathExists: Boolean(projectPath.trim()),
       name,
-      kind: "node",
-      type: "Node.js",
       branch: "main",
       scripts: [],
       packagePath: null,

@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, ref } from "vue";
 import {
   Play,
   Square,
-  Clock,
   AlertTriangle,
   FolderOpen,
   Pencil,
@@ -17,6 +16,7 @@ import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import ProjectIcon from "../project/ProjectIcon.vue";
 
 const props = defineProps<{
   project: Project;
@@ -64,27 +64,35 @@ const hiddenScripts = computed(() => {
   const visibleIds = new Set(visibleScripts.value.map((script) => script.id));
   return props.project.scripts.filter((script) => !visibleIds.has(script.id));
 });
-const stackMeta = computed(() => {
-  const envText = Object.keys(props.project.env || {})
-    .join(" ")
-    .toLowerCase();
+const projectStack = computed(() => {
+  const explicitIcon = props.project.icon;
+  const typeText = `${props.project.type} ${props.project.name}`.toLowerCase();
   const scriptText = props.project.scripts
     .map((script) => `${script.command} ${script.note || ""}`)
     .join(" ")
     .toLowerCase();
-  if (props.project.kind === "python") {
-    const envHint =
-      scriptText.includes("uv") || envText.includes("uv")
-        ? "uv"
-        : scriptText.includes("conda") || envText.includes("conda")
-          ? "conda"
-          : "";
-    return envHint ? `Python | ${envHint}` : "Python";
+  const source = `${typeText} ${scriptText}`;
+
+  if (explicitIcon && explicitIcon !== "custom") {
+    const label = explicitIcon === "executable" ? "EXE" : explicitIcon.toUpperCase();
+    return { kind: explicitIcon, title: label, label };
+  }
+  if (props.project.kind === "node" && /\b(vue|vite|nuxt)\b/.test(source)) {
+    return { kind: "vue", title: "Vue", label: "Vue" };
   }
   if (props.project.kind === "node") {
-    return "Node.js";
+    return { kind: "node", title: "Node.js", label: "node" };
   }
-  return props.project.type || t.value.projectKinds[props.project.kind];
+  if (props.project.kind === "python") {
+    return { kind: "python", title: "Python", label: "Py" };
+  }
+  if (props.project.kind === "go") {
+    return { kind: "go", title: "Go", label: "Go" };
+  }
+  if (props.project.kind === "executable") {
+    return { kind: "executable", title: t.value.projectKinds.executable, label: "EXE" };
+  }
+  return { kind: "custom", title: props.project.type || t.value.projectKinds.custom, label: "DEV" };
 });
 const displayPath = computed(() => {
   const normalizedPath = props.project.path.replace(/\\/g, "/");
@@ -274,7 +282,7 @@ const handleDelete = (event: MouseEvent) => {
     :class="
       cn(
         'group relative self-stretch border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
-        isRunning && 'border-status-running/45 shadow-[0_0_0_1px_rgba(46,175,125,0.10)]',
+        isRunning && 'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
         isDragging && 'opacity-55 scale-[0.99]',
         isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
       )
@@ -284,20 +292,22 @@ const handleDelete = (event: MouseEvent) => {
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5 min-w-0">
+            <span
+              class="inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden"
+              :title="projectStack.title"
+              :aria-label="projectStack.title"
+            >
+              <ProjectIcon :icon="projectStack.kind" size="sm" />
+            </span>
             <h3 class="min-w-0 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
               {{ project.name }}
             </h3>
             <span
-              class="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border border-border-subtle bg-surface-container-high text-on-surface-variant"
-            >
-              {{ stackMeta }}
-            </span>
-            <span
               v-if="isRunning"
-              class="inline-flex shrink-0 items-center gap-1 text-[9px] font-bold uppercase text-status-running"
+              class="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-running/25 bg-status-running/10 px-1.5 py-0.5 text-[9px] font-bold text-status-running"
             >
               <span class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse" />
-              Running
+              {{ t.common.running }}
             </span>
           </div>
         </div>
@@ -371,7 +381,7 @@ const handleDelete = (event: MouseEvent) => {
           </button>
           <div
             v-if="moreScriptsOpen"
-            class="absolute right-0 top-[calc(100%+0.25rem)] z-30 w-44 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-xl"
+            class="absolute right-0 top-[calc(100%+0.25rem)] z-30 w-44 overflow-hidden rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-1 shadow-[0_18px_44px_rgba(0,0,0,0.20),0_0_0_1px_rgba(255,255,255,0.45)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
             @click.stop
             role="menu"
           >

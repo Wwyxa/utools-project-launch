@@ -1,5 +1,18 @@
 <script setup lang="ts">
-import { ChevronRight, File, Folder } from "lucide-vue-next";
+import { computed } from "vue";
+import {
+  Binary,
+  Braces,
+  ChevronRight,
+  File,
+  FileCode,
+  FileImage,
+  FileJson,
+  FileText,
+  FileTerminal,
+  Folder,
+  Package,
+} from "lucide-vue-next";
 import { cn } from "../../lib/utils";
 import type { ProjectFileTreeEntry } from "../../types";
 
@@ -20,6 +33,34 @@ const emit = defineEmits<{
   (event: "toggle", node: TreeNode): void;
   (event: "open", node: TreeNode, edit?: boolean): void;
 }>();
+
+const fileIcon = computed(() => {
+  if (props.node.kind === "directory") {
+    return Folder;
+  }
+
+  const extension = props.node.extension.toLowerCase().replace(/^\./, "");
+  const name = props.node.name.toLowerCase();
+  if (["package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"].includes(name)) return Package;
+  if (["json", "jsonc"].includes(extension)) return FileJson;
+  if (["md", "markdown", "txt", "log"].includes(extension)) return FileText;
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"].includes(extension)) return FileImage;
+  if (["sh", "bash", "ps1", "bat", "cmd"].includes(extension)) return FileTerminal;
+  if (["lock", "bin", "exe", "dll"].includes(extension)) return Binary;
+  if (["css", "scss", "less", "html", "xml", "vue"].includes(extension)) return Braces;
+  if (["js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "go", "rs", "java", "c", "cpp", "h", "hpp"].includes(extension))
+    return FileCode;
+  return File;
+});
+
+const fileIconClass = computed(() => {
+  if (props.node.kind === "directory") return "text-primary";
+  const extension = props.node.extension.toLowerCase().replace(/^\./, "");
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"].includes(extension)) return "text-status-warning";
+  if (["json", "jsonc", "css", "scss", "less"].includes(extension)) return "text-status-info";
+  if (["js", "jsx", "ts", "tsx", "vue", "py", "go", "rs"].includes(extension)) return "text-primary";
+  return "text-on-surface-variant";
+});
 
 const handleClick = () => {
   if (props.node.kind === "directory") {
@@ -48,7 +89,7 @@ const handleDoubleClick = () => {
         cn(
           'relative flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left hover:bg-surface-variant',
           selectedRelativePath === node.relativePath
-            ? 'bg-white/[0.08] text-primary before:absolute before:left-0 before:top-1 before:h-5 before:w-0.5 before:rounded-full before:bg-primary'
+            ? 'bg-primary/10 text-primary before:absolute before:left-0 before:top-1 before:h-5 before:w-0.5 before:rounded-full before:bg-primary'
             : 'text-on-surface',
         )
       "
@@ -60,11 +101,10 @@ const handleDoubleClick = () => {
         :class="cn('shrink-0 transition-transform', node.expanded ? 'rotate-90' : '')"
       />
       <span v-else class="w-[13px] shrink-0" />
-      <Folder v-if="node.kind === 'directory'" :size="14" class="shrink-0 text-primary" />
-      <File
-        v-else
+      <component
+        :is="fileIcon"
         :size="14"
-        :class="cn('shrink-0', selectedRelativePath === node.relativePath ? 'text-primary' : 'text-on-surface-variant')"
+        :class="cn('shrink-0', selectedRelativePath === node.relativePath ? 'text-primary' : fileIconClass)"
       />
       <span class="truncate font-medium">{{ node.name }}</span>
       <span v-if="node.loading" class="ml-auto shrink-0 text-[10px] text-on-surface-variant">...</span>

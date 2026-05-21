@@ -580,8 +580,6 @@ function toStoredProject(project) {
     id: project.id,
     name: project.name,
     path: project.path,
-    type: project.type,
-    kind: project.kind,
     status: "STOPPED",
     description: project.description || "",
     lastUpdated: project.lastUpdated || "",
@@ -638,50 +636,6 @@ function detectNodeUnit(rootPath, targetPath) {
     note: `package.json: ${toRelativeCwd(rootPath, packageResult.packagePath)}`,
     source: "package-json",
   }));
-}
-
-function detectPythonUnit(rootPath, targetPath) {
-  const resolvedPath = expandPath(targetPath);
-  if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isDirectory()) {
-    return [];
-  }
-
-  const cwd = toRelativeCwd(rootPath, targetPath);
-  const scripts = [];
-  const entry = ["main.py", "app.py"].find((fileName) => fs.existsSync(path.join(resolvedPath, fileName)));
-  const hasPythonFiles = fs.readdirSync(resolvedPath).some((fileName) => fileName.endsWith(".py"));
-  const hasTests =
-    fs.existsSync(path.join(resolvedPath, "tests")) || fs.existsSync(path.join(resolvedPath, "pytest.ini"));
-
-  if (entry) {
-    scripts.push({
-      name: cwd === "." ? "run" : `${cwd}:run`,
-      command: `python ${entry}`,
-      cwd,
-      note: `Python entry: ${entry}`,
-      source: "preset",
-    });
-  } else if (hasPythonFiles) {
-    scripts.push({
-      name: cwd === "." ? "run" : `${cwd}:run`,
-      command: "python app.py",
-      cwd,
-      note: "Python run suggestion",
-      source: "preset",
-    });
-  }
-
-  if (hasTests) {
-    scripts.push({
-      name: cwd === "." ? "test" : `${cwd}:test`,
-      command: "pytest",
-      cwd,
-      note: "Python test suggestion",
-      source: "preset",
-    });
-  }
-
-  return scripts;
 }
 
 function readLegacyStoredProjects() {
@@ -1029,8 +983,6 @@ function inspectProjectPath(projectPath) {
   const result = {
     pathExists: exists,
     name: path.basename(resolvedPath),
-    kind: "custom",
-    type: "自定义",
     branch: "main",
     scripts: [],
     packagePath: null,
@@ -1047,19 +999,13 @@ function inspectProjectPath(projectPath) {
 
   const detectedScripts = commonProjectDirs.flatMap((dirName) => {
     const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
-    return [...detectNodeUnit(resolvedPath, targetPath), ...detectPythonUnit(resolvedPath, targetPath)];
+    return detectNodeUnit(resolvedPath, targetPath);
   });
 
   const hasNode = detectedScripts.some((script) => script.source === "package-json");
-  const hasPython = detectedScripts.some((script) => script.note?.includes("Python"));
   const packageResult = readPackageScripts(projectPath);
   if (hasNode) {
-    result.kind = "node";
-    result.type = "Node.js";
     result.packagePath = packageResult.packagePath;
-  } else if (hasPython) {
-    result.kind = "python";
-    result.type = "Python";
   }
 
   result.scripts = detectedScripts;

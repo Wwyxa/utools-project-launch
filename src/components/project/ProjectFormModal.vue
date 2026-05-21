@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ChevronDown, X, Plus, Trash2, Save, WandSparkles, FolderOpen, GripVertical } from "lucide-vue-next";
+import { X, Plus, Trash2, Save, WandSparkles, FolderOpen, GripVertical } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import type { ProjectKind } from "../../types";
+import { cn } from "../../lib/utils";
+import type { ProjectIconKey, ProjectKind } from "../../types";
+import ProjectIcon from "./ProjectIcon.vue";
 
 const store = useStore();
 const t = useI18n();
@@ -12,29 +14,41 @@ const form = computed(() => store.projectFormDraft);
 const title = computed(() => (store.projectFormMode === "edit" ? t.value.modal.editTitle : t.value.modal.createTitle));
 const draggedScriptId = ref<string | null>(null);
 
-const projectKinds: ProjectKind[] = ["node", "python", "go", "executable", "custom"];
+const projectIcons: Array<{ key: ProjectIconKey; label: string; kind: ProjectKind; type: string }> = [
+  { key: "node", label: "Node.js", kind: "node", type: "Node.js" },
+  { key: "vue", label: "Vue", kind: "node", type: "Vue" },
+  { key: "react", label: "React", kind: "node", type: "React" },
+  { key: "python", label: "Python", kind: "python", type: "Python" },
+  { key: "go", label: "Go", kind: "go", type: "Go" },
+  { key: "rust", label: "Rust", kind: "custom", type: "Rust" },
+  { key: "java", label: "Java", kind: "custom", type: "Java" },
+  { key: "docker", label: "Docker", kind: "custom", type: "Docker" },
+  { key: "database", label: "Database", kind: "custom", type: "Database" },
+  { key: "browser", label: "Web", kind: "custom", type: "Web" },
+  { key: "terminal", label: "CLI", kind: "custom", type: "CLI" },
+  { key: "backend", label: "API", kind: "custom", type: "API" },
+  { key: "package", label: "Package", kind: "custom", type: "Package" },
+  { key: "ai", label: "AI", kind: "custom", type: "AI" },
+  { key: "executable", label: "Executable", kind: "executable", type: "Executable" },
+  { key: "custom", label: "Custom", kind: "custom", type: "Custom" },
+];
 
-const updateKind = (kind: ProjectKind) => {
-  const type = t.value.kinds[kind];
+const updateIcon = (icon: (typeof projectIcons)[number]) => {
   const command =
-    kind === "node"
+    icon.kind === "node"
       ? "npm run dev"
-      : kind === "python"
+      : icon.kind === "python"
         ? "python main.py"
-        : kind === "go"
+        : icon.kind === "go"
           ? "go run ."
-          : kind === "executable"
+          : icon.kind === "executable"
             ? "app.exe"
             : "";
 
-  store.updateProjectForm({ kind, type });
+  store.updateProjectForm({ icon: icon.key, kind: icon.kind, type: icon.type });
   if (form.value.scripts.length === 1 && !form.value.scripts[0].command.trim()) {
     store.updateScriptEntry(form.value.scripts[0].id, { command });
   }
-};
-
-const closeDropdown = (event: MouseEvent) => {
-  (event.currentTarget as HTMLElement).closest("details")?.removeAttribute("open");
 };
 
 const handlePathBlur = () => {
@@ -128,41 +142,27 @@ const handleScriptDrop = (targetScriptId: string) => {
                 <WandSparkles :size="14" /> {{ store.projectFormInspecting ? "识别中" : "识别" }}
               </button>
             </div>
-            <label class="space-y-1.5 md:col-span-3">
-              <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.type }}</span>
-              <details class="relative group/dropdown">
-                <summary
-                  class="flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm transition-colors hover:bg-surface-container-low focus:outline-none focus:border-primary [&::-webkit-details-marker]:hidden"
+            <div class="space-y-1.5 md:col-span-12">
+              <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.icon }}</span>
+              <div class="grid grid-cols-8 gap-1.5 rounded-lg border border-border-subtle bg-surface-container-low p-1.5">
+                <button
+                  v-for="icon in projectIcons"
+                  :key="icon.key"
+                  type="button"
+                  @click="updateIcon(icon)"
+                  :title="icon.label"
+                  :aria-label="icon.label"
+                  :class="
+                    cn(
+                      'flex h-8 min-w-0 items-center justify-center rounded-md transition-colors hover:bg-surface-container-high',
+                      form.icon === icon.key ? 'bg-surface ring-1 ring-primary/50' : 'opacity-75',
+                    )
+                  "
                 >
-                  <span class="truncate">{{ t.kinds[form.kind] }}</span>
-                  <ChevronDown
-                    :size="16"
-                    class="shrink-0 text-on-surface-variant transition-transform group-open/dropdown:rotate-180"
-                  />
-                </summary>
-                <div
-                  class="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-50 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-xl"
-                >
-                  <button
-                    v-for="kind in projectKinds"
-                    :key="kind"
-                    type="button"
-                    @click="
-                      (event) => {
-                        updateKind(kind);
-                        closeDropdown(event);
-                      }
-                    "
-                    :class="[
-                      'block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-container-high hover:text-on-surface',
-                      form.kind === kind ? 'bg-primary text-on-primary' : 'text-on-surface',
-                    ]"
-                  >
-                    {{ t.kinds[kind] }}
-                  </button>
-                </div>
-              </details>
-            </label>
+                  <ProjectIcon :icon="icon.key" />
+                </button>
+              </div>
+            </div>
             <label class="space-y-1.5 md:col-span-3">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.branch }}</span>
               <input
@@ -205,22 +205,23 @@ const handleScriptDrop = (targetScriptId: string) => {
                 @dragover.prevent
                 @drop="handleScriptDrop(script.id)"
                 @dragend="draggedScriptId = null"
-                :class="[
-                  'grid grid-cols-1 md:grid-cols-[auto_repeat(12,minmax(0,1fr))] gap-2 rounded-lg border border-border-subtle bg-surface-container-low p-2 transition-all',
-                  draggedScriptId === script.id ? 'opacity-55 ring-1 ring-primary/40' : '',
-                ]"
+                :class="
+                  cn(
+                    'group/script grid grid-cols-1 items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low p-2 transition-all hover:border-primary/30 hover:bg-surface-container md:grid-cols-[auto_repeat(12,minmax(0,1fr))]',
+                    draggedScriptId === script.id && 'opacity-55 ring-1 ring-primary/40',
+                  )
+                "
               >
-                <div
-                  class="hidden md:flex items-center justify-center text-on-surface-variant cursor-grab active:cursor-grabbing"
+                <button
+                  type="button"
+                  class="hidden h-8 w-6 items-center justify-center rounded text-on-surface-variant/55 opacity-70 cursor-grab transition-all hover:bg-surface-container-high hover:text-primary group-hover/script:opacity-100 active:cursor-grabbing md:flex"
                   draggable="true"
                   @dragstart="handleScriptDragStart($event, script.id)"
                   @dragend="draggedScriptId = null"
-                  role="button"
-                  tabindex="0"
                   :aria-label="`拖拽排序 ${script.name || t.modal.scriptName}`"
                 >
                   <GripVertical :size="16" />
-                </div>
+                </button>
                 <input
                   :value="script.name"
                   @input="
@@ -254,14 +255,14 @@ const handleScriptDrop = (targetScriptId: string) => {
                   @input="
                     (event) => store.updateScriptEntry(script.id, { note: (event.target as HTMLInputElement).value })
                   "
-                  placeholder="note"
+                  :placeholder="t.modal.scriptNote"
                   class="md:col-span-3 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
                 />
                 <div class="md:col-span-1 flex min-h-8 items-center justify-end gap-1">
                   <button
                     type="button"
                     @click="store.removeScriptEntry(script.id)"
-                    class="rounded-md border border-border-subtle p-1.5 text-on-surface-variant hover:text-status-error hover:bg-surface"
+                    class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant opacity-80 transition-all hover:border-status-error/30 hover:bg-status-error/10 hover:text-status-error group-hover/script:opacity-100"
                     :title="t.modal.removeScript"
                     :aria-label="t.modal.removeScript"
                   >

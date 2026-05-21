@@ -3,13 +3,10 @@ import { computed, nextTick, ref } from "vue";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
-  Code2,
+  CircleCheck,
   FileSearch,
   GitBranch,
   RefreshCw,
-  Minus,
-  PlusCircle,
-  Trash2,
   X,
 } from "lucide-vue-next";
 import { Project, type ProjectGitFileChange, type ProjectGitFileDiffResult } from "../../types";
@@ -252,8 +249,9 @@ const graphColumnWidth = computed(() =>
 );
 
 const graphRowColumns = computed(
-  () => `${graphColumnWidth.value}px 4rem minmax(0, 1fr) minmax(0, 8rem) minmax(0, 6rem) 5.5rem`,
+  () => `${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`,
 );
+const gitGridColumns = "minmax(13rem,0.42fr) minmax(0,1.58fr)";
 
 const fileLabel = (status: string) => {
   if (status === "ADDED") return t.value.git.added;
@@ -354,16 +352,12 @@ const formatCommitTime = (value?: string) => ({
       </div>
     </div>
 
-    <div
-      class="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:min-w-0 lg:grid-cols-[minmax(14rem,0.65fr)_minmax(0,1.35fr)]"
-    >
-      <div
-        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
-      >
+    <div class="grid min-h-0 flex-1 gap-2 overflow-hidden" :style="{ gridTemplateColumns: gitGridColumns }">
+      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col">
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
         >
-          <h3 class="text-sm font-bold text-on-surface">{{ t.git.files }}</h3>
+          <h3 class="min-w-0 truncate text-xs font-bold text-on-surface">{{ t.git.files }}</h3>
           <div class="flex items-center gap-1 shrink-0">
             <span class="mr-1 text-[10px] font-bold text-on-surface-variant">{{ files.length }}</span>
             <button
@@ -391,30 +385,16 @@ const formatCommitTime = (value?: string) => ({
           v-if="files.length > 0"
           ref="filesScrollRef"
           @wheel="handlePanelWheel($event, 'files')"
-          class="min-h-0 flex-1 overflow-x-auto overflow-y-auto [overscroll-behavior-y:contain]"
+          class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [overscroll-behavior-y:contain]"
         >
           <div
             v-for="(file, idx) in files"
             :key="`${file.path}-${idx}`"
-            class="group flex min-w-max items-center justify-between gap-4 border-b border-border-subtle px-3 py-2 last:border-b-0 hover:bg-surface-container-low transition-all"
+            class="group grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 border-b border-border-subtle px-2.5 py-2 last:border-b-0 hover:bg-surface-container-low transition-all"
+            :title="file.path"
+            @click="handleViewDiff(file)"
           >
-            <div class="flex min-w-0 items-center gap-3 overflow-hidden">
-              <div
-                :class="
-                  cn(
-                    'w-7 h-7 rounded flex items-center justify-center shrink-0',
-                    file.status === 'ADDED'
-                      ? 'bg-primary-fixed'
-                      : file.status === 'DELETED'
-                        ? 'bg-error-container'
-                        : 'bg-secondary-fixed',
-                  )
-                "
-              >
-                <PlusCircle v-if="file.status === 'ADDED'" :size="14" class="text-primary" />
-                <Trash2 v-else-if="file.status === 'DELETED'" :size="14" class="text-error" />
-                <Minus v-else :size="14" class="text-secondary" />
-              </div>
+            <div class="flex min-w-0 items-center overflow-hidden">
               <div class="truncate">
                 <p
                   :class="
@@ -423,6 +403,7 @@ const formatCommitTime = (value?: string) => ({
                       file.status === 'DELETED' ? 'text-on-surface-variant line-through' : 'text-on-surface',
                     )
                   "
+                  :title="file.path"
                 >
                   {{ file.path }}
                 </p>
@@ -433,28 +414,26 @@ const formatCommitTime = (value?: string) => ({
                 </div>
               </div>
             </div>
-            <div class="ml-2 flex shrink-0 items-center gap-1 opacity-80 transition-opacity group-hover:opacity-100">
+            <div class="flex shrink-0 items-center gap-0.5 opacity-80 transition-opacity group-hover:opacity-100">
               <button
                 type="button"
                 class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
                 :disabled="file.status === 'DELETED'"
                 :title="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
                 :aria-label="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
-                @click="handleOpenFile(file)"
+                @click.stop="handleOpenFile(file)"
               >
                 <FileSearch :size="14" />
               </button>
-              <button
-                type="button"
-                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-secondary"
-                :title="t.git.viewDiff"
-                :aria-label="t.git.viewDiff"
-                @click="handleViewDiff(file)"
-              >
-                <Code2 :size="14" />
-              </button>
             </div>
           </div>
+        </div>
+        <div
+          v-else
+          class="flex flex-none items-center gap-1.5 px-2.5 py-2 text-[11px] text-on-surface-variant"
+        >
+          <CircleCheck :size="14" class="shrink-0 text-status-running" />
+          <span class="leading-4">{{ t.git.cleanWorkingTree }}</span>
         </div>
       </div>
 
@@ -495,12 +474,12 @@ const formatCommitTime = (value?: string) => ({
             <div
               v-for="row in graphRows"
               :key="row.commit.hash"
-              class="grid h-7 min-w-full items-center gap-2 rounded px-2 text-xs hover:bg-surface-container-high"
+              class="grid h-10 min-w-[30rem] items-center gap-2 rounded px-2 text-xs hover:bg-surface-container-high"
               :style="{ gridTemplateColumns: graphRowColumns }"
             >
-              <div class="h-7 min-w-0 overflow-hidden" :title="row.commit.graph || '*'">
+              <div class="h-10 min-w-0 overflow-hidden" :title="row.commit.graph || '*'">
                 <svg
-                  class="block h-7 w-full"
+                  class="block h-10 w-full"
                   :viewBox="`0 0 ${row.width} ${rowHeight}`"
                   preserveAspectRatio="xMinYMid meet"
                 >
@@ -542,26 +521,22 @@ const formatCommitTime = (value?: string) => ({
               <span class="truncate font-mono font-semibold text-on-surface-variant" :title="row.commit.hash">{{
                 row.commit.hash
               }}</span>
-              <span class="truncate text-on-surface" :title="row.commit.message">{{ row.commit.message }}</span>
-              <div class="flex min-w-0 gap-1 overflow-hidden">
-                <span
-                  v-for="refName in refsForCommit(row.commit.refs)"
-                  :key="`${row.commit.hash}-${refName}`"
-                  :class="refClass(refName)"
-                  :title="refName"
-                >
-                  {{ refName }}
-                </span>
+              <div class="min-w-0 overflow-hidden">
+                <div class="flex min-w-0 items-center gap-1.5">
+                  <span class="truncate font-semibold text-on-surface" :title="row.commit.message">{{ row.commit.message }}</span>
+                  <span
+                    v-for="refName in refsForCommit(row.commit.refs)"
+                    :key="`${row.commit.hash}-${refName}`"
+                    :class="refClass(refName)"
+                    :title="refName"
+                  >
+                    {{ refName }}
+                  </span>
+                </div>
+                <div class="mt-0.5 truncate text-[10px] text-on-surface-variant/75" :title="`${row.commit.author} · ${formatCommitTime(row.commit.date).title}`">
+                  {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
+                </div>
               </div>
-              <span class="truncate text-left text-on-surface-variant" :title="row.commit.author">{{
-                row.commit.author
-              }}</span>
-              <span
-                class="text-right text-[10px] tabular-nums text-on-surface-variant"
-                :title="formatCommitTime(row.commit.date).title"
-              >
-                {{ formatCommitTime(row.commit.date).text }}
-              </span>
             </div>
 
             <div v-if="commits.length === 0" class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
