@@ -12,7 +12,7 @@ import {
   ChevronDown,
   GripVertical,
 } from "lucide-vue-next";
-import { Project, ProjectStatus } from "../../types";
+import { Project, ProjectStatus, ProjectIconKey } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -64,8 +64,8 @@ const hiddenScripts = computed(() => {
   const visibleIds = new Set(visibleScripts.value.map((script) => script.id));
   return props.project.scripts.filter((script) => !visibleIds.has(script.id));
 });
-const projectStack = computed(() => {
-  const explicitIcon = props.project.icon;
+const projectStack = computed<{ kind: ProjectIconKey; title: string; label: string }>(() => {
+  const explicitIcon = props.project.icon as ProjectIconKey | undefined;
   const typeText = `${props.project.type} ${props.project.name}`.toLowerCase();
   const scriptText = props.project.scripts
     .map((script) => `${script.command} ${script.note || ""}`)
@@ -282,7 +282,8 @@ const handleDelete = (event: MouseEvent) => {
     :class="
       cn(
         'group relative self-stretch border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
-        isRunning && 'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
+        isRunning &&
+          'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
         isDragging && 'opacity-55 scale-[0.99]',
         isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
       )
