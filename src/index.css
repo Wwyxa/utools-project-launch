@@ -388,3 +388,48 @@
 .memo-rendered .hljs-meta {
   color: #ffa657;
 }
+
+.hljs {
+  color: #e6edf3;
+  background: #0b1020;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name,
+.hljs-tag {
+  color: #ff7b72;
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-symbol,
+.hljs-bullet {
+  color: #a5d6ff;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-function .hljs-title {
+  color: #d2a8ff;
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable {
+  color: #79c0ff;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #8b949e;
+  font-style: italic;
+}
+
+.hljs-operator,
+.hljs-punctuation,
+.hljs-meta {
+  color: #ffa657;
+}

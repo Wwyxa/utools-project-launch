@@ -67,8 +67,8 @@ const handleFileOpened = (relativePath: string) => {
 </script>
 
 <template>
-  <div class="p-4 flex-1 flex flex-col h-full overflow-hidden">
-    <div class="mb-4 flex justify-between items-center gap-3">
+  <div class="flex h-full flex-1 flex-col overflow-hidden p-3">
+    <div class="mb-3 flex items-center justify-between gap-3">
       <div class="flex items-center gap-4 min-w-0">
         <button
           type="button"
@@ -156,7 +156,7 @@ const handleFileOpened = (relativePath: string) => {
       </div>
     </div>
 
-    <nav class="flex gap-5 border-b border-border-subtle mb-4 overflow-x-auto">
+    <nav class="mb-3 flex gap-5 overflow-x-auto border-b border-border-subtle">
       <button
         v-for="tab in tabs"
         :key="tab.id"
@@ -180,7 +180,7 @@ const handleFileOpened = (relativePath: string) => {
           'themed-scrollbar min-h-0 flex-1 pr-1 [color-scheme:inherit]',
           activeTab === 'files' || activeTab === 'scripts' || activeTab === 'git' || activeTab === 'memo'
             ? 'overflow-hidden'
-            : 'space-y-4 overflow-y-auto',
+            : 'space-y-3 overflow-y-auto',
         )
       "
     >

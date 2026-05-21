@@ -1,19 +1,21 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import {
-  Languages,
-  Info,
+  ArrowLeft,
+  Code2,
+  Download,
   Github,
+  Info,
+  Languages,
+  Monitor,
   Moon,
   Sun,
-  Monitor,
   TerminalSquare,
-  Code2,
-  ArrowLeft,
   Upload,
-  Download,
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import { cn } from "../../lib/utils";
 import type { DefaultEditorKind, DefaultTerminalKind } from "../../types";
 
 const store = useStore();
@@ -21,203 +23,196 @@ const t = useI18n();
 
 const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
 const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
+
+const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
+const editorUsesCustomCommand = computed(() => store.editorPreferences.kind === "custom");
+
+const segmentButtonClass = (active: boolean) =>
+  cn(
+    "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all",
+    active
+      ? "bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
+      : "text-on-surface-variant hover:bg-surface-container",
+  );
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto p-4 max-w-5xl themed-scrollbar">
-    <header class="mb-5 flex items-center gap-3">
+  <div class="themed-scrollbar h-full max-w-5xl overflow-y-auto p-2.5">
+    <header class="mb-3 flex items-center gap-3">
       <button
         type="button"
         @click="store.setActiveTab('projects')"
-        class="p-2 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
+        class="rounded-lg border border-border-subtle bg-surface p-2 text-on-surface-variant shadow-sm transition-all active:scale-90 hover:bg-surface-variant"
         :title="t.common.back"
         :aria-label="t.common.back"
       >
         <ArrowLeft :size="20" />
       </button>
-      <h2 class="text-xl font-bold text-on-surface tracking-tight">{{ t.sidebar.settings }}</h2>
+      <h2 class="text-xl font-bold tracking-tight text-on-surface">{{ t.sidebar.settings }}</h2>
     </header>
 
     <div class="grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-      <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm">
-        <div class="flex items-center gap-2 mb-3 text-primary">
-          <Languages :size="18" />
-          <h3 class="text-sm font-semibold text-on-surface">{{ t.common.language }}</h3>
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-3 shadow-sm">
+        <div class="mb-3 flex items-center gap-2 text-primary">
+          <Info :size="18" />
+          <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.general }}</h3>
         </div>
-        <div class="inline-flex max-w-full flex-wrap rounded-lg border border-border-subtle bg-surface-container-low p-1">
-          <button
-            type="button"
-            @click="store.setLocale('zh-CN')"
-            :class="[
-              'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
-              store.locale === 'zh-CN'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container',
-            ]"
-          >
-            简体中文
-          </button>
-          <button
-            type="button"
-            @click="store.setLocale('en-US')"
-            :class="[
-              'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
-              store.locale === 'en-US'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container',
-            ]"
-          >
-            English
-          </button>
-        </div>
-      </section>
-
-      <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm">
-        <div class="flex items-center gap-2 mb-3 text-primary">
-          <Monitor :size="18" />
-          <h3 class="text-sm font-semibold text-on-surface">{{ t.common.theme }}</h3>
-        </div>
-        <div class="inline-flex max-w-full flex-wrap rounded-lg border border-border-subtle bg-surface-container-low p-1">
-          <button
-            type="button"
-            @click="store.setTheme('light')"
-            :class="[
-              'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all',
-              store.theme === 'light'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container',
-            ]"
-          >
-            <Sun :size="16" />
-            {{ t.common.themeLight }}
-          </button>
-          <button
-            type="button"
-            @click="store.setTheme('dark')"
-            :class="[
-              'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all',
-              store.theme === 'dark'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container',
-            ]"
-          >
-            <Moon :size="16" />
-            {{ t.common.themeDark }}
-          </button>
-          <button
-            type="button"
-            @click="store.setTheme('auto')"
-            :class="[
-              'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all',
-              store.theme === 'auto'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container',
-            ]"
-          >
-            <Monitor :size="16" />
-            {{ t.common.themeAuto }}
-          </button>
+        <div class="space-y-3">
+          <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
+            <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.interfaceLanguage }}</div>
+            <div
+              class="inline-flex max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
+            >
+              <button
+                type="button"
+                @click="store.setLocale('zh-CN')"
+                :class="segmentButtonClass(store.locale === 'zh-CN')"
+              >
+                简体中文
+              </button>
+              <button
+                type="button"
+                @click="store.setLocale('en-US')"
+                :class="segmentButtonClass(store.locale === 'en-US')"
+              >
+                English
+              </button>
+            </div>
+          </div>
+          <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
+            <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.appearanceTheme }}</div>
+            <div
+              class="inline-flex max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
+            >
+              <button
+                type="button"
+                @click="store.setTheme('light')"
+                :class="segmentButtonClass(store.theme === 'light')"
+              >
+                <Sun :size="16" />
+                {{ t.common.themeLight }}
+              </button>
+              <button type="button" @click="store.setTheme('dark')" :class="segmentButtonClass(store.theme === 'dark')">
+                <Moon :size="16" />
+                {{ t.common.themeDark }}
+              </button>
+              <button type="button" @click="store.setTheme('auto')" :class="segmentButtonClass(store.theme === 'auto')">
+                <Monitor :size="16" />
+                {{ t.common.themeAuto }}
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm lg:col-span-2">
-        <div class="flex items-center gap-2 mb-3 text-primary">
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2 text-primary">
           <TerminalSquare :size="18" />
           <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultTerminal }}</h3>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-          <div class="inline-flex h-fit max-w-full flex-wrap rounded-lg border border-border-subtle bg-surface-container-low p-1">
+          <div
+            class="inline-flex h-fit max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
+          >
             <button
               v-for="option in terminalOptions"
               :key="option"
               type="button"
               @click="store.setDefaultTerminal(option)"
-              :class="[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
-                store.terminalPreferences.kind === option
-                  ? 'bg-primary text-on-primary shadow-sm'
-                  : 'text-on-surface-variant hover:bg-surface-container',
-              ]"
+              :class="segmentButtonClass(store.terminalPreferences.kind === option)"
             >
               {{ t.settings.terminals[option] }}
             </button>
           </div>
-          <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
-            <label class="block text-xs font-semibold uppercase text-on-surface-variant mb-2">
-              {{ t.settings.customCommand }}
-            </label>
-            <input
-              :value="store.terminalPreferences.customCommand"
-              @input="store.setDefaultTerminalCustomCommand(($event.target as HTMLInputElement).value)"
-              type="text"
-              :disabled="store.terminalPreferences.kind !== 'custom'"
-              :placeholder="t.settings.customCommandPlaceholder"
-              :title="
-                store.terminalPreferences.kind === 'custom'
-                  ? t.settings.customCommand
-                  : t.settings.customCommandDisabled
-              "
-              class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant disabled:opacity-70 disabled:placeholder:text-on-surface-variant/60"
-            />
-            <p class="mt-2 text-xs text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
-            <p v-if="store.terminalPreferences.kind === 'builtin'" class="mt-1 text-xs text-on-surface-variant">
+          <div class="space-y-1.5">
+            <Transition
+              enter-active-class="transition-all duration-200 ease-out"
+              enter-from-class="max-h-0 opacity-0 -translate-y-1"
+              enter-to-class="max-h-28 opacity-100 translate-y-0"
+              leave-active-class="transition-all duration-150 ease-in"
+              leave-from-class="max-h-28 opacity-100 translate-y-0"
+              leave-to-class="max-h-0 opacity-0 -translate-y-1"
+            >
+              <div
+                v-if="terminalUsesCustomCommand"
+                class="overflow-hidden rounded-lg border border-border-subtle bg-surface px-3 py-2.5"
+              >
+                <label class="mb-2 block text-xs font-semibold uppercase text-on-surface-variant">
+                  {{ t.settings.customCommand }}
+                </label>
+                <input
+                  :value="store.terminalPreferences.customCommand"
+                  @input="store.setDefaultTerminalCustomCommand(($event.target as HTMLInputElement).value)"
+                  type="text"
+                  :placeholder="t.settings.customCommandPlaceholder"
+                  class="w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p class="mt-2 text-xs leading-5 text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
+              </div>
+            </Transition>
+            <p v-if="store.terminalPreferences.kind === 'builtin'" class="text-xs leading-5 text-on-surface-variant">
               {{ t.settings.builtinTerminalHint }}
             </p>
           </div>
         </div>
       </section>
 
-      <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm lg:col-span-2">
-        <div class="flex items-center gap-2 mb-3 text-primary">
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2 text-primary">
           <Code2 :size="18" />
           <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultEditor }}</h3>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-          <div class="inline-flex h-fit max-w-full flex-wrap rounded-lg border border-border-subtle bg-surface-container-low p-1">
+          <div
+            class="inline-flex h-fit max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
+          >
             <button
               v-for="option in editorOptions"
               :key="option"
               type="button"
               @click="store.setDefaultEditor(option)"
-              :class="[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
-                store.editorPreferences.kind === option
-                  ? 'bg-primary text-on-primary shadow-sm'
-                  : 'text-on-surface-variant hover:bg-surface-container',
-              ]"
+              :class="segmentButtonClass(store.editorPreferences.kind === option)"
             >
               {{ t.settings.editors[option] }}
             </button>
           </div>
-          <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
-            <label class="block text-xs font-semibold uppercase text-on-surface-variant mb-2">
-              {{ t.settings.customEditorCommand }}
-            </label>
-            <input
-              :value="store.editorPreferences.customCommand"
-              @input="store.setDefaultEditorCustomCommand(($event.target as HTMLInputElement).value)"
-              type="text"
-              :disabled="store.editorPreferences.kind !== 'custom'"
-              :placeholder="t.settings.customEditorCommandPlaceholder"
-              :title="
-                store.editorPreferences.kind === 'custom'
-                  ? t.settings.customEditorCommand
-                  : t.settings.customCommandDisabled
-              "
-              class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant disabled:opacity-70 disabled:placeholder:text-on-surface-variant/60"
-            />
-            <p class="mt-2 text-xs text-on-surface-variant">{{ t.settings.defaultEditorHint }}</p>
+          <div class="space-y-1.5">
+            <Transition
+              enter-active-class="transition-all duration-200 ease-out"
+              enter-from-class="max-h-0 opacity-0 -translate-y-1"
+              enter-to-class="max-h-28 opacity-100 translate-y-0"
+              leave-active-class="transition-all duration-150 ease-in"
+              leave-from-class="max-h-28 opacity-100 translate-y-0"
+              leave-to-class="max-h-0 opacity-0 -translate-y-1"
+            >
+              <div
+                v-if="editorUsesCustomCommand"
+                class="overflow-hidden rounded-lg border border-border-subtle bg-surface px-3 py-2.5"
+              >
+                <label class="mb-2 block text-xs font-semibold uppercase text-on-surface-variant">
+                  {{ t.settings.customEditorCommand }}
+                </label>
+                <input
+                  :value="store.editorPreferences.customCommand"
+                  @input="store.setDefaultEditorCustomCommand(($event.target as HTMLInputElement).value)"
+                  type="text"
+                  :placeholder="t.settings.customEditorCommandPlaceholder"
+                  class="w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p class="mt-2 text-xs leading-5 text-on-surface-variant">{{ t.settings.defaultEditorHint }}</p>
+              </div>
+            </Transition>
           </div>
         </div>
       </section>
 
-      <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm lg:col-span-2">
-        <div class="flex items-center justify-between gap-3 mb-3">
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-sm">
+        <div class="mb-3 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2 text-primary">
             <Download :size="18" />
             <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.projectConfig }}</h3>
           </div>
-          <p v-if="store.projectStorageMessage" class="text-xs text-on-surface-variant truncate">
+          <p v-if="store.projectStorageMessage" class="truncate text-xs text-on-surface-variant">
             {{ store.projectStorageMessage }}
           </p>
         </div>
@@ -225,43 +220,42 @@ const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
           <button
             type="button"
             @click="store.importProjectConfig"
-            class="inline-flex w-auto items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-variant"
           >
-            <Download :size="16" />
+            <Download :size="14" />
             {{ t.settings.importProjectConfig }}
           </button>
           <button
             type="button"
             @click="store.exportProjectConfig"
-            class="inline-flex w-auto items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-variant"
           >
-            <Upload :size="16" />
+            <Upload :size="14" />
             {{ t.settings.exportProjectConfig }}
           </button>
         </div>
       </section>
 
-      <section class="bg-surface border border-border-subtle rounded-lg p-4 shadow-sm lg:col-span-2">
-        <div class="flex items-center gap-2 mb-3 text-primary">
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2 text-primary">
           <Info :size="18" />
           <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.about }}</h3>
         </div>
-        <div class="grid gap-2 sm:grid-cols-2">
-          <div class="flex justify-between items-center rounded-lg bg-surface-container-low px-3 py-2">
-            <span class="text-sm font-medium text-on-surface-variant">{{ t.settings.version }}</span>
-            <span class="text-sm font-mono bg-surface-variant px-2 py-0.5 rounded text-on-surface-variant">v0.1.0</span>
-          </div>
-          <div class="flex justify-between items-center rounded-lg bg-surface-container-low px-3 py-2">
-            <span class="text-sm font-medium text-on-surface-variant">{{ t.settings.repository }}</span>
-            <a
-              href="https://github.com/wyxa/utools-project-launch"
-              target="_blank"
-              class="text-primary hover:underline flex items-center gap-1 text-sm"
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-container-low px-3 py-2">
+          <div class="flex items-center gap-2 text-sm text-on-surface-variant">
+            <span class="font-medium">{{ t.settings.version }}</span>
+            <span class="rounded-full bg-surface-variant px-2 py-0.5 font-mono text-xs text-on-surface-variant"
+              >v0.1.0</span
             >
-              <Github :size="14" />
-              GitHub
-            </a>
           </div>
+          <a
+            href="https://github.com/wyxa/utools-project-launch"
+            target="_blank"
+            class="inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:underline"
+          >
+            <Github :size="14" />
+            GitHub
+          </a>
         </div>
       </section>
     </div>

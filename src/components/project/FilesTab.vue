@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { Check, Code2, Edit3, FileImage, Folder, Save } from "lucide-vue-next";
+import { Check, Edit3, FileImage, Folder, Save } from "lucide-vue-next";
 import type { Project, ProjectFileReadResult, ProjectFileTreeEntry } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import { isMarkdownFile, renderMarkdown } from "../../lib/markdown";
+import { highlightCode, isMarkdownFile, renderMarkdown } from "../../lib/markdown";
 import FileTreeNode, { type TreeNode } from "./FileTreeNode.vue";
 
 const props = defineProps<{
@@ -33,8 +33,7 @@ const statusMessage = ref("");
 const selectedRelativePath = computed(() => selectedFile.value?.relativePath || "");
 const isMarkdownPreview = computed(() =>
   Boolean(
-    selectedFile.value?.previewKind === "text" &&
-      isMarkdownFile(selectedFile.value.name, selectedFile.value.extension),
+    selectedFile.value?.previewKind === "text" && isMarkdownFile(selectedFile.value.name, selectedFile.value.extension),
   ),
 );
 const isDirty = computed(
@@ -50,6 +49,66 @@ const lineNumbers = computed(() =>
     .join("\n"),
 );
 const renderedMarkdown = computed(() => renderMarkdown(draftContent.value));
+const previewLanguage = computed(() => {
+  const extension = selectedFile.value?.extension.toLowerCase().replace(/^\./, "") || "";
+  const name = selectedFile.value?.name.toLowerCase() || "";
+
+  if (name === "dockerfile") return "dockerfile";
+
+  switch (extension) {
+    case "js":
+    case "mjs":
+    case "cjs":
+    case "jsx":
+      return "javascript";
+    case "ts":
+    case "tsx":
+    case "cts":
+    case "mts":
+      return "typescript";
+    case "html":
+    case "htm":
+    case "vue":
+    case "xml":
+      return "xml";
+    case "md":
+    case "markdown":
+      return "markdown";
+    case "json":
+      return "json";
+    case "css":
+      return "css";
+    case "yml":
+    case "yaml":
+      return "yaml";
+    case "sh":
+    case "bash":
+      return "bash";
+    case "sql":
+      return "sql";
+    case "ini":
+      return "ini";
+    case "py":
+      return "python";
+    case "go":
+      return "go";
+    case "rs":
+      return "rust";
+    case "java":
+      return "java";
+    case "c":
+    case "h":
+      return "c";
+    case "cpp":
+    case "cc":
+    case "cxx":
+    case "hpp":
+      return "cpp";
+    default:
+      return "";
+  }
+});
+const renderedCode = computed(() => highlightCode(draftContent.value, previewLanguage.value));
 
 const formatSize = (size: number) => {
   if (size < 1024) return `${size} B`;
@@ -247,32 +306,20 @@ watch(
           <div class="flex shrink-0 items-center gap-2">
             <button
               type="button"
+              v-if="!isEditing"
               @click="enterEdit"
               :disabled="!canEdit"
               :class="
                 cn(
-                  'flex h-7 items-center justify-center rounded border border-border-subtle text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-                  isEditing
-                    ? 'w-7 bg-surface-container-low text-on-surface-variant'
-                    : 'gap-1.5 bg-transparent px-2 text-on-surface-variant hover:bg-surface hover:text-primary',
+                  'flex h-7 items-center justify-center rounded border border-border-subtle bg-transparent px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                  'gap-1.5 text-on-surface-variant hover:bg-surface hover:text-primary',
                 )
               "
               aria-label="Edit file"
               title="Edit file"
             >
               <Edit3 :size="13" />
-              <span v-if="!isEditing">Edit</span>
-            </button>
-            <button
-              v-if="isEditing"
-              type="button"
-              @click="exitEdit"
-              class="flex h-7 items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-              aria-label="Done editing"
-              title="Done editing"
-            >
-              <Check :size="13" />
-              Done
+              <span>Edit</span>
             </button>
             <button
               v-if="isEditing"
@@ -281,10 +328,10 @@ watch(
               :disabled="!canSave"
               :class="
                 cn(
-                  'flex h-7 items-center gap-1.5 rounded px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed',
+                  'flex h-7 items-center gap-1.5 rounded border border-border-subtle px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed',
                   canSave
                     ? 'bg-primary text-on-primary hover:bg-primary/90'
-                    : 'border border-border-subtle bg-surface-container-low text-on-surface-variant opacity-60',
+                    : 'bg-surface-container-low text-on-surface-variant opacity-60',
                 )
               "
               aria-label="Save file"
@@ -292,6 +339,17 @@ watch(
             >
               <Save :size="13" />
               Save
+            </button>
+            <button
+              v-if="isEditing"
+              type="button"
+              @click="exitEdit"
+              class="flex h-7 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+              aria-label="Done editing"
+              title="Done editing"
+            >
+              <Check :size="13" />
+              Done
             </button>
           </div>
         </div>
@@ -327,16 +385,14 @@ watch(
               >{{ lineNumbers }}</pre
             >
             <textarea
+              v-if="isEditing"
               v-model="draftContent"
-              :readonly="!isEditing"
-              :class="
-                cn(
-                  'h-full w-full resize-none bg-transparent p-4 text-on-surface outline-none themed-scrollbar',
-                  !isEditing ? 'cursor-default caret-transparent' : '',
-                )
-              "
+              class="themed-scrollbar h-full w-full resize-none bg-transparent p-4 text-on-surface outline-none"
               @dblclick="enterEdit"
             />
+            <pre v-else class="themed-scrollbar min-w-0 overflow-auto p-4 text-on-surface">
+              <code class="hljs" v-html="renderedCode" />
+            </pre>
           </div>
           <div v-else-if="selectedFile.previewKind === 'image'" class="flex h-full items-center justify-center p-6">
             <img :src="selectedFile.dataUrl" :alt="selectedFile.name" class="max-h-full max-w-full object-contain" />

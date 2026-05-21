@@ -68,7 +68,17 @@ export const markdown = new MarkdownIt({
 
 export const renderMarkdown = (content: string) => markdown.render(content);
 
+export const highlightCode = (source: string, language: string) => {
+  const normalizedLanguage = language === "sh" ? "bash" : language;
+  if (normalizedLanguage && hljs.getLanguage(normalizedLanguage)) {
+    return hljs.highlight(source, { language: normalizedLanguage }).value;
+  }
+  return markdown.utils.escapeHtml(source);
+};
+
 export const isMarkdownFile = (fileName: string, extension = "") => {
   const normalizedExtension = extension.toLowerCase();
-  return normalizedExtension === ".md" || normalizedExtension === ".markdown" || /(?:^|\/)readme(?:\.md)?$/i.test(fileName);
+  return (
+    normalizedExtension === ".md" || normalizedExtension === ".markdown" || /(?:^|\/)readme(?:\.md)?$/i.test(fileName)
+  );
 };

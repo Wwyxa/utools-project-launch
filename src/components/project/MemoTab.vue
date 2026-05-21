@@ -103,13 +103,11 @@ onBeforeUnmount(flushMemo);
 </script>
 
 <template>
-  <div
-    class="flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-lg border border-border-subtle bg-surface p-3 shadow-sm"
-  >
+  <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
     <section
-      class="flex min-h-[10rem] max-h-[18rem] flex-none flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
+      class="flex min-h-[10rem] max-h-[18rem] flex-none flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
     >
-      <div class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle px-4">
+      <div class="flex h-10 items-center justify-between gap-3 border-b border-border-subtle px-4">
         <h3 class="flex items-center gap-2 text-sm font-bold text-on-surface">
           <CheckSquare :size="16" class="text-primary" />
           {{ t.memo.taskList }}
@@ -117,7 +115,7 @@ onBeforeUnmount(flushMemo);
         <span class="text-[10px] font-bold text-on-surface-variant">{{ projectTodos.length }}</span>
       </div>
 
-      <form class="flex gap-2 border-b border-border-subtle bg-surface px-4 py-3" @submit.prevent="addTodo">
+      <form class="flex gap-2 border-b border-border-subtle px-4 py-2.5" @submit.prevent="addTodo">
         <input
           v-model="newTodoText"
           class="min-w-0 flex-1 rounded border border-outline-variant/70 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary focus:bg-surface-container-lowest"
@@ -135,7 +133,7 @@ onBeforeUnmount(flushMemo);
         </button>
       </form>
 
-      <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-2.5">
         <div class="space-y-1">
           <label
             v-for="todo in projectTodos"
@@ -176,10 +174,10 @@ onBeforeUnmount(flushMemo);
     </section>
 
     <section
-      class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
+      class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       @dblclick.self="enterEdit"
     >
-      <div class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle px-4">
+      <div class="flex h-10 items-center justify-between gap-3 border-b border-border-subtle px-4">
         <div v-if="isEditing" class="flex items-center gap-1">
           <button
             v-for="action in toolbarActions"

@@ -165,6 +165,9 @@ const messages = {
       ready: "等待启动命令执行…",
     },
     settings: {
+      general: "通用设置",
+      interfaceLanguage: "界面语言",
+      appearanceTheme: "外观主题",
       about: "关于",
       version: "版本",
       repository: "仓库",
@@ -392,6 +395,9 @@ const messages = {
       ready: "Waiting for launch commands…",
     },
     settings: {
+      general: "General",
+      interfaceLanguage: "Interface Language",
+      appearanceTheme: "Appearance Theme",
       about: "About",
       version: "Version",
       repository: "Repository",
