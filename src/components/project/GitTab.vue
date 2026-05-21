@@ -1,18 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
-import {
-  ArrowDownToLine,
-  ArrowUpToLine,
-  CircleCheck,
-  FileSearch,
-  GitBranch,
-  RefreshCw,
-  X,
-} from "lucide-vue-next";
+import { computed, nextTick, onBeforeUnmount, ref } from "vue";
+import { ArrowDownToLine, ArrowUpToLine, CircleCheck, FileSearch, GitBranch, RefreshCw, X } from "lucide-vue-next";
 import { Project, type ProjectGitFileChange, type ProjectGitFileDiffResult } from "../../types";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import { renderMarkdown } from "../../lib/markdown";
 
 const props = defineProps<{
   project: Project;
@@ -35,6 +28,31 @@ const isLoadingMore = ref(false);
 const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingDiff = ref(false);
 const isDiffDialogOpen = ref(false);
+const commitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
+const pendingCommitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
+let commitTooltipTimer: number | undefined;
+const commitTooltipStyle = computed(() => {
+  if (!commitTooltip.value) {
+    return {};
+  }
+
+  const viewportWidth = globalThis.window?.innerWidth || 1024;
+  const viewportHeight = globalThis.window?.innerHeight || 768;
+  const tooltipMaxWidth = Math.min(384, Math.max(260, viewportWidth - 64));
+  const tooltipHeight = Math.min(240, Math.max(140, viewportHeight - 64));
+  const left = Math.min(Math.max(16, commitTooltip.value.x), Math.max(16, viewportWidth - tooltipMaxWidth - 16));
+  const showAbove = commitTooltip.value.y - tooltipHeight - 10 >= 16;
+  const top = showAbove
+    ? commitTooltip.value.y - 10
+    : Math.min(commitTooltip.value.y + 18, Math.max(16, viewportHeight - tooltipHeight - 16));
+
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    maxWidth: `${tooltipMaxWidth}px`,
+    transform: showAbove ? "translateY(-100%)" : "none",
+  };
+});
 
 const handleRefresh = async () => {
   await store.refreshGitSnapshot(props.project.id);
@@ -78,6 +96,30 @@ const handleViewDiff = async (file: ProjectGitFileChange) => {
 const closeDiffDialog = () => {
   isDiffDialogOpen.value = false;
 };
+
+const showCommitTooltip = (event: MouseEvent, content: string) => {
+  window.clearTimeout(commitTooltipTimer);
+  pendingCommitTooltip.value = { content, x: event.clientX, y: event.clientY };
+  commitTooltipTimer = window.setTimeout(() => {
+    commitTooltip.value = pendingCommitTooltip.value;
+  }, 450);
+};
+
+const moveCommitTooltip = (event: MouseEvent) => {
+  if (pendingCommitTooltip.value) {
+    pendingCommitTooltip.value = { ...pendingCommitTooltip.value, x: event.clientX, y: event.clientY };
+  }
+  if (!commitTooltip.value) return;
+  commitTooltip.value = { ...commitTooltip.value, x: event.clientX, y: event.clientY };
+};
+
+const hideCommitTooltip = () => {
+  window.clearTimeout(commitTooltipTimer);
+  pendingCommitTooltip.value = null;
+  commitTooltip.value = null;
+};
+
+onBeforeUnmount(hideCommitTooltip);
 
 const diffLines = computed(() =>
   (selectedDiff.value?.diff || "").split("\n").map((content, index) => {
@@ -248,9 +290,7 @@ const graphColumnWidth = computed(() =>
   Math.min(maxGraphColumnWidth, Math.max(minGraphColumnWidth, ...graphRows.value.map((row) => row.width))),
 );
 
-const graphRowColumns = computed(
-  () => `${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`,
-);
+const graphRowColumns = computed(() => `${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`);
 const gitGridColumns = "minmax(13rem,0.42fr) minmax(0,1.58fr)";
 
 const fileLabel = (status: string) => {
@@ -326,6 +366,9 @@ const formatCommitTime = (value?: string) => ({
   text: formatRelativeTime(value),
   title: formatAbsoluteTime(value),
 });
+
+const renderCommitMessage = (message: string) => renderMarkdown(message || "");
+const commitTooltipContent = (commit: { message: string; body?: string }) => commit.body || commit.message;
 </script>
 
 <template>
@@ -353,7 +396,9 @@ const formatCommitTime = (value?: string) => ({
     </div>
 
     <div class="grid min-h-0 flex-1 gap-2 overflow-hidden" :style="{ gridTemplateColumns: gitGridColumns }">
-      <div class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col">
+      <div
+        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
+      >
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
         >
@@ -428,10 +473,7 @@ const formatCommitTime = (value?: string) => ({
             </div>
           </div>
         </div>
-        <div
-          v-else
-          class="flex flex-none items-center gap-1.5 px-2.5 py-2 text-[11px] text-on-surface-variant"
-        >
+        <div v-else class="flex flex-none items-center gap-1.5 px-2.5 py-2 text-[11px] text-on-surface-variant">
           <CircleCheck :size="14" class="shrink-0 text-status-running" />
           <span class="leading-4">{{ t.git.cleanWorkingTree }}</span>
         </div>
@@ -477,7 +519,7 @@ const formatCommitTime = (value?: string) => ({
               class="grid h-8 min-w-[30rem] items-center gap-1.5 rounded px-2 text-xs hover:bg-surface-container-high"
               :style="{ gridTemplateColumns: graphRowColumns }"
             >
-              <div class="h-8 min-w-0 overflow-hidden" :title="row.commit.graph || '*'">
+              <div class="h-8 min-w-0 overflow-hidden">
                 <svg
                   class="block h-8 w-full"
                   :viewBox="`0 0 ${row.width} ${rowHeight}`"
@@ -518,12 +560,21 @@ const formatCommitTime = (value?: string) => ({
                 </svg>
               </div>
 
-              <span class="truncate font-mono text-[10px] font-semibold text-on-surface-variant" :title="row.commit.hash">{{
-                row.commit.hash
-              }}</span>
+              <span
+                class="truncate font-mono text-[10px] font-semibold text-on-surface-variant"
+                :title="row.commit.hash"
+                >{{ row.commit.hash }}</span
+              >
               <div class="min-w-0 overflow-hidden">
                 <div class="flex min-w-0 items-center gap-1.5 leading-4">
-                  <span class="truncate text-[11px] font-semibold text-on-surface" :title="row.commit.message">{{ row.commit.message }}</span>
+                  <span
+                    class="min-w-0 truncate text-[11px] font-semibold text-on-surface"
+                    @mouseenter="showCommitTooltip($event, commitTooltipContent(row.commit))"
+                    @mousemove="moveCommitTooltip"
+                    @mouseleave="hideCommitTooltip"
+                  >
+                    {{ row.commit.message }}
+                  </span>
                   <span
                     v-for="refName in refsForCommit(row.commit.refs)"
                     :key="`${row.commit.hash}-${refName}`"
@@ -533,7 +584,10 @@ const formatCommitTime = (value?: string) => ({
                     {{ refName }}
                   </span>
                 </div>
-                <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75" :title="`${row.commit.author} · ${formatCommitTime(row.commit.date).title}`">
+                <div
+                  class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75"
+                  :title="`${row.commit.author} · ${formatCommitTime(row.commit.date).title}`"
+                >
                   {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
                 </div>
               </div>
@@ -608,5 +662,17 @@ const formatCommitTime = (value?: string) => ({
         </div>
       </div>
     </div>
+    <Teleport to="body">
+      <div
+        v-if="commitTooltip"
+        class="pointer-events-none fixed z-[70] w-max rounded-md border border-border-subtle bg-surface px-2 py-2 text-left shadow-xl"
+        :style="commitTooltipStyle"
+      >
+        <div
+          class="memo-rendered commit-tooltip-rendered block max-h-60 overflow-auto text-on-surface"
+          v-html="renderCommitMessage(commitTooltip.content)"
+        ></div>
+      </div>
+    </Teleport>
   </div>
 </template>

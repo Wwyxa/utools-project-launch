@@ -13,6 +13,8 @@ const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
+const gitCommitFieldSeparator = "\x1f";
+const gitCommitRecordSeparator = "\x1e";
 const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api", "src"];
 const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set(["vscode", "cursor", "custom"]);
@@ -580,6 +582,9 @@ function toStoredProject(project) {
     id: project.id,
     name: project.name,
     path: project.path,
+    type: project.type || "Custom",
+    kind: project.kind || "custom",
+    icon: project.icon || "custom",
     status: "STOPPED",
     description: project.description || "",
     lastUpdated: project.lastUpdated || "",
@@ -1099,11 +1104,10 @@ function readGitSnapshot(projectPath, options = {}) {
   const commitOutput = runGit(repositoryPath, [
     "log",
     "--all",
-    "--graph",
     "--decorate=short",
     `--max-count=${limit + 1}`,
     `--skip=${skip}`,
-    "--pretty=format:%h\t%p\t%an\t%ad\t%D\t%s",
+    `--pretty=format:%h${gitCommitFieldSeparator}%p${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
     "--date=iso-strict",
   ]);
   const numstatOutput = collectNumstat(repositoryPath, ["diff", "--numstat"]);
@@ -1144,17 +1148,26 @@ function readGitSnapshot(projectPath, options = {}) {
 
   const commits = [];
   if (commitOutput) {
-    commitOutput.split(/\r?\n/).forEach((line) => {
-      const hashIndex = line.search(/[0-9a-f]{7,40}\t/);
+    commitOutput.split(gitCommitRecordSeparator).forEach((record) => {
+      const normalizedRecord = record.trimEnd();
+      if (!normalizedRecord.trim()) {
+        return;
+      }
+
+      const hashIndex = normalizedRecord.search(/[0-9a-f]{7,40}\x1f/);
       if (hashIndex < 0) {
         return;
       }
 
-      const graph = line.slice(0, hashIndex).trimEnd();
-      const [hash, parentText, author, date, refs, ...messageParts] = line.slice(hashIndex).split("\t");
+      const graph = normalizedRecord.slice(0, hashIndex).trimEnd();
+      const [hash, parentText, author, date, refs, message, ...bodyParts] = normalizedRecord
+        .slice(hashIndex)
+        .split(gitCommitFieldSeparator);
       if (!hash) {
         return;
       }
+
+      const body = bodyParts.join(gitCommitFieldSeparator).trim();
 
       commits.push({
         hash,
@@ -1163,7 +1176,8 @@ function readGitSnapshot(projectPath, options = {}) {
         author,
         date,
         refs,
-        message: messageParts.join("\t"),
+        message: message || body.split(/\r?\n/)[0] || "",
+        body: body || message || "",
       });
     });
   }

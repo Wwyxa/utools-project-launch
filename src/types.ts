@@ -67,6 +67,7 @@ export interface ProjectGitFileDiffResult {
 export interface ProjectGitCommitSummary {
   hash: string;
   message: string;
+  body?: string;
   author: string;
   date: string;
   graph?: string;

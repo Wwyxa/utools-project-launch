@@ -396,6 +396,33 @@
   background: var(--code-preview-bg) !important;
 }
 
+.commit-tooltip-rendered {
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.commit-tooltip-rendered > :first-child {
+  margin-top: 0;
+}
+
+.commit-tooltip-rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.commit-tooltip-rendered ul,
+.commit-tooltip-rendered ol {
+  margin: 0.35rem 0 0.45rem 0.75rem;
+  padding-left: 0.65rem;
+}
+
+.commit-tooltip-rendered li {
+  margin: 0.12rem 0;
+}
+
+.commit-tooltip-rendered pre {
+  max-height: 9rem;
+}
+
 .hljs-subst {
   color: var(--syntax-subst);
 }

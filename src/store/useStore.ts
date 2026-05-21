@@ -676,11 +676,13 @@ export const useStore = defineStore("app", {
           name: currentName || result.name || this.projectFormDraft.name,
           kind: result.kind || this.projectFormDraft.kind,
           type: result.type || this.projectFormDraft.type,
-          icon: inferProjectIcon(
-            result.kind || this.projectFormDraft.kind,
-            result.type || this.projectFormDraft.type,
-            result.name || currentName,
-          ),
+          icon:
+            this.projectFormDraft.icon ||
+            inferProjectIcon(
+              result.kind || this.projectFormDraft.kind,
+              result.type || this.projectFormDraft.type,
+              result.name || currentName,
+            ),
           branch: result.branch || this.projectFormDraft.branch,
           scripts: scripts.length > 0 ? scripts : this.projectFormDraft.scripts,
         };
