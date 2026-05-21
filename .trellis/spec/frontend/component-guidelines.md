@@ -144,6 +144,55 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 
 **Related**: `src/lib/markdown.ts`, `src/index.css`, `src/components/project/FilesTab.vue`.
 
+### Convention: Semantic Status Surfaces
+
+**What**: When a component represents running, success, warning, error, or info state, use the shared semantic tokens from `src/index.css` instead of inventing a local palette.
+
+**Why**: Dashboard cards, project overview badges, Git metadata, and terminal logs feel inconsistent when each surface picks its own shade of green or red.
+
+**Example**:
+
+```vue
+<span class="border border-status-running/30 bg-status-running/10 text-status-running">
+  Running
+</span>
+```
+
+**Related**: `src/index.css`, `src/components/dashboard/ProjectCard.vue`, `src/components/project/ProjectDetails.vue`, `src/components/terminal/Terminal.vue`.
+
+### Convention: Collapsible Dense Panels
+
+**What**: Dense data-heavy panels may use a small local collapse toggle to reclaim vertical space in narrow windows, but they should still render an explicit empty state when there is no data.
+
+**Why**: Git change lists and similar sections can crowd the rest of a tab, especially in compact uTools windows.
+
+**Example**:
+
+```ts
+const filesPanelOpen = ref(true);
+```
+
+**Related**: `src/components/project/GitTab.vue`.
+
+### Convention: File-Type Icons in Trees
+
+**What**: File trees should map common extensions and special filenames to lightweight `lucide-vue-next` icons instead of relying on plain text labels.
+
+**Why**: Compact file trees become easier to scan without introducing a heavy icon dependency or expanding the row height.
+
+**Example**:
+
+```ts
+const fileIcon = computed(() => {
+  if (props.node.kind === "directory") return Folder;
+  if (["json", "jsonc"].includes(extension)) return FileJson;
+  if (["js", "jsx", "ts", "tsx"].includes(extension)) return FileCode;
+  return File;
+});
+```
+
+**Related**: `src/components/project/FileTreeNode.vue`.
+
 ## Interaction Safety
 
 - For clickable cards that also contain action buttons, stop event propagation on the action area and on each icon button so card-level navigation does not fire accidentally.
@@ -164,6 +213,7 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 - Leaving icon-only actions without an accessible name
 - Letting nested action buttons bubble to the card root and trigger unintended navigation
 - Forgetting `min-w-0` on nested panel children, which causes wide rows to truncate or hide the rightmost content on smaller screens
+- Coloring normal startup/readiness output as error red just because it arrived on stderr; reserve error tones for true failures and use semantic content to classify logs
 
 ### 布局与间距
 

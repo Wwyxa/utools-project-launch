@@ -24,6 +24,7 @@ There is no dedicated test runner configured yet, so the quality baseline is typ
 - Leaving icon-only buttons without an accessible label
 - Copying class strings by hand when the same pattern already exists in nearby components
 - Replacing shared state with duplicated local state across tabs or panels
+- Coloring routine startup or readiness messages red just because they came from stderr; inspect the log meaning and reserve danger tones for actual failures
 
 ---
 
@@ -44,6 +45,7 @@ Minimum checks for frontend changes today:
 - run `npm run lint`
 - run `npm run build`
 - manually inspect the dashboard and project detail flows for layout overflow, broken tab switching, and clipped terminal output
+- verify that normal readiness logs remain neutral/success-toned while real errors stay red
 
 If a test runner is added later, prefer focused component or store tests around the project shell and store mutations first.
 

@@ -104,6 +104,58 @@ store.setDefaultEditor("cursor");
 
 Let store actions persist preferences and keep bridge state synchronized.
 
+## Scenario: Todo Drag Reordering
+
+### 1. Scope / Trigger
+
+- Trigger: the memo tab supports drag reordering of todo items and the new order must survive component re-renders.
+
+### 2. Signatures
+
+- `reorderTodo(projectId: string, todoId: string, targetTodoId: string): void`
+
+### 3. Contracts
+
+- Todo order is owned by the Pinia store, not the memo component.
+- Components surface drag handles and call the store action with source/target todo ids.
+- The store keeps completed and incomplete items in the same array and preserves the selected order after reordering.
+- `syncProjectTodos(projectId)` remains the persistence boundary after any todo mutation.
+
+### 4. Validation & Error Matrix
+
+- Missing project, source todo, or target todo -> no-op.
+- Source and target ids are equal -> no-op.
+- Reorder after a drag drop -> update store order and persist through `syncProjectTodos`.
+- Component-local arrays should not become the source of truth.
+
+### 5. Good/Base/Bad Cases
+
+- Good: dragging a todo above another item updates the list order and survives a refresh.
+- Base: an empty todo list still renders the empty state and does not expose drag controls.
+- Bad: the component mutates a local array and hopes the store will notice later.
+
+### 6. Tests Required
+
+- `npm run lint` should verify the store action and component event types.
+- `npm run build` should verify the memo tab compiles with drag handles and the split layout.
+- Manual smoke test: add todos, drag one item, toggle completion, and confirm the order stays stable.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+todoList.splice(targetIndex, 0, todoList.splice(currentIndex, 1)[0]);
+```
+
+#### Correct
+
+```ts
+store.reorderTodo(projectId, todoId, targetTodoId);
+```
+
+Let the store own reorder semantics so memo content, persistence, and project snapshots stay aligned.
+
 ## Scenario: Non-blocking Script Stop Flow
 
 ### 1. Scope / Trigger

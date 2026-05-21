@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package overview and guideline index for this Vue UI task."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Component, styling, accessibility, interaction, spacing, and theme conventions for the changed screens."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Keep feature changes in the existing frontend component organization."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Quality baseline, forbidden patterns, and validation expectations for frontend edits."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Shared typing and Vue/Pinia type-safety conventions for UI changes."}

@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package overview for checking task fit."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review changed UI against component, accessibility, interaction, spacing, and theme conventions."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run and interpret the required frontend quality checks."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check type consistency and avoid broad casts or duplicated domain models."}
