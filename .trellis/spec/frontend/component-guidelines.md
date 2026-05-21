@@ -144,6 +144,22 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 
 **Related**: `src/lib/markdown.ts`, `src/index.css`, `src/components/project/FilesTab.vue`.
 
+### Convention: Theme-Aware Code Preview Surfaces
+
+**What**: File previews should use surface tokens for the preview background, gutter, and borders instead of leaving the syntax block on a contrasting hard-coded panel.
+
+**Why**: When a light themed card contains a dark syntax block, the preview reads like a screenshot pasted into the UI. Using shared preview surface variables keeps the file viewer visually continuous in both light and dark themes.
+
+**Example**:
+```vue
+<div class="grid h-full grid-cols-[3rem_minmax(0,1fr)] overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs">
+  <pre class="border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)]">...</pre>
+  <pre class="bg-[var(--code-preview-bg)]"><code class="hljs">...</code></pre>
+</div>
+```
+
+**Related**: `src/components/project/FilesTab.vue`, `src/index.css`.
+
 ### Convention: Semantic Status Surfaces
 
 **What**: When a component represents running, success, warning, error, or info state, use the shared semantic tokens from `src/index.css` instead of inventing a local palette.
@@ -170,6 +186,27 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 
 ```ts
 const filesPanelOpen = ref(true);
+```
+
+**Related**: `src/components/project/GitTab.vue`.
+
+### Convention: Compact Git History Rows
+
+**What**: Git history rows should keep hash, message, refs, author, and relative time readable while fitting into a compact fixed-height row.
+
+**Why**: Moving author/time below the commit message improves scanability, but if the row height stays too large the graph feels stretched and wastes vertical space.
+
+**Example**:
+```vue
+<div class="grid h-8 min-w-[30rem] items-center gap-1.5 rounded px-2 text-xs">
+  <span class="truncate font-mono text-[10px] font-semibold">abc1234</span>
+  <div class="min-w-0 overflow-hidden">
+    <div class="flex min-w-0 items-center gap-1.5 leading-4">
+      <span class="truncate text-[11px] font-semibold">Fix layout</span>
+    </div>
+    <div class="mt-px truncate text-[9px] leading-3">wyxa · 2 小时前</div>
+  </div>
+</div>
 ```
 
 **Related**: `src/components/project/GitTab.vue`.
