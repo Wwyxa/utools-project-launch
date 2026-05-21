@@ -524,3 +524,38 @@ Resolved plugin exit cleanup behavior, updated lifecycle contracts, and archived
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Git tree layout and UI fixes
+
+**Date**: 2026-05-21
+**Task**: Git tree layout and UI fixes
+**Branch**: `master`
+
+### Summary
+
+Resolved Git tree layout issues, stopped command lag by making stop flow non-blocking, and fixed running state card styling; then archived both completed tasks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `23db684` | (see git log) |
+| `2921480` | (see git log) |
+| `def8d03` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
