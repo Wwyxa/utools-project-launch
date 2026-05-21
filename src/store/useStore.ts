@@ -203,6 +203,12 @@ function createLogEntry(message: string, type: LogEntry["type"]): LogEntry {
   };
 }
 
+function scheduleProcessStop(pid: number) {
+  window.setTimeout(() => {
+    void bridge.stopProcess(pid).catch(() => undefined);
+  }, 0);
+}
+
 function normalizeLogLines(message: string): string[] {
   const normalized = message.replace(ansiControlPattern, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
@@ -1091,14 +1097,17 @@ export const useStore = defineStore("app", {
         return;
       }
 
-      if (script.pid) {
-        await bridge.stopProcess(script.pid);
-      }
+      const pid = script.pid;
       this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "WARN"), scriptId);
       script.status = "STOPPED";
       script.pid = undefined;
       project.status = deriveProjectStatus(project);
       project.lastUpdated = new Date().toLocaleString();
+      void this.persistProjects();
+
+      if (pid) {
+        scheduleProcessStop(pid);
+      }
     },
     stopRunningScriptsForPluginExit() {
       this.projects.forEach((project) => {
@@ -1109,7 +1118,8 @@ export const useStore = defineStore("app", {
           }
 
           if (script.pid) {
-            void bridge.stopProcess(script.pid);
+            const pid = script.pid;
+            scheduleProcessStop(pid);
           }
           this.addLog(project.id, createLogEntry(`[${script.name}] stopped`, "WARN"), script.id);
           script.status = "STOPPED";
@@ -1122,6 +1132,7 @@ export const useStore = defineStore("app", {
           project.lastUpdated = new Date().toLocaleString();
         }
       });
+      void this.persistProjects();
     },
     async openProjectFolder(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);

@@ -119,6 +119,7 @@ const isTextEntryTarget = (target: EventTarget | null) =>
 - Keep action buttons visually and structurally separated from card navigation affordances so users can tell whether they are opening a detail view or running a direct command.
 - For nested scroll panels such as runtime logs, provide direct top/bottom controls and avoid forcing auto-scroll while the user is reading history.
 - When a nested scroll panel reaches its top or bottom boundary, pass wheel movement to the nearest outer scroll container so users can leave the panel naturally.
+- For dense panels with variable-width rows such as Git history or file trees, combine `min-w-0` on flex/grid children with explicit `overflow-x-auto` or a fixed minimum row width so narrow windows do not clip the right edge of the content.
 
 ---
 
@@ -130,6 +131,7 @@ const isTextEntryTarget = (target: EventTarget | null) =>
 - Adding local CSS files for patterns already covered by Tailwind and theme tokens
 - Leaving icon-only actions without an accessible name
 - Letting nested action buttons bubble to the card root and trigger unintended navigation
+- Forgetting `min-w-0` on nested panel children, which causes wide rows to truncate or hide the rightmost content on smaller screens
 
 ### 布局与间距
 

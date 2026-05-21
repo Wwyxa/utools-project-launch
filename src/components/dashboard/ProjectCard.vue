@@ -483,7 +483,7 @@ const handleDelete = (event: MouseEvent) => {
     <div
       :class="
         cn(
-          'absolute left-0 top-0 bottom-0 w-1',
+          'absolute -left-px -top-px -bottom-px w-[5px] rounded-l-lg rounded-r-none pointer-events-none',
           isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'transparent',
         )
       "

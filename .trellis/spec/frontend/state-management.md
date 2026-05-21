@@ -104,6 +104,65 @@ store.setDefaultEditor("cursor");
 
 Let store actions persist preferences and keep bridge state synchronized.
 
+## Scenario: Non-blocking Script Stop Flow
+
+### 1. Scope / Trigger
+
+- Trigger: stopping a running script from the dashboard or project detail view should feel immediate and should not wait on the bridge kill call before the UI updates.
+
+### 2. Signatures
+
+- `stopScript(projectId: string, scriptId: string): Promise<void>`
+- `stopRunningScriptsForPluginExit(): void`
+
+### 3. Contracts
+
+- Store actions update local script and project status first so the UI reflects the stop request immediately.
+- PID termination should be best-effort and fire asynchronously after the UI state is updated.
+- `persistProjects()` should run in the background after the local state change so state survives reloads even if the bridge kill is still in flight.
+- Bridge exit events still own the final reconciliation when the process reports back.
+
+### 4. Validation & Error Matrix
+
+- Missing project/script or non-running script -> no-op.
+- PID missing -> still update local status and logs, skip bridge kill.
+- Bridge stop fails -> swallow the failure for the stop action path and keep the UI responsive.
+- Exit event arrives after optimistic stop -> leave the script/project in stopped state.
+
+### 5. Good/Base/Bad Cases
+
+- Good: clicking stop flips the script badge to stopped immediately and the bridge kill finishes later.
+- Base: plugin-exit cleanup marks all running scripts stopped and persists the new state without blocking the UI thread.
+- Bad: awaiting `bridge.stopProcess(pid)` before clearing local status, which makes the card feel frozen.
+
+### 6. Tests Required
+
+- `npm run lint` should verify the store action still types cleanly.
+- `npm run build` should verify the dashboard and detail views still compile.
+- Manual smoke test should cover stopping a running script from both the card and the project detail view.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+if (script.pid) {
+  await bridge.stopProcess(script.pid);
+}
+script.status = "STOPPED";
+```
+
+#### Correct
+
+```ts
+const pid = script.pid;
+script.status = "STOPPED";
+script.pid = undefined;
+void bridge.stopProcess(pid).catch(() => undefined);
+```
+
+Update local state first, then let the bridge stop the process in the background.
+
 ---
 
 ## Scenario: Project File Browser Bridge
