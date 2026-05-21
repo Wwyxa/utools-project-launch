@@ -46,6 +46,7 @@ Minimum checks for frontend changes today:
 - run `npm run build`
 - manually inspect the dashboard and project detail flows for layout overflow, broken tab switching, and clipped terminal output
 - verify that normal readiness logs remain neutral/success-toned while real errors stay red
+- for hover tooltips in dense panels, verify delayed appearance, tab switching/unmount cleanup, markdown rendering, and placement above/below the cursor in a compact window
 
 If a test runner is added later, prefer focused component or store tests around the project shell and store mutations first.
 
@@ -58,3 +59,4 @@ If a test runner is added later, prefer focused component or store tests around 
 - Icons, spacing, and colors follow the current design tokens
 - The new UI still works without a backend
 - No accidental use of `any` or duplicated domain models
+- Floating UI is not clipped by parent overflow and does not jump far away from the trigger while hovering dense lists

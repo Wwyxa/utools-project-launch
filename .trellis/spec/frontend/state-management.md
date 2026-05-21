@@ -49,6 +49,76 @@ If the app later talks to a real backend or file system adapter, keep the fetche
 
 The current uTools integration follows this rule: UI components call store actions, store actions call `src/lib/projectBridge.ts`, and the bridge delegates to `window.projectBridge` from `public/preload.js` when running inside uTools.
 
+## Scenario: Project Metadata Persistence Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: project metadata is edited in the Vue form, normalized in the Pinia store, persisted through browser fallback or uTools preload storage, then hydrated again after plugin restart.
+
+### 2. Signatures
+
+- `Project` includes display metadata such as `type`, `kind`, and optional `icon`.
+- `ProjectFormValue` includes the same editable metadata fields.
+- Store persistence path: `saveProjectForm()` -> `persistProjects()` -> `bridge.saveProjects(...)`.
+- uTools preload persistence path: `writeStoredProjects(projects)` -> per-project docs containing `project: toStoredProject(project)`.
+
+### 3. Contracts
+
+- Every user-visible project metadata field that should survive restart must be written by both store-side persistence (`toPersistedProject` in `src/store/useStore.ts`) and preload-side persistence (`toStoredProject` in `public/preload.js`).
+- Browser fallback and uTools preload storage must preserve the same logical project fields. A field working in browser/local state is not enough if preload drops it during doc writes.
+- `type`, `kind`, and `icon` are linked metadata: icon selection may update type/kind, and all three must round-trip together.
+- Path inspection may infer metadata for new/blank forms, but it must not overwrite an explicit user-selected icon when the draft already has one.
+- Hydration may infer an icon only as a fallback when persisted data has no icon.
+
+### 4. Validation & Error Matrix
+
+- Missing persisted `icon` -> hydrate with `inferProjectIcon(kind, type, name)`.
+- Missing persisted `type` or `kind` -> keep existing defaults or normalize to a safe custom project type.
+- Preload `toStoredProject` omits a new metadata field -> field appears to work until plugin restart, then is lost.
+- Path inspection after manual icon selection -> keep selected icon, only update other inferred metadata when appropriate.
+
+### 5. Good/Base/Bad Cases
+
+- Good: selecting a Vue/AI/Docker icon updates the form, saves `type/kind/icon`, and the same icon appears after plugin restart.
+- Base: older stored projects without `icon` still load with an inferred icon.
+- Bad: adding `Project.icon` and store persistence but forgetting `public/preload.js#toStoredProject`, causing uTools db docs to drop the field.
+
+### 6. Tests Required
+
+- `npm run build` after changing shared project metadata or persistence code.
+- Manual smoke test in uTools: edit a project icon/type, restart the plugin, and confirm the icon/type are still present.
+- Manual smoke test in browser preview: save and reload from fallback storage.
+- Regression check: trigger path inspection after choosing an icon and verify the explicit icon is not reset unexpectedly.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+function toStoredProject(project) {
+  return { id: project.id, name: project.name, path: project.path };
+}
+```
+
+This drops user-visible metadata at the preload persistence boundary.
+
+#### Correct
+
+```js
+function toStoredProject(project) {
+  return {
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    type: project.type || "Custom",
+    kind: project.kind || "custom",
+    icon: project.icon || "custom",
+  };
+}
+```
+
+Keep persisted project docs aligned with the shared `Project` shape whenever the UI adds metadata that must survive restart.
+
 ## Scenario: Project File Browser Bridge
 
 ## Scenario: External Tool Preferences

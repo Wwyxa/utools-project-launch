@@ -151,6 +151,7 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 **Why**: When a light themed card contains a dark syntax block, the preview reads like a screenshot pasted into the UI. Using shared preview surface variables keeps the file viewer visually continuous in both light and dark themes.
 
 **Example**:
+
 ```vue
 <div class="grid h-full grid-cols-[3rem_minmax(0,1fr)] overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs">
   <pre class="border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)]">...</pre>
@@ -197,6 +198,7 @@ const filesPanelOpen = ref(true);
 **Why**: Moving author/time below the commit message improves scanability, but if the row height stays too large the graph feels stretched and wastes vertical space.
 
 **Example**:
+
 ```vue
 <div class="grid h-8 min-w-[30rem] items-center gap-1.5 rounded px-2 text-xs">
   <span class="truncate font-mono text-[10px] font-semibold">abc1234</span>
@@ -210,6 +212,32 @@ const filesPanelOpen = ref(true);
 ```
 
 **Related**: `src/components/project/GitTab.vue`.
+
+### Convention: Markdown Commit Tooltips
+
+**What**: Git commit rows may show a delayed markdown tooltip for the full commit body, while the row itself stays compact and displays only the subject line.
+
+**Why**: Commit bodies often contain markdown lists. Native `title` tooltips flatten formatting and cannot render list structure, but immediate custom tooltips feel noisy when scanning a dense history list.
+
+**Implementation Rules**:
+
+- Render rich commit tooltips with a `Teleport` to `body` so nested Git panel `overflow` rules do not clip the floating layer.
+- Use a short hover delay before showing the tooltip. Current Git history uses about `450ms`.
+- Keep row text compact; use the full commit `body` only for the tooltip.
+- Positioning should stay simple: default above the cursor/row, fall below only when there is not enough top space. Avoid complex left/right flipping that can make the tooltip appear far from the hovered commit.
+- When placing above, prefer CSS transform based on the tooltip's real height, such as `transform: translateY(-100%)`, instead of subtracting an estimated height from `top`.
+- Clear pending timers and visible tooltip state on mouse leave and component unmount.
+
+**Example**:
+
+```ts
+const commitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
+const pendingCommitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
+
+const commitTooltipContent = (commit: { message: string; body?: string }) => commit.body || commit.message;
+```
+
+**Related**: `src/components/project/GitTab.vue`, `src/lib/markdown.ts`, `src/index.css`.
 
 ### Convention: File-Type Icons in Trees
 
@@ -238,6 +266,7 @@ const fileIcon = computed(() => {
 - For nested scroll panels such as runtime logs, provide direct top/bottom controls and avoid forcing auto-scroll while the user is reading history.
 - When a nested scroll panel reaches its top or bottom boundary, pass wheel movement to the nearest outer scroll container so users can leave the panel naturally.
 - For dense panels with variable-width rows such as Git history or file trees, combine `min-w-0` on flex/grid children with explicit `overflow-x-auto` or a fixed minimum row width so narrow windows do not clip the right edge of the content.
+- For floating UI inside clipped/scrolling panels, render the floating layer outside the panel with `Teleport` and keep positioning logic minimal. Over-calculated placement can be worse than a simple above/below rule in compact windows.
 
 ---
 
