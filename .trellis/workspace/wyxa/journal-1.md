@@ -694,3 +694,36 @@ Implemented configurable environment inspection, read-only Git enhancements, AI 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Git commit detail AI stream and layout polish
+
+**Date**: 2026-05-22
+**Task**: Git commit detail AI stream and layout polish
+**Branch**: `master`
+
+### Summary
+
+Polished Git commit detail UI with true streaming AI output, commit-specific files/diffs, tighter two-column layout, and Markdown-rendered commit body; verified with lint and build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b1164dc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
