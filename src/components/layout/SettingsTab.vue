@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import {
   ArrowLeft,
   Brain,
@@ -12,6 +12,8 @@ import {
   Sun,
   Upload,
   WandSparkles,
+  ChevronDown,
+  Check,
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -23,6 +25,7 @@ const t = useI18n();
 
 const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
 const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
+const isAiModelMenuOpen = ref(false);
 const environmentOptions: Array<{ key: EnvironmentToolKey; label: string }> = [
   { key: "node", label: "Node.js" },
   { key: "npm", label: "npm" },
@@ -52,6 +55,11 @@ const aiModelOptions = computed(() => {
   }
   return Array.from(collected.entries()).map(([value, label]) => ({ value, label }));
 });
+const aiModelLabel = computed(
+  () =>
+    aiModelOptions.value.find((option) => option.value === store.aiPreferences.model)?.label ||
+    t.value.settings.aiModelPlaceholder,
+);
 
 const segmentButtonClass = (active: boolean) =>
   cn(
@@ -66,6 +74,11 @@ const loadAiModels = async () => {
   if (store.aiPreferences.provider === "utools" && !store.aiPreferences.model && store.aiModels[0]) {
     store.setAiPreferences({ model: store.aiModels[0].id });
   }
+};
+
+const selectAiModel = (model: string) => {
+  store.setAiPreferences({ model });
+  isAiModelMenuOpen.value = false;
 };
 
 const handleTestAi = async () => {
@@ -97,7 +110,7 @@ watch(
 </script>
 
 <template>
-  <div class="themed-scrollbar h-full max-w-5xl overflow-y-auto p-2">
+  <div class="themed-scrollbar h-full max-w-5xl overflow-y-auto p-2" @click="isAiModelMenuOpen = false">
     <header class="mb-3 flex items-center gap-3">
       <button
         type="button"
@@ -219,16 +232,50 @@ watch(
               <label class="block text-xs font-semibold uppercase text-on-surface-variant">
                 {{ t.settings.aiModel }}
                 <div class="mt-1 flex items-center gap-2">
-                  <select
-                    :value="store.aiPreferences.model"
-                    @change="store.setAiPreferences({ model: ($event.target as HTMLSelectElement).value })"
-                    class="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="">{{ t.settings.aiModelPlaceholder }}</option>
-                    <option v-for="option in aiModelOptions" :key="option.value" :value="option.value">
-                      {{ option.label }}
-                    </option>
-                  </select>
+                  <div class="relative min-w-0 flex-1">
+                    <button
+                      type="button"
+                      class="ui-field flex w-full items-center justify-between gap-2 text-left normal-case"
+                      @click.stop="isAiModelMenuOpen = !isAiModelMenuOpen"
+                    >
+                      <span
+                        class="truncate"
+                        :class="store.aiPreferences.model ? 'text-on-surface' : 'text-on-surface-variant/70'"
+                      >
+                        {{ aiModelLabel }}
+                      </span>
+                      <ChevronDown :size="14" class="shrink-0 text-on-surface-variant" />
+                    </button>
+                    <div
+                      v-if="isAiModelMenuOpen"
+                      class="mode-menu-popover popover-above max-h-56 overflow-auto"
+                      @click.stop
+                    >
+                      <button
+                        type="button"
+                        :class="cn('mode-menu-item', !store.aiPreferences.model && 'bg-primary/10 text-primary')"
+                        @click="selectAiModel('')"
+                      >
+                        <span class="truncate">{{ t.settings.aiModelPlaceholder }}</span>
+                        <Check v-if="!store.aiPreferences.model" :size="13" />
+                      </button>
+                      <button
+                        v-for="option in aiModelOptions"
+                        :key="option.value"
+                        type="button"
+                        :class="
+                          cn(
+                            'mode-menu-item',
+                            store.aiPreferences.model === option.value && 'bg-primary/10 text-primary',
+                          )
+                        "
+                        @click="selectAiModel(option.value)"
+                      >
+                        <span class="truncate">{{ option.label }}</span>
+                        <Check v-if="store.aiPreferences.model === option.value" :size="13" />
+                      </button>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     @click="loadAiModels"

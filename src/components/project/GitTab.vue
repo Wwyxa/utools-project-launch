@@ -14,7 +14,12 @@ import {
   ListTree,
   SlidersHorizontal,
   WandSparkles,
-  Info,
+  Save,
+  ChevronDown,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Check,
 } from "lucide-vue-next";
 import { Project, type ProjectGitFileChange, type ProjectGitFileDiffResult } from "../../types";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
@@ -35,10 +40,13 @@ const t = useI18n();
 const filesScrollRef = ref<HTMLDivElement | null>(null);
 const graphScrollRef = ref<HTMLDivElement | null>(null);
 const showCommitFilters = ref(false);
-const showFilterStatus = ref(false);
 const isAiDialogOpen = ref(false);
 const aiMode = ref<"summary" | "analysis" | "evaluation" | "custom">("summary");
 const aiCustomPrompt = ref("");
+const isCustomPromptEditorOpen = ref(true);
+const isAiModeMenuOpen = ref(false);
+const openDatePickerKind = ref<"since" | "until" | null>(null);
+const datePickerMonth = ref(new Date());
 
 const files = computed(() => store.stagedFiles[props.project.id] || props.project.git?.files || []);
 const commitKeyword = ref("");
@@ -75,12 +83,14 @@ const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingDiff = ref(false);
 const isDiffDialogOpen = ref(false);
 const isCommitDetailOpen = ref(false);
+const isAiDialogGenerating = computed(() => store.aiAnalyzing || store.aiAnalysisState === "loading");
 const aiModeOptions = [
   { value: "summary", label: "总结" },
   { value: "analysis", label: "分析" },
   { value: "evaluation", label: "评估" },
   { value: "custom", label: "自定义" },
 ] as const;
+const weekDayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
 const commitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
@@ -118,13 +128,11 @@ const clearCommitFilters = () => {
   commitAuthor.value = "";
   commitSince.value = "";
   commitUntil.value = "";
+  openDatePickerKind.value = null;
 };
 
 const toggleCommitFilters = () => {
   showCommitFilters.value = !showCommitFilters.value;
-  if (!showCommitFilters.value) {
-    showFilterStatus.value = false;
-  }
 };
 
 const openAiDialog = () => {
@@ -136,19 +144,115 @@ const openAiDialog = () => {
 
 const closeAiDialog = () => {
   isAiDialogOpen.value = false;
+  isAiModeMenuOpen.value = false;
 };
 
+const closeFloatingControls = () => {
+  isAiModeMenuOpen.value = false;
+  openDatePickerKind.value = null;
+};
+
+const selectAiMode = (mode: (typeof aiModeOptions)[number]["value"]) => {
+  aiMode.value = mode;
+  isAiModeMenuOpen.value = false;
+};
+
+const aiModeLabel = computed(() => aiModeOptions.find((option) => option.value === aiMode.value)?.label || "总结");
+
+const parseDateValue = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDateValue = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const datePickerValue = computed(() =>
+  openDatePickerKind.value === "since"
+    ? commitSince.value
+    : openDatePickerKind.value === "until"
+      ? commitUntil.value
+      : "",
+);
+
+const datePickerTitle = computed(() =>
+  new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(datePickerMonth.value),
+);
+
+const datePickerDays = computed(() => {
+  const year = datePickerMonth.value.getFullYear();
+  const month = datePickerMonth.value.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const startDate = new Date(year, month, 1 - firstDay.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + index);
+    const value = formatDateValue(date);
+    return {
+      value,
+      label: String(date.getDate()),
+      isCurrentMonth: date.getMonth() === month,
+      isToday: value === formatDateValue(new Date()),
+      isSelected: value === datePickerValue.value,
+    };
+  });
+});
+
+const openDatePicker = (kind: "since" | "until") => {
+  const selectedDate = parseDateValue(kind === "since" ? commitSince.value : commitUntil.value);
+  datePickerMonth.value = selectedDate || new Date();
+  openDatePickerKind.value = openDatePickerKind.value === kind ? null : kind;
+};
+
+const shiftDatePickerMonth = (offset: number) => {
+  datePickerMonth.value = new Date(datePickerMonth.value.getFullYear(), datePickerMonth.value.getMonth() + offset, 1);
+};
+
+const selectDatePickerDay = (value: string) => {
+  if (openDatePickerKind.value === "since") {
+    commitSince.value = value;
+  } else if (openDatePickerKind.value === "until") {
+    commitUntil.value = value;
+  }
+  openDatePickerKind.value = null;
+};
+
+const clearDatePickerValue = () => {
+  if (openDatePickerKind.value === "since") {
+    commitSince.value = "";
+  } else if (openDatePickerKind.value === "until") {
+    commitUntil.value = "";
+  }
+};
+
+const saveAiCustomPrompt = () => {
+  const prompt = aiCustomPrompt.value.trim();
+  if (!prompt) return;
+  aiCustomPrompt.value = prompt;
+  isCustomPromptEditorOpen.value = false;
+};
+
+const editAiCustomPrompt = () => {
+  isCustomPromptEditorOpen.value = true;
+};
+
+const activeCommitFilterCount = computed(
+  () =>
+    [commitKeyword.value.trim(), commitAuthor.value.trim(), commitSince.value, commitUntil.value].filter(Boolean)
+      .length,
+);
+
+const hasCommitFilters = computed(() => activeCommitFilterCount.value > 0);
+
+const customPromptSummary = computed(() => aiCustomPrompt.value.trim() || "尚未保存自定义提示词");
+
 const filterStatusSummary = computed(() => {
-  const activeFilters = [
-    commitKeyword.value.trim(),
-    commitAuthor.value.trim(),
-    commitSince.value,
-    commitUntil.value,
-  ].filter(Boolean);
-  if (activeFilters.length === 0) {
+  if (activeCommitFilterCount.value === 0) {
     return "当前未启用筛选条件。";
   }
-  return `当前已启用 ${activeFilters.length} 项筛选，匹配 ${commits.value.length} 条提交。`;
+  return `当前已启用 ${activeCommitFilterCount.value} 项筛选，匹配 ${commits.value.length} 条提交。`;
 });
 
 const commitScopeContext = computed(() => {
@@ -562,7 +666,7 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+  <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden" @click="closeFloatingControls">
     <div class="border border-border-subtle rounded-lg bg-surface px-3 py-2 flex items-center justify-between gap-3">
       <div class="flex items-center gap-3 min-w-0 text-xs">
         <GitBranch :size="16" class="text-primary shrink-0" />
@@ -823,7 +927,7 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
           <Filter :size="14" class="text-primary" />
           <h3 class="text-xs font-bold text-on-surface">{{ t.git.filters }}</h3>
           <span
-            v-if="commitKeyword || commitAuthor || commitSince || commitUntil"
+            v-if="hasCommitFilters"
             class="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
           >
             {{ commits.length }}
@@ -836,16 +940,7 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
             @click="toggleCommitFilters"
           >
             <SlidersHorizontal :size="13" />
-            {{ showCommitFilters ? t.common.close : "筛" }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-2.5 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90"
-            @click="showFilterStatus = !showFilterStatus"
-            :title="filterStatusSummary"
-            :aria-label="filterStatusSummary"
-          >
-            <Info :size="13" />
+            {{ showCommitFilters ? t.common.close : "筛选" }}
           </button>
           <button
             type="button"
@@ -858,58 +953,132 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
           </button>
         </div>
       </div>
-      <div
-        v-if="showFilterStatus"
-        class="mt-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant"
-      >
-        {{ filterStatusSummary }}
-      </div>
       <Transition name="fade">
-        <div v-if="showCommitFilters" class="mt-3 space-y-2">
+        <div v-if="showCommitFilters" class="mt-3">
           <div
-            class="grid gap-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(8.5rem,0.75fr)_minmax(8.5rem,0.75fr)]"
+            class="grid gap-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(8.5rem,0.75fr)_minmax(8.5rem,0.75fr)_2.25rem]"
           >
-            <input
-              v-model="commitKeyword"
-              type="text"
-              class="rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm"
-              :placeholder="t.git.keyword"
-            />
-            <input
-              v-model="commitAuthor"
-              type="text"
-              class="rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm"
-              :placeholder="t.git.author"
-            />
-            <input
-              v-model="commitSince"
-              type="date"
-              class="rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-2 text-sm"
-              :placeholder="t.git.since"
-            />
-            <input
-              v-model="commitUntil"
-              type="date"
-              class="rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-2 text-sm"
-              :placeholder="t.git.until"
-            />
-          </div>
-          <div class="flex flex-wrap gap-2">
+            <input v-model="commitKeyword" type="text" class="ui-field" :placeholder="t.git.keyword" />
+            <input v-model="commitAuthor" type="text" class="ui-field" :placeholder="t.git.author" />
+            <div class="relative">
+              <button
+                type="button"
+                class="ui-field flex w-full items-center justify-between gap-2 text-left"
+                @click.stop="openDatePicker('since')"
+              >
+                <span :class="commitSince ? 'text-on-surface' : 'text-on-surface-variant/70'">
+                  {{ commitSince || t.git.since }}
+                </span>
+                <CalendarDays :size="14" class="text-on-surface-variant" />
+              </button>
+              <div
+                v-if="openDatePickerKind === 'since'"
+                class="date-picker-popover date-picker-popover-above"
+                @click.stop
+              >
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
+                    <ChevronLeft :size="14" />
+                  </button>
+                  <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
+                  <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
+                    <ChevronRight :size="14" />
+                  </button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                  <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
+                </div>
+                <div class="mt-1 grid grid-cols-7 gap-1">
+                  <button
+                    v-for="day in datePickerDays"
+                    :key="`since-${day.value}`"
+                    type="button"
+                    :class="
+                      cn(
+                        'date-picker-day',
+                        !day.isCurrentMonth && 'text-on-surface-variant/35',
+                        day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                        day.isSelected && 'border-primary bg-primary text-on-primary',
+                      )
+                    "
+                    @click="selectDatePickerDay(day.value)"
+                  >
+                    {{ day.label }}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                  @click="clearDatePickerValue"
+                >
+                  清除日期
+                </button>
+              </div>
+            </div>
+            <div class="relative">
+              <button
+                type="button"
+                class="ui-field flex w-full items-center justify-between gap-2 text-left"
+                @click.stop="openDatePicker('until')"
+              >
+                <span :class="commitUntil ? 'text-on-surface' : 'text-on-surface-variant/70'">
+                  {{ commitUntil || t.git.until }}
+                </span>
+                <CalendarDays :size="14" class="text-on-surface-variant" />
+              </button>
+              <div
+                v-if="openDatePickerKind === 'until'"
+                class="date-picker-popover date-picker-popover-above"
+                @click.stop
+              >
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
+                    <ChevronLeft :size="14" />
+                  </button>
+                  <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
+                  <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
+                    <ChevronRight :size="14" />
+                  </button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                  <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
+                </div>
+                <div class="mt-1 grid grid-cols-7 gap-1">
+                  <button
+                    v-for="day in datePickerDays"
+                    :key="`until-${day.value}`"
+                    type="button"
+                    :class="
+                      cn(
+                        'date-picker-day',
+                        !day.isCurrentMonth && 'text-on-surface-variant/35',
+                        day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                        day.isSelected && 'border-primary bg-primary text-on-primary',
+                      )
+                    "
+                    @click="selectDatePickerDay(day.value)"
+                  >
+                    {{ day.label }}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                  @click="clearDatePickerValue"
+                >
+                  清除日期
+                </button>
+              </div>
+            </div>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-45"
+              :disabled="!hasCommitFilters"
+              :title="t.git.clearFilters"
+              :aria-label="t.git.clearFilters"
               @click="clearCommitFilters"
             >
-              {{ t.git.clearFilters }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90"
-              :disabled="!store.aiPreferences.model && store.aiPreferences.provider === 'utools'"
-              @click="openAiDialog"
-            >
-              <WandSparkles :size="13" />
-              AI生成
+              <X :size="14" />
             </button>
           </div>
         </div>
@@ -922,16 +1091,15 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
       @click.self="closeAiDialog"
     >
       <div
-        class="flex h-[min(42rem,88vh)] w-[min(52rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+        class="flex w-[min(54rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+        @click.stop
       >
         <div
-          class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
+          class="flex items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-3"
         >
           <div class="min-w-0">
             <h3 class="text-sm font-bold text-on-surface">AI 生成</h3>
-            <p class="truncate text-[10px] font-medium text-on-surface-variant">
-              基于当前筛选提交、提交时间与工作区变更生成结果
-            </p>
+            <p class="truncate text-[10px] font-medium text-on-surface-variant">{{ filterStatusSummary }}</p>
           </div>
           <div class="flex items-center gap-2">
             <button
@@ -954,40 +1122,76 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
             </button>
           </div>
         </div>
-        <div class="grid min-h-0 flex-1 gap-3 p-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
-          <div class="space-y-3">
+        <div class="space-y-3 p-3">
+          <div class="grid gap-3 lg:grid-cols-[14rem_minmax(0,1fr)]">
             <label class="block text-xs font-semibold uppercase text-on-surface-variant">
               模式
-              <select
-                v-model="aiMode"
-                class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-              >
-                <option v-for="option in aiModeOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
-            <label v-if="aiMode === 'custom'" class="block text-xs font-semibold uppercase text-on-surface-variant">
-              自定义提示词
-              <textarea
-                v-model="aiCustomPrompt"
-                rows="8"
-                class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-                placeholder="例如：请只从提交影响、风险点和代码质量角度分析。"
-              />
-            </label>
-            <div
-              class="rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant"
-            >
-              <div class="mb-1 flex items-center gap-1.5 font-bold text-on-surface">
-                <Info :size="13" class="text-primary" />
-                当前筛选
+              <div class="relative mt-1">
+                <button
+                  type="button"
+                  class="ui-field flex w-full items-center justify-between gap-2 text-left font-semibold normal-case"
+                  @click.stop="isAiModeMenuOpen = !isAiModeMenuOpen"
+                >
+                  <span>{{ aiModeLabel }}</span>
+                  <ChevronDown :size="14" class="text-on-surface-variant" />
+                </button>
+                <div v-if="isAiModeMenuOpen" class="mode-menu-popover" @click.stop>
+                  <button
+                    v-for="option in aiModeOptions"
+                    :key="option.value"
+                    type="button"
+                    :class="cn('mode-menu-item', aiMode === option.value && 'bg-primary/10 text-primary')"
+                    @click="selectAiMode(option.value)"
+                  >
+                    <span>{{ option.label }}</span>
+                    <Check v-if="aiMode === option.value" :size="13" />
+                  </button>
+                </div>
               </div>
-              <p>{{ filterStatusSummary }}</p>
+            </label>
+            <div v-if="aiMode === 'custom'" class="space-y-2">
+              <div
+                class="flex items-center justify-between gap-2 text-xs font-semibold uppercase text-on-surface-variant"
+              >
+                <span>自定义提示词</span>
+                <button
+                  v-if="!isCustomPromptEditorOpen"
+                  type="button"
+                  class="rounded px-1.5 py-1 text-[10px] font-bold text-primary transition-colors hover:bg-primary/10"
+                  @click="editAiCustomPrompt"
+                >
+                  编辑
+                </button>
+              </div>
+              <div v-if="isCustomPromptEditorOpen" class="space-y-2">
+                <textarea
+                  v-model="aiCustomPrompt"
+                  rows="5"
+                  class="ui-field min-h-24 w-full resize-none leading-5 focus:bg-surface-container-low"
+                  placeholder="例如：请只从提交影响、风险点和代码质量角度分析。"
+                />
+                <button
+                  type="button"
+                  class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                  :disabled="!aiCustomPrompt.trim()"
+                  @click="saveAiCustomPrompt"
+                >
+                  <Save :size="13" />
+                  保存
+                </button>
+              </div>
+              <button
+                v-else
+                type="button"
+                class="block w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-left text-xs leading-5 text-on-surface-variant transition-colors hover:bg-surface-container"
+                @click="editAiCustomPrompt"
+              >
+                {{ customPromptSummary }}
+              </button>
             </div>
           </div>
           <div
-            class="min-h-0 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
+            class="ai-result-panel min-h-40 max-h-[min(20rem,42vh)] overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
           >
             <div v-if="store.aiAnalyzing" class="text-on-surface-variant">正在生成中...</div>
             <div v-else-if="store.aiAnalysisMessage || store.aiAnalysisResult" class="space-y-2">
