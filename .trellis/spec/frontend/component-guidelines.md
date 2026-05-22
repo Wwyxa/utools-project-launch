@@ -239,6 +239,102 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
 
 **Related**: `src/components/project/GitTab.vue`, `src/lib/markdown.ts`, `src/index.css`.
 
+### Convention: Custom Floating Controls in Dense Panels
+
+**What**: In compact project panels, date pickers, model pickers, and similar high-frequency form controls should use custom popovers or menus when the native browser control would be clipped, feel visually inconsistent, or open in the wrong direction inside overflow-constrained containers.
+
+**Why**: Native `select` and `input[type=date]` widgets keep the browser's default popup styling and placement. In dense uTools panels, those popups can appear below the trigger, get clipped by nested overflow containers, or read as unrelated system UI instead of part of the app.
+
+**Implementation Notes**:
+
+- Keep the trigger in the normal form row, but render the popup as a local floating layer with its own surface, border, and shadow.
+- Prefer opening upward when the control sits near the bottom of a dense panel.
+- Use a compact menu or calendar grid with shared design tokens and a subdued scrollbar for long option lists.
+- Keep the selected value in the same source field the rest of the component already uses; the custom popup should only change how the value is chosen.
+
+**Example**:
+
+```vue
+<div class="relative min-w-0 flex-1">
+  <button type="button" class="ui-field flex w-full items-center justify-between gap-2" @click.stop="isMenuOpen = !isMenuOpen">
+    <span>{{ selectedLabel }}</span>
+    <ChevronDown :size="14" />
+  </button>
+  <div v-if="isMenuOpen" class="mode-menu-popover popover-above" @click.stop>
+    <button v-for="option in options" :key="option.value" type="button" @click="selectOption(option.value)">
+      {{ option.label }}
+    </button>
+  </div>
+</div>
+```
+
+**Related**: `src/components/project/GitTab.vue`, `src/components/layout/SettingsTab.vue`, `src/index.css`.
+
+### Convention: Unified Dropdown Styling
+
+**What**: Dropdown-like controls in the app should share the same trigger, menu surface, spacing, and selection states instead of using ad hoc native `select` styling per component.
+
+**Why**: We already learned that a themed trigger alone does not fix the native popup. If each feature uses a different approach, the app quickly ends up with mixed browser pickers, inconsistent focus rings, and dropdowns that open in the wrong direction inside compact panels.
+
+**Implementation Notes**:
+
+- Use a shared trigger style based on `ui-field` for the closed state.
+- Prefer a local floating menu with `mode-menu-popover`, `mode-menu-item`, or a close equivalent that follows the same surface tokens and icon treatment.
+- Keep option rows compact and highlight the active choice with a semantic token, not a custom one-off palette.
+- For menu-like controls inside settings panes or dialogs, make the popup close on outside click and open upward when the trigger sits near the bottom edge of the container.
+- If a control needs a long option list, give the popup its own restrained scrollbar so the panel around it does not scroll unexpectedly.
+
+**Example**:
+
+```vue
+<div class="relative min-w-0 flex-1">
+  <button type="button" class="ui-field flex w-full items-center justify-between gap-2 text-left" @click.stop="open = !open">
+    <span>{{ label }}</span>
+    <ChevronDown :size="14" />
+  </button>
+  <div v-if="open" class="mode-menu-popover popover-above" @click.stop>
+    <button v-for="option in options" :key="option.value" type="button" :class="cn('mode-menu-item', active === option.value && 'bg-primary/10 text-primary')">
+      <span>{{ option.label }}</span>
+      <Check v-if="active === option.value" :size="13" />
+    </button>
+  </div>
+</div>
+```
+
+**Related**: `src/components/project/GitTab.vue`, `src/components/layout/SettingsTab.vue`, `src/index.css`.
+
+### Convention: Compact AI Analysis Dialogs
+
+**What**: AI generation dialogs in compact project views should keep the body focused on the input controls and the generated result, while moving summary metadata into the header and collapsing optional prompt editors after save.
+
+**Why**: Long empty panels and duplicate status blocks make the dialog feel taller than necessary and distract from the primary action. A compact header summary plus a constrained result pane keeps the interaction readable in small windows.
+
+**Implementation Notes**:
+
+- Put the current filter or scope summary in the dialog header subtitle instead of repeating it in a separate card.
+- Hide the custom prompt editor after saving, and reopen it only when the user explicitly edits it again.
+- Let the result pane scroll independently with a soft scrollbar, but avoid forcing a second scrollable column for simple setup controls.
+- Keep the dialog width comfortable, but let height be driven by content and a capped result panel rather than an oversized fixed shell.
+
+**Example**:
+
+```vue
+<div class="flex w-[min(54rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl">
+  <header class="flex items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-3">
+    <div>
+      <h3 class="text-sm font-bold text-on-surface">AI 生成</h3>
+      <p class="truncate text-[10px] font-medium text-on-surface-variant">{{ filterStatusSummary }}</p>
+    </div>
+  </header>
+  <section class="space-y-3 p-3">
+    <div class="grid gap-3 lg:grid-cols-[14rem_minmax(0,1fr)]">...</div>
+    <div class="ai-result-panel min-h-40 max-h-[min(20rem,42vh)] overflow-auto">...</div>
+  </section>
+</div>
+```
+
+**Related**: `src/components/project/GitTab.vue`, `src/index.css`.
+
 ### Convention: File-Type Icons in Trees
 
 **What**: File trees should map common extensions and special filenames to lightweight `lucide-vue-next` icons instead of relying on plain text labels.

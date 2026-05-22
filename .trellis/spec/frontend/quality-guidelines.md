@@ -60,3 +60,33 @@ If a test runner is added later, prefer focused component or store tests around 
 - The new UI still works without a backend
 - No accidental use of `any` or duplicated domain models
 - Floating UI is not clipped by parent overflow and does not jump far away from the trigger while hovering dense lists
+
+### Common Mistake: Relying on Native Popups Inside Dense Panels
+
+**Symptom**: A `select` or `input[type=date]` looks styled, but its browser popup still appears in the default system style or opens beneath the trigger where it gets clipped by the surrounding panel.
+
+**Cause**: The trigger element was themed, but the actual popup remained native. Nested overflow containers, fixed-height dialogs, and compact settings panes make the browser's default popup behavior a poor fit.
+
+**Fix**: Replace the picker with a local custom floating menu or calendar when the control sits inside a dense panel or dialog. Keep the value in the same store field, but own the popup surface and its placement.
+
+**Prevention**: When reviewing compact dialogs and settings panes, check the full interaction, not just the trigger styling. If the popup is part of a dense surface, verify clipping, placement, and scrollbar behavior in the browser.
+
+### Common Mistake: Over-Tall AI Dialogs with Duplicate Summary Cards
+
+**Symptom**: The AI analysis dialog opens with a large blank area, a separate summary card, and an inner scrollbar that competes with the rest of the panel.
+
+**Cause**: Scope metadata and setup controls were spread across too many stacked sections, and the result pane was given more vertical space than it needed.
+
+**Fix**: Move the scope summary into the header, collapse optional prompt editors after save, and let the result pane own the limited scroll area.
+
+**Prevention**: Keep AI dialogs compact and use the header for the high-level status. If a dialog needs multiple controls, ensure only the result region scrolls and the setup column remains visually light.
+
+### Common Mistake: Reintroducing Native Dropdowns in New Panels
+
+**Symptom**: A new settings or detail panel uses a native `select` or date input because it looks fast to wire up, but the popup behaves differently from the rest of the app.
+
+**Cause**: The control was added in isolation and the author only styled the trigger, not the popup itself. In this project, dense panels are common, so a native popup often fails once it sits inside `overflow-hidden` or fixed-height containers.
+
+**Fix**: Reuse the custom dropdown pattern already used in project details and settings panels. Make the popup a local floating layer with shared tokens, a compact row height, and upward placement when needed.
+
+**Prevention**: When adding a new dropdown-like control, ask whether the browser popup can be clipped or whether it needs to match the app's own surface. If the answer is yes, default to the shared floating pattern instead of a plain native input.
