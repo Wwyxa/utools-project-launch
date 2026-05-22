@@ -569,6 +569,46 @@
   background: var(--code-preview-bg) !important;
 }
 
+.ai-markdown-result {
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.ai-markdown-result > :first-child {
+  margin-top: 0;
+}
+
+.ai-markdown-result > :last-child {
+  margin-bottom: 0;
+}
+
+.ai-markdown-result h1,
+.ai-markdown-result h2,
+.ai-markdown-result h3,
+.ai-markdown-result h4 {
+  margin: 0.6rem 0 0.3rem;
+  font-size: 0.86rem;
+}
+
+.ai-markdown-result p {
+  margin: 0.32rem 0;
+}
+
+.ai-markdown-result ul,
+.ai-markdown-result ol {
+  margin: 0.32rem 0 0.45rem 0.9rem;
+  padding-left: 0.75rem;
+}
+
+.ai-markdown-result li {
+  margin: 0.1rem 0;
+}
+
+.ai-markdown-result pre {
+  margin: 0.45rem 0;
+  padding: 0.55rem;
+}
+
 .commit-tooltip-rendered {
   font-size: 0.78rem;
   line-height: 1.5;

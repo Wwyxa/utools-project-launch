@@ -3,6 +3,7 @@ import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridg
 import { ProjectStatus } from "../types";
 import type {
   AiPreferences,
+  AiAnalyzeResult,
   AiModelInfo,
   DefaultTerminalKind,
   DefaultEditorKind,
@@ -32,6 +33,14 @@ import type {
 } from "../types";
 
 const bridge = getProjectBridge();
+
+type AiAnalysisState = "idle" | "loading" | "success" | "warning" | "error";
+
+interface AiStreamHandlers {
+  onStart?: () => void;
+  onChunk?: (chunk: string) => void;
+  onDone?: (result: AiAnalyzeResult) => void;
+}
 
 const createScriptId = (projectId: string, index: number) => `${projectId}-script-${index + 1}`;
 const createTodoId = () => `todo-${Date.now()}`;
@@ -460,7 +469,7 @@ export const useStore = defineStore("app", {
     aiAnalyzing: false,
     aiAnalysisResult: "",
     aiAnalysisMessage: "",
-    aiAnalysisState: "idle" as "idle" | "loading" | "success" | "warning" | "error",
+    aiAnalysisState: "idle" as AiAnalysisState,
     supportsBridge: supportsRealProjectBridge(),
     projectsLoaded: false,
     projectStorageMessage: "",
@@ -663,6 +672,40 @@ export const useStore = defineStore("app", {
         this.aiModelTesting = false;
       }
     },
+    async analyzeGitWithAiStream(projectId: string, prompt: string, handlers: AiStreamHandlers = {}) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        const result: AiAnalyzeResult = { ok: false, content: "", message: "项目不存在，无法进行 AI 分析。" };
+        handlers.onDone?.(result);
+        return result;
+      }
+      let finalResult: AiAnalyzeResult | undefined;
+      let completed = false;
+      handlers.onStart?.();
+      try {
+        await bridge.analyzeWithAiStream(
+          { preferences: { ...this.aiPreferences }, prompt },
+          (chunk) => {
+            handlers.onChunk?.(chunk);
+          },
+          (result) => {
+            completed = true;
+            finalResult = result;
+            handlers.onDone?.(result);
+          },
+        );
+      } catch (error) {
+        if (!completed) {
+          finalResult = {
+            ok: false,
+            content: "",
+            message: error instanceof Error ? error.message : "AI 分析失败。",
+          };
+          handlers.onDone?.(finalResult);
+        }
+      }
+      return finalResult;
+    },
     async analyzeGitWithAi(projectId: string, prompt: string) {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project) {
@@ -673,16 +716,24 @@ export const useStore = defineStore("app", {
       this.aiAnalysisResult = "";
       this.aiAnalysisState = "loading";
       try {
-        const result = await bridge.analyzeWithAi({ preferences: { ...this.aiPreferences }, prompt });
-        this.aiAnalysisResult = result.content;
-        this.aiAnalysisMessage = result.ok ? "" : result.message || "AI analysis failed";
-        this.aiAnalysisState = result.ok ? (result.content ? "success" : "warning") : "error";
-        if (!result.ok && !this.aiAnalysisMessage) {
-          this.aiAnalysisMessage = "AI 分析失败。";
-        }
-        if (result.ok && !result.content) {
-          this.aiAnalysisMessage = "AI 已返回成功，但没有生成内容。";
-        }
+        await this.analyzeGitWithAiStream(projectId, prompt, {
+          onChunk: (chunk) => {
+            this.aiAnalysisResult += chunk;
+          },
+          onDone: (result) => {
+            if (!this.aiAnalysisResult && result.content) {
+              this.aiAnalysisResult = result.content;
+            }
+            this.aiAnalysisMessage = result.ok ? "" : result.message || "AI analysis failed";
+            this.aiAnalysisState = result.ok ? (this.aiAnalysisResult ? "success" : "warning") : "error";
+            if (!result.ok && !this.aiAnalysisMessage) {
+              this.aiAnalysisMessage = "AI 分析失败。";
+            }
+            if (result.ok && !this.aiAnalysisResult) {
+              this.aiAnalysisMessage = "AI 已返回成功，但没有生成内容。";
+            }
+          },
+        });
       } finally {
         this.aiAnalyzing = false;
       }
@@ -1186,6 +1237,26 @@ export const useStore = defineStore("app", {
       }
 
       return bridge.readGitFileDiff(project.path, relativePath);
+    },
+    async readGitCommitFileDiff(
+      projectId: string,
+      commitHash: string,
+      relativePath: string,
+    ): Promise<ProjectGitFileDiffResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return bridge.readGitCommitFileDiff(project.path, commitHash, relativePath);
+    },
+    async readGitCommitFiles(projectId: string, commitHash: string): Promise<ProjectGitFileChange[]> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return [];
+      }
+
+      return bridge.readGitCommitFiles(project.path, commitHash);
     },
     async writeProjectFile(
       projectId: string,

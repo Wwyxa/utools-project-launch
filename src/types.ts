@@ -97,6 +97,9 @@ export interface AiAnalyzeResult {
   message?: string;
 }
 
+export type AiStreamChunkHandler = (chunk: string) => void;
+export type AiStreamDoneHandler = (result: AiAnalyzeResult) => void;
+
 export interface ProjectScript {
   id: string;
   name: string;
@@ -130,6 +133,7 @@ export interface ProjectGitCommitSummary {
   graph?: string;
   parents?: string[];
   refs?: string;
+  files?: ProjectGitFileChange[];
 }
 
 export interface ProjectGitSnapshot {
@@ -348,6 +352,11 @@ export interface ProjectBridge {
   listAiModels(): Promise<AiModelInfo[]>;
   testAiConnection(preferences: AiPreferences): Promise<AiModelTestResult>;
   analyzeWithAi(payload: AiAnalyzePayload): Promise<AiAnalyzeResult>;
+  analyzeWithAiStream(
+    payload: AiAnalyzePayload,
+    onChunk: AiStreamChunkHandler,
+    onDone: AiStreamDoneHandler,
+  ): Promise<void>;
   inspectProjectPath(projectPath: string): Promise<ProjectPathInspection>;
   pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pathExists(projectPath: string): Promise<boolean>;
@@ -359,6 +368,12 @@ export interface ProjectBridge {
   listProjectSubdirectories(projectPath: string): Promise<string[]>;
   readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>;
   readGitFileDiff(projectPath: string, relativePath: string): Promise<ProjectGitFileDiffResult>;
+  readGitCommitFileDiff(
+    projectPath: string,
+    commitHash: string,
+    relativePath: string,
+  ): Promise<ProjectGitFileDiffResult>;
+  readGitCommitFiles(projectPath: string, commitHash: string): Promise<ProjectGitFileChange[]>;
   listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileListResult>;
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;

@@ -490,6 +490,105 @@ async function callThirdPartyAi(preferences, prompt) {
   return String(data?.choices?.[0]?.message?.content || "").trim();
 }
 
+function extractOpenAiStreamDelta(data) {
+  return String(data?.choices?.[0]?.delta?.content || data?.choices?.[0]?.text || "");
+}
+
+function extractAnthropicStreamDelta(data) {
+  if (data?.type === "content_block_delta") {
+    return String(data?.delta?.text || "");
+  }
+  if (data?.type === "content_block_start") {
+    return String(data?.content_block?.text || "");
+  }
+  return "";
+}
+
+async function readSseStream(response, extractDelta, onChunk) {
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    throw new Error("当前运行环境不支持 AI 流式响应。");
+  }
+
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let content = "";
+
+  const consumeLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) {
+      return;
+    }
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") {
+      return;
+    }
+    try {
+      const chunk = extractDelta(JSON.parse(payload));
+      if (chunk) {
+        content += chunk;
+        onChunk?.(chunk);
+      }
+    } catch (error) {
+      // Ignore malformed keep-alive frames and continue reading the stream.
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    lines.forEach(consumeLine);
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    consumeLine(buffer);
+  }
+
+  return content.trim();
+}
+
+async function callThirdPartyAiStream(preferences, prompt, onChunk) {
+  const headers = { "content-type": "application/json", authorization: `Bearer ${preferences.apiKey}` };
+  if (preferences.provider === "anthropic") {
+    const response = await fetch(`${preferences.baseUrl.replace(/\/$/, "")}/messages`, {
+      method: "POST",
+      headers: { ...headers, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: preferences.model,
+        max_tokens: 1200,
+        stream: true,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.error?.message || response.statusText);
+    }
+    return readSseStream(response, extractAnthropicStreamDelta, onChunk);
+  }
+
+  const response = await fetch(`${preferences.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: preferences.model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+      stream: true,
+    }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data?.error?.message || response.statusText);
+  }
+  return readSseStream(response, extractOpenAiStreamDelta, onChunk);
+}
+
 async function analyzeWithAi(payload) {
   const preferences = normalizeAiPreferences(payload?.preferences || readAiPreferences());
   const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
@@ -509,6 +608,35 @@ async function analyzeWithAi(payload) {
     return { ok: true, content: await callThirdPartyAi(preferences, prompt) };
   } catch (error) {
     return { ok: false, content: "", message: error?.message || "AI 分析失败。" };
+  }
+}
+
+async function analyzeWithAiStream(payload, onChunk, onDone) {
+  const preferences = normalizeAiPreferences(payload?.preferences || readAiPreferences());
+  const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
+  const done = typeof onDone === "function" ? onDone : () => undefined;
+  const chunk = typeof onChunk === "function" ? onChunk : () => undefined;
+  if (!prompt) {
+    done({ ok: false, content: "", message: "AI 分析内容为空。" });
+    return;
+  }
+  try {
+    if (preferences.provider === "utools") {
+      const result = await analyzeWithAi({ preferences, prompt });
+      if (result.content) {
+        chunk(result.content);
+      }
+      done(result);
+      return;
+    }
+    if (!preferences.baseUrl.trim() || !preferences.model.trim() || !preferences.apiKey.trim()) {
+      done({ ok: false, content: "", message: "第三方 AI 配置不完整。" });
+      return;
+    }
+    const content = await callThirdPartyAiStream(preferences, prompt, chunk);
+    done({ ok: true, content });
+  } catch (error) {
+    done({ ok: false, content: "", message: error?.message || "AI 分析失败。" });
   }
 }
 
@@ -1277,6 +1405,58 @@ function readGitFileDiff(projectPath, relativePath) {
   };
 }
 
+function readGitCommitFiles(projectPath, commitHash) {
+  const repositoryPath = findGitRoot(projectPath);
+  const hash = String(commitHash || "").trim();
+  if (!repositoryPath || !hash) {
+    return [];
+  }
+
+  const numstatLines = runGit(repositoryPath, ["show", "--format=", "--numstat", hash]).split(/\r?\n/);
+  const statusLines = runGit(repositoryPath, ["show", "--format=", "--name-status", hash]).split(/\r?\n/);
+  const statusByPath = new Map();
+
+  statusLines.forEach((line) => {
+    const parts = line.split(/\t+/).filter(Boolean);
+    if (parts.length < 2) return;
+    const code = parts[0];
+    const filePath = parts[parts.length - 1];
+    statusByPath.set(
+      filePath,
+      code.startsWith("A") ? "ADDED" : code.startsWith("D") ? "DELETED" : code.startsWith("R") ? "RENAMED" : "MODIFIED",
+    );
+  });
+
+  return numstatLines
+    .map((line) => line.split(/\t+/).filter(Boolean))
+    .filter((parts) => parts.length >= 3)
+    .map((parts) => {
+      const filePath = parts[parts.length - 1];
+      return {
+        path: filePath,
+        additions: parts[0] === "-" ? 0 : Number(parts[0]) || 0,
+        deletions: parts[1] === "-" ? 0 : Number(parts[1]) || 0,
+        status: statusByPath.get(filePath) || "MODIFIED",
+      };
+    });
+}
+
+function readGitCommitFileDiff(projectPath, commitHash, relativePath) {
+  const repositoryPath = findGitRoot(projectPath);
+  const hash = String(commitHash || "").trim();
+  const filePath = String(relativePath || "").trim();
+  if (!repositoryPath || !hash || !filePath) {
+    return { path: filePath, diff: "", message: "提交或文件信息为空，无法读取 diff。" };
+  }
+
+  const diff = runGitDiff(repositoryPath, ["show", "--format=", hash, "--", filePath]);
+  return {
+    path: filePath,
+    diff,
+    message: diff ? "" : "该提交中此文件暂无可显示的 diff。",
+  };
+}
+
 function listProjectSubdirectories(projectPath) {
   const resolvedPath = expandPath(projectPath);
   const preferred = new Set(commonProjectDirs);
@@ -1683,12 +1863,15 @@ window.projectBridge = {
   listAiModels,
   testAiConnection,
   analyzeWithAi,
+  analyzeWithAiStream,
   exportProjects,
   importProjects,
   readPackageScripts,
   listProjectSubdirectories,
   readGitSnapshot,
   readGitFileDiff,
+  readGitCommitFileDiff,
+  readGitCommitFiles,
   listProjectFiles,
   readProjectFile,
   writeProjectFile,

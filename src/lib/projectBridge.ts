@@ -8,6 +8,7 @@ import type {
   EnvironmentToolKey,
   ProjectBridge,
   ProjectConfigFile,
+  ProjectGitFileChange,
   ProjectBridgeGitSnapshot,
   ProjectBridgePackageScript,
   ProjectBridgeTerminalLaunchPayload,
@@ -322,6 +323,13 @@ const fallbackBridge: ProjectBridge = {
         payload.preferences.provider === "utools" ? "浏览器预览无法调用 uTools AI。" : "浏览器预览未连接第三方 AI。",
     };
   },
+  async analyzeWithAiStream(payload: AiAnalyzePayload, onChunk, onDone) {
+    const result = await this.analyzeWithAi(payload);
+    if (result.content) {
+      onChunk(result.content);
+    }
+    onDone(result);
+  },
   async inspectProjectPath(projectPath: string): Promise<ProjectPathInspection> {
     const name = projectPath.split(/[\\/]/).filter(Boolean).pop() || "";
     return {
@@ -368,6 +376,16 @@ const fallbackBridge: ProjectBridge = {
       diff: "",
       message: projectPath ? "浏览器预览无法读取 Git diff。" : "项目路径为空，无法读取 Git diff。",
     };
+  },
+  async readGitCommitFileDiff(projectPath: string, commitHash: string, relativePath: string) {
+    return {
+      path: relativePath,
+      diff: "",
+      message: projectPath && commitHash ? "浏览器预览无法读取提交 diff。" : "提交信息为空，无法读取 diff。",
+    };
+  },
+  async readGitCommitFiles(): Promise<ProjectGitFileChange[]> {
+    return [];
   },
   async listProjectFiles(projectPath: string, relativePath = ""): Promise<ProjectFileListResult> {
     return { rootPath: projectPath, relativePath, entries: [] };
