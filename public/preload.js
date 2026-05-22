@@ -11,6 +11,8 @@ const userStoppedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
+const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
+const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
 const gitCommitFieldSeparator = "\x1f";
@@ -18,6 +20,63 @@ const gitCommitRecordSeparator = "\x1e";
 const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api", "src"];
 const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set(["vscode", "cursor", "custom"]);
+const aiProviderKinds = new Set(["utools", "openai", "anthropic"]);
+const environmentTools = {
+  node: {
+    name: "Node.js",
+    command: "node",
+    versionArgs: ["--version"],
+    pathArgs: process.platform === "win32" ? ["where", "node"] : ["which", "node"],
+  },
+  npm: {
+    name: "npm",
+    command: "npm",
+    versionArgs: ["--version"],
+    pathArgs: process.platform === "win32" ? ["where", "npm"] : ["which", "npm"],
+  },
+  pnpm: {
+    name: "pnpm",
+    command: "pnpm",
+    versionArgs: ["--version"],
+    pathArgs: process.platform === "win32" ? ["where", "pnpm"] : ["which", "pnpm"],
+  },
+  yarn: {
+    name: "Yarn",
+    command: "yarn",
+    versionArgs: ["--version"],
+    pathArgs: process.platform === "win32" ? ["where", "yarn"] : ["which", "yarn"],
+  },
+  python: {
+    name: "Python",
+    command: process.platform === "win32" ? "python" : "python3",
+    versionArgs: ["--version"],
+    pathArgs: process.platform === "win32" ? ["where", "python"] : ["which", "python3"],
+  },
+  pip: {
+    name: "pip",
+    command: process.platform === "win32" ? "pip" : "pip3",
+    versionArgs: ["--version"],
+    pathArgs: process.platform === "win32" ? ["where", "pip"] : ["which", "pip3"],
+  },
+  go: {
+    name: "Go",
+    command: "go",
+    versionArgs: ["version"],
+    pathArgs: process.platform === "win32" ? ["where", "go"] : ["which", "go"],
+  },
+  git: {
+    name: "Git",
+    command: "git",
+    versionArgs: ["--version"],
+    pathArgs: process.platform === "win32" ? ["where", "git"] : ["which", "git"],
+  },
+  docker: {
+    name: "Docker",
+    command: "docker",
+    versionArgs: ["--version"],
+    pathArgs: process.platform === "win32" ? ["where", "docker"] : ["which", "docker"],
+  },
+};
 const ignoredFileTreeDirs = new Set([
   "node_modules",
   ".git",
@@ -134,6 +193,40 @@ function normalizeEditorPreferences(value) {
   };
 }
 
+function getDefaultEnvironmentPreferences() {
+  return { enabledToolKeys: ["node", "npm", "pnpm", "python", "go", "git"] };
+}
+
+function normalizeEnvironmentPreferences(value) {
+  const defaults = getDefaultEnvironmentPreferences();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+  const enabledToolKeys = Array.isArray(value.enabledToolKeys)
+    ? value.enabledToolKeys.filter((key) => Object.prototype.hasOwnProperty.call(environmentTools, key))
+    : defaults.enabledToolKeys;
+  return {
+    enabledToolKeys: enabledToolKeys.length > 0 ? Array.from(new Set(enabledToolKeys)) : defaults.enabledToolKeys,
+  };
+}
+
+function getDefaultAiPreferences() {
+  return { provider: "utools", baseUrl: "", model: "", apiKey: "" };
+}
+
+function normalizeAiPreferences(value) {
+  const defaults = getDefaultAiPreferences();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+  return {
+    provider: aiProviderKinds.has(value.provider) ? value.provider : defaults.provider,
+    baseUrl: typeof value.baseUrl === "string" ? value.baseUrl : "",
+    model: typeof value.model === "string" ? value.model : "",
+    apiKey: typeof value.apiKey === "string" ? value.apiKey : "",
+  };
+}
+
 function readTerminalPreferences() {
   try {
     if (window.utools?.dbStorage) {
@@ -188,6 +281,234 @@ function saveEditorPreferences(preferences) {
     window.localStorage?.setItem(editorPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+}
+
+function readEnvironmentPreferences() {
+  try {
+    if (window.utools?.dbStorage) {
+      return normalizeEnvironmentPreferences(window.utools.dbStorage.getItem(environmentPreferencesStorageKey));
+    }
+    const raw = window.localStorage?.getItem(environmentPreferencesStorageKey);
+    return raw ? normalizeEnvironmentPreferences(JSON.parse(raw)) : getDefaultEnvironmentPreferences();
+  } catch (error) {
+    return getDefaultEnvironmentPreferences();
+  }
+}
+
+function saveEnvironmentPreferences(preferences) {
+  const normalized = normalizeEnvironmentPreferences(preferences);
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(environmentPreferencesStorageKey, normalized);
+      return;
+    }
+    window.localStorage?.setItem(environmentPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+}
+
+function readAiPreferences() {
+  try {
+    if (window.utools?.dbStorage) {
+      return normalizeAiPreferences(window.utools.dbStorage.getItem(aiPreferencesStorageKey));
+    }
+    const raw = window.localStorage?.getItem(aiPreferencesStorageKey);
+    return raw ? normalizeAiPreferences(JSON.parse(raw)) : getDefaultAiPreferences();
+  } catch (error) {
+    return getDefaultAiPreferences();
+  }
+}
+
+function saveAiPreferences(preferences) {
+  const normalized = normalizeAiPreferences(preferences);
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(aiPreferencesStorageKey, normalized);
+      return;
+    }
+    window.localStorage?.setItem(aiPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+}
+
+function runToolCommand(command, args) {
+  try {
+    return spawnSync(command, args, { encoding: "utf8", windowsHide: true, timeout: 5000 });
+  } catch (error) {
+    return { error };
+  }
+}
+
+function detectEnvironmentTools(toolKeys) {
+  const requestedKeys =
+    Array.isArray(toolKeys) && toolKeys.length > 0 ? toolKeys : readEnvironmentPreferences().enabledToolKeys;
+  return requestedKeys
+    .filter((key) => Object.prototype.hasOwnProperty.call(environmentTools, key))
+    .map((key) => {
+      const tool = environmentTools[key];
+      const checkedAt = new Date().toISOString();
+      const versionResult = runToolCommand(tool.command, tool.versionArgs);
+      if (versionResult.error || versionResult.status !== 0) {
+        return {
+          key,
+          name: tool.name,
+          status: "missing",
+          version: "",
+          executablePath: "",
+          checkedAt,
+          error: versionResult.error?.message || String(versionResult.stderr || "Command not found").trim(),
+        };
+      }
+      const [pathCommand, ...pathArgs] = tool.pathArgs;
+      const pathResult = runToolCommand(pathCommand, pathArgs);
+      return {
+        key,
+        name: tool.name,
+        status: "available",
+        version:
+          String(versionResult.stdout || versionResult.stderr || "")
+            .trim()
+            .split(/\r?\n/)[0] || "OK",
+        executablePath:
+          pathResult.status === 0
+            ? String(pathResult.stdout || "")
+                .trim()
+                .split(/\r?\n/)[0] || ""
+            : "",
+        checkedAt,
+      };
+    });
+}
+
+async function listAiModels() {
+  if (!window.utools?.allAiModels) {
+    return [];
+  }
+  const models = await window.utools.allAiModels();
+  return Array.isArray(models)
+    ? models
+        .map((model) => ({
+          id: String(model.id || model.model || model.name || ""),
+          name: String(model.name || model.label || model.id || model.model || ""),
+          provider: model.provider ? String(model.provider) : undefined,
+        }))
+        .filter((model) => model.id || model.name)
+    : [];
+}
+
+function normalizeAiModelCollection(models, providerHint) {
+  return Array.isArray(models)
+    ? models
+        .map((model) => ({
+          id: String(model.id || model.model || model.name || model.label || "").trim(),
+          name: String(model.name || model.label || model.model || model.id || "").trim(),
+          provider: String(model.provider || providerHint || "").trim() || undefined,
+        }))
+        .filter((model) => Boolean(model.id || model.name))
+    : [];
+}
+
+async function testAiConnection(preferences) {
+  const normalized = normalizeAiPreferences(preferences || readAiPreferences());
+  try {
+    if (normalized.provider === "utools") {
+      if (!window.utools?.allAiModels) {
+        return { ok: false, message: "当前 uTools 版本不支持获取内置 AI 模型。" };
+      }
+      const models = normalizeAiModelCollection(await window.utools.allAiModels(), "utools");
+      return models.length > 0
+        ? { ok: true, message: `已连接 uTools 内置 AI，可用模型 ${models.length} 个。` }
+        : { ok: false, message: "已连接 uTools，但没有获取到可用模型。" };
+    }
+
+    if (!normalized.baseUrl.trim() || !normalized.model.trim() || !normalized.apiKey.trim()) {
+      return { ok: false, message: "第三方 AI 配置不完整，无法测试。" };
+    }
+
+    const response = await fetch(
+      `${normalized.baseUrl.replace(/\/$/, "")}${normalized.provider === "anthropic" ? "/messages" : "/chat/completions"}`,
+      {
+        method: "POST",
+        headers:
+          normalized.provider === "anthropic"
+            ? {
+                "content-type": "application/json",
+                authorization: `Bearer ${normalized.apiKey}`,
+                "anthropic-version": "2023-06-01",
+              }
+            : {
+                "content-type": "application/json",
+                authorization: `Bearer ${normalized.apiKey}`,
+              },
+        body:
+          normalized.provider === "anthropic"
+            ? JSON.stringify({ model: normalized.model, max_tokens: 1, messages: [{ role: "user", content: "ping" }] })
+            : JSON.stringify({ model: normalized.model, messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+      },
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error?.message || response.statusText || "AI 连接测试失败。");
+    }
+    return { ok: true, message: "AI 连接测试成功。" };
+  } catch (error) {
+    return { ok: false, message: error?.message || "AI 连接测试失败。" };
+  }
+}
+
+async function callThirdPartyAi(preferences, prompt) {
+  const headers = { "content-type": "application/json", authorization: `Bearer ${preferences.apiKey}` };
+  if (preferences.provider === "anthropic") {
+    const response = await fetch(`${preferences.baseUrl.replace(/\/$/, "")}/messages`, {
+      method: "POST",
+      headers: { ...headers, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: preferences.model,
+        max_tokens: 1200,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error?.message || response.statusText);
+    return Array.isArray(data.content)
+      ? data.content
+          .map((part) => part.text || "")
+          .join("\n")
+          .trim()
+      : "";
+  }
+  const response = await fetch(`${preferences.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ model: preferences.model, messages: [{ role: "user", content: prompt }], temperature: 0.2 }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || response.statusText);
+  return String(data?.choices?.[0]?.message?.content || "").trim();
+}
+
+async function analyzeWithAi(payload) {
+  const preferences = normalizeAiPreferences(payload?.preferences || readAiPreferences());
+  const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
+  if (!prompt) return { ok: false, content: "", message: "AI 分析内容为空。" };
+  try {
+    if (preferences.provider === "utools") {
+      if (!window.utools?.ai) return { ok: false, content: "", message: "当前 uTools 版本不支持内置 AI。" };
+      const result = await window.utools.ai({
+        model: preferences.model || undefined,
+        messages: [{ role: "user", content: prompt }],
+      });
+      return { ok: true, content: String(result?.content || result?.text || result || "").trim() };
+    }
+    if (!preferences.baseUrl.trim() || !preferences.model.trim() || !preferences.apiKey.trim()) {
+      return { ok: false, content: "", message: "第三方 AI 配置不完整。" };
+    }
+    return { ok: true, content: await callThirdPartyAi(preferences, prompt) };
+  } catch (error) {
+    return { ok: false, content: "", message: error?.message || "AI 分析失败。" };
   }
 }
 
@@ -1354,6 +1675,14 @@ window.projectBridge = {
   saveTerminalPreferences: saveTerminalPreferences,
   loadEditorPreferences: readEditorPreferences,
   saveEditorPreferences: saveEditorPreferences,
+  loadEnvironmentPreferences: readEnvironmentPreferences,
+  saveEnvironmentPreferences: saveEnvironmentPreferences,
+  detectEnvironmentTools,
+  loadAiPreferences: readAiPreferences,
+  saveAiPreferences: saveAiPreferences,
+  listAiModels,
+  testAiConnection,
+  analyzeWithAi,
   exportProjects,
   importProjects,
   readPackageScripts,

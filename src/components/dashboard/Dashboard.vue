@@ -4,7 +4,7 @@ import { useStore } from "../../store/useStore";
 import ProjectCard from "./ProjectCard.vue";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
-import { Search, RefreshCw, Plus, Settings, ChevronDown, ArrowUpDown } from "lucide-vue-next";
+import { Search, RefreshCw, Plus, Settings, ChevronDown, ArrowUpDown, MonitorCog } from "lucide-vue-next";
 
 const store = useStore();
 const t = useI18n();
@@ -111,6 +111,14 @@ const handleProjectDragEnd = () => {
             <span class="text-xs font-semibold">{{
               isSortingProjects ? t.dashboard.doneSorting : t.dashboard.sort
             }}</span>
+          </button>
+          <button
+            @click="store.setActiveTab('environment')"
+            class="toolbar-icon-button p-1.5 rounded-lg transition-colors"
+            :title="t.environment.title"
+            :aria-label="t.environment.title"
+          >
+            <MonitorCog :size="18" />
           </button>
           <button
             @click="store.setActiveTab('settings')"

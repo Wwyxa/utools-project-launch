@@ -1,7 +1,11 @@
 import type {
   DefaultTerminalKind,
   DefaultEditorKind,
+  AiAnalyzePayload,
+  AiPreferences,
   EditorPreferences,
+  EnvironmentPreferences,
+  EnvironmentToolKey,
   ProjectBridge,
   ProjectConfigFile,
   ProjectBridgeGitSnapshot,
@@ -21,6 +25,8 @@ import type {
 const fallbackStorageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
+const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
+const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 
 const isWindowsPlatform = () => /win/i.test(window.navigator?.platform || window.navigator?.userAgent || "");
 
@@ -31,6 +37,17 @@ const defaultTerminalPreferences = (): TerminalPreferences => ({
 
 const terminalKinds = new Set<DefaultTerminalKind>(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set<DefaultEditorKind>(["vscode", "cursor", "custom"]);
+const environmentToolKeys = new Set<EnvironmentToolKey>([
+  "node",
+  "npm",
+  "pnpm",
+  "yarn",
+  "python",
+  "pip",
+  "go",
+  "git",
+  "docker",
+]);
 
 const isTerminalKind = (kind: unknown): kind is DefaultTerminalKind =>
   typeof kind === "string" && terminalKinds.has(kind as DefaultTerminalKind);
@@ -40,6 +57,17 @@ const isEditorKind = (kind: unknown): kind is DefaultEditorKind =>
 const defaultEditorPreferences = (): EditorPreferences => ({
   kind: "vscode",
   customCommand: "",
+});
+
+const defaultEnvironmentPreferences = (): EnvironmentPreferences => ({
+  enabledToolKeys: ["node", "npm", "pnpm", "python", "go", "git"],
+});
+
+const defaultAiPreferences = (): AiPreferences => ({
+  provider: "utools",
+  baseUrl: "",
+  model: "",
+  apiKey: "",
 });
 
 const normalizeTerminalPreferences = (value: unknown): TerminalPreferences => {
@@ -65,6 +93,38 @@ const normalizeEditorPreferences = (value: unknown): EditorPreferences => {
   return {
     kind: isEditorKind(candidate.kind) ? candidate.kind : defaults.kind,
     customCommand: typeof candidate.customCommand === "string" ? candidate.customCommand : "",
+  };
+};
+
+const normalizeEnvironmentPreferences = (value: unknown): EnvironmentPreferences => {
+  const defaults = defaultEnvironmentPreferences();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+  const candidate = value as Partial<EnvironmentPreferences>;
+  const enabledToolKeys = Array.isArray(candidate.enabledToolKeys)
+    ? candidate.enabledToolKeys.filter((key): key is EnvironmentToolKey =>
+        environmentToolKeys.has(key as EnvironmentToolKey),
+      )
+    : defaults.enabledToolKeys;
+  return {
+    enabledToolKeys: enabledToolKeys.length > 0 ? Array.from(new Set(enabledToolKeys)) : defaults.enabledToolKeys,
+  };
+};
+
+const normalizeAiPreferences = (value: unknown): AiPreferences => {
+  const defaults = defaultAiPreferences();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+  const candidate = value as Partial<AiPreferences>;
+  const provider =
+    candidate.provider === "openai" || candidate.provider === "anthropic" ? candidate.provider : "utools";
+  return {
+    provider,
+    baseUrl: typeof candidate.baseUrl === "string" ? candidate.baseUrl : defaults.baseUrl,
+    model: typeof candidate.model === "string" ? candidate.model : defaults.model,
+    apiKey: typeof candidate.apiKey === "string" ? candidate.apiKey : defaults.apiKey,
   };
 };
 
@@ -126,6 +186,56 @@ const writeStoredEditorPreferences = (preferences: EditorPreferences) => {
   }
 };
 
+const readStoredEnvironmentPreferences = (): EnvironmentPreferences => {
+  try {
+    if (window.utools?.dbStorage) {
+      return normalizeEnvironmentPreferences(window.utools.dbStorage.getItem(environmentPreferencesStorageKey));
+    }
+    const raw = window.localStorage?.getItem(environmentPreferencesStorageKey);
+    return raw ? normalizeEnvironmentPreferences(JSON.parse(raw)) : defaultEnvironmentPreferences();
+  } catch (error) {
+    return defaultEnvironmentPreferences();
+  }
+};
+
+const writeStoredEnvironmentPreferences = (preferences: EnvironmentPreferences) => {
+  const normalized = normalizeEnvironmentPreferences(preferences);
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(environmentPreferencesStorageKey, normalized);
+      return;
+    }
+    window.localStorage?.setItem(environmentPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+};
+
+const readStoredAiPreferences = (): AiPreferences => {
+  try {
+    if (window.utools?.dbStorage) {
+      return normalizeAiPreferences(window.utools.dbStorage.getItem(aiPreferencesStorageKey));
+    }
+    const raw = window.localStorage?.getItem(aiPreferencesStorageKey);
+    return raw ? normalizeAiPreferences(JSON.parse(raw)) : defaultAiPreferences();
+  } catch (error) {
+    return defaultAiPreferences();
+  }
+};
+
+const writeStoredAiPreferences = (preferences: AiPreferences) => {
+  const normalized = normalizeAiPreferences(preferences);
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(aiPreferencesStorageKey, normalized);
+      return;
+    }
+    window.localStorage?.setItem(aiPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+};
+
 const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   branch: "main",
   ahead: 0,
@@ -174,6 +284,43 @@ const fallbackBridge: ProjectBridge = {
   },
   saveEditorPreferences(preferences) {
     writeStoredEditorPreferences(preferences);
+  },
+  loadEnvironmentPreferences() {
+    return readStoredEnvironmentPreferences();
+  },
+  saveEnvironmentPreferences(preferences) {
+    writeStoredEnvironmentPreferences(preferences);
+  },
+  async detectEnvironmentTools(toolKeys: EnvironmentToolKey[]) {
+    return toolKeys.map((key) => ({
+      key,
+      name: key === "node" ? "Node.js" : key,
+      status: "error" as const,
+      version: "",
+      executablePath: "",
+      checkedAt: new Date().toISOString(),
+      error: "浏览器预览无法检测本机开发环境。",
+    }));
+  },
+  loadAiPreferences() {
+    return readStoredAiPreferences();
+  },
+  saveAiPreferences(preferences) {
+    writeStoredAiPreferences(preferences);
+  },
+  async listAiModels() {
+    return [];
+  },
+  async testAiConnection() {
+    return { ok: false, message: "浏览器预览无法测试 AI 连接。" };
+  },
+  async analyzeWithAi(payload: AiAnalyzePayload) {
+    return {
+      ok: false,
+      content: "",
+      message:
+        payload.preferences.provider === "utools" ? "浏览器预览无法调用 uTools AI。" : "浏览器预览未连接第三方 AI。",
+    };
   },
   async inspectProjectPath(projectPath: string): Promise<ProjectPathInspection> {
     const name = projectPath.split(/[\\/]/).filter(Boolean).pop() || "";

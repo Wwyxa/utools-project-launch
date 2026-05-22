@@ -5,6 +5,7 @@ import Dashboard from "./components/dashboard/Dashboard.vue";
 import ProjectDetails from "./components/project/ProjectDetails.vue";
 import ProjectFormModal from "./components/project/ProjectFormModal.vue";
 import SettingsTab from "./components/layout/SettingsTab.vue";
+import EnvironmentTab from "./components/environment/EnvironmentTab.vue";
 import { useI18n } from "./lib/i18n";
 import type { ProjectBridgeEvent } from "./types";
 
@@ -79,7 +80,7 @@ const handleGlobalEscape = (event: KeyboardEvent) => {
     return;
   }
 
-  if (store.activeTab === "settings") {
+  if (store.activeTab === "settings" || store.activeTab === "environment") {
     store.setActiveTab("projects");
     return;
   }
@@ -157,6 +158,9 @@ onUnmounted(() => {
           </div>
           <div v-else-if="activeTab === 'settings'" key="settings" class="themed-scrollbar h-full overflow-y-auto">
             <SettingsTab />
+          </div>
+          <div v-else-if="activeTab === 'environment'" key="environment" class="h-full overflow-hidden">
+            <EnvironmentTab />
           </div>
         </Transition>
       </main>

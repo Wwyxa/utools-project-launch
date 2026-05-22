@@ -2,8 +2,13 @@ import { defineStore } from "pinia";
 import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
 import { ProjectStatus } from "../types";
 import type {
+  AiPreferences,
+  AiModelInfo,
   DefaultTerminalKind,
   DefaultEditorKind,
+  EnvironmentPreferences,
+  EnvironmentToolKey,
+  EnvironmentToolResult,
   Locale,
   LogEntry,
   Project,
@@ -440,10 +445,22 @@ function createBlankProjectForm(): ProjectFormValue {
 export const useStore = defineStore("app", {
   state: () => ({
     locale: "zh-CN" as Locale,
-    activeTab: "projects" as "projects" | "settings",
+    activeTab: "projects" as "projects" | "settings" | "environment",
     theme: "auto" as "light" | "dark" | "auto",
     terminalPreferences: bridge.loadTerminalPreferences(),
     editorPreferences: bridge.loadEditorPreferences(),
+    environmentPreferences: bridge.loadEnvironmentPreferences(),
+    environmentResults: [] as EnvironmentToolResult[],
+    environmentRefreshing: false,
+    aiPreferences: bridge.loadAiPreferences(),
+    aiModels: [] as AiModelInfo[],
+    aiModelRefreshMessage: "",
+    aiModelTesting: false,
+    aiModelTestMessage: "",
+    aiAnalyzing: false,
+    aiAnalysisResult: "",
+    aiAnalysisMessage: "",
+    aiAnalysisState: "idle" as "idle" | "loading" | "success" | "warning" | "error",
     supportsBridge: supportsRealProjectBridge(),
     projectsLoaded: false,
     projectStorageMessage: "",
@@ -517,6 +534,8 @@ export const useStore = defineStore("app", {
     async loadProjects() {
       this.terminalPreferences = bridge.loadTerminalPreferences();
       this.editorPreferences = bridge.loadEditorPreferences();
+      this.environmentPreferences = bridge.loadEnvironmentPreferences();
+      this.aiPreferences = bridge.loadAiPreferences();
       try {
         const storedProjects = await bridge.loadProjects();
         if (this.supportsBridge || storedProjects.length > 0) {
@@ -588,7 +607,87 @@ export const useStore = defineStore("app", {
       this.editorPreferences.customCommand = command;
       bridge.saveEditorPreferences(this.editorPreferences);
     },
-    setActiveTab(tab: "projects" | "settings") {
+    setEnvironmentToolEnabled(key: EnvironmentToolKey, enabled: boolean) {
+      const keys = new Set<EnvironmentToolKey>(this.environmentPreferences.enabledToolKeys);
+      if (enabled) {
+        keys.add(key);
+      } else {
+        keys.delete(key);
+      }
+      const nextPreferences: EnvironmentPreferences = { enabledToolKeys: Array.from(keys) };
+      this.environmentPreferences = nextPreferences;
+      bridge.saveEnvironmentPreferences(nextPreferences);
+      if (!enabled) {
+        this.environmentResults = this.environmentResults.filter((result) => result.key !== key);
+      }
+    },
+    async refreshEnvironmentTools() {
+      this.environmentRefreshing = true;
+      try {
+        this.environmentResults = await bridge.detectEnvironmentTools(this.environmentPreferences.enabledToolKeys);
+      } finally {
+        this.environmentRefreshing = false;
+      }
+    },
+    setAiPreferences(patch: Partial<AiPreferences>) {
+      this.aiPreferences = { ...this.aiPreferences, ...patch };
+      bridge.saveAiPreferences(this.aiPreferences);
+    },
+    async refreshAiModels() {
+      this.aiModelRefreshMessage = "";
+      try {
+        this.aiModels = await bridge.listAiModels();
+        if (
+          this.aiPreferences.provider === "utools" &&
+          this.aiPreferences.model &&
+          !this.aiModels.some(
+            (model) => model.id === this.aiPreferences.model || model.name === this.aiPreferences.model,
+          )
+        ) {
+          this.aiModelRefreshMessage = "当前配置的 uTools 模型未在可用列表中找到，建议重新选择。";
+        }
+      } catch (error) {
+        this.aiModelRefreshMessage = "获取模型列表失败。";
+      }
+    },
+    async testAiConfiguration() {
+      this.aiModelTesting = true;
+      this.aiModelTestMessage = "";
+      try {
+        const result = await bridge.testAiConnection({ ...this.aiPreferences });
+        this.aiModelTestMessage = result.ok
+          ? result.message || "AI 连接测试成功。"
+          : result.message || "AI 连接测试失败。";
+        return result;
+      } finally {
+        this.aiModelTesting = false;
+      }
+    },
+    async analyzeGitWithAi(projectId: string, prompt: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return;
+      }
+      this.aiAnalyzing = true;
+      this.aiAnalysisMessage = "";
+      this.aiAnalysisResult = "";
+      this.aiAnalysisState = "loading";
+      try {
+        const result = await bridge.analyzeWithAi({ preferences: { ...this.aiPreferences }, prompt });
+        this.aiAnalysisResult = result.content;
+        this.aiAnalysisMessage = result.ok ? "" : result.message || "AI analysis failed";
+        this.aiAnalysisState = result.ok ? (result.content ? "success" : "warning") : "error";
+        if (!result.ok && !this.aiAnalysisMessage) {
+          this.aiAnalysisMessage = "AI 分析失败。";
+        }
+        if (result.ok && !result.content) {
+          this.aiAnalysisMessage = "AI 已返回成功，但没有生成内容。";
+        }
+      } finally {
+        this.aiAnalyzing = false;
+      }
+    },
+    setActiveTab(tab: "projects" | "settings" | "environment") {
       this.activeTab = tab;
       this.selectedProjectId = null;
     },

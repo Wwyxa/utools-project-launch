@@ -1,6 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
-import { ArrowDownToLine, ArrowUpToLine, CircleCheck, FileSearch, GitBranch, RefreshCw, X } from "lucide-vue-next";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  CircleCheck,
+  ClipboardCopy,
+  FileSearch,
+  GitBranch,
+  RefreshCw,
+  X,
+  Sparkles,
+  Filter,
+  ListTree,
+  SlidersHorizontal,
+  WandSparkles,
+  Info,
+} from "lucide-vue-next";
 import { Project, type ProjectGitFileChange, type ProjectGitFileDiffResult } from "../../types";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -19,15 +34,55 @@ const store = useStore();
 const t = useI18n();
 const filesScrollRef = ref<HTMLDivElement | null>(null);
 const graphScrollRef = ref<HTMLDivElement | null>(null);
+const showCommitFilters = ref(false);
+const showFilterStatus = ref(false);
+const isAiDialogOpen = ref(false);
+const aiMode = ref<"summary" | "analysis" | "evaluation" | "custom">("summary");
+const aiCustomPrompt = ref("");
 
 const files = computed(() => store.stagedFiles[props.project.id] || props.project.git?.files || []);
-const commits = computed(() => props.project.git?.commits || []);
+const commitKeyword = ref("");
+const commitAuthor = ref("");
+const commitSince = ref("");
+const commitUntil = ref("");
+const selectedCommitHash = ref("");
+const selectedCommit = computed(() => commits.value.find((commit) => commit.hash === selectedCommitHash.value));
+const commits = computed(() => {
+  const source = props.project.git?.commits || [];
+  const keyword = commitKeyword.value.trim().toLowerCase();
+  const author = commitAuthor.value.trim().toLowerCase();
+  const since = commitSince.value ? new Date(commitSince.value).getTime() : 0;
+  const until = commitUntil.value ? new Date(commitUntil.value).getTime() : Number.POSITIVE_INFINITY;
+
+  return source.filter((commit) => {
+    const commitTime = new Date(commit.date).getTime();
+    if (Number.isFinite(since) && since > 0 && commitTime < since) return false;
+    if (Number.isFinite(until) && until < Number.POSITIVE_INFINITY && commitTime > until + 24 * 60 * 60 * 1000)
+      return false;
+    if (author && !commit.author.toLowerCase().includes(author)) return false;
+    if (keyword) {
+      const body = commit.body || "";
+      const searchable = `${commit.hash} ${commit.message} ${body} ${commit.refs || ""}`.toLowerCase();
+      if (!searchable.includes(keyword)) return false;
+    }
+    return true;
+  });
+});
 const snapshot = computed(() => props.project.git);
 const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.project.path);
 const isLoadingMore = ref(false);
 const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingDiff = ref(false);
 const isDiffDialogOpen = ref(false);
+const isCommitDetailOpen = ref(false);
+const aiModeOptions = [
+  { value: "summary", label: "总结" },
+  { value: "analysis", label: "分析" },
+  { value: "evaluation", label: "评估" },
+  { value: "custom", label: "自定义" },
+] as const;
+const copiedText = ref("");
+const copiedTimer = ref<number | undefined>();
 const commitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
 const pendingCommitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
 let commitTooltipTimer: number | undefined;
@@ -56,6 +111,137 @@ const commitTooltipStyle = computed(() => {
 
 const handleRefresh = async () => {
   await store.refreshGitSnapshot(props.project.id);
+};
+
+const clearCommitFilters = () => {
+  commitKeyword.value = "";
+  commitAuthor.value = "";
+  commitSince.value = "";
+  commitUntil.value = "";
+};
+
+const toggleCommitFilters = () => {
+  showCommitFilters.value = !showCommitFilters.value;
+  if (!showCommitFilters.value) {
+    showFilterStatus.value = false;
+  }
+};
+
+const openAiDialog = () => {
+  store.aiAnalysisMessage = "";
+  store.aiAnalysisResult = "";
+  store.aiAnalysisState = "idle";
+  isAiDialogOpen.value = true;
+};
+
+const closeAiDialog = () => {
+  isAiDialogOpen.value = false;
+};
+
+const filterStatusSummary = computed(() => {
+  const activeFilters = [
+    commitKeyword.value.trim(),
+    commitAuthor.value.trim(),
+    commitSince.value,
+    commitUntil.value,
+  ].filter(Boolean);
+  if (activeFilters.length === 0) {
+    return "当前未启用筛选条件。";
+  }
+  return `当前已启用 ${activeFilters.length} 项筛选，匹配 ${commits.value.length} 条提交。`;
+});
+
+const commitScopeContext = computed(() => {
+  const selectedCommits = commits.value;
+  const commitLines = selectedCommits
+    .map((commit) => {
+      const refs = commit.refs ? `\n  Refs: ${commit.refs}` : "";
+      const body = commit.body ? `\n  Body: ${commit.body}` : "";
+      return `- ${commit.hash}\n  Date: ${commit.date}\n  Author: ${commit.author}\n  Message: ${commit.message}${refs}${body}`;
+    })
+    .join("\n");
+  const fileLines = (snapshot.value?.files || [])
+    .map((file) => `- ${file.path} (+${file.additions}/-${file.deletions}, ${fileLabel(file.status)})`)
+    .join("\n");
+
+  return {
+    commitLines: commitLines || "无提交",
+    fileLines: fileLines || "当前没有工作区文件变更。",
+  };
+});
+
+const buildAiPrompt = () => {
+  const focus =
+    aiMode.value === "summary"
+      ? "请总结这些提交在时间线上的主要工作内容、功能变化和代码变更方向。"
+      : aiMode.value === "analysis"
+        ? "请分析这些提交体现出的实现思路、代码变更逻辑和潜在影响。"
+        : aiMode.value === "evaluation"
+          ? "请评估这些提交的质量、风险点、可维护性和后续需要注意的地方。"
+          : aiCustomPrompt.value.trim() || "请基于这些提交给出有帮助的开发分析。";
+
+  return `${focus}\n\n要求：\n- 必须结合提交时间、commit message、body、refs，以及当前代码变更一起判断。\n- 不要只复述 commit message。\n- 输出面向开发者的结构化内容。\n\n当前筛选后的提交：\n${commitScopeContext.value.commitLines}\n\n当前工作区代码变更：\n${commitScopeContext.value.fileLines}`;
+};
+
+const generateAiAnalysis = async () => {
+  if (store.aiPreferences.provider === "utools" && !store.aiPreferences.model) {
+    store.aiAnalysisMessage = "请先从设置中选择一个 uTools 模型。";
+    store.aiAnalysisState = "warning";
+    return;
+  }
+
+  await store.analyzeGitWithAi(props.project.id, buildAiPrompt());
+};
+
+const openCommitDetails = (hash: string) => {
+  selectedCommitHash.value = hash;
+  isCommitDetailOpen.value = true;
+};
+
+const closeCommitDetails = () => {
+  isCommitDetailOpen.value = false;
+};
+
+const copyText = async (value: string) => {
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    copiedText.value = value;
+    window.clearTimeout(copiedTimer.value);
+    copiedTimer.value = window.setTimeout(() => {
+      if (copiedText.value === value) copiedText.value = "";
+    }, 1200);
+  } catch (error) {
+    copiedText.value = "";
+  }
+};
+
+const copyLabel = computed(
+  () => (value: string) => (copiedText.value === value ? t.value.common.copied : t.value.common.copy),
+);
+
+const analyzeCommits = async (mode: "filtered" | "diff") => {
+  if (!store.aiPreferences.provider) {
+    store.aiAnalysisMessage = t.value.git.aiUnavailable;
+    store.aiAnalysisState = "warning";
+    return;
+  }
+  if (store.aiPreferences.provider === "utools" && !store.aiPreferences.model) {
+    store.aiAnalysisMessage = "请先从设置中选择一个 uTools 模型。";
+    store.aiAnalysisState = "warning";
+    return;
+  }
+  const lines =
+    mode === "filtered"
+      ? commits.value.map((commit) => `- ${commit.hash} ${commit.message}`).join("\n")
+      : selectedCommit.value
+        ? `Commit: ${selectedCommit.value.hash}\nMessage: ${selectedCommit.value.message}\n\nBody:\n${selectedCommit.value.body || ""}`
+        : "";
+  const prompt =
+    mode === "filtered"
+      ? `Summarize these Git commits for a developer. Focus on what changed and the main work themes.\n\n${lines}`
+      : `Explain what this Git commit does in concise developer-friendly language.\n\n${lines}`;
+  await store.analyzeGitWithAi(props.project.id, prompt);
 };
 
 const handleLoadMore = async () => {
@@ -119,7 +305,10 @@ const hideCommitTooltip = () => {
   commitTooltip.value = null;
 };
 
-onBeforeUnmount(hideCommitTooltip);
+onBeforeUnmount(() => {
+  hideCommitTooltip();
+  window.clearTimeout(copiedTimer.value);
+});
 
 const diffLines = computed(() =>
   (selectedDiff.value?.diff || "").split("\n").map((content, index) => {
@@ -292,6 +481,7 @@ const graphColumnWidth = computed(() =>
 
 const graphRowColumns = computed(() => `${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`);
 const gitGridColumns = "minmax(13rem,0.42fr) minmax(0,1.58fr)";
+const commitDateLabel = (value?: string) => formatCommitTime(value).text;
 
 const fileLabel = (status: string) => {
   if (status === "ADDED") return t.value.git.added;
@@ -376,7 +566,15 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
     <div class="border border-border-subtle rounded-lg bg-surface px-3 py-2 flex items-center justify-between gap-3">
       <div class="flex items-center gap-3 min-w-0 text-xs">
         <GitBranch :size="16" class="text-primary shrink-0" />
-        <span class="font-mono font-bold text-on-surface truncate">{{ snapshot?.branch || "main" }}</span>
+        <button
+          type="button"
+          class="min-w-0 truncate rounded px-1 font-mono font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
+          :title="`${t.common.copy}: ${snapshot?.branch || 'main'}`"
+          :aria-label="`${t.common.copy}: ${snapshot?.branch || 'main'}`"
+          @click="copyText(snapshot?.branch || 'main')"
+        >
+          {{ snapshot?.branch || "main" }}
+        </button>
         <span class="text-on-surface-variant whitespace-nowrap">
           {{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}
         </span>
@@ -462,6 +660,15 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
             <div class="flex shrink-0 items-center gap-0.5 opacity-80 transition-opacity group-hover:opacity-100">
               <button
                 type="button"
+                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                :title="`${t.common.copy}: ${file.path}`"
+                :aria-label="`${t.common.copy}: ${file.path}`"
+                @click.stop="copyText(file.path)"
+              >
+                <ClipboardCopy :size="14" />
+              </button>
+              <button
+                type="button"
                 class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
                 :disabled="file.status === 'DELETED'"
                 :title="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
@@ -516,8 +723,9 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
             <div
               v-for="row in graphRows"
               :key="row.commit.hash"
-              class="grid h-8 min-w-[30rem] items-center gap-1.5 rounded px-2 text-xs hover:bg-surface-container-high"
+              class="grid h-8 min-w-[30rem] cursor-pointer items-center gap-1.5 rounded px-2 text-xs hover:bg-surface-container-high"
               :style="{ gridTemplateColumns: graphRowColumns }"
+              @click="openCommitDetails(row.commit.hash)"
             >
               <div class="h-8 min-w-0 overflow-hidden">
                 <svg
@@ -561,8 +769,9 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
               </div>
 
               <span
-                class="truncate font-mono text-[10px] font-semibold text-on-surface-variant"
+                class="truncate rounded font-mono text-[10px] font-semibold text-on-surface-variant hover:text-primary"
                 :title="row.commit.hash"
+                @click.stop="copyText(row.commit.hash)"
                 >{{ row.commit.hash }}</span
               >
               <div class="min-w-0 overflow-hidden">
@@ -607,6 +816,226 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
         </div>
       </div>
     </div>
+
+    <section class="rounded-lg border border-border-subtle bg-surface px-3 py-2 shadow-sm">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <Filter :size="14" class="text-primary" />
+          <h3 class="text-xs font-bold text-on-surface">{{ t.git.filters }}</h3>
+          <span
+            v-if="commitKeyword || commitAuthor || commitSince || commitUntil"
+            class="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
+          >
+            {{ commits.length }}
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-2.5 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+            @click="toggleCommitFilters"
+          >
+            <SlidersHorizontal :size="13" />
+            {{ showCommitFilters ? t.common.close : "筛" }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-2.5 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90"
+            @click="showFilterStatus = !showFilterStatus"
+            :title="filterStatusSummary"
+            :aria-label="filterStatusSummary"
+          >
+            <Info :size="13" />
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90"
+            :disabled="!store.aiPreferences.model && store.aiPreferences.provider === 'utools'"
+            @click="openAiDialog"
+          >
+            <WandSparkles :size="13" />
+            AI生成
+          </button>
+        </div>
+      </div>
+      <div
+        v-if="showFilterStatus"
+        class="mt-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant"
+      >
+        {{ filterStatusSummary }}
+      </div>
+      <Transition name="fade">
+        <div v-if="showCommitFilters" class="mt-3 space-y-2">
+          <div
+            class="grid gap-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(8.5rem,0.75fr)_minmax(8.5rem,0.75fr)]"
+          >
+            <input
+              v-model="commitKeyword"
+              type="text"
+              class="rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm"
+              :placeholder="t.git.keyword"
+            />
+            <input
+              v-model="commitAuthor"
+              type="text"
+              class="rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm"
+              :placeholder="t.git.author"
+            />
+            <input
+              v-model="commitSince"
+              type="date"
+              class="rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-2 text-sm"
+              :placeholder="t.git.since"
+            />
+            <input
+              v-model="commitUntil"
+              type="date"
+              class="rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-2 text-sm"
+              :placeholder="t.git.until"
+            />
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              @click="clearCommitFilters"
+            >
+              {{ t.git.clearFilters }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90"
+              :disabled="!store.aiPreferences.model && store.aiPreferences.provider === 'utools'"
+              @click="openAiDialog"
+            >
+              <WandSparkles :size="13" />
+              AI生成
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </section>
+
+    <div
+      v-if="isAiDialogOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+      @click.self="closeAiDialog"
+    >
+      <div
+        class="flex h-[min(42rem,88vh)] w-[min(52rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+      >
+        <div
+          class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
+        >
+          <div class="min-w-0">
+            <h3 class="text-sm font-bold text-on-surface">AI 生成</h3>
+            <p class="truncate text-[10px] font-medium text-on-surface-variant">
+              基于当前筛选提交、提交时间与工作区变更生成结果
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+              :disabled="isAiDialogGenerating"
+              @click="generateAiAnalysis"
+            >
+              <Sparkles :size="13" />
+              {{ isAiDialogGenerating ? "生成中" : "生成" }}
+            </button>
+            <button
+              type="button"
+              class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+              :title="t.common.close"
+              :aria-label="t.common.close"
+              @click="closeAiDialog"
+            >
+              <X :size="15" />
+            </button>
+          </div>
+        </div>
+        <div class="grid min-h-0 flex-1 gap-3 p-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
+          <div class="space-y-3">
+            <label class="block text-xs font-semibold uppercase text-on-surface-variant">
+              模式
+              <select
+                v-model="aiMode"
+                class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+              >
+                <option v-for="option in aiModeOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label v-if="aiMode === 'custom'" class="block text-xs font-semibold uppercase text-on-surface-variant">
+              自定义提示词
+              <textarea
+                v-model="aiCustomPrompt"
+                rows="8"
+                class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                placeholder="例如：请只从提交影响、风险点和代码质量角度分析。"
+              />
+            </label>
+            <div
+              class="rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant"
+            >
+              <div class="mb-1 flex items-center gap-1.5 font-bold text-on-surface">
+                <Info :size="13" class="text-primary" />
+                当前筛选
+              </div>
+              <p>{{ filterStatusSummary }}</p>
+            </div>
+          </div>
+          <div
+            class="min-h-0 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
+          >
+            <div v-if="store.aiAnalyzing" class="text-on-surface-variant">正在生成中...</div>
+            <div v-else-if="store.aiAnalysisMessage || store.aiAnalysisResult" class="space-y-2">
+              <div class="flex items-center gap-2">
+                <span
+                  :class="
+                    cn(
+                      'rounded-full border px-2 py-0.5 font-bold',
+                      store.aiAnalysisState === 'success' &&
+                        'border-status-running/30 bg-status-running/10 text-status-running',
+                      store.aiAnalysisState === 'warning' &&
+                        'border-status-warning/30 bg-status-warning/10 text-status-warning',
+                      store.aiAnalysisState === 'error' &&
+                        'border-status-error/30 bg-status-error/10 text-status-error',
+                      store.aiAnalysisState === 'loading' &&
+                        'border-status-warning/30 bg-status-warning/10 text-status-warning',
+                      store.aiAnalysisState === 'idle' && 'border-border-subtle bg-surface text-on-surface-variant',
+                    )
+                  "
+                >
+                  {{
+                    store.aiAnalysisState === "loading"
+                      ? "处理中"
+                      : store.aiAnalysisState === "success"
+                        ? "成功"
+                        : store.aiAnalysisState === "warning"
+                          ? "提示"
+                          : store.aiAnalysisState === "error"
+                            ? "失败"
+                            : "就绪"
+                  }}
+                </span>
+                <span
+                  v-if="store.aiAnalysisMessage"
+                  :class="store.aiAnalysisState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+                  >{{ store.aiAnalysisMessage }}</span
+                >
+              </div>
+              <pre v-if="store.aiAnalysisResult" class="whitespace-pre-wrap font-sans text-on-surface">{{
+                store.aiAnalysisResult
+              }}</pre>
+            </div>
+            <div v-else class="text-on-surface-variant">点击“生成”开始。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div
       v-if="isDiffDialogOpen"
       class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
@@ -658,6 +1087,100 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
           </div>
           <div v-else class="p-5 text-sm text-on-surface-variant">
             {{ selectedDiff?.message || t.git.diffEmpty }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      v-if="isCommitDetailOpen && selectedCommit"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+      @click.self="closeCommitDetails"
+    >
+      <div
+        class="flex h-[min(44rem,88vh)] w-[min(54rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+      >
+        <div
+          class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
+        >
+          <div class="min-w-0">
+            <h3 class="truncate text-sm font-bold text-on-surface">{{ t.git.commitDetails }}</h3>
+            <p class="truncate font-mono text-[10px] font-bold text-on-surface-variant">{{ selectedCommit.hash }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              @click="copyText(selectedCommit.hash)"
+            >
+              <ClipboardCopy :size="13" />
+              {{ copyLabel(selectedCommit.hash) }}
+            </button>
+            <button
+              type="button"
+              class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+              :title="t.common.close"
+              :aria-label="t.common.close"
+              @click="closeCommitDetails"
+            >
+              <X :size="15" />
+            </button>
+          </div>
+        </div>
+        <div class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest p-4">
+          <div class="grid gap-3 text-sm md:grid-cols-2">
+            <div class="space-y-1">
+              <p class="text-xs font-semibold uppercase text-on-surface-variant">{{ t.git.summary }}</p>
+              <p class="text-on-surface">{{ selectedCommit.message }}</p>
+              <p class="text-xs text-on-surface-variant">
+                {{ selectedCommit.author }} · {{ commitDateLabel(selectedCommit.date) }}
+              </p>
+              <div class="flex flex-wrap gap-1.5 pt-1">
+                <span v-for="refName in refsForCommit(selectedCommit.refs)" :key="refName" :class="refClass(refName)">{{
+                  refName
+                }}</span>
+              </div>
+            </div>
+            <div class="space-y-2">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90"
+                @click="analyzeCommits('diff')"
+              >
+                <Sparkles :size="13" />
+                {{ t.git.explainDiff }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+                @click="copyText(selectedCommit.message)"
+              >
+                <ClipboardCopy :size="13" />
+                {{ copyLabel(selectedCommit.message) }}
+              </button>
+              <div
+                v-if="store.aiAnalysisResult"
+                class="rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-xs leading-5 text-on-surface-variant"
+              >
+                <h4 class="mb-1 font-bold text-on-surface">{{ t.git.aiSummary }}</h4>
+                <pre class="whitespace-pre-wrap font-sans">{{ store.aiAnalysisResult }}</pre>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 rounded-lg border border-border-subtle bg-surface px-3 py-3">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <h4 class="text-xs font-bold text-on-surface">{{ t.git.changedFiles }}</h4>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+                @click="copyText(selectedCommit.hash)"
+              >
+                <ListTree :size="13" />
+                {{ t.common.copy }}
+              </button>
+            </div>
+            <pre class="whitespace-pre-wrap font-mono text-xs leading-5 text-on-surface-variant">{{
+              selectedCommit.body || selectedCommit.message
+            }}</pre>
           </div>
         </div>
       </div>

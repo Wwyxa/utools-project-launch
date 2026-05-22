@@ -1,19 +1,57 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { ArrowLeft, Download, Github, Monitor, Moon, Sun, Upload } from "lucide-vue-next";
+import { computed, onMounted, watch } from "vue";
+import {
+  ArrowLeft,
+  Brain,
+  Download,
+  Github,
+  Monitor,
+  MonitorCog,
+  Moon,
+  RefreshCw,
+  Sun,
+  Upload,
+  WandSparkles,
+} from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
-import type { DefaultEditorKind, DefaultTerminalKind } from "../../types";
+import type { AiProviderKind, DefaultEditorKind, DefaultTerminalKind, EnvironmentToolKey } from "../../types";
 
 const store = useStore();
 const t = useI18n();
 
 const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
 const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
+const environmentOptions: Array<{ key: EnvironmentToolKey; label: string }> = [
+  { key: "node", label: "Node.js" },
+  { key: "npm", label: "npm" },
+  { key: "pnpm", label: "pnpm" },
+  { key: "yarn", label: "Yarn" },
+  { key: "python", label: "Python" },
+  { key: "pip", label: "pip" },
+  { key: "go", label: "Go" },
+  { key: "git", label: "Git" },
+  { key: "docker", label: "Docker" },
+];
+const aiProviderOptions: AiProviderKind[] = ["utools", "openai", "anthropic"];
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
 const editorUsesCustomCommand = computed(() => store.editorPreferences.kind === "custom");
+const aiUsesThirdParty = computed(() => store.aiPreferences.provider !== "utools");
+const aiModelOptions = computed(() => {
+  const collected = new Map<string, string>();
+  store.aiModels.forEach((model) => {
+    const key = model.id || model.name;
+    if (key) {
+      collected.set(key, model.name || model.id);
+    }
+  });
+  if (store.aiPreferences.model && !collected.has(store.aiPreferences.model)) {
+    collected.set(store.aiPreferences.model, store.aiPreferences.model);
+  }
+  return Array.from(collected.entries()).map(([value, label]) => ({ value, label }));
+});
 
 const segmentButtonClass = (active: boolean) =>
   cn(
@@ -22,6 +60,40 @@ const segmentButtonClass = (active: boolean) =>
       ? "bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
       : "text-on-surface-variant hover:bg-surface-container",
   );
+
+const loadAiModels = async () => {
+  await store.refreshAiModels();
+  if (store.aiPreferences.provider === "utools" && !store.aiPreferences.model && store.aiModels[0]) {
+    store.setAiPreferences({ model: store.aiModels[0].id });
+  }
+};
+
+const handleTestAi = async () => {
+  await store.testAiConfiguration();
+};
+
+const aiTestIconClass = computed(() => {
+  if (store.aiModelTesting) return "text-primary animate-spin";
+  if (!store.aiModelTestMessage) return "text-on-surface-variant";
+  return store.aiModelTestMessage.includes("失败") ? "text-status-error" : "text-status-running";
+});
+
+const aiTestTitle = computed(() => {
+  if (store.aiModelTesting) return "测试中";
+  if (!store.aiModelTestMessage) return "测试 AI 连接";
+  return store.aiModelTestMessage;
+});
+
+onMounted(() => {
+  void loadAiModels();
+});
+
+watch(
+  () => store.aiPreferences.provider,
+  () => {
+    void loadAiModels();
+  },
+);
 </script>
 
 <template>
@@ -87,6 +159,131 @@ const segmentButtonClass = (active: boolean) =>
                 <Monitor :size="16" />
                 {{ t.common.themeAuto }}
               </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <MonitorCog :size="15" class="text-primary" />
+            <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.environment }}</h3>
+          </div>
+          <button
+            type="button"
+            @click="store.setActiveTab('environment')"
+            class="rounded-lg border border-border-subtle bg-transparent px-3 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          >
+            {{ t.environment.title }}
+          </button>
+        </div>
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-2">
+          <label
+            v-for="option in environmentOptions"
+            :key="option.key"
+            class="flex cursor-pointer items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-variant"
+          >
+            <input
+              type="checkbox"
+              class="h-4 w-4 accent-primary"
+              :checked="store.environmentPreferences.enabledToolKeys.includes(option.key)"
+              @change="store.setEnvironmentToolEnabled(option.key, ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="truncate font-medium">{{ option.label }}</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex items-center gap-2">
+          <Brain :size="15" class="text-primary" />
+          <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.aiProvider }}</h3>
+        </div>
+        <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+          <div
+            class="inline-flex h-fit max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
+          >
+            <button
+              v-for="option in aiProviderOptions"
+              :key="option"
+              type="button"
+              @click="store.setAiPreferences({ provider: option })"
+              :class="segmentButtonClass(store.aiPreferences.provider === option)"
+            >
+              {{ t.settings.aiProviders[option] }}
+            </button>
+          </div>
+          <div class="space-y-2">
+            <div class="grid gap-2 md:grid-cols-2">
+              <label class="block text-xs font-semibold uppercase text-on-surface-variant">
+                {{ t.settings.aiModel }}
+                <div class="mt-1 flex items-center gap-2">
+                  <select
+                    :value="store.aiPreferences.model"
+                    @change="store.setAiPreferences({ model: ($event.target as HTMLSelectElement).value })"
+                    class="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">{{ t.settings.aiModelPlaceholder }}</option>
+                    <option v-for="option in aiModelOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                  <button
+                    type="button"
+                    @click="loadAiModels"
+                    class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-transparent text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+                    :title="t.common.refresh"
+                    :aria-label="t.common.refresh"
+                  >
+                    <RefreshCw :size="14" :class="store.aiAnalyzing ? 'animate-spin' : ''" />
+                  </button>
+                </div>
+              </label>
+              <label v-if="aiUsesThirdParty" class="block text-xs font-semibold uppercase text-on-surface-variant">
+                {{ t.settings.aiBaseUrl }}
+                <input
+                  :value="store.aiPreferences.baseUrl"
+                  @input="store.setAiPreferences({ baseUrl: ($event.target as HTMLInputElement).value })"
+                  type="text"
+                  placeholder="https://api.example.com/v1"
+                  class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </label>
+            </div>
+            <label v-if="aiUsesThirdParty" class="block text-xs font-semibold uppercase text-on-surface-variant">
+              {{ t.settings.aiApiKey }}
+              <input
+                :value="store.aiPreferences.apiKey"
+                @input="store.setAiPreferences({ apiKey: ($event.target as HTMLInputElement).value })"
+                type="password"
+                :placeholder="t.settings.aiApiKeyPlaceholder"
+                class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </label>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                @click="handleTestAi"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-2.5 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                :disabled="store.aiModelTesting"
+              >
+                <WandSparkles :size="13" />
+                测试
+              </button>
+              <span
+                class="inline-flex h-8 items-center gap-1 rounded-full border border-border-subtle bg-surface-container-low px-2 text-[11px] text-on-surface-variant"
+                :title="aiTestTitle"
+              >
+                <span :class="aiTestIconClass">
+                  <WandSparkles :size="12" />
+                </span>
+                <span v-if="store.aiModelTesting">测试中</span>
+                <span v-else-if="store.aiModelTestMessage">{{
+                  store.aiModelTestMessage.includes("失败") ? "失败" : "成功"
+                }}</span>
+                <span v-else>就绪</span>
+              </span>
             </div>
           </div>
         </div>

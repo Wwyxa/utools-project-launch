@@ -29,6 +29,9 @@ export type ProjectIconKey =
 
 export type DefaultTerminalKind = "builtin" | "windows-terminal" | "powershell" | "cmd" | "custom";
 export type DefaultEditorKind = "vscode" | "cursor" | "custom";
+export type EnvironmentToolKey = "node" | "npm" | "pnpm" | "yarn" | "python" | "pip" | "go" | "git" | "docker";
+export type EnvironmentToolStatus = "available" | "missing" | "error";
+export type AiProviderKind = "utools" | "openai" | "anthropic";
 
 export interface TerminalPreferences {
   kind: DefaultTerminalKind;
@@ -38,6 +41,60 @@ export interface TerminalPreferences {
 export interface EditorPreferences {
   kind: DefaultEditorKind;
   customCommand: string;
+}
+
+export interface EnvironmentToolDefinition {
+  key: EnvironmentToolKey;
+  name: string;
+}
+
+export interface EnvironmentPreferences {
+  enabledToolKeys: EnvironmentToolKey[];
+}
+
+export interface EnvironmentToolResult {
+  key: EnvironmentToolKey;
+  name: string;
+  status: EnvironmentToolStatus;
+  version: string;
+  executablePath: string;
+  checkedAt: string;
+  error?: string;
+}
+
+export interface AiPreferences {
+  provider: AiProviderKind;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+}
+
+export interface AiModelInfo {
+  id: string;
+  name: string;
+  provider?: string;
+}
+
+export interface AiModelTestResult {
+  ok: boolean;
+  message: string;
+}
+
+export interface AiAnalysisFeedback {
+  state: "idle" | "loading" | "success" | "warning" | "error";
+  message: string;
+  content: string;
+}
+
+export interface AiAnalyzePayload {
+  preferences: AiPreferences;
+  prompt: string;
+}
+
+export interface AiAnalyzeResult {
+  ok: boolean;
+  content: string;
+  message?: string;
 }
 
 export interface ProjectScript {
@@ -283,6 +340,14 @@ export interface ProjectBridge {
   saveTerminalPreferences(preferences: TerminalPreferences): void;
   loadEditorPreferences(): EditorPreferences;
   saveEditorPreferences(preferences: EditorPreferences): void;
+  loadEnvironmentPreferences(): EnvironmentPreferences;
+  saveEnvironmentPreferences(preferences: EnvironmentPreferences): void;
+  detectEnvironmentTools(toolKeys: EnvironmentToolKey[]): Promise<EnvironmentToolResult[]>;
+  loadAiPreferences(): AiPreferences;
+  saveAiPreferences(preferences: AiPreferences): void;
+  listAiModels(): Promise<AiModelInfo[]>;
+  testAiConnection(preferences: AiPreferences): Promise<AiModelTestResult>;
+  analyzeWithAi(payload: AiAnalyzePayload): Promise<AiAnalyzeResult>;
   inspectProjectPath(projectPath: string): Promise<ProjectPathInspection>;
   pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pathExists(projectPath: string): Promise<boolean>;
