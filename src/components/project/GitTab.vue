@@ -11,7 +11,6 @@ import {
   X,
   Sparkles,
   Filter,
-  ListTree,
   SlidersHorizontal,
   WandSparkles,
   ChevronDown,
@@ -1241,7 +1240,7 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
       @click.self="closeAiDialog"
     >
       <div
-        class="flex w-[min(54rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+        class="flex h-[min(46rem,90vh)] w-[min(58rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
         @click.stop
       >
         <div
@@ -1254,15 +1253,6 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
           <div class="flex items-center gap-2">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
-              :disabled="isAiDialogGenerating"
-              @click="generateAiAnalysis"
-            >
-              <Sparkles :size="13" />
-              {{ isAiDialogGenerating ? "生成中" : "生成" }}
-            </button>
-            <button
-              type="button"
               class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
               :title="t.common.close"
               :aria-label="t.common.close"
@@ -1272,10 +1262,9 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
             </button>
           </div>
         </div>
-        <div class="space-y-3 p-3">
-          <div class="max-w-56">
-            <label class="block text-xs font-semibold uppercase text-on-surface-variant">
-              模式
+        <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
+          <div class="flex shrink-0 flex-wrap items-end gap-2">
+            <label class="block w-48 text-xs font-semibold uppercase text-on-surface-variant">
               <div class="relative mt-1">
                 <button
                   type="button"
@@ -1299,9 +1288,18 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
                 </div>
               </div>
             </label>
+            <button
+              type="button"
+              class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+              :disabled="isAiDialogGenerating"
+              @click="generateAiAnalysis"
+            >
+              <Sparkles :size="13" />
+              {{ isAiDialogGenerating ? "生成中" : "生成" }}
+            </button>
           </div>
           <div
-            class="ai-result-panel min-h-40 max-h-[min(20rem,42vh)] overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
+            class="ai-result-panel min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
           >
             <div v-if="aiDialogState !== 'idle' || aiDialogDisplayResult || aiDialogMessage" class="space-y-2">
               <div class="flex items-center gap-2">
@@ -1398,14 +1396,6 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
           <div class="flex items-center gap-2">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-              @click="copyText(selectedCommit.hash)"
-            >
-              <ClipboardCopy :size="13" />
-              {{ copyLabel(selectedCommit.hash) }}
-            </button>
-            <button
-              type="button"
               class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
               :title="t.common.close"
               :aria-label="t.common.close"
@@ -1482,26 +1472,25 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
                 </p>
               </div>
               <div class="mt-2 shrink-0 border-t border-border-subtle pt-2">
-                <div class="mb-1.5 flex justify-end">
+                <div class="relative">
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center gap-1.5 rounded border border-border-subtle bg-transparent px-2 text-[10px] font-bold text-on-surface transition-colors hover:bg-surface-variant"
+                    class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
+                    :title="copyLabel(commitBodyContent)"
+                    :aria-label="copyLabel(commitBodyContent)"
                     @click="copyText(commitBodyContent)"
                   >
-                    <ListTree :size="12" />
-                    {{ t.common.copy }}
+                    <ClipboardCopy :size="12" />
                   </button>
+                  <div
+                    class="memo-rendered ai-markdown-result max-h-40 overflow-auto rounded border border-border-subtle bg-surface-container-low px-2 py-2 pr-8 text-on-surface lg:max-h-52"
+                    v-html="renderedCommitBody"
+                  ></div>
                 </div>
-                <div
-                  class="memo-rendered ai-markdown-result max-h-32 overflow-auto rounded border border-border-subtle bg-surface-container-low px-2 py-2 text-on-surface lg:max-h-40"
-                  v-html="renderedCommitBody"
-                ></div>
               </div>
             </section>
 
-            <section
-              class="flex min-h-0 flex-col rounded-lg border border-border-subtle bg-surface px-2.5 py-2.5"
-            >
+            <section class="flex min-h-0 flex-col rounded-lg border border-border-subtle bg-surface px-2.5 py-2.5">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-2">
                   <Sparkles :size="14" class="shrink-0 text-primary" />
