@@ -174,6 +174,79 @@ store.setDefaultEditor("cursor");
 
 Let store actions persist preferences and keep bridge state synchronized.
 
+## Scenario: Streaming AI Bridge Actions
+
+### 1. Scope / Trigger
+
+- Trigger: a component needs progressive AI output while the actual provider call crosses Vue component -> Pinia store -> project bridge -> uTools preload.
+- Applies to Git AI analysis flows, including the Git tab batch "AI生成" dialog and commit detail AI analysis panel.
+
+### 2. Signatures
+
+- Type contract: `ProjectBridge.analyzeWithAiStream(payload, onChunk, onDone): Promise<void>`.
+- Store action: `analyzeGitWithAiStream(projectId: string, prompt: string, handlers?: AiStreamHandlers): Promise<AiAnalyzeResult | undefined>`.
+- Handler shape: `onStart?: () => void`, `onChunk?: (chunk: string) => void`, `onDone?: (result: AiAnalyzeResult) => void`.
+
+### 3. Contracts
+
+- Components own view-specific streaming text when the result only belongs to one dialog or panel.
+- Components may keep a local reveal buffer/timer when providers return one large chunk or fallback content, so the UI still visibly progresses without changing the bridge contract.
+- Store actions own provider preferences and project lookup, then delegate to the bridge with cloned AI preferences.
+- `onStart` fires before bridge delegation starts.
+- `onChunk` may fire zero or more times and should append text in the component or caller-owned state.
+- `onDone` must fire exactly once for every started analysis path, including validation failures and thrown bridge errors.
+- uTools built-in AI may return a single non-streaming result; preload should emit it as one chunk before `onDone` when content exists.
+
+### 4. Validation & Error Matrix
+
+- Missing project id -> call `onDone({ ok: false, content: "", message: "项目不存在，无法进行 AI 分析。" })` and return that result.
+- Empty prompt -> preload returns `ok: false` through `onDone` with an empty-content message.
+- Incomplete third-party AI config -> preload returns `ok: false` through `onDone`; component leaves loading state.
+- Bridge throws before calling `onDone` -> store catches and calls `onDone` with an error result.
+- Bridge calls `onDone` then throws -> store must not call `onDone` a second time.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a commit detail panel keeps its own `streamingText`, appends chunks, and switches from loading to success/warning/error in `onDone`.
+- Base: uTools built-in AI returns one full content string, which is displayed through the same streaming UI path.
+- Base: a third-party provider sends a large chunk; the component queues it and reveals small slices for readable progress.
+- Bad: a component sets loading before calling the store action, the bridge throws, and no `onDone` handler clears loading.
+
+### 6. Tests Required
+
+- `npm run lint` after changing `ProjectBridge`, `AiAnalyzeResult`, or store AI actions.
+- `npm run build` after changing Vue templates that render streaming output.
+- Manual smoke test with a third-party provider: verify text appears progressively and the final state changes from loading to success.
+- Manual smoke test with invalid AI config: verify the panel shows an error and does not remain loading.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await bridge.analyzeWithAiStream(payload, onChunk, onDone);
+```
+
+This lets thrown bridge errors skip `onDone`, leaving caller-owned loading state stuck.
+
+#### Correct
+
+```ts
+let completed = false;
+try {
+  await bridge.analyzeWithAiStream(payload, onChunk, (result) => {
+    completed = true;
+    onDone(result);
+  });
+} catch (error) {
+  if (!completed) {
+    onDone({ ok: false, content: "", message: error instanceof Error ? error.message : "AI 分析失败。" });
+  }
+}
+```
+
+Every async path reports a terminal result exactly once, so UI panels can clear loading state reliably.
+
 ## Scenario: Todo Drag Reordering
 
 ### 1. Scope / Trigger
