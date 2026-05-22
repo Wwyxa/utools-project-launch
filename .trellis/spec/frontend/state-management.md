@@ -186,6 +186,8 @@ Let store actions persist preferences and keep bridge state synchronized.
 - Type contract: `ProjectBridge.analyzeWithAiStream(payload, onChunk, onDone): Promise<void>`.
 - Store action: `analyzeGitWithAiStream(projectId: string, prompt: string, handlers?: AiStreamHandlers): Promise<AiAnalyzeResult | undefined>`.
 - Handler shape: `onStart?: () => void`, `onChunk?: (chunk: string) => void`, `onDone?: (result: AiAnalyzeResult) => void`.
+- `AiPreferences.provider` is one of `"utools"`, `"openai-compatible"`, or `"anthropic-compatible"`; legacy stored values `"openai"`, `"anthropic"`, and `"openai-responses"` normalize to the nearest supported compatible provider.
+- `AiPreferences.modes` stores configurable prompt modes with `{ id, name, prompt, builtIn }` and is shared by settings plus both Git AI entry points.
 
 ### 3. Contracts
 
@@ -195,22 +197,30 @@ Let store actions persist preferences and keep bridge state synchronized.
 - `onStart` fires before bridge delegation starts.
 - `onChunk` may fire zero or more times and should append text in the component or caller-owned state.
 - `onDone` must fire exactly once for every started analysis path, including validation failures and thrown bridge errors.
-- uTools built-in AI may return a single non-streaming result; preload should emit it as one chunk before `onDone` when content exists.
+- OpenAI-compatible and Anthropic-compatible providers use real SSE / `ReadableStream` parsing in preload and emit chunks as provider deltas arrive.
+- uTools built-in AI currently returns a single non-streaming result; preload must not fake stream it by sending the full content through `onChunk`. Return the full content in `onDone.content` and include a user-visible message that uTools is non-streaming.
+- Browser preview fallback is also non-streaming; it should call `onDone` only and avoid pretending preview output is incremental.
+- API keys stay inside `AiPreferences` storage and request headers. Do not include keys in user-visible messages, model refresh errors, logs, or AI result text.
 
 ### 4. Validation & Error Matrix
 
 - Missing project id -> call `onDone({ ok: false, content: "", message: "项目不存在，无法进行 AI 分析。" })` and return that result.
 - Empty prompt -> preload returns `ok: false` through `onDone` with an empty-content message.
 - Incomplete third-party AI config -> preload returns `ok: false` through `onDone`; component leaves loading state.
+- Third-party model list refresh without base URL or API key -> return an empty model list so the user can manually enter a model id.
+- Third-party non-2xx response -> parse the provider error message when available and surface it through model test or AI result state without exposing headers or API keys.
+- uTools provider selected without a model -> model test and generation return a warning/error asking the user to select a uTools model.
 - Bridge throws before calling `onDone` -> store catches and calls `onDone` with an error result.
 - Bridge calls `onDone` then throws -> store must not call `onDone` a second time.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a commit detail panel keeps its own `streamingText`, appends chunks, and switches from loading to success/warning/error in `onDone`.
-- Base: uTools built-in AI returns one full content string, which is displayed through the same streaming UI path.
-- Base: a third-party provider sends a large chunk; the component queues it and reveals small slices for readable progress.
+- Good: settings edits an AI mode prompt, and both the batch Git AI dialog and commit detail AI panel use that prompt on their next generation.
+- Base: uTools built-in AI returns one full content string in `onDone.content`; the UI shows it after completion with a non-streaming fallback message.
+- Base: a third-party provider sends small SSE deltas and the component appends them directly into its local result text.
 - Bad: a component sets loading before calling the store action, the bridge throws, and no `onDone` handler clears loading.
+- Bad: emitting the full uTools result via `onChunk` to create the appearance of streaming.
 
 ### 6. Tests Required
 
@@ -218,16 +228,20 @@ Let store actions persist preferences and keep bridge state synchronized.
 - `npm run build` after changing Vue templates that render streaming output.
 - Manual smoke test with a third-party provider: verify text appears progressively and the final state changes from loading to success.
 - Manual smoke test with invalid AI config: verify the panel shows an error and does not remain loading.
+- Manual smoke test for uTools: verify the result appears only when the full response returns and the UI explains that uTools is non-streaming.
+- Manual smoke test for settings: edit/add/delete/restore prompt modes, then generate from both Git AI entry points and confirm the selected mode is used.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```ts
-await bridge.analyzeWithAiStream(payload, onChunk, onDone);
+const result = await window.utools.ai(payload);
+onChunk(String(result.content || result.text || result || ""));
+onDone({ ok: true, content: String(result.content || result.text || result || "") });
 ```
 
-This lets thrown bridge errors skip `onDone`, leaving caller-owned loading state stuck.
+This makes a complete uTools response look like streaming output and duplicates the result path.
 
 #### Correct
 
@@ -246,6 +260,16 @@ try {
 ```
 
 Every async path reports a terminal result exactly once, so UI panels can clear loading state reliably.
+
+For uTools in preload, the provider branch should complete through `onDone` only:
+
+```js
+const result = await analyzeWithAi({ preferences, prompt });
+done({
+  ...result,
+  message: result.message || "uTools 内置 AI 当前不支持真实流式，已按完整结果返回。",
+});
+```
 
 ## Scenario: Todo Drag Reordering
 
