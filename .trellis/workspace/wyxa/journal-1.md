@@ -727,3 +727,38 @@ Polished Git commit detail UI with true streaming AI output, commit-specific fil
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: 完善 AI 流式与配置
+
+**Date**: 2026-05-23
+**Task**: 完善 AI 流式与配置
+**Branch**: `master`
+
+### Summary
+
+实现 OpenAI/Anthropic 兼容流式输出，重构 AI 设置页供应商、模型测试和模式提示词管理，并更新 AI 桥接规范与任务上下文。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a95ab70` | (see git log) |
+| `7bed6bf` | (see git log) |
+| `d109e52` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

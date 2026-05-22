@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
-- **Last Active**: 2026-05-22
+- **Total Sessions**: 21
+- **Last Active**: 2026-05-23
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~729 | Active |
+| `journal-1.md` | ~764 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-05-23 | 完善 AI 流式与配置 | `a95ab70`, `7bed6bf`, `d109e52` | `master` |
 | 20 | 2026-05-22 | Git commit detail AI stream and layout polish | `b1164dc` | `master` |
 | 19 | 2026-05-22 | Implement environment Git AI features | `f05e7b3`, `e6c20a8` | `master` |
 | 18 | 2026-05-22 | Polish file preview and Git tree UI | `7012728`, `c37a86b` | `master` |
