@@ -1,10 +1,11 @@
 import { defineStore } from "pinia";
 import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
-import { ProjectStatus } from "../types";
+import { DEFAULT_AI_PROMPT_MODES, ProjectStatus } from "../types";
 import type {
   AiPreferences,
   AiAnalyzeResult,
   AiModelInfo,
+  AiPromptMode,
   DefaultTerminalKind,
   DefaultEditorKind,
   EnvironmentPreferences,
@@ -43,6 +44,7 @@ interface AiStreamHandlers {
 }
 
 const createScriptId = (projectId: string, index: number) => `${projectId}-script-${index + 1}`;
+const createAiPromptModeId = () => `custom-${Date.now()}`;
 const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
 const createProjectId = () => `project-${Date.now()}`;
@@ -463,9 +465,11 @@ export const useStore = defineStore("app", {
     environmentRefreshing: false,
     aiPreferences: bridge.loadAiPreferences(),
     aiModels: [] as AiModelInfo[],
+    aiModelRefreshing: false,
     aiModelRefreshMessage: "",
     aiModelTesting: false,
     aiModelTestMessage: "",
+    aiModelTestOk: null as boolean | null,
     aiAnalyzing: false,
     aiAnalysisResult: "",
     aiAnalysisMessage: "",
@@ -642,10 +646,51 @@ export const useStore = defineStore("app", {
       this.aiPreferences = { ...this.aiPreferences, ...patch };
       bridge.saveAiPreferences(this.aiPreferences);
     },
+    addAiPromptMode() {
+      const id = createAiPromptModeId();
+      const nextMode: AiPromptMode = {
+        id,
+        name: "自定义模式",
+        prompt: "请基于以下 Git 信息输出面向开发者的结构化内容。",
+        builtIn: false,
+      };
+      this.aiPreferences = { ...this.aiPreferences, modes: [...this.aiPreferences.modes, nextMode] };
+      bridge.saveAiPreferences(this.aiPreferences);
+      return id;
+    },
+    updateAiPromptMode(modeId: string, patch: Partial<Pick<AiPromptMode, "name" | "prompt">>) {
+      const modes = this.aiPreferences.modes.map((mode) =>
+        mode.id === modeId
+          ? {
+              ...mode,
+              name: typeof patch.name === "string" ? patch.name : mode.name,
+              prompt: typeof patch.prompt === "string" ? patch.prompt : mode.prompt,
+            }
+          : mode,
+      );
+      this.aiPreferences = { ...this.aiPreferences, modes };
+      bridge.saveAiPreferences(this.aiPreferences);
+    },
+    deleteAiPromptMode(modeId: string) {
+      const modes = this.aiPreferences.modes.filter((mode) => mode.builtIn || mode.id !== modeId);
+      this.aiPreferences = {
+        ...this.aiPreferences,
+        modes: modes.length > 0 ? modes : DEFAULT_AI_PROMPT_MODES.map((mode) => ({ ...mode })),
+      };
+      bridge.saveAiPreferences(this.aiPreferences);
+    },
+    resetAiPromptModes() {
+      this.aiPreferences = {
+        ...this.aiPreferences,
+        modes: DEFAULT_AI_PROMPT_MODES.map((mode) => ({ ...mode })),
+      };
+      bridge.saveAiPreferences(this.aiPreferences);
+    },
     async refreshAiModels() {
+      this.aiModelRefreshing = true;
       this.aiModelRefreshMessage = "";
       try {
-        this.aiModels = await bridge.listAiModels();
+        this.aiModels = await bridge.listAiModels({ ...this.aiPreferences });
         if (
           this.aiPreferences.provider === "utools" &&
           this.aiPreferences.model &&
@@ -655,18 +700,31 @@ export const useStore = defineStore("app", {
         ) {
           this.aiModelRefreshMessage = "当前配置的 uTools 模型未在可用列表中找到，建议重新选择。";
         }
+        if (this.aiPreferences.provider !== "utools" && this.aiModels.length === 0) {
+          this.aiModelRefreshMessage = "未从当前供应商获取到模型，可手动填写模型 ID。";
+        }
       } catch (error) {
-        this.aiModelRefreshMessage = "获取模型列表失败。";
+        this.aiModels = [];
+        this.aiModelRefreshMessage = error instanceof Error ? error.message : "获取模型列表失败。";
+      } finally {
+        this.aiModelRefreshing = false;
       }
     },
     async testAiConfiguration() {
       this.aiModelTesting = true;
       this.aiModelTestMessage = "";
+      this.aiModelTestOk = null;
       try {
         const result = await bridge.testAiConnection({ ...this.aiPreferences });
+        this.aiModelTestOk = result.ok;
         this.aiModelTestMessage = result.ok
           ? result.message || "AI 连接测试成功。"
           : result.message || "AI 连接测试失败。";
+        return result;
+      } catch (error) {
+        const result = { ok: false, message: error instanceof Error ? error.message : "AI 连接测试失败。" };
+        this.aiModelTestOk = false;
+        this.aiModelTestMessage = result.message;
         return result;
       } finally {
         this.aiModelTesting = false;
@@ -724,7 +782,7 @@ export const useStore = defineStore("app", {
             if (!this.aiAnalysisResult && result.content) {
               this.aiAnalysisResult = result.content;
             }
-            this.aiAnalysisMessage = result.ok ? "" : result.message || "AI analysis failed";
+            this.aiAnalysisMessage = result.ok ? result.message || "" : result.message || "AI analysis failed";
             this.aiAnalysisState = result.ok ? (this.aiAnalysisResult ? "success" : "warning") : "error";
             if (!result.ok && !this.aiAnalysisMessage) {
               this.aiAnalysisMessage = "AI 分析失败。";

@@ -227,8 +227,8 @@ const messages = {
       aiApiKeyPlaceholder: "保存到本地 uTools 存储，不在界面回显明文。",
       aiProviders: {
         utools: "uTools 内置",
-        openai: "OpenAI 兼容",
-        anthropic: "Anthropic 兼容",
+        "openai-compatible": "OpenAI 兼容",
+        "anthropic-compatible": "Anthropic 兼容",
       },
       terminals: {
         builtin: "内置（不启动外部终端）",
@@ -507,8 +507,8 @@ const messages = {
       aiApiKeyPlaceholder: "Stored locally by uTools and never shown in plain text after entry.",
       aiProviders: {
         utools: "uTools Built-in",
-        openai: "OpenAI Compatible",
-        anthropic: "Anthropic Compatible",
+        "openai-compatible": "OpenAI Compatible",
+        "anthropic-compatible": "Anthropic Compatible",
       },
       terminals: {
         builtin: "Built-in (no external terminal)",

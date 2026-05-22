@@ -9,7 +9,10 @@ import {
   MonitorCog,
   Moon,
   RefreshCw,
+  Plus,
+  RotateCcw,
   Sun,
+  Trash2,
   Upload,
   WandSparkles,
   ChevronDown,
@@ -26,6 +29,7 @@ const t = useI18n();
 const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
 const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
 const isAiModelMenuOpen = ref(false);
+const selectedAiModeId = ref("");
 const environmentOptions: Array<{ key: EnvironmentToolKey; label: string }> = [
   { key: "node", label: "Node.js" },
   { key: "npm", label: "npm" },
@@ -37,7 +41,7 @@ const environmentOptions: Array<{ key: EnvironmentToolKey; label: string }> = [
   { key: "git", label: "Git" },
   { key: "docker", label: "Docker" },
 ];
-const aiProviderOptions: AiProviderKind[] = ["utools", "openai", "anthropic"];
+const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
 const editorUsesCustomCommand = computed(() => store.editorPreferences.kind === "custom");
@@ -60,6 +64,23 @@ const aiModelLabel = computed(
     aiModelOptions.value.find((option) => option.value === store.aiPreferences.model)?.label ||
     t.value.settings.aiModelPlaceholder,
 );
+const selectedAiMode = computed(
+  () =>
+    store.aiPreferences.modes.find((mode) => mode.id === selectedAiModeId.value) ||
+    store.aiPreferences.modes[0] ||
+    null,
+);
+const aiProviderDescription = computed(() => {
+  if (store.aiPreferences.provider === "utools") return "使用 uTools 内置模型列表。";
+  if (store.aiPreferences.provider === "anthropic-compatible") return "兼容 /messages 接口。";
+  return "兼容 /chat/completions 接口。";
+});
+const aiConfigReady = computed(() => {
+  if (store.aiPreferences.provider === "utools") return Boolean(store.aiPreferences.model.trim());
+  return Boolean(
+    store.aiPreferences.baseUrl.trim() && store.aiPreferences.model.trim() && store.aiPreferences.apiKey.trim(),
+  );
+});
 
 const segmentButtonClass = (active: boolean) =>
   cn(
@@ -85,10 +106,27 @@ const handleTestAi = async () => {
   await store.testAiConfiguration();
 };
 
+const handleAddAiMode = () => {
+  selectedAiModeId.value = store.addAiPromptMode();
+};
+
+const handleDeleteAiMode = () => {
+  const mode = selectedAiMode.value;
+  if (!mode || mode.builtIn) return;
+  store.deleteAiPromptMode(mode.id);
+  selectedAiModeId.value = store.aiPreferences.modes[0]?.id || "";
+};
+
+const handleResetAiModes = () => {
+  store.resetAiPromptModes();
+  selectedAiModeId.value = store.aiPreferences.modes[0]?.id || "";
+};
+
 const aiTestIconClass = computed(() => {
   if (store.aiModelTesting) return "text-primary animate-spin";
-  if (!store.aiModelTestMessage) return "text-on-surface-variant";
-  return store.aiModelTestMessage.includes("失败") ? "text-status-error" : "text-status-running";
+  if (store.aiModelTestOk === true) return "text-status-running";
+  if (store.aiModelTestOk === false) return "text-status-error";
+  return "text-on-surface-variant";
 });
 
 const aiTestTitle = computed(() => {
@@ -104,8 +142,19 @@ onMounted(() => {
 watch(
   () => store.aiPreferences.provider,
   () => {
+    isAiModelMenuOpen.value = false;
     void loadAiModels();
   },
+);
+
+watch(
+  () => store.aiPreferences.modes.map((mode) => mode.id).join("|"),
+  () => {
+    if (!store.aiPreferences.modes.some((mode) => mode.id === selectedAiModeId.value)) {
+      selectedAiModeId.value = store.aiPreferences.modes[0]?.id || "";
+    }
+  },
+  { immediate: true },
 );
 </script>
 
@@ -209,84 +258,42 @@ watch(
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
-        <div class="mb-2.5 flex items-center gap-2">
-          <Brain :size="15" class="text-primary" />
-          <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.aiProvider }}</h3>
-        </div>
-        <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-          <div
-            class="inline-flex h-fit max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
-          >
-            <button
-              v-for="option in aiProviderOptions"
-              :key="option"
-              type="button"
-              @click="store.setAiPreferences({ provider: option })"
-              :class="segmentButtonClass(store.aiPreferences.provider === option)"
-            >
-              {{ t.settings.aiProviders[option] }}
-            </button>
+        <div class="mb-2.5 flex items-center justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-2">
+            <Brain :size="15" class="shrink-0 text-primary" />
+            <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.aiProvider }}</h3>
+            <span class="truncate text-[11px] font-medium text-on-surface-variant">{{ aiProviderDescription }}</span>
           </div>
-          <div class="space-y-2">
+          <span
+            :class="
+              cn(
+                'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                aiConfigReady
+                  ? 'border-status-running/30 bg-status-running/10 text-status-running'
+                  : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+              )
+            "
+          >
+            {{ aiConfigReady ? "已配置" : "待配置" }}
+          </span>
+        </div>
+        <div class="grid gap-2.5 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.95fr)]">
+          <div class="space-y-2.5 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2.5">
+            <div
+              class="grid grid-cols-3 gap-1 rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-inner"
+            >
+              <button
+                v-for="option in aiProviderOptions"
+                :key="option"
+                type="button"
+                @click="store.setAiPreferences({ provider: option })"
+                :class="segmentButtonClass(store.aiPreferences.provider === option)"
+              >
+                {{ t.settings.aiProviders[option] }}
+              </button>
+            </div>
+
             <div class="grid gap-2 md:grid-cols-2">
-              <label class="block text-xs font-semibold uppercase text-on-surface-variant">
-                {{ t.settings.aiModel }}
-                <div class="mt-1 flex items-center gap-2">
-                  <div class="relative min-w-0 flex-1">
-                    <button
-                      type="button"
-                      class="ui-field flex w-full items-center justify-between gap-2 text-left normal-case"
-                      @click.stop="isAiModelMenuOpen = !isAiModelMenuOpen"
-                    >
-                      <span
-                        class="truncate"
-                        :class="store.aiPreferences.model ? 'text-on-surface' : 'text-on-surface-variant/70'"
-                      >
-                        {{ aiModelLabel }}
-                      </span>
-                      <ChevronDown :size="14" class="shrink-0 text-on-surface-variant" />
-                    </button>
-                    <div
-                      v-if="isAiModelMenuOpen"
-                      class="mode-menu-popover popover-above max-h-56 overflow-auto"
-                      @click.stop
-                    >
-                      <button
-                        type="button"
-                        :class="cn('mode-menu-item', !store.aiPreferences.model && 'bg-primary/10 text-primary')"
-                        @click="selectAiModel('')"
-                      >
-                        <span class="truncate">{{ t.settings.aiModelPlaceholder }}</span>
-                        <Check v-if="!store.aiPreferences.model" :size="13" />
-                      </button>
-                      <button
-                        v-for="option in aiModelOptions"
-                        :key="option.value"
-                        type="button"
-                        :class="
-                          cn(
-                            'mode-menu-item',
-                            store.aiPreferences.model === option.value && 'bg-primary/10 text-primary',
-                          )
-                        "
-                        @click="selectAiModel(option.value)"
-                      >
-                        <span class="truncate">{{ option.label }}</span>
-                        <Check v-if="store.aiPreferences.model === option.value" :size="13" />
-                      </button>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    @click="loadAiModels"
-                    class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-transparent text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-                    :title="t.common.refresh"
-                    :aria-label="t.common.refresh"
-                  >
-                    <RefreshCw :size="14" :class="store.aiAnalyzing ? 'animate-spin' : ''" />
-                  </button>
-                </div>
-              </label>
               <label v-if="aiUsesThirdParty" class="block text-xs font-semibold uppercase text-on-surface-variant">
                 {{ t.settings.aiBaseUrl }}
                 <input
@@ -294,43 +301,199 @@ watch(
                   @input="store.setAiPreferences({ baseUrl: ($event.target as HTMLInputElement).value })"
                   type="text"
                   placeholder="https://api.example.com/v1"
-                  class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  class="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </label>
+              <label v-if="aiUsesThirdParty" class="block text-xs font-semibold uppercase text-on-surface-variant">
+                {{ t.settings.aiApiKey }}
+                <input
+                  :value="store.aiPreferences.apiKey"
+                  @input="store.setAiPreferences({ apiKey: ($event.target as HTMLInputElement).value })"
+                  type="password"
+                  :placeholder="t.settings.aiApiKeyPlaceholder"
+                  class="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </label>
             </div>
-            <label v-if="aiUsesThirdParty" class="block text-xs font-semibold uppercase text-on-surface-variant">
-              {{ t.settings.aiApiKey }}
-              <input
-                :value="store.aiPreferences.apiKey"
-                @input="store.setAiPreferences({ apiKey: ($event.target as HTMLInputElement).value })"
-                type="password"
-                :placeholder="t.settings.aiApiKeyPlaceholder"
-                class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </label>
-            <div class="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                @click="handleTestAi"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-2.5 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
-                :disabled="store.aiModelTesting"
-              >
-                <WandSparkles :size="13" />
-                测试
-              </button>
-              <span
-                class="inline-flex h-8 items-center gap-1 rounded-full border border-border-subtle bg-surface-container-low px-2 text-[11px] text-on-surface-variant"
-                :title="aiTestTitle"
-              >
-                <span :class="aiTestIconClass">
-                  <WandSparkles :size="12" />
+
+            <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+              <label class="block text-xs font-semibold uppercase text-on-surface-variant">
+                {{ t.settings.aiModel }}
+                <div class="relative mt-1">
+                  <button
+                    type="button"
+                    class="ui-field flex w-full items-center justify-between gap-2 text-left normal-case"
+                    @click.stop="isAiModelMenuOpen = !isAiModelMenuOpen"
+                  >
+                    <span
+                      class="truncate"
+                      :class="store.aiPreferences.model ? 'text-on-surface' : 'text-on-surface-variant/70'"
+                    >
+                      {{ aiModelLabel }}
+                    </span>
+                    <ChevronDown :size="14" class="shrink-0 text-on-surface-variant" />
+                  </button>
+                  <div
+                    v-if="isAiModelMenuOpen"
+                    class="mode-menu-popover popover-above max-h-56 overflow-auto"
+                    @click.stop
+                  >
+                    <button
+                      type="button"
+                      :class="cn('mode-menu-item', !store.aiPreferences.model && 'bg-primary/10 text-primary')"
+                      @click="selectAiModel('')"
+                    >
+                      <span class="truncate">{{ t.settings.aiModelPlaceholder }}</span>
+                      <Check v-if="!store.aiPreferences.model" :size="13" />
+                    </button>
+                    <button
+                      v-for="option in aiModelOptions"
+                      :key="option.value"
+                      type="button"
+                      :class="
+                        cn('mode-menu-item', store.aiPreferences.model === option.value && 'bg-primary/10 text-primary')
+                      "
+                      @click="selectAiModel(option.value)"
+                    >
+                      <span class="truncate">{{ option.label }}</span>
+                      <Check v-if="store.aiPreferences.model === option.value" :size="13" />
+                    </button>
+                  </div>
+                </div>
+              </label>
+              <label class="block text-xs font-semibold uppercase text-on-surface-variant">
+                手动模型 ID
+                <input
+                  :value="store.aiPreferences.model"
+                  @input="store.setAiPreferences({ model: ($event.target as HTMLInputElement).value })"
+                  type="text"
+                  :placeholder="t.settings.aiModelPlaceholder"
+                  class="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </label>
+              <div class="flex gap-1.5">
+                <button
+                  type="button"
+                  @click="loadAiModels"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                  :title="t.common.refresh"
+                  :aria-label="t.common.refresh"
+                >
+                  <RefreshCw :size="14" :class="store.aiModelRefreshing ? 'animate-spin' : ''" />
+                </button>
+                <button
+                  type="button"
+                  @click="handleTestAi"
+                  class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                  :disabled="store.aiModelTesting || !aiConfigReady"
+                >
+                  <WandSparkles :size="13" />
+                  {{ store.aiModelTesting ? "测试中" : "测试" }}
+                </button>
+              </div>
+            </div>
+
+            <div
+              class="min-h-8 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-xs leading-5 text-on-surface-variant"
+              :title="aiTestTitle"
+            >
+              <div class="flex items-start gap-1.5">
+                <span :class="cn('mt-0.5 shrink-0', aiTestIconClass)"><WandSparkles :size="12" /></span>
+                <span class="min-w-0 flex-1 break-words">
+                  {{
+                    store.aiModelTestMessage ||
+                    store.aiModelRefreshMessage ||
+                    (aiConfigReady ? "配置完整，可进行连接测试。" : "请补全模型和凭证。")
+                  }}
                 </span>
-                <span v-if="store.aiModelTesting">测试中</span>
-                <span v-else-if="store.aiModelTestMessage">{{
-                  store.aiModelTestMessage.includes("失败") ? "失败" : "成功"
-                }}</span>
-                <span v-else>就绪</span>
-              </span>
+              </div>
+            </div>
+          </div>
+
+          <div
+            class="grid min-h-0 gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2.5 md:grid-cols-[9rem_minmax(0,1fr)]"
+          >
+            <div class="min-h-0 space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-on-surface">模式</h4>
+                <div class="flex gap-1">
+                  <button
+                    type="button"
+                    class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                    title="新增模式"
+                    aria-label="新增模式"
+                    @click="handleAddAiMode"
+                  >
+                    <Plus :size="13" />
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                    title="恢复默认模式"
+                    aria-label="恢复默认模式"
+                    @click="handleResetAiModes"
+                  >
+                    <RotateCcw :size="13" />
+                  </button>
+                </div>
+              </div>
+              <div class="themed-scrollbar max-h-56 space-y-1 overflow-y-auto pr-1">
+                <button
+                  v-for="mode in store.aiPreferences.modes"
+                  :key="mode.id"
+                  type="button"
+                  :class="
+                    cn(
+                      'flex w-full items-center justify-between gap-2 rounded border px-2 py-1.5 text-left text-xs font-bold transition-colors',
+                      selectedAiMode?.id === mode.id
+                        ? 'border-primary/35 bg-primary/10 text-primary'
+                        : 'border-border-subtle bg-surface text-on-surface-variant hover:bg-surface-variant hover:text-on-surface',
+                    )
+                  "
+                  @click="selectedAiModeId = mode.id"
+                >
+                  <span class="truncate">{{ mode.name }}</span>
+                  <span v-if="mode.builtIn" class="shrink-0 text-[9px] text-on-surface-variant/70">默认</span>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="selectedAiMode" class="min-w-0 space-y-2">
+              <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <label class="block text-xs font-semibold uppercase text-on-surface-variant">
+                  模式名称
+                  <input
+                    :value="selectedAiMode.name"
+                    @input="
+                      store.updateAiPromptMode(selectedAiMode.id, { name: ($event.target as HTMLInputElement).value })
+                    "
+                    type="text"
+                    class="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </label>
+                <button
+                  type="button"
+                  class="mt-5 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-status-error/10 hover:text-status-error disabled:cursor-not-allowed disabled:opacity-40"
+                  :disabled="selectedAiMode.builtIn"
+                  @click="handleDeleteAiMode"
+                >
+                  <Trash2 :size="13" />
+                  删除
+                </button>
+              </div>
+              <label class="block text-xs font-semibold uppercase text-on-surface-variant">
+                提示词
+                <textarea
+                  :value="selectedAiMode.prompt"
+                  @input="
+                    store.updateAiPromptMode(selectedAiMode.id, {
+                      prompt: ($event.target as HTMLTextAreaElement).value,
+                    })
+                  "
+                  rows="7"
+                  class="themed-scrollbar mt-1 w-full resize-none rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case leading-5 text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </label>
             </div>
           </div>
         </div>

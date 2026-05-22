@@ -1,8 +1,11 @@
+import { DEFAULT_AI_PROMPT_MODES } from "../types";
 import type {
   DefaultTerminalKind,
   DefaultEditorKind,
   AiAnalyzePayload,
   AiPreferences,
+  AiPromptMode,
+  AiProviderKind,
   EditorPreferences,
   EnvironmentPreferences,
   EnvironmentToolKey,
@@ -38,6 +41,11 @@ const defaultTerminalPreferences = (): TerminalPreferences => ({
 
 const terminalKinds = new Set<DefaultTerminalKind>(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set<DefaultEditorKind>(["vscode", "cursor", "custom"]);
+const aiProviderKinds = new Set<AiProviderKind>([
+  "utools",
+  "openai-compatible",
+  "anthropic-compatible",
+]);
 const environmentToolKeys = new Set<EnvironmentToolKey>([
   "node",
   "npm",
@@ -64,11 +72,51 @@ const defaultEnvironmentPreferences = (): EnvironmentPreferences => ({
   enabledToolKeys: ["node", "npm", "pnpm", "python", "go", "git"],
 });
 
+const cloneDefaultAiModes = (): AiPromptMode[] => DEFAULT_AI_PROMPT_MODES.map((mode) => ({ ...mode }));
+
+const normalizeAiProviderKind = (provider: unknown): AiProviderKind => {
+  if (provider === "openai" || provider === "openai-responses") return "openai-compatible";
+  if (provider === "anthropic") return "anthropic-compatible";
+  return typeof provider === "string" && aiProviderKinds.has(provider as AiProviderKind)
+    ? (provider as AiProviderKind)
+    : "utools";
+};
+
+const normalizeAiModes = (value: unknown): AiPromptMode[] => {
+  const defaults = cloneDefaultAiModes();
+  const defaultIds = new Set(defaults.map((mode) => mode.id));
+  if (!Array.isArray(value)) {
+    return defaults;
+  }
+
+  const modes = new Map<string, AiPromptMode>();
+  value.forEach((item, index) => {
+    if (!item || typeof item !== "object") return;
+    const candidate = item as Partial<AiPromptMode>;
+    const fallbackId = candidate.builtIn ? defaults[index]?.id : `custom-${index + 1}`;
+    const id = typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : fallbackId;
+    const name = typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim() : id;
+    const defaultPrompt = defaults.find((mode) => mode.id === id)?.prompt || "";
+    const prompt = typeof candidate.prompt === "string" ? candidate.prompt : defaultPrompt;
+    if (!id || modes.has(id)) return;
+    modes.set(id, { id, name, prompt, builtIn: defaultIds.has(id) });
+  });
+
+  defaults.forEach((defaultMode) => {
+    if (!modes.has(defaultMode.id)) {
+      modes.set(defaultMode.id, defaultMode);
+    }
+  });
+
+  return modes.size > 0 ? Array.from(modes.values()) : defaults;
+};
+
 const defaultAiPreferences = (): AiPreferences => ({
   provider: "utools",
   baseUrl: "",
   model: "",
   apiKey: "",
+  modes: cloneDefaultAiModes(),
 });
 
 const normalizeTerminalPreferences = (value: unknown): TerminalPreferences => {
@@ -119,13 +167,13 @@ const normalizeAiPreferences = (value: unknown): AiPreferences => {
     return defaults;
   }
   const candidate = value as Partial<AiPreferences>;
-  const provider =
-    candidate.provider === "openai" || candidate.provider === "anthropic" ? candidate.provider : "utools";
+  const provider = normalizeAiProviderKind(candidate.provider);
   return {
     provider,
     baseUrl: typeof candidate.baseUrl === "string" ? candidate.baseUrl : defaults.baseUrl,
     model: typeof candidate.model === "string" ? candidate.model : defaults.model,
     apiKey: typeof candidate.apiKey === "string" ? candidate.apiKey : defaults.apiKey,
+    modes: normalizeAiModes(candidate.modes),
   };
 };
 
@@ -325,9 +373,7 @@ const fallbackBridge: ProjectBridge = {
   },
   async analyzeWithAiStream(payload: AiAnalyzePayload, onChunk, onDone) {
     const result = await this.analyzeWithAi(payload);
-    if (result.content) {
-      onChunk(result.content);
-    }
+    void onChunk;
     onDone(result);
   },
   async inspectProjectPath(projectPath: string): Promise<ProjectPathInspection> {

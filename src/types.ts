@@ -31,7 +31,7 @@ export type DefaultTerminalKind = "builtin" | "windows-terminal" | "powershell" 
 export type DefaultEditorKind = "vscode" | "cursor" | "custom";
 export type EnvironmentToolKey = "node" | "npm" | "pnpm" | "yarn" | "python" | "pip" | "go" | "git" | "docker";
 export type EnvironmentToolStatus = "available" | "missing" | "error";
-export type AiProviderKind = "utools" | "openai" | "anthropic";
+export type AiProviderKind = "utools" | "openai-compatible" | "anthropic-compatible";
 
 export interface TerminalPreferences {
   kind: DefaultTerminalKind;
@@ -67,7 +67,36 @@ export interface AiPreferences {
   baseUrl: string;
   model: string;
   apiKey: string;
+  modes: AiPromptMode[];
 }
+
+export interface AiPromptMode {
+  id: string;
+  name: string;
+  prompt: string;
+  builtIn: boolean;
+}
+
+export const DEFAULT_AI_PROMPT_MODES: AiPromptMode[] = [
+  {
+    id: "summary",
+    name: "总结",
+    prompt: "请总结这些 Git 信息中的主要工作内容、功能变化和代码变更方向。",
+    builtIn: true,
+  },
+  {
+    id: "analysis",
+    name: "分析",
+    prompt: "请分析这些 Git 信息体现出的实现思路、代码变更逻辑和潜在影响。",
+    builtIn: true,
+  },
+  {
+    id: "evaluation",
+    name: "评估",
+    prompt: "请评估这些 Git 信息的质量、风险点、可维护性和后续需要注意的地方。",
+    builtIn: true,
+  },
+];
 
 export interface AiModelInfo {
   id: string;
@@ -349,7 +378,7 @@ export interface ProjectBridge {
   detectEnvironmentTools(toolKeys: EnvironmentToolKey[]): Promise<EnvironmentToolResult[]>;
   loadAiPreferences(): AiPreferences;
   saveAiPreferences(preferences: AiPreferences): void;
-  listAiModels(): Promise<AiModelInfo[]>;
+  listAiModels(preferences?: AiPreferences): Promise<AiModelInfo[]>;
   testAiConnection(preferences: AiPreferences): Promise<AiModelTestResult>;
   analyzeWithAi(payload: AiAnalyzePayload): Promise<AiAnalyzeResult>;
   analyzeWithAiStream(

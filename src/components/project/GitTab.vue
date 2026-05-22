@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -25,7 +25,6 @@ import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
 
-type AiMode = "summary" | "analysis" | "evaluation";
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 
 const props = defineProps<{
@@ -42,14 +41,14 @@ const filesScrollRef = ref<HTMLDivElement | null>(null);
 const graphScrollRef = ref<HTMLDivElement | null>(null);
 const showCommitFilters = ref(false);
 const isAiDialogOpen = ref(false);
-const aiMode = ref<AiMode>("summary");
+const aiMode = ref("summary");
 const isAiModeMenuOpen = ref(false);
 const aiDialogResult = ref("");
 const aiDialogMessage = ref("");
 const aiDialogState = ref<AiState>("idle");
 const aiDialogStreamingText = ref("");
 const aiDialogStarted = ref(false);
-const commitAiMode = ref<AiMode>("summary");
+const commitAiMode = ref("summary");
 const isCommitAiModeMenuOpen = ref(false);
 const commitAiResult = ref("");
 const commitAiMessage = ref("");
@@ -97,11 +96,13 @@ const isLoadingDiff = ref(false);
 const isDiffDialogOpen = ref(false);
 const isCommitDetailOpen = ref(false);
 const isAiDialogGenerating = computed(() => aiDialogState.value === "loading");
-const aiModeOptions = [
-  { value: "summary", label: "总结" },
-  { value: "analysis", label: "分析" },
-  { value: "evaluation", label: "评估" },
-] as const;
+const aiModeOptions = computed(() => store.aiPreferences.modes);
+const resolveAiModeId = (modeId: string) =>
+  aiModeOptions.value.some((option) => option.id === modeId) ? modeId : aiModeOptions.value[0]?.id || "summary";
+const selectedAiMode = computed(() => aiModeOptions.value.find((option) => option.id === aiMode.value) || aiModeOptions.value[0]);
+const selectedCommitAiMode = computed(
+  () => aiModeOptions.value.find((option) => option.id === commitAiMode.value) || aiModeOptions.value[0],
+);
 const weekDayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
@@ -163,19 +164,28 @@ const closeFloatingControls = () => {
   openDatePickerKind.value = null;
 };
 
-const selectAiMode = (mode: (typeof aiModeOptions)[number]["value"]) => {
-  aiMode.value = mode;
+const selectAiMode = (modeId: string) => {
+  aiMode.value = resolveAiModeId(modeId);
   isAiModeMenuOpen.value = false;
 };
 
-const selectCommitAiMode = (mode: (typeof aiModeOptions)[number]["value"]) => {
-  commitAiMode.value = mode;
+const selectCommitAiMode = (modeId: string) => {
+  commitAiMode.value = resolveAiModeId(modeId);
   isCommitAiModeMenuOpen.value = false;
 };
 
-const aiModeLabel = computed(() => aiModeOptions.find((option) => option.value === aiMode.value)?.label || "总结");
-const commitAiModeLabel = computed(
-  () => aiModeOptions.find((option) => option.value === commitAiMode.value)?.label || "总结",
+const aiModeLabel = computed(() => selectedAiMode.value?.name || "总结");
+const commitAiModeLabel = computed(() => selectedCommitAiMode.value?.name || "总结");
+const aiResponseModeHint = computed(() =>
+  store.aiPreferences.provider === "utools"
+    ? "uTools 内置 AI 不提供真实流式，会在完成后一次性返回完整结果。"
+    : "Markdown 渲染，响应片段实时追加。",
+);
+const aiLoadingFeedbackText = computed(() =>
+  store.aiPreferences.provider === "utools" ? "uTools 内置 AI 正在生成完整结果..." : "AI 正在准备响应流...",
+);
+const aiGeneratingFeedbackText = computed(() =>
+  store.aiPreferences.provider === "utools" ? "正在等待完整结果..." : "正在生成中...",
 );
 
 const parseDateValue = (value: string) => {
@@ -261,13 +271,6 @@ const filterStatusSummary = computed(() => {
   return `当前已启用 ${activeCommitFilterCount.value} 项筛选，匹配 ${commits.value.length} 条提交。`;
 });
 
-const focusForAiMode = (mode: AiMode) =>
-  mode === "summary"
-    ? "请总结这些提交在时间线上的主要工作内容、功能变化和代码变更方向。"
-    : mode === "analysis"
-      ? "请分析这些提交体现出的实现思路、代码变更逻辑和潜在影响。"
-      : "请评估这些提交的质量、风险点、可维护性和后续需要注意的地方。";
-
 const commitScopeContext = computed(() => {
   const selectedCommits = commits.value;
   const commitLines = selectedCommits
@@ -288,7 +291,7 @@ const commitScopeContext = computed(() => {
 });
 
 const buildAiPrompt = () => {
-  const focus = focusForAiMode(aiMode.value);
+  const focus = selectedAiMode.value?.prompt || "请总结这些 Git 信息。";
 
   return `${focus}\n\n要求：\n- 必须结合提交时间、commit message、body、refs，以及当前代码变更一起判断。\n- 不要只复述 commit message。\n- 输出面向开发者的结构化内容。\n\n当前筛选后的提交：\n${commitScopeContext.value.commitLines}\n\n当前工作区代码变更：\n${commitScopeContext.value.fileLines}`;
 };
@@ -330,7 +333,7 @@ const commitAiFeedbackText = computed(() => {
     return commitAiMessage.value;
   }
   if (commitAiState.value === "loading") {
-    return commitAiStarted.value ? "正在生成中..." : "AI 正在准备响应流...";
+    return commitAiStarted.value ? aiGeneratingFeedbackText.value : aiLoadingFeedbackText.value;
   }
   if (commitAiState.value === "idle") {
     return "选择模式后点击“生成”。";
@@ -365,7 +368,7 @@ const aiDialogFeedbackText = computed(() => {
     return aiDialogMessage.value;
   }
   if (aiDialogState.value === "loading") {
-    return aiDialogStarted.value ? "正在生成中..." : "AI 正在准备响应流...";
+    return aiDialogStarted.value ? aiGeneratingFeedbackText.value : aiLoadingFeedbackText.value;
   }
   if (aiDialogState.value === "idle") {
     return "点击“生成”开始。";
@@ -406,7 +409,7 @@ const generateAiAnalysis = async () => {
         aiDialogStreamingText.value = result.content;
       }
       aiDialogResult.value = aiDialogStreamingText.value;
-      aiDialogMessage.value = result.ok ? "" : result.message || "AI 分析失败。";
+      aiDialogMessage.value = result.ok ? result.message || "" : result.message || "AI 分析失败。";
       aiDialogState.value = result.ok ? (aiDialogResult.value ? "success" : "warning") : "error";
       if (result.ok && !aiDialogResult.value) {
         aiDialogMessage.value = "AI 已返回成功，但没有生成内容。";
@@ -424,7 +427,9 @@ const buildCommitAiPrompt = () => {
     .map((file) => `- ${file.path} (+${file.additions}/-${file.deletions}, ${fileLabel(file.status)})`)
     .join("\n");
 
-  return `${focusForAiMode(commitAiMode.value)}\n\n要求：\n- 结合 commit message、body、refs、作者、时间和该提交的变更文件判断。\n- 不要只复述标题。\n- 输出面向开发者的结构化内容。\n\nCommit:\nHash: ${commit.hash}\nDate: ${commit.date}\nAuthor: ${commit.author}\nMessage: ${commit.message}${refs}${body}\n\n该提交变更文件：\n${fileLines || "该提交暂无可显示的变更文件。"}`;
+  const focus = selectedCommitAiMode.value?.prompt || "请总结这个 Git 提交。";
+
+  return `${focus}\n\n要求：\n- 结合 commit message、body、refs、作者、时间和该提交的变更文件判断。\n- 不要只复述标题。\n- 输出面向开发者的结构化内容。\n\nCommit:\nHash: ${commit.hash}\nDate: ${commit.date}\nAuthor: ${commit.author}\nMessage: ${commit.message}${refs}${body}\n\n该提交变更文件：\n${fileLines || "该提交暂无可显示的变更文件。"}`;
 };
 
 const generateCommitAiAnalysis = async () => {
@@ -457,7 +462,7 @@ const generateCommitAiAnalysis = async () => {
         commitAiStreamingText.value = result.content;
       }
       commitAiResult.value = commitAiStreamingText.value;
-      commitAiMessage.value = result.ok ? "" : result.message || "AI 分析失败。";
+      commitAiMessage.value = result.ok ? result.message || "" : result.message || "AI 分析失败。";
       commitAiState.value = result.ok ? (commitAiResult.value ? "success" : "warning") : "error";
       if (result.ok && !commitAiResult.value) {
         commitAiMessage.value = "AI 已返回成功，但没有生成内容。";
@@ -469,7 +474,7 @@ const generateCommitAiAnalysis = async () => {
 const openCommitDetails = async (hash: string) => {
   selectedCommitHash.value = hash;
   resetCommitAiState();
-  commitAiMode.value = "summary";
+  commitAiMode.value = resolveAiModeId(commitAiMode.value);
   selectedCommitFiles.value = [];
   isCommitDetailOpen.value = true;
   isLoadingCommitFiles.value = true;
@@ -571,6 +576,15 @@ onBeforeUnmount(() => {
   hideCommitTooltip();
   window.clearTimeout(copiedTimer.value);
 });
+
+watch(
+  () => store.aiPreferences.modes.map((mode) => mode.id).join("|"),
+  () => {
+    aiMode.value = resolveAiModeId(aiMode.value);
+    commitAiMode.value = resolveAiModeId(commitAiMode.value);
+  },
+  { immediate: true },
+);
 
 const diffLines = computed(() =>
   (selectedDiff.value?.diff || "").split("\n").map((content, index) => {
@@ -1277,13 +1291,13 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
                 <div v-if="isAiModeMenuOpen" class="mode-menu-popover" @click.stop>
                   <button
                     v-for="option in aiModeOptions"
-                    :key="option.value"
+                    :key="option.id"
                     type="button"
-                    :class="cn('mode-menu-item', aiMode === option.value && 'bg-primary/10 text-primary')"
-                    @click="selectAiMode(option.value)"
+                    :class="cn('mode-menu-item', aiMode === option.id && 'bg-primary/10 text-primary')"
+                    @click="selectAiMode(option.id)"
                   >
-                    <span>{{ option.label }}</span>
-                    <Check v-if="aiMode === option.value" :size="13" />
+                    <span>{{ option.name }}</span>
+                    <Check v-if="aiMode === option.id" :size="13" />
                   </button>
                 </div>
               </div>
@@ -1497,7 +1511,7 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
                   <div class="min-w-0">
                     <h4 class="text-xs font-bold text-on-surface">{{ t.git.aiSummary }}</h4>
                     <p class="truncate text-[10px] font-medium text-on-surface-variant">
-                      Markdown 渲染，响应片段实时追加。
+                      {{ aiResponseModeHint }}
                     </p>
                   </div>
                 </div>
@@ -1514,13 +1528,13 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
                     <div v-if="isCommitAiModeMenuOpen" class="mode-menu-popover" @click.stop>
                       <button
                         v-for="option in aiModeOptions"
-                        :key="`commit-${option.value}`"
+                        :key="`commit-${option.id}`"
                         type="button"
-                        :class="cn('mode-menu-item', commitAiMode === option.value && 'bg-primary/10 text-primary')"
-                        @click="selectCommitAiMode(option.value)"
+                        :class="cn('mode-menu-item', commitAiMode === option.id && 'bg-primary/10 text-primary')"
+                        @click="selectCommitAiMode(option.id)"
                       >
-                        <span>{{ option.label }}</span>
-                        <Check v-if="commitAiMode === option.value" :size="13" />
+                        <span>{{ option.name }}</span>
+                        <Check v-if="commitAiMode === option.id" :size="13" />
                       </button>
                     </div>
                   </div>

@@ -20,7 +20,27 @@ const gitCommitRecordSeparator = "\x1e";
 const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api", "src"];
 const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set(["vscode", "cursor", "custom"]);
-const aiProviderKinds = new Set(["utools", "openai", "anthropic"]);
+const aiProviderKinds = new Set(["utools", "openai-compatible", "anthropic-compatible"]);
+const defaultAiPromptModes = [
+  {
+    id: "summary",
+    name: "总结",
+    prompt: "请总结这些 Git 信息中的主要工作内容、功能变化和代码变更方向。",
+    builtIn: true,
+  },
+  {
+    id: "analysis",
+    name: "分析",
+    prompt: "请分析这些 Git 信息体现出的实现思路、代码变更逻辑和潜在影响。",
+    builtIn: true,
+  },
+  {
+    id: "evaluation",
+    name: "评估",
+    prompt: "请评估这些 Git 信息的质量、风险点、可维护性和后续需要注意的地方。",
+    builtIn: true,
+  },
+];
 const environmentTools = {
   node: {
     name: "Node.js",
@@ -210,8 +230,46 @@ function normalizeEnvironmentPreferences(value) {
   };
 }
 
+function cloneDefaultAiPromptModes() {
+  return defaultAiPromptModes.map((mode) => ({ ...mode }));
+}
+
+function normalizeAiProviderKind(provider) {
+  if (provider === "openai" || provider === "openai-responses") return "openai-compatible";
+  if (provider === "anthropic") return "anthropic-compatible";
+  return aiProviderKinds.has(provider) ? provider : "utools";
+}
+
+function normalizeAiPromptModes(value) {
+  const defaults = cloneDefaultAiPromptModes();
+  const defaultIds = new Set(defaults.map((mode) => mode.id));
+  if (!Array.isArray(value)) {
+    return defaults;
+  }
+
+  const modes = new Map();
+  value.forEach((item, index) => {
+    if (!item || typeof item !== "object") return;
+    const fallbackId = item.builtIn ? defaults[index]?.id : `custom-${index + 1}`;
+    const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : fallbackId;
+    const name = typeof item.name === "string" && item.name.trim() ? item.name.trim() : id;
+    const defaultPrompt = defaults.find((mode) => mode.id === id)?.prompt || "";
+    const prompt = typeof item.prompt === "string" ? item.prompt : defaultPrompt;
+    if (!id || modes.has(id)) return;
+    modes.set(id, { id, name, prompt, builtIn: defaultIds.has(id) });
+  });
+
+  defaults.forEach((mode) => {
+    if (!modes.has(mode.id)) {
+      modes.set(mode.id, mode);
+    }
+  });
+
+  return modes.size > 0 ? Array.from(modes.values()) : defaults;
+}
+
 function getDefaultAiPreferences() {
-  return { provider: "utools", baseUrl: "", model: "", apiKey: "" };
+  return { provider: "utools", baseUrl: "", model: "", apiKey: "", modes: cloneDefaultAiPromptModes() };
 }
 
 function normalizeAiPreferences(value) {
@@ -220,10 +278,11 @@ function normalizeAiPreferences(value) {
     return defaults;
   }
   return {
-    provider: aiProviderKinds.has(value.provider) ? value.provider : defaults.provider,
+    provider: normalizeAiProviderKind(value.provider),
     baseUrl: typeof value.baseUrl === "string" ? value.baseUrl : "",
     model: typeof value.model === "string" ? value.model : "",
     apiKey: typeof value.apiKey === "string" ? value.apiKey : "",
+    modes: normalizeAiPromptModes(value.modes),
   };
 }
 
@@ -383,22 +442,6 @@ function detectEnvironmentTools(toolKeys) {
     });
 }
 
-async function listAiModels() {
-  if (!window.utools?.allAiModels) {
-    return [];
-  }
-  const models = await window.utools.allAiModels();
-  return Array.isArray(models)
-    ? models
-        .map((model) => ({
-          id: String(model.id || model.model || model.name || ""),
-          name: String(model.name || model.label || model.id || model.model || ""),
-          provider: model.provider ? String(model.provider) : undefined,
-        }))
-        .filter((model) => model.id || model.name)
-    : [];
-}
-
 function normalizeAiModelCollection(models, providerHint) {
   return Array.isArray(models)
     ? models
@@ -411,68 +454,133 @@ function normalizeAiModelCollection(models, providerHint) {
     : [];
 }
 
+function normalizeAiBaseUrl(preferences) {
+  return String(preferences.baseUrl || "").trim().replace(/\/+$/, "");
+}
+
+function getAiHeaders(preferences) {
+  if (preferences.provider === "anthropic-compatible") {
+    return {
+      "content-type": "application/json",
+      "x-api-key": preferences.apiKey,
+      "anthropic-version": "2023-06-01",
+    };
+  }
+  return {
+    "content-type": "application/json",
+    authorization: `Bearer ${preferences.apiKey}`,
+  };
+}
+
+function extractAiErrorMessage(data, fallback) {
+  return (
+    data?.error?.message ||
+    data?.error?.error?.message ||
+    data?.message ||
+    data?.detail ||
+    data?.type ||
+    fallback ||
+    "AI 请求失败。"
+  );
+}
+
+async function parseAiHttpError(response) {
+  const data = await response.json().catch(() => ({}));
+  return extractAiErrorMessage(data, response.statusText || `HTTP ${response.status}`);
+}
+
+async function listAiModels(preferences) {
+  const normalized = normalizeAiPreferences(preferences || readAiPreferences());
+  if (normalized.provider === "utools") {
+    if (!window.utools?.allAiModels) {
+      return [];
+    }
+    return normalizeAiModelCollection(await window.utools.allAiModels(), "utools");
+  }
+
+  const baseUrl = normalizeAiBaseUrl(normalized);
+  if (!baseUrl || !normalized.apiKey.trim()) {
+    return [];
+  }
+
+  const response = await fetch(`${baseUrl}/models`, {
+    method: "GET",
+    headers: getAiHeaders(normalized),
+  });
+  if (!response.ok) {
+    throw new Error(await parseAiHttpError(response));
+  }
+  const data = await response.json().catch(() => ({}));
+  return normalizeAiModelCollection(data?.data || data?.models || data, normalized.provider);
+}
+
 async function testAiConnection(preferences) {
   const normalized = normalizeAiPreferences(preferences || readAiPreferences());
   try {
     if (normalized.provider === "utools") {
-      if (!window.utools?.allAiModels) {
-        return { ok: false, message: "当前 uTools 版本不支持获取内置 AI 模型。" };
+      if (!normalized.model.trim()) {
+        return { ok: false, message: "请先选择一个 uTools 内置 AI 模型。" };
       }
-      const models = normalizeAiModelCollection(await window.utools.allAiModels(), "utools");
-      return models.length > 0
-        ? { ok: true, message: `已连接 uTools 内置 AI，可用模型 ${models.length} 个。` }
-        : { ok: false, message: "已连接 uTools，但没有获取到可用模型。" };
+      if (!window.utools?.ai) {
+        return { ok: false, message: "当前 uTools 版本不支持内置 AI 请求。" };
+      }
+      const result = await window.utools.ai({
+        model: normalized.model,
+        messages: [{ role: "user", content: "ping" }],
+      });
+      const content = String(result?.content || result?.text || result || "").trim();
+      return {
+        ok: true,
+        message: content ? "uTools 内置 AI 连接测试成功，模型已返回响应。" : "uTools 内置 AI 连接成功，但模型返回为空。",
+      };
     }
 
     if (!normalized.baseUrl.trim() || !normalized.model.trim() || !normalized.apiKey.trim()) {
       return { ok: false, message: "第三方 AI 配置不完整，无法测试。" };
     }
 
+    const baseUrl = normalizeAiBaseUrl(normalized);
     const response = await fetch(
-      `${normalized.baseUrl.replace(/\/$/, "")}${normalized.provider === "anthropic" ? "/messages" : "/chat/completions"}`,
+      `${baseUrl}${normalized.provider === "anthropic-compatible" ? "/messages" : "/chat/completions"}`,
       {
         method: "POST",
-        headers:
-          normalized.provider === "anthropic"
-            ? {
-                "content-type": "application/json",
-                authorization: `Bearer ${normalized.apiKey}`,
-                "anthropic-version": "2023-06-01",
-              }
-            : {
-                "content-type": "application/json",
-                authorization: `Bearer ${normalized.apiKey}`,
-              },
+        headers: getAiHeaders(normalized),
         body:
-          normalized.provider === "anthropic"
-            ? JSON.stringify({ model: normalized.model, max_tokens: 1, messages: [{ role: "user", content: "ping" }] })
-            : JSON.stringify({ model: normalized.model, messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+          normalized.provider === "anthropic-compatible"
+            ? JSON.stringify({ model: normalized.model, max_tokens: 8, messages: [{ role: "user", content: "ping" }] })
+            : JSON.stringify({ model: normalized.model, messages: [{ role: "user", content: "ping" }], max_tokens: 8 }),
       },
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data?.error?.message || response.statusText || "AI 连接测试失败。");
+      throw new Error(extractAiErrorMessage(data, response.statusText || "AI 连接测试失败。"));
     }
-    return { ok: true, message: "AI 连接测试成功。" };
+    const content =
+      normalized.provider === "anthropic-compatible"
+        ? Array.isArray(data.content)
+          ? data.content.map((part) => part.text || "").join("")
+          : ""
+        : String(data?.choices?.[0]?.message?.content || "");
+    return { ok: true, message: content ? "AI 连接测试成功，模型已返回响应。" : "AI 连接成功，但模型返回为空。" };
   } catch (error) {
     return { ok: false, message: error?.message || "AI 连接测试失败。" };
   }
 }
 
 async function callThirdPartyAi(preferences, prompt) {
-  const headers = { "content-type": "application/json", authorization: `Bearer ${preferences.apiKey}` };
-  if (preferences.provider === "anthropic") {
-    const response = await fetch(`${preferences.baseUrl.replace(/\/$/, "")}/messages`, {
+  const baseUrl = normalizeAiBaseUrl(preferences);
+  if (preferences.provider === "anthropic-compatible") {
+    const response = await fetch(`${baseUrl}/messages`, {
       method: "POST",
-      headers: { ...headers, "anthropic-version": "2023-06-01" },
+      headers: getAiHeaders(preferences),
       body: JSON.stringify({
         model: preferences.model,
         max_tokens: 1200,
         messages: [{ role: "user", content: prompt }],
       }),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || response.statusText);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(extractAiErrorMessage(data, response.statusText));
     return Array.isArray(data.content)
       ? data.content
           .map((part) => part.text || "")
@@ -480,21 +588,27 @@ async function callThirdPartyAi(preferences, prompt) {
           .trim()
       : "";
   }
-  const response = await fetch(`${preferences.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
-    headers,
+    headers: getAiHeaders(preferences),
     body: JSON.stringify({ model: preferences.model, messages: [{ role: "user", content: prompt }], temperature: 0.2 }),
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || response.statusText);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(extractAiErrorMessage(data, response.statusText));
   return String(data?.choices?.[0]?.message?.content || "").trim();
 }
 
 function extractOpenAiStreamDelta(data) {
+  if (data?.error) {
+    throw new Error(extractAiErrorMessage(data, "OpenAI 兼容流式响应失败。"));
+  }
   return String(data?.choices?.[0]?.delta?.content || data?.choices?.[0]?.text || "");
 }
 
 function extractAnthropicStreamDelta(data) {
+  if (data?.type === "error" || data?.error) {
+    throw new Error(extractAiErrorMessage(data, "Anthropic 兼容流式响应失败。"));
+  }
   if (data?.type === "content_block_delta") {
     return String(data?.delta?.text || "");
   }
@@ -530,7 +644,10 @@ async function readSseStream(response, extractDelta, onChunk) {
         onChunk?.(chunk);
       }
     } catch (error) {
-      // Ignore malformed keep-alive frames and continue reading the stream.
+      if (error instanceof SyntaxError) {
+        return;
+      }
+      throw error;
     }
   };
 
@@ -553,11 +670,11 @@ async function readSseStream(response, extractDelta, onChunk) {
 }
 
 async function callThirdPartyAiStream(preferences, prompt, onChunk) {
-  const headers = { "content-type": "application/json", authorization: `Bearer ${preferences.apiKey}` };
-  if (preferences.provider === "anthropic") {
-    const response = await fetch(`${preferences.baseUrl.replace(/\/$/, "")}/messages`, {
+  const baseUrl = normalizeAiBaseUrl(preferences);
+  if (preferences.provider === "anthropic-compatible") {
+    const response = await fetch(`${baseUrl}/messages`, {
       method: "POST",
-      headers: { ...headers, "anthropic-version": "2023-06-01" },
+      headers: getAiHeaders(preferences),
       body: JSON.stringify({
         model: preferences.model,
         max_tokens: 1200,
@@ -566,15 +683,14 @@ async function callThirdPartyAiStream(preferences, prompt, onChunk) {
       }),
     });
     if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data?.error?.message || response.statusText);
+      throw new Error(await parseAiHttpError(response));
     }
     return readSseStream(response, extractAnthropicStreamDelta, onChunk);
   }
 
-  const response = await fetch(`${preferences.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
-    headers,
+    headers: getAiHeaders(preferences),
     body: JSON.stringify({
       model: preferences.model,
       messages: [{ role: "user", content: prompt }],
@@ -583,8 +699,7 @@ async function callThirdPartyAiStream(preferences, prompt, onChunk) {
     }),
   });
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data?.error?.message || response.statusText);
+    throw new Error(await parseAiHttpError(response));
   }
   return readSseStream(response, extractOpenAiStreamDelta, onChunk);
 }
@@ -623,10 +738,14 @@ async function analyzeWithAiStream(payload, onChunk, onDone) {
   try {
     if (preferences.provider === "utools") {
       const result = await analyzeWithAi({ preferences, prompt });
-      if (result.content) {
-        chunk(result.content);
-      }
-      done(result);
+      done(
+        result.ok
+          ? {
+              ...result,
+              message: result.message || "uTools 内置 AI 当前不支持真实流式，已按完整结果返回。",
+            }
+          : result,
+      );
       return;
     }
     if (!preferences.baseUrl.trim() || !preferences.model.trim() || !preferences.apiKey.trim()) {
