@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend task entry point and checklist for verification."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Verify Settings/Git UI follows local component patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify AI preferences and modes are persisted through the expected state flow."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify shared AI provider/mode types remain safe and compatible."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify frontend quality, maintainability, and scope control."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify preload bridge errors are clear and user-visible."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Verify API key and AI request handling does not expose secrets."}
+{"file":".trellis/tasks/05-22-enhance-ai-features/research/ai-provider-configuration-ux.md","reason":"Verify the implemented AI settings UX matches researched MVP patterns."}

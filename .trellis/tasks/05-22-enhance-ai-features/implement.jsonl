@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend task entry point and checklist for Vue/Vite conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Settings and Git panel UI changes must follow local component conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"AI preferences and mode configuration are persisted through Pinia/bridge state."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"AI provider/mode data model changes require shared TypeScript type updates."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"General frontend quality rules for focused, maintainable changes."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"preload bridge AI calls need consistent user-visible error handling."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"AI API key handling and bridge behavior must avoid leaking secrets."}
+{"file":".trellis/tasks/05-22-enhance-ai-features/research/ai-provider-configuration-ux.md","reason":"UX research for AI provider configuration, model testing, and mode management."}
