@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { spawn, spawnSync, execFileSync } = require("node:child_process");
+const { spawn, execFileSync } = require("node:child_process");
 const { TextDecoder } = require("node:util");
 const { shell } = require("electron");
 
@@ -395,52 +395,97 @@ function saveAiPreferences(preferences) {
 }
 
 function runToolCommand(command, args) {
-  try {
-    return spawnSync(command, args, { encoding: "utf8", windowsHide: true, timeout: 5000 });
-  } catch (error) {
-    return { error };
-  }
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let timeout = null;
+    let timedOut = false;
+    let settled = false;
+    const decodeStdout = createProcessOutputDecoder();
+    const decodeStderr = createProcessOutputDecoder();
+
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      resolve(result);
+    };
+
+    try {
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      timeout = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, 5000);
+
+      child.stdout?.on("data", (chunk) => {
+        stdout += decodeStdout(chunk);
+      });
+      child.stderr?.on("data", (chunk) => {
+        stderr += decodeStderr(chunk);
+      });
+      child.on("error", (error) => {
+        finish({ error, stdout, stderr });
+      });
+      child.on("close", (status) => {
+        finish({
+          status,
+          stdout,
+          stderr,
+          error: timedOut ? new Error(`Command timed out after 5000ms: ${command}`) : undefined,
+        });
+      });
+    } catch (error) {
+      finish({ error, stdout, stderr });
+    }
+  });
 }
 
-function detectEnvironmentTools(toolKeys) {
+async function detectEnvironmentTools(toolKeys) {
   const requestedKeys =
     Array.isArray(toolKeys) && toolKeys.length > 0 ? toolKeys : readEnvironmentPreferences().enabledToolKeys;
-  return requestedKeys
-    .filter((key) => Object.prototype.hasOwnProperty.call(environmentTools, key))
-    .map((key) => {
-      const tool = environmentTools[key];
-      const checkedAt = new Date().toISOString();
-      const versionResult = runToolCommand(tool.command, tool.versionArgs);
-      if (versionResult.error || versionResult.status !== 0) {
+  return Promise.all(
+    requestedKeys
+      .filter((key) => Object.prototype.hasOwnProperty.call(environmentTools, key))
+      .map(async (key) => {
+        const tool = environmentTools[key];
+        const checkedAt = new Date().toISOString();
+        const versionResult = await runToolCommand(tool.command, tool.versionArgs);
+        if (versionResult.error || versionResult.status !== 0) {
+          return {
+            key,
+            name: tool.name,
+            status: "missing",
+            version: "",
+            executablePath: "",
+            checkedAt,
+            error: versionResult.error?.message || String(versionResult.stderr || "Command not found").trim(),
+          };
+        }
+        const [pathCommand, ...pathArgs] = tool.pathArgs;
+        const pathResult = await runToolCommand(pathCommand, pathArgs);
         return {
           key,
           name: tool.name,
-          status: "missing",
-          version: "",
-          executablePath: "",
+          status: "available",
+          version:
+            String(versionResult.stdout || versionResult.stderr || "")
+              .trim()
+              .split(/\r?\n/)[0] || "OK",
+          executablePath:
+            pathResult.status === 0
+              ? String(pathResult.stdout || "")
+                  .trim()
+                  .split(/\r?\n/)[0] || ""
+              : "",
           checkedAt,
-          error: versionResult.error?.message || String(versionResult.stderr || "Command not found").trim(),
         };
-      }
-      const [pathCommand, ...pathArgs] = tool.pathArgs;
-      const pathResult = runToolCommand(pathCommand, pathArgs);
-      return {
-        key,
-        name: tool.name,
-        status: "available",
-        version:
-          String(versionResult.stdout || versionResult.stderr || "")
-            .trim()
-            .split(/\r?\n/)[0] || "OK",
-        executablePath:
-          pathResult.status === 0
-            ? String(pathResult.stdout || "")
-                .trim()
-                .split(/\r?\n/)[0] || ""
-            : "",
-        checkedAt,
-      };
-    });
+      }),
+  );
 }
 
 function normalizeAiModelCollection(models, providerHint) {

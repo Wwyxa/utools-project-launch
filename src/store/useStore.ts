@@ -472,6 +472,7 @@ export const useStore = defineStore("app", {
     editorPreferences: bridge.loadEditorPreferences(),
     environmentPreferences: bridge.loadEnvironmentPreferences(),
     environmentResults: [] as EnvironmentToolResult[],
+    environmentChecked: false,
     environmentRefreshing: false,
     aiPreferences: bridge.loadAiPreferences(),
     aiModels: [] as AiModelInfo[],
@@ -650,10 +651,26 @@ export const useStore = defineStore("app", {
       }
     },
     async refreshEnvironmentTools() {
+      if (this.environmentRefreshing) {
+        return;
+      }
       this.environmentRefreshing = true;
+      const requestedKeys = [...this.environmentPreferences.enabledToolKeys];
       try {
-        this.environmentResults = await bridge.detectEnvironmentTools(this.environmentPreferences.enabledToolKeys);
+        this.environmentResults = await bridge.detectEnvironmentTools(requestedKeys);
+      } catch (error) {
+        const checkedAt = new Date().toISOString();
+        this.environmentResults = requestedKeys.map((key) => ({
+          key,
+          name: key,
+          status: "error",
+          version: "",
+          executablePath: "",
+          checkedAt,
+          error: error instanceof Error ? error.message : "环境检测失败。",
+        }));
       } finally {
+        this.environmentChecked = true;
         this.environmentRefreshing = false;
       }
     },
