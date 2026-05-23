@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Verify frontend changes match project structure and checklist."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review dashboard card and terminal UX against component conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review Pinia process lifecycle and log state behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review shared type changes and bridge API typing."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run and interpret required quality checks."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Review preload process stop/input behavior and failure surfacing."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review bridge boundary implementation quality."}
+{"file":".trellis/tasks/05-23-optimize-project-details/research/utools-ai-streaming.md","reason":"Confirm uTools streaming implementation matches researched API."}

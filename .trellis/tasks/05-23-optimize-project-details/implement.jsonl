@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend app structure and pre-development checklist for Vue/Pinia changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Dashboard card and terminal component interaction/style conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Pinia project/script state updates for process lifecycle and terminal input."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Shared domain type updates for script statuses and bridge APIs."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required frontend quality checks and regression expectations."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"uTools preload/process bridge error handling and process cleanup semantics."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Preload boundary quality guidelines for typed bridge behavior."}
+{"file":".trellis/tasks/05-23-optimize-project-details/research/utools-ai-streaming.md","reason":"Official uTools AI streaming API findings that correct previous assumptions."}
