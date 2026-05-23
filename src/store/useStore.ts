@@ -225,7 +225,7 @@ function deriveProjectStatus(project: Project): ProjectStatus {
   if (project.pathExists === false) {
     return ProjectStatus.WARNING;
   }
-  if (project.scripts.some((script) => script.status === "RUNNING")) {
+  if (project.scripts.some((script) => script.status === "RUNNING" || script.status === "STOPPING")) {
     return ProjectStatus.RUNNING;
   }
   if (project.scripts.some((script) => script.status === "ERROR")) {
@@ -1336,6 +1336,7 @@ export const useStore = defineStore("app", {
         !script ||
         project.pathExists === false ||
         script.status === "RUNNING" ||
+        script.status === "STOPPING" ||
         !script.command.trim()
       ) {
         return null;
@@ -1363,7 +1364,7 @@ export const useStore = defineStore("app", {
       }
 
       const launchableScripts = project.scripts.filter(
-        (script) => script.status !== "RUNNING" && script.command.trim(),
+        (script) => script.status !== "RUNNING" && script.status !== "STOPPING" && script.command.trim(),
       );
       const results = [];
       for (const script of launchableScripts) {
@@ -1382,32 +1383,34 @@ export const useStore = defineStore("app", {
       }
 
       const pid = script.pid;
-      this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "WARN"), scriptId);
-      script.status = "STOPPED";
-      script.pid = undefined;
+      this.addLog(projectId, createLogEntry(`[${script.name}] stop requested`, "WARN"), scriptId);
+      script.status = pid ? "STOPPING" : "STOPPED";
       project.status = deriveProjectStatus(project);
       project.lastUpdated = new Date().toLocaleString();
       void this.persistProjects();
 
       if (pid) {
         scheduleProcessStop(pid);
+      } else {
+        this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "SUCCESS"), scriptId);
       }
     },
     stopRunningScriptsForPluginExit() {
       this.projects.forEach((project) => {
         let projectUpdated = false;
         project.scripts.forEach((script) => {
-          if (script.status !== "RUNNING") {
+          if (script.status !== "RUNNING" && script.status !== "STOPPING") {
             return;
           }
 
           if (script.pid) {
             const pid = script.pid;
             scheduleProcessStop(pid);
+            script.status = "STOPPING";
+          } else {
+            script.status = "STOPPED";
           }
-          this.addLog(project.id, createLogEntry(`[${script.name}] stopped`, "WARN"), script.id);
-          script.status = "STOPPED";
-          script.pid = undefined;
+          this.addLog(project.id, createLogEntry(`[${script.name}] stop requested`, "WARN"), script.id);
           projectUpdated = true;
         });
 
@@ -1417,6 +1420,20 @@ export const useStore = defineStore("app", {
         }
       });
       void this.persistProjects();
+    },
+    async sendScriptInput(projectId: string, scriptId: string, input: string) {
+      const line = input;
+      const project = this.projects.find((item) => item.id === projectId);
+      const script = project?.scripts.find((item) => item.id === scriptId);
+      if (!project || !script || script.status !== "RUNNING" || !script.pid) {
+        return { sent: false, message: "当前选中的脚本不可输入。" };
+      }
+
+      const result = await bridge.sendProcessInput(script.pid, line);
+      if (!result.sent) {
+        this.addLog(projectId, createLogEntry(result.message || "输入发送失败。", "WARN"), scriptId);
+      }
+      return result;
     },
     async openProjectFolder(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
@@ -1652,8 +1669,12 @@ export const useStore = defineStore("app", {
         });
       }
 
+      if (event.type === "stdin") {
+        this.addLog(event.projectId, createLogEntry(`> ${event.message || ""}`, "INFO"), event.scriptId);
+      }
+
       if (event.type === "exit") {
-        const isStopped = Boolean(event.stoppedByUser);
+        const isStopped = Boolean(event.stoppedByUser || script?.status === "STOPPING");
         const isSuccess = event.code === 0;
         if (script) {
           script.status = isStopped ? "STOPPED" : isSuccess ? "IDLE" : "ERROR";

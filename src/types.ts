@@ -133,7 +133,7 @@ export interface ProjectScript {
   id: string;
   name: string;
   command: string;
-  status: "IDLE" | "RUNNING" | "ERROR" | "STOPPED";
+  status: "IDLE" | "RUNNING" | "STOPPING" | "ERROR" | "STOPPED";
   cwd?: string;
   pid?: number;
   note?: string;
@@ -280,6 +280,11 @@ export interface ProjectBridgeRunResult {
   cwd: string;
 }
 
+export interface ProjectBridgeSendInputResult {
+  sent: boolean;
+  message?: string;
+}
+
 export interface ProjectBridgeTerminalLaunchPayload {
   projectPath: string;
   terminal: TerminalPreferences;
@@ -356,7 +361,7 @@ export interface ProjectFileWriteResult {
 }
 
 export interface ProjectBridgeEvent {
-  type: "started" | "stdout" | "stderr" | "exit" | "error";
+  type: "started" | "stdout" | "stderr" | "stdin" | "exit" | "error";
   projectId: string;
   scriptId: string;
   pid: number;
@@ -417,6 +422,7 @@ export interface ProjectBridge {
     label: string;
   }): Promise<ProjectBridgeRunResult>;
   stopProcess(pid: number): Promise<void>;
+  sendProcessInput(pid: number, input: string): Promise<ProjectBridgeSendInputResult>;
   stopAllProcesses(): Promise<void>;
   openPath(path: string): Promise<void>;
   showItemInFolder(path: string): Promise<void>;

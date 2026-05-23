@@ -47,14 +47,12 @@ const aiDialogResult = ref("");
 const aiDialogMessage = ref("");
 const aiDialogState = ref<AiState>("idle");
 const aiDialogStreamingText = ref("");
-const aiDialogStarted = ref(false);
 const commitAiMode = ref("summary");
 const isCommitAiModeMenuOpen = ref(false);
 const commitAiResult = ref("");
 const commitAiMessage = ref("");
 const commitAiState = ref<AiState>("idle");
 const commitAiStreamingText = ref("");
-const commitAiStarted = ref(false);
 const openDatePickerKind = ref<"since" | "until" | null>(null);
 const datePickerMonth = ref(new Date());
 
@@ -99,7 +97,9 @@ const isAiDialogGenerating = computed(() => aiDialogState.value === "loading");
 const aiModeOptions = computed(() => store.aiPreferences.modes);
 const resolveAiModeId = (modeId: string) =>
   aiModeOptions.value.some((option) => option.id === modeId) ? modeId : aiModeOptions.value[0]?.id || "summary";
-const selectedAiMode = computed(() => aiModeOptions.value.find((option) => option.id === aiMode.value) || aiModeOptions.value[0]);
+const selectedAiMode = computed(
+  () => aiModeOptions.value.find((option) => option.id === aiMode.value) || aiModeOptions.value[0],
+);
 const selectedCommitAiMode = computed(
   () => aiModeOptions.value.find((option) => option.id === commitAiMode.value) || aiModeOptions.value[0],
 );
@@ -178,14 +178,8 @@ const aiModeLabel = computed(() => selectedAiMode.value?.name || "总结");
 const commitAiModeLabel = computed(() => selectedCommitAiMode.value?.name || "总结");
 const aiResponseModeHint = computed(() =>
   store.aiPreferences.provider === "utools"
-    ? "uTools 内置 AI 不提供真实流式，会在完成后一次性返回完整结果。"
+    ? "uTools 内置 AI 流式输出，响应片段实时追加。"
     : "Markdown 渲染，响应片段实时追加。",
-);
-const aiLoadingFeedbackText = computed(() =>
-  store.aiPreferences.provider === "utools" ? "uTools 内置 AI 正在生成完整结果..." : "AI 正在准备响应流...",
-);
-const aiGeneratingFeedbackText = computed(() =>
-  store.aiPreferences.provider === "utools" ? "正在等待完整结果..." : "正在生成中...",
 );
 
 const parseDateValue = (value: string) => {
@@ -301,7 +295,6 @@ const resetCommitAiState = () => {
   commitAiStreamingText.value = "";
   commitAiMessage.value = "";
   commitAiState.value = "idle";
-  commitAiStarted.value = false;
 };
 
 const commitAiDisplayResult = computed(() => commitAiStreamingText.value || commitAiResult.value);
@@ -309,31 +302,15 @@ const renderedCommitAiResult = computed(() => renderMarkdown(commitAiDisplayResu
 const commitBodyContent = computed(() => selectedCommit.value?.body || selectedCommit.value?.message || "");
 const renderedCommitBody = computed(() => renderMarkdown(commitBodyContent.value));
 
-const commitAiStatusLabel = computed(() => {
-  if (commitAiState.value === "loading") return commitAiStarted.value ? "生成中" : "准备中";
-  if (commitAiState.value === "success") return "成功";
-  if (commitAiState.value === "warning") return "提示";
-  if (commitAiState.value === "error") return "失败";
-  return "就绪";
-});
-
-const commitAiStatusClass = computed(() => {
-  return cn(
-    "rounded-full border px-2 py-0.5 font-bold",
-    commitAiState.value === "success" && "border-status-running/30 bg-status-running/10 text-status-running",
-    commitAiState.value === "warning" && "border-status-warning/30 bg-status-warning/10 text-status-warning",
-    commitAiState.value === "error" && "border-status-error/30 bg-status-error/10 text-status-error",
-    commitAiState.value === "loading" && "border-status-warning/30 bg-status-warning/10 text-status-warning",
-    commitAiState.value === "idle" && "border-border-subtle bg-surface text-on-surface-variant",
-  );
-});
-
-const commitAiFeedbackText = computed(() => {
+const commitAiPanelHint = computed(() => {
+  if (commitAiState.value === "loading") {
+    return "";
+  }
   if (commitAiMessage.value) {
     return commitAiMessage.value;
   }
-  if (commitAiState.value === "loading") {
-    return commitAiStarted.value ? aiGeneratingFeedbackText.value : aiLoadingFeedbackText.value;
+  if (commitAiState.value === "error") {
+    return "AI 分析失败。";
   }
   if (commitAiState.value === "idle") {
     return "选择模式后点击“生成”。";
@@ -344,31 +321,15 @@ const commitAiFeedbackText = computed(() => {
 const aiDialogDisplayResult = computed(() => aiDialogStreamingText.value || aiDialogResult.value);
 const renderedAiDialogResult = computed(() => renderMarkdown(aiDialogDisplayResult.value));
 
-const aiDialogStatusLabel = computed(() => {
-  if (aiDialogState.value === "loading") return aiDialogStarted.value ? "生成中" : "准备中";
-  if (aiDialogState.value === "success") return "成功";
-  if (aiDialogState.value === "warning") return "提示";
-  if (aiDialogState.value === "error") return "失败";
-  return "就绪";
-});
-
-const aiDialogStatusClass = computed(() => {
-  return cn(
-    "rounded-full border px-2 py-0.5 font-bold",
-    aiDialogState.value === "success" && "border-status-running/30 bg-status-running/10 text-status-running",
-    aiDialogState.value === "warning" && "border-status-warning/30 bg-status-warning/10 text-status-warning",
-    aiDialogState.value === "error" && "border-status-error/30 bg-status-error/10 text-status-error",
-    aiDialogState.value === "loading" && "border-status-warning/30 bg-status-warning/10 text-status-warning",
-    aiDialogState.value === "idle" && "border-border-subtle bg-surface text-on-surface-variant",
-  );
-});
-
-const aiDialogFeedbackText = computed(() => {
+const aiDialogPanelHint = computed(() => {
+  if (aiDialogState.value === "loading") {
+    return "";
+  }
   if (aiDialogMessage.value) {
     return aiDialogMessage.value;
   }
-  if (aiDialogState.value === "loading") {
-    return aiDialogStarted.value ? aiGeneratingFeedbackText.value : aiLoadingFeedbackText.value;
+  if (aiDialogState.value === "error") {
+    return "AI 分析失败。";
   }
   if (aiDialogState.value === "idle") {
     return "点击“生成”开始。";
@@ -381,7 +342,6 @@ const resetAiDialogState = () => {
   aiDialogMessage.value = "";
   aiDialogState.value = "idle";
   aiDialogStreamingText.value = "";
-  aiDialogStarted.value = false;
 };
 
 const generateAiAnalysis = async () => {
@@ -395,12 +355,8 @@ const generateAiAnalysis = async () => {
   aiDialogStreamingText.value = "";
   aiDialogMessage.value = "";
   aiDialogState.value = "loading";
-  aiDialogStarted.value = false;
 
   await store.analyzeGitWithAiStream(props.project.id, buildAiPrompt(), {
-    onStart: () => {
-      aiDialogStarted.value = true;
-    },
     onChunk: (chunk) => {
       aiDialogStreamingText.value += chunk;
     },
@@ -449,11 +405,7 @@ const generateCommitAiAnalysis = async () => {
   commitAiStreamingText.value = "";
   commitAiMessage.value = "";
   commitAiState.value = "loading";
-  commitAiStarted.value = false;
   await store.analyzeGitWithAiStream(props.project.id, buildCommitAiPrompt(), {
-    onStart: () => {
-      commitAiStarted.value = true;
-    },
     onChunk: (chunk) => {
       commitAiStreamingText.value += chunk;
     },
@@ -1315,23 +1267,17 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
           <div
             class="ai-result-panel min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
           >
-            <div v-if="aiDialogState !== 'idle' || aiDialogDisplayResult || aiDialogMessage" class="space-y-2">
-              <div class="flex items-center gap-2">
-                <span :class="aiDialogStatusClass">{{ aiDialogStatusLabel }}</span>
-                <span
-                  v-if="aiDialogFeedbackText"
-                  :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
-                >
-                  {{ aiDialogFeedbackText }}
-                </span>
-              </div>
-              <div
-                v-if="aiDialogDisplayResult"
-                class="memo-rendered ai-markdown-result text-on-surface"
-                v-html="renderedAiDialogResult"
-              ></div>
+            <div
+              v-if="aiDialogDisplayResult"
+              class="memo-rendered ai-markdown-result text-on-surface"
+              v-html="renderedAiDialogResult"
+            ></div>
+            <div
+              v-else-if="aiDialogPanelHint"
+              :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+            >
+              {{ aiDialogPanelHint }}
             </div>
-            <div v-else class="text-on-surface-variant">点击“生成”开始。</div>
           </div>
         </div>
       </div>
@@ -1552,23 +1498,17 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
               <div
                 class="ai-result-panel mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
               >
-                <div v-if="commitAiState !== 'idle' || commitAiDisplayResult || commitAiMessage" class="space-y-2">
-                  <div class="flex items-center gap-2">
-                    <span :class="commitAiStatusClass">{{ commitAiStatusLabel }}</span>
-                    <span
-                      v-if="commitAiFeedbackText"
-                      :class="commitAiState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
-                    >
-                      {{ commitAiFeedbackText }}
-                    </span>
-                  </div>
-                  <div
-                    v-if="commitAiDisplayResult"
-                    class="memo-rendered ai-markdown-result text-on-surface"
-                    v-html="renderedCommitAiResult"
-                  ></div>
+                <div
+                  v-if="commitAiDisplayResult"
+                  class="memo-rendered ai-markdown-result text-on-surface"
+                  v-html="renderedCommitAiResult"
+                ></div>
+                <div
+                  v-else-if="commitAiPanelHint"
+                  :class="commitAiState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+                >
+                  {{ commitAiPanelHint }}
                 </div>
-                <div v-else class="text-on-surface-variant">选择模式后点击“生成”。</div>
               </div>
             </section>
           </div>

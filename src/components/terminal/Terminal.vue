@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { ArrowDownToLine, ArrowUpToLine, Search, Terminal as TerminalIcon, Trash2, X } from "lucide-vue-next";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Search,
+  SendHorizontal,
+  Terminal as TerminalIcon,
+  Trash2,
+  X,
+} from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
@@ -15,6 +23,7 @@ const store = useStore();
 const t = useI18n();
 const scrollRef = ref<HTMLDivElement | null>(null);
 const query = ref("");
+const inputLine = ref("");
 const selectedScriptId = ref("");
 const closedAt = ref<Record<string, number>>({});
 const shouldFollowLogs = ref(true);
@@ -34,6 +43,11 @@ const logTargets = computed(() =>
 );
 const projectLogs = computed(() =>
   selectedScriptId.value ? store.scriptLogs[props.projectId]?.[selectedScriptId.value] || [] : [],
+);
+const selectedScript = computed(() => (props.scripts || []).find((script) => script.id === selectedScriptId.value));
+const canSendInput = computed(() => selectedScript.value?.status === "RUNNING");
+const terminalInputPlaceholder = computed(() =>
+  canSendInput.value ? t.value.terminal.inputPlaceholder : t.value.terminal.inputDisabled,
 );
 const filteredLogs = computed(() => {
   const normalized = query.value.trim().toLowerCase();
@@ -110,6 +124,17 @@ const handleClear = () => {
   selectedScriptId.value = "";
 };
 
+const handleInputSubmit = async () => {
+  if (!canSendInput.value || !selectedScriptId.value) {
+    return;
+  }
+
+  const result = await store.sendScriptInput(props.projectId, selectedScriptId.value, inputLine.value);
+  if (result.sent) {
+    inputLine.value = "";
+  }
+};
+
 watch(
   () => filteredLogs.value.length,
   () => {
@@ -172,9 +197,11 @@ onMounted(() => {
                   'w-1.5 h-1.5 rounded-full shrink-0',
                   target.status === 'RUNNING'
                     ? 'bg-status-running animate-pulse shadow-[0_0_8px_rgba(46,175,125,0.9)]'
-                    : target.status === 'ERROR'
-                      ? 'bg-status-error'
-                      : 'bg-status-stopped',
+                    : target.status === 'STOPPING'
+                      ? 'bg-status-warning animate-pulse'
+                      : target.status === 'ERROR'
+                        ? 'bg-status-error'
+                        : 'bg-status-stopped',
                 ]"
               />
               <span class="max-w-28 truncate">{{ target.name }}</span>
@@ -259,5 +286,26 @@ onMounted(() => {
         <div class="animate-pulse text-primary dark:text-emerald-300 mt-1">_</div>
       </div>
     </div>
+    <form
+      class="flex items-center gap-2 border-t border-border-subtle bg-surface-container-low px-3 py-2 dark:border-slate-700/80 dark:bg-[#111820]"
+      @submit.prevent="handleInputSubmit"
+    >
+      <input
+        v-model="inputLine"
+        type="text"
+        :disabled="!canSendInput"
+        :placeholder="terminalInputPlaceholder"
+        class="min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 py-1 font-mono text-xs text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-55 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400"
+      />
+      <button
+        type="submit"
+        :disabled="!canSendInput"
+        class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400 dark:hover:border-emerald-400/60 dark:hover:text-emerald-200"
+        :title="t.terminal.sendInput"
+        :aria-label="t.terminal.sendInput"
+      >
+        <SendHorizontal :size="13" />
+      </button>
+    </form>
   </div>
 </template>

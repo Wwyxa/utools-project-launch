@@ -19,6 +19,7 @@ const isUnavailable = computed(() => props.project.pathExists === false);
 
 const scriptStatusLabel = (status: Project["scripts"][number]["status"]) => {
   if (status === "RUNNING") return t.value.common.running;
+  if (status === "STOPPING") return t.value.common.stopping;
   if (status === "ERROR") return t.value.common.error;
   if (status === "STOPPED") return t.value.common.stopped;
   return t.value.common.idle;
@@ -37,7 +38,6 @@ const handleStop = async (scriptId: string) => {
   }
   await store.stopScript(props.project.id, scriptId);
 };
-
 </script>
 
 <template>
@@ -49,7 +49,10 @@ const handleStop = async (scriptId: string) => {
       {{ t.projectDetails.noScripts }}
     </div>
 
-    <div v-else class="max-h-[38%] shrink-0 overflow-auto rounded-lg border border-border-subtle bg-surface shadow-sm themed-scrollbar">
+    <div
+      v-else
+      class="max-h-[38%] shrink-0 overflow-auto rounded-lg border border-border-subtle bg-surface shadow-sm themed-scrollbar"
+    >
       <div
         v-for="script in scripts"
         :key="script.id"
@@ -67,9 +70,11 @@ const handleStop = async (scriptId: string) => {
               'px-2 py-0.5 rounded-full text-[9px] font-bold border justify-self-start',
               script.status === 'RUNNING'
                 ? 'bg-status-running/10 text-status-running border-status-running/20'
-                : script.status === 'ERROR'
-                  ? 'bg-status-error/10 text-status-error border-status-error/20'
-                  : 'bg-status-stopped/10 text-status-stopped border-status-stopped/20',
+                : script.status === 'STOPPING'
+                  ? 'bg-status-warning/10 text-status-warning border-status-warning/20'
+                  : script.status === 'ERROR'
+                    ? 'bg-status-error/10 text-status-error border-status-error/20'
+                    : 'bg-status-stopped/10 text-status-stopped border-status-stopped/20',
             )
           "
         >
@@ -90,6 +95,14 @@ const handleStop = async (scriptId: string) => {
             class="bg-status-error text-white text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90 disabled:opacity-50"
           >
             <Square :size="12" fill="currentColor" /> {{ t.scripts.stopScript }}
+          </button>
+          <button
+            v-else-if="script.status === 'STOPPING'"
+            type="button"
+            disabled
+            class="bg-status-warning text-white text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 opacity-80 cursor-wait"
+          >
+            <Square :size="12" fill="currentColor" /> {{ t.common.stopping }}
           </button>
           <button
             v-else

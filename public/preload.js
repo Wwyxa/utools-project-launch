@@ -6,6 +6,7 @@ const { TextDecoder } = require("node:util");
 const { shell } = require("electron");
 
 const activeProcesses = new Map();
+const activeProcessMetadata = new Map();
 const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
@@ -455,7 +456,9 @@ function normalizeAiModelCollection(models, providerHint) {
 }
 
 function normalizeAiBaseUrl(preferences) {
-  return String(preferences.baseUrl || "").trim().replace(/\/+$/, "");
+  return String(preferences.baseUrl || "")
+    .trim()
+    .replace(/\/+$/, "");
 }
 
 function getAiHeaders(preferences) {
@@ -531,7 +534,9 @@ async function testAiConnection(preferences) {
       const content = String(result?.content || result?.text || result || "").trim();
       return {
         ok: true,
-        message: content ? "uTools 内置 AI 连接测试成功，模型已返回响应。" : "uTools 内置 AI 连接成功，但模型返回为空。",
+        message: content
+          ? "uTools 内置 AI 连接测试成功，模型已返回响应。"
+          : "uTools 内置 AI 连接成功，但模型返回为空。",
       };
     }
 
@@ -737,15 +742,27 @@ async function analyzeWithAiStream(payload, onChunk, onDone) {
   }
   try {
     if (preferences.provider === "utools") {
-      const result = await analyzeWithAi({ preferences, prompt });
-      done(
-        result.ok
-          ? {
-              ...result,
-              message: result.message || "uTools 内置 AI 当前不支持真实流式，已按完整结果返回。",
-            }
-          : result,
+      if (!window.utools?.ai) {
+        done({ ok: false, content: "", message: "当前 uTools 版本不支持内置 AI。" });
+        return;
+      }
+      let content = "";
+      await window.utools.ai(
+        {
+          model: preferences.model || undefined,
+          messages: [{ role: "user", content: prompt }],
+        },
+        (delta) => {
+          const deltaContent = [delta?.reasoning_content, delta?.content]
+            .filter((part) => typeof part === "string" && part.length > 0)
+            .join("");
+          if (deltaContent) {
+            content += deltaContent;
+            chunk(deltaContent);
+          }
+        },
       );
+      done({ ok: true, content: content.trim() });
       return;
     }
     if (!preferences.baseUrl.trim() || !preferences.model.trim() || !preferences.apiKey.trim()) {
@@ -1839,6 +1856,10 @@ function runCommand(payload) {
   });
 
   activeProcesses.set(child.pid, child);
+  activeProcessMetadata.set(child.pid, {
+    projectId: payload.projectId,
+    scriptId: payload.scriptId,
+  });
   launchedProcessIds.add(child.pid);
 
   emit({
@@ -1871,6 +1892,8 @@ function runCommand(payload) {
 
   child.on("close", (code, signal) => {
     activeProcesses.delete(child.pid);
+    activeProcessMetadata.delete(child.pid);
+    launchedProcessIds.delete(child.pid);
     const stoppedByUser = userStoppedProcesses.delete(child.pid);
     emit({
       type: "exit",
@@ -1910,19 +1933,31 @@ function stopWindowsProcessTree(pid) {
     "Stop-Process -Id $root -Force -ErrorAction SilentlyContinue",
   ].join("\n");
 
-  spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-    env: { ...process.env, UTOOLS_STOP_PID: String(pid) },
-    stdio: "ignore",
+  return new Promise((resolve) => {
+    let killer;
+    try {
+      killer = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+        env: { ...process.env, UTOOLS_STOP_PID: String(pid) },
+        stdio: "ignore",
+        windowsHide: true,
+      });
+    } catch (error) {
+      resolve();
+      return;
+    }
+
+    killer.once("error", () => resolve());
+    killer.once("close", () => resolve());
   });
 }
 
-function stopProcess(pid) {
+async function stopProcess(pid) {
   const child = activeProcesses.get(pid);
 
   if (child) {
     userStoppedProcesses.add(pid);
     if (process.platform === "win32") {
-      stopWindowsProcessTree(pid);
+      await stopWindowsProcessTree(pid);
     } else {
       try {
         process.kill(pid, "SIGTERM");
@@ -1935,9 +1970,39 @@ function stopProcess(pid) {
   if (!child) {
     userStoppedProcesses.delete(pid);
     if (process.platform === "win32" && launchedProcessIds.has(pid)) {
-      stopWindowsProcessTree(pid);
+      await stopWindowsProcessTree(pid);
     }
   }
+}
+
+async function sendProcessInput(pid, input) {
+  const child = activeProcesses.get(pid);
+  const metadata = activeProcessMetadata.get(pid);
+  if (!child || !child.stdin || child.stdin.destroyed || child.stdin.writableEnded) {
+    return { sent: false, message: "当前进程不可输入。" };
+  }
+  if (!metadata) {
+    return { sent: false, message: "当前进程缺少日志上下文。" };
+  }
+
+  const line = `${String(input ?? "")}\n`;
+  return new Promise((resolve) => {
+    child.stdin.write(line, (error) => {
+      if (error) {
+        resolve({ sent: false, message: error.message || "输入发送失败。" });
+        return;
+      }
+
+      emit({
+        type: "stdin",
+        projectId: metadata.projectId,
+        scriptId: metadata.scriptId,
+        pid,
+        message: String(input ?? ""),
+      });
+      resolve({ sent: true });
+    });
+  });
 }
 
 function stopAllProcesses() {
@@ -1998,6 +2063,7 @@ window.projectBridge = {
   openEditor,
   runCommand,
   stopProcess,
+  sendProcessInput,
   stopAllProcesses,
   openPath: (targetPath) => shell.openPath(expandPath(targetPath)),
   showItemInFolder: (targetPath) => shell.showItemInFolder(expandPath(targetPath)),

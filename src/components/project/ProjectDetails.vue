@@ -58,14 +58,20 @@ const latestCommit = computed(() => props.project.git?.commits?.[0]);
 const projectTodos = computed(() => store.todos[props.project.id] || props.project.todos || []);
 const memoContent = computed(() => store.memoContent[props.project.id] || props.project.memo || "");
 const runningScriptCount = computed(() => props.project.scripts.filter((script) => script.status === "RUNNING").length);
+const stoppingScriptCount = computed(
+  () => props.project.scripts.filter((script) => script.status === "STOPPING").length,
+);
+const activeScriptCount = computed(() => runningScriptCount.value + stoppingScriptCount.value);
 const overviewMetrics = computed(() => [
   {
     icon: TerminalSquare,
     label: t.value.projectDetails.scripts,
     value: `${props.project.scripts.length}`,
     detail:
-      runningScriptCount.value > 0 ? `${runningScriptCount.value} ${t.value.common.running}` : t.value.scripts.ready,
-    tone: runningScriptCount.value > 0 ? "running" : "neutral",
+      activeScriptCount.value > 0
+        ? `${activeScriptCount.value} ${stoppingScriptCount.value > 0 ? t.value.common.stopping : t.value.common.running}`
+        : t.value.scripts.ready,
+    tone: activeScriptCount.value > 0 ? "running" : "neutral",
   },
   {
     icon: CheckSquare,
@@ -325,9 +331,11 @@ const handleFileOpened = (relativePath: string) => {
                   'rounded-full border px-2 py-1 text-[11px] font-semibold',
                   script.status === 'RUNNING'
                     ? 'border-status-running/25 bg-status-running/10 text-status-running'
-                    : script.status === 'ERROR'
-                      ? 'border-status-error/25 bg-status-error/10 text-status-error'
-                      : 'border-border-subtle bg-surface-container-low text-on-surface-variant',
+                    : script.status === 'STOPPING'
+                      ? 'border-status-warning/25 bg-status-warning/10 text-status-warning'
+                      : script.status === 'ERROR'
+                        ? 'border-status-error/25 bg-status-error/10 text-status-error'
+                        : 'border-border-subtle bg-surface-container-low text-on-surface-variant',
                 )
               "
             >

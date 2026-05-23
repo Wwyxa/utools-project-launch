@@ -41,11 +41,7 @@ const defaultTerminalPreferences = (): TerminalPreferences => ({
 
 const terminalKinds = new Set<DefaultTerminalKind>(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set<DefaultEditorKind>(["vscode", "cursor", "custom"]);
-const aiProviderKinds = new Set<AiProviderKind>([
-  "utools",
-  "openai-compatible",
-  "anthropic-compatible",
-]);
+const aiProviderKinds = new Set<AiProviderKind>(["utools", "openai-compatible", "anthropic-compatible"]);
 const environmentToolKeys = new Set<EnvironmentToolKey>([
   "node",
   "npm",
@@ -481,6 +477,9 @@ const fallbackBridge: ProjectBridge = {
   },
   async stopProcess(): Promise<void> {
     return undefined;
+  },
+  async sendProcessInput(): Promise<{ sent: boolean; message?: string }> {
+    return { sent: false, message: "浏览器预览无法向运行进程发送输入。" };
   },
   async stopAllProcesses(): Promise<void> {
     return undefined;

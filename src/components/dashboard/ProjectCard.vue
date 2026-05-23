@@ -36,12 +36,14 @@ const moreScriptsRef = ref<HTMLElement | null>(null);
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
 const isUnavailable = computed(() => props.project.pathExists === false);
-const runningScripts = computed(() => props.project.scripts.filter((script) => script.status === "RUNNING"));
+const activeScripts = computed(() =>
+  props.project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
+);
 const visibleScripts = computed(() => {
-  const runningIds = new Set(runningScripts.value.map((script) => script.id));
+  const activeIds = new Set(activeScripts.value.map((script) => script.id));
   const prioritizedScripts = [
-    ...runningScripts.value,
-    ...props.project.scripts.filter((script) => !runningIds.has(script.id)),
+    ...activeScripts.value,
+    ...props.project.scripts.filter((script) => !activeIds.has(script.id)),
   ];
   const exposedScripts = [];
   const maxVisibleCount = prioritizedScripts.some((script) => script.name.length > 14) ? 1 : 2;
@@ -57,7 +59,7 @@ const visibleScripts = computed(() => {
 });
 const hiddenRunningCount = computed(
   () =>
-    runningScripts.value.filter((script) => !visibleScripts.value.some((visible) => visible.id === script.id)).length,
+    activeScripts.value.filter((script) => !visibleScripts.value.some((visible) => visible.id === script.id)).length,
 );
 const hiddenScriptCount = computed(() => props.project.scripts.length - visibleScripts.value.length);
 const hiddenScripts = computed(() => {
@@ -233,6 +235,10 @@ const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: s
     moreScriptsOpen.value = false;
     return;
   }
+  if (status === "STOPPING") {
+    moreScriptsOpen.value = false;
+    return;
+  }
   await store.launchScript(props.project.id, scriptId);
   moreScriptsOpen.value = false;
 };
@@ -350,17 +356,24 @@ const handleDelete = (event: MouseEvent) => {
           :key="script.id"
           :title="script.command"
           @click="handleScriptToggle($event, script.id, script.status)"
-          :disabled="isUnavailable"
+          :disabled="isUnavailable || script.status === 'STOPPING'"
           :class="
             cn(
               'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
               script.status === 'RUNNING'
                 ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
-                : 'text-on-surface-variant bg-surface-variant border-transparent hover:text-on-surface hover:bg-surface-container-high',
+                : script.status === 'STOPPING'
+                  ? 'text-status-warning bg-status-warning/10 border-status-warning/30 cursor-wait'
+                  : 'text-on-surface-variant bg-surface-variant border-transparent hover:text-on-surface hover:bg-surface-container-high',
             )
           "
         >
-          <Square v-if="script.status === 'RUNNING'" :size="8" class="shrink-0" fill="currentColor" />
+          <Square
+            v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
+            :size="8"
+            class="shrink-0"
+            fill="currentColor"
+          />
           <Play v-else :size="9" class="shrink-0" fill="currentColor" />
           <span>{{ script.name }}</span>
         </button>
@@ -391,20 +404,22 @@ const handleDelete = (event: MouseEvent) => {
               :key="script.id"
               type="button"
               @click="handleScriptToggle($event, script.id, script.status)"
-              :disabled="isUnavailable"
+              :disabled="isUnavailable || script.status === 'STOPPING'"
               class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface disabled:opacity-50"
               :title="script.command"
               :aria-label="
                 script.status === 'RUNNING'
                   ? `${t.scripts.stopScript}: ${script.name}`
-                  : `${t.scripts.startScript}: ${script.name}`
+                  : script.status === 'STOPPING'
+                    ? `${t.common.stopping}: ${script.name}`
+                    : `${t.scripts.startScript}: ${script.name}`
               "
               role="menuitem"
             >
               <Square
-                v-if="script.status === 'RUNNING'"
+                v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
                 :size="9"
-                class="shrink-0 text-status-running"
+                :class="script.status === 'STOPPING' ? 'shrink-0 text-status-warning' : 'shrink-0 text-status-running'"
                 fill="currentColor"
               />
               <Play v-else :size="10" class="shrink-0" fill="currentColor" />
