@@ -215,7 +215,7 @@ const filesPanelOpen = ref(true);
 
 ### Convention: Markdown Commit Tooltips
 
-**What**: Git commit rows may show a delayed markdown tooltip for the full commit body, while the row itself stays compact and displays only the subject line.
+**What**: Git commit rows may show a delayed structured markdown tooltip for the full commit details, while the row itself stays compact and displays only the short hash, subject, refs, author, and relative time.
 
 **Why**: Commit bodies often contain markdown lists. Native `title` tooltips flatten formatting and cannot render list structure, but immediate custom tooltips feel noisy when scanning a dense history list.
 
@@ -223,18 +223,31 @@ const filesPanelOpen = ref(true);
 
 - Render rich commit tooltips with a `Teleport` to `body` so nested Git panel `overflow` rules do not clip the floating layer.
 - Use a short hover delay before showing the tooltip. Current Git history uses about `450ms`.
-- Keep row text compact; use the full commit `body` only for the tooltip.
+- Keep row text compact; put detailed absolute time in the custom tooltip instead of a native `title` on the author/time row.
+- Do not repeat the short commit hash inside the tooltip header; the row already shows it. It is fine to use the hash only for stable Vue keys.
+- Store the hovered commit object plus coordinates in tooltip state instead of storing only a precomputed string. The tooltip needs `message`, `body`, `author`, `date`, and `refs` to build the header and markdown body.
+- Let tooltip width fit content with a max-width cap. Do not add a fixed/minimum width that leaves empty space for short commit messages.
 - Positioning should stay simple: default above the cursor/row, fall below only when there is not enough top space. Avoid complex left/right flipping that can make the tooltip appear far from the hovered commit.
 - When placing above, prefer CSS transform based on the tooltip's real height, such as `transform: translateY(-100%)`, instead of subtracting an estimated height from `top`.
 - Clear pending timers and visible tooltip state on mouse leave and component unmount.
+- Normalize common commit formats before rendering the tooltip body:
+  - Subject-only commit: show the subject as the tooltip title and omit the body area.
+  - `body` starts with the same subject line or a truncated/expanded version of it: remove that first body line before markdown rendering.
+  - Message/body starts as an unordered markdown list (`- item`, `* item`, `+ item`): render the whole content as markdown and do not create a separate plain title.
+  - Subject is `Title - item A - item B` and body repeats `- item A\n- item B`: title should be `Title`, body should render the list.
+  - Subject contains multiple conventional commit segments such as `fix: A fix: B change: C`, and body repeats the trailing segments line-by-line: title should keep only `fix: A`, body should render the repeated segments.
 
 **Example**:
 
 ```ts
-const commitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
-const pendingCommitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
+type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
 
-const commitTooltipContent = (commit: { message: string; body?: string }) => commit.body || commit.message;
+const commitTooltip = ref<CommitTooltipState | null>(null);
+const pendingCommitTooltip = ref<CommitTooltipState | null>(null);
+
+const showCommitTooltip = (event: MouseEvent, commit: ProjectGitCommitSummary) => {
+  pendingCommitTooltip.value = { commit, x: event.clientX, y: event.clientY };
+};
 ```
 
 **Related**: `src/components/project/GitTab.vue`, `src/lib/markdown.ts`, `src/index.css`.

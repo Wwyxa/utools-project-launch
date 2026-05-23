@@ -82,15 +82,22 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 
 - `ProjectGitCommitSummary = { hash: string; message: string; body?: string; author: string; date: string; graph?: string; parents?: string[]; refs?: string }`
 - Preload git read path should populate `message` with the compact subject line and `body` with the full commit message body when available.
-- UI helper shape may be local and narrow: `(commit: { message: string; body?: string }) => string`.
+- Tooltip state should keep the whole commit object plus cursor coordinates, e.g. `{ commit: ProjectGitCommitSummary; x: number; y: number }`, because the tooltip header needs `author`, `date`, and `refs` while the body parser needs both `message` and `body`.
+- UI parser helpers may stay local to `GitTab.vue`, but their output contract is structured: `title: string` for the header and `body: string` for markdown rendering.
 
 ### 3. Contracts
 
-- `message` is the one-line subject used in dense Git history rows.
-- `body` is optional and contains the full commit text used by markdown tooltips.
+- `message` is the one-line subject used in dense Git history rows and as the default tooltip title.
+- `body` is optional and contains the full commit text used by markdown tooltips after de-duplicating repeated subject/list content.
 - The git log parser must preserve newlines in `body`; do not rely on `%s` alone when tooltip markdown needs lists or paragraphs.
 - Use robust field/record separators for git output parsing when reading multiline bodies. Tab-separated parsing is not enough once `%B` is included.
 - Avoid `git log --graph` in the backend/preload data fetch when parsing multiline bodies. ASCII graph prefixes can pollute markdown lines and break list rendering. The frontend already draws its own graph from `parents`.
+- Tooltip rendering should normalize common Git message shapes before rendering:
+  - if `body` is missing or equals `message`, render only the title and omit the body panel;
+  - if the first `body` line equals, prefixes, or extends `message`, drop that first body line before rendering markdown;
+  - if the first content line is an unordered markdown list item and `message` also starts as a list item, render the whole content as markdown without a separate title;
+  - if `message` is `Title - item A - item B` and markdown body repeats `- item A` / `- item B`, title is `Title` and body is the list;
+  - if `message` chains conventional commit segments (`fix: A fix: B change: C`) and body repeats trailing segments line-by-line, keep only the leading segment(s) in the title and render the repeated trailing segments in the body.
 
 ### 4. Validation & Error Matrix
 
@@ -98,18 +105,27 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 - Empty commit output -> return an empty `commits` array.
 - Malformed commit record without a hash -> skip that record.
 - Multiline body with markdown lists -> preserve newline structure and render via `renderMarkdown` in the UI.
+- Body repeats the subject line -> remove the duplicate line so tooltip title/body do not show the same sentence twice.
+- Message is itself a markdown list -> do not coerce the first list item into a plain bold title.
+- Chained conventional commits with repeated body lines -> trim only exact repeated trailing segments; keep the body lines available for markdown rendering.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: row displays `message`, tooltip renders `body` with markdown bullets preserved.
+- Good: row displays `message`, tooltip title/body split removes duplicated subject text and renders `body` with markdown bullets preserved.
 - Base: commit has only a subject; both row and tooltip use `message`.
 - Bad: using `--pretty=format:%h\t...\t%s` and expecting tooltip markdown lists to exist.
+- Bad: always rendering `message` as a plain tooltip title when `message` starts with `- `; this breaks list-style commit messages.
+- Bad: always rendering the full subject as title when the body repeats trailing `fix:` / `change:` segments; this creates a long duplicate title and repeated body.
 
 ### 6. Tests Required
 
 - `npm run build` after changing commit metadata parsing or tooltip rendering.
 - Manual smoke test with commits containing a subject plus markdown body list items (`- item`).
 - Manual smoke test with subject-only commits to verify tooltip fallback remains readable.
+- Manual smoke test with list-only commit messages where the first line starts with `- ` and should render as markdown.
+- Manual smoke test with `Title - item A - item B` plus matching bullet body to verify title trimming.
+- Manual smoke test with chained conventional commit subjects (`fix: A fix: B change: C`) plus repeated body lines to verify trailing segment trimming.
+- Verify tooltip width fits short content and only caps long content; no fixed/minimum width should create empty right-side space.
 
 ### 7. Wrong vs Correct
 
@@ -128,6 +144,24 @@ This loses the commit body and therefore loses markdown list line breaks.
 ```
 
 Keep the subject and full body as separate fields so dense rows and rich tooltips can each use the right content.
+
+#### Wrong
+
+```ts
+const title = commit.message;
+const body = commit.body || "";
+```
+
+This blindly duplicates commit text for bodies that include the subject, markdown-list-only commits, and chained conventional commit subjects.
+
+#### Correct
+
+```ts
+const title = commitTooltipTitle(commit);
+const body = commitTooltipBody(commit);
+```
+
+Keep tooltip parsing explicit and format-aware so the dense row can show the raw subject while the tooltip shows a readable title plus markdown body.
 
 ## Scenario: Editor Launch Bridge Boundary
 
