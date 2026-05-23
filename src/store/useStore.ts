@@ -51,8 +51,16 @@ const createProjectId = () => `project-${Date.now()}`;
 const ansiControlPattern =
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
-function toPersistedProject(project: Project): Project {
+function resolveProjectSortOrder(project: Project, fallbackIndex = 0): number {
+  return typeof project.sortOrder === "number" && Number.isFinite(project.sortOrder)
+    ? project.sortOrder
+    : fallbackIndex;
+}
+
+function toPersistedProject(project: Project, sortOrder?: number): Project {
   const persistedStatus = project.pathExists === false ? ProjectStatus.WARNING : ProjectStatus.STOPPED;
+  const persistedSortOrder =
+    typeof sortOrder === "number" && Number.isFinite(sortOrder) ? sortOrder : resolveProjectSortOrder(project);
 
   return {
     id: project.id,
@@ -79,6 +87,7 @@ function toPersistedProject(project: Project): Project {
     todos: project.todos || [],
     git: null,
     gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || "",
+    sortOrder: persistedSortOrder,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
@@ -207,6 +216,7 @@ function hydrateProject(project: Project): Project {
     git: normalizeGitSnapshot(project.git),
     pathExists: project.pathExists ?? true,
     unavailableReason: project.unavailableReason || "",
+    sortOrder: resolveProjectSortOrder(project),
     createdAt: project.createdAt || new Date().toISOString(),
     updatedAt: project.updatedAt || new Date().toISOString(),
     scripts: project.scripts.map((script, index) => ({
@@ -573,7 +583,12 @@ export const useStore = defineStore("app", {
     },
     async persistProjects() {
       try {
-        await bridge.saveProjects(this.projects.map((project) => toPersistedProject(project)));
+        const persistedProjects = this.projects.map((project, index) => {
+          const persistedProject = toPersistedProject(project, index);
+          project.sortOrder = persistedProject.sortOrder;
+          return persistedProject;
+        });
+        await bridge.saveProjects(persistedProjects);
         this.projectStorageMessage = "";
       } catch (error) {
         this.projectStorageMessage = "项目配置保存失败，请稍后重试";
@@ -1597,7 +1612,7 @@ export const useStore = defineStore("app", {
       const config: ProjectConfigFile = {
         schemaVersion: 1,
         exportedAt: new Date().toISOString(),
-        projects: this.projects.map((project) => toPersistedProject(project)),
+        projects: this.projects.map((project, index) => toPersistedProject(project, index)),
       };
       const result = await bridge.exportProjects(config);
       this.projectStorageMessage = result.canceled
@@ -1623,7 +1638,7 @@ export const useStore = defineStore("app", {
 
       const incoming = result.config.projects
         .filter(isImportableProject)
-        .map((project) => hydrateProject(toPersistedProject(project)));
+        .map((project, index) => hydrateProject(toPersistedProject(project, index)));
       const accepted: Project[] = [];
       let skipped = result.config.projects.length - incoming.length;
 

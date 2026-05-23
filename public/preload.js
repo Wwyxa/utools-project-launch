@@ -1162,7 +1162,23 @@ function toRelativeCwd(rootPath, targetPath) {
   return relativePath ? relativePath.replace(/\\/g, "/") : ".";
 }
 
-function toStoredProject(project) {
+function resolveProjectSortOrder(project, fallbackIndex = 0) {
+  const sortOrder = Number(project?.sortOrder);
+  return Number.isFinite(sortOrder) ? sortOrder : fallbackIndex;
+}
+
+function sortProjectsByStoredOrder(projects) {
+  return projects
+    .map((project, index) => ({ project, index }))
+    .sort((left, right) => {
+      const sortDelta =
+        resolveProjectSortOrder(left.project, left.index) - resolveProjectSortOrder(right.project, right.index);
+      return sortDelta || left.index - right.index;
+    })
+    .map((entry) => entry.project);
+}
+
+function toStoredProject(project, index = 0) {
   return {
     id: project.id,
     name: project.name,
@@ -1189,6 +1205,7 @@ function toStoredProject(project) {
     memo: project.memo || "",
     todos: Array.isArray(project.todos) ? project.todos : [],
     gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || "",
+    sortOrder: resolveProjectSortOrder(project, index),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
@@ -1282,17 +1299,17 @@ function readProjects() {
   try {
     const docs = readProjectDocs();
     if (docs.length > 0) {
-      return docs.map((doc) => doc.project).filter(Boolean);
+      return sortProjectsByStoredOrder(docs.map((doc) => doc.project).filter(Boolean));
     }
 
     const legacyProjects = readLegacyStoredProjects();
     if (legacyProjects.length > 0 && window.utools?.db?.put) {
       writeStoredProjects(legacyProjects);
     }
-    return legacyProjects;
+    return sortProjectsByStoredOrder(legacyProjects);
   } catch (error) {
     logStorageError("read projects", error);
-    return readLegacyStoredProjects();
+    return sortProjectsByStoredOrder(readLegacyStoredProjects());
   }
 }
 
@@ -1303,13 +1320,13 @@ function writeStoredProjects(projects) {
       const existingByProjectId = new Map(existingDocs.map((doc) => [doc._id.replace(projectDocPrefix, ""), doc]));
       const projectIds = new Set(projects.map((project) => project.id));
 
-      projects.forEach((project) => {
+      projects.forEach((project, index) => {
         const existing = existingByProjectId.get(project.id);
         const doc = toPlainJson({
           _id: `${projectDocPrefix}${project.id}`,
           schemaVersion,
           updatedAt: new Date().toISOString(),
-          project: toStoredProject(project),
+          project: toStoredProject(project, index),
         });
         if (existing?._rev) {
           doc._rev = existing._rev;

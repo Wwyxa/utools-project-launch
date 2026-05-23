@@ -224,6 +224,7 @@ export interface Project {
   git?: ProjectGitSnapshot | null;
   pathExists?: boolean;
   unavailableReason?: string;
+  sortOrder?: number;
   createdAt?: string;
   updatedAt?: string;
   gitLatestCommitAt?: string;
