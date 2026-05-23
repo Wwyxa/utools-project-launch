@@ -7,6 +7,8 @@ import {
   ClipboardCopy,
   FileSearch,
   GitBranch,
+  UserCircle,
+  Clock3,
   RefreshCw,
   X,
   Sparkles,
@@ -19,13 +21,19 @@ import {
   ChevronRight,
   Check,
 } from "lucide-vue-next";
-import { Project, type ProjectGitFileChange, type ProjectGitFileDiffResult } from "../../types";
+import {
+  Project,
+  type ProjectGitCommitSummary,
+  type ProjectGitFileChange,
+  type ProjectGitFileDiffResult,
+} from "../../types";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
+type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
 
 const props = defineProps<{
   project: Project;
@@ -106,8 +114,8 @@ const selectedCommitAiMode = computed(
 const weekDayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
-const commitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
-const pendingCommitTooltip = ref<{ content: string; x: number; y: number } | null>(null);
+const commitTooltip = ref<CommitTooltipState | null>(null);
+const pendingCommitTooltip = ref<CommitTooltipState | null>(null);
 let commitTooltipTimer: number | undefined;
 const commitTooltipStyle = computed(() => {
   if (!commitTooltip.value) {
@@ -116,7 +124,7 @@ const commitTooltipStyle = computed(() => {
 
   const viewportWidth = globalThis.window?.innerWidth || 1024;
   const viewportHeight = globalThis.window?.innerHeight || 768;
-  const tooltipMaxWidth = Math.min(384, Math.max(260, viewportWidth - 64));
+  const tooltipMaxWidth = Math.min(384, Math.max(240, viewportWidth - 32));
   const tooltipHeight = Math.min(240, Math.max(140, viewportHeight - 64));
   const left = Math.min(Math.max(16, commitTooltip.value.x), Math.max(16, viewportWidth - tooltipMaxWidth - 16));
   const showAbove = commitTooltip.value.y - tooltipHeight - 10 >= 16;
@@ -502,9 +510,9 @@ const closeDiffDialog = () => {
   isDiffDialogOpen.value = false;
 };
 
-const showCommitTooltip = (event: MouseEvent, content: string) => {
+const showCommitTooltip = (event: MouseEvent, commit: ProjectGitCommitSummary) => {
   window.clearTimeout(commitTooltipTimer);
-  pendingCommitTooltip.value = { content, x: event.clientX, y: event.clientY };
+  pendingCommitTooltip.value = { commit, x: event.clientX, y: event.clientY };
   commitTooltipTimer = window.setTimeout(() => {
     commitTooltip.value = pendingCommitTooltip.value;
   }, 450);
@@ -786,7 +794,96 @@ const formatCommitTime = (value?: string) => ({
 });
 
 const renderCommitMessage = (message: string) => renderMarkdown(message || "");
-const commitTooltipContent = (commit: { message: string; body?: string }) => commit.body || commit.message;
+const unorderedListLinePattern = /^[-*+]\s+/;
+const unorderedListItemPattern = /^[-*+]\s+(.+)$/;
+const conventionalCommitPrefixPattern =
+  "(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test|change)(?:\\([^)]+\\))?!?:\\s+";
+const conventionalCommitLinePattern = new RegExp(`^${conventionalCommitPrefixPattern}.+`, "i");
+const conventionalCommitSplitPattern = new RegExp(`\\s+(?=${conventionalCommitPrefixPattern})`, "gi");
+
+const normalizeCommitText = (value: string) => value.replace(/\s+/g, " ").trim();
+
+const markdownListItems = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((line) => unorderedListItemPattern.exec(line.trim())?.[1]?.trim() || "")
+    .filter(Boolean);
+
+const markdownComparableLines = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      return unorderedListItemPattern.exec(trimmed)?.[1]?.trim() || trimmed;
+    })
+    .filter(Boolean);
+
+const conventionalCommitSegments = (value: string) =>
+  value
+    .split(conventionalCommitSplitPattern)
+    .map((part) => part.trim())
+    .filter((part) => conventionalCommitLinePattern.test(part));
+
+const commitTooltipUsesFullMarkdown = (commit: ProjectGitCommitSummary) => {
+  const message = commit.message.trim();
+  const source = (commit.body || message).trim();
+  const firstContentLine =
+    source
+      .split(/\r?\n/)
+      .find((line) => line.trim())
+      ?.trim() || "";
+  return unorderedListLinePattern.test(message) && unorderedListLinePattern.test(firstContentLine);
+};
+
+const commitTooltipBody = (commit: ProjectGitCommitSummary) => {
+  if (commitTooltipUsesFullMarkdown(commit)) {
+    return (commit.body || commit.message).trim();
+  }
+
+  const body = (commit.body || "").trim();
+  const message = commit.message.trim();
+  if (!body || body === message) return "";
+
+  const lines = body.split(/\r?\n/);
+  const firstLine = lines[0]?.trim() || "";
+  if (firstLine && (firstLine === message || message.startsWith(firstLine) || firstLine.startsWith(message))) {
+    return lines.slice(1).join("\n").trim();
+  }
+  return body;
+};
+
+const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
+  if (commitTooltipUsesFullMarkdown(commit)) return "";
+
+  const message = commit.message.trim();
+  const body = commitTooltipBody(commit);
+  const bodyItems = markdownListItems(body).map(normalizeCommitText);
+  const messageParts = message
+    .split(/\s+-\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (messageParts.length > bodyItems.length && bodyItems.length > 0) {
+    const tailParts = messageParts.slice(-bodyItems.length).map(normalizeCommitText);
+    const tailMatchesBody = bodyItems.every((item, index) => item === tailParts[index]);
+    if (tailMatchesBody) {
+      return messageParts.slice(0, -bodyItems.length).join(" - ");
+    }
+  }
+
+  const bodyConventionalLines = markdownComparableLines(body)
+    .filter((line) => conventionalCommitLinePattern.test(line))
+    .map(normalizeCommitText);
+  const messageConventionalSegments = conventionalCommitSegments(message).map(normalizeCommitText);
+  if (messageConventionalSegments.length > bodyConventionalLines.length && bodyConventionalLines.length > 0) {
+    const tailSegments = messageConventionalSegments.slice(-bodyConventionalLines.length);
+    const tailMatchesBody = bodyConventionalLines.every((line, index) => line === tailSegments[index]);
+    if (tailMatchesBody) {
+      return messageConventionalSegments.slice(0, -bodyConventionalLines.length).join(" ");
+    }
+  }
+
+  return message;
+};
 </script>
 
 <template>
@@ -997,7 +1094,7 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
                 <div class="flex min-w-0 items-center gap-1.5 leading-4">
                   <span
                     class="min-w-0 truncate text-[11px] font-semibold text-on-surface"
-                    @mouseenter="showCommitTooltip($event, commitTooltipContent(row.commit))"
+                    @mouseenter="showCommitTooltip($event, row.commit)"
                     @mousemove="moveCommitTooltip"
                     @mouseleave="hideCommitTooltip"
                   >
@@ -1012,10 +1109,7 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
                     {{ refName }}
                   </span>
                 </div>
-                <div
-                  class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75"
-                  :title="`${row.commit.author} · ${formatCommitTime(row.commit.date).title}`"
-                >
+                <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75">
                   {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
                 </div>
               </div>
@@ -1518,13 +1612,52 @@ const commitTooltipContent = (commit: { message: string; body?: string }) => com
     <Teleport to="body">
       <div
         v-if="commitTooltip"
-        class="pointer-events-none fixed z-[70] w-max rounded-md border border-border-subtle bg-surface px-2 py-2 text-left shadow-xl"
+        class="commit-tooltip-panel pointer-events-none fixed z-[70] w-max overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
         :style="commitTooltipStyle"
       >
+        <div class="border-b border-border-subtle bg-surface-container-low px-3 py-2.5">
+          <p v-if="commitTooltipTitle(commitTooltip.commit)" class="text-[12px] font-bold leading-5 text-on-surface">
+            {{ commitTooltipTitle(commitTooltip.commit) }}
+          </p>
+          <div
+            :class="
+              cn(
+                'flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-on-surface-variant',
+                commitTooltipTitle(commitTooltip.commit) && 'mt-2',
+              )
+            "
+          >
+            <span class="inline-flex min-w-0 items-center gap-1.5">
+              <UserCircle :size="12" class="shrink-0 text-on-surface-variant/70" />
+              <span class="truncate">{{ commitTooltip.commit.author }}</span>
+            </span>
+            <span class="inline-flex min-w-0 items-center gap-1.5">
+              <Clock3 :size="12" class="shrink-0 text-on-surface-variant/70" />
+              <span>{{ formatCommitTime(commitTooltip.commit.date).text }}</span>
+              <span v-if="formatCommitTime(commitTooltip.commit.date).title" class="text-on-surface-variant/70">
+                ({{ formatCommitTime(commitTooltip.commit.date).title }})
+              </span>
+            </span>
+          </div>
+          <div v-if="refsForCommit(commitTooltip.commit.refs).length" class="mt-2 flex flex-wrap gap-1">
+            <span
+              v-for="refName in refsForCommit(commitTooltip.commit.refs)"
+              :key="`tooltip-${commitTooltip.commit.hash}-${refName}`"
+              :class="refClass(refName)"
+            >
+              {{ refName }}
+            </span>
+          </div>
+        </div>
         <div
-          class="memo-rendered commit-tooltip-rendered block max-h-60 overflow-auto text-on-surface"
-          v-html="renderCommitMessage(commitTooltip.content)"
-        ></div>
+          v-if="commitTooltipBody(commitTooltip.commit)"
+          class="commit-tooltip-body max-h-52 overflow-auto px-3 py-2.5"
+        >
+          <div
+            class="memo-rendered commit-tooltip-rendered block text-on-surface"
+            v-html="renderCommitMessage(commitTooltipBody(commitTooltip.commit))"
+          ></div>
+        </div>
       </div>
     </Teleport>
   </div>

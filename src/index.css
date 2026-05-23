@@ -612,6 +612,18 @@
 .commit-tooltip-rendered {
   font-size: 0.78rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.commit-tooltip-panel {
+  max-width: min(24rem, calc(100vw - 2rem));
+  box-shadow:
+    0 22px 52px rgba(0, 0, 0, 0.22),
+    0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.commit-tooltip-body {
+  scrollbar-color: var(--scrollbar-thumb) var(--color-surface-container-lowest);
 }
 
 .commit-tooltip-rendered > :first-child {
