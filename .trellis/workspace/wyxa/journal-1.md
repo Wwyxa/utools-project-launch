@@ -762,3 +762,38 @@ Polished Git commit detail UI with true streaming AI output, commit-specific fil
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: 优化项目细节
+
+**Date**: 2026-05-23
+**Task**: 优化项目细节
+**Branch**: `master`
+
+### Summary
+
+修正 uTools 内置 AI 流式能力认知并接入真实流式输出，优化命令停止的非阻塞与停止中状态，稳定首页脚本按钮交互，新增终端按行输入能力，并更新相关规范与任务上下文。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5805d4c` | (see git log) |
+| `16a94a7` | (see git log) |
+| `6655160` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
