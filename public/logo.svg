@@ -1,18 +1,18 @@
 <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <!-- 背景圆角矩形 (终端底板) -->
-  <rect x="32" y="32" width="448" height="448" rx="100" fill="#1E1E2E" />
+  <!-- 背景圆角矩形 (终端底板)，已扩展至铺满整个 SVG 画幅，并且去除了边距 -->
+  <rect x="0" y="0" width="512" height="512" rx="100" fill="#1E1E2E" />
   
-  <!-- 顶部的三个控制点 (模拟窗口) -->
-  <circle cx="96" cy="96" r="14" fill="#FF5F56" />
-  <circle cx="144" cy="96" r="14" fill="#FFBD2E" />
-  <circle cx="192" cy="96" r="14" fill="#27C93F" />
+  <!-- 顶部的三个控制点 (模拟窗口)，已按比例缩放并重新定位，以适应新的画布大小 -->
+  <circle cx="80" cy="80" r="16" fill="#FF5F56" />
+  <circle cx="134" cy="80" r="16" fill="#FFBD2E" />
+  <circle cx="188" cy="80" r="16" fill="#27C93F" />
   
-  <!-- 终端提示符 > (代表命令行/配置) -->
-  <path d="M 120 200 L 220 256 L 120 312" fill="none" stroke="#89DDFF" stroke-width="40" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 终端提示符 > (代表命令行/配置)，已重新定位并调整，以保持在新的布局中 -->
+  <path d="M 100 200 L 200 256 L 100 312" fill="none" stroke="#89DDFF" stroke-width="45" stroke-linecap="round" stroke-linejoin="round" />
   
-  <!-- 闪烁的光标或底层线 -->
-  <rect x="120" y="360" width="100" height="32" rx="16" fill="#89DDFF" />
+  <!-- 闪烁的光标或底层线，已按比例重新定位 -->
+  <rect x="100" y="380" width="100" height="36" rx="18" fill="#89DDFF" />
   
-  <!-- 启动/运行 按钮 (代表快速启动) -->
-  <path d="M 280 180 L 410 256 L 280 332 Z" fill="#A6E22E" />
+  <!-- 启动/运行 按钮 (代表快速启动)，已按比例重新定位 -->
+  <path d="M 280 200 L 410 256 L 280 312 Z" fill="#A6E22E" />
 </svg>
