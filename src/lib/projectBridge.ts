@@ -484,8 +484,11 @@ const fallbackBridge: ProjectBridge = {
   async stopAllProcesses(): Promise<void> {
     return undefined;
   },
-  async openPath(): Promise<void> {
-    return undefined;
+  async openPath(targetPath: string): Promise<void> {
+    const normalizedPath = targetPath.trim();
+    if (/^(?:https?:)?\/\//i.test(normalizedPath) || /^(?:mailto|utools):/i.test(normalizedPath)) {
+      window.open(normalizedPath.startsWith("//") ? `https:${normalizedPath}` : normalizedPath, "_blank", "noopener");
+    }
   },
   async showItemInFolder(): Promise<void> {
     return undefined;

@@ -11,6 +11,7 @@ import {
   Trash2,
   ChevronDown,
   GripVertical,
+  ExternalLink,
 } from "lucide-vue-next";
 import { Project, ProjectStatus, ProjectIconKey } from "../../types";
 import { cn } from "../../lib/utils";
@@ -36,6 +37,7 @@ const moreScriptsRef = ref<HTMLElement | null>(null);
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
 const isUnavailable = computed(() => props.project.pathExists === false);
+const quickLink = computed(() => props.project.quickLink?.trim() || "");
 const activeScripts = computed(() =>
   props.project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
 );
@@ -225,6 +227,14 @@ const handleOpenEditor = async (event: MouseEvent) => {
   await store.openProjectInEditor(props.project.id);
 };
 
+const handleOpenQuickLink = async (event: MouseEvent) => {
+  event.stopPropagation();
+  if (!quickLink.value) {
+    return;
+  }
+  await store.openProjectQuickLink(props.project.id);
+};
+
 const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: string) => {
   event.stopPropagation();
   if (isUnavailable.value) {
@@ -319,21 +329,34 @@ const handleDelete = (event: MouseEvent) => {
           </div>
         </div>
 
-        <GripVertical v-if="isSorting" :size="16" class="shrink-0 text-on-surface-variant/55" />
+        <div v-if="isSorting || quickLink || isError" class="flex shrink-0 items-center justify-end gap-1">
+          <button
+            v-if="quickLink && !isSorting"
+            type="button"
+            @click="handleOpenQuickLink"
+            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-surface-container hover:text-primary"
+            :title="t.projectActions.openQuickLink"
+            :aria-label="t.projectActions.openQuickLink"
+          >
+            <ExternalLink :size="13" />
+          </button>
 
-        <div
-          v-if="isError && !isSorting"
-          :class="
-            cn(
-              'shrink-0 inline-flex max-w-[5rem] items-center gap-1 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap',
-              'bg-status-error/10 text-status-error',
-            )
-          "
-        >
-          <span class="w-1.5 h-1.5 rounded-full bg-status-error" />
-          <span class="truncate">
-            {{ t.common.error }}
-          </span>
+          <GripVertical v-if="isSorting" :size="16" class="shrink-0 text-on-surface-variant/55" />
+
+          <div
+            v-else-if="isError"
+            :class="
+              cn(
+                'shrink-0 inline-flex max-w-[4.25rem] items-center gap-1 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap',
+                'bg-status-error/10 text-status-error',
+              )
+            "
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-status-error" />
+            <span class="truncate">
+              {{ t.common.error }}
+            </span>
+          </div>
         </div>
       </div>
 

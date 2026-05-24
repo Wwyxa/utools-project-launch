@@ -1223,6 +1223,27 @@ function sortProjectsByStoredOrder(projects) {
     .map((entry) => entry.project);
 }
 
+function normalizeQuickLink(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isExternalUrl(value) {
+  return /^(?:https?:)?\/\//i.test(value) || /^(?:mailto|utools):/i.test(value);
+}
+
+function openPath(targetPath) {
+  const normalizedPath = String(targetPath || "").trim();
+  if (!normalizedPath) {
+    return Promise.resolve();
+  }
+
+  if (isExternalUrl(normalizedPath)) {
+    return shell.openExternal(normalizedPath.startsWith("//") ? `https:${normalizedPath}` : normalizedPath);
+  }
+
+  return shell.openPath(expandPath(normalizedPath));
+}
+
 function toStoredProject(project, index = 0) {
   return {
     id: project.id,
@@ -1231,6 +1252,7 @@ function toStoredProject(project, index = 0) {
     type: project.type || "Custom",
     kind: project.kind || "custom",
     icon: project.icon || "custom",
+    quickLink: normalizeQuickLink(project.quickLink),
     status: "STOPPED",
     description: project.description || "",
     lastUpdated: project.lastUpdated || "",
@@ -2127,6 +2149,6 @@ window.projectBridge = {
   stopProcess,
   sendProcessInput,
   stopAllProcesses,
-  openPath: (targetPath) => shell.openPath(expandPath(targetPath)),
+  openPath,
   showItemInFolder: (targetPath) => shell.showItemInFolder(expandPath(targetPath)),
 };

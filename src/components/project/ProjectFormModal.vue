@@ -144,7 +144,9 @@ const handleScriptDrop = (targetScriptId: string) => {
             </div>
             <div class="space-y-1.5 md:col-span-12">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.icon }}</span>
-              <div class="grid grid-cols-8 gap-1.5 rounded-lg border border-border-subtle bg-surface-container-low p-1.5">
+              <div
+                class="grid grid-cols-8 gap-1.5 rounded-lg border border-border-subtle bg-surface-container-low p-1.5"
+              >
                 <button
                   v-for="icon in projectIcons"
                   :key="icon.key"
@@ -171,7 +173,18 @@ const handleScriptDrop = (targetScriptId: string) => {
                 class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
               />
             </label>
-            <label class="space-y-1.5 md:col-span-6">
+            <label class="space-y-1.5 md:col-span-4">
+              <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.quickLink }}</span>
+              <input
+                :value="form.quickLink"
+                type="url"
+                inputmode="url"
+                :placeholder="t.modal.quickLinkPlaceholder"
+                @input="(event) => store.updateProjectForm({ quickLink: (event.target as HTMLInputElement).value })"
+                class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              />
+            </label>
+            <label class="space-y-1.5 md:col-span-5">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.description }}</span>
               <textarea
                 :value="form.description"

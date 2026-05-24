@@ -199,6 +199,7 @@ export interface ProjectFormValue {
   type: string;
   kind: ProjectKind;
   icon: ProjectIconKey;
+  quickLink: string;
   description: string;
   branch: string;
   memo: string;
@@ -213,6 +214,7 @@ export interface Project {
   type: string;
   kind: ProjectKind;
   icon?: ProjectIconKey;
+  quickLink?: string;
   status: ProjectStatus;
   description?: string;
   lastUpdated?: string;

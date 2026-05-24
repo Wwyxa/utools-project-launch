@@ -57,6 +57,10 @@ function resolveProjectSortOrder(project: Project, fallbackIndex = 0): number {
     : fallbackIndex;
 }
 
+function normalizeQuickLink(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function toPersistedProject(project: Project, sortOrder?: number): Project {
   const persistedStatus = project.pathExists === false ? ProjectStatus.WARNING : ProjectStatus.STOPPED;
   const persistedSortOrder =
@@ -69,6 +73,7 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
     type: project.type,
     kind: project.kind,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
+    quickLink: normalizeQuickLink(project.quickLink),
     description: project.description || "",
     status: persistedStatus,
     lastUpdated: project.lastUpdated || "",
@@ -157,6 +162,7 @@ function formFromProject(project: Project): ProjectFormValue {
     type: project.type,
     kind: project.kind,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
+    quickLink: normalizeQuickLink(project.quickLink),
     description: project.description || "",
     branch: project.branch || "main",
     memo: project.memo || "",
@@ -209,6 +215,7 @@ function hydrateProject(project: Project): Project {
   return {
     ...project,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
+    quickLink: normalizeQuickLink(project.quickLink),
     branch: project.branch || project.git?.branch || "main",
     description: project.description || "",
     memo: project.memo || "",
@@ -446,6 +453,7 @@ function createBlankProjectForm(): ProjectFormValue {
     type: "Node.js",
     kind: "node",
     icon: "node",
+    quickLink: "",
     description: "",
     branch: "main",
     memo: "",
@@ -1048,6 +1056,7 @@ export const useStore = defineStore("app", {
         type: payload.type,
         kind: payload.kind,
         icon: payload.icon,
+        quickLink: payload.quickLink.trim(),
         description: payload.description,
         status:
           this.projectFormMode === "edit"
@@ -1543,6 +1552,25 @@ export const useStore = defineStore("app", {
           createLogEntry(
             `Failed to open editor (${editorPreferences.kind}): ${error instanceof Error ? error.message : String(error)}`,
             "ERROR",
+          ),
+        );
+      }
+    },
+    async openProjectQuickLink(projectId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      const quickLink = project?.quickLink?.trim();
+      if (!project || !quickLink) {
+        return;
+      }
+
+      try {
+        await bridge.openPath(quickLink);
+      } catch (error) {
+        this.addLog(
+          projectId,
+          createLogEntry(
+            `Failed to open quick link: ${error instanceof Error ? error.message : String(error)}`,
+            "WARN",
           ),
         );
       }
