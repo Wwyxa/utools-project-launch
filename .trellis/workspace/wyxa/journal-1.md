@@ -797,3 +797,37 @@ Polished Git commit detail UI with true streaming AI output, commit-specific fil
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: 优化首页卡片与快捷访问链接
+
+**Date**: 2026-05-25
+**Task**: 优化首页卡片与快捷访问链接
+**Branch**: `master`
+
+### Summary
+
+修复首页排序模式下项目卡片高度变化问题，新增项目快捷访问链接配置与卡片入口，并记录项目字段持久化契约。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c6006c2` | (see git log) |
+| `8949e8c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
-- **Last Active**: 2026-05-23
+- **Total Sessions**: 23
+- **Last Active**: 2026-05-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~799 | Active |
+| `journal-1.md` | ~833 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-05-25 | 优化首页卡片与快捷访问链接 | `c6006c2`, `8949e8c` | `master` |
 | 22 | 2026-05-23 | 优化项目细节 | `5805d4c`, `16a94a7`, `6655160` | `master` |
 | 21 | 2026-05-23 | 完善 AI 流式与配置 | `a95ab70`, `7bed6bf`, `d109e52` | `master` |
 | 20 | 2026-05-22 | Git commit detail AI stream and layout polish | `b1164dc` | `master` |
