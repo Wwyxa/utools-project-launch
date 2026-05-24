@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend app structure and pre-development checklist for Vue/Pinia changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Dashboard card and project form component conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Project form, persistence, hydration, and Pinia store update conventions."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Project type and form value changes must stay type-safe."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Quality bar for focused frontend changes and verification."}

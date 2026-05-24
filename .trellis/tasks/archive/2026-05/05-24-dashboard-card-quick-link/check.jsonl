@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Verify changes against frontend project conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Check card/form component behavior, layout, and interaction boundaries."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check project persistence, hydration, and form draft consistency."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check new project URL field typing across forms and persisted data."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run final quality review and verification commands."}
