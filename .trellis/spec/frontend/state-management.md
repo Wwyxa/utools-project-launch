@@ -57,22 +57,30 @@ The current uTools integration follows this rule: UI components call store actio
 
 ### 2. Signatures
 
-- `Project` includes display metadata such as `type`, `kind`, and optional `icon`.
-- `ProjectFormValue` includes the same editable metadata fields.
+- `Project` includes display metadata such as `type`, `kind`, optional `icon`, and optional `quickLink`.
+- `ProjectFormValue` includes the same editable metadata fields, with optional persisted project fields normalized to form-safe strings.
 - Store persistence path: `saveProjectForm()` -> `persistProjects()` -> `bridge.saveProjects(...)`.
 - uTools preload persistence path: `writeStoredProjects(projects)` -> per-project docs containing `project: toStoredProject(project)`.
+- Quick link launch path: dashboard/card action -> `openProjectQuickLink(projectId)` -> `bridge.openPath(quickLink)` -> browser fallback `window.open(...)` or uTools preload `shell.openExternal(...)` for URL-like targets.
 
 ### 3. Contracts
 
 - Every user-visible project metadata field that should survive restart must be written by both store-side persistence (`toPersistedProject` in `src/store/useStore.ts`) and preload-side persistence (`toStoredProject` in `public/preload.js`).
 - Browser fallback and uTools preload storage must preserve the same logical project fields. A field working in browser/local state is not enough if preload drops it during doc writes.
 - `type`, `kind`, and `icon` are linked metadata: icon selection may update type/kind, and all three must round-trip together.
+- `quickLink` is a project-level optional URL string. Trim it when moving between persisted projects, hydrated projects, form drafts, and saved projects; keep missing/legacy values as an empty string in form state and absent/empty in project state.
+- Components must call store actions for project quick links. Do not call `window.open`, `shell.openExternal`, or `bridge.openPath` directly from `ProjectCard.vue`.
+- `bridge.openPath` may receive both file-system paths and quick-link URLs. The browser fallback and uTools preload must keep file paths opening through the existing path behavior while routing `http://`, `https://`, protocol-relative URLs, `mailto:`, and `utools:` URLs through external URL opening.
 - Path inspection may infer metadata for new/blank forms, but it must not overwrite an explicit user-selected icon when the draft already has one.
 - Hydration may infer an icon only as a fallback when persisted data has no icon.
 
 ### 4. Validation & Error Matrix
 
 - Missing persisted `icon` -> hydrate with `inferProjectIcon(kind, type, name)`.
+- Missing persisted `quickLink` -> hydrate/form value is `""`; dashboard renders no quick-link button and reserves no empty slot.
+- Whitespace-only `quickLink` -> normalize to `""` before persisting or rendering.
+- Configured URL-like `quickLink` -> open externally through the bridge and prevent card click bubbling in the component action.
+- `bridge.openPath` receives a normal local folder/file path -> keep existing path opening behavior, not external URL handling.
 - Missing persisted `type` or `kind` -> keep existing defaults or normalize to a safe custom project type.
 - Preload `toStoredProject` omits a new metadata field -> field appears to work until plugin restart, then is lost.
 - Path inspection after manual icon selection -> keep selected icon, only update other inferred metadata when appropriate.
@@ -80,15 +88,19 @@ The current uTools integration follows this rule: UI components call store actio
 ### 5. Good/Base/Bad Cases
 
 - Good: selecting a Vue/AI/Docker icon updates the form, saves `type/kind/icon`, and the same icon appears after plugin restart.
+- Good: adding `http://localhost:3000` as a quick link saves, reloads, shows one compact dashboard card action, and opens without selecting the card.
 - Base: older stored projects without `icon` still load with an inferred icon.
-- Bad: adding `Project.icon` and store persistence but forgetting `public/preload.js#toStoredProject`, causing uTools db docs to drop the field.
+- Base: older stored projects without `quickLink` still open edit forms with an empty quick-link field.
+- Bad: adding `Project.icon` or `Project.quickLink` and store persistence but forgetting `public/preload.js#toStoredProject`, causing uTools db docs to drop the field.
 
 ### 6. Tests Required
 
-- `npm run build` after changing shared project metadata or persistence code.
+- `npm run lint` and `npm run build` after changing shared project metadata or persistence code.
 - Manual smoke test in uTools: edit a project icon/type, restart the plugin, and confirm the icon/type are still present.
+- Manual smoke test in uTools: edit a project quick link, restart the plugin, and confirm the dashboard button is still present and opens the URL externally.
 - Manual smoke test in browser preview: save and reload from fallback storage.
 - Regression check: trigger path inspection after choosing an icon and verify the explicit icon is not reset unexpectedly.
+- Regression check: projects without quick links should not gain an empty dashboard action slot.
 
 ### 7. Wrong vs Correct
 
@@ -113,6 +125,7 @@ function toStoredProject(project) {
     type: project.type || "Custom",
     kind: project.kind || "custom",
     icon: project.icon || "custom",
+    quickLink: normalizeQuickLink(project.quickLink),
   };
 }
 ```
