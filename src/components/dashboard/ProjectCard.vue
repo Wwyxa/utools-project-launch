@@ -11,7 +11,7 @@ import {
   Trash2,
   ChevronDown,
   GripVertical,
-  ExternalLink,
+  Link2,
 } from "lucide-vue-next";
 import { Project, ProjectStatus, ProjectIconKey } from "../../types";
 import { cn } from "../../lib/utils";
@@ -338,7 +338,7 @@ const handleDelete = (event: MouseEvent) => {
             :title="t.projectActions.openQuickLink"
             :aria-label="t.projectActions.openQuickLink"
           >
-            <ExternalLink :size="13" />
+            <Link2 :size="13" />
           </button>
 
           <GripVertical v-if="isSorting" :size="16" class="shrink-0 text-on-surface-variant/55" />

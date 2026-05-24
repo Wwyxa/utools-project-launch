@@ -3,8 +3,8 @@ import { computed, ref } from "vue";
 import {
   CheckSquare,
   Code2,
-  ExternalLink,
   Folder,
+  FolderOpen,
   GitCommitHorizontal,
   Pencil,
   ArrowLeft,
@@ -210,7 +210,7 @@ const handleFileOpened = (relativePath: string) => {
           :title="t.projectDetails.openProject"
           :aria-label="t.projectDetails.openProject"
         >
-          <ExternalLink :size="18" class="group-hover:text-primary" />
+          <FolderOpen :size="18" class="group-hover:text-primary" />
         </button>
         <button
           type="button"
