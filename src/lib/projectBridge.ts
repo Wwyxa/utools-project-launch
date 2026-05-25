@@ -387,6 +387,9 @@ const fallbackBridge: ProjectBridge = {
   async pickProjectPath() {
     return { canceled: true, message: "浏览器预览无法打开系统文件夹选择器，请手动填写路径。" };
   },
+  async pickQuickLinkPath() {
+    return { canceled: true, message: "浏览器预览无法打开系统路径选择器，请手动填写路径。" };
+  },
   async pathExists(projectPath: string): Promise<boolean> {
     return Boolean(projectPath.trim());
   },

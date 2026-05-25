@@ -1755,6 +1755,19 @@ async function pickProjectPath() {
   return filePath ? { path: filePath } : { canceled: true };
 }
 
+async function pickQuickLinkPath() {
+  if (!window.utools?.showOpenDialog) {
+    return { canceled: true, message: "当前环境不支持系统路径选择器，请手动填写路径。" };
+  }
+
+  const selected = await window.utools.showOpenDialog({
+    title: "选择快捷访问路径",
+    properties: ["openFile", "openDirectory"],
+  });
+  const filePath = Array.isArray(selected) ? selected[0] : selected?.filePaths?.[0];
+  return filePath ? { path: filePath } : { canceled: true };
+}
+
 async function exportProjects(config) {
   const defaultPath = path.join(os.homedir(), `utools-projects-${new Date().toISOString().slice(0, 10)}.json`);
   const selected = window.utools?.showSaveDialog
@@ -2118,6 +2131,7 @@ window.projectBridge = {
   saveProjects: writeStoredProjects,
   inspectProjectPath,
   pickProjectPath,
+  pickQuickLinkPath,
   pathExists,
   loadTerminalPreferences: readTerminalPreferences,
   saveTerminalPreferences: saveTerminalPreferences,

@@ -967,6 +967,17 @@ export const useStore = defineStore("app", {
         this.projectFormInspectionMessage = result.message;
       }
     },
+    async pickQuickLinkPath() {
+      const result = await bridge.pickQuickLinkPath();
+      if (result.path) {
+        this.updateProjectForm({ quickLink: result.path });
+        return;
+      }
+
+      if (result.message) {
+        this.projectFormInspectionMessage = result.message;
+      }
+    },
     addEnvironmentEntry() {
       this.projectFormDraft.envEntries.push({
         id: createEnvId(),

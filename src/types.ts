@@ -396,6 +396,7 @@ export interface ProjectBridge {
   ): Promise<void>;
   inspectProjectPath(projectPath: string): Promise<ProjectPathInspection>;
   pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
+  pickQuickLinkPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pathExists(projectPath: string): Promise<boolean>;
   exportProjects(config: ProjectConfigFile): Promise<{ canceled?: boolean; path?: string }>;
   importProjects(): Promise<{ canceled?: boolean; config?: ProjectConfigFile; message?: string }>;

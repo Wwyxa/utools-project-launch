@@ -175,14 +175,24 @@ const handleScriptDrop = (targetScriptId: string) => {
             </label>
             <label class="space-y-1.5 md:col-span-4">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.quickLink }}</span>
-              <input
-                :value="form.quickLink"
-                type="url"
-                inputmode="url"
-                :placeholder="t.modal.quickLinkPlaceholder"
-                @input="(event) => store.updateProjectForm({ quickLink: (event.target as HTMLInputElement).value })"
-                class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
-              />
+              <div class="flex gap-2">
+                <input
+                  :value="form.quickLink"
+                  type="text"
+                  :placeholder="t.modal.quickLinkPlaceholder"
+                  @input="(event) => store.updateProjectForm({ quickLink: (event.target as HTMLInputElement).value })"
+                  class="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                />
+                <button
+                  type="button"
+                  @click="store.pickQuickLinkPath"
+                  class="shrink-0 rounded-lg border border-border-subtle px-2.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                  :title="t.modal.quickLinkPickPath"
+                  :aria-label="t.modal.quickLinkPickPath"
+                >
+                  <FolderOpen :size="16" />
+                </button>
+              </div>
             </label>
             <label class="space-y-1.5 md:col-span-5">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.description }}</span>
