@@ -1455,11 +1455,21 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             </button>
           </div>
           <div
-            class="ai-result-panel min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
+            class="ai-result-panel relative min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
           >
+            <button
+              v-if="aiDialogDisplayResult"
+              type="button"
+              class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
+              :title="copyLabel(aiDialogDisplayResult)"
+              :aria-label="copyLabel(aiDialogDisplayResult)"
+              @click="copyText(aiDialogDisplayResult)"
+            >
+              <ClipboardCopy :size="12" />
+            </button>
             <div
               v-if="aiDialogDisplayResult"
-              class="memo-rendered ai-markdown-result text-on-surface"
+              class="memo-rendered ai-markdown-result pr-7 text-on-surface"
               v-html="renderedAiDialogResult"
             ></div>
             <div
@@ -1686,11 +1696,21 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 </div>
               </div>
               <div
-                class="ai-result-panel mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
+                class="ai-result-panel relative mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
               >
+                <button
+                  v-if="commitAiDisplayResult"
+                  type="button"
+                  class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
+                  :title="copyLabel(commitAiDisplayResult)"
+                  :aria-label="copyLabel(commitAiDisplayResult)"
+                  @click="copyText(commitAiDisplayResult)"
+                >
+                  <ClipboardCopy :size="12" />
+                </button>
                 <div
                   v-if="commitAiDisplayResult"
-                  class="memo-rendered ai-markdown-result text-on-surface"
+                  class="memo-rendered ai-markdown-result pr-7 text-on-surface"
                   v-html="renderedCommitAiResult"
                 ></div>
                 <div
