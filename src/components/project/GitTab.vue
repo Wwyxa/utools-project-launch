@@ -69,6 +69,7 @@ const commitKeyword = ref("");
 const commitAuthor = ref("");
 const commitSince = ref("");
 const commitUntil = ref("");
+const selectedCommitHashes = ref<string[]>([]);
 const selectedCommitHash = ref("");
 const selectedCommit = computed(() => commits.value.find((commit) => commit.hash === selectedCommitHash.value));
 const selectedCommitFiles = ref<ProjectGitFileChange[]>([]);
@@ -265,8 +266,43 @@ const activeCommitFilterCount = computed(
 );
 
 const hasCommitFilters = computed(() => activeCommitFilterCount.value > 0);
+const selectedCommitHashSet = computed(() => new Set(selectedCommitHashes.value));
+const selectedCommitCount = computed(() => selectedCommitHashes.value.length);
+const manuallySelectedCommits = computed(() => {
+  const selectedHashes = selectedCommitHashSet.value;
+  return (props.project.git?.commits || []).filter((commit) => selectedHashes.has(commit.hash));
+});
+const aiScopedCommits = computed(() =>
+  manuallySelectedCommits.value.length > 0 ? manuallySelectedCommits.value : commits.value,
+);
+const areAllVisibleCommitsSelected = computed(
+  () => commits.value.length > 0 && commits.value.every((commit) => selectedCommitHashSet.value.has(commit.hash)),
+);
+
+const isCommitSelected = (hash: string) => selectedCommitHashSet.value.has(hash);
+
+const toggleCommitSelection = (hash: string) => {
+  if (isCommitSelected(hash)) {
+    selectedCommitHashes.value = selectedCommitHashes.value.filter((selectedHash) => selectedHash !== hash);
+    return;
+  }
+  selectedCommitHashes.value = [...selectedCommitHashes.value, hash];
+};
+
+const selectVisibleCommits = () => {
+  const selectedHashes = new Set(selectedCommitHashes.value);
+  commits.value.forEach((commit) => selectedHashes.add(commit.hash));
+  selectedCommitHashes.value = Array.from(selectedHashes);
+};
+
+const clearCommitSelection = () => {
+  selectedCommitHashes.value = [];
+};
 
 const filterStatusSummary = computed(() => {
+  if (selectedCommitCount.value > 0) {
+    return `已手动选择 ${selectedCommitCount.value} 条提交，AI 将只分析这些提交。`;
+  }
   if (activeCommitFilterCount.value === 0) {
     return "当前未启用筛选条件。";
   }
@@ -274,8 +310,7 @@ const filterStatusSummary = computed(() => {
 });
 
 const commitScopeContext = computed(() => {
-  const selectedCommits = commits.value;
-  const commitLines = selectedCommits
+  const commitLines = aiScopedCommits.value
     .map((commit) => {
       const refs = commit.refs ? `\n  Refs: ${commit.refs}` : "";
       const body = commit.body ? `\n  Body: ${commit.body}` : "";
@@ -294,8 +329,9 @@ const commitScopeContext = computed(() => {
 
 const buildAiPrompt = () => {
   const focus = selectedAiMode.value?.prompt || "请总结这些 Git 信息。";
+  const scopeTitle = selectedCommitCount.value > 0 ? "当前手动选择的提交" : "当前筛选后的提交";
 
-  return `${focus}\n\n要求：\n- 必须结合提交时间、commit message、body、refs，以及当前代码变更一起判断。\n- 不要只复述 commit message。\n- 输出面向开发者的结构化内容。\n\n当前筛选后的提交：\n${commitScopeContext.value.commitLines}\n\n当前工作区代码变更：\n${commitScopeContext.value.fileLines}`;
+  return `${focus}\n\n要求：\n- 必须结合提交时间、commit message、body、refs，以及当前代码变更一起判断。\n- 不要只复述 commit message。\n- 输出面向开发者的结构化内容。\n\n${scopeTitle}：\n${commitScopeContext.value.commitLines}\n\n当前工作区代码变更：\n${commitScopeContext.value.fileLines}`;
 };
 
 const resetCommitAiState = () => {
@@ -546,6 +582,21 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => props.project.id,
+  () => {
+    clearCommitSelection();
+  },
+);
+
+watch(
+  () => (props.project.git?.commits || []).map((commit) => commit.hash).join("|"),
+  () => {
+    const availableHashes = new Set((props.project.git?.commits || []).map((commit) => commit.hash));
+    selectedCommitHashes.value = selectedCommitHashes.value.filter((hash) => availableHashes.has(hash));
+  },
+);
+
 const diffLines = computed(() =>
   (selectedDiff.value?.diff || "").split("\n").map((content, index) => {
     const kind =
@@ -715,7 +766,7 @@ const graphColumnWidth = computed(() =>
   Math.min(maxGraphColumnWidth, Math.max(minGraphColumnWidth, ...graphRows.value.map((row) => row.width))),
 );
 
-const graphRowColumns = computed(() => `${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`);
+const graphRowColumns = computed(() => `1.25rem ${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`);
 const gitGridColumns = "minmax(13rem,0.42fr) minmax(0,1.58fr)";
 const commitDateLabel = (value?: string) => formatCommitTime(value).text;
 
@@ -1039,10 +1090,31 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             <div
               v-for="row in graphRows"
               :key="row.commit.hash"
-              class="grid h-8 min-w-[30rem] cursor-pointer items-center gap-1.5 rounded px-2 text-xs hover:bg-surface-container-high"
+              :class="
+                cn(
+                  'group grid h-8 min-w-[31rem] cursor-pointer items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-container-high',
+                  isCommitSelected(row.commit.hash) && 'bg-primary/5 ring-1 ring-primary/20 hover:bg-primary/10',
+                )
+              "
               :style="{ gridTemplateColumns: graphRowColumns }"
               @click="openCommitDetails(row.commit.hash)"
             >
+              <button
+                type="button"
+                :class="
+                  cn(
+                    'flex h-4 w-4 items-center justify-center rounded-[4px] border text-on-surface-variant/80 transition-colors hover:border-primary hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70 group-hover:border-outline-variant',
+                    isCommitSelected(row.commit.hash)
+                      ? 'border-primary bg-primary text-on-primary shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-primary)_18%,transparent)] hover:bg-primary hover:text-on-primary'
+                      : 'border-border-subtle bg-transparent',
+                  )
+                "
+                :title="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
+                :aria-label="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
+                @click.stop="toggleCommitSelection(row.commit.hash)"
+              >
+                <Check v-if="isCommitSelected(row.commit.hash)" :size="10" :stroke-width="3" />
+              </button>
               <div class="h-8 min-w-0 overflow-hidden">
                 <svg
                   class="block h-8 w-full"
@@ -1131,10 +1203,16 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
     </div>
 
     <section class="rounded-lg border border-border-subtle bg-surface px-3 py-2 shadow-sm">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2">
           <Filter :size="14" class="text-primary" />
           <h3 class="text-xs font-bold text-on-surface">{{ t.git.filters }}</h3>
+          <span
+            v-if="selectedCommitCount > 0"
+            class="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
+          >
+            已选 {{ selectedCommitCount }}
+          </span>
           <span
             v-if="hasCommitFilters"
             class="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
@@ -1143,6 +1221,24 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </span>
         </div>
         <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-2.5 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="commits.length === 0 || areAllVisibleCommitsSelected"
+            @click="selectVisibleCommits"
+          >
+            <Check :size="13" />
+            全选可见
+          </button>
+          <button
+            v-if="selectedCommitCount > 0"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-2.5 py-1.5 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+            @click="clearCommitSelection"
+          >
+            <X :size="13" />
+            清空选择
+          </button>
           <button
             type="button"
             class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-2.5 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
