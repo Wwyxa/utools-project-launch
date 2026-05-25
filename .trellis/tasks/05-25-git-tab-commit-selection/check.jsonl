@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend Vue/Tailwind project conventions for reviewing Git tab UI changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review component structure and template consistency."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review local state and store interaction consistency."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review TypeScript type safety for commit selection logic."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run and interpret required frontend quality checks."}

@@ -213,6 +213,36 @@ const filesPanelOpen = ref(true);
 
 **Related**: `src/components/project/GitTab.vue`.
 
+### Convention: Git History Selection Controls
+
+**What**: When Git history rows support manual selection for batch AI analysis, selection uses a dedicated compact button at the start of each row. The row click remains reserved for opening commit details.
+
+**Why**: Dense Git rows already have multiple meanings: graph scanning, hash copy, tooltip preview, and detail opening. A dedicated selection control lets users choose arbitrary commits without accidentally opening details or losing the compact row layout.
+
+**Example**:
+
+```vue
+<div class="grid h-8 items-center" @click="openCommitDetails(row.commit.hash)">
+  <button
+    type="button"
+    :aria-label="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
+    @click.stop="toggleCommitSelection(row.commit.hash)"
+  >
+    <Check v-if="isCommitSelected(row.commit.hash)" :size="12" />
+  </button>
+  <!-- graph, hash, message, refs, author/time -->
+</div>
+```
+
+**Rules**:
+
+- Keep selection state local to `GitTab.vue` unless another view needs to consume it.
+- AI batch scope should prefer explicitly selected commits, falling back to the filtered visible commit list when nothing is selected.
+- Bulk actions such as select visible and clear selection belong near the filter/AI action area, and the toolbar should wrap in narrow windows.
+- Do not make the whole row toggle selection; preserve row click for commit details and `@click.stop` for hash copy and selection buttons.
+
+**Related**: `src/components/project/GitTab.vue`, Streaming AI Bridge Actions in `state-management.md`.
+
 ### Convention: Markdown Commit Tooltips
 
 **What**: Git commit rows may show a delayed structured markdown tooltip for the full commit details, while the row itself stays compact and displays only the short hash, subject, refs, author, and relative time.

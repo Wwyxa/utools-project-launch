@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend Vue/Tailwind project conventions for Git tab UI changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Component structure and template conventions for editing a Vue single-file component."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"State handling conventions for local component state and store interaction."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"TypeScript typing conventions for computed state and helper functions."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Quality and verification expectations for frontend changes."}
