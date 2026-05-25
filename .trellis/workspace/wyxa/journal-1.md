@@ -831,3 +831,37 @@ Polished Git commit detail UI with true streaming AI output, commit-specific fil
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Git tab commit selection AI scope
+
+**Date**: 2026-05-25
+**Task**: Git tab commit selection AI scope
+**Branch**: `master`
+
+### Summary
+
+Added compact manual commit selection for Git tab AI generation, documented the interaction convention, and archived the completed Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4fca41b` | (see git log) |
+| `b9dbf00` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
