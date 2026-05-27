@@ -865,3 +865,38 @@ Added compact manual commit selection for Git tab AI generation, documented the 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: 修复 Git 分支较多时提交树渲染
+
+**Date**: 2026-05-27
+**Task**: 修复 Git 分支较多时提交树渲染
+**Branch**: `master`
+
+### Summary
+
+修复 Git 提交树在分支轨道较多时被固定列宽裁剪的问题，补充前端组件规范和 Trellis 任务记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `abf9201` | (see git log) |
+| `dd2818b` | (see git log) |
+| `851933e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
