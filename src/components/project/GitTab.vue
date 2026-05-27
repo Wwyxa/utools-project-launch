@@ -638,7 +638,6 @@ const rowHeight = 28;
 const dotRadius = 4.2;
 const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + 2;
 const minGraphColumnWidth = 50;
-const maxGraphColumnWidth = 104;
 
 const refsIncludeBranch = (refs: string | undefined, branch: string) =>
   refsForCommit(refs).some((refName) => {
@@ -762,11 +761,10 @@ const graphRows = computed(() => {
   });
 });
 
-const graphColumnWidth = computed(() =>
-  Math.min(maxGraphColumnWidth, Math.max(minGraphColumnWidth, ...graphRows.value.map((row) => row.width))),
-);
+const graphColumnWidth = computed(() => Math.max(minGraphColumnWidth, ...graphRows.value.map((row) => row.width)));
 
 const graphRowColumns = computed(() => `1.25rem ${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`);
+const graphRowMinWidth = computed(() => `max(31rem, calc(${graphColumnWidth.value}px + 25.375rem))`);
 const gitGridColumns = "minmax(13rem,0.42fr) minmax(0,1.58fr)";
 const commitDateLabel = (value?: string) => formatCommitTime(value).text;
 
@@ -1096,7 +1094,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                   isCommitSelected(row.commit.hash) && 'bg-primary/5 ring-1 ring-primary/20 hover:bg-primary/10',
                 )
               "
-              :style="{ gridTemplateColumns: graphRowColumns }"
+              :style="{ gridTemplateColumns: graphRowColumns, minWidth: graphRowMinWidth }"
               @click="openCommitDetails(row.commit.hash)"
             >
               <button
@@ -1118,7 +1116,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               <div class="h-8 min-w-0 overflow-hidden">
                 <svg
                   class="block h-8 w-full"
-                  :viewBox="`0 0 ${row.width} ${rowHeight}`"
+                  :viewBox="`0 0 ${graphColumnWidth} ${rowHeight}`"
                   preserveAspectRatio="xMinYMid meet"
                 >
                   <line
