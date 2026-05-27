@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package overview for validating scoped UI changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Check Vue component layout and interaction conventions."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check TypeScript safety for computed graph layout values."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run and interpret frontend quality checks."}

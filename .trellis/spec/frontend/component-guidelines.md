@@ -197,6 +197,8 @@ const filesPanelOpen = ref(true);
 
 **Why**: Moving author/time below the commit message improves scanability, but if the row height stays too large the graph feels stretched and wastes vertical space.
 
+**Graph Width Rule**: The SVG graph column must use the actual lane span as its CSS grid width. Do not cap the graph column to an arbitrary maximum such as `104px`; dense branch histories should make the row horizontally scrollable instead of clipping lanes or scaling each row differently.
+
 **Example**:
 
 ```vue

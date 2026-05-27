@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package overview and pre-development checklist for Vue UI changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Vue component composition and styling conventions for GitTab layout work."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"TypeScript patterns for computed values and component-local data structures."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Quality rules and verification expectations for frontend changes."}
