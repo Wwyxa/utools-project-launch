@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend task touching Vue components and Pinia store refresh state; load the frontend guideline index."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Refresh feedback is implemented in Vue components and should follow existing component conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Refresh state belongs in the Pinia store where project data and async actions live."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Keep the UI change focused, accessible, and consistent with project quality rules."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Any new refresh state should be typed safely and avoid loose record access pitfalls."}

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Check the change against frontend-wide conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Verify component interaction and accessibility conventions for refresh buttons."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify Pinia state/action choices and async refresh handling."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run the quality review against project frontend standards."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify new state and computed access remain type-safe."}
