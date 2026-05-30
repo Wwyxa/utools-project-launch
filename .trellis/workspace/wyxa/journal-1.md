@@ -900,3 +900,37 @@ Added compact manual commit selection for Git tab AI generation, documented the 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: 刷新按钮反馈
+
+**Date**: 2026-05-30
+**Task**: 刷新按钮反馈
+**Branch**: `master`
+
+### Summary
+
+为首页和项目详情刷新按钮补充可见的刷新中反馈；确认自动刷新暂不进入本次范围，仅记录为后续可选增强。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a1bfadd` | (see git log) |
+| `a804666` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
