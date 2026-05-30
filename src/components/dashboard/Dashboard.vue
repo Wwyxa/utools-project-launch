@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useStore } from "../../store/useStore";
 import ProjectCard from "./ProjectCard.vue";
 import { useI18n } from "../../lib/i18n";
@@ -10,6 +10,7 @@ const store = useStore();
 const t = useI18n();
 
 const searchQuery = ref("");
+const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
 const draggingProjectId = ref<string | null>(null);
 const projects = computed(() => {
@@ -30,8 +31,19 @@ const unavailableProjects = computed(() => {
 });
 const hasVisibleProjects = computed(() => projects.value.length > 0 || unavailableProjects.value.length > 0);
 
-const handleRefreshAll = () => {
-  store.refreshProjects();
+const handleRefreshAll = async () => {
+  if (isRefreshingProjects.value) {
+    return;
+  }
+
+  isRefreshingProjects.value = true;
+  await nextTick();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  try {
+    await store.refreshProjects();
+  } finally {
+    isRefreshingProjects.value = false;
+  }
 };
 
 const toggleSortingProjects = () => {
@@ -130,11 +142,22 @@ const handleProjectDragEnd = () => {
           </button>
           <button
             @click="handleRefreshAll"
-            class="toolbar-icon-button p-1.5 rounded-lg transition-colors"
-            :title="t.common.refresh"
-            :aria-label="t.common.refresh"
+            :disabled="isRefreshingProjects"
+            :class="
+              cn(
+                'toolbar-icon-button h-8 rounded-lg transition-colors disabled:cursor-wait disabled:opacity-90',
+                isRefreshingProjects
+                  ? 'px-2 flex items-center gap-1.5 !border-primary/35 !bg-primary/10 !text-primary'
+                  : 'p-1.5',
+              )
+            "
+            :title="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
+            :aria-label="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
           >
-            <RefreshCw :size="18" />
+            <RefreshCw :size="18" :class="isRefreshingProjects && 'animate-spin'" />
+            <span v-if="isRefreshingProjects" class="text-xs font-semibold leading-none">{{
+              t.common.refreshing
+            }}</span>
           </button>
           <button
             @click="store.openCreateProjectForm"

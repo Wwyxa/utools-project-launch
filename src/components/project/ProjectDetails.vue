@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import {
   CheckSquare,
   Code2,
@@ -31,6 +31,7 @@ const t = useI18n();
 type TabId = "info" | "scripts" | "files" | "git" | "memo";
 const activeTab = ref<TabId>("scripts");
 const fileOpenRequest = ref("");
+const refreshingProjectIds = ref<Set<string>>(new Set());
 
 const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
   { id: "info", label: t.value.projectDetails.overview },
@@ -107,6 +108,24 @@ const statusToneClass = computed(() => {
   }
   return "border-border-subtle bg-surface-container-low text-on-surface-variant";
 });
+const isRefreshingProject = computed(() => refreshingProjectIds.value.has(props.project.id));
+const refreshButtonLabel = computed(() => {
+  if (isRefreshingProject.value) {
+    return t.value.common.refreshing;
+  }
+  if (isUnavailable.value) {
+    return t.value.projectDetails.refreshUnavailable;
+  }
+  return t.value.common.refresh;
+});
+const refreshButtonClass = computed(() =>
+  cn(
+    "p-2 text-on-surface-variant hover:bg-surface-variant rounded-lg transition-colors shadow-sm bg-surface border border-border-subtle",
+    isRefreshingProject.value
+      ? "disabled:cursor-wait disabled:opacity-70"
+      : "disabled:cursor-not-allowed disabled:opacity-45",
+  ),
+);
 const metricToneClass = (tone: string) => {
   if (tone === "running") {
     return "border-status-running/25 bg-status-running/10 text-status-running";
@@ -122,9 +141,21 @@ const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
 const handleOpenEditor = () => store.openProjectInEditor(props.project.id);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
-const handleRefresh = () => {
-  if (!isUnavailable.value) {
-    void store.refreshGitSnapshot(props.project.id);
+const handleRefresh = async () => {
+  const projectId = props.project.id;
+  if (isUnavailable.value || refreshingProjectIds.value.has(projectId)) {
+    return;
+  }
+
+  refreshingProjectIds.value = new Set(refreshingProjectIds.value).add(projectId);
+  await nextTick();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  try {
+    await store.refreshGitSnapshot(projectId);
+  } finally {
+    const nextRefreshingProjectIds = new Set(refreshingProjectIds.value);
+    nextRefreshingProjectIds.delete(projectId);
+    refreshingProjectIds.value = nextRefreshingProjectIds;
   }
 };
 const handleDelete = () => {
@@ -175,12 +206,12 @@ const handleFileOpened = (relativePath: string) => {
         <button
           type="button"
           @click="handleRefresh"
-          :disabled="isUnavailable"
-          class="p-2 text-on-surface-variant hover:bg-surface-variant rounded-lg transition-colors shadow-sm bg-surface border border-border-subtle"
-          :title="t.common.refresh"
-          :aria-label="t.common.refresh"
+          :disabled="isUnavailable || isRefreshingProject"
+          :class="refreshButtonClass"
+          :title="refreshButtonLabel"
+          :aria-label="refreshButtonLabel"
         >
-          <RefreshCw :size="18" />
+          <RefreshCw :size="18" :class="isRefreshingProject && 'animate-spin'" />
         </button>
         <button
           type="button"

@@ -16,6 +16,7 @@ const messages = {
       cancel: "取消",
       delete: "删除",
       refresh: "刷新",
+      refreshing: "正在刷新",
       openFolder: "打开目录",
       search: "搜索",
       close: "关闭",
@@ -95,6 +96,7 @@ const messages = {
       packageScriptsHint: "优先读取 package.json 中的脚本。",
       manualScriptsHint: "支持自定义命令、前后端分组与可执行文件。",
       noScripts: "还没有配置可启动脚本。",
+      refreshUnavailable: "项目路径不可用，无法刷新",
     },
     projectActions: {
       viewDetails: "查看项目详情",
@@ -302,6 +304,7 @@ const messages = {
       cancel: "Cancel",
       delete: "Delete",
       refresh: "Refresh",
+      refreshing: "Refreshing",
       openFolder: "Open Folder",
       search: "Search",
       close: "Close",
@@ -381,6 +384,7 @@ const messages = {
       packageScriptsHint: "Prefer scripts from package.json when available.",
       manualScriptsHint: "Supports custom commands, front-end/back-end groups, and executables.",
       noScripts: "No launch scripts yet.",
+      refreshUnavailable: "Project path is unavailable, refresh disabled",
     },
     projectActions: {
       viewDetails: "View project details",
