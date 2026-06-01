@@ -48,8 +48,17 @@ const createAiPromptModeId = () => `custom-${Date.now()}`;
 const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
 const createProjectId = () => `project-${Date.now()}`;
+const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
+let projectConfigMessageClearTimer: number | null = null;
 const ansiControlPattern =
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+
+function cancelProjectConfigMessageClear() {
+  if (projectConfigMessageClearTimer) {
+    window.clearTimeout(projectConfigMessageClearTimer);
+    projectConfigMessageClearTimer = null;
+  }
+}
 
 function resolveProjectSortOrder(project: Project, fallbackIndex = 0): number {
   return typeof project.sortOrder === "number" && Number.isFinite(project.sortOrder)
@@ -496,6 +505,7 @@ export const useStore = defineStore("app", {
     supportsBridge: supportsRealProjectBridge(),
     projectsLoaded: false,
     projectStorageMessage: "",
+    projectConfigMessage: "",
     projectFormInspectionMessage: "",
     projectFormInspecting: false,
     projectFormCwdSuggestions: ["."] as string[],
@@ -627,6 +637,20 @@ export const useStore = defineStore("app", {
     },
     setTheme(theme: "light" | "dark" | "auto") {
       this.theme = theme;
+    },
+    setProjectConfigMessage(message: string) {
+      cancelProjectConfigMessageClear();
+      this.projectConfigMessage = message;
+      if (!message) {
+        return;
+      }
+
+      projectConfigMessageClearTimer = window.setTimeout(() => {
+        if (this.projectConfigMessage === message) {
+          this.projectConfigMessage = "";
+        }
+        projectConfigMessageClearTimer = null;
+      }, PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS);
     },
     setDefaultTerminal(kind: DefaultTerminalKind) {
       this.terminalPreferences.kind = kind;
@@ -1671,16 +1695,14 @@ export const useStore = defineStore("app", {
         projects: this.projects.map((project, index) => toPersistedProject(project, index)),
       };
       const result = await bridge.exportProjects(config);
-      this.projectStorageMessage = result.canceled
-        ? "已取消导出"
-        : result.path
-          ? `已导出到 ${result.path}`
-          : "已导出项目配置";
+      this.setProjectConfigMessage(
+        result.canceled ? "已取消导出" : result.path ? `已导出到 ${result.path}` : "已导出项目配置",
+      );
     },
     async importProjectConfig() {
       const result = await bridge.importProjects();
       if (result.canceled || !result.config) {
-        this.projectStorageMessage = result.message || "已取消导入";
+        this.setProjectConfigMessage(result.message || "已取消导入");
         return;
       }
 
@@ -1688,7 +1710,7 @@ export const useStore = defineStore("app", {
         this.projects.map((project) => `${project.path.toLowerCase()}::${project.name.toLowerCase()}`),
       );
       if (result.config.schemaVersion !== 1 || !Array.isArray(result.config.projects)) {
-        this.projectStorageMessage = "配置文件格式不受支持";
+        this.setProjectConfigMessage("配置文件格式不受支持");
         return;
       }
 
@@ -1711,7 +1733,7 @@ export const useStore = defineStore("app", {
       this.projects = [...accepted, ...this.projects];
       await this.refreshProjectAvailability();
       await this.persistProjects();
-      this.projectStorageMessage = `已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`;
+      this.setProjectConfigMessage(`已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`);
     },
     handleBridgeEvent(event: ProjectBridgeEvent) {
       const project = this.projects.find((item) => item.id === event.projectId);

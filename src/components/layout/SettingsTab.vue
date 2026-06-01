@@ -603,8 +603,11 @@ watch(
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.projectConfig }}</h3>
           </div>
-          <p v-if="store.projectStorageMessage" class="truncate text-xs text-on-surface-variant">
-            {{ store.projectStorageMessage }}
+          <p
+            v-if="store.projectConfigMessage || store.projectStorageMessage"
+            class="truncate text-xs text-on-surface-variant"
+          >
+            {{ store.projectConfigMessage || store.projectStorageMessage }}
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
