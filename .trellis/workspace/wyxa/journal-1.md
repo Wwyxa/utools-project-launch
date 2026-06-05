@@ -934,3 +934,37 @@ Added compact manual commit selection for Git tab AI generation, documented the 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Memo todo display polish
+
+**Date**: 2026-06-06
+**Task**: Memo todo display polish
+**Branch**: `master`
+
+### Summary
+
+Adjusted Memo tab todo layout: widened the todo column, allowed todo text to clamp to two lines, added a type-check script, and recorded task planning context.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8c51db4` | (see git log) |
+| `4447335` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

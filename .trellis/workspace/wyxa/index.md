@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
-- **Last Active**: 2026-05-30
+- **Total Sessions**: 27
+- **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~936 | Active |
+| `journal-1.md` | ~970 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-06-06 | Memo todo display polish | `8c51db4`, `4447335` | `master` |
 | 26 | 2026-05-30 | 刷新按钮反馈 | `a1bfadd`, `a804666` | `master` |
 | 25 | 2026-05-27 | 修复 Git 分支较多时提交树渲染 | `abf9201`, `dd2818b`, `851933e` | `master` |
 | 24 | 2026-05-25 | Git tab commit selection AI scope | `4fca41b`, `b9dbf00` | `master` |
