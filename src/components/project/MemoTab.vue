@@ -120,7 +120,7 @@ onBeforeUnmount(flushMemo);
 </script>
 
 <template>
-  <div class="grid h-full min-h-0 grid-cols-[minmax(10.5rem,0.52fr)_minmax(0,1.48fr)] gap-2 overflow-hidden">
+  <div class="grid h-full min-h-0 grid-cols-[minmax(12rem,0.64fr)_minmax(0,1.36fr)] gap-2 overflow-hidden">
     <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
       <div class="flex h-10 items-center justify-between gap-3 border-b border-border-subtle px-4">
         <h3 class="flex items-center gap-2 text-sm font-bold text-on-surface">
@@ -183,7 +183,7 @@ onBeforeUnmount(flushMemo);
             <span
               :class="
                 cn(
-                  'min-w-0 flex-1 truncate text-xs font-medium leading-5 transition-colors',
+                  'line-clamp-2 min-w-0 flex-1 break-words text-xs font-medium leading-5 transition-colors',
                   todo.completed ? 'text-on-surface-variant line-through' : 'text-on-surface group-hover:text-primary',
                 )
               "
