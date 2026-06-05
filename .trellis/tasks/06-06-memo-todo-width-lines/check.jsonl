@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend project overview and guideline index for verification."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Verify the Vue component remains consistent with local component conventions."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify frontend quality checks and style expectations."}
