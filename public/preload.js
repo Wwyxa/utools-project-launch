@@ -1265,6 +1265,10 @@ function normalizeQuickLink(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeProjectGroup(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function isExternalUrl(value) {
   return /^(?:https?:)?\/\//i.test(value) || /^(?:mailto|utools):/i.test(value);
 }
@@ -1291,6 +1295,7 @@ function toStoredProject(project, index = 0) {
     kind: project.kind || "custom",
     icon: project.icon || "custom",
     quickLink: normalizeQuickLink(project.quickLink),
+    group: normalizeProjectGroup(project.group),
     status: "STOPPED",
     description: project.description || "",
     lastUpdated: project.lastUpdated || "",

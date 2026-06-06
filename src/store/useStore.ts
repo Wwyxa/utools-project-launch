@@ -72,6 +72,10 @@ function normalizeQuickLink(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeProjectGroup(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function toPersistedProject(project: Project, sortOrder?: number): Project {
   const persistedStatus = project.pathExists === false ? ProjectStatus.WARNING : ProjectStatus.STOPPED;
   const persistedSortOrder =
@@ -85,6 +89,7 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
     kind: project.kind,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
     quickLink: normalizeQuickLink(project.quickLink),
+    group: normalizeProjectGroup(project.group),
     description: project.description || "",
     status: persistedStatus,
     lastUpdated: project.lastUpdated || "",
@@ -174,6 +179,7 @@ function formFromProject(project: Project): ProjectFormValue {
     kind: project.kind,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
     quickLink: normalizeQuickLink(project.quickLink),
+    group: normalizeProjectGroup(project.group),
     description: project.description || "",
     branch: project.branch || "main",
     memo: project.memo || "",
@@ -227,6 +233,7 @@ function hydrateProject(project: Project): Project {
     ...project,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
     quickLink: normalizeQuickLink(project.quickLink),
+    group: normalizeProjectGroup(project.group),
     branch: project.branch || project.git?.branch || "main",
     description: project.description || "",
     memo: project.memo || "",
@@ -465,6 +472,7 @@ function createBlankProjectForm(): ProjectFormValue {
     kind: "node",
     icon: "node",
     quickLink: "",
+    group: "",
     description: "",
     branch: "main",
     memo: "",
@@ -1094,6 +1102,7 @@ export const useStore = defineStore("app", {
         kind: payload.kind,
         icon: payload.icon,
         quickLink: payload.quickLink.trim(),
+        group: normalizeProjectGroup(payload.group),
         description: payload.description,
         status:
           this.projectFormMode === "edit"
@@ -1291,6 +1300,33 @@ export const useStore = defineStore("app", {
       }
       if (!activeSectionProjects.some((item) => item.id === targetProjectId)) {
         return false;
+      }
+
+      if (scopedSectionProjects.length > 0) {
+        const reorderedScopedProjects = [...scopedSectionProjects];
+        const currentScopedIndex = reorderedScopedProjects.findIndex((item) => item.id === projectId);
+        const targetScopedIndex = reorderedScopedProjects.findIndex((item) => item.id === targetProjectId);
+        if (currentScopedIndex < 0 || targetScopedIndex < 0) {
+          return false;
+        }
+
+        const [movedProject] = reorderedScopedProjects.splice(currentScopedIndex, 1);
+        const nextTargetScopedIndex = reorderedScopedProjects.findIndex((item) => item.id === targetProjectId);
+        reorderedScopedProjects.splice(nextTargetScopedIndex, 0, movedProject);
+
+        const scopedProjectIds = new Set(reorderedScopedProjects.map((item) => item.id));
+        let scopedIndex = 0;
+        this.projects = this.projects.map((item) => {
+          if (!isSameSection(item) || !scopedProjectIds.has(item.id)) {
+            return item;
+          }
+
+          const nextProject = reorderedScopedProjects[scopedIndex];
+          scopedIndex += 1;
+          return nextProject;
+        });
+        await this.persistProjects();
+        return true;
       }
 
       const reorderedSectionProjects = [...sectionProjects];

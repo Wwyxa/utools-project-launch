@@ -23,6 +23,8 @@ const props = defineProps<{
   project: Project;
   isSorting?: boolean;
   isDragging?: boolean;
+  showGroupBadge?: boolean;
+  groupLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -45,6 +47,7 @@ const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING)
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
 const isUnavailable = computed(() => props.project.pathExists === false);
 const quickLink = computed(() => props.project.quickLink?.trim() || "");
+const displayGroupLabel = computed(() => props.groupLabel?.trim() || props.project.group?.trim() || "");
 const activeScripts = computed(() =>
   props.project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
 );
@@ -428,6 +431,13 @@ const handleDelete = (event: MouseEvent) => {
             <h3 class="min-w-0 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
               {{ project.name }}
             </h3>
+            <span
+              v-if="showGroupBadge && displayGroupLabel"
+              class="inline-flex max-w-20 shrink-0 rounded-full border border-border-subtle bg-surface-container-low px-1.5 py-0.5 text-[9px] font-bold leading-none text-on-surface-variant"
+              :title="displayGroupLabel"
+            >
+              <span class="truncate">{{ displayGroupLabel }}</span>
+            </span>
             <span
               v-if="isRunning"
               class="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-running/25 bg-status-running/10 px-1.5 py-0.5 text-[9px] font-bold text-status-running"

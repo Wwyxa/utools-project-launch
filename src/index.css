@@ -298,6 +298,64 @@
   background: var(--toolbar-primary-bg-hover);
 }
 
+.dashboard-filter-chip {
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface);
+}
+
+.dashboard-filter-chip:hover {
+  border-color: var(--color-outline-variant);
+  background: var(--toolbar-control-bg-hover);
+  color: var(--color-on-surface);
+}
+
+.dashboard-filter-chip.is-active {
+  border-color: var(--color-primary-container);
+  background: #ddf6ea;
+  color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px rgba(0, 108, 73, 0.12);
+}
+
+.dashboard-filter-chip-count {
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+}
+
+.dashboard-filter-chip-count.is-active {
+  background: rgba(0, 108, 73, 0.12);
+  color: var(--color-primary);
+}
+
+.dark .dashboard-filter-chip {
+  border-color: #2b3030;
+  background: #151718;
+  color: #bccac0;
+}
+
+.dark .dashboard-filter-chip:hover {
+  border-color: #3b4641;
+  background: #1b1e1f;
+  color: #e4e2e1;
+}
+
+.dark .dashboard-filter-chip.is-active {
+  border-color: #2f7d5d;
+  background: #10251d;
+  color: #63dca6;
+  box-shadow: inset 0 0 0 1px rgba(99, 220, 166, 0.12);
+}
+
+.dark .dashboard-filter-chip-count {
+  background: #222526;
+  color: #bccac0;
+}
+
+.dark .dashboard-filter-chip-count.is-active {
+  background: #17382b;
+  color: #81f9c1;
+}
+
 .ui-field {
   min-height: 2.25rem;
   border: 1px solid var(--color-border-subtle);
