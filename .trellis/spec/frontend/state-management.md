@@ -57,7 +57,7 @@ The current uTools integration follows this rule: UI components call store actio
 
 ### 2. Signatures
 
-- `Project` includes display metadata such as `type`, `kind`, optional `icon`, and optional `quickLink`.
+- `Project` includes display metadata such as `type`, `kind`, optional `icon`, optional `quickLink`, and optional grouping metadata like `group`.
 - `ProjectFormValue` includes the same editable metadata fields, with optional persisted project fields normalized to form-safe strings.
 - Store persistence path: `saveProjectForm()` -> `persistProjects()` -> `bridge.saveProjects(...)`.
 - uTools preload persistence path: `writeStoredProjects(projects)` -> per-project docs containing `project: toStoredProject(project)`.
@@ -69,6 +69,7 @@ The current uTools integration follows this rule: UI components call store actio
 - Browser fallback and uTools preload storage must preserve the same logical project fields. A field working in browser/local state is not enough if preload drops it during doc writes.
 - `type`, `kind`, and `icon` are linked metadata: icon selection may update type/kind, and all three must round-trip together.
 - `quickLink` is a project-level optional URL string. Trim it when moving between persisted projects, hydrated projects, form drafts, and saved projects; keep missing/legacy values as an empty string in form state and absent/empty in project state.
+- `group` is project-level display metadata. Trim it at every boundary and treat missing or whitespace-only values as the ungrouped bucket in Dashboard UI while keeping form state as an empty string.
 - Components must call store actions for project quick links. Do not call `window.open`, `shell.openExternal`, or `bridge.openPath` directly from `ProjectCard.vue`.
 - `bridge.openPath` may receive both file-system paths and quick-link URLs. The browser fallback and uTools preload must keep file paths opening through the existing path behavior while routing `http://`, `https://`, protocol-relative URLs, `mailto:`, and `utools:` URLs through external URL opening.
 - Path inspection may infer metadata for new/blank forms, but it must not overwrite an explicit user-selected icon when the draft already has one.
@@ -79,6 +80,8 @@ The current uTools integration follows this rule: UI components call store actio
 - Missing persisted `icon` -> hydrate with `inferProjectIcon(kind, type, name)`.
 - Missing persisted `quickLink` -> hydrate/form value is `""`; dashboard renders no quick-link button and reserves no empty slot.
 - Whitespace-only `quickLink` -> normalize to `""` before persisting or rendering.
+- Missing persisted `group` -> hydrate/form value is `""`; dashboard displays the project under the localized ungrouped label.
+- Whitespace-only `group` -> normalize to `""` before persisting, grouping, or rendering.
 - Configured URL-like `quickLink` -> open externally through the bridge and prevent card click bubbling in the component action.
 - `bridge.openPath` receives a normal local folder/file path -> keep existing path opening behavior, not external URL handling.
 - Missing persisted `type` or `kind` -> keep existing defaults or normalize to a safe custom project type.
@@ -91,7 +94,8 @@ The current uTools integration follows this rule: UI components call store actio
 - Good: adding `http://localhost:3000` as a quick link saves, reloads, shows one compact dashboard card action, and opens without selecting the card.
 - Base: older stored projects without `icon` still load with an inferred icon.
 - Base: older stored projects without `quickLink` still open edit forms with an empty quick-link field.
-- Bad: adding `Project.icon` or `Project.quickLink` and store persistence but forgetting `public/preload.js#toStoredProject`, causing uTools db docs to drop the field.
+- Base: older stored projects without `group` still open edit forms with an empty group field and appear under the ungrouped dashboard section.
+- Bad: adding `Project.icon`, `Project.quickLink`, `Project.group`, or similar display metadata and store persistence but forgetting `public/preload.js#toStoredProject`, causing uTools db docs to drop the field.
 
 ### 6. Tests Required
 
@@ -126,6 +130,7 @@ function toStoredProject(project) {
     kind: project.kind || "custom",
     icon: project.icon || "custom",
     quickLink: normalizeQuickLink(project.quickLink),
+    group: normalizeProjectGroup(project.group),
   };
 }
 ```
