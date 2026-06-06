@@ -1003,3 +1003,38 @@ Adjusted Memo tab todo layout: widened the todo column, allowed todo text to cla
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: 首页项目分组筛选
+
+**Date**: 2026-06-07
+**Task**: 首页项目分组筛选
+**Branch**: `master`
+
+### Summary
+
+实现首页项目分组筛选：新增项目 group 字段并打通表单、store、导入导出与 preload 持久化；首页改为分组筛选加连续卡片网格，补充分组角标、深浅色筛选样式和项目元数据持久化规格。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1607856` | (see git log) |
+| `2a9d9db` | (see git log) |
+| `d926c16` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

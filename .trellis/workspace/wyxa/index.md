@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
-- **Last Active**: 2026-06-06
+- **Total Sessions**: 29
+- **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1005 | Active |
+| `journal-1.md` | ~1040 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 29 | 2026-06-07 | 首页项目分组筛选 | `1607856`, `2a9d9db`, `d926c16` | `master` |
 | 28 | 2026-06-06 | 折叠 AI 思考过程 | `8a46855`, `846ea99`, `da11b3f` | `master` |
 | 27 | 2026-06-06 | Memo todo display polish | `8c51db4`, `4447335` | `master` |
 | 26 | 2026-05-30 | 刷新按钮反馈 | `a1bfadd`, `a804666` | `master` |
