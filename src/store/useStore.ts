@@ -1,9 +1,11 @@
 import { defineStore } from "pinia";
+import { aiStreamChunkRawText } from "../lib/aiReasoning";
 import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
 import { DEFAULT_AI_PROMPT_MODES, ProjectStatus } from "../types";
 import type {
   AiPreferences,
   AiAnalyzeResult,
+  AiStreamChunkPayload,
   AiModelInfo,
   AiPromptMode,
   DefaultTerminalKind,
@@ -39,7 +41,7 @@ type AiAnalysisState = "idle" | "loading" | "success" | "warning" | "error";
 
 interface AiStreamHandlers {
   onStart?: () => void;
-  onChunk?: (chunk: string) => void;
+  onChunk?: (chunk: AiStreamChunkPayload) => void;
   onDone?: (result: AiAnalyzeResult) => void;
 }
 
@@ -840,7 +842,7 @@ export const useStore = defineStore("app", {
       try {
         await this.analyzeGitWithAiStream(projectId, prompt, {
           onChunk: (chunk) => {
-            this.aiAnalysisResult += chunk;
+            this.aiAnalysisResult += aiStreamChunkRawText(chunk);
           },
           onDone: (result) => {
             if (!this.aiAnalysisResult && result.content) {

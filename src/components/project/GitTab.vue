@@ -27,6 +27,14 @@ import {
   type ProjectGitFileChange,
   type ProjectGitFileDiffResult,
 } from "../../types";
+import AiReasoningResult from "./AiReasoningResult.vue";
+import {
+  aiReasoningCopyText,
+  aiReasoningStateFromResult,
+  appendAiStreamChunk,
+  createAiReasoningStreamState,
+  hasAiReasoningDisplay,
+} from "../../lib/aiReasoning";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -51,16 +59,14 @@ const showCommitFilters = ref(false);
 const isAiDialogOpen = ref(false);
 const aiMode = ref("summary");
 const isAiModeMenuOpen = ref(false);
-const aiDialogResult = ref("");
+const aiDialogResult = ref(createAiReasoningStreamState());
 const aiDialogMessage = ref("");
 const aiDialogState = ref<AiState>("idle");
-const aiDialogStreamingText = ref("");
 const commitAiMode = ref("summary");
 const isCommitAiModeMenuOpen = ref(false);
-const commitAiResult = ref("");
+const commitAiResult = ref(createAiReasoningStreamState());
 const commitAiMessage = ref("");
 const commitAiState = ref<AiState>("idle");
-const commitAiStreamingText = ref("");
 const openDatePickerKind = ref<"since" | "until" | null>(null);
 const datePickerMonth = ref(new Date());
 
@@ -335,14 +341,14 @@ const buildAiPrompt = () => {
 };
 
 const resetCommitAiState = () => {
-  commitAiResult.value = "";
-  commitAiStreamingText.value = "";
+  commitAiResult.value = createAiReasoningStreamState();
   commitAiMessage.value = "";
   commitAiState.value = "idle";
 };
 
-const commitAiDisplayResult = computed(() => commitAiStreamingText.value || commitAiResult.value);
-const renderedCommitAiResult = computed(() => renderMarkdown(commitAiDisplayResult.value));
+const commitAiDisplayResult = computed(() => commitAiResult.value);
+const hasCommitAiDisplayResult = computed(() => hasAiReasoningDisplay(commitAiDisplayResult.value));
+const commitAiCopyContent = computed(() => aiReasoningCopyText(commitAiDisplayResult.value));
 const commitBodyContent = computed(() => selectedCommit.value?.body || selectedCommit.value?.message || "");
 const renderedCommitBody = computed(() => renderMarkdown(commitBodyContent.value));
 
@@ -362,8 +368,9 @@ const commitAiPanelHint = computed(() => {
   return "";
 });
 
-const aiDialogDisplayResult = computed(() => aiDialogStreamingText.value || aiDialogResult.value);
-const renderedAiDialogResult = computed(() => renderMarkdown(aiDialogDisplayResult.value));
+const aiDialogDisplayResult = computed(() => aiDialogResult.value);
+const hasAiDialogDisplayResult = computed(() => hasAiReasoningDisplay(aiDialogDisplayResult.value));
+const aiDialogCopyContent = computed(() => aiReasoningCopyText(aiDialogDisplayResult.value));
 
 const aiDialogPanelHint = computed(() => {
   if (aiDialogState.value === "loading") {
@@ -382,36 +389,28 @@ const aiDialogPanelHint = computed(() => {
 });
 
 const resetAiDialogState = () => {
-  aiDialogResult.value = "";
+  aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
   aiDialogState.value = "idle";
-  aiDialogStreamingText.value = "";
 };
 
 const generateAiAnalysis = async () => {
-  if (store.aiPreferences.provider === "utools" && !store.aiPreferences.model) {
-    aiDialogMessage.value = "请先从设置中选择一个 uTools 模型。";
-    aiDialogState.value = "warning";
-    return;
-  }
-
-  aiDialogResult.value = "";
-  aiDialogStreamingText.value = "";
+  aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
   aiDialogState.value = "loading";
 
   await store.analyzeGitWithAiStream(props.project.id, buildAiPrompt(), {
     onChunk: (chunk) => {
-      aiDialogStreamingText.value += chunk;
+      aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
     },
     onDone: (result) => {
-      if (!aiDialogStreamingText.value && result.content) {
-        aiDialogStreamingText.value = result.content;
+      const finalResult = aiReasoningStateFromResult(result);
+      if (hasAiReasoningDisplay(finalResult) || !hasAiDialogDisplayResult.value) {
+        aiDialogResult.value = finalResult;
       }
-      aiDialogResult.value = aiDialogStreamingText.value;
       aiDialogMessage.value = result.ok ? result.message || "" : result.message || "AI 分析失败。";
-      aiDialogState.value = result.ok ? (aiDialogResult.value ? "success" : "warning") : "error";
-      if (result.ok && !aiDialogResult.value) {
+      aiDialogState.value = result.ok ? (hasAiDialogDisplayResult.value ? "success" : "warning") : "error";
+      if (result.ok && !hasAiDialogDisplayResult.value) {
         aiDialogMessage.value = "AI 已返回成功，但没有生成内容。";
       }
     },
@@ -439,28 +438,22 @@ const generateCommitAiAnalysis = async () => {
     commitAiState.value = "warning";
     return;
   }
-  if (store.aiPreferences.provider === "utools" && !store.aiPreferences.model) {
-    commitAiMessage.value = "请先从设置中选择一个 uTools 模型。";
-    commitAiState.value = "warning";
-    return;
-  }
 
-  commitAiResult.value = "";
-  commitAiStreamingText.value = "";
+  commitAiResult.value = createAiReasoningStreamState();
   commitAiMessage.value = "";
   commitAiState.value = "loading";
   await store.analyzeGitWithAiStream(props.project.id, buildCommitAiPrompt(), {
     onChunk: (chunk) => {
-      commitAiStreamingText.value += chunk;
+      commitAiResult.value = appendAiStreamChunk(commitAiResult.value, chunk);
     },
     onDone: (result) => {
-      if (!commitAiStreamingText.value && result.content) {
-        commitAiStreamingText.value = result.content;
+      const finalResult = aiReasoningStateFromResult(result);
+      if (hasAiReasoningDisplay(finalResult) || !hasCommitAiDisplayResult.value) {
+        commitAiResult.value = finalResult;
       }
-      commitAiResult.value = commitAiStreamingText.value;
       commitAiMessage.value = result.ok ? result.message || "" : result.message || "AI 分析失败。";
-      commitAiState.value = result.ok ? (commitAiResult.value ? "success" : "warning") : "error";
-      if (result.ok && !commitAiResult.value) {
+      commitAiState.value = result.ok ? (hasCommitAiDisplayResult.value ? "success" : "warning") : "error";
+      if (result.ok && !hasCommitAiDisplayResult.value) {
         commitAiMessage.value = "AI 已返回成功，但没有生成内容。";
       }
     },
@@ -1456,21 +1449,17 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             class="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
           >
             <button
-              v-if="aiDialogDisplayResult"
+              v-if="aiDialogCopyContent"
               type="button"
               class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
-              :title="copyLabel(aiDialogDisplayResult)"
-              :aria-label="copyLabel(aiDialogDisplayResult)"
-              @click="copyText(aiDialogDisplayResult)"
+              :title="copyLabel(aiDialogCopyContent)"
+              :aria-label="copyLabel(aiDialogCopyContent)"
+              @click="copyText(aiDialogCopyContent)"
             >
               <ClipboardCopy :size="12" />
             </button>
             <div class="ai-result-panel h-full overflow-auto p-3">
-              <div
-                v-if="aiDialogDisplayResult"
-                class="memo-rendered ai-markdown-result pr-7 text-on-surface"
-                v-html="renderedAiDialogResult"
-              ></div>
+              <AiReasoningResult v-if="hasAiDialogDisplayResult" :result="aiDialogDisplayResult" />
               <div
                 v-else-if="aiDialogPanelHint"
                 :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
@@ -1699,21 +1688,17 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 class="relative mt-2 min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
               >
                 <button
-                  v-if="commitAiDisplayResult"
+                  v-if="commitAiCopyContent"
                   type="button"
                   class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
-                  :title="copyLabel(commitAiDisplayResult)"
-                  :aria-label="copyLabel(commitAiDisplayResult)"
-                  @click="copyText(commitAiDisplayResult)"
+                  :title="copyLabel(commitAiCopyContent)"
+                  :aria-label="copyLabel(commitAiCopyContent)"
+                  @click="copyText(commitAiCopyContent)"
                 >
                   <ClipboardCopy :size="12" />
                 </button>
                 <div class="ai-result-panel h-full overflow-auto p-3">
-                  <div
-                    v-if="commitAiDisplayResult"
-                    class="memo-rendered ai-markdown-result pr-7 text-on-surface"
-                    v-html="renderedCommitAiResult"
-                  ></div>
+                  <AiReasoningResult v-if="hasCommitAiDisplayResult" :result="commitAiDisplayResult" />
                   <div
                     v-else-if="commitAiPanelHint"
                     :class="commitAiState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"

@@ -123,10 +123,19 @@ export interface AiAnalyzePayload {
 export interface AiAnalyzeResult {
   ok: boolean;
   content: string;
+  reasoning?: string;
+  rawContent?: string;
   message?: string;
 }
 
-export type AiStreamChunkHandler = (chunk: string) => void;
+export interface AiStreamChunk {
+  content?: string;
+  reasoning?: string;
+  rawContent?: string;
+}
+
+export type AiStreamChunkPayload = string | AiStreamChunk;
+export type AiStreamChunkHandler = (chunk: AiStreamChunkPayload) => void;
 export type AiStreamDoneHandler = (result: AiAnalyzeResult) => void;
 
 export interface ProjectScript {

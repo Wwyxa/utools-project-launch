@@ -648,11 +648,29 @@ async function callThirdPartyAi(preferences, prompt) {
   return String(data?.choices?.[0]?.message?.content || "").trim();
 }
 
+function aiText(value) {
+  return typeof value === "string" ? value : "";
+}
+
+function compactAiStreamChunk(chunk) {
+  if (typeof chunk === "string") {
+    return { content: chunk, reasoning: "", rawContent: chunk };
+  }
+  const content = aiText(chunk?.content);
+  const reasoning = aiText(chunk?.reasoning);
+  const rawContent = aiText(chunk?.rawContent) || `${reasoning}${content}`;
+  return { content, reasoning, rawContent };
+}
+
 function extractOpenAiStreamDelta(data) {
   if (data?.error) {
     throw new Error(extractAiErrorMessage(data, "OpenAI 兼容流式响应失败。"));
   }
-  return String(data?.choices?.[0]?.delta?.content || data?.choices?.[0]?.text || "");
+  const choice = data?.choices?.[0] || {};
+  const delta = choice.delta || {};
+  const content = aiText(delta.content) || aiText(choice.text);
+  const reasoning = [delta.reasoning_content, delta.reasoning, delta.thinking].map(aiText).filter(Boolean).join("");
+  return compactAiStreamChunk({ content, reasoning });
 }
 
 function extractAnthropicStreamDelta(data) {
@@ -660,12 +678,20 @@ function extractAnthropicStreamDelta(data) {
     throw new Error(extractAiErrorMessage(data, "Anthropic 兼容流式响应失败。"));
   }
   if (data?.type === "content_block_delta") {
-    return String(data?.delta?.text || "");
+    const delta = data?.delta || {};
+    return compactAiStreamChunk({
+      content: aiText(delta.text),
+      reasoning: aiText(delta.thinking),
+    });
   }
   if (data?.type === "content_block_start") {
-    return String(data?.content_block?.text || "");
+    const contentBlock = data?.content_block || {};
+    return compactAiStreamChunk({
+      content: aiText(contentBlock.text),
+      reasoning: aiText(contentBlock.thinking),
+    });
   }
-  return "";
+  return compactAiStreamChunk({});
 }
 
 async function readSseStream(response, extractDelta, onChunk) {
@@ -677,6 +703,8 @@ async function readSseStream(response, extractDelta, onChunk) {
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
   let content = "";
+  let reasoning = "";
+  let rawContent = "";
 
   const consumeLine = (line) => {
     const trimmed = line.trim();
@@ -688,10 +716,12 @@ async function readSseStream(response, extractDelta, onChunk) {
       return;
     }
     try {
-      const chunk = extractDelta(JSON.parse(payload));
-      if (chunk) {
-        content += chunk;
-        onChunk?.(chunk);
+      const streamChunk = compactAiStreamChunk(extractDelta(JSON.parse(payload)));
+      if (streamChunk.content || streamChunk.reasoning || streamChunk.rawContent) {
+        content += streamChunk.content;
+        reasoning += streamChunk.reasoning;
+        rawContent += streamChunk.rawContent;
+        onChunk?.(streamChunk);
       }
     } catch (error) {
       if (error instanceof SyntaxError) {
@@ -716,7 +746,7 @@ async function readSseStream(response, extractDelta, onChunk) {
     consumeLine(buffer);
   }
 
-  return content.trim();
+  return { content: content.trim(), reasoning: reasoning.trim(), rawContent: rawContent.trim() };
 }
 
 async function callThirdPartyAiStream(preferences, prompt, onChunk) {
@@ -792,30 +822,38 @@ async function analyzeWithAiStream(payload, onChunk, onDone) {
         return;
       }
       let content = "";
+      let reasoning = "";
+      let rawContent = "";
       await window.utools.ai(
         {
           model: preferences.model || undefined,
           messages: [{ role: "user", content: prompt }],
         },
         (delta) => {
-          const deltaContent = [delta?.reasoning_content, delta?.content]
-            .filter((part) => typeof part === "string" && part.length > 0)
-            .join("");
-          if (deltaContent) {
-            content += deltaContent;
-            chunk(deltaContent);
+          const streamChunk =
+            typeof delta === "string"
+              ? compactAiStreamChunk({ content: delta })
+              : compactAiStreamChunk({
+                  content: aiText(delta?.content) || aiText(delta?.text),
+                  reasoning: aiText(delta?.reasoning_content) || aiText(delta?.reasoning) || aiText(delta?.thinking),
+                });
+          if (streamChunk.content || streamChunk.reasoning || streamChunk.rawContent) {
+            content += streamChunk.content;
+            reasoning += streamChunk.reasoning;
+            rawContent += streamChunk.rawContent;
+            chunk(streamChunk);
           }
         },
       );
-      done({ ok: true, content: content.trim() });
+      done({ ok: true, content: content.trim(), reasoning: reasoning.trim(), rawContent: rawContent.trim() });
       return;
     }
     if (!preferences.baseUrl.trim() || !preferences.model.trim() || !preferences.apiKey.trim()) {
       done({ ok: false, content: "", message: "第三方 AI 配置不完整。" });
       return;
     }
-    const content = await callThirdPartyAiStream(preferences, prompt, chunk);
-    done({ ok: true, content });
+    const result = await callThirdPartyAiStream(preferences, prompt, chunk);
+    done({ ok: true, ...result });
   } catch (error) {
     done({ ok: false, content: "", message: error?.message || "AI 分析失败。" });
   }

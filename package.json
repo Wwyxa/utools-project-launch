@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "lint": "tsc --noEmit",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "validate:ai-reasoning": "node scripts/validate-ai-reasoning.mjs"
   },
   "dependencies": {
     "@types/markdown-it": "^14.1.2",
