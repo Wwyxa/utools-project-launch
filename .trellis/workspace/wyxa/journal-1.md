@@ -968,3 +968,38 @@ Adjusted Memo tab todo layout: widened the todo column, allowed todo text to cla
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: 折叠 AI 思考过程
+
+**Date**: 2026-06-06
+**Task**: 折叠 AI 思考过程
+**Branch**: `master`
+
+### Summary
+
+实现 AI 生成结果的思考过程分离与默认折叠：保留结构化 reasoning/content/rawContent 流式契约，Git 总览和提交详情复用折叠展示，复制按钮仅复制正式回答，并补充解析验证与规格记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a46855` | (see git log) |
+| `846ea99` | (see git log) |
+| `da11b3f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
