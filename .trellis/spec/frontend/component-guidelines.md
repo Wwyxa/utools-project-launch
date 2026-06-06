@@ -191,6 +191,21 @@ const filesPanelOpen = ref(true);
 
 **Related**: `src/components/project/GitTab.vue`.
 
+### Convention: Collapsible AI Reasoning Results
+
+**What**: AI result panels that can receive model reasoning should render through a shared result component with a default-collapsed reasoning block and a separate final-answer body.
+
+**Why**: Reasoning streams can be much longer than the useful answer. Keeping reasoning separate preserves provider compatibility and prevents dense Git dialogs from filling with intermediate thinking text.
+
+**Rules**:
+
+- Keep the final answer visible and streaming normally.
+- Render reasoning only when the stream state has non-empty reasoning; do not show an empty collapse block.
+- Copy actions should copy the final answer content only. Keep `rawContent` for parsing/debug preservation, not for the default user-facing copy action.
+- Use conservative parsing for inline reasoning tags; never hide incomplete, inline-code, or fenced-code tags.
+
+**Related**: `src/components/project/AiReasoningResult.vue`, Streaming AI Bridge Actions in `state-management.md`.
+
 ### Convention: Compact Git History Rows
 
 **What**: Git history rows should keep hash, message, refs, author, and relative time readable while fitting into a compact fixed-height row.
