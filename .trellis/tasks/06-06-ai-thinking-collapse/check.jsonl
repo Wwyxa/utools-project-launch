@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec index for reviewing Vue/Pinia/Tailwind changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review shared component structure and UI consistency."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review streaming state updates and store integration."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review new AI response/chunk typing."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Review frontend quality and forbidden patterns."}
+{"file":".trellis/spec/backend/index.md","reason":"Review preload bridge changes against current no-backend constraints."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Review provider failure behavior and conservative fallbacks."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review preload-side compatibility and robustness."}

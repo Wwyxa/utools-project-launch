@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec index for Vue/Pinia/Tailwind conventions relevant to AI result rendering."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Component patterns for the shared collapsible AI reasoning UI."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Pinia state conventions for streaming AI result updates."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Type conventions for extending AI stream chunk/result shapes."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend implementation guardrails and quality expectations."}
+{"file":".trellis/spec/backend/index.md","reason":"Current no-backend baseline and preload bridge boundary context."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Bridge/provider error handling expectations for AI interfaces."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Guardrails for preload-side compatibility and conservative parsing behavior."}
