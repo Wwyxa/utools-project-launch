@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   Play,
   Square,
@@ -33,6 +33,13 @@ const store = useStore();
 const t = useI18n();
 const moreScriptsOpen = ref(false);
 const moreScriptsRef = ref<HTMLElement | null>(null);
+const scriptRowRef = ref<HTMLElement | null>(null);
+const scriptMeasureRef = ref<HTMLElement | null>(null);
+const visibleScriptLimit = ref(3);
+const maxVisibleScriptButtons = 3;
+const scriptButtonGapFallback = 6;
+let scriptRowResizeObserver: ResizeObserver | null = null;
+let visibleScriptMeasureFrame: number | null = null;
 
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
@@ -41,24 +48,121 @@ const quickLink = computed(() => props.project.quickLink?.trim() || "");
 const activeScripts = computed(() =>
   props.project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
 );
-const visibleScripts = computed(() => {
+const prioritizedScripts = computed(() => {
   const activeIds = new Set(activeScripts.value.map((script) => script.id));
-  const prioritizedScripts = [
-    ...activeScripts.value,
-    ...props.project.scripts.filter((script) => !activeIds.has(script.id)),
-  ];
-  const exposedScripts = [];
-  const maxVisibleCount = prioritizedScripts.some((script) => script.name.length > 14) ? 1 : 2;
+  return [...activeScripts.value, ...props.project.scripts.filter((script) => !activeIds.has(script.id))];
+});
+const visibleScripts = computed(() => prioritizedScripts.value.slice(0, visibleScriptLimit.value));
 
-  for (const script of prioritizedScripts) {
-    if (exposedScripts.length >= maxVisibleCount) {
-      break;
-    }
-    exposedScripts.push(script);
+const parsePixelValue = (value: string, fallback: number) => {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const getFallbackVisibleScriptLimit = () => Math.min(prioritizedScripts.value.length, maxVisibleScriptButtons);
+
+const calculateVisibleScriptLimit = () => {
+  const scriptCount = prioritizedScripts.value.length;
+  if (scriptCount === 0) {
+    return 0;
   }
 
-  return exposedScripts;
+  const rowElement = scriptRowRef.value;
+  const measureElement = scriptMeasureRef.value;
+  if (!rowElement || !measureElement) {
+    return getFallbackVisibleScriptLimit();
+  }
+
+  const availableWidth = rowElement.getBoundingClientRect().width;
+  if (availableWidth <= 0) {
+    return getFallbackVisibleScriptLimit();
+  }
+
+  const scriptButtonWidths = Array.from(
+    measureElement.querySelectorAll<HTMLElement>("[data-script-measure-button]"),
+  ).map((element) => Math.ceil(element.getBoundingClientRect().width));
+
+  if (scriptButtonWidths.length === 0) {
+    return getFallbackVisibleScriptLimit();
+  }
+
+  const moreButtonWidth = Math.ceil(
+    measureElement.querySelector<HTMLElement>("[data-script-more-measure]")?.getBoundingClientRect().width || 0,
+  );
+  const rowStyle = window.getComputedStyle(rowElement);
+  const gap = parsePixelValue(rowStyle.columnGap || rowStyle.gap, scriptButtonGapFallback);
+  const maxCandidate = Math.min(scriptCount, maxVisibleScriptButtons, scriptButtonWidths.length);
+
+  for (let candidate = maxCandidate; candidate >= 1; candidate -= 1) {
+    const visibleWidth = scriptButtonWidths.slice(0, candidate).reduce((total, width) => total + width, 0);
+    const visibleGaps = Math.max(candidate - 1, 0) * gap;
+    const needsMoreButton = candidate < scriptCount;
+    const totalWidth = visibleWidth + visibleGaps + (needsMoreButton ? moreButtonWidth + gap : 0);
+
+    if (totalWidth <= availableWidth + 1) {
+      return candidate;
+    }
+  }
+
+  return 1;
+};
+
+const updateVisibleScriptLimit = () => {
+  visibleScriptLimit.value = calculateVisibleScriptLimit();
+};
+
+const scheduleVisibleScriptMeasure = async () => {
+  await nextTick();
+  if (typeof window === "undefined") {
+    updateVisibleScriptLimit();
+    return;
+  }
+
+  if (visibleScriptMeasureFrame !== null) {
+    window.cancelAnimationFrame(visibleScriptMeasureFrame);
+  }
+  visibleScriptMeasureFrame = window.requestAnimationFrame(() => {
+    visibleScriptMeasureFrame = null;
+    updateVisibleScriptLimit();
+  });
+};
+
+watch(
+  () => prioritizedScripts.value.map((script) => `${script.id}:${script.name}:${script.status}`).join("|"),
+  () => {
+    void scheduleVisibleScriptMeasure();
+  },
+  { immediate: true },
+);
+
+watch(
+  scriptRowRef,
+  (rowElement, previousRowElement) => {
+    if (previousRowElement) {
+      scriptRowResizeObserver?.unobserve(previousRowElement);
+    }
+    if (rowElement) {
+      scriptRowResizeObserver?.observe(rowElement);
+    }
+    void scheduleVisibleScriptMeasure();
+  },
+  { flush: "post" },
+);
+
+onMounted(() => {
+  if (typeof ResizeObserver !== "undefined") {
+    scriptRowResizeObserver = new ResizeObserver(() => {
+      void scheduleVisibleScriptMeasure();
+    });
+    if (scriptRowRef.value) {
+      scriptRowResizeObserver.observe(scriptRowRef.value);
+    }
+  } else {
+    window.addEventListener("resize", scheduleVisibleScriptMeasure);
+  }
+  void scheduleVisibleScriptMeasure();
 });
+
 const hiddenRunningCount = computed(
   () =>
     activeScripts.value.filter((script) => !visibleScripts.value.some((visible) => visible.id === script.id)).length,
@@ -282,6 +386,11 @@ const toggleMoreScripts = (event: MouseEvent) => {
 };
 
 onBeforeUnmount(() => {
+  if (visibleScriptMeasureFrame !== null) {
+    window.cancelAnimationFrame(visibleScriptMeasureFrame);
+  }
+  scriptRowResizeObserver?.disconnect();
+  window.removeEventListener("resize", scheduleVisibleScriptMeasure);
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
   document.removeEventListener("keydown", handleDocumentKeyDown);
 });
@@ -371,7 +480,8 @@ const handleDelete = (event: MouseEvent) => {
       </p>
 
       <div
-        v-if="visibleScripts.length > 0 || hiddenScriptCount > 0"
+        v-if="prioritizedScripts.length > 0"
+        ref="scriptRowRef"
         class="flex min-w-0 items-center justify-start gap-1.5 mt-3 mb-2 flex-nowrap overflow-visible"
       >
         <button
@@ -450,6 +560,44 @@ const handleDelete = (event: MouseEvent) => {
             </button>
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="prioritizedScripts.length > 0"
+        ref="scriptMeasureRef"
+        class="pointer-events-none fixed -left-[10000px] top-0 flex items-center gap-1.5 opacity-0"
+        aria-hidden="true"
+      >
+        <span
+          v-for="script in prioritizedScripts"
+          :key="script.id"
+          data-script-measure-button
+          :class="
+            cn(
+              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border',
+              script.status === 'RUNNING'
+                ? 'border-status-running/30'
+                : script.status === 'STOPPING'
+                  ? 'border-status-warning/30'
+                  : 'border-transparent',
+            )
+          "
+        >
+          <Square
+            v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
+            :size="8"
+            class="shrink-0"
+            fill="currentColor"
+          />
+          <Play v-else :size="9" class="shrink-0" fill="currentColor" />
+          <span>{{ script.name }}</span>
+        </span>
+        <span
+          data-script-more-measure
+          class="inline-flex flex-none items-center justify-center whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border border-transparent"
+        >
+          <ChevronDown :size="10" />
+        </span>
       </div>
 
       <div
