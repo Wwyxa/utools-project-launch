@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Check agent should verify against frontend checklist and conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review Dashboard and modal UI structure for consistency and accessibility."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review Pinia persistence, hydration, form draft, import/export, and sorting changes."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify new group fields are typed and backward-compatible."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Ensure lint/type-check and focused implementation quality."}

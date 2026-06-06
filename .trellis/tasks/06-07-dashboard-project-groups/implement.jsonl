@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend entrypoint for required pre-development checklist and Vue project conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Dashboard and project form component changes must follow local component structure and UI conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Project group data touches Pinia store hydration, persistence, form drafts, and sorting behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Project and form type changes must stay compatible with existing data and imports."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Implementation should preserve lint/type-check quality and avoid unrelated changes."}
