@@ -1453,7 +1453,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             </button>
           </div>
           <div
-            class="ai-result-panel relative min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
+            class="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
           >
             <button
               v-if="aiDialogDisplayResult"
@@ -1465,16 +1465,18 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             >
               <ClipboardCopy :size="12" />
             </button>
-            <div
-              v-if="aiDialogDisplayResult"
-              class="memo-rendered ai-markdown-result pr-7 text-on-surface"
-              v-html="renderedAiDialogResult"
-            ></div>
-            <div
-              v-else-if="aiDialogPanelHint"
-              :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
-            >
-              {{ aiDialogPanelHint }}
+            <div class="ai-result-panel h-full overflow-auto p-3">
+              <div
+                v-if="aiDialogDisplayResult"
+                class="memo-rendered ai-markdown-result pr-7 text-on-surface"
+                v-html="renderedAiDialogResult"
+              ></div>
+              <div
+                v-else-if="aiDialogPanelHint"
+                :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+              >
+                {{ aiDialogPanelHint }}
+              </div>
             </div>
           </div>
         </div>
@@ -1694,7 +1696,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 </div>
               </div>
               <div
-                class="ai-result-panel relative mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border-subtle bg-surface-container-low p-3 text-xs leading-5 text-on-surface-variant"
+                class="relative mt-2 min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
               >
                 <button
                   v-if="commitAiDisplayResult"
@@ -1706,16 +1708,18 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 >
                   <ClipboardCopy :size="12" />
                 </button>
-                <div
-                  v-if="commitAiDisplayResult"
-                  class="memo-rendered ai-markdown-result pr-7 text-on-surface"
-                  v-html="renderedCommitAiResult"
-                ></div>
-                <div
-                  v-else-if="commitAiPanelHint"
-                  :class="commitAiState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
-                >
-                  {{ commitAiPanelHint }}
+                <div class="ai-result-panel h-full overflow-auto p-3">
+                  <div
+                    v-if="commitAiDisplayResult"
+                    class="memo-rendered ai-markdown-result pr-7 text-on-surface"
+                    v-html="renderedCommitAiResult"
+                  ></div>
+                  <div
+                    v-else-if="commitAiPanelHint"
+                    :class="commitAiState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+                  >
+                    {{ commitAiPanelHint }}
+                  </div>
                 </div>
               </div>
             </section>
