@@ -1881,6 +1881,7 @@ function readGitSnapshot(projectPath, options = {}) {
   const commitOutput = runGit(repositoryPath, [
     "log",
     "--all",
+    "--topo-order",
     "--decorate=short",
     `--max-count=${limit + 1}`,
     `--skip=${skip}`,

@@ -625,12 +625,30 @@ const refClass = (refName: string) =>
   );
 
 const isHeadCommit = (refs?: string) => Boolean(refs?.includes("HEAD"));
-const graphStrokeColors = ["#2eaf7d", "#0ea5e9", "#f59e0b", "#d946ef", "#f43f5e", "#06b6d4", "#84cc16", "#8b5cf6"];
-const laneWidth = 14;
-const rowHeight = 28;
-const dotRadius = 4.2;
-const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + 2;
+const graphStrokeColors = ["#0ea5e9", "#e91e9d", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16"];
+const laneWidth = 18;
+const graphPaddingX = 8;
+const graphRowPaddingX = 8;
+const graphRowGapX = 6;
+const graphSelectionColumnWidth = 20;
+const rowHeight = 32;
+const rowGap = 2;
+const rowPitch = rowHeight + rowGap;
+const dotRadius = 4.4;
+const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + graphPaddingX;
 const minGraphColumnWidth = 50;
+const graphLayerLeft = graphRowPaddingX + graphSelectionColumnWidth + graphRowGapX;
+
+type GitGraphRow = { commit: ProjectGitCommitSummary; lane: number; color: string; y: number };
+type GitGraphPath = { id: string; d: string; color: string; opacity: number };
+type GitGraphNode = { hash: string; x: number; y: number; color: string; isHead: boolean };
+type GitGraphPathMode = "vertical" | "fanOut" | "fanIn";
+type GitGraphEdge = {
+  sourceHash: string;
+  parentHash: string;
+  parentIndex: number;
+  color: string;
+};
 
 const refsIncludeBranch = (refs: string | undefined, branch: string) =>
   refsForCommit(refs).some((refName) => {
@@ -638,123 +656,176 @@ const refsIncludeBranch = (refs: string | undefined, branch: string) =>
     return cleanRef === branch || cleanRef === `origin/${branch}`;
   });
 
-const graphRows = computed(() => {
-  const lanes: Array<string | null> = [];
+const graphPathData = (sourceX: number, sourceY: number, targetX: number, targetY: number, mode: GitGraphPathMode) => {
+  if (sourceX === targetX) {
+    return `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
+  }
+
+  const deltaY = targetY - sourceY;
+  if (deltaY <= rowPitch) {
+    const curveY = Math.max(rowHeight * 0.32, deltaY * 0.45);
+    return `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + curveY} ${targetX} ${targetY - curveY} ${targetX} ${targetY}`;
+  }
+
+  if (mode === "fanIn") {
+    const switchY = Math.max(sourceY, targetY - rowPitch * 0.78);
+    const curveY = Math.max(rowHeight * 0.28, (targetY - switchY) * 0.5);
+    return `M ${sourceX} ${sourceY} L ${sourceX} ${switchY} C ${sourceX} ${switchY + curveY} ${targetX} ${targetY - curveY} ${targetX} ${targetY}`;
+  }
+
+  const switchY = Math.min(targetY, sourceY + rowPitch * 0.78);
+  const curveY = Math.max(rowHeight * 0.28, (switchY - sourceY) * 0.5);
+  return `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + curveY} ${targetX} ${switchY - curveY} ${targetX} ${switchY} L ${targetX} ${targetY}`;
+};
+
+const graphLayout = computed(() => {
+  const visibleCommits = commits.value;
+  const visibleIndex = new Map(visibleCommits.map((commit, index) => [commit.hash, index]));
+  const activeLanes: Array<string | null> = [];
   const laneColors = new Map<number, string>();
   let colorIndex = 0;
   let maxLane = 0;
+  const rows: GitGraphRow[] = [];
+  const edges: GitGraphEdge[] = [];
   const currentBranch = snapshot.value?.branch || "";
-  const visibleHashes = new Set(commits.value.map((commit) => commit.hash));
 
   const nextColor = () => graphStrokeColors[colorIndex++ % graphStrokeColors.length];
-  const laneColor = (lane: number) => {
+  const ensureLaneColor = (lane: number) => {
     if (!laneColors.has(lane)) {
       laneColors.set(lane, nextColor());
     }
     return laneColors.get(lane) || graphStrokeColors[0];
   };
-  const findLane = (hash: string) => lanes.indexOf(hash);
-  const allocLane = () => {
-    const emptyLane = lanes.indexOf(null);
-    if (emptyLane >= 0) return emptyLane;
-    lanes.push(null);
-    return lanes.length - 1;
+  const setLaneColor = (lane: number, color: string) => {
+    laneColors.set(lane, color);
+    return color;
+  };
+  const findLane = (hash: string) => activeLanes.indexOf(hash);
+  const allocLane = (color = nextColor(), startLane = 0) => {
+    const firstCandidate = Math.max(0, startLane);
+    let lane = -1;
+    for (let index = firstCandidate; index < activeLanes.length; index += 1) {
+      if (activeLanes[index] === null) {
+        lane = index;
+        break;
+      }
+    }
+    if (lane < 0) {
+      lane = Math.max(firstCandidate, activeLanes.length);
+      while (activeLanes.length <= lane) {
+        activeLanes.push(null);
+      }
+    }
+    setLaneColor(lane, color);
+    return lane;
   };
 
   if (currentBranch) {
-    const headCommit = commits.value.find((commit) => refsIncludeBranch(commit.refs, currentBranch));
+    const headCommit = visibleCommits.find((commit) => refsIncludeBranch(commit.refs, currentBranch));
     if (headCommit) {
-      lanes[0] = headCommit.hash;
-      laneColors.set(0, nextColor());
+      activeLanes[0] = headCommit.hash;
+      setLaneColor(0, nextColor());
     }
   }
 
-  return commits.value.map((commit) => {
+  visibleCommits.forEach((commit, index) => {
     const existingLane = findLane(commit.hash);
     let lane = existingLane;
     if (lane < 0) {
       lane = allocLane();
-      lanes[lane] = commit.hash;
-      laneColor(lane);
+      activeLanes[lane] = commit.hash;
     }
 
-    const color = laneColor(lane);
-    const activeBefore = lanes
-      .map((hash, index) => ({ hash, index }))
-      .filter((item) => item.hash !== null)
-      .map((item) => item.index);
-    const rowLaneColors = new Map<number, string>();
-    activeBefore.forEach((activeLane) => {
-      rowLaneColors.set(activeLane, laneColor(activeLane));
-    });
+    const color = ensureLaneColor(lane);
+    rows.push({ commit, lane, color, y: index * rowPitch + rowHeight / 2 });
+    maxLane = Math.max(maxLane, lane);
+    activeLanes[lane] = null;
 
-    const connections: Array<{ from: number; to: number; color: string }> = [];
-    const parents = commit.parents || [];
-    lanes[lane] = null;
-
-    if (parents.length > 0) {
-      const firstParent = parents[0];
-      if (visibleHashes.has(firstParent)) {
-        const existingFirstParentLane = findLane(firstParent);
-        if (existingFirstParentLane >= 0) {
-          connections.push({ from: lane, to: existingFirstParentLane, color });
-        } else {
-          lanes[lane] = firstParent;
-          laneColors.set(lane, color);
-          connections.push({ from: lane, to: lane, color });
-        }
+    (commit.parents || []).forEach((parentHash, parentIndex) => {
+      if (!visibleIndex.has(parentHash)) {
+        return;
       }
 
-      parents.slice(1).forEach((parentHash) => {
-        if (!visibleHashes.has(parentHash)) {
-          return;
+      let parentLane = findLane(parentHash);
+      if (parentLane < 0) {
+        if (parentIndex === 0 && activeLanes[lane] === null) {
+          parentLane = lane;
+          activeLanes[parentLane] = parentHash;
+          setLaneColor(parentLane, color);
+        } else {
+          parentLane = allocLane(undefined, parentIndex > 0 ? lane + 1 : 0);
+          activeLanes[parentLane] = parentHash;
         }
-        let parentLane = findLane(parentHash);
-        if (parentLane < 0) {
-          parentLane = allocLane();
-          lanes[parentLane] = parentHash;
-          laneColors.set(parentLane, nextColor());
-        }
-        connections.push({ from: lane, to: parentLane, color });
+      } else if (parentIndex === 0 && parentLane > lane && activeLanes[lane] === null) {
+        activeLanes[parentLane] = null;
+        parentLane = lane;
+        activeLanes[parentLane] = parentHash;
+        setLaneColor(parentLane, color);
+      }
+
+      const parentColor = parentIndex === 0 ? color : ensureLaneColor(parentLane);
+      edges.push({
+        sourceHash: commit.hash,
+        parentHash,
+        parentIndex,
+        color: parentColor,
       });
+      maxLane = Math.max(maxLane, parentLane);
+    });
+
+    while (activeLanes.length && activeLanes[activeLanes.length - 1] === null) {
+      activeLanes.pop();
     }
-
-    while (lanes.length && lanes[lanes.length - 1] === null) {
-      lanes.pop();
-    }
-
-    const activeAfter = lanes
-      .map((hash, index) => ({ hash, index }))
-      .filter((item) => item.hash !== null)
-      .map((item) => item.index);
-    const verticalSegments = Array.from(new Set([...activeBefore, ...activeAfter])).map((activeLane) => ({
-      lane: activeLane,
-      fromTop: activeBefore.includes(activeLane) && (activeLane !== lane || existingLane >= 0),
-      toBottom: activeAfter.includes(activeLane),
-      color: rowLaneColors.get(activeLane) || laneColor(activeLane),
-    }));
-
-    maxLane = Math.max(
-      maxLane,
-      lane,
-      ...activeBefore,
-      ...activeAfter,
-      ...connections.map((connection) => connection.to),
-    );
-
-    return {
-      commit,
-      lane,
-      color,
-      verticalSegments,
-      laneColors: rowLaneColors,
-      connections,
-      width: Math.max(58, (maxLane + 1) * laneWidth + 16),
-    };
   });
+
+  const rowByHash = new Map(rows.map((row) => [row.commit.hash, row]));
+  const paths = edges.flatMap((edge) => {
+    const sourceRow = rowByHash.get(edge.sourceHash);
+    const parentRow = rowByHash.get(edge.parentHash);
+    if (!sourceRow || !parentRow || parentRow.y <= sourceRow.y) {
+      return [];
+    }
+
+    const sourceX = laneCenter(sourceRow.lane);
+    const targetX = laneCenter(parentRow.lane);
+    const sourceY = sourceRow.y;
+    const targetY = parentRow.y;
+    const mode = sourceRow.lane === parentRow.lane ? "vertical" : edge.parentIndex > 0 ? "fanOut" : "fanIn";
+
+    return [
+      {
+        id: `${edge.sourceHash}-${edge.parentHash}-${edge.parentIndex}`,
+        d: graphPathData(sourceX, sourceY, targetX, targetY, mode),
+        color: edge.color,
+        opacity: edge.parentIndex === 0 ? 0.82 : 0.72,
+      },
+    ];
+  });
+  const nodes = rows.map((row) => ({
+    hash: row.commit.hash,
+    x: laneCenter(row.lane),
+    y: row.y,
+    color: row.color,
+    isHead: isHeadCommit(row.commit.refs),
+  }));
+  const laneCount = rows.length > 0 ? maxLane + 1 : 1;
+  const columnWidth = Math.max(minGraphColumnWidth, laneCount * laneWidth + graphPaddingX * 2);
+  const height = rows.length > 0 ? rows.length * rowHeight + Math.max(0, rows.length - 1) * rowGap : 0;
+
+  return { rows, paths, nodes, columnWidth, height };
 });
 
-const graphColumnWidth = computed(() => Math.max(minGraphColumnWidth, ...graphRows.value.map((row) => row.width)));
+const graphRows = computed(() => graphLayout.value.rows);
+const graphPaths = computed(() => graphLayout.value.paths);
+const graphNodes = computed(() => graphLayout.value.nodes);
+const graphColumnWidth = computed(() => graphLayout.value.columnWidth);
+const graphContentHeight = computed(() => graphLayout.value.height);
+const graphViewBox = computed(() => `0 0 ${graphColumnWidth.value} ${Math.max(rowHeight, graphContentHeight.value)}`);
+const graphLayerStyle = computed(() => ({
+  left: `${graphLayerLeft}px`,
+  width: `${graphColumnWidth.value}px`,
+  height: `${graphContentHeight.value}px`,
+}));
 
 const graphRowColumns = computed(() => `1.25rem ${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`);
 const graphRowMinWidth = computed(() => `max(31rem, calc(${graphColumnWidth.value}px + 25.375rem))`);
@@ -1075,110 +1146,109 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         <div
           ref="graphScrollRef"
           @wheel="handlePanelWheel($event, 'graph')"
-          class="min-h-0 flex-1 overflow-auto bg-surface-container-lowest p-2 text-on-surface [overscroll-behavior-y:contain]"
+          class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest p-2 text-on-surface [overscroll-behavior-y:contain]"
         >
-          <div class="min-w-full space-y-0.5">
+          <div class="min-w-full">
             <div
-              v-for="row in graphRows"
-              :key="row.commit.hash"
-              :class="
-                cn(
-                  'group grid h-8 min-w-[31rem] cursor-pointer items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-container-high',
-                  isCommitSelected(row.commit.hash) && 'bg-primary/5 ring-1 ring-primary/20 hover:bg-primary/10',
-                )
-              "
-              :style="{ gridTemplateColumns: graphRowColumns, minWidth: graphRowMinWidth }"
-              @click="openCommitDetails(row.commit.hash)"
+              v-if="graphRows.length > 0"
+              class="relative min-w-full overflow-hidden"
+              :style="{ minWidth: graphRowMinWidth }"
             >
-              <button
-                type="button"
+              <svg
+                class="pointer-events-none absolute top-0 z-20 block overflow-hidden"
+                :style="graphLayerStyle"
+                :viewBox="graphViewBox"
+                preserveAspectRatio="xMinYMin meet"
+              >
+                <path
+                  v-for="path in graphPaths"
+                  :key="path.id"
+                  :d="path.d"
+                  :stroke="path.color"
+                  :opacity="path.opacity"
+                  fill="none"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <circle
+                  v-for="node in graphNodes"
+                  :key="node.hash"
+                  :cx="node.x"
+                  :cy="node.y"
+                  :r="node.isHead ? dotRadius + 0.9 : dotRadius"
+                  :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
+                  :stroke="node.color"
+                  :stroke-width="node.isHead ? 2.5 : 1.5"
+                />
+              </svg>
+              <div
+                v-for="(row, rowIndex) in graphRows"
+                :key="row.commit.hash"
                 :class="
                   cn(
-                    'flex h-4 w-4 items-center justify-center rounded-[4px] border text-on-surface-variant/80 transition-colors hover:border-primary hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70 group-hover:border-outline-variant',
-                    isCommitSelected(row.commit.hash)
-                      ? 'border-primary bg-primary text-on-primary shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-primary)_18%,transparent)] hover:bg-primary hover:text-on-primary'
-                      : 'border-border-subtle bg-transparent',
+                    'group relative z-10 grid min-w-[31rem] cursor-pointer items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-container-high',
+                    isCommitSelected(row.commit.hash) && 'bg-primary/5 ring-1 ring-primary/20 hover:bg-primary/10',
                   )
                 "
-                :title="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
-                :aria-label="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
-                @click.stop="toggleCommitSelection(row.commit.hash)"
+                :style="{
+                  gridTemplateColumns: graphRowColumns,
+                  minWidth: graphRowMinWidth,
+                  height: `${rowHeight}px`,
+                  marginTop: rowIndex === 0 ? '0' : `${rowGap}px`,
+                }"
+                @click="openCommitDetails(row.commit.hash)"
               >
-                <Check v-if="isCommitSelected(row.commit.hash)" :size="10" :stroke-width="3" />
-              </button>
-              <div class="h-8 min-w-0 overflow-hidden">
-                <svg
-                  class="block h-8 w-full"
-                  :viewBox="`0 0 ${graphColumnWidth} ${rowHeight}`"
-                  preserveAspectRatio="xMinYMid meet"
+                <button
+                  type="button"
+                  :class="
+                    cn(
+                      'flex h-4 w-4 items-center justify-center rounded-[4px] border text-on-surface-variant/80 transition-colors hover:border-primary hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70 group-hover:border-outline-variant',
+                      isCommitSelected(row.commit.hash)
+                        ? 'border-primary bg-primary text-on-primary shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-primary)_18%,transparent)] hover:bg-primary hover:text-on-primary'
+                        : 'border-border-subtle bg-transparent',
+                    )
+                  "
+                  :title="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
+                  :aria-label="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
+                  @click.stop="toggleCommitSelection(row.commit.hash)"
                 >
-                  <line
-                    v-for="segment in row.verticalSegments"
-                    :key="`${row.commit.hash}-v-${segment.lane}`"
-                    :x1="laneCenter(segment.lane)"
-                    :y1="segment.fromTop ? 0 : rowHeight / 2"
-                    :x2="laneCenter(segment.lane)"
-                    :y2="segment.toBottom ? rowHeight : rowHeight / 2"
-                    :stroke="segment.color"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    opacity="0.42"
-                  />
-                  <line
-                    v-for="(connection, index) in row.connections"
-                    :key="`${row.commit.hash}-c-${index}`"
-                    :x1="laneCenter(connection.from)"
-                    :y1="rowHeight / 2"
-                    :x2="laneCenter(connection.to)"
-                    :y2="rowHeight"
-                    :stroke="connection.color"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    opacity="0.82"
-                  />
-                  <circle
-                    :cx="laneCenter(row.lane)"
-                    :cy="rowHeight / 2"
-                    :r="isHeadCommit(row.commit.refs) ? dotRadius + 0.7 : dotRadius"
-                    :fill="isHeadCommit(row.commit.refs) ? 'var(--color-surface)' : row.color"
-                    :stroke="row.color"
-                    :stroke-width="isHeadCommit(row.commit.refs) ? 2.4 : 1.4"
-                  />
-                </svg>
-              </div>
+                  <Check v-if="isCommitSelected(row.commit.hash)" :size="10" :stroke-width="3" />
+                </button>
+                <div class="min-w-0 self-stretch" aria-hidden="true"></div>
 
-              <span
-                class="truncate rounded font-mono text-[10px] font-semibold text-on-surface-variant hover:text-primary"
-                :title="row.commit.hash"
-                @click.stop="copyText(row.commit.hash)"
-                >{{ row.commit.hash }}</span
-              >
-              <div class="min-w-0 overflow-hidden">
-                <div class="flex min-w-0 items-center gap-1.5 leading-4">
-                  <span
-                    class="min-w-0 truncate text-[11px] font-semibold text-on-surface"
-                    @mouseenter="showCommitTooltip($event, row.commit)"
-                    @mousemove="moveCommitTooltip"
-                    @mouseleave="hideCommitTooltip"
-                  >
-                    {{ row.commit.message }}
-                  </span>
-                  <span
-                    v-for="refName in refsForCommit(row.commit.refs)"
-                    :key="`${row.commit.hash}-${refName}`"
-                    :class="refClass(refName)"
-                    :title="refName"
-                  >
-                    {{ refName }}
-                  </span>
-                </div>
-                <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75">
-                  {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
+                <span
+                  class="truncate rounded font-mono text-[10px] font-semibold text-on-surface-variant hover:text-primary"
+                  :title="row.commit.hash"
+                  @click.stop="copyText(row.commit.hash)"
+                  >{{ row.commit.hash }}</span
+                >
+                <div class="min-w-0 overflow-hidden">
+                  <div class="flex min-w-0 items-center gap-1.5 leading-4">
+                    <span
+                      class="min-w-0 truncate text-[11px] font-semibold text-on-surface"
+                      @mouseenter="showCommitTooltip($event, row.commit)"
+                      @mousemove="moveCommitTooltip"
+                      @mouseleave="hideCommitTooltip"
+                    >
+                      {{ row.commit.message }}
+                    </span>
+                    <span
+                      v-for="refName in refsForCommit(row.commit.refs)"
+                      :key="`${row.commit.hash}-${refName}`"
+                      :class="refClass(refName)"
+                      :title="refName"
+                    >
+                      {{ refName }}
+                    </span>
+                  </div>
+                  <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75">
+                    {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div v-if="commits.length === 0" class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
+            <div v-else class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
             <button
               v-if="snapshot?.hasMoreCommits"
               type="button"
