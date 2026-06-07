@@ -214,6 +214,10 @@ const filesPanelOpen = ref(true);
 
 **Graph Width Rule**: The SVG graph column must use the actual lane span as its CSS grid width. Do not cap the graph column to an arbitrary maximum such as `104px`; dense branch histories should make the row horizontally scrollable instead of clipping lanes or scaling each row differently.
 
+**Continuous Graph Rule**: Render Git graph lanes with a list-level shared SVG layer, not one isolated SVG per row. Compute row `y` coordinates from the same fixed row height and row gap used by the visible rows, keep the SVG layer `pointer-events: none`, and place it above hover/selected row backgrounds so branch lines and nodes remain visible while row clicks, selection buttons, hash copy, and tooltips continue to work. Keep that SVG inside the loaded-row container and clip it there; the graph must not visually extend into empty states or the "load more" area. Prefer a stable left-side mainline. For cross-lane parent links, non-first parents should fan out near the merge commit and branch lanes should fan back in near the target/base commit, then continue vertically; do not draw one long diagonal or long Bezier across many rows.
+
+**Dot Alignment Rule**: Commit rows must use the same pixel row-height constant as the SVG coordinate system. Do not rely on a rem-based utility such as `h-8` for Git graph rows while SVG nodes use numeric pixel coordinates, because root font size, zoom, or rendered content can make dots drift above or below their matching commit row. Set the row height from the shared `rowHeight` value and compute node `y` values from that same value plus the row gap.
+
 **Example**:
 
 ```vue
