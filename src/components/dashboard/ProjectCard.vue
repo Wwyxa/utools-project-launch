@@ -432,13 +432,6 @@ const handleDelete = (event: MouseEvent) => {
               {{ project.name }}
             </h3>
             <span
-              v-if="showGroupBadge && displayGroupLabel"
-              class="inline-flex max-w-20 shrink-0 rounded-full border border-border-subtle bg-surface-container-low px-1.5 py-0.5 text-[9px] font-bold leading-none text-on-surface-variant"
-              :title="displayGroupLabel"
-            >
-              <span class="truncate">{{ displayGroupLabel }}</span>
-            </span>
-            <span
               v-if="isRunning"
               class="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-running/25 bg-status-running/10 px-1.5 py-0.5 text-[9px] font-bold text-status-running"
             >
