@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec index and pre-development checklist for Vue component changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Git tree rendering lives in a Vue component and must follow component conventions."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Graph layout helpers should remain typed and avoid unsafe shapes."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Rendering refactor must keep code maintainable and pass project quality rules."}
+{"file":".trellis/tasks/06-07-git-tree-rendering/research/vscode-git-graph-rendering.md","reason":"External reference summary for Git Graph lane/path rendering behavior."}

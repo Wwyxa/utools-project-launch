@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec index for final verification."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Verify Vue component structure and UI behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify graph layout types and computed data safety."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify lint/type-check expectations and maintainability."}
+{"file":".trellis/tasks/06-07-git-tree-rendering/research/vscode-git-graph-rendering.md","reason":"Check final rendering approach against the Git Graph reference summary."}
