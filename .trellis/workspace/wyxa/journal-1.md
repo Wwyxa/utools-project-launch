@@ -1038,3 +1038,38 @@ Adjusted Memo tab todo layout: widened the todo column, allowed todo text to cla
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: 改进 Git 树渲染
+
+**Date**: 2026-06-07
+**Task**: 改进 Git 树渲染
+**Branch**: `master`
+
+### Summary
+
+优化 Git 提交树多分支渲染，记录连续 SVG 轨道约定，并保存任务上下文。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `353b030` | (see git log) |
+| `f7f7a1b` | (see git log) |
+| `afa18a3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
