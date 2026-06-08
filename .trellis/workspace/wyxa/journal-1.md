@@ -1108,3 +1108,38 @@ Implemented Git write operations, AI commit-message/context handling, force bran
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: Git 功能性能和 UI 优化
+
+**Date**: 2026-06-08
+**Task**: Git 功能性能和 UI 优化
+**Branch**: `master`
+
+### Summary
+
+优化 Git 面板自动刷新、轻量状态刷新、提交分页加载、detached HEAD 切回分支 tip 和提交详情布局，并记录相关 Trellis 上下文与规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `64c8028` | (see git log) |
+| `935ef8a` | (see git log) |
+| `57cdc57` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
