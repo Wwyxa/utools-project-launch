@@ -510,12 +510,17 @@ Let the store own bridge calls and normalize errors before the component renders
 ### 2. Signatures
 
 - `ProjectBridge.readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>`
+- `ProjectBridge.readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>`
+- `ProjectBridge.readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>`
 - `loadMoreGitCommits(projectId: string): Promise<void>`
 
 ### 3. Contracts
 
-- Initial Git refresh should request a bounded page of commits, currently `limit: 80` and `skip: 0`.
-- Loading more commits must request the next page using `skip: project.git.commits.length`, then append the returned commits in the store.
+- Initial Git refresh should request a bounded page of commits, currently `limit: 80` and `skip: 0`, through `readGitSnapshot`.
+- `readGitSnapshot` is the full refresh path and may compose `readGitStatusSnapshot` plus `readGitCommits` internally. It should refresh status/files/branches/HEAD and the first commit page together.
+- Loading more commits must call `readGitCommits(project.path, { limit: 80, skip: project.git.commits.length })`, then append only the returned commits in the store.
+- Loading more commits must not overwrite the current `files`, `branches`, `branch`, `headHash`, or `isDetachedHead` fields. Those fields belong to status refresh.
+- Git write actions that only affect the index or worktree, such as stage and unstage, should refresh through `readGitStatusSnapshot` instead of rereading commit history.
 - The preload bridge should request `limit + 1` commits from `git log` to derive `hasMoreCommits`, then trim the returned page to `limit`.
 - UI components should use `hasMoreCommits` to show an explicit load-more affordance instead of rendering the full repository history.
 
@@ -524,12 +529,16 @@ Let the store own bridge calls and normalize errors before the component renders
 - Missing Git repository -> return an empty snapshot with `hasMoreCommits: false`.
 - Invalid `limit` or `skip` -> clamp to a safe bounded page in preload.
 - Loading more with no existing snapshot -> no-op.
+- Stage/unstage while a full refresh is in flight -> keep the latest status/files from the lightweight refresh, but still accept the full refresh's first commit page when HEAD/reference state has not changed.
+- Commit, branch switch, or checkout while a full refresh is in flight -> reject or ignore the stale full refresh commit page unless it was started after the ref-changing mutation.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: the Git tab shows the first page quickly and appends another page only when the user asks for more.
+- Good: staging one file updates W/S counts and row state without paying for another `git log` page.
 - Base: a small repository returns fewer than `limit` commits and hides the load-more control.
 - Bad: running `git log --all` without a max count and rendering every commit.
+- Bad: implementing load-more by calling `readGitSnapshot` and replacing the entire Git snapshot, which makes status refresh slow and can overwrite current worktree state.
 
 ### 6. Tests Required
 
@@ -549,7 +558,7 @@ This depends on bridge defaults and can drift toward unbounded history reads.
 #### Correct
 
 ```ts
-const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: project.git?.commits.length || 0 });
+const page = await bridge.readGitCommits(project.path, { limit: 80, skip: project.git?.commits.length || 0 });
 ```
 
 Always make the intended page size and offset explicit at the store boundary.
@@ -623,7 +632,11 @@ Keep Git diff reads behind the store action so fallback, unavailable projects, a
 - `ProjectGitBranchSummary = { name: string; current: boolean }`
 - `ProjectGitActionResult = { ok: boolean; message: string; path?: string; paths?: string[]; count?: number; branch?: string; commitHash?: string; isDetachedHead?: boolean }`
 - `ProjectGitCommitMessageDiffResult = { ok: boolean; scope: "staged" | "working-tree"; diff: string; truncated?: boolean; message?: string }`
+- `ProjectGitStatusSnapshot = { branch: string; headHash?: string; isDetachedHead?: boolean; ahead: number; behind: number; files: ProjectGitFileChange[]; branches?: ProjectGitBranchSummary[]; repositoryPath: string; lastRefreshedAt: string; statusText: string }`
+- `ProjectGitCommitPage = { commits: ProjectGitCommitSummary[]; hasMoreCommits?: boolean; repositoryPath: string; lastRefreshedAt: string }`
 - `ProjectGitSnapshot = { branch: string; headHash?: string; isDetachedHead?: boolean; ahead: number; behind: number; files: ProjectGitFileChange[]; commits: ProjectGitCommitSummary[]; branches?: ProjectGitBranchSummary[]; ... }`
+- `ProjectBridge.readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>`
+- `ProjectBridge.readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>`
 - `ProjectBridge.stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
 - `ProjectBridge.unstageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
 - `ProjectBridge.discardGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
@@ -632,20 +645,27 @@ Keep Git diff reads behind the store action so fallback, unavailable projects, a
 - `ProjectBridge.discardGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>`
 - `ProjectBridge.commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>`
 - `ProjectBridge.switchGitBranch(projectPath: string, branchName: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>`
-- `ProjectBridge.checkoutGitCommit(projectPath: string, commitHash: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.checkoutGitCommit(projectPath: string, commitHash: string, options?: { force?: boolean; preferredBranch?: string }): Promise<ProjectGitActionResult>`
 - `ProjectBridge.readGitCommitMessageDiff(projectPath: string): Promise<ProjectGitCommitMessageDiffResult>`
 
 ### 3. Contracts
 
 - Components call store actions such as `store.stageGitFile(project.id, file.path)`, never `window.projectBridge` directly.
-- Store actions resolve the project id to the project path, call the bridge, and refresh `readGitSnapshot(project.path, { limit: 80, skip: 0 })` after successful write results.
+- Store actions resolve the project id to the project path, call the bridge, and choose the lightest post-write refresh that preserves correctness.
+- Stage/unstage single-file and batch actions should bump the Git mutation version and refresh `readGitStatusSnapshot(project.path)` after successful writes. They must not reread commit history on the success path.
+- Commit, branch switch, checkout, and discard actions can change HEAD, refs, or file contents beyond index-only state; refresh `readGitSnapshot(project.path, { limit: 80, skip: 0 })` after successful results.
+- Full refresh and lightweight status refresh may overlap. The store must track mutation/ref versions so a stale full refresh does not overwrite newer status/files, and so full refresh commit pages are only merged when no ref-changing mutation happened after the full refresh started.
 - Browser fallback must implement the same methods and return user-facing unavailable messages instead of throwing.
 - Preload Git write commands must use argument arrays with `spawnSync` or `execFileSync`, e.g. `git -C <repo> add -- <path>`. Do not build shell command strings for Git writes.
 - Preload resolves `relativePath` under the Git repository root before running Git, rejecting path traversal through the existing child-path resolver.
 - Preload reads Git file status with a NUL-delimited porcelain format and preserves `originalPath` for renamed files, so file actions do not break paths with spaces or staged renames.
 - `discardGitFile` is a risky action and the UI must show an app-rendered confirmation before calling the store. Do not use `window.confirm`, uTools native confirmation, or Electron native confirmation for this Git panel action. Preload may discard tracked single-file changes and untracked files, but must not recursively delete untracked directories from the Git panel.
 - `switchGitBranch` must block when `git status --porcelain` has any output unless `options.force === true`. Branch switching is only for existing local branches returned by the snapshot branch list. The UI must show an app-rendered danger confirmation before calling `switchGitBranch(..., { force: true })`; forced switching may run `git switch --discard-changes -- <branch>` and discard local uncommitted changes.
-- `checkoutGitCommit` must block when `git status --porcelain` has any output unless `options.force === true`, validate the target as an existing commit, use `git switch --detach <hash>`, and refresh the snapshot after success. The UI must show an app-rendered danger confirmation before calling `checkoutGitCommit(..., { force: true })`; forced checkout may run `git switch --discard-changes --detach <hash>` and discard local uncommitted changes.
+- `checkoutGitCommit` must block when `git status --porcelain` has any output unless `options.force === true`, validate the target as an existing commit, then choose the checkout mode:
+  - if the target commit equals a local branch tip, switch to that branch instead of detached HEAD;
+  - prefer `options.preferredBranch`, then the symbolic current branch, then `main`, `master`, `develop`, then the first matching local branch;
+  - if no local branch tip matches, use `git switch --detach <hash>`.
+    The UI must show an app-rendered danger confirmation before calling `checkoutGitCommit(..., { force: true })`; forced checkout may use `--discard-changes` and discard local uncommitted changes.
 - `readGitSnapshot` must expose `headHash` and `isDetachedHead` so the Git tab can render `HEAD @ <hash>`, detached HEAD badges, and current-commit markers after checkout.
 - `readGitCommitMessageDiff` prefers `git diff --cached`; when no staged diff exists, it falls back to the working-tree diff and bounded untracked-file summaries for AI commit message generation.
 - The Git tab left sidebar follows a VS Code Source Control-style compact panel convention: commit textarea first, adjacent icon-only commit/AI actions, one dense changed-files toolbar row with W/S counts and bulk actions, compact file rows, subtle dividers, and no stacked card sections or explanatory helper paragraphs inside the sidebar. Do not render action/status messages directly under the commit textarea; use refreshed state, button loading/disabled states, app dialogs, or the top Git status area instead. The changed-files toolbar label should stay short (currently `变更`) and should not spend space on total changed-file count or scroll-to-top/bottom controls.
@@ -664,18 +684,20 @@ Keep Git diff reads behind the store action so fallback, unavailable projects, a
 - Branch switch with uncommitted changes after app confirmation -> UI calls `switchGitBranch(..., { force: true })`; preload runs `git switch --discard-changes -- <branch>`, returns `{ ok: true, branch }` on success, and the store refreshes the snapshot.
 - Unknown local branch -> bridge returns `{ ok: false, message: "只能切换到已有本地分支。" }`.
 - Commit checkout with uncommitted changes and no force option -> bridge returns `{ ok: false, commitHash, message: "当前工作区存在未提交变更..." }` and does not run `git switch --detach`.
-- Commit checkout with uncommitted changes after app confirmation -> UI calls `checkoutGitCommit(..., { force: true })`; preload runs `git switch --discard-changes --detach <hash>`, returns `{ ok: true, commitHash, isDetachedHead: true }` on success, and the store refreshes the snapshot.
+- Commit checkout with uncommitted changes after app confirmation -> UI calls `checkoutGitCommit(..., { force: true })`; preload runs either `git switch --discard-changes -- <branch>` for a matching local branch tip or `git switch --discard-changes --detach <hash>` otherwise, and the store refreshes the snapshot.
 - Commit checkout with an invalid or missing hash -> bridge returns `{ ok: false, message: "请选择一个有效的提交 hash。" }` or a not-found commit message.
+- Commit checkout target equals a local branch tip -> bridge returns `{ ok: true, branch, commitHash, isDetachedHead: false }`, and the refreshed snapshot should show the branch name rather than detached HEAD.
+- Commit checkout target is not any local branch tip -> bridge returns `{ ok: true, commitHash, isDetachedHead: true }`, and the refreshed snapshot should show detached HEAD.
 - Detached HEAD snapshot -> `branch` may be `"HEAD"`, `isDetachedHead` is `true`, and `headHash` carries the current short commit hash for UI labels.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: clicking a file stage button calls the store, preload runs `git add -- <file>`, then the store refreshes the snapshot and the row shows staged state.
+- Good: clicking a file stage button calls the store, preload runs `git add -- <file>`, then the store refreshes only the Git status snapshot and the row shows staged state without reloading the commit graph.
 - Good: AI commit message generation includes actual diff text from staged changes, and falls back to working-tree diff only when nothing is staged.
 - Good: editing the commit-message prompt in Settings persists through browser fallback and preload storage, then the next Git tab generation uses that stored template.
 - Good: the changed-files panel keeps stage/unstage/discard controls in the header and shows immediate per-file loading feedback before the refreshed snapshot arrives.
 - Good: switching to a clean local branch refreshes branch, graph, files, and command-running views naturally see the new working tree.
-- Good: checking out a selected commit from the commit detail dialog enters detached HEAD, refreshes files/branch/graph, and highlights the current commit through `headHash`.
+- Good: checking out a selected commit from the commit detail dialog switches back to a matching local branch tip when one exists; otherwise it enters detached HEAD, refreshes files/branch/graph, and highlights the current commit through `headHash`.
 - Base: browser preview shows safe unavailable messages for write actions but still renders the Git tab.
 - Bad: a component directly calls `window.projectBridge.commitGitStaged(...)` and then forgets to refresh `project.git`.
 - Bad: running `spawn("git add " + filePath, { shell: true })`, which creates shell injection risk.
@@ -689,6 +711,7 @@ Keep Git diff reads behind the store action so fallback, unavailable projects, a
 - Manual uTools smoke test: stage, unstage, discard a single file after confirmation, commit staged changes, and confirm each successful action refreshes the snapshot.
 - Manual uTools smoke test: attempt branch switching with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-switches and refreshes branch/files/graph. Then switch on a clean worktree and verify the branch and graph refresh.
 - Manual uTools smoke test: attempt commit checkout with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-checks out the selected commit and refreshes detached HEAD/current commit state. Then checkout a clean selected commit and verify detached HEAD/current commit state is visible.
+- Manual uTools smoke test: from detached HEAD, select the tip commit of `main` or another local branch and verify the Git panel returns to that branch instead of staying detached.
 - Manual AI smoke test: generate a commit message with staged changes, then with only unstaged changes, and verify the prompt source uses diff content.
 
 ### 7. Wrong vs Correct
