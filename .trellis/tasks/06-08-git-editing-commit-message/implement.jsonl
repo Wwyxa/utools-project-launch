@@ -1,0 +1,10 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Vue 3 frontend conventions and pre-development index for Git tab changes."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"GitTab UI changes must follow existing component composition and compact tool-surface patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"New Git actions need Pinia store methods and snapshot refresh behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Bridge and store interfaces require typed contracts for Git write operations."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Implementation should avoid forbidden frontend patterns and preserve project quality bar."}
+{"file":".trellis/spec/backend/index.md","reason":"The project has no backend; preload bridge changes must respect current frontend-only runtime boundaries."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Git CLI write failures and unavailable fallback paths need clear UI-state error handling."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Bridge command execution should remain constrained, non-shell-injection-prone, and scoped."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse existing Git and AI helpers rather than duplicating command/prompt plumbing."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Feature crosses preload bridge, shared types, store, and Vue component boundaries."}

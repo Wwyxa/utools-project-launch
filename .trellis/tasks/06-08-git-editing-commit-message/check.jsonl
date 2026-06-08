@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Verify Git tab changes against frontend conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review UI composition, compact controls, dialogs, and interaction states."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review Pinia action placement and Git snapshot refresh consistency."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check shared bridge/store types for nullability and result contracts."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run quality review against frontend guardrails."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Review Git command error handling and user-visible failure states."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review preload Git command execution safety and scope."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify data contracts across preload, types, store, and component layers."}
