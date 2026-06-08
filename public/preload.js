@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { spawn, execFileSync } = require("node:child_process");
+const { spawn, spawnSync, execFileSync } = require("node:child_process");
 const { TextDecoder } = require("node:util");
 const { shell } = require("electron");
 
@@ -22,24 +22,54 @@ const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api"
 const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set(["vscode", "cursor", "custom"]);
 const aiProviderKinds = new Set(["utools", "openai-compatible", "anthropic-compatible"]);
+const aiPromptModeKinds = new Set(["git-analysis", "commit-message"]);
+const aiCommitMessageModeId = "commit-message";
+const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
+
+要求：
+- 只输出最终 commit message，不要解释推理过程。
+- 输出 1 行标题，优先使用 conventional commit 风格，例如 feat:, fix:, chore:, docs:, refactor:。
+- 如确实需要，可在标题后追加 2-4 条简短正文要点。
+- 不要使用 Markdown 代码块。
+{truncatedNote}
+
+{diffScope}:
+{diffContent}`;
+const defaultAiCommitMessagePrompt = `请根据当前 Git diff 生成一个简洁、可直接使用的 Git commit message。
+
+要求：
+- 只输出最终 commit message，不要解释推理过程。
+- 输出 1 行标题，优先使用 conventional commit 风格，例如 feat:, fix:, chore:, docs:, refactor:。
+- 如确实需要，可在标题后追加 2-4 条简短正文要点。
+- 不要使用 Markdown 代码块。`;
 const defaultAiPromptModes = [
   {
     id: "summary",
     name: "总结",
     prompt: "请总结这些 Git 信息中的主要工作内容、功能变化和代码变更方向。",
     builtIn: true,
+    kind: "git-analysis",
   },
   {
     id: "analysis",
     name: "分析",
     prompt: "请分析这些 Git 信息体现出的实现思路、代码变更逻辑和潜在影响。",
     builtIn: true,
+    kind: "git-analysis",
   },
   {
     id: "evaluation",
     name: "评估",
     prompt: "请评估这些 Git 信息的质量、风险点、可维护性和后续需要注意的地方。",
     builtIn: true,
+    kind: "git-analysis",
+  },
+  {
+    id: aiCommitMessageModeId,
+    name: "提交信息",
+    prompt: defaultAiCommitMessagePrompt,
+    builtIn: true,
+    kind: "commit-message",
   },
 ];
 const environmentTools = {
@@ -241,11 +271,24 @@ function normalizeAiProviderKind(provider) {
   return aiProviderKinds.has(provider) ? provider : "utools";
 }
 
-function normalizeAiPromptModes(value) {
+function normalizeAiPromptModeKind(id, kind) {
+  if (id === aiCommitMessageModeId) {
+    return "commit-message";
+  }
+  return typeof kind === "string" && aiPromptModeKinds.has(kind) && kind !== "commit-message" ? kind : "git-analysis";
+}
+
+function normalizeAiPromptModes(value, legacyCommitMessagePrompt) {
   const defaults = cloneDefaultAiPromptModes();
+  const defaultById = new Map(defaults.map((mode) => [mode.id, mode]));
   const defaultIds = new Set(defaults.map((mode) => mode.id));
+  const legacyPrompt = typeof legacyCommitMessagePrompt === "string" ? legacyCommitMessagePrompt : "";
+  const defaultModeWithLegacyPrompt = (mode) =>
+    mode.id === aiCommitMessageModeId && legacyPrompt
+      ? { ...mode, prompt: legacyPrompt === legacyDefaultAiCommitMessagePrompt ? mode.prompt : legacyPrompt }
+      : mode;
   if (!Array.isArray(value)) {
-    return defaults;
+    return defaults.map(defaultModeWithLegacyPrompt);
   }
 
   const modes = new Map();
@@ -254,15 +297,20 @@ function normalizeAiPromptModes(value) {
     const fallbackId = item.builtIn ? defaults[index]?.id : `custom-${index + 1}`;
     const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : fallbackId;
     const name = typeof item.name === "string" && item.name.trim() ? item.name.trim() : id;
-    const defaultPrompt = defaults.find((mode) => mode.id === id)?.prompt || "";
-    const prompt = typeof item.prompt === "string" ? item.prompt : defaultPrompt;
+    const defaultPrompt = defaultById.get(id)?.prompt || "";
+    const prompt =
+      typeof item.prompt === "string"
+        ? id === aiCommitMessageModeId && item.prompt === legacyDefaultAiCommitMessagePrompt
+          ? defaultPrompt
+          : item.prompt
+        : defaultPrompt;
     if (!id || modes.has(id)) return;
-    modes.set(id, { id, name, prompt, builtIn: defaultIds.has(id) });
+    modes.set(id, { id, name, prompt, builtIn: defaultIds.has(id), kind: normalizeAiPromptModeKind(id, item.kind) });
   });
 
   defaults.forEach((mode) => {
     if (!modes.has(mode.id)) {
-      modes.set(mode.id, mode);
+      modes.set(mode.id, defaultModeWithLegacyPrompt(mode));
     }
   });
 
@@ -270,7 +318,13 @@ function normalizeAiPromptModes(value) {
 }
 
 function getDefaultAiPreferences() {
-  return { provider: "utools", baseUrl: "", model: "", apiKey: "", modes: cloneDefaultAiPromptModes() };
+  return {
+    provider: "utools",
+    baseUrl: "",
+    model: "",
+    apiKey: "",
+    modes: cloneDefaultAiPromptModes(),
+  };
 }
 
 function normalizeAiPreferences(value) {
@@ -283,7 +337,7 @@ function normalizeAiPreferences(value) {
     baseUrl: typeof value.baseUrl === "string" ? value.baseUrl : "",
     model: typeof value.model === "string" ? value.model : "",
     apiKey: typeof value.apiKey === "string" ? value.apiKey : "",
-    modes: normalizeAiPromptModes(value.modes),
+    modes: normalizeAiPromptModes(value.modes, value.commitMessagePrompt),
   };
 }
 
@@ -1193,6 +1247,23 @@ function runGitDiff(startPath, args) {
   }
 }
 
+function runGitResult(startPath, args) {
+  const resolvedPath = expandPath(startPath);
+  const result = spawnSync("git", ["-C", resolvedPath, ...args], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  return {
+    status: typeof result.status === "number" ? result.status : result.error ? 1 : 0,
+    stdout: String(result.stdout || ""),
+    stderr: String(result.stderr || result.error?.message || ""),
+  };
+}
+
+function firstGitError(result, fallback) {
+  return String(result.stderr || result.stdout || fallback || "Git 操作失败。").trim();
+}
+
 function collectNumstat(startPath, args) {
   const output = runGit(startPath, args);
   if (!output) {
@@ -1214,6 +1285,425 @@ function collectNumstat(startPath, args) {
   });
 
   return result;
+}
+
+function parseGitStatusRecord(statusCode, filePath, originalPath = "") {
+  if (!statusCode || !filePath) {
+    return null;
+  }
+
+  const status =
+    statusCode === "??"
+      ? "UNTRACKED"
+      : statusCode.includes("R")
+        ? "RENAMED"
+        : statusCode.includes("A")
+          ? "ADDED"
+          : statusCode.includes("D")
+            ? "DELETED"
+            : "MODIFIED";
+
+  return {
+    statusCode,
+    path: filePath,
+    status,
+    staged: statusCode[0] !== " " && statusCode[0] !== "?",
+    unstaged: statusCode[1] !== " " || statusCode === "??",
+    originalPath: originalPath || undefined,
+  };
+}
+
+function readGitStatusEntries(repositoryPath) {
+  const statusOutput = runGit(repositoryPath, ["status", "--porcelain=v1", "-z"]);
+  if (!statusOutput) {
+    return [];
+  }
+
+  const records = statusOutput.split("\0").filter(Boolean);
+  const entries = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    const statusCode = record.slice(0, 2);
+    const filePath = record.slice(3);
+    const originalPath = statusCode.includes("R") ? records[++index] || "" : "";
+    const entry = parseGitStatusRecord(statusCode, filePath, originalPath);
+    if (entry) {
+      entries.push(entry);
+    }
+  }
+  return entries;
+}
+
+function readGitBranches(repositoryPath) {
+  const output = runGit(repositoryPath, ["branch", "--format=%(refname:short)%09%(HEAD)"]);
+  if (!output) {
+    return [];
+  }
+
+  return output
+    .split(/\r?\n/)
+    .map((line) => {
+      const [name, marker] = line.split("\t");
+      const branchName = String(name || "").trim();
+      return branchName ? { name: branchName, current: String(marker || "").trim() === "*" } : null;
+    })
+    .filter(Boolean);
+}
+
+function resolveGitFilePath(repositoryPath, relativePath) {
+  const resolved = resolveProjectChild(repositoryPath, relativePath);
+  if (!resolved.relativePath) {
+    throw new Error("请选择一个仓库内文件。");
+  }
+  return resolved;
+}
+
+function getGitFileStatus(repositoryPath, relativePath) {
+  const normalizedPath = String(relativePath || "").replace(/\\/g, "/");
+  return readGitStatusEntries(repositoryPath).find((entry) => entry.path === normalizedPath) || null;
+}
+
+function gitFileActionPaths(repositoryPath, status, fallbackPath) {
+  const paths = status?.originalPath ? [status.originalPath, status.path] : [fallbackPath];
+  return paths.map((filePath) => resolveGitFilePath(repositoryPath, filePath).relativePath);
+}
+
+function uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus) {
+  const actionPaths = new Set();
+  const displayPaths = [];
+  const requestedPaths = Array.isArray(relativePaths) ? relativePaths : [];
+
+  requestedPaths.forEach((relativePath) => {
+    const resolved = resolveGitFilePath(repositoryPath, relativePath);
+    const status = getGitFileStatus(repositoryPath, resolved.relativePath);
+    if (!filterStatus(status, resolved.relativePath)) {
+      return;
+    }
+    gitFileActionPaths(repositoryPath, status, resolved.relativePath).forEach((filePath) => actionPaths.add(filePath));
+    displayPaths.push(resolved.relativePath);
+  });
+
+  return { actionPaths: Array.from(actionPaths), displayPaths: Array.from(new Set(displayPaths)) };
+}
+
+function hasUncommittedGitChanges(repositoryPath) {
+  const status = runGit(repositoryPath, ["status", "--porcelain"]);
+  return Boolean(status && status.trim());
+}
+
+function fileExistsInHead(repositoryPath, relativePath) {
+  const result = runGitResult(repositoryPath, ["cat-file", "-e", `HEAD:${relativePath}`]);
+  return result.status === 0;
+}
+
+function removeGitWorktreePath(targetPath) {
+  if (!fs.existsSync(targetPath)) {
+    return;
+  }
+  const stats = fs.statSync(targetPath);
+  if (!stats.isFile()) {
+    throw new Error("暂不支持从 Git 面板丢弃未跟踪目录或非普通文件，请在文件系统中确认后手动处理。");
+  }
+  fs.rmSync(targetPath, { force: true });
+}
+
+function truncateGitDiff(diff, maxLength = 18000) {
+  if (diff.length <= maxLength) {
+    return { diff, truncated: false };
+  }
+  return {
+    diff: `${diff.slice(0, maxLength)}\n\n[diff 已截断，仅保留前 ${maxLength} 个字符]`,
+    truncated: true,
+  };
+}
+
+function readUntrackedFileDiffs(repositoryPath) {
+  return readGitStatusEntries(repositoryPath)
+    .filter((entry) => entry.status === "UNTRACKED")
+    .map((entry) => {
+      const resolved = resolveProjectChild(repositoryPath, entry.path);
+      if (!fs.existsSync(resolved.targetPath) || !fs.statSync(resolved.targetPath).isFile()) {
+        return `diff --git a/${entry.path} b/${entry.path}\nnew file mode 000000\n--- /dev/null\n+++ b/${entry.path}\n@@\n[未跟踪目录或非普通文件，已跳过内容 diff]`;
+      }
+      return runGitDiff(repositoryPath, ["diff", "--no-index", "--", os.devNull, entry.path]) || "";
+    })
+    .filter(Boolean);
+}
+
+function readGitCommitMessageDiff(projectPath) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, scope: "working-tree", diff: "", message: "未检测到 Git 仓库。" };
+  }
+
+  const stagedDiff = runGitDiff(repositoryPath, ["diff", "--cached"]);
+  if (stagedDiff && stagedDiff.trim()) {
+    return { ok: true, scope: "staged", ...truncateGitDiff(stagedDiff) };
+  }
+
+  const workingDiff = [runGitDiff(repositoryPath, ["diff"]), ...readUntrackedFileDiffs(repositoryPath)]
+    .filter(Boolean)
+    .join("\n");
+  if (!workingDiff.trim()) {
+    return { ok: false, scope: "working-tree", diff: "", message: "当前没有可用于生成提交信息的 diff。" };
+  }
+
+  return { ok: true, scope: "working-tree", ...truncateGitDiff(workingDiff) };
+}
+
+function stageGitFile(projectPath, relativePath) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  try {
+    const resolved = resolveGitFilePath(repositoryPath, relativePath);
+    const status = getGitFileStatus(repositoryPath, resolved.relativePath);
+    const actionPaths = gitFileActionPaths(repositoryPath, status, resolved.relativePath);
+    const result = runGitResult(repositoryPath, ["add", "--", ...actionPaths]);
+    return result.status === 0
+      ? { ok: true, path: resolved.relativePath, message: "已暂存文件变更。" }
+      : { ok: false, path: resolved.relativePath, message: firstGitError(result, "暂存文件失败。") };
+  } catch (error) {
+    return { ok: false, message: error?.message || "暂存文件失败。" };
+  }
+}
+
+function unstageGitFile(projectPath, relativePath) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  try {
+    const resolved = resolveGitFilePath(repositoryPath, relativePath);
+    const status = getGitFileStatus(repositoryPath, resolved.relativePath);
+    const actionPaths = gitFileActionPaths(repositoryPath, status, resolved.relativePath);
+    const result = runGitResult(repositoryPath, ["reset", "-q", "HEAD", "--", ...actionPaths]);
+    return result.status === 0
+      ? { ok: true, path: resolved.relativePath, message: "已取消暂存文件。" }
+      : { ok: false, path: resolved.relativePath, message: firstGitError(result, "取消暂存失败。") };
+  } catch (error) {
+    return { ok: false, message: error?.message || "取消暂存失败。" };
+  }
+}
+
+function discardGitFile(projectPath, relativePath) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  try {
+    const resolved = resolveGitFilePath(repositoryPath, relativePath);
+    const status = getGitFileStatus(repositoryPath, resolved.relativePath);
+    if (!status) {
+      return { ok: true, path: resolved.relativePath, message: "该文件没有可丢弃的变更。" };
+    }
+
+    if (
+      status.status === "UNTRACKED" ||
+      (status.statusCode[0] === "A" && !fileExistsInHead(repositoryPath, resolved.relativePath))
+    ) {
+      if (status.staged) {
+        runGitResult(repositoryPath, ["reset", "-q", "HEAD", "--", resolved.relativePath]);
+      }
+      removeGitWorktreePath(resolved.targetPath);
+      return { ok: true, path: resolved.relativePath, message: "已丢弃该文件变更。" };
+    }
+
+    const actionPaths = gitFileActionPaths(repositoryPath, status, resolved.relativePath);
+    const result = runGitResult(repositoryPath, ["restore", "--staged", "--worktree", "--", ...actionPaths]);
+    return result.status === 0
+      ? { ok: true, path: resolved.relativePath, message: "已丢弃该文件变更。" }
+      : { ok: false, path: resolved.relativePath, message: firstGitError(result, "丢弃文件变更失败。") };
+  } catch (error) {
+    return { ok: false, message: error?.message || "丢弃文件变更失败。" };
+  }
+}
+
+function stageGitFiles(projectPath, relativePaths) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  try {
+    const { actionPaths, displayPaths } = uniqueGitActionPaths(repositoryPath, relativePaths, (status) =>
+      Boolean(status && (status.unstaged || (!status.staged && status.unstaged !== false))),
+    );
+    if (actionPaths.length === 0) {
+      return { ok: false, count: 0, paths: [], message: "没有可暂存的文件变更。" };
+    }
+    const result = runGitResult(repositoryPath, ["add", "--", ...actionPaths]);
+    return result.status === 0
+      ? { ok: true, count: displayPaths.length, paths: displayPaths, message: `已暂存 ${displayPaths.length} 个文件。` }
+      : {
+          ok: false,
+          count: displayPaths.length,
+          paths: displayPaths,
+          message: firstGitError(result, "批量暂存失败。"),
+        };
+  } catch (error) {
+    return { ok: false, message: error?.message || "批量暂存失败。" };
+  }
+}
+
+function unstageGitFiles(projectPath, relativePaths) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  try {
+    const { actionPaths, displayPaths } = uniqueGitActionPaths(repositoryPath, relativePaths, (status) =>
+      Boolean(status?.staged),
+    );
+    if (actionPaths.length === 0) {
+      return { ok: false, count: 0, paths: [], message: "没有可取消暂存的文件。" };
+    }
+    const result = runGitResult(repositoryPath, ["reset", "-q", "HEAD", "--", ...actionPaths]);
+    return result.status === 0
+      ? {
+          ok: true,
+          count: displayPaths.length,
+          paths: displayPaths,
+          message: `已取消暂存 ${displayPaths.length} 个文件。`,
+        }
+      : {
+          ok: false,
+          count: displayPaths.length,
+          paths: displayPaths,
+          message: firstGitError(result, "批量取消暂存失败。"),
+        };
+  } catch (error) {
+    return { ok: false, message: error?.message || "批量取消暂存失败。" };
+  }
+}
+
+function discardGitFiles(projectPath, relativePaths) {
+  const requestedPaths = Array.isArray(relativePaths) ? Array.from(new Set(relativePaths)) : [];
+  if (requestedPaths.length === 0) {
+    return { ok: false, count: 0, paths: [], message: "没有可丢弃的文件变更。" };
+  }
+
+  const succeededPaths = [];
+  for (const relativePath of requestedPaths) {
+    const result = discardGitFile(projectPath, relativePath);
+    if (!result.ok) {
+      return {
+        ...result,
+        count: succeededPaths.length,
+        paths: succeededPaths,
+        message:
+          succeededPaths.length > 0 ? `${result.message}（已先丢弃 ${succeededPaths.length} 个文件）` : result.message,
+      };
+    }
+    if (result.path) {
+      succeededPaths.push(result.path);
+    }
+  }
+
+  return {
+    ok: true,
+    count: succeededPaths.length,
+    paths: succeededPaths,
+    message: succeededPaths.length > 0 ? `已丢弃 ${succeededPaths.length} 个文件变更。` : "没有可丢弃的文件变更。",
+  };
+}
+
+function commitGitStaged(projectPath, message) {
+  const repositoryPath = findGitRoot(projectPath);
+  const commitMessage = typeof message === "string" ? message.trim() : "";
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (!commitMessage) {
+    return { ok: false, message: "请先填写 commit message。" };
+  }
+
+  const stagedDiff = runGitDiff(repositoryPath, ["diff", "--cached"]);
+  if (!stagedDiff || !stagedDiff.trim()) {
+    return { ok: false, message: "没有 staged 变更可提交。" };
+  }
+
+  const result = runGitResult(repositoryPath, ["commit", "-m", commitMessage]);
+  if (result.status !== 0) {
+    return { ok: false, message: firstGitError(result, "提交失败。") };
+  }
+
+  const commitHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || "").trim();
+  return { ok: true, commitHash, message: commitHash ? `提交成功：${commitHash}` : "提交成功。" };
+}
+
+function switchGitBranch(projectPath, branchName, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  const targetBranch = typeof branchName === "string" ? branchName.trim() : "";
+  const force = Boolean(options && options.force);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (!targetBranch) {
+    return { ok: false, message: "请选择要切换的本地分支。" };
+  }
+  if (!force && hasUncommittedGitChanges(repositoryPath)) {
+    return { ok: false, message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换分支。" };
+  }
+
+  const branches = readGitBranches(repositoryPath);
+  const branch = branches.find((item) => item.name === targetBranch);
+  if (!branch) {
+    return { ok: false, message: "只能切换到已有本地分支。" };
+  }
+  if (branch.current) {
+    return { ok: true, branch: targetBranch, message: "已经位于该分支。" };
+  }
+
+  const result = runGitResult(repositoryPath, force ? ["switch", "--discard-changes", "--", targetBranch] : ["switch", "--", targetBranch]);
+  return result.status === 0
+    ? { ok: true, branch: targetBranch, message: force ? `已强制切换到 ${targetBranch}。` : `已切换到 ${targetBranch}。` }
+    : { ok: false, branch: targetBranch, message: firstGitError(result, "切换分支失败。") };
+}
+
+function checkoutGitCommit(projectPath, commitHash, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  const targetHash = typeof commitHash === "string" ? commitHash.trim() : "";
+  const force = Boolean(options && options.force);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (!/^[0-9a-fA-F]{7,40}$/.test(targetHash)) {
+    return { ok: false, message: "请选择一个有效的提交 hash。" };
+  }
+  if (!force && hasUncommittedGitChanges(repositoryPath)) {
+    return {
+      ok: false,
+      commitHash: targetHash,
+      message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换提交。",
+    };
+  }
+
+  const existsResult = runGitResult(repositoryPath, ["cat-file", "-e", `${targetHash}^{commit}`]);
+  if (existsResult.status !== 0) {
+    return { ok: false, commitHash: targetHash, message: "该提交不存在或不是有效 commit。" };
+  }
+
+  const result = runGitResult(
+    repositoryPath,
+    force ? ["switch", "--discard-changes", "--detach", targetHash] : ["switch", "--detach", targetHash],
+  );
+  if (result.status !== 0) {
+    return { ok: false, commitHash: targetHash, message: firstGitError(result, "切换到提交失败。") };
+  }
+
+  const headHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || targetHash).trim();
+  return {
+    ok: true,
+    commitHash: headHash,
+    isDetachedHead: true,
+    message: headHash ? `已切换到提交 ${headHash}，当前为 detached HEAD。` : "已切换到该提交，当前为 detached HEAD。",
+  };
 }
 
 function readPackageScripts(projectPath) {
@@ -1654,12 +2144,14 @@ function readGitFileDiff(projectPath, relativePath) {
     return { path: "", diff: "", message: "请选择文件查看 diff。" };
   }
 
+  const status = getGitFileStatus(repositoryPath, diffPath);
   const headDiff = runGitDiff(repositoryPath, ["diff", "--", diffPath]);
   const cachedDiff = runGitDiff(repositoryPath, ["diff", "--cached", "--", diffPath]);
-  const untrackedDiff = fs.existsSync(resolved.targetPath)
-    ? runGitDiff(repositoryPath, ["diff", "--no-index", "--", os.devNull, diffPath])
-    : "";
-  const diff = [cachedDiff, headDiff || untrackedDiff].filter(Boolean).join("\n");
+  const untrackedDiff =
+    status?.status === "UNTRACKED" && fs.existsSync(resolved.targetPath)
+      ? runGitDiff(repositoryPath, ["diff", "--no-index", "--", os.devNull, diffPath])
+      : "";
+  const diff = [cachedDiff, headDiff, untrackedDiff].filter(Boolean).join("\n");
 
   return {
     path: diffPath,
@@ -1675,8 +2167,8 @@ function readGitCommitFiles(projectPath, commitHash) {
     return [];
   }
 
-  const numstatLines = runGit(repositoryPath, ["show", "--format=", "--numstat", hash]).split(/\r?\n/);
-  const statusLines = runGit(repositoryPath, ["show", "--format=", "--name-status", hash]).split(/\r?\n/);
+  const numstatLines = (runGit(repositoryPath, ["show", "--format=", "--numstat", hash]) || "").split(/\r?\n/);
+  const statusLines = (runGit(repositoryPath, ["show", "--format=", "--name-status", hash]) || "").split(/\r?\n/);
   const statusByPath = new Map();
 
   statusLines.forEach((line) => {
@@ -1712,9 +2204,10 @@ function readGitCommitFileDiff(projectPath, commitHash, relativePath) {
     return { path: filePath, diff: "", message: "提交或文件信息为空，无法读取 diff。" };
   }
 
-  const diff = runGitDiff(repositoryPath, ["show", "--format=", hash, "--", filePath]);
+  const resolved = resolveProjectChild(repositoryPath, filePath);
+  const diff = runGitDiff(repositoryPath, ["show", "--format=", hash, "--", resolved.relativePath]);
   return {
-    path: filePath,
+    path: resolved.relativePath,
     diff,
     message: diff ? "" : "该提交中此文件暂无可显示的 diff。",
   };
@@ -1877,7 +2370,10 @@ function readGitSnapshot(projectPath, options = {}) {
   }
 
   const branchOutput = runGit(repositoryPath, ["status", "--short", "--branch"]);
-  const statusOutput = runGit(repositoryPath, ["status", "--short"]);
+  const symbolicBranch = (runGit(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]) || "").trim();
+  const headHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || "").trim();
+  const isDetachedHead = !symbolicBranch && Boolean(headHash);
+  const statusEntries = readGitStatusEntries(repositoryPath);
   const commitOutput = runGit(repositoryPath, [
     "log",
     "--all",
@@ -1892,37 +2388,24 @@ function readGitSnapshot(projectPath, options = {}) {
   const cachedNumstatOutput = collectNumstat(repositoryPath, ["diff", "--cached", "--numstat"]);
   const fileMap = new Map();
 
-  if (statusOutput) {
-    statusOutput.split(/\r?\n/).forEach((line) => {
-      if (!line.trim()) {
-        return;
-      }
+  statusEntries.forEach((entry) => {
+    const pathStats = numstatOutput.get(entry.path) ?? cachedNumstatOutput.get(entry.path);
+    const originalPathStats = entry.originalPath
+      ? (numstatOutput.get(entry.originalPath) ?? cachedNumstatOutput.get(entry.originalPath))
+      : null;
+    const additions = pathStats?.additions ?? originalPathStats?.additions ?? 0;
+    const deletions = pathStats?.deletions ?? originalPathStats?.deletions ?? 0;
 
-      const statusCode = line.slice(0, 2);
-      const rawPath = line.slice(3).trim();
-      const filePath = rawPath.includes("->") ? rawPath.split("->").pop().trim() : rawPath;
-      const status =
-        statusCode === "??"
-          ? "UNTRACKED"
-          : rawPath.includes("->")
-            ? "RENAMED"
-            : statusCode.includes("A")
-              ? "ADDED"
-              : statusCode.includes("D")
-                ? "DELETED"
-                : "MODIFIED";
-
-      const additions = numstatOutput.get(filePath)?.additions ?? cachedNumstatOutput.get(filePath)?.additions ?? 0;
-      const deletions = numstatOutput.get(filePath)?.deletions ?? cachedNumstatOutput.get(filePath)?.deletions ?? 0;
-
-      fileMap.set(filePath, {
-        path: filePath,
-        additions,
-        deletions,
-        status,
-      });
+    fileMap.set(entry.path, {
+      path: entry.path,
+      originalPath: entry.originalPath,
+      additions,
+      deletions,
+      status: entry.status,
+      staged: entry.staged,
+      unstaged: entry.unstaged,
     });
-  }
+  });
 
   const commits = [];
   if (commitOutput) {
@@ -1967,21 +2450,24 @@ function readGitSnapshot(projectPath, options = {}) {
 
   const branchLine = branchOutput ? branchOutput.split(/\r?\n/)[0] : "";
   const branchMatch = branchLine.match(/^##\s+([^\.\s]+)(?:\.\.\.(?:[^\s]+))?(?:\s+\[(.+)\])?/);
-  const branch = branchMatch?.[1] || "main";
+  const branch = symbolicBranch || (isDetachedHead ? "HEAD" : branchMatch?.[1] || "main");
   const upstreamInfo = branchMatch?.[2] || "";
   const aheadMatch = upstreamInfo.match(/ahead\s+(\d+)/);
   const behindMatch = upstreamInfo.match(/behind\s+(\d+)/);
 
   return {
     branch,
+    headHash,
+    isDetachedHead,
     ahead: aheadMatch ? Number(aheadMatch[1]) : 0,
     behind: behindMatch ? Number(behindMatch[1]) : 0,
     files: Array.from(fileMap.values()),
     commits,
+    branches: readGitBranches(repositoryPath),
     hasMoreCommits,
     repositoryPath,
     lastRefreshedAt: now,
-    statusText: fileMap.size === 0 ? "工作区干净" : `${fileMap.size} 个文件变更`,
+    statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${fileMap.size === 0 ? "工作区干净" : `${fileMap.size} 个文件变更`}`,
   };
 }
 
@@ -2198,6 +2684,16 @@ window.projectBridge = {
   readGitFileDiff,
   readGitCommitFileDiff,
   readGitCommitFiles,
+  readGitCommitMessageDiff,
+  stageGitFile,
+  unstageGitFile,
+  discardGitFile,
+  stageGitFiles,
+  unstageGitFiles,
+  discardGitFiles,
+  commitGitStaged,
+  switchGitBranch,
+  checkoutGitCommit,
   listProjectFiles,
   readProjectFile,
   writeProjectFile,

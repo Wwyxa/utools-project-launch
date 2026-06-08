@@ -16,6 +16,8 @@ import type {
   Locale,
   LogEntry,
   Project,
+  ProjectGitActionResult,
+  ProjectGitCommitMessageDiffResult,
   ProjectConfigFile,
   ProjectBridgeEvent,
   ProjectEnvironmentEntry,
@@ -147,10 +149,13 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
 
   return {
     branch: snapshot.branch || "main",
+    headHash: snapshot.headHash || "",
+    isDetachedHead: Boolean(snapshot.isDetachedHead),
     ahead: snapshot.ahead || 0,
     behind: snapshot.behind || 0,
     files: snapshot.files || [],
     commits: snapshot.commits || [],
+    branches: snapshot.branches || [],
     hasMoreCommits: snapshot.hasMoreCommits || false,
     repositoryPath: snapshot.repositoryPath || "",
     lastRefreshedAt: snapshot.lastRefreshedAt || new Date().toISOString(),
@@ -727,6 +732,7 @@ export const useStore = defineStore("app", {
         name: "自定义模式",
         prompt: "请基于以下 Git 信息输出面向开发者的结构化内容。",
         builtIn: false,
+        kind: "git-analysis",
       };
       this.aiPreferences = { ...this.aiPreferences, modes: [...this.aiPreferences.modes, nextMode] };
       bridge.saveAiPreferences(this.aiPreferences);
@@ -1429,6 +1435,130 @@ export const useStore = defineStore("app", {
       }
 
       return bridge.readGitCommitFiles(project.path, commitHash);
+    },
+    async readGitCommitMessageDiff(projectId: string): Promise<ProjectGitCommitMessageDiffResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return bridge.readGitCommitMessageDiff(project.path);
+    },
+    async stageGitFile(projectId: string, relativePath: string): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.stageGitFile(project.path, relativePath);
+      if (result.ok || (result.count || 0) > 0) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
+    },
+    async unstageGitFile(projectId: string, relativePath: string): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.unstageGitFile(project.path, relativePath);
+      if (result.ok || (result.count || 0) > 0) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
+    },
+    async discardGitFile(projectId: string, relativePath: string): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.discardGitFile(project.path, relativePath);
+      if (result.ok || (result.count || 0) > 0) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
+    },
+    async stageGitFiles(projectId: string, relativePaths: string[]): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.stageGitFiles(project.path, relativePaths);
+      if (result.ok) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
+    },
+    async unstageGitFiles(projectId: string, relativePaths: string[]): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.unstageGitFiles(project.path, relativePaths);
+      if (result.ok) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
+    },
+    async discardGitFiles(projectId: string, relativePaths: string[]): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.discardGitFiles(project.path, relativePaths);
+      if (result.ok) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
+    },
+    async commitGitStaged(projectId: string, message: string): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.commitGitStaged(project.path, message);
+      if (result.ok) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
+    },
+    async switchGitBranch(
+      projectId: string,
+      branchName: string,
+      options: { force?: boolean } = {},
+    ): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.switchGitBranch(project.path, branchName, options);
+      if (result.ok) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
+    },
+    async checkoutGitCommit(
+      projectId: string,
+      commitHash: string,
+      options: { force?: boolean } = {},
+    ): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      const result = await bridge.checkoutGitCommit(project.path, commitHash, options);
+      if (result.ok) {
+        await this.refreshGitSnapshot(projectId);
+      }
+      return result;
     },
     async writeProjectFile(
       projectId: string,

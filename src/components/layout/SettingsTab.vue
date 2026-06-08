@@ -81,7 +81,6 @@ const aiConfigReady = computed(() => {
     store.aiPreferences.baseUrl.trim() && store.aiPreferences.model.trim() && store.aiPreferences.apiKey.trim(),
   );
 });
-
 const segmentButtonClass = (active: boolean) =>
   cn(
     "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all",
@@ -481,9 +480,12 @@ watch(
                   删除
                 </button>
               </div>
-              <label class="block text-xs font-semibold uppercase text-on-surface-variant">
-                提示词
+              <div>
+                <label for="ai-mode-prompt" class="mb-1 block text-xs font-semibold uppercase text-on-surface-variant">
+                  {{ t.settings.aiPromptLabel }}
+                </label>
                 <textarea
+                  id="ai-mode-prompt"
                   :value="selectedAiMode.prompt"
                   @input="
                     store.updateAiPromptMode(selectedAiMode.id, {
@@ -493,7 +495,7 @@ watch(
                   rows="7"
                   class="themed-scrollbar mt-1 w-full resize-none rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case leading-5 text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
-              </label>
+              </div>
             </div>
           </div>
         </div>

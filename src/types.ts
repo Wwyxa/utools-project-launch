@@ -32,6 +32,7 @@ export type DefaultEditorKind = "vscode" | "cursor" | "custom";
 export type EnvironmentToolKey = "node" | "npm" | "pnpm" | "yarn" | "python" | "pip" | "go" | "git" | "docker";
 export type EnvironmentToolStatus = "available" | "missing" | "error";
 export type AiProviderKind = "utools" | "openai-compatible" | "anthropic-compatible";
+export type AiPromptModeKind = "git-analysis" | "commit-message";
 
 export interface TerminalPreferences {
   kind: DefaultTerminalKind;
@@ -75,7 +76,18 @@ export interface AiPromptMode {
   name: string;
   prompt: string;
   builtIn: boolean;
+  kind: AiPromptModeKind;
 }
+
+export const AI_COMMIT_MESSAGE_MODE_ID = "commit-message";
+
+export const DEFAULT_AI_COMMIT_MESSAGE_PROMPT = `请根据当前 Git diff 生成一个简洁、可直接使用的 Git commit message。
+
+要求：
+- 只输出最终 commit message，不要解释推理过程。
+- 输出 1 行标题，优先使用 conventional commit 风格，例如 feat:, fix:, chore:, docs:, refactor:。
+- 如确实需要，可在标题后追加 2-4 条简短正文要点。
+- 不要使用 Markdown 代码块。`;
 
 export const DEFAULT_AI_PROMPT_MODES: AiPromptMode[] = [
   {
@@ -83,18 +95,28 @@ export const DEFAULT_AI_PROMPT_MODES: AiPromptMode[] = [
     name: "总结",
     prompt: "请总结这些 Git 信息中的主要工作内容、功能变化和代码变更方向。",
     builtIn: true,
+    kind: "git-analysis",
   },
   {
     id: "analysis",
     name: "分析",
     prompt: "请分析这些 Git 信息体现出的实现思路、代码变更逻辑和潜在影响。",
     builtIn: true,
+    kind: "git-analysis",
   },
   {
     id: "evaluation",
     name: "评估",
     prompt: "请评估这些 Git 信息的质量、风险点、可维护性和后续需要注意的地方。",
     builtIn: true,
+    kind: "git-analysis",
+  },
+  {
+    id: AI_COMMIT_MESSAGE_MODE_ID,
+    name: "提交信息",
+    prompt: DEFAULT_AI_COMMIT_MESSAGE_PROMPT,
+    builtIn: true,
+    kind: "commit-message",
   },
 ];
 
@@ -151,14 +173,41 @@ export interface ProjectScript {
 
 export interface ProjectGitFileChange {
   path: string;
+  originalPath?: string;
   additions: number;
   deletions: number;
   status: "MODIFIED" | "ADDED" | "DELETED" | "RENAMED" | "UNTRACKED";
+  staged?: boolean;
+  unstaged?: boolean;
 }
 
 export interface ProjectGitFileDiffResult {
   path: string;
   diff: string;
+  message?: string;
+}
+
+export interface ProjectGitBranchSummary {
+  name: string;
+  current: boolean;
+}
+
+export interface ProjectGitActionResult {
+  ok: boolean;
+  message: string;
+  path?: string;
+  paths?: string[];
+  count?: number;
+  branch?: string;
+  commitHash?: string;
+  isDetachedHead?: boolean;
+}
+
+export interface ProjectGitCommitMessageDiffResult {
+  ok: boolean;
+  scope: "staged" | "working-tree";
+  diff: string;
+  truncated?: boolean;
   message?: string;
 }
 
@@ -176,10 +225,13 @@ export interface ProjectGitCommitSummary {
 
 export interface ProjectGitSnapshot {
   branch: string;
+  headHash?: string;
+  isDetachedHead?: boolean;
   ahead: number;
   behind: number;
   files: ProjectGitFileChange[];
   commits: ProjectGitCommitSummary[];
+  branches?: ProjectGitBranchSummary[];
   hasMoreCommits?: boolean;
   repositoryPath: string;
   lastRefreshedAt: string;
@@ -423,6 +475,16 @@ export interface ProjectBridge {
     relativePath: string,
   ): Promise<ProjectGitFileDiffResult>;
   readGitCommitFiles(projectPath: string, commitHash: string): Promise<ProjectGitFileChange[]>;
+  readGitCommitMessageDiff(projectPath: string): Promise<ProjectGitCommitMessageDiffResult>;
+  stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
+  unstageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
+  discardGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
+  stageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>;
+  unstageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>;
+  discardGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>;
+  commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>;
+  switchGitBranch(projectPath: string, branchName: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>;
+  checkoutGitCommit(projectPath: string, commitHash: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>;
   listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileListResult>;
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;

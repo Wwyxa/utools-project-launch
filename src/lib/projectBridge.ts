@@ -1,10 +1,11 @@
-import { DEFAULT_AI_PROMPT_MODES } from "../types";
+import { AI_COMMIT_MESSAGE_MODE_ID, DEFAULT_AI_PROMPT_MODES } from "../types";
 import type {
   DefaultTerminalKind,
   DefaultEditorKind,
   AiAnalyzePayload,
   AiPreferences,
   AiPromptMode,
+  AiPromptModeKind,
   AiProviderKind,
   EditorPreferences,
   EnvironmentPreferences,
@@ -12,7 +13,9 @@ import type {
   ProjectBridge,
   ProjectConfigFile,
   ProjectGitFileChange,
+  ProjectGitActionResult,
   ProjectBridgeGitSnapshot,
+  ProjectGitCommitMessageDiffResult,
   ProjectBridgePackageScript,
   ProjectBridgeTerminalLaunchPayload,
   ProjectBridgeTerminalLaunchResult,
@@ -31,6 +34,17 @@ const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
+const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
+
+要求：
+- 只输出最终 commit message，不要解释推理过程。
+- 输出 1 行标题，优先使用 conventional commit 风格，例如 feat:, fix:, chore:, docs:, refactor:。
+- 如确实需要，可在标题后追加 2-4 条简短正文要点。
+- 不要使用 Markdown 代码块。
+{truncatedNote}
+
+{diffScope}:
+{diffContent}`;
 
 const isWindowsPlatform = () => /win/i.test(window.navigator?.platform || window.navigator?.userAgent || "");
 
@@ -42,6 +56,7 @@ const defaultTerminalPreferences = (): TerminalPreferences => ({
 const terminalKinds = new Set<DefaultTerminalKind>(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set<DefaultEditorKind>(["vscode", "cursor", "custom"]);
 const aiProviderKinds = new Set<AiProviderKind>(["utools", "openai-compatible", "anthropic-compatible"]);
+const aiPromptModeKinds = new Set<AiPromptModeKind>(["git-analysis", "commit-message"]);
 const environmentToolKeys = new Set<EnvironmentToolKey>([
   "node",
   "npm",
@@ -78,11 +93,26 @@ const normalizeAiProviderKind = (provider: unknown): AiProviderKind => {
     : "utools";
 };
 
-const normalizeAiModes = (value: unknown): AiPromptMode[] => {
+const normalizeAiModeKind = (id: string, kind: unknown): AiPromptModeKind => {
+  if (id === AI_COMMIT_MESSAGE_MODE_ID) {
+    return "commit-message";
+  }
+  return typeof kind === "string" && aiPromptModeKinds.has(kind as AiPromptModeKind) && kind !== "commit-message"
+    ? (kind as AiPromptModeKind)
+    : "git-analysis";
+};
+
+const normalizeAiModes = (value: unknown, legacyCommitMessagePrompt?: unknown): AiPromptMode[] => {
   const defaults = cloneDefaultAiModes();
+  const defaultById = new Map(defaults.map((mode) => [mode.id, mode]));
   const defaultIds = new Set(defaults.map((mode) => mode.id));
+  const legacyPrompt = typeof legacyCommitMessagePrompt === "string" ? legacyCommitMessagePrompt : "";
+  const defaultModeWithLegacyPrompt = (mode: AiPromptMode) =>
+    mode.id === AI_COMMIT_MESSAGE_MODE_ID && legacyPrompt
+      ? { ...mode, prompt: legacyPrompt === legacyDefaultAiCommitMessagePrompt ? mode.prompt : legacyPrompt }
+      : mode;
   if (!Array.isArray(value)) {
-    return defaults;
+    return defaults.map(defaultModeWithLegacyPrompt);
   }
 
   const modes = new Map<string, AiPromptMode>();
@@ -92,15 +122,20 @@ const normalizeAiModes = (value: unknown): AiPromptMode[] => {
     const fallbackId = candidate.builtIn ? defaults[index]?.id : `custom-${index + 1}`;
     const id = typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : fallbackId;
     const name = typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim() : id;
-    const defaultPrompt = defaults.find((mode) => mode.id === id)?.prompt || "";
-    const prompt = typeof candidate.prompt === "string" ? candidate.prompt : defaultPrompt;
+    const defaultPrompt = defaultById.get(id)?.prompt || "";
+    const prompt =
+      typeof candidate.prompt === "string"
+        ? id === AI_COMMIT_MESSAGE_MODE_ID && candidate.prompt === legacyDefaultAiCommitMessagePrompt
+          ? defaultPrompt
+          : candidate.prompt
+        : defaultPrompt;
     if (!id || modes.has(id)) return;
-    modes.set(id, { id, name, prompt, builtIn: defaultIds.has(id) });
+    modes.set(id, { id, name, prompt, builtIn: defaultIds.has(id), kind: normalizeAiModeKind(id, candidate.kind) });
   });
 
   defaults.forEach((defaultMode) => {
     if (!modes.has(defaultMode.id)) {
-      modes.set(defaultMode.id, defaultMode);
+      modes.set(defaultMode.id, defaultModeWithLegacyPrompt(defaultMode));
     }
   });
 
@@ -162,14 +197,14 @@ const normalizeAiPreferences = (value: unknown): AiPreferences => {
   if (!value || typeof value !== "object") {
     return defaults;
   }
-  const candidate = value as Partial<AiPreferences>;
+  const candidate = value as Partial<AiPreferences> & { commitMessagePrompt?: unknown };
   const provider = normalizeAiProviderKind(candidate.provider);
   return {
     provider,
     baseUrl: typeof candidate.baseUrl === "string" ? candidate.baseUrl : defaults.baseUrl,
     model: typeof candidate.model === "string" ? candidate.model : defaults.model,
     apiKey: typeof candidate.apiKey === "string" ? candidate.apiKey : defaults.apiKey,
-    modes: normalizeAiModes(candidate.modes),
+    modes: normalizeAiModes(candidate.modes, candidate.commitMessagePrompt),
   };
 };
 
@@ -283,14 +318,22 @@ const writeStoredAiPreferences = (preferences: AiPreferences) => {
 
 const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   branch: "main",
+  headHash: "",
+  isDetachedHead: false,
   ahead: 0,
   behind: 0,
   files: [],
   commits: [],
+  branches: [],
   hasMoreCommits: false,
   repositoryPath: "",
   lastRefreshedAt: new Date().toISOString(),
   statusText: "离线预览",
+});
+
+const unavailableGitAction = (message = "浏览器预览无法执行 Git 写操作。"): ProjectGitActionResult => ({
+  ok: false,
+  message,
 });
 
 const fallbackBridge: ProjectBridge = {
@@ -431,6 +474,45 @@ const fallbackBridge: ProjectBridge = {
   },
   async readGitCommitFiles(): Promise<ProjectGitFileChange[]> {
     return [];
+  },
+  async readGitCommitMessageDiff(): Promise<ProjectGitCommitMessageDiffResult> {
+    return {
+      ok: false,
+      scope: "working-tree",
+      diff: "",
+      message: "浏览器预览无法读取 Git diff。",
+    };
+  },
+  async stageGitFile(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction();
+  },
+  async unstageGitFile(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction();
+  },
+  async discardGitFile(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法丢弃本地文件变更。");
+  },
+  async stageGitFiles(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction();
+  },
+  async unstageGitFiles(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction();
+  },
+  async discardGitFiles(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法丢弃本地文件变更。");
+  },
+  async commitGitStaged(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法提交 staged 变更。");
+  },
+  async switchGitBranch(_projectPath: string, _branchName: string, _options: { force?: boolean } = {}): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法切换 Git 分支。");
+  },
+  async checkoutGitCommit(
+    _projectPath: string,
+    _commitHash: string,
+    _options: { force?: boolean } = {},
+  ): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法切换到 Git 提交。");
   },
   async listProjectFiles(projectPath: string, relativePath = ""): Promise<ProjectFileListResult> {
     return { rootPath: projectPath, relativePath, entries: [] };

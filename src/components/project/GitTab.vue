@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  CircleAlert,
   CircleCheck,
   ClipboardCopy,
   FileSearch,
@@ -20,9 +21,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  GitCommitHorizontal,
+  Minus,
+  Plus,
+  Undo,
 } from "lucide-vue-next";
 import {
+  AI_COMMIT_MESSAGE_MODE_ID,
+  DEFAULT_AI_COMMIT_MESSAGE_PROMPT,
   Project,
+  type ProjectGitActionResult,
   type ProjectGitCommitSummary,
   type ProjectGitFileChange,
   type ProjectGitFileDiffResult,
@@ -41,7 +49,20 @@ import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
+type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
+type GitFileActionName = "stage" | "unstage" | "discard";
+type ActiveGitFileAction = { action: GitFileActionName; path: string };
 type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
+type AppDialogKind = "danger" | "warning";
+type AppActionDialog = {
+  kind?: AppDialogKind;
+  title: string;
+  message: string;
+  detail?: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  onConfirm: () => Promise<void> | void;
+};
 
 const props = defineProps<{
   project: Project;
@@ -59,18 +80,84 @@ const showCommitFilters = ref(false);
 const isAiDialogOpen = ref(false);
 const aiMode = ref("summary");
 const isAiModeMenuOpen = ref(false);
+const aiDialogIncludeDiffContext = ref(true);
 const aiDialogResult = ref(createAiReasoningStreamState());
 const aiDialogMessage = ref("");
 const aiDialogState = ref<AiState>("idle");
 const commitAiMode = ref("summary");
 const isCommitAiModeMenuOpen = ref(false);
+const commitAiIncludeDiffContext = ref(true);
 const commitAiResult = ref(createAiReasoningStreamState());
 const commitAiMessage = ref("");
 const commitAiState = ref<AiState>("idle");
 const openDatePickerKind = ref<"since" | "until" | null>(null);
 const datePickerMonth = ref(new Date());
+const isBranchMenuOpen = ref(false);
+const gitActionMessage = ref("");
+const gitActionState = ref<GitActionState>("idle");
+const activeGitAction = ref("");
+const activeGitFileActions = ref<ActiveGitFileAction[]>([]);
+const selectedGitFilePath = ref("");
+const commitMessage = ref("");
+const commitMessageTextareaRef = ref<HTMLTextAreaElement | null>(null);
+const commitMessageAiResult = ref(createAiReasoningStreamState());
+const commitMessageAiState = ref<AiState>("idle");
+const confirmationDialog = ref<AppActionDialog | null>(null);
+const isConfirmationRunning = ref(false);
+const commitMessageTextareaMinHeight = 60;
+const commitMessageTextareaMaxHeight = 124;
+
+const resizeCommitMessageTextarea = () => {
+  const textarea = commitMessageTextareaRef.value;
+  if (!textarea) return;
+
+  textarea.style.height = "auto";
+  const nextHeight = Math.min(
+    commitMessageTextareaMaxHeight,
+    Math.max(commitMessageTextareaMinHeight, textarea.scrollHeight),
+  );
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY = textarea.scrollHeight > commitMessageTextareaMaxHeight ? "auto" : "hidden";
+};
+
+const scheduleCommitMessageTextareaResize = () => {
+  void nextTick(resizeCommitMessageTextarea);
+};
+
+const canStageFile = (file: ProjectGitFileChange) => file.unstaged || (!file.staged && file.unstaged !== false);
+const canUnstageFile = (file: ProjectGitFileChange) => Boolean(file.staged);
+const rowPrimaryGitFileAction = (file: ProjectGitFileChange): Exclude<GitFileActionName, "discard"> | null => {
+  if (canStageFile(file)) return "stage";
+  if (canUnstageFile(file)) return "unstage";
+  return null;
+};
 
 const files = computed(() => store.stagedFiles[props.project.id] || props.project.git?.files || []);
+const stageableFiles = computed(() => files.value.filter(canStageFile));
+const unstageableFiles = computed(() => files.value.filter(canUnstageFile));
+const discardableFiles = computed(() => files.value);
+const stagedFiles = computed(() => files.value.filter((file) => file.staged));
+const hasStagedChanges = computed(() => stagedFiles.value.length > 0);
+const hasUncommittedChanges = computed(() => files.value.length > 0);
+const bulkPrimaryGitFileAction = computed<Exclude<GitFileActionName, "discard"> | null>(() => {
+  if (stageableFiles.value.length > 0) return "stage";
+  if (unstageableFiles.value.length > 0) return "unstage";
+  return null;
+});
+const bulkSecondaryGitFileAction = computed<Exclude<GitFileActionName, "discard"> | null>(() =>
+  stageableFiles.value.length > 0 && unstageableFiles.value.length > 0 ? "unstage" : null,
+);
+const branchOptions = computed(() => {
+  const branches = snapshot.value?.branches || [];
+  if (branches.length > 0) return branches;
+  return [{ name: snapshot.value?.branch || props.project.branch || "main", current: true }];
+});
+const currentGitRefLabel = computed(() => {
+  if (snapshot.value?.isDetachedHead) {
+    return snapshot.value.headHash ? `HEAD @ ${snapshot.value.headHash}` : "detached HEAD";
+  }
+  return snapshot.value?.branch || props.project.branch || "main";
+});
 const commitKeyword = ref("");
 const commitAuthor = ref("");
 const commitSince = ref("");
@@ -109,7 +196,7 @@ const isLoadingDiff = ref(false);
 const isDiffDialogOpen = ref(false);
 const isCommitDetailOpen = ref(false);
 const isAiDialogGenerating = computed(() => aiDialogState.value === "loading");
-const aiModeOptions = computed(() => store.aiPreferences.modes);
+const aiModeOptions = computed(() => store.aiPreferences.modes.filter((mode) => mode.kind !== "commit-message"));
 const resolveAiModeId = (modeId: string) =>
   aiModeOptions.value.some((option) => option.id === modeId) ? modeId : aiModeOptions.value[0]?.id || "summary";
 const selectedAiMode = computed(
@@ -117,6 +204,12 @@ const selectedAiMode = computed(
 );
 const selectedCommitAiMode = computed(
   () => aiModeOptions.value.find((option) => option.id === commitAiMode.value) || aiModeOptions.value[0],
+);
+const commitMessageAiMode = computed(
+  () =>
+    store.aiPreferences.modes.find((mode) => mode.id === AI_COMMIT_MESSAGE_MODE_ID) ||
+    store.aiPreferences.modes.find((mode) => mode.kind === "commit-message") ||
+    null,
 );
 const weekDayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 const copiedText = ref("");
@@ -176,7 +269,536 @@ const closeAiDialog = () => {
 const closeFloatingControls = () => {
   isAiModeMenuOpen.value = false;
   isCommitAiModeMenuOpen.value = false;
+  isBranchMenuOpen.value = false;
   openDatePickerKind.value = null;
+};
+
+const setGitActionResult = (state: GitActionState, message: string) => {
+  gitActionState.value = state;
+  gitActionMessage.value = message;
+};
+
+const isDirtyGitWriteBlock = (result: ProjectGitActionResult, options: { force?: boolean }) =>
+  !options.force && !result.ok && result.message.includes("未提交变更");
+
+const waitForVisualFeedback = async () => {
+  await nextTick();
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+};
+
+const closeConfirmationDialog = () => {
+  if (isConfirmationRunning.value) return;
+  confirmationDialog.value = null;
+};
+
+const confirmRiskyAction = async () => {
+  const dialog = confirmationDialog.value;
+  if (!dialog || isConfirmationRunning.value) return;
+
+  isConfirmationRunning.value = true;
+  try {
+    await dialog.onConfirm();
+    confirmationDialog.value = null;
+  } finally {
+    isConfirmationRunning.value = false;
+  }
+};
+
+const gitFileActionLoadingMessage = (action: GitFileActionName) => {
+  if (action === "stage") return "正在暂存文件...";
+  if (action === "unstage") return "正在取消暂存...";
+  return "正在丢弃文件变更...";
+};
+
+const gitBulkActionLoadingMessage = (action: GitFileActionName, count: number) => {
+  if (action === "stage") return `正在暂存 ${count} 个文件...`;
+  if (action === "unstage") return `正在取消暂存 ${count} 个文件...`;
+  return `正在丢弃 ${count} 个文件变更...`;
+};
+
+const bulkActionTargetFiles = (action: GitFileActionName) => {
+  if (action === "stage") return stageableFiles.value;
+  if (action === "unstage") return unstageableFiles.value;
+  return discardableFiles.value;
+};
+
+const bulkActionTitle = (action: GitFileActionName) => {
+  const count = bulkActionTargetFiles(action).length;
+  if (action === "stage") return count > 0 ? `暂存全部 ${count} 个可暂存文件` : "没有可暂存的文件";
+  if (action === "unstage") return count > 0 ? `取消暂存全部 ${count} 个 staged 文件` : "没有可取消暂存的文件";
+  return count > 0 ? `丢弃全部 ${count} 个 changed 文件` : "没有可丢弃的文件变更";
+};
+
+const bulkActionAriaLabel = (action: GitFileActionName) => {
+  if (action === "stage") return "暂存全部可暂存文件";
+  if (action === "unstage") return "取消暂存全部 staged 文件";
+  return "丢弃全部 changed 文件";
+};
+
+const isBulkGitActionActive = (action: GitFileActionName) => activeGitAction.value === `bulk:${action}`;
+
+const executeBulkGitFileAction = async (action: GitFileActionName) => {
+  if (activeGitAction.value || activeGitFileActions.value.length > 0) return;
+  const targetFiles = bulkActionTargetFiles(action);
+  if (targetFiles.length === 0) {
+    setGitActionResult("warning", bulkActionTitle(action));
+    return;
+  }
+
+  activeGitAction.value = `bulk:${action}`;
+  setGitActionResult("loading", action === "discard" ? gitBulkActionLoadingMessage(action, targetFiles.length) : "");
+  await waitForVisualFeedback();
+  try {
+    const paths = targetFiles.map((file) => file.path);
+    const result =
+      action === "stage"
+        ? await store.stageGitFiles(props.project.id, paths)
+        : action === "unstage"
+          ? await store.unstageGitFiles(props.project.id, paths)
+          : await store.discardGitFiles(props.project.id, paths);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法执行 Git 操作。");
+      return;
+    }
+    if (result.ok && (action === "stage" || action === "unstage")) {
+      setGitActionResult("idle", "");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "Git 操作失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const executeGitFileAction = async (action: GitFileActionName, file: ProjectGitFileChange) => {
+  if (activeGitAction.value || isGitFileBusy(file)) return;
+
+  activeGitFileActions.value = [...activeGitFileActions.value, { action, path: file.path }];
+  setGitActionResult("loading", action === "discard" ? gitFileActionLoadingMessage(action) : "");
+  await waitForVisualFeedback();
+  try {
+    const result =
+      action === "stage"
+        ? await store.stageGitFile(props.project.id, file.path)
+        : action === "unstage"
+          ? await store.unstageGitFile(props.project.id, file.path)
+          : await store.discardGitFile(props.project.id, file.path);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法执行 Git 操作。");
+      return;
+    }
+    if (result.ok && (action === "stage" || action === "unstage")) {
+      setGitActionResult("idle", "");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "Git 操作失败。");
+  } finally {
+    activeGitFileActions.value = activeGitFileActions.value.filter(
+      (item) => item.action !== action || item.path !== file.path,
+    );
+  }
+};
+
+const requestDiscardGitFile = (file: ProjectGitFileChange) => {
+  if (activeGitAction.value || isGitFileBusy(file)) return;
+  confirmationDialog.value = {
+    title: "丢弃文件变更",
+    message: "此操作会还原该文件在工作区与暂存区中的本地变更。",
+    detail: gitFileDisplayPath(file),
+    confirmLabel: "丢弃变更",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeGitFileAction("discard", file),
+  };
+};
+
+const runGitFileAction = async (action: GitFileActionName, file: ProjectGitFileChange) => {
+  selectedGitFilePath.value = file.path;
+  if (action === "discard") {
+    requestDiscardGitFile(file);
+    return;
+  }
+  await executeGitFileAction(action, file);
+};
+
+const runPrimaryGitFileAction = async (file: ProjectGitFileChange) => {
+  const action = rowPrimaryGitFileAction(file);
+  if (!action) return;
+  await runGitFileAction(action, file);
+};
+
+const requestDiscardAllGitFiles = () => {
+  if (activeGitAction.value || activeGitFileActions.value.length > 0 || discardableFiles.value.length === 0) return;
+  confirmationDialog.value = {
+    title: "丢弃全部文件变更",
+    message: `此操作会还原 ${discardableFiles.value.length} 个 changed 文件在工作区与暂存区中的本地变更。`,
+    detail: discardableFiles.value.map(gitFileDisplayPath).join("\n"),
+    confirmLabel: "丢弃全部",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeBulkGitFileAction("discard"),
+  };
+};
+
+const handleCommitStaged = async () => {
+  if (activeGitAction.value || activeGitFileActions.value.length > 0) return;
+  const message = commitMessage.value.trim();
+  if (!message) {
+    setGitActionResult("warning", "请先填写 commit message。");
+    return;
+  }
+  if (!hasStagedChanges.value) {
+    setGitActionResult("warning", "没有 staged 变更可提交。");
+    return;
+  }
+
+  activeGitAction.value = "commit";
+  setGitActionResult("loading", "正在提交 staged 变更...");
+  await waitForVisualFeedback();
+  try {
+    const result = await store.commitGitStaged(props.project.id, message);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法提交。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      commitMessage.value = "";
+      scheduleCommitMessageTextareaResize();
+      clearCommitSelection();
+    }
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "提交失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const executeSwitchBranch = async (branchName: string, options: { force?: boolean } = {}) => {
+  if (
+    !branchName ||
+    branchName === snapshot.value?.branch ||
+    activeGitAction.value ||
+    activeGitFileActions.value.length > 0
+  ) {
+    return;
+  }
+
+  activeGitAction.value = `branch:${branchName}`;
+  setGitActionResult("loading", options.force ? `正在强制切换到 ${branchName}...` : `正在切换到 ${branchName}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.switchGitBranch(props.project.id, branchName, options);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法切换分支。");
+      return;
+    }
+    if (isDirtyGitWriteBlock(result, options)) {
+      setGitActionResult("idle", "");
+      requestForceSwitchBranch(branchName);
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      clearCommitSelection();
+      selectedCommitHash.value = "";
+    }
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "切换分支失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestForceSwitchBranch = (branchName: string) => {
+  confirmationDialog.value = {
+    kind: "danger",
+    title: "强制切换分支",
+    message: `当前工作区存在未提交变更。强制切换到 ${branchName} 会丢弃这些本地变更。`,
+    detail: formatGitFileLines(files.value, ""),
+    confirmLabel: "强制切换",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeSwitchBranch(branchName, { force: true }),
+  };
+};
+
+const handleSwitchBranch = async (branchName: string) => {
+  isBranchMenuOpen.value = false;
+  if (
+    !branchName ||
+    branchName === snapshot.value?.branch ||
+    activeGitAction.value ||
+    activeGitFileActions.value.length > 0
+  ) {
+    return;
+  }
+  if (hasUncommittedChanges.value) {
+    requestForceSwitchBranch(branchName);
+    return;
+  }
+
+  await executeSwitchBranch(branchName);
+};
+
+const commitHashMatches = (left?: string, right?: string) =>
+  Boolean(left && right && (left === right || left.startsWith(right) || right.startsWith(left)));
+
+const isSelectedCommitDetachedHead = computed(() =>
+  Boolean(
+    snapshot.value?.isDetachedHead &&
+    selectedCommit.value &&
+    commitHashMatches(selectedCommit.value.hash, snapshot.value.headHash),
+  ),
+);
+
+const isSelectedCommitCurrentHead = computed(() =>
+  Boolean(selectedCommit.value && commitHashMatches(selectedCommit.value.hash, snapshot.value?.headHash)),
+);
+
+const executeCheckoutCommit = async (commit: ProjectGitCommitSummary, options: { force?: boolean } = {}) => {
+  if (!commit || activeGitAction.value || activeGitFileActions.value.length > 0) return;
+
+  activeGitAction.value = `checkout:${commit.hash}`;
+  setGitActionResult("loading", options.force ? `正在强制切换到提交 ${commit.hash}...` : `正在切换到提交 ${commit.hash}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.checkoutGitCommit(props.project.id, commit.hash, options);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法切换提交。");
+      return;
+    }
+    if (isDirtyGitWriteBlock(result, options)) {
+      setGitActionResult("idle", "");
+      requestForceCheckoutCommit(commit);
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      clearCommitSelection();
+    }
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "切换提交失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestForceCheckoutCommit = (commit: ProjectGitCommitSummary) => {
+  confirmationDialog.value = {
+    kind: "danger",
+    title: "强制切换提交",
+    message: `当前工作区存在未提交变更。强制切换到 ${commit.hash} 会丢弃这些本地变更，并进入 detached HEAD。`,
+    detail: formatGitFileLines(files.value, ""),
+    confirmLabel: "强制切换",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeCheckoutCommit(commit, { force: true }),
+  };
+};
+
+const handleCheckoutSelectedCommit = async () => {
+  const commit = selectedCommit.value;
+  if (!commit || activeGitAction.value || activeGitFileActions.value.length > 0) return;
+  if (hasUncommittedChanges.value) {
+    requestForceCheckoutCommit(commit);
+    return;
+  }
+
+  await executeCheckoutCommit(commit);
+};
+
+const commitMessagePromptTemplate = computed(
+  () => commitMessageAiMode.value?.prompt.trim() || DEFAULT_AI_COMMIT_MESSAGE_PROMPT,
+);
+
+const renderCommitMessagePrompt = (diffScope: string, diffContent: string, truncated = false) => {
+  const template = commitMessagePromptTemplate.value;
+  const truncatedNote = truncated ? "- diff 已截断，请基于已有内容保守生成。" : "";
+  const includesDiffContent = template.includes("{diffContent}");
+  const includesTruncatedNote = template.includes("{truncatedNote}");
+  let prompt = template
+    .replace(/\{diffScope\}/g, diffScope)
+    .replace(/\{diffContent\}/g, diffContent)
+    .replace(/\{truncatedNote\}/g, truncatedNote);
+
+  if (!includesDiffContent) {
+    prompt = `${prompt.trim()}${truncatedNote && !includesTruncatedNote ? `\n${truncatedNote}` : ""}\n\n${diffScope}:\n${diffContent}`;
+  }
+
+  return prompt;
+};
+
+const replacePromptPlaceholders = (template: string, placeholders: Record<string, string>) =>
+  Object.entries(placeholders).reduce((prompt, [name, value]) => prompt.replaceAll(`{${name}}`, value), template);
+
+const buildCommonGitPromptPlaceholders = () => ({
+  repositoryPath: repositoryPath.value,
+  branch: currentGitRefLabel.value,
+  statusText: snapshot.value?.statusText || t.value.git.noRepo,
+  changedFiles: formatGitFileLines(snapshot.value?.files || [], "当前没有工作区文件变更。"),
+});
+
+const commonGitContextSection = () =>
+  [
+    `仓库路径：${repositoryPath.value}`,
+    `当前引用：${currentGitRefLabel.value}`,
+    `Git 状态：${snapshot.value?.statusText || t.value.git.noRepo}`,
+  ].join("\n");
+
+const formatGitFileLines = (sourceFiles: ProjectGitFileChange[], emptyMessage: string) => {
+  const lines = sourceFiles
+    .map((file) => {
+      const stagingState = [file.staged ? "staged" : "", file.unstaged ? "unstaged" : ""].filter(Boolean).join("/");
+      const stagingSuffix = stagingState ? `, ${stagingState}` : "";
+      return `- ${gitFileDisplayPath(file)} (+${file.additions}/-${file.deletions}, ${fileLabel(file.status)}${stagingSuffix})`;
+    })
+    .join("\n");
+
+  return lines || emptyMessage;
+};
+
+const formatCommitLines = (sourceCommits: ProjectGitCommitSummary[], emptyMessage: string) => {
+  const lines = sourceCommits
+    .map((commit) => {
+      const refs = commit.refs ? `\n  Refs: ${commit.refs}` : "";
+      const body = commit.body ? `\n  Body: ${commit.body}` : "";
+      return `- ${commit.hash}\n  Date: ${commit.date}\n  Author: ${commit.author}\n  Message: ${commit.message}${refs}${body}`;
+    })
+    .join("\n");
+
+  return lines || emptyMessage;
+};
+
+const gitAiDiffContextMaxChars = 14000;
+
+const buildGitAiDiffContext = async (
+  sourceFiles: ProjectGitFileChange[],
+  readDiff: (file: ProjectGitFileChange) => Promise<ProjectGitFileDiffResult | null>,
+) => {
+  if (sourceFiles.length === 0) {
+    return { content: "", truncated: false };
+  }
+
+  let content = "";
+  let truncated = false;
+  for (const sourceFile of sourceFiles) {
+    const result = await readDiff(sourceFile);
+    const diff = result?.diff?.trim();
+    if (!diff) {
+      continue;
+    }
+
+    const nextSection = `${content ? "\n\n" : ""}--- ${gitFileDisplayPath(sourceFile)} ---\n${diff}`;
+    if (content.length + nextSection.length > gitAiDiffContextMaxChars) {
+      const remainingChars = Math.max(0, gitAiDiffContextMaxChars - content.length);
+      if (remainingChars > 0) {
+        content += nextSection.slice(0, remainingChars);
+      }
+      truncated = true;
+      break;
+    }
+    content += nextSection;
+  }
+
+  return { content, truncated };
+};
+
+const workingTreeDiffContext = () =>
+  buildGitAiDiffContext(snapshot.value?.files || [], (file) => store.readGitFileDiff(props.project.id, file.path));
+
+const selectedCommitDiffContext = () => {
+  const commitHash = selectedCommit.value?.hash || "";
+  if (!commitHash) {
+    return Promise.resolve({ content: "", truncated: false });
+  }
+  return buildGitAiDiffContext(selectedCommitFiles.value, (file) =>
+    store.readGitCommitFileDiff(props.project.id, commitHash, file.path),
+  );
+};
+
+const formatDiffContextSection = (title: string, diffContext: { content: string; truncated: boolean } | null) => {
+  if (!diffContext) {
+    return "代码 diff：未附加；请基于提交元数据和文件列表分析。";
+  }
+  if (!diffContext.content.trim()) {
+    return "代码 diff：当前没有可附加的 diff 内容。";
+  }
+  const truncatedNote = diffContext.truncated ? "\n\n（diff 内容已按长度截断，请基于已有内容保守判断。）" : "";
+  return `${title}：\n${diffContext.content}${truncatedNote}`;
+};
+
+const buildCommitMessagePrompt = async () => {
+  const diffResult = await store.readGitCommitMessageDiff(props.project.id);
+  if (!diffResult) {
+    return { ok: false, prompt: "", message: "当前项目不可用，无法读取 Git diff。" };
+  }
+  if (!diffResult.ok || !diffResult.diff.trim()) {
+    return { ok: false, prompt: "", message: diffResult.message || "当前没有可分析的 Git diff。" };
+  }
+
+  const scopeLabel = diffResult.scope === "staged" ? "staged diff" : "working-tree diff";
+  return {
+    ok: true,
+    prompt: renderCommitMessagePrompt(scopeLabel, diffResult.diff, diffResult.truncated),
+    message: "已填入提交信息。",
+  };
+};
+
+const generateCommitMessage = async () => {
+  if (commitMessageAiState.value === "loading") return;
+  if (!store.aiPreferences.provider) {
+    setGitActionResult("warning", t.value.git.aiUnavailable);
+    commitMessageAiState.value = "warning";
+    return;
+  }
+
+  commitMessageAiResult.value = createAiReasoningStreamState();
+  commitMessageAiState.value = "loading";
+  await waitForVisualFeedback();
+  const promptResult = await buildCommitMessagePrompt();
+  if (!promptResult.ok) {
+    setGitActionResult("warning", promptResult.message);
+    commitMessageAiState.value = "warning";
+    return;
+  }
+
+  await store.analyzeGitWithAiStream(props.project.id, promptResult.prompt, {
+    onChunk: (chunk) => {
+      commitMessageAiResult.value = appendAiStreamChunk(commitMessageAiResult.value, chunk);
+    },
+    onDone: (result) => {
+      const finalResult = aiReasoningStateFromResult(result);
+      if (hasAiReasoningDisplay(finalResult) || !hasAiReasoningDisplay(commitMessageAiResult.value)) {
+        commitMessageAiResult.value = finalResult;
+      }
+      const generated = aiReasoningCopyText(commitMessageAiResult.value).trim();
+      if (result.ok && generated) {
+        commitMessage.value = generated;
+        scheduleCommitMessageTextareaResize();
+        commitMessageAiState.value = "success";
+        return;
+      }
+      setGitActionResult("warning", result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 生成失败。");
+      commitMessageAiState.value = result.ok ? "warning" : "error";
+    },
+  });
+};
+
+const isGitActionRunning = computed(() => Boolean(activeGitAction.value));
+const isAnyGitWriteRunning = computed(() => Boolean(activeGitAction.value) || activeGitFileActions.value.length > 0);
+const isGitFileActionActive = (action: GitFileActionName, file: ProjectGitFileChange) =>
+  activeGitFileActions.value.some((item) => item.action === action && item.path === file.path);
+const isGitFileBusy = (file: ProjectGitFileChange) =>
+  activeGitFileActions.value.some((item) => item.path === file.path);
+const canRunFileAction = (file: ProjectGitFileChange | null, action: GitFileActionName) => {
+  if (!file || activeGitAction.value || isGitFileBusy(file)) return false;
+  if (action === "stage") return canStageFile(file);
+  if (action === "unstage") return canUnstageFile(file);
+  return true;
+};
+const selectGitFileForActions = (file: ProjectGitFileChange) => {
+  selectedGitFilePath.value = file.path;
 };
 
 const selectAiMode = (modeId: string) => {
@@ -316,28 +938,29 @@ const filterStatusSummary = computed(() => {
 });
 
 const commitScopeContext = computed(() => {
-  const commitLines = aiScopedCommits.value
-    .map((commit) => {
-      const refs = commit.refs ? `\n  Refs: ${commit.refs}` : "";
-      const body = commit.body ? `\n  Body: ${commit.body}` : "";
-      return `- ${commit.hash}\n  Date: ${commit.date}\n  Author: ${commit.author}\n  Message: ${commit.message}${refs}${body}`;
-    })
-    .join("\n");
-  const fileLines = (snapshot.value?.files || [])
-    .map((file) => `- ${file.path} (+${file.additions}/-${file.deletions}, ${fileLabel(file.status)})`)
-    .join("\n");
-
   return {
-    commitLines: commitLines || "无提交",
-    fileLines: fileLines || "当前没有工作区文件变更。",
+    commitLines: formatCommitLines(aiScopedCommits.value, "无提交"),
+    fileLines: formatGitFileLines(snapshot.value?.files || [], "当前没有工作区文件变更。"),
   };
 });
 
-const buildAiPrompt = () => {
-  const focus = selectedAiMode.value?.prompt || "请总结这些 Git 信息。";
+const buildAiPrompt = async () => {
+  const template = selectedAiMode.value?.prompt || "请总结这些 Git 信息。";
   const scopeTitle = selectedCommitCount.value > 0 ? "当前手动选择的提交" : "当前筛选后的提交";
+  const diffContext = aiDialogIncludeDiffContext.value ? await workingTreeDiffContext() : null;
+  const prompt = replacePromptPlaceholders(template, {
+    ...buildCommonGitPromptPlaceholders(),
+    commits: commitScopeContext.value.commitLines,
+  });
+  const contextSections = [
+    "要求：\n- 必须结合提交时间、commit message、body、refs，以及当前代码变更一起判断。\n- 不要只复述 commit message。\n- 输出面向开发者的结构化内容。",
+    `仓库上下文：\n${commonGitContextSection()}`,
+    `${scopeTitle}：\n${commitScopeContext.value.commitLines}`,
+    `当前工作区变更文件：\n${commitScopeContext.value.fileLines}`,
+    formatDiffContextSection("当前工作区代码 diff", diffContext),
+  ].filter(Boolean);
 
-  return `${focus}\n\n要求：\n- 必须结合提交时间、commit message、body、refs，以及当前代码变更一起判断。\n- 不要只复述 commit message。\n- 输出面向开发者的结构化内容。\n\n${scopeTitle}：\n${commitScopeContext.value.commitLines}\n\n当前工作区代码变更：\n${commitScopeContext.value.fileLines}`;
+  return `${prompt.trim()}\n\n${contextSections.join("\n\n")}`;
 };
 
 const resetCommitAiState = () => {
@@ -398,8 +1021,10 @@ const generateAiAnalysis = async () => {
   aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
   aiDialogState.value = "loading";
+  await waitForVisualFeedback();
 
-  await store.analyzeGitWithAiStream(props.project.id, buildAiPrompt(), {
+  const prompt = await buildAiPrompt();
+  await store.analyzeGitWithAiStream(props.project.id, prompt, {
     onChunk: (chunk) => {
       aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
     },
@@ -417,18 +1042,33 @@ const generateAiAnalysis = async () => {
   });
 };
 
-const buildCommitAiPrompt = () => {
+const buildCommitAiPrompt = async () => {
   const commit = selectedCommit.value;
   if (!commit) return "";
   const refs = commit.refs ? `\nRefs: ${commit.refs}` : "";
   const body = commit.body ? `\n\nCommit body:\n${commit.body}` : "";
-  const fileLines = selectedCommitFiles.value
-    .map((file) => `- ${file.path} (+${file.additions}/-${file.deletions}, ${fileLabel(file.status)})`)
-    .join("\n");
+  const fileLines = formatGitFileLines(selectedCommitFiles.value, "该提交暂无可显示的变更文件。");
+  const template = selectedCommitAiMode.value?.prompt || "请总结这个 Git 提交。";
+  const diffContext = commitAiIncludeDiffContext.value ? await selectedCommitDiffContext() : null;
+  const prompt = replacePromptPlaceholders(template, {
+    ...buildCommonGitPromptPlaceholders(),
+    commitHash: commit.hash,
+    commitMessage: commit.message,
+    commitBody: commit.body || "",
+    commitAuthor: commit.author,
+    commitDate: commit.date,
+    commitRefs: commit.refs || "",
+    commitFiles: fileLines,
+  });
+  const contextSections = [
+    "要求：\n- 结合 commit message、body、refs、作者、时间和该提交的变更文件判断。\n- 不要只复述标题。\n- 输出面向开发者的结构化内容。",
+    `仓库上下文：\n${commonGitContextSection()}`,
+    `Commit:\nHash: ${commit.hash}\nDate: ${commit.date}\nAuthor: ${commit.author}\nMessage: ${commit.message}${refs}${body}`,
+    `该提交变更文件：\n${fileLines}`,
+    formatDiffContextSection("该提交代码 diff", diffContext),
+  ].filter(Boolean);
 
-  const focus = selectedCommitAiMode.value?.prompt || "请总结这个 Git 提交。";
-
-  return `${focus}\n\n要求：\n- 结合 commit message、body、refs、作者、时间和该提交的变更文件判断。\n- 不要只复述标题。\n- 输出面向开发者的结构化内容。\n\nCommit:\nHash: ${commit.hash}\nDate: ${commit.date}\nAuthor: ${commit.author}\nMessage: ${commit.message}${refs}${body}\n\n该提交变更文件：\n${fileLines || "该提交暂无可显示的变更文件。"}`;
+  return `${prompt.trim()}\n\n${contextSections.join("\n\n")}`;
 };
 
 const generateCommitAiAnalysis = async () => {
@@ -442,7 +1082,9 @@ const generateCommitAiAnalysis = async () => {
   commitAiResult.value = createAiReasoningStreamState();
   commitAiMessage.value = "";
   commitAiState.value = "loading";
-  await store.analyzeGitWithAiStream(props.project.id, buildCommitAiPrompt(), {
+  await waitForVisualFeedback();
+  const prompt = await buildCommitAiPrompt();
+  await store.analyzeGitWithAiStream(props.project.id, prompt, {
     onChunk: (chunk) => {
       commitAiResult.value = appendAiStreamChunk(commitAiResult.value, chunk);
     },
@@ -521,6 +1163,11 @@ const handleOpenFile = (file: ProjectGitFileChange) => {
   emit("open-file", file.path);
 };
 
+const selectAndOpenGitFileDiff = (file: ProjectGitFileChange) => {
+  selectGitFileForActions(file);
+  void handleViewDiff(file);
+};
+
 const handleViewDiff = async (file: ProjectGitFileChange) => {
   isLoadingDiff.value = true;
   isDiffDialogOpen.value = true;
@@ -567,7 +1214,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => store.aiPreferences.modes.map((mode) => mode.id).join("|"),
+  () => aiModeOptions.value.map((mode) => mode.id).join("|"),
   () => {
     aiMode.value = resolveAiModeId(aiMode.value);
     commitAiMode.value = resolveAiModeId(commitAiMode.value);
@@ -579,7 +1226,25 @@ watch(
   () => props.project.id,
   () => {
     clearCommitSelection();
+    selectedGitFilePath.value = "";
+    scheduleCommitMessageTextareaResize();
   },
+);
+
+watch(commitMessage, scheduleCommitMessageTextareaResize, { immediate: true });
+
+watch(
+  () => files.value.map((file) => file.path).join("|"),
+  () => {
+    if (!files.value.length) {
+      selectedGitFilePath.value = "";
+      return;
+    }
+    if (!files.value.some((file) => file.path === selectedGitFilePath.value)) {
+      selectedGitFilePath.value = files.value[0].path;
+    }
+  },
+  { immediate: true },
 );
 
 watch(
@@ -612,6 +1277,8 @@ const refsForCommit = (refs?: string) =>
     .map((refName) => refName.trim())
     .filter(Boolean);
 
+const selectedCommitRefs = computed(() => refsForCommit(selectedCommit.value?.refs));
+
 const refClass = (refName: string) =>
   cn(
     "max-w-40 truncate rounded border px-1.5 py-px text-[9px] font-bold leading-3",
@@ -626,17 +1293,17 @@ const refClass = (refName: string) =>
 
 const isHeadCommit = (refs?: string) => Boolean(refs?.includes("HEAD"));
 const graphStrokeColors = ["#0ea5e9", "#e91e9d", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16"];
-const laneWidth = 18;
-const graphPaddingX = 8;
-const graphRowPaddingX = 8;
-const graphRowGapX = 6;
-const graphSelectionColumnWidth = 20;
-const rowHeight = 32;
-const rowGap = 2;
+const laneWidth = 14;
+const graphPaddingX = 5;
+const graphRowPaddingX = 4;
+const graphRowGapX = 4;
+const graphSelectionColumnWidth = 16;
+const rowHeight = 30;
+const rowGap = 1;
 const rowPitch = rowHeight + rowGap;
-const dotRadius = 4.4;
+const dotRadius = 3.9;
 const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + graphPaddingX;
-const minGraphColumnWidth = 50;
+const minGraphColumnWidth = 36;
 const graphLayerLeft = graphRowPaddingX + graphSelectionColumnWidth + graphRowGapX;
 
 type GitGraphRow = { commit: ProjectGitCommitSummary; lane: number; color: string; y: number };
@@ -827,9 +1494,11 @@ const graphLayerStyle = computed(() => ({
   height: `${graphContentHeight.value}px`,
 }));
 
-const graphRowColumns = computed(() => `1.25rem ${graphColumnWidth.value}px 4rem minmax(18rem, 1fr)`);
-const graphRowMinWidth = computed(() => `max(31rem, calc(${graphColumnWidth.value}px + 25.375rem))`);
-const gitGridColumns = "minmax(13rem,0.42fr) minmax(0,1.58fr)";
+const graphRowColumns = computed(
+  () => `${graphSelectionColumnWidth}px ${graphColumnWidth.value}px 3.25rem minmax(14rem, 1fr)`,
+);
+const graphRowMinWidth = computed(() => `max(24rem, calc(${graphColumnWidth.value}px + 18.5rem))`);
+const gitGridColumns = "minmax(15rem,0.46fr) minmax(0,1.54fr)";
 const commitDateLabel = (value?: string) => formatCommitTime(value).text;
 
 const fileLabel = (status: string) => {
@@ -838,6 +1507,23 @@ const fileLabel = (status: string) => {
   if (status === "RENAMED") return t.value.git.renamed;
   if (status === "UNTRACKED") return t.value.git.untracked;
   return t.value.git.modified;
+};
+
+const fileStatusCode = (status: string) => {
+  if (status === "ADDED") return "A";
+  if (status === "DELETED") return "D";
+  if (status === "RENAMED") return "R";
+  if (status === "UNTRACKED") return "U";
+  return "M";
+};
+
+const gitFileDisplayPath = (file: ProjectGitFileChange) =>
+  file.originalPath && file.originalPath !== file.path ? `${file.originalPath} -> ${file.path}` : file.path;
+
+const gitFileName = (file: ProjectGitFileChange) => file.path.split(/[\\/]/).filter(Boolean).pop() || file.path;
+const gitFileDirectory = (file: ProjectGitFileChange) => {
+  const parts = file.path.split(/[\\/]/).filter(Boolean);
+  return parts.length > 1 ? parts.slice(0, -1).join("/") : "";
 };
 
 const formatAbsoluteTime = (value?: string) => {
@@ -1004,19 +1690,57 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
     <div class="border border-border-subtle rounded-lg bg-surface px-3 py-2 flex items-center justify-between gap-3">
       <div class="flex items-center gap-3 min-w-0 text-xs">
         <GitBranch :size="16" class="text-primary shrink-0" />
-        <button
-          type="button"
-          class="min-w-0 truncate rounded px-1 font-mono font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
-          :title="`${t.common.copy}: ${snapshot?.branch || 'main'}`"
-          :aria-label="`${t.common.copy}: ${snapshot?.branch || 'main'}`"
-          @click="copyText(snapshot?.branch || 'main')"
+        <div class="relative min-w-0" @click.stop>
+          <button
+            type="button"
+            class="flex max-w-48 items-center gap-1 rounded px-1.5 py-1 font-mono font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
+            :title="t.git.branch"
+            :aria-label="t.git.branch"
+            @click="isBranchMenuOpen = !isBranchMenuOpen"
+          >
+            <span class="min-w-0 truncate">{{ currentGitRefLabel }}</span>
+            <ChevronDown :size="12" class="shrink-0 text-on-surface-variant" />
+          </button>
+          <div v-if="isBranchMenuOpen" class="mode-menu-popover min-w-44" @click.stop>
+            <button
+              v-for="branch in branchOptions"
+              :key="branch.name"
+              type="button"
+              :class="cn('mode-menu-item', branch.current && 'bg-primary/10 text-primary')"
+              :title="branch.name"
+              @click="handleSwitchBranch(branch.name)"
+            >
+              <span class="min-w-0 truncate font-mono">{{ branch.name }}</span>
+              <Check v-if="branch.current" :size="13" />
+            </button>
+          </div>
+        </div>
+        <span
+          v-if="snapshot?.isDetachedHead"
+          class="shrink-0 rounded-full border border-status-warning/30 bg-status-warning/10 px-2 py-0.5 text-[10px] font-bold text-status-warning"
         >
-          {{ snapshot?.branch || "main" }}
-        </button>
+          detached HEAD
+        </span>
         <span class="text-on-surface-variant whitespace-nowrap">
           {{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}
         </span>
         <span class="text-on-surface-variant truncate">{{ snapshot?.statusText || t.git.noRepo }}</span>
+        <span
+          v-if="gitActionMessage"
+          :class="
+            cn(
+              'hidden max-w-72 truncate rounded-full border px-2 py-0.5 text-[10px] font-bold lg:inline',
+              gitActionState === 'success' && 'border-status-running/30 bg-status-running/10 text-status-running',
+              gitActionState === 'warning' && 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+              gitActionState === 'error' && 'border-status-error/30 bg-status-error/10 text-status-error',
+              (gitActionState === 'idle' || gitActionState === 'loading') &&
+                'border-border-subtle bg-surface-container-low text-on-surface-variant',
+            )
+          "
+          :title="gitActionMessage"
+        >
+          {{ gitActionMessage }}
+        </span>
         <span class="text-on-surface-variant truncate hidden lg:inline">{{ repositoryPath }}</span>
       </div>
       <div class="flex gap-2 shrink-0">
@@ -1033,31 +1757,100 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
 
     <div class="grid min-h-0 flex-1 gap-2 overflow-hidden" :style="{ gridTemplateColumns: gitGridColumns }">
       <div
-        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
+        class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       >
+        <div class="border-b border-border-subtle bg-surface px-2 py-1.5">
+          <div class="flex min-w-0 items-start gap-1.5">
+            <textarea
+              ref="commitMessageTextareaRef"
+              v-model="commitMessage"
+              rows="1"
+              class="themed-scrollbar h-[3.75rem] max-h-[7.75rem] min-h-[3.75rem] min-w-0 flex-1 resize-none overflow-hidden rounded border border-transparent bg-surface-container-low px-2 py-1.5 text-xs leading-4 text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/55 focus:border-primary/45 focus:bg-surface"
+              placeholder="输入 commit message..."
+              @input="resizeCommitMessageTextarea"
+            ></textarea>
+            <div class="flex shrink-0 flex-col items-center gap-1">
+              <button
+                type="button"
+                class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                :disabled="isAnyGitWriteRunning || !hasStagedChanges || !commitMessage.trim()"
+                :title="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
+                :aria-label="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
+                @click="handleCommitStaged"
+              >
+                <GitCommitHorizontal :size="13" :class="activeGitAction === 'commit' ? 'animate-pulse' : ''" />
+              </button>
+              <button
+                type="button"
+                class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-60"
+                :disabled="isAnyGitWriteRunning || commitMessageAiState === 'loading'"
+                :title="commitMessageAiState === 'loading' ? '正在生成 commit message' : 'AI 生成 commit message'"
+                :aria-label="commitMessageAiState === 'loading' ? '正在生成 commit message' : 'AI 生成 commit message'"
+                @click="generateCommitMessage"
+              >
+                <WandSparkles :size="13" :class="commitMessageAiState === 'loading' ? 'animate-pulse' : ''" />
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div
-          class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
+          class="flex h-8 items-center justify-between gap-1 border-b border-border-subtle bg-surface-container-low px-2"
         >
-          <h3 class="min-w-0 truncate text-xs font-bold text-on-surface">{{ t.git.files }}</h3>
-          <div class="flex items-center gap-1 shrink-0">
-            <span class="mr-1 text-[10px] font-bold text-on-surface-variant">{{ files.length }}</span>
-            <button
-              @click="scrollGitPanel('files', 'top')"
-              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="files.length === 0"
-              :title="t.git.scrollFilesToTop"
-              :aria-label="t.git.scrollFilesToTop"
+          <div class="flex min-w-0 items-center gap-1.5">
+            <h3 class="min-w-0 truncate text-[11px] font-bold text-on-surface">{{ t.git.files }}</h3>
+            <span
+              v-if="stageableFiles.length > 0"
+              class="hidden shrink-0 font-mono text-[10px] font-semibold text-status-warning sm:inline"
+              :title="`${stageableFiles.length} 个可暂存文件`"
             >
-              <ArrowUpToLine :size="12" />
+              W {{ stageableFiles.length }}
+            </span>
+            <span
+              v-if="unstageableFiles.length > 0"
+              class="hidden shrink-0 font-mono text-[10px] font-semibold text-primary sm:inline"
+              :title="`${unstageableFiles.length} 个 staged 文件`"
+            >
+              S {{ unstageableFiles.length }}
+            </span>
+          </div>
+          <div class="flex shrink-0 items-center gap-px">
+            <button
+              v-if="bulkPrimaryGitFileAction"
+              type="button"
+              class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+              :disabled="isAnyGitWriteRunning"
+              :title="bulkActionTitle(bulkPrimaryGitFileAction)"
+              :aria-label="bulkActionAriaLabel(bulkPrimaryGitFileAction)"
+              @click="executeBulkGitFileAction(bulkPrimaryGitFileAction)"
+            >
+              <Plus
+                v-if="bulkPrimaryGitFileAction === 'stage'"
+                :size="13"
+                :class="isBulkGitActionActive('stage') ? 'animate-pulse' : ''"
+              />
+              <Minus v-else :size="13" :class="isBulkGitActionActive('unstage') ? 'animate-pulse' : ''" />
             </button>
             <button
-              @click="scrollGitPanel('files', 'bottom')"
-              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="files.length === 0"
-              :title="t.git.scrollFilesToBottom"
-              :aria-label="t.git.scrollFilesToBottom"
+              v-if="bulkSecondaryGitFileAction"
+              type="button"
+              class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-surface-variant hover:text-secondary disabled:cursor-not-allowed disabled:opacity-35"
+              :disabled="isAnyGitWriteRunning"
+              :title="bulkActionTitle(bulkSecondaryGitFileAction)"
+              :aria-label="bulkActionAriaLabel(bulkSecondaryGitFileAction)"
+              @click="executeBulkGitFileAction(bulkSecondaryGitFileAction)"
             >
-              <ArrowDownToLine :size="12" />
+              <Minus :size="13" :class="isBulkGitActionActive('unstage') ? 'animate-pulse' : ''" />
+            </button>
+            <button
+              type="button"
+              class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-status-error disabled:cursor-not-allowed disabled:opacity-35"
+              :disabled="isAnyGitWriteRunning || discardableFiles.length === 0"
+              :title="bulkActionTitle('discard')"
+              :aria-label="bulkActionAriaLabel('discard')"
+              @click="requestDiscardAllGitFiles"
+            >
+              <Undo :size="13" :class="isBulkGitActionActive('discard') ? 'animate-pulse' : ''" />
             </button>
           </div>
         </div>
@@ -1071,45 +1864,110 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           <div
             v-for="(file, idx) in files"
             :key="`${file.path}-${idx}`"
-            class="group grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 border-b border-border-subtle px-2.5 py-2 last:border-b-0 hover:bg-surface-container-low transition-all"
-            :title="file.path"
-            @click="handleViewDiff(file)"
+            :class="
+              cn(
+                'group relative grid min-h-[1.875rem] cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-b border-border-subtle px-2 py-0.5 last:border-b-0 transition-colors hover:bg-surface-container-low focus-within:bg-surface-container-low',
+                selectedGitFilePath === file.path && 'bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]',
+              )
+            "
+            :title="gitFileDisplayPath(file)"
+            @click="selectAndOpenGitFileDiff(file)"
           >
-            <div class="flex min-w-0 items-center overflow-hidden">
-              <div class="truncate">
-                <p
+            <div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
+              <span
+                :class="
+                  cn(
+                    'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
+                    file.status === 'ADDED' && 'text-status-running',
+                    file.status === 'DELETED' && 'text-status-error',
+                    file.status === 'RENAMED' && 'text-secondary',
+                    file.status === 'UNTRACKED' && 'text-primary',
+                    file.status === 'MODIFIED' && 'text-on-surface-variant',
+                  )
+                "
+                :title="fileLabel(file.status)"
+              >
+                {{ fileStatusCode(file.status) }}
+              </span>
+              <div class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden">
+                <span
                   :class="
                     cn(
-                      'font-mono text-xs font-bold truncate',
+                      'min-w-0 truncate font-mono text-[11px] font-bold leading-4',
                       file.status === 'DELETED' ? 'text-on-surface-variant line-through' : 'text-on-surface',
                     )
                   "
-                  :title="file.path"
                 >
-                  {{ file.path }}
-                </p>
-                <div class="flex gap-3 text-[10px] font-bold mt-0.5">
-                  <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
-                  <span v-if="file.deletions > 0" class="text-status-error">-{{ file.deletions }}</span>
-                  <span class="text-on-surface-variant">{{ fileLabel(file.status) }}</span>
-                </div>
+                  {{ gitFileName(file) }}
+                </span>
+                <span
+                  v-if="gitFileDirectory(file)"
+                  class="hidden min-w-0 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65 sm:inline"
+                >
+                  {{ gitFileDirectory(file) }}
+                </span>
               </div>
             </div>
-            <div class="flex shrink-0 items-center gap-0.5 opacity-80 transition-opacity group-hover:opacity-100">
+            <div class="flex shrink-0 items-center gap-1 text-[10px] font-bold leading-4">
+              <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
+              <span v-if="file.deletions > 0" class="text-status-error">-{{ file.deletions }}</span>
+              <span v-if="file.staged" class="font-mono text-primary" title="staged" aria-label="staged">S</span>
+              <span v-if="file.unstaged" class="font-mono text-status-warning" title="unstaged" aria-label="unstaged"
+                >W</span
+              >
+            </div>
+            <div
+              :class="
+                cn(
+                  'absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-px rounded border border-border-subtle bg-surface-container-low px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                  isGitFileBusy(file) && 'opacity-100',
+                )
+              "
+            >
+              <button
+                v-if="rowPrimaryGitFileAction(file)"
+                type="button"
+                class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-45"
+                :disabled="!canRunFileAction(file, rowPrimaryGitFileAction(file) || 'stage')"
+                :title="
+                  rowPrimaryGitFileAction(file) === 'stage'
+                    ? `暂存文件：${gitFileDisplayPath(file)}`
+                    : `取消暂存：${gitFileDisplayPath(file)}`
+                "
+                :aria-label="rowPrimaryGitFileAction(file) === 'stage' ? '暂存文件' : '取消暂存文件'"
+                @click.stop="runPrimaryGitFileAction(file)"
+              >
+                <Plus
+                  v-if="rowPrimaryGitFileAction(file) === 'stage'"
+                  :size="12"
+                  :class="isGitFileActionActive('stage', file) ? 'animate-pulse' : ''"
+                />
+                <Minus v-else :size="12" :class="isGitFileActionActive('unstage', file) ? 'animate-pulse' : ''" />
+              </button>
               <button
                 type="button"
-                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-status-error disabled:cursor-wait disabled:opacity-45"
+                :disabled="!canRunFileAction(file, 'discard')"
+                :title="`丢弃文件变更：${gitFileDisplayPath(file)}`"
+                aria-label="丢弃文件变更"
+                @click.stop="runGitFileAction('discard', file)"
+              >
+                <Undo :size="12" :class="isGitFileActionActive('discard', file) ? 'animate-pulse' : ''" />
+              </button>
+              <button
+                type="button"
+                class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
                 :disabled="file.status === 'DELETED'"
                 :title="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
                 :aria-label="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
                 @click.stop="handleOpenFile(file)"
               >
-                <FileSearch :size="14" />
+                <FileSearch :size="12" />
               </button>
             </div>
           </div>
         </div>
-        <div v-else class="flex flex-none items-center gap-1.5 px-2.5 py-2 text-[11px] text-on-surface-variant">
+        <div v-else class="flex flex-none items-center gap-1.5 px-2 py-1.5 text-[11px] text-on-surface-variant">
           <CircleCheck :size="14" class="shrink-0 text-status-running" />
           <span class="leading-4">{{ t.git.cleanWorkingTree }}</span>
         </div>
@@ -1187,8 +2045,11 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 :key="row.commit.hash"
                 :class="
                   cn(
-                    'group relative z-10 grid min-w-[31rem] cursor-pointer items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-container-high',
+                    'group relative z-10 grid min-w-[24rem] cursor-pointer items-center gap-1 rounded px-1.5 text-xs transition-colors hover:bg-surface-container-high',
                     isCommitSelected(row.commit.hash) && 'bg-primary/5 ring-1 ring-primary/20 hover:bg-primary/10',
+                    snapshot?.isDetachedHead &&
+                      commitHashMatches(row.commit.hash, snapshot?.headHash) &&
+                      'bg-status-warning/10 ring-1 ring-status-warning/25',
                   )
                 "
                 :style="{
@@ -1240,6 +2101,12 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                       :title="refName"
                     >
                       {{ refName }}
+                    </span>
+                    <span
+                      v-if="snapshot?.isDetachedHead && commitHashMatches(row.commit.hash, snapshot?.headHash)"
+                      class="shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-1.5 py-px text-[9px] font-bold leading-3 text-status-warning"
+                    >
+                      HEAD
                     </span>
                   </div>
                   <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75">
@@ -1505,6 +2372,18 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 </div>
               </div>
             </label>
+            <label
+              class="mb-0.5 inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold normal-case text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+              title="包含代码 diff 上下文"
+            >
+              <input
+                v-model="aiDialogIncludeDiffContext"
+                type="checkbox"
+                class="h-3 w-3 accent-primary"
+                :disabled="isAiDialogGenerating"
+              />
+              <span>Diff</span>
+            </label>
             <button
               type="button"
               class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
@@ -1626,10 +2505,8 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </div>
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest p-2.5">
           <section class="rounded-lg border border-border-subtle bg-surface px-3 py-2">
-            <div
-              class="grid gap-2 text-xs text-on-surface-variant sm:grid-cols-[minmax(0,1.7fr)_auto_auto_auto] sm:items-center"
-            >
-              <div class="min-w-0">
+            <div class="grid gap-2.5 text-xs text-on-surface-variant sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+              <div class="min-w-0 space-y-1.5">
                 <div class="truncate font-semibold text-on-surface">{{ selectedCommit.message }}</div>
                 <div class="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] font-medium text-on-surface-variant">
                   <span class="truncate">{{ selectedCommit.author }}</span>
@@ -1637,27 +2514,60 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                   <span :title="formatAbsoluteTime(selectedCommit.date)">{{
                     commitDateLabel(selectedCommit.date)
                   }}</span>
+                  <span
+                    v-if="isSelectedCommitCurrentHead"
+                    :class="
+                      cn(
+                        'rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                        isSelectedCommitDetachedHead
+                          ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                          : 'border-primary/30 bg-primary/10 text-primary',
+                      )
+                    "
+                  >
+                    {{ isSelectedCommitDetachedHead ? "detached HEAD" : "当前 HEAD" }}
+                  </span>
+                </div>
+                <div v-if="selectedCommitRefs.length" class="flex flex-wrap items-center gap-1">
+                  <span v-for="refName in selectedCommitRefs" :key="refName" :class="refClass(refName)">
+                    {{ refName }}
+                  </span>
                 </div>
               </div>
-              <div class="flex items-center gap-1.5 sm:justify-self-end">
-                <span
-                  class="rounded border border-border-subtle bg-surface-container-low px-1.5 py-0.5 font-mono text-[10px] font-bold text-on-surface-variant"
-                >
-                  {{ selectedCommit.hash }}
-                </span>
+              <div class="flex max-w-full flex-wrap items-center justify-start gap-1 sm:justify-end">
                 <button
                   type="button"
-                  class="inline-flex h-7 items-center gap-1.5 rounded border border-border-subtle bg-transparent px-2 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                  class="inline-flex h-7 max-w-36 items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 font-mono text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                  :title="copyLabel(selectedCommit.hash)"
+                  :aria-label="copyLabel(selectedCommit.hash)"
                   @click="copyText(selectedCommit.hash)"
                 >
-                  <ClipboardCopy :size="12" />
-                  {{ copyLabel(selectedCommit.hash) }}
+                  <span class="truncate">{{ selectedCommit.hash }}</span>
+                  <ClipboardCopy :size="11" />
                 </button>
-              </div>
-              <div class="flex flex-wrap gap-1.5 sm:justify-self-end sm:col-span-2">
-                <span v-for="refName in refsForCommit(selectedCommit.refs)" :key="refName" :class="refClass(refName)">
-                  {{ refName }}
-                </span>
+                <button
+                  type="button"
+                  class="inline-flex h-7 items-center gap-1.5 rounded border border-primary/25 bg-primary/10 px-2 text-[10px] font-bold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-55"
+                  :disabled="isGitActionRunning || isSelectedCommitDetachedHead"
+                  :title="
+                    isSelectedCommitDetachedHead
+                      ? '当前已处于该 detached HEAD 提交'
+                      : hasUncommittedChanges
+                        ? '当前工作区存在未提交变更，点击后打开强制切换确认'
+                        : '切换到此提交（detached HEAD）'
+                  "
+                  :aria-label="
+                    isSelectedCommitDetachedHead
+                      ? '当前已处于该 detached HEAD 提交'
+                      : hasUncommittedChanges
+                        ? '打开强制切换提交确认'
+                        : '切换到此提交'
+                  "
+                  @click="handleCheckoutSelectedCommit"
+                >
+                  <GitCommitHorizontal :size="12" />
+                  {{ activeGitAction === `checkout:${selectedCommit.hash}` ? "切换中" : hasUncommittedChanges ? "确认强制切换" : "切换" }}
+                </button>
               </div>
             </div>
           </section>
@@ -1743,6 +2653,18 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                       </button>
                     </div>
                   </div>
+                  <label
+                    class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                    title="包含代码 diff 上下文"
+                  >
+                    <input
+                      v-model="commitAiIncludeDiffContext"
+                      type="checkbox"
+                      class="h-3 w-3 accent-primary"
+                      :disabled="commitAiState === 'loading'"
+                    />
+                    <span>Diff</span>
+                  </label>
                   <button
                     type="button"
                     class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
@@ -1783,6 +2705,75 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </div>
     </div>
     <Teleport to="body">
+      <div
+        v-if="confirmationDialog"
+        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        @click.self="closeConfirmationDialog"
+      >
+        <div
+          class="w-[min(24rem,92vw)] overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
+          role="dialog"
+          aria-modal="true"
+          @click.stop
+        >
+          <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
+            <div class="flex items-start gap-3">
+              <div
+                :class="
+                  cn(
+                    'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
+                    (confirmationDialog.kind || 'danger') === 'warning'
+                      ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                      : 'border-status-error/30 bg-status-error/10 text-status-error',
+                  )
+                "
+              >
+                <CircleAlert v-if="(confirmationDialog.kind || 'danger') === 'warning'" :size="16" />
+                <Undo v-else :size="16" />
+              </div>
+              <div class="min-w-0">
+                <h3 class="text-sm font-bold text-on-surface">{{ confirmationDialog.title }}</h3>
+                <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ confirmationDialog.message }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="px-4 py-3">
+            <p
+              v-if="confirmationDialog.detail"
+              class="rounded border border-border-subtle bg-surface-container-low px-2 py-2 font-mono text-[11px] font-bold text-on-surface-variant break-all"
+            >
+              {{ confirmationDialog.detail }}
+            </p>
+            <div class="mt-4 flex justify-end gap-2">
+              <button
+                v-if="(confirmationDialog.kind || 'danger') === 'danger' || confirmationDialog.cancelLabel"
+                type="button"
+                class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+                :disabled="isConfirmationRunning"
+                @click="closeConfirmationDialog"
+              >
+                {{ confirmationDialog.cancelLabel || t.common.cancel }}
+              </button>
+              <button
+                type="button"
+                :class="
+                  cn(
+                    'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors disabled:cursor-wait disabled:opacity-70',
+                    (confirmationDialog.kind || 'danger') === 'warning'
+                      ? 'border-primary/30 bg-primary text-on-primary hover:bg-primary/90'
+                      : 'border-status-error/30 bg-status-error text-on-error hover:bg-status-error/90',
+                  )
+                "
+                :disabled="isConfirmationRunning"
+                @click="confirmRiskyAction"
+              >
+                <Undo v-if="(confirmationDialog.kind || 'danger') === 'danger'" :size="13" />
+                {{ isConfirmationRunning ? "处理中" : confirmationDialog.confirmLabel }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div
         v-if="commitTooltip"
         class="commit-tooltip-panel pointer-events-none fixed z-[70] w-max overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
