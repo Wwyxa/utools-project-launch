@@ -1073,3 +1073,38 @@ Adjusted Memo tab todo layout: widened the todo column, allowed todo text to cla
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Git 操作与提交信息生成
+
+**Date**: 2026-06-08
+**Task**: Git 操作与提交信息生成
+**Branch**: `master`
+
+### Summary
+
+Implemented Git write operations, AI commit-message/context handling, force branch/commit switching confirmations, updated frontend state-management specs, and recorded the Trellis task context.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eec7ffd` | (see git log) |
+| `df0b5a9` | (see git log) |
+| `b62e6c6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
