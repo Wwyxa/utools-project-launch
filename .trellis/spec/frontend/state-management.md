@@ -208,7 +208,9 @@ Let store actions persist preferences and keep bridge state synchronized.
 - `AiStreamChunkPayload = string | AiStreamChunk`; legacy string chunks remain valid for fallback and browser preview paths.
 - Handler shape: `onStart?: () => void`, `onChunk?: (chunk: AiStreamChunkPayload) => void`, `onDone?: (result: AiAnalyzeResult) => void`.
 - `AiPreferences.provider` is one of `"utools"`, `"openai-compatible"`, or `"anthropic-compatible"`; legacy stored values `"openai"`, `"anthropic"`, and `"openai-responses"` normalize to the nearest supported compatible provider.
-- `AiPreferences.modes` stores configurable prompt modes with `{ id, name, prompt, builtIn }` and is shared by settings plus both Git AI entry points.
+- `AiPreferences.modes` stores configurable prompt modes with `{ id, name, prompt, builtIn, kind }` and is shared by settings plus Git AI entry points.
+- The commit-message prompt is represented as a fixed built-in mode with `id: "commit-message"` and `kind: "commit-message"`. Normal Git history AI mode pickers must filter it out, while AI commit message generation reads that fixed mode prompt. Browser fallback storage and uTools preload storage must normalize older `commitMessagePrompt` preferences into this fixed mode.
+- Git AI prompt text should stay general in Settings. Normal batch analysis and commit-detail analysis must automatically append repository/status/commit/file-list context at runtime instead of relying on users to insert placeholder tokens. Existing saved prompt placeholders remain supported as backward compatibility: normal batch Git AI prompts may still replace `{repositoryPath}`, `{branch}`, `{statusText}`, `{changedFiles}`, and `{commits}`; commit detail AI prompts may still replace `{repositoryPath}`, `{branch}`, `{statusText}`, `{changedFiles}`, `{commitHash}`, `{commitMessage}`, `{commitBody}`, `{commitAuthor}`, `{commitDate}`, `{commitRefs}`, and `{commitFiles}`. Commit-message generation keeps its separate diff placeholders `{diffScope}`, `{diffContent}`, and `{truncatedNote}` for older saved templates, but default prompts should be general and the component must append the staged/working-tree diff when the template omits `{diffContent}`.
 
 ### 3. Contracts
 
@@ -222,6 +224,8 @@ Let store actions persist preferences and keep bridge state synchronized.
 - uTools built-in AI supports real streaming through `utools.ai(option, streamCallback)`. The preload `provider === "utools"` branch should call the streaming signature, keep `delta.reasoning_content` in `chunk.reasoning`, keep `delta.content` in `chunk.content`, and keep `chunk.rawContent` as the provider-order concatenation for conservative parsing/debug preservation. User-facing copy actions should copy `content`, not `rawContent`.
 - OpenAI-compatible streams should preserve provider reasoning fields such as `delta.reasoning_content`, `delta.reasoning`, `delta.thinking`, or `message.reasoning_content` separately from `delta.content` when present.
 - Components should use the shared AI reasoning stream helpers to merge chunks, parse conservative inline tags, and render final content. Do not concatenate structured reasoning into the visible answer before the UI has a chance to collapse it.
+- AI commit message generation should write only the final visible content into the Git commit textarea. It must not render a separate generated-result box in the changed-files sidebar and must not copy structured reasoning or raw preservation text into the textarea.
+- Settings prompt editors must not show placeholder help buttons or tooltip/popover guidance. Prompt editing UX should encourage general instructions; runtime Git AI flows append the required context automatically.
 - Inline reasoning-tag fallback is conservative: split only complete block-start tags (`<think>`, `<thinking>`, `<reasoning>`) outside Markdown fences and inline code. Incomplete tags or tags embedded in ordinary prose/code stay in the visible content.
 - Browser preview fallback is also non-streaming; it should call `onDone` only and avoid pretending preview output is incremental.
 - API keys stay inside `AiPreferences` storage and request headers. Do not include keys in user-visible messages, model refresh errors, logs, or AI result text.
@@ -606,6 +610,120 @@ const diff = await store.readGitFileDiff(project.id, file.path);
 ```
 
 Keep Git diff reads behind the store action so fallback, unavailable projects, and UI state stay consistent.
+
+## Scenario: Git Lightweight Write Actions
+
+### 1. Scope / Trigger
+
+- Trigger: Git write actions cross the Git tab, Pinia store, browser fallback bridge, and uTools preload Git command boundary.
+
+### 2. Signatures
+
+- `ProjectGitFileChange = { path: string; originalPath?: string; additions: number; deletions: number; status: ...; staged?: boolean; unstaged?: boolean }`
+- `ProjectGitBranchSummary = { name: string; current: boolean }`
+- `ProjectGitActionResult = { ok: boolean; message: string; path?: string; paths?: string[]; count?: number; branch?: string; commitHash?: string; isDetachedHead?: boolean }`
+- `ProjectGitCommitMessageDiffResult = { ok: boolean; scope: "staged" | "working-tree"; diff: string; truncated?: boolean; message?: string }`
+- `ProjectGitSnapshot = { branch: string; headHash?: string; isDetachedHead?: boolean; ahead: number; behind: number; files: ProjectGitFileChange[]; commits: ProjectGitCommitSummary[]; branches?: ProjectGitBranchSummary[]; ... }`
+- `ProjectBridge.stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
+- `ProjectBridge.unstageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
+- `ProjectBridge.discardGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
+- `ProjectBridge.stageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>`
+- `ProjectBridge.unstageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>`
+- `ProjectBridge.discardGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>`
+- `ProjectBridge.commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>`
+- `ProjectBridge.switchGitBranch(projectPath: string, branchName: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.checkoutGitCommit(projectPath: string, commitHash: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.readGitCommitMessageDiff(projectPath: string): Promise<ProjectGitCommitMessageDiffResult>`
+
+### 3. Contracts
+
+- Components call store actions such as `store.stageGitFile(project.id, file.path)`, never `window.projectBridge` directly.
+- Store actions resolve the project id to the project path, call the bridge, and refresh `readGitSnapshot(project.path, { limit: 80, skip: 0 })` after successful write results.
+- Browser fallback must implement the same methods and return user-facing unavailable messages instead of throwing.
+- Preload Git write commands must use argument arrays with `spawnSync` or `execFileSync`, e.g. `git -C <repo> add -- <path>`. Do not build shell command strings for Git writes.
+- Preload resolves `relativePath` under the Git repository root before running Git, rejecting path traversal through the existing child-path resolver.
+- Preload reads Git file status with a NUL-delimited porcelain format and preserves `originalPath` for renamed files, so file actions do not break paths with spaces or staged renames.
+- `discardGitFile` is a risky action and the UI must show an app-rendered confirmation before calling the store. Do not use `window.confirm`, uTools native confirmation, or Electron native confirmation for this Git panel action. Preload may discard tracked single-file changes and untracked files, but must not recursively delete untracked directories from the Git panel.
+- `switchGitBranch` must block when `git status --porcelain` has any output unless `options.force === true`. Branch switching is only for existing local branches returned by the snapshot branch list. The UI must show an app-rendered danger confirmation before calling `switchGitBranch(..., { force: true })`; forced switching may run `git switch --discard-changes -- <branch>` and discard local uncommitted changes.
+- `checkoutGitCommit` must block when `git status --porcelain` has any output unless `options.force === true`, validate the target as an existing commit, use `git switch --detach <hash>`, and refresh the snapshot after success. The UI must show an app-rendered danger confirmation before calling `checkoutGitCommit(..., { force: true })`; forced checkout may run `git switch --discard-changes --detach <hash>` and discard local uncommitted changes.
+- `readGitSnapshot` must expose `headHash` and `isDetachedHead` so the Git tab can render `HEAD @ <hash>`, detached HEAD badges, and current-commit markers after checkout.
+- `readGitCommitMessageDiff` prefers `git diff --cached`; when no staged diff exists, it falls back to the working-tree diff and bounded untracked-file summaries for AI commit message generation.
+- The Git tab left sidebar follows a VS Code Source Control-style compact panel convention: commit textarea first, adjacent icon-only commit/AI actions, one dense changed-files toolbar row with W/S counts and bulk actions, compact file rows, subtle dividers, and no stacked card sections or explanatory helper paragraphs inside the sidebar. Do not render action/status messages directly under the commit textarea; use refreshed state, button loading/disabled states, app dialogs, or the top Git status area instead. The changed-files toolbar label should stay short (currently `变更`) and should not spend space on total changed-file count or scroll-to-top/bottom controls.
+- The changed-files header action band operates on all eligible files: stage all unstaged/eligible files, unstage all staged files, and discard all changed files after app-rendered confirmation. Row actions use one contextual stage/unstage slot and appear on row hover/focus, while row click remains reserved for opening the diff.
+- Git file actions should set a local per-file loading state before awaiting the bridge action and snapshot refresh. Avoid making the whole Git panel feel frozen for one file action; disable only the relevant file/action where practical, while still preventing conflicting write operations such as commit or checkout. Stage/unstage success should not render a textual status message in the compact sidebar; the refreshed W/S counts and row state are the success feedback.
+- AI commit message generation uses the fixed `commit-message` AI mode prompt, supports `{diffScope}`, `{diffContent}`, and `{truncatedNote}` only for older saved templates, falls back by appending diff content if the template omits `{diffContent}`, and writes only final content to the commit message textarea. Settings should not show placeholder help next to AI prompt titles and should avoid separate explanatory blocks inside individual mode editors. Batch Git AI and commit-detail AI each expose a compact include-diff control; when disabled, they must preserve repository, commit, status, and file-list context while omitting full code diff content.
+
+### 4. Validation & Error Matrix
+
+- Missing project or unavailable path -> store returns `null`; component shows a user-facing warning.
+- Missing Git repository -> bridge returns `{ ok: false, message: "未检测到 Git 仓库。" }` or an empty snapshot.
+- Empty commit message -> bridge returns `{ ok: false, message: "请先填写 commit message。" }`.
+- Commit with no staged diff -> bridge returns `{ ok: false, message: "没有 staged 变更可提交。" }`.
+- Discard untracked directory or non-file path -> bridge returns a failure message asking the user to handle it in the file system.
+- Branch switch with uncommitted changes and no force option -> bridge returns `{ ok: false, message: "当前工作区存在未提交变更..." }` and does not run `git switch`.
+- Branch switch with uncommitted changes after app confirmation -> UI calls `switchGitBranch(..., { force: true })`; preload runs `git switch --discard-changes -- <branch>`, returns `{ ok: true, branch }` on success, and the store refreshes the snapshot.
+- Unknown local branch -> bridge returns `{ ok: false, message: "只能切换到已有本地分支。" }`.
+- Commit checkout with uncommitted changes and no force option -> bridge returns `{ ok: false, commitHash, message: "当前工作区存在未提交变更..." }` and does not run `git switch --detach`.
+- Commit checkout with uncommitted changes after app confirmation -> UI calls `checkoutGitCommit(..., { force: true })`; preload runs `git switch --discard-changes --detach <hash>`, returns `{ ok: true, commitHash, isDetachedHead: true }` on success, and the store refreshes the snapshot.
+- Commit checkout with an invalid or missing hash -> bridge returns `{ ok: false, message: "请选择一个有效的提交 hash。" }` or a not-found commit message.
+- Detached HEAD snapshot -> `branch` may be `"HEAD"`, `isDetachedHead` is `true`, and `headHash` carries the current short commit hash for UI labels.
+
+### 5. Good/Base/Bad Cases
+
+- Good: clicking a file stage button calls the store, preload runs `git add -- <file>`, then the store refreshes the snapshot and the row shows staged state.
+- Good: AI commit message generation includes actual diff text from staged changes, and falls back to working-tree diff only when nothing is staged.
+- Good: editing the commit-message prompt in Settings persists through browser fallback and preload storage, then the next Git tab generation uses that stored template.
+- Good: the changed-files panel keeps stage/unstage/discard controls in the header and shows immediate per-file loading feedback before the refreshed snapshot arrives.
+- Good: switching to a clean local branch refreshes branch, graph, files, and command-running views naturally see the new working tree.
+- Good: checking out a selected commit from the commit detail dialog enters detached HEAD, refreshes files/branch/graph, and highlights the current commit through `headHash`.
+- Base: browser preview shows safe unavailable messages for write actions but still renders the Git tab.
+- Bad: a component directly calls `window.projectBridge.commitGitStaged(...)` and then forgets to refresh `project.git`.
+- Bad: running `spawn("git add " + filePath, { shell: true })`, which creates shell injection risk.
+- Bad: using recursive filesystem deletion for a Git discard action from a compact UI.
+- Bad: showing a native confirmation dialog for discard, because it can hide or detach the compact uTools plugin UI.
+
+### 6. Tests Required
+
+- `npm run type-check` should verify bridge contracts across `src/types.ts`, fallback bridge, store actions, and components.
+- `npm run build` should verify the Git tab template compiles.
+- Manual uTools smoke test: stage, unstage, discard a single file after confirmation, commit staged changes, and confirm each successful action refreshes the snapshot.
+- Manual uTools smoke test: attempt branch switching with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-switches and refreshes branch/files/graph. Then switch on a clean worktree and verify the branch and graph refresh.
+- Manual uTools smoke test: attempt commit checkout with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-checks out the selected commit and refreshes detached HEAD/current commit state. Then checkout a clean selected commit and verify detached HEAD/current commit state is visible.
+- Manual AI smoke test: generate a commit message with staged changes, then with only unstaged changes, and verify the prompt source uses diff content.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await window.projectBridge.commitGitStaged(project.path, message);
+```
+
+This bypasses store fallback behavior and leaves the Git snapshot stale.
+
+#### Correct
+
+```ts
+const result = await store.commitGitStaged(project.id, message);
+```
+
+Let the store own project lookup, bridge fallback, and post-success snapshot refresh.
+
+#### Wrong
+
+```js
+spawn(`git -C ${repo} add ${filePath}`, { shell: true });
+```
+
+This mixes user-controlled paths into a shell command.
+
+#### Correct
+
+```js
+spawnSync("git", ["-C", repo, "add", "--", relativePath], { windowsHide: true });
+```
+
+Use Git argument arrays and the `--` path separator at the preload boundary.
 
 ## Scenario: Project Catalog Persistence
 
