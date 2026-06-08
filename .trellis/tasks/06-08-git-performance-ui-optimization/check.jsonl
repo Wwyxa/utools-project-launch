@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Verify changes remain aligned with Vue/Pinia project structure."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review GitTab UI changes for component and layout conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review refresh, staging, and pagination state transitions."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review bridge and Git type contracts."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run focused quality review and type-check expectations."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review preload Git command changes against bridge quality guardrails."}

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package overview for Vue/Pinia project structure."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"GitTab UI/layout changes must follow existing Vue component conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Git snapshot refresh and file action performance changes live in Pinia store state flow."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"New bridge APIs and Git result shapes require consistent TypeScript contracts."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Implementation should stay focused, typed, and pass project quality checks."}
+{"file":".trellis/spec/backend/index.md","reason":"Project has no backend; preload bridge changes should respect current no-backend boundary."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Node/Electron preload Git command changes need current quality guardrails."}
