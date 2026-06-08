@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   CheckSquare,
   Code2,
@@ -31,7 +31,6 @@ const t = useI18n();
 type TabId = "info" | "scripts" | "files" | "git" | "memo";
 const activeTab = ref<TabId>("scripts");
 const fileOpenRequest = ref("");
-const refreshingProjectIds = ref<Set<string>>(new Set());
 
 const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
   { id: "info", label: t.value.projectDetails.overview },
@@ -108,7 +107,9 @@ const statusToneClass = computed(() => {
   }
   return "border-border-subtle bg-surface-container-low text-on-surface-variant";
 });
-const isRefreshingProject = computed(() => refreshingProjectIds.value.has(props.project.id));
+const isRefreshingProject = computed(
+  () => Boolean(store.gitRefreshing[props.project.id]) || Boolean(store.gitStatusRefreshing[props.project.id]),
+);
 const refreshButtonLabel = computed(() => {
   if (isRefreshingProject.value) {
     return t.value.common.refreshing;
@@ -143,20 +144,13 @@ const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
 const handleRefresh = async () => {
   const projectId = props.project.id;
-  if (isUnavailable.value || refreshingProjectIds.value.has(projectId)) {
+  if (isUnavailable.value || store.gitRefreshing[projectId] || store.gitStatusRefreshing[projectId]) {
     return;
   }
 
-  refreshingProjectIds.value = new Set(refreshingProjectIds.value).add(projectId);
   await nextTick();
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  try {
-    await store.refreshGitSnapshot(projectId);
-  } finally {
-    const nextRefreshingProjectIds = new Set(refreshingProjectIds.value);
-    nextRefreshingProjectIds.delete(projectId);
-    refreshingProjectIds.value = nextRefreshingProjectIds;
-  }
+  await store.refreshGitSnapshot(projectId);
 };
 const handleDelete = () => {
   store.requestDeleteProject(props.project.id);
@@ -172,6 +166,19 @@ const handleFileOpened = (relativePath: string) => {
     fileOpenRequest.value = "";
   }
 };
+
+const scheduleInitialGitRefresh = () => {
+  if (isUnavailable.value || store.gitRefreshing[props.project.id] || store.gitStatusRefreshing[props.project.id]) {
+    return;
+  }
+  void nextTick(() => {
+    void store.refreshGitSnapshot(props.project.id);
+  });
+};
+
+onMounted(scheduleInitialGitRefresh);
+
+watch(() => props.project.id, scheduleInitialGitRefresh);
 </script>
 
 <template>

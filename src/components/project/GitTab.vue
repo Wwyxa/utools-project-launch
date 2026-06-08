@@ -189,6 +189,10 @@ const commits = computed(() => {
   });
 });
 const snapshot = computed(() => props.project.git);
+const isGitSnapshotRefreshing = computed(() => Boolean(store.gitRefreshing[props.project.id]));
+const isGitStatusRefreshing = computed(() => Boolean(store.gitStatusRefreshing[props.project.id]));
+const isGitRefreshing = computed(() => isGitSnapshotRefreshing.value || isGitStatusRefreshing.value);
+const gitRefreshLabel = computed(() => (isGitRefreshing.value ? "正在刷新 Git 状态" : t.value.git.refresh));
 const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.project.path);
 const isLoadingMore = ref(false);
 const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
@@ -241,6 +245,7 @@ const commitTooltipStyle = computed(() => {
 });
 
 const handleRefresh = async () => {
+  if (isGitRefreshing.value) return;
   await store.refreshGitSnapshot(props.project.id);
 };
 
@@ -557,6 +562,46 @@ const isSelectedCommitCurrentHead = computed(() =>
   Boolean(selectedCommit.value && commitHashMatches(selectedCommit.value.hash, snapshot.value?.headHash)),
 );
 
+const selectedCommitLocalBranchNames = computed(() => {
+  const localBranches = new Set((snapshot.value?.branches || []).map((branch) => branch.name));
+  return selectedCommitRefs.value
+    .map((refName) => refName.replace(/^HEAD ->\s*/, "").trim())
+    .filter((refName) => localBranches.has(refName));
+});
+const canCheckoutSelectedCommit = computed(
+  () => Boolean(selectedCommit.value) && (!isSelectedCommitDetachedHead.value || selectedCommitLocalBranchNames.value.length > 0),
+);
+const selectedCommitCheckoutTitle = computed(() => {
+  if (isSelectedCommitDetachedHead.value && selectedCommitLocalBranchNames.value.length === 0) {
+    return "当前已处于该 detached HEAD 提交";
+  }
+  if (hasUncommittedChanges.value) {
+    return "当前工作区存在未提交变更，点击后打开强制切换确认";
+  }
+  if (selectedCommitLocalBranchNames.value.length > 0) {
+    return `切换到本地分支 ${selectedCommitLocalBranchNames.value[0]}`;
+  }
+  return "切换到此提交（detached HEAD）";
+});
+const selectedCommitCheckoutAriaLabel = computed(() => {
+  if (isSelectedCommitDetachedHead.value && selectedCommitLocalBranchNames.value.length === 0) {
+    return "当前已处于该 detached HEAD 提交";
+  }
+  if (hasUncommittedChanges.value) {
+    return "打开强制切换提交确认";
+  }
+  return selectedCommitLocalBranchNames.value.length > 0 ? "切换到对应本地分支" : "切换到此提交";
+});
+const selectedCommitCheckoutLabel = computed(() => {
+  if (selectedCommit.value && activeGitAction.value === `checkout:${selectedCommit.value.hash}`) {
+    return "切换中";
+  }
+  if (hasUncommittedChanges.value) {
+    return "确认强制切换";
+  }
+  return selectedCommitLocalBranchNames.value.length > 0 ? "切回分支" : "切换";
+});
+
 const executeCheckoutCommit = async (commit: ProjectGitCommitSummary, options: { force?: boolean } = {}) => {
   if (!commit || activeGitAction.value || activeGitFileActions.value.length > 0) return;
 
@@ -589,7 +634,7 @@ const requestForceCheckoutCommit = (commit: ProjectGitCommitSummary) => {
   confirmationDialog.value = {
     kind: "danger",
     title: "强制切换提交",
-    message: `当前工作区存在未提交变更。强制切换到 ${commit.hash} 会丢弃这些本地变更，并进入 detached HEAD。`,
+    message: `当前工作区存在未提交变更。强制切换到 ${commit.hash} 会丢弃这些本地变更；若该提交是本地分支 tip，将切回对应分支，否则进入 detached HEAD。`,
     detail: formatGitFileLines(files.value, ""),
     confirmLabel: "强制切换",
     cancelLabel: t.value.common.cancel,
@@ -1741,16 +1786,23 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         >
           {{ gitActionMessage }}
         </span>
+        <span
+          v-if="isGitSnapshotRefreshing || isGitStatusRefreshing"
+          class="hidden shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary lg:inline"
+        >
+          {{ isGitSnapshotRefreshing ? "正在刷新" : "正在更新状态" }}
+        </span>
         <span class="text-on-surface-variant truncate hidden lg:inline">{{ repositoryPath }}</span>
       </div>
       <div class="flex gap-2 shrink-0">
         <button
           @click="handleRefresh"
+          :disabled="isGitRefreshing"
           class="h-8 px-3 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors"
-          :title="t.git.refresh"
-          :aria-label="t.git.refresh"
+          :title="gitRefreshLabel"
+          :aria-label="gitRefreshLabel"
         >
-          <RefreshCw :size="14" />
+          <RefreshCw :size="14" :class="isGitRefreshing && 'animate-spin'" />
         </button>
       </div>
     </div>
@@ -2485,13 +2537,65 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         class="flex h-[min(46rem,90vh)] w-[min(58rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
       >
         <div
-          class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
+          class="flex min-h-14 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-2"
         >
-          <div class="min-w-0">
-            <h3 class="truncate text-sm font-bold text-on-surface">{{ t.git.commitDetails }}</h3>
-            <p class="truncate font-mono text-[10px] font-bold text-on-surface-variant">{{ selectedCommit.hash }}</p>
+          <div class="min-w-0 flex-1 py-0.5">
+            <div class="flex min-w-0 items-center">
+              <span class="block min-w-0 truncate text-sm font-semibold leading-5 text-on-surface" :title="selectedCommit.message">
+                {{ selectedCommit.message }}
+              </span>
+            </div>
+            <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-medium leading-4 text-on-surface-variant">
+              <button
+                type="button"
+                class="inline-flex h-5 max-w-28 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-1.5 font-mono font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                :title="copyLabel(selectedCommit.hash)"
+                :aria-label="copyLabel(selectedCommit.hash)"
+                @click="copyText(selectedCommit.hash)"
+              >
+                <span class="truncate">{{ selectedCommit.hash }}</span>
+                <ClipboardCopy :size="10" />
+              </button>
+              <span class="max-w-28 truncate" :title="selectedCommit.author">{{ selectedCommit.author }}</span>
+              <span class="text-on-surface-variant/60">·</span>
+              <span class="shrink-0" :title="formatAbsoluteTime(selectedCommit.date)">
+                {{ commitDateLabel(selectedCommit.date) }}
+              </span>
+              <span
+                v-if="isSelectedCommitCurrentHead"
+                :class="
+                  cn(
+                    'shrink-0 rounded-full border px-1.5 py-px text-[9px] font-bold leading-3',
+                    isSelectedCommitDetachedHead
+                      ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                      : 'border-primary/30 bg-primary/10 text-primary',
+                  )
+                "
+              >
+                {{ isSelectedCommitDetachedHead ? "detached HEAD" : "当前 HEAD" }}
+              </span>
+              <span
+                v-for="refName in selectedCommitRefs"
+                :key="refName"
+                :class="cn(refClass(refName), 'max-w-28 shrink-0')"
+                :title="refName"
+              >
+                {{ refName }}
+              </span>
+            </div>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex h-7 max-w-32 items-center gap-1.5 rounded border border-primary/25 bg-primary/10 px-2 text-[10px] font-bold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-55"
+              :disabled="isGitActionRunning || !canCheckoutSelectedCommit"
+              :title="selectedCommitCheckoutTitle"
+              :aria-label="selectedCommitCheckoutAriaLabel"
+              @click="handleCheckoutSelectedCommit"
+            >
+              <GitCommitHorizontal :size="12" />
+              <span class="truncate">{{ selectedCommitCheckoutLabel }}</span>
+            </button>
             <button
               type="button"
               class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
@@ -2504,75 +2608,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </div>
         </div>
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest p-2.5">
-          <section class="rounded-lg border border-border-subtle bg-surface px-3 py-2">
-            <div class="grid gap-2.5 text-xs text-on-surface-variant sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-              <div class="min-w-0 space-y-1.5">
-                <div class="truncate font-semibold text-on-surface">{{ selectedCommit.message }}</div>
-                <div class="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] font-medium text-on-surface-variant">
-                  <span class="truncate">{{ selectedCommit.author }}</span>
-                  <span class="text-on-surface-variant/60">·</span>
-                  <span :title="formatAbsoluteTime(selectedCommit.date)">{{
-                    commitDateLabel(selectedCommit.date)
-                  }}</span>
-                  <span
-                    v-if="isSelectedCommitCurrentHead"
-                    :class="
-                      cn(
-                        'rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                        isSelectedCommitDetachedHead
-                          ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
-                          : 'border-primary/30 bg-primary/10 text-primary',
-                      )
-                    "
-                  >
-                    {{ isSelectedCommitDetachedHead ? "detached HEAD" : "当前 HEAD" }}
-                  </span>
-                </div>
-                <div v-if="selectedCommitRefs.length" class="flex flex-wrap items-center gap-1">
-                  <span v-for="refName in selectedCommitRefs" :key="refName" :class="refClass(refName)">
-                    {{ refName }}
-                  </span>
-                </div>
-              </div>
-              <div class="flex max-w-full flex-wrap items-center justify-start gap-1 sm:justify-end">
-                <button
-                  type="button"
-                  class="inline-flex h-7 max-w-36 items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 font-mono text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                  :title="copyLabel(selectedCommit.hash)"
-                  :aria-label="copyLabel(selectedCommit.hash)"
-                  @click="copyText(selectedCommit.hash)"
-                >
-                  <span class="truncate">{{ selectedCommit.hash }}</span>
-                  <ClipboardCopy :size="11" />
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex h-7 items-center gap-1.5 rounded border border-primary/25 bg-primary/10 px-2 text-[10px] font-bold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-55"
-                  :disabled="isGitActionRunning || isSelectedCommitDetachedHead"
-                  :title="
-                    isSelectedCommitDetachedHead
-                      ? '当前已处于该 detached HEAD 提交'
-                      : hasUncommittedChanges
-                        ? '当前工作区存在未提交变更，点击后打开强制切换确认'
-                        : '切换到此提交（detached HEAD）'
-                  "
-                  :aria-label="
-                    isSelectedCommitDetachedHead
-                      ? '当前已处于该 detached HEAD 提交'
-                      : hasUncommittedChanges
-                        ? '打开强制切换提交确认'
-                        : '切换到此提交'
-                  "
-                  @click="handleCheckoutSelectedCommit"
-                >
-                  <GitCommitHorizontal :size="12" />
-                  {{ activeGitAction === `checkout:${selectedCommit.hash}` ? "切换中" : hasUncommittedChanges ? "确认强制切换" : "切换" }}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <div class="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(13rem,0.78fr)_minmax(0,1.22fr)] gap-2.5">
+          <div class="grid min-h-0 flex-1 grid-cols-[minmax(13rem,0.78fr)_minmax(0,1.22fr)] gap-2.5">
             <section
               class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface px-2.5 py-2.5"
             >

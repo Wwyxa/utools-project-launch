@@ -17,6 +17,7 @@ import type {
   LogEntry,
   Project,
   ProjectGitActionResult,
+  ProjectGitCommitPage,
   ProjectGitCommitMessageDiffResult,
   ProjectConfigFile,
   ProjectBridgeEvent,
@@ -25,6 +26,7 @@ import type {
   ProjectGitFileChange,
   ProjectGitFileDiffResult,
   ProjectGitSnapshot,
+  ProjectGitStatusSnapshot,
   ProjectFileListResult,
   ProjectFileReadResult,
   ProjectFileWriteResult,
@@ -54,6 +56,11 @@ const createEnvId = () => `env-${Date.now()}`;
 const createProjectId = () => `project-${Date.now()}`;
 const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
 let projectConfigMessageClearTimer: number | null = null;
+const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
+const gitStatusRefreshPromises = new Map<string, Promise<void>>();
+const gitSnapshotRefreshTokens = new Map<string, symbol>();
+const gitMutationVersions = new Map<string, number>();
+const gitRefMutationVersions = new Map<string, number>();
 const ansiControlPattern =
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
@@ -62,6 +69,22 @@ function cancelProjectConfigMessageClear() {
     window.clearTimeout(projectConfigMessageClearTimer);
     projectConfigMessageClearTimer = null;
   }
+}
+
+function gitMutationVersion(projectId: string) {
+  return gitMutationVersions.get(projectId) || 0;
+}
+
+function bumpGitMutationVersion(projectId: string) {
+  gitMutationVersions.set(projectId, gitMutationVersion(projectId) + 1);
+}
+
+function gitRefMutationVersion(projectId: string) {
+  return gitRefMutationVersions.get(projectId) || 0;
+}
+
+function bumpGitRefMutationVersion(projectId: string) {
+  gitRefMutationVersions.set(projectId, gitRefMutationVersion(projectId) + 1);
 }
 
 function resolveProjectSortOrder(project: Project, fallbackIndex = 0): number {
@@ -160,6 +183,49 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
     repositoryPath: snapshot.repositoryPath || "",
     lastRefreshedAt: snapshot.lastRefreshedAt || new Date().toISOString(),
     statusText: snapshot.statusText || "OK",
+  };
+}
+
+function mergeGitStatusSnapshot(
+  currentSnapshot: ProjectGitSnapshot | null | undefined,
+  statusSnapshot: ProjectGitStatusSnapshot,
+): ProjectGitSnapshot {
+  return {
+    branch: statusSnapshot.branch || currentSnapshot?.branch || "main",
+    headHash: statusSnapshot.headHash || "",
+    isDetachedHead: Boolean(statusSnapshot.isDetachedHead),
+    ahead: statusSnapshot.ahead || 0,
+    behind: statusSnapshot.behind || 0,
+    files: statusSnapshot.files || [],
+    commits: currentSnapshot?.commits || [],
+    branches: statusSnapshot.branches || currentSnapshot?.branches || [],
+    hasMoreCommits: currentSnapshot?.hasMoreCommits || false,
+    repositoryPath: statusSnapshot.repositoryPath || currentSnapshot?.repositoryPath || "",
+    lastRefreshedAt: statusSnapshot.lastRefreshedAt || new Date().toISOString(),
+    statusText: statusSnapshot.statusText || currentSnapshot?.statusText || "OK",
+  };
+}
+
+function mergeGitCommitPage(currentSnapshot: ProjectGitSnapshot, commitPage: ProjectGitCommitPage): ProjectGitSnapshot {
+  return {
+    ...currentSnapshot,
+    commits: [...currentSnapshot.commits, ...(commitPage.commits || [])],
+    hasMoreCommits: commitPage.hasMoreCommits || false,
+    repositoryPath: commitPage.repositoryPath || currentSnapshot.repositoryPath,
+    lastRefreshedAt: commitPage.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
+  };
+}
+
+function replaceGitCommitPage(
+  currentSnapshot: ProjectGitSnapshot,
+  commitPage: ProjectGitCommitPage,
+): ProjectGitSnapshot {
+  return {
+    ...currentSnapshot,
+    commits: commitPage.commits || [],
+    hasMoreCommits: commitPage.hasMoreCommits || false,
+    repositoryPath: commitPage.repositoryPath || currentSnapshot.repositoryPath,
+    lastRefreshedAt: commitPage.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
   };
 }
 
@@ -563,6 +629,8 @@ export const useStore = defineStore("app", {
       ],
       "project-go-1": [{ path: "cmd/server/main.go", additions: 6, deletions: 3, status: "MODIFIED" }],
     } as Record<string, ProjectGitFileChange[]>,
+    gitRefreshing: {} as Record<string, boolean>,
+    gitStatusRefreshing: {} as Record<string, boolean>,
     todos: {
       "project-node-1": [
         { id: "t1", text: "Review launch commands", completed: true },
@@ -1359,20 +1427,84 @@ export const useStore = defineStore("app", {
       await this.persistProjects();
       return true;
     },
-    async refreshGitSnapshot(projectId: string) {
+    async refreshGitSnapshot(projectId: string, options: { force?: boolean } = {}) {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {
         return;
       }
 
-      const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: 0 });
-      project.git = normalizeGitSnapshot(snapshot);
-      if (project.git) {
-        project.branch = project.git.branch;
-        project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
-        this.stagedFiles[projectId] = project.git.files;
+      const existingRefresh = gitSnapshotRefreshPromises.get(projectId);
+      if (existingRefresh && !options.force) {
+        return existingRefresh;
       }
-      await this.persistProjects();
+
+      this.gitRefreshing[projectId] = true;
+      this.gitStatusRefreshing[projectId] = true;
+      const refreshToken = Symbol(projectId);
+      gitSnapshotRefreshTokens.set(projectId, refreshToken);
+      const refreshPromise = (async () => {
+        const startedAtVersion = gitMutationVersion(projectId);
+        const startedAtRefVersion = gitRefMutationVersion(projectId);
+        try {
+          const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: 0 });
+          if (startedAtVersion !== gitMutationVersion(projectId)) {
+            const normalizedSnapshot =
+              startedAtRefVersion === gitRefMutationVersion(projectId) ? normalizeGitSnapshot(snapshot) : null;
+            if (project.git && normalizedSnapshot) {
+              project.git = replaceGitCommitPage(project.git, normalizedSnapshot);
+              project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
+            }
+            return;
+          }
+          project.git = normalizeGitSnapshot(snapshot);
+          if (project.git) {
+            project.branch = project.git.branch;
+            project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
+            this.stagedFiles[projectId] = project.git.files;
+          }
+          await this.persistProjects();
+        } finally {
+          if (gitSnapshotRefreshTokens.get(projectId) === refreshToken) {
+            gitSnapshotRefreshPromises.delete(projectId);
+            gitSnapshotRefreshTokens.delete(projectId);
+            this.gitRefreshing[projectId] = false;
+            this.gitStatusRefreshing[projectId] = Boolean(gitStatusRefreshPromises.get(projectId));
+          }
+        }
+      })();
+      gitSnapshotRefreshPromises.set(projectId, refreshPromise);
+      return refreshPromise;
+    },
+    async refreshGitStatusSnapshot(projectId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return;
+      }
+
+      const existingRefresh = gitStatusRefreshPromises.get(projectId);
+      if (existingRefresh) {
+        return existingRefresh;
+      }
+
+      this.gitStatusRefreshing[projectId] = true;
+      const refreshPromise = (async () => {
+        try {
+          let needsAnotherRead = true;
+          while (needsAnotherRead) {
+            const startedAtVersion = gitMutationVersion(projectId);
+            const statusSnapshot = await bridge.readGitStatusSnapshot(project.path);
+            project.git = mergeGitStatusSnapshot(project.git, statusSnapshot);
+            project.branch = project.git.branch;
+            this.stagedFiles[projectId] = project.git.files;
+            needsAnotherRead = startedAtVersion !== gitMutationVersion(projectId);
+          }
+        } finally {
+          gitStatusRefreshPromises.delete(projectId);
+          this.gitStatusRefreshing[projectId] = Boolean(gitSnapshotRefreshPromises.get(projectId));
+        }
+      })();
+      gitStatusRefreshPromises.set(projectId, refreshPromise);
+      return refreshPromise;
     },
     async loadMoreGitCommits(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
@@ -1380,17 +1512,8 @@ export const useStore = defineStore("app", {
         return;
       }
 
-      const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: project.git.commits.length });
-      project.git = normalizeGitSnapshot({
-        ...snapshot,
-        commits: [...project.git.commits, ...(snapshot.commits || [])],
-      });
-      if (project.git) {
-        project.branch = project.git.branch;
-        project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
-        this.stagedFiles[projectId] = project.git.files;
-      }
-      await this.persistProjects();
+      const commitPage = await bridge.readGitCommits(project.path, { limit: 80, skip: project.git.commits.length });
+      project.git = mergeGitCommitPage(project.git, commitPage);
     },
     async listProjectFiles(projectId: string, relativePath = ""): Promise<ProjectFileListResult | null> {
       const project = this.projects.find((item) => item.id === projectId);
@@ -1452,7 +1575,8 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.stageGitFile(project.path, relativePath);
       if (result.ok || (result.count || 0) > 0) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        await this.refreshGitStatusSnapshot(projectId);
       }
       return result;
     },
@@ -1464,7 +1588,8 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.unstageGitFile(project.path, relativePath);
       if (result.ok || (result.count || 0) > 0) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        await this.refreshGitStatusSnapshot(projectId);
       }
       return result;
     },
@@ -1476,7 +1601,8 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.discardGitFile(project.path, relativePath);
       if (result.ok || (result.count || 0) > 0) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        await this.refreshGitSnapshot(projectId, { force: true });
       }
       return result;
     },
@@ -1488,7 +1614,8 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.stageGitFiles(project.path, relativePaths);
       if (result.ok) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        await this.refreshGitStatusSnapshot(projectId);
       }
       return result;
     },
@@ -1500,7 +1627,8 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.unstageGitFiles(project.path, relativePaths);
       if (result.ok) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        await this.refreshGitStatusSnapshot(projectId);
       }
       return result;
     },
@@ -1512,7 +1640,8 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.discardGitFiles(project.path, relativePaths);
       if (result.ok) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        await this.refreshGitSnapshot(projectId, { force: true });
       }
       return result;
     },
@@ -1524,7 +1653,9 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.commitGitStaged(project.path, message);
       if (result.ok) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        bumpGitRefMutationVersion(projectId);
+        await this.refreshGitSnapshot(projectId, { force: true });
       }
       return result;
     },
@@ -1540,7 +1671,9 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.switchGitBranch(project.path, branchName, options);
       if (result.ok) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        bumpGitRefMutationVersion(projectId);
+        await this.refreshGitSnapshot(projectId, { force: true });
       }
       return result;
     },
@@ -1554,9 +1687,14 @@ export const useStore = defineStore("app", {
         return null;
       }
 
-      const result = await bridge.checkoutGitCommit(project.path, commitHash, options);
+      const result = await bridge.checkoutGitCommit(project.path, commitHash, {
+        ...options,
+        preferredBranch: project.branch || project.git?.branch,
+      });
       if (result.ok) {
-        await this.refreshGitSnapshot(projectId);
+        bumpGitMutationVersion(projectId);
+        bumpGitRefMutationVersion(projectId);
+        await this.refreshGitSnapshot(projectId, { force: true });
       }
       return result;
     },

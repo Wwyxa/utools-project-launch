@@ -238,6 +238,26 @@ export interface ProjectGitSnapshot {
   statusText: string;
 }
 
+export interface ProjectGitStatusSnapshot {
+  branch: string;
+  headHash?: string;
+  isDetachedHead?: boolean;
+  ahead: number;
+  behind: number;
+  files: ProjectGitFileChange[];
+  branches?: ProjectGitBranchSummary[];
+  repositoryPath: string;
+  lastRefreshedAt: string;
+  statusText: string;
+}
+
+export interface ProjectGitCommitPage {
+  commits: ProjectGitCommitSummary[];
+  hasMoreCommits?: boolean;
+  repositoryPath: string;
+  lastRefreshedAt: string;
+}
+
 export interface ProjectScriptFormValue {
   id: string;
   name: string;
@@ -387,6 +407,10 @@ export interface ProjectBridgePackageScript {
 
 export interface ProjectBridgeGitSnapshot extends ProjectGitSnapshot {}
 
+export interface ProjectBridgeGitStatusSnapshot extends ProjectGitStatusSnapshot {}
+
+export interface ProjectBridgeGitCommitPage extends ProjectGitCommitPage {}
+
 export type ProjectFileKind = "file" | "directory";
 
 export interface ProjectFileTreeEntry {
@@ -468,6 +492,8 @@ export interface ProjectBridge {
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;
   listProjectSubdirectories(projectPath: string): Promise<string[]>;
   readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>;
+  readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>;
+  readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>;
   readGitFileDiff(projectPath: string, relativePath: string): Promise<ProjectGitFileDiffResult>;
   readGitCommitFileDiff(
     projectPath: string,
@@ -483,8 +509,16 @@ export interface ProjectBridge {
   unstageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>;
   discardGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>;
   commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>;
-  switchGitBranch(projectPath: string, branchName: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>;
-  checkoutGitCommit(projectPath: string, commitHash: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>;
+  switchGitBranch(
+    projectPath: string,
+    branchName: string,
+    options?: { force?: boolean },
+  ): Promise<ProjectGitActionResult>;
+  checkoutGitCommit(
+    projectPath: string,
+    commitHash: string,
+    options?: { force?: boolean; preferredBranch?: string },
+  ): Promise<ProjectGitActionResult>;
   listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileListResult>;
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;

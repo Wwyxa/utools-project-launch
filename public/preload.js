@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { spawn, spawnSync, execFileSync } = require("node:child_process");
+const { spawn, spawnSync, execFile, execFileSync } = require("node:child_process");
 const { TextDecoder } = require("node:util");
 const { shell } = require("electron");
 
@@ -1221,6 +1221,21 @@ function findGitRoot(startPath) {
   }
 }
 
+function findGitRootAsync(startPath) {
+  const resolvedPath = expandPath(startPath);
+
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      ["-C", resolvedPath, "rev-parse", "--show-toplevel"],
+      { encoding: "utf8", windowsHide: true },
+      (error, stdout) => {
+        resolve(error ? null : String(stdout || "").trim());
+      },
+    );
+  });
+}
+
 function runGit(startPath, args) {
   const resolvedPath = expandPath(startPath);
 
@@ -1232,6 +1247,16 @@ function runGit(startPath, args) {
   } catch (error) {
     return null;
   }
+}
+
+function runGitAsync(startPath, args) {
+  const resolvedPath = expandPath(startPath);
+
+  return new Promise((resolve) => {
+    execFile("git", ["-C", resolvedPath, ...args], { encoding: "utf8", windowsHide: true }, (error, stdout) => {
+      resolve(error ? null : String(stdout || ""));
+    });
+  });
 }
 
 function runGitDiff(startPath, args) {
@@ -1266,6 +1291,29 @@ function firstGitError(result, fallback) {
 
 function collectNumstat(startPath, args) {
   const output = runGit(startPath, args);
+  if (!output) {
+    return new Map();
+  }
+
+  const result = new Map();
+  output.split(/\r?\n/).forEach((line) => {
+    if (!line.trim()) {
+      return;
+    }
+
+    const [additions, deletions, ...rest] = line.split(/\t/);
+    const filePath = rest.join("\t");
+    result.set(filePath, {
+      additions: additions === "-" ? 0 : Number(additions),
+      deletions: deletions === "-" ? 0 : Number(deletions),
+    });
+  });
+
+  return result;
+}
+
+async function collectNumstatAsync(startPath, args) {
+  const output = await runGitAsync(startPath, args);
   if (!output) {
     return new Map();
   }
@@ -1334,6 +1382,27 @@ function readGitStatusEntries(repositoryPath) {
   return entries;
 }
 
+async function readGitStatusEntriesAsync(repositoryPath) {
+  const statusOutput = await runGitAsync(repositoryPath, ["status", "--porcelain=v1", "-z"]);
+  if (!statusOutput) {
+    return [];
+  }
+
+  const records = statusOutput.split("\0").filter(Boolean);
+  const entries = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    const statusCode = record.slice(0, 2);
+    const filePath = record.slice(3);
+    const originalPath = statusCode.includes("R") ? records[++index] || "" : "";
+    const entry = parseGitStatusRecord(statusCode, filePath, originalPath);
+    if (entry) {
+      entries.push(entry);
+    }
+  }
+  return entries;
+}
+
 function readGitBranches(repositoryPath) {
   const output = runGit(repositoryPath, ["branch", "--format=%(refname:short)%09%(HEAD)"]);
   if (!output) {
@@ -1348,6 +1417,64 @@ function readGitBranches(repositoryPath) {
       return branchName ? { name: branchName, current: String(marker || "").trim() === "*" } : null;
     })
     .filter(Boolean);
+}
+
+async function readGitBranchesAsync(repositoryPath) {
+  const output = await runGitAsync(repositoryPath, ["branch", "--format=%(refname:short)%09%(HEAD)"]);
+  if (!output) {
+    return [];
+  }
+
+  return output
+    .split(/\r?\n/)
+    .map((line) => {
+      const [name, marker] = line.split("\t");
+      const branchName = String(name || "").trim();
+      return branchName ? { name: branchName, current: String(marker || "").trim() === "*" } : null;
+    })
+    .filter(Boolean);
+}
+
+function readGitLocalBranchTips(repositoryPath) {
+  const output = runGit(repositoryPath, ["for-each-ref", "--format=%(refname:short)%09%(objectname)", "refs/heads"]);
+  if (!output) {
+    return [];
+  }
+
+  return output
+    .split(/\r?\n/)
+    .map((line) => {
+      const [name, hash] = line.split("\t");
+      const branchName = String(name || "").trim();
+      const branchHash = String(hash || "").trim();
+      return branchName && branchHash ? { name: branchName, hash: branchHash } : null;
+    })
+    .filter(Boolean);
+}
+
+function chooseGitBranchTip(repositoryPath, commitHash, preferredBranch = "") {
+  const fullHash = (runGit(repositoryPath, ["rev-parse", `${commitHash}^{commit}`]) || "").trim();
+  if (!fullHash) {
+    return null;
+  }
+
+  const matchingBranches = readGitLocalBranchTips(repositoryPath).filter((branch) => branch.hash === fullHash);
+  if (matchingBranches.length === 0) {
+    return null;
+  }
+
+  const symbolicBranch = (runGit(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]) || "").trim();
+  const preferredNames = [preferredBranch, symbolicBranch, "main", "master", "develop"].filter(
+    (name) => typeof name === "string" && name.trim() && name !== "HEAD",
+  );
+  for (const preferredName of preferredNames) {
+    const match = matchingBranches.find((branch) => branch.name === preferredName);
+    if (match) {
+      return match;
+    }
+  }
+
+  return matchingBranches[0];
 }
 
 function resolveGitFilePath(repositoryPath, relativePath) {
@@ -1660,9 +1787,16 @@ function switchGitBranch(projectPath, branchName, options = {}) {
     return { ok: true, branch: targetBranch, message: "已经位于该分支。" };
   }
 
-  const result = runGitResult(repositoryPath, force ? ["switch", "--discard-changes", "--", targetBranch] : ["switch", "--", targetBranch]);
+  const result = runGitResult(
+    repositoryPath,
+    force ? ["switch", "--discard-changes", "--", targetBranch] : ["switch", "--", targetBranch],
+  );
   return result.status === 0
-    ? { ok: true, branch: targetBranch, message: force ? `已强制切换到 ${targetBranch}。` : `已切换到 ${targetBranch}。` }
+    ? {
+        ok: true,
+        branch: targetBranch,
+        message: force ? `已强制切换到 ${targetBranch}。` : `已切换到 ${targetBranch}。`,
+      }
     : { ok: false, branch: targetBranch, message: firstGitError(result, "切换分支失败。") };
 }
 
@@ -1670,6 +1804,7 @@ function checkoutGitCommit(projectPath, commitHash, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   const targetHash = typeof commitHash === "string" ? commitHash.trim() : "";
   const force = Boolean(options && options.force);
+  const preferredBranch = typeof options?.preferredBranch === "string" ? options.preferredBranch.trim() : "";
   if (!repositoryPath) {
     return { ok: false, message: "未检测到 Git 仓库。" };
   }
@@ -1687,6 +1822,33 @@ function checkoutGitCommit(projectPath, commitHash, options = {}) {
   const existsResult = runGitResult(repositoryPath, ["cat-file", "-e", `${targetHash}^{commit}`]);
   if (existsResult.status !== 0) {
     return { ok: false, commitHash: targetHash, message: "该提交不存在或不是有效 commit。" };
+  }
+
+  const branchTip = chooseGitBranchTip(repositoryPath, targetHash, preferredBranch);
+  if (branchTip) {
+    const branchResult = runGitResult(
+      repositoryPath,
+      force ? ["switch", "--discard-changes", "--", branchTip.name] : ["switch", "--", branchTip.name],
+    );
+    if (branchResult.status !== 0) {
+      return {
+        ok: false,
+        branch: branchTip.name,
+        commitHash: targetHash,
+        message: firstGitError(branchResult, "切换分支失败。"),
+      };
+    }
+
+    const headHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || targetHash).trim();
+    return {
+      ok: true,
+      branch: branchTip.name,
+      commitHash: headHash,
+      isDetachedHead: false,
+      message: headHash
+        ? `已切换到本地分支 ${branchTip.name}（${headHash}）。`
+        : `已切换到本地分支 ${branchTip.name}。`,
+    };
   }
 
   const result = runGitResult(
@@ -2239,7 +2401,7 @@ function listProjectSubdirectories(projectPath) {
   }
 }
 
-function inspectProjectPath(projectPath) {
+async function inspectProjectPath(projectPath) {
   const resolvedPath = expandPath(projectPath);
   const exists = pathExists(projectPath);
   const result = {
@@ -2272,7 +2434,7 @@ function inspectProjectPath(projectPath) {
 
   result.scripts = detectedScripts;
 
-  result.git = readGitSnapshot(projectPath);
+  result.git = await readGitSnapshot(projectPath);
   result.gitLatestCommitAt = result.git?.commits?.[0]?.date || "";
   result.branch = result.git?.branch || "main";
   return result;
@@ -2349,11 +2511,9 @@ async function importProjects() {
   }
 }
 
-function readGitSnapshot(projectPath, options = {}) {
-  const repositoryPath = findGitRoot(projectPath);
+async function readGitStatusSnapshot(projectPath) {
+  const repositoryPath = await findGitRootAsync(projectPath);
   const now = new Date().toISOString();
-  const limit = Math.min(100, Math.max(20, Number(options.limit) || 80));
-  const skip = Math.max(0, Number(options.skip) || 0);
 
   if (!repositoryPath) {
     return {
@@ -2361,31 +2521,33 @@ function readGitSnapshot(projectPath, options = {}) {
       ahead: 0,
       behind: 0,
       files: [],
-      commits: [],
-      hasMoreCommits: false,
+      branches: [],
       repositoryPath: "",
       lastRefreshedAt: now,
       statusText: "未检测到 Git 仓库",
     };
   }
 
-  const branchOutput = runGit(repositoryPath, ["status", "--short", "--branch"]);
-  const symbolicBranch = (runGit(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]) || "").trim();
-  const headHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || "").trim();
-  const isDetachedHead = !symbolicBranch && Boolean(headHash);
-  const statusEntries = readGitStatusEntries(repositoryPath);
-  const commitOutput = runGit(repositoryPath, [
-    "log",
-    "--all",
-    "--topo-order",
-    "--decorate=short",
-    `--max-count=${limit + 1}`,
-    `--skip=${skip}`,
-    `--pretty=format:%h${gitCommitFieldSeparator}%p${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
-    "--date=iso-strict",
+  const [
+    branchOutput,
+    symbolicBranchOutput,
+    headHashOutput,
+    statusEntries,
+    numstatOutput,
+    cachedNumstatOutput,
+    branches,
+  ] = await Promise.all([
+    runGitAsync(repositoryPath, ["status", "--short", "--branch"]),
+    runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
+    runGitAsync(repositoryPath, ["rev-parse", "--short", "HEAD"]),
+    readGitStatusEntriesAsync(repositoryPath),
+    collectNumstatAsync(repositoryPath, ["diff", "--numstat"]),
+    collectNumstatAsync(repositoryPath, ["diff", "--cached", "--numstat"]),
+    readGitBranchesAsync(repositoryPath),
   ]);
-  const numstatOutput = collectNumstat(repositoryPath, ["diff", "--numstat"]);
-  const cachedNumstatOutput = collectNumstat(repositoryPath, ["diff", "--cached", "--numstat"]);
+  const symbolicBranch = String(symbolicBranchOutput || "").trim();
+  const headHash = String(headHashOutput || "").trim();
+  const isDetachedHead = !symbolicBranch && Boolean(headHash);
   const fileMap = new Map();
 
   statusEntries.forEach((entry) => {
@@ -2406,6 +2568,53 @@ function readGitSnapshot(projectPath, options = {}) {
       unstaged: entry.unstaged,
     });
   });
+
+  const branchLine = branchOutput ? String(branchOutput).split(/\r?\n/)[0] : "";
+  const branchMatch = branchLine.match(/^##\s+([^\.\s]+)(?:\.\.\.(?:[^\s]+))?(?:\s+\[(.+)\])?/);
+  const branch = symbolicBranch || (isDetachedHead ? "HEAD" : branchMatch?.[1] || "main");
+  const upstreamInfo = branchMatch?.[2] || "";
+  const aheadMatch = upstreamInfo.match(/ahead\s+(\d+)/);
+  const behindMatch = upstreamInfo.match(/behind\s+(\d+)/);
+
+  return {
+    branch,
+    headHash,
+    isDetachedHead,
+    ahead: aheadMatch ? Number(aheadMatch[1]) : 0,
+    behind: behindMatch ? Number(behindMatch[1]) : 0,
+    files: Array.from(fileMap.values()),
+    branches,
+    repositoryPath,
+    lastRefreshedAt: now,
+    statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${fileMap.size === 0 ? "工作区干净" : `${fileMap.size} 个文件变更`}`,
+  };
+}
+
+async function readGitCommits(projectPath, options = {}) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const now = new Date().toISOString();
+  const limit = Math.min(100, Math.max(20, Number(options.limit) || 80));
+  const skip = Math.max(0, Number(options.skip) || 0);
+
+  if (!repositoryPath) {
+    return {
+      commits: [],
+      hasMoreCommits: false,
+      repositoryPath: "",
+      lastRefreshedAt: now,
+    };
+  }
+
+  const commitOutput = await runGitAsync(repositoryPath, [
+    "log",
+    "--all",
+    "--topo-order",
+    "--decorate=short",
+    `--max-count=${limit + 1}`,
+    `--skip=${skip}`,
+    `--pretty=format:%h${gitCommitFieldSeparator}%p${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
+    "--date=iso-strict",
+  ]);
 
   const commits = [];
   if (commitOutput) {
@@ -2448,26 +2657,25 @@ function readGitSnapshot(projectPath, options = {}) {
     commits.length = limit;
   }
 
-  const branchLine = branchOutput ? branchOutput.split(/\r?\n/)[0] : "";
-  const branchMatch = branchLine.match(/^##\s+([^\.\s]+)(?:\.\.\.(?:[^\s]+))?(?:\s+\[(.+)\])?/);
-  const branch = symbolicBranch || (isDetachedHead ? "HEAD" : branchMatch?.[1] || "main");
-  const upstreamInfo = branchMatch?.[2] || "";
-  const aheadMatch = upstreamInfo.match(/ahead\s+(\d+)/);
-  const behindMatch = upstreamInfo.match(/behind\s+(\d+)/);
-
   return {
-    branch,
-    headHash,
-    isDetachedHead,
-    ahead: aheadMatch ? Number(aheadMatch[1]) : 0,
-    behind: behindMatch ? Number(behindMatch[1]) : 0,
-    files: Array.from(fileMap.values()),
     commits,
-    branches: readGitBranches(repositoryPath),
     hasMoreCommits,
     repositoryPath,
     lastRefreshedAt: now,
-    statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${fileMap.size === 0 ? "工作区干净" : `${fileMap.size} 个文件变更`}`,
+  };
+}
+
+async function readGitSnapshot(projectPath, options = {}) {
+  const [statusSnapshot, commitPage] = await Promise.all([
+    readGitStatusSnapshot(projectPath),
+    readGitCommits(projectPath, options),
+  ]);
+  return {
+    ...statusSnapshot,
+    commits: commitPage.commits,
+    hasMoreCommits: commitPage.hasMoreCommits,
+    repositoryPath: statusSnapshot.repositoryPath || commitPage.repositoryPath,
+    lastRefreshedAt: statusSnapshot.lastRefreshedAt,
   };
 }
 
@@ -2681,6 +2889,8 @@ window.projectBridge = {
   readPackageScripts,
   listProjectSubdirectories,
   readGitSnapshot,
+  readGitStatusSnapshot,
+  readGitCommits,
   readGitFileDiff,
   readGitCommitFileDiff,
   readGitCommitFiles,

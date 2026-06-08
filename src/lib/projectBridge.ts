@@ -11,9 +11,11 @@ import type {
   EnvironmentPreferences,
   EnvironmentToolKey,
   ProjectBridge,
+  ProjectBridgeGitCommitPage,
   ProjectConfigFile,
   ProjectGitFileChange,
   ProjectGitActionResult,
+  ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
   ProjectGitCommitMessageDiffResult,
   ProjectBridgePackageScript,
@@ -331,6 +333,32 @@ const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   statusText: "离线预览",
 });
 
+const emptyGitStatusSnapshot = (): ProjectBridgeGitStatusSnapshot => {
+  const snapshot = emptyGitSnapshot();
+  return {
+    branch: snapshot.branch,
+    headHash: snapshot.headHash,
+    isDetachedHead: snapshot.isDetachedHead,
+    ahead: snapshot.ahead,
+    behind: snapshot.behind,
+    files: snapshot.files,
+    branches: snapshot.branches,
+    repositoryPath: snapshot.repositoryPath,
+    lastRefreshedAt: snapshot.lastRefreshedAt,
+    statusText: snapshot.statusText,
+  };
+};
+
+const emptyGitCommitPage = (): ProjectBridgeGitCommitPage => {
+  const snapshot = emptyGitSnapshot();
+  return {
+    commits: snapshot.commits,
+    hasMoreCommits: snapshot.hasMoreCommits,
+    repositoryPath: snapshot.repositoryPath,
+    lastRefreshedAt: snapshot.lastRefreshedAt,
+  };
+};
+
 const unavailableGitAction = (message = "浏览器预览无法执行 Git 写操作。"): ProjectGitActionResult => ({
   ok: false,
   message,
@@ -458,6 +486,12 @@ const fallbackBridge: ProjectBridge = {
   async readGitSnapshot(): Promise<ProjectBridgeGitSnapshot> {
     return emptyGitSnapshot();
   },
+  async readGitStatusSnapshot(): Promise<ProjectBridgeGitStatusSnapshot> {
+    return emptyGitStatusSnapshot();
+  },
+  async readGitCommits(): Promise<ProjectBridgeGitCommitPage> {
+    return emptyGitCommitPage();
+  },
   async readGitFileDiff(projectPath: string, relativePath: string) {
     return {
       path: relativePath,
@@ -504,13 +538,17 @@ const fallbackBridge: ProjectBridge = {
   async commitGitStaged(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法提交 staged 变更。");
   },
-  async switchGitBranch(_projectPath: string, _branchName: string, _options: { force?: boolean } = {}): Promise<ProjectGitActionResult> {
+  async switchGitBranch(
+    _projectPath: string,
+    _branchName: string,
+    _options: { force?: boolean } = {},
+  ): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法切换 Git 分支。");
   },
   async checkoutGitCommit(
     _projectPath: string,
     _commitHash: string,
-    _options: { force?: boolean } = {},
+    _options: { force?: boolean; preferredBranch?: string } = {},
   ): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法切换到 Git 提交。");
   },
