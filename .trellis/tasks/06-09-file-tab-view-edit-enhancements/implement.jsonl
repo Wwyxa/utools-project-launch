@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend task overview and guideline index for Vue/Vite code."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Files tab and Git tab are Vue components; follow local component/style conventions."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Quality bar, compact UI constraints, required lint/build checks."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Typed props/emits and shared model constraints for component changes."}

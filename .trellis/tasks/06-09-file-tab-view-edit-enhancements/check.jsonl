@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Validate the change against frontend guideline index."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review component structure, accessibility, and code preview style conventions."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify quality checks and compact UI behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check typed component state/events and avoid broad casts."}
