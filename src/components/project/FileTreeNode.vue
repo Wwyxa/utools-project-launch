@@ -34,6 +34,12 @@ const emit = defineEmits<{
   (event: "open", node: TreeNode, edit?: boolean): void;
 }>();
 
+const normalizedRelativePath = (relativePath: string) => relativePath.replace(/\\/g, "/");
+
+const isSelected = computed(
+  () => normalizedRelativePath(props.selectedRelativePath) === normalizedRelativePath(props.node.relativePath),
+);
+
 const fileIcon = computed(() => {
   if (props.node.kind === "directory") {
     return Folder;
@@ -88,7 +94,7 @@ const handleDoubleClick = () => {
       :class="
         cn(
           'relative flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left hover:bg-surface-variant',
-          selectedRelativePath === node.relativePath
+          isSelected
             ? 'bg-primary/10 text-primary before:absolute before:left-0 before:top-1 before:h-5 before:w-0.5 before:rounded-full before:bg-primary'
             : 'text-on-surface',
         )
@@ -101,11 +107,7 @@ const handleDoubleClick = () => {
         :class="cn('shrink-0 transition-transform', node.expanded ? 'rotate-90' : '')"
       />
       <span v-else class="w-[13px] shrink-0" />
-      <component
-        :is="fileIcon"
-        :size="14"
-        :class="cn('shrink-0', selectedRelativePath === node.relativePath ? 'text-primary' : fileIconClass)"
-      />
+      <component :is="fileIcon" :size="14" :class="cn('shrink-0', isSelected ? 'text-primary' : fileIconClass)" />
       <span class="truncate font-medium">{{ node.name }}</span>
       <span v-if="node.loading" class="ml-auto shrink-0 text-[10px] text-on-surface-variant">...</span>
     </button>

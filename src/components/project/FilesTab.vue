@@ -1,12 +1,25 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { Check, Edit3, FileImage, Folder, Save } from "lucide-vue-next";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Edit3,
+  FileImage,
+  Folder,
+  Replace,
+  ReplaceAll,
+  Save,
+  Search,
+  X,
+} from "lucide-vue-next";
 import type { Project, ProjectFileReadResult, ProjectFileTreeEntry } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
-import { useI18n } from "../../lib/i18n";
 import { highlightCode, isMarkdownFile, renderMarkdown } from "../../lib/markdown";
 import FileTreeNode, { type TreeNode } from "./FileTreeNode.vue";
+
+type SearchMatch = { start: number; end: number };
 
 const props = defineProps<{
   project: Project;
@@ -18,7 +31,6 @@ const emit = defineEmits<{
 }>();
 
 const store = useStore();
-const t = useI18n();
 const rootNodes = ref<TreeNode[]>([]);
 const selectedFile = ref<ProjectFileReadResult | null>(null);
 const draftContent = ref("");
@@ -29,6 +41,16 @@ const isSaving = ref(false);
 const treeWidth = ref(280);
 const isResizing = ref(false);
 const statusMessage = ref("");
+const codeScrollRef = ref<HTMLDivElement | null>(null);
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const findInputRef = ref<HTMLInputElement | null>(null);
+const replaceInputRef = ref<HTMLInputElement | null>(null);
+const isFindOpen = ref(false);
+const isReplaceOpen = ref(false);
+const findQuery = ref("");
+const replaceValue = ref("");
+const activeMatchIndex = ref(0);
+let rootLoadPromise: Promise<void> | null = null;
 
 const selectedRelativePath = computed(() => selectedFile.value?.relativePath || "");
 const isMarkdownPreview = computed(() =>
@@ -41,6 +63,8 @@ const isDirty = computed(
 );
 const canEdit = computed(() => Boolean(selectedFile.value?.editable));
 const canSave = computed(() => canEdit.value && isDirty.value && !isSaving.value);
+const canSearchCurrentFile = computed(() => selectedFile.value?.previewKind === "text");
+const canReplaceCurrentFile = computed(() => selectedFile.value?.previewKind === "text" && canEdit.value);
 const treeStyle = computed(() => ({ width: `${treeWidth.value}px` }));
 const lineNumbers = computed(() =>
   draftContent.value
@@ -48,6 +72,8 @@ const lineNumbers = computed(() =>
     .map((_, index) => index + 1)
     .join("\n"),
 );
+const editorLineCount = computed(() => Math.max(1, draftContent.value.split("\n").length));
+const editorContentStyle = computed(() => ({ "--file-code-line-count": `${editorLineCount.value}` }));
 const renderedMarkdown = computed(() => renderMarkdown(draftContent.value));
 const previewLanguage = computed(() => {
   const extension = selectedFile.value?.extension.toLowerCase().replace(/^\./, "") || "";
@@ -109,6 +135,99 @@ const previewLanguage = computed(() => {
   }
 });
 const renderedCode = computed(() => highlightCode(draftContent.value, previewLanguage.value));
+const searchMatches = computed<SearchMatch[]>(() => {
+  const query = findQuery.value;
+  if (!query || !canSearchCurrentFile.value) return [];
+
+  const matches: SearchMatch[] = [];
+  let fromIndex = 0;
+  while (fromIndex <= draftContent.value.length) {
+    const start = draftContent.value.indexOf(query, fromIndex);
+    if (start === -1) break;
+    const end = start + query.length;
+    matches.push({ start, end });
+    fromIndex = end > start ? end : start + 1;
+  }
+
+  return matches;
+});
+const hasMatches = computed(() => searchMatches.value.length > 0);
+const activeMatch = computed(() => (hasMatches.value ? searchMatches.value[activeMatchIndex.value] : null));
+const matchStatusLabel = computed(() => {
+  if (!findQuery.value) return "";
+  if (!hasMatches.value) return "No results";
+  return `${activeMatchIndex.value + 1}/${searchMatches.value.length}`;
+});
+
+const highlightedCodeSegments = () => {
+  const matches = searchMatches.value;
+  if (matches.length === 0) return renderedCode.value;
+
+  const highlightedHtml = renderedCode.value;
+  let output = "";
+  let htmlIndex = 0;
+  let sourceOffset = 0;
+  let matchIndex = 0;
+  let markOpen = false;
+
+  const closeMarkIfDone = () => {
+    while (matchIndex < matches.length && sourceOffset >= matches[matchIndex].end) {
+      if (markOpen) {
+        output += "</mark>";
+        markOpen = false;
+      }
+      matchIndex += 1;
+    }
+  };
+
+  const openMarkIfNeeded = () => {
+    const match = matches[matchIndex];
+    if (!match || markOpen || sourceOffset < match.start || sourceOffset >= match.end) return;
+    const markClass =
+      matchIndex === activeMatchIndex.value ? "file-search-match file-search-match-active" : "file-search-match";
+    output += `<mark class="${markClass}">`;
+    markOpen = true;
+  };
+
+  while (htmlIndex < highlightedHtml.length) {
+    closeMarkIfDone();
+
+    if (highlightedHtml[htmlIndex] === "<") {
+      if (markOpen) {
+        output += "</mark>";
+        markOpen = false;
+      }
+      const tagEndIndex = highlightedHtml.indexOf(">", htmlIndex);
+      if (tagEndIndex === -1) break;
+      output += highlightedHtml.slice(htmlIndex, tagEndIndex + 1);
+      htmlIndex = tagEndIndex + 1;
+      continue;
+    }
+
+    openMarkIfNeeded();
+
+    if (highlightedHtml[htmlIndex] === "&") {
+      const entityEndIndex = highlightedHtml.indexOf(";", htmlIndex + 1);
+      if (entityEndIndex !== -1) {
+        output += highlightedHtml.slice(htmlIndex, entityEndIndex + 1);
+        htmlIndex = entityEndIndex + 1;
+        sourceOffset += 1;
+        continue;
+      }
+    }
+
+    output += highlightedHtml[htmlIndex];
+    htmlIndex += 1;
+    sourceOffset += 1;
+  }
+
+  if (markOpen) {
+    output += "</mark>";
+  }
+
+  return output;
+};
+const highlightedCodeWithMatches = computed(highlightedCodeSegments);
 
 const formatSize = (size: number) => {
   if (size < 1024) return `${size} B`;
@@ -117,6 +236,11 @@ const formatSize = (size: number) => {
 };
 
 const loadChildren = async (node?: TreeNode) => {
+  if (!node && rootLoadPromise) {
+    await rootLoadPromise;
+    return;
+  }
+
   const relativePath = node?.relativePath || "";
   if (node) {
     node.loading = true;
@@ -124,7 +248,7 @@ const loadChildren = async (node?: TreeNode) => {
     isLoadingTree.value = true;
   }
 
-  try {
+  const load = async () => {
     const result = await store.listProjectFiles(props.project.id, relativePath);
     const entries = (result?.entries || []).map((entry: ProjectFileTreeEntry) => ({ ...entry }));
     if (node) {
@@ -134,12 +258,51 @@ const loadChildren = async (node?: TreeNode) => {
     } else {
       rootNodes.value = entries;
     }
+  };
+
+  if (!node) {
+    rootLoadPromise = load();
+  }
+
+  try {
+    await (node ? load() : rootLoadPromise);
   } finally {
     if (node) {
       node.loading = false;
     } else {
       isLoadingTree.value = false;
+      rootLoadPromise = null;
     }
+  }
+};
+
+const pathParts = (relativePath: string) => relativePath.replace(/\\/g, "/").split("/").filter(Boolean);
+
+const normalizedRelativePath = (relativePath: string) => relativePath.replace(/\\/g, "/");
+
+const findNode = (nodes: TreeNode[], relativePath: string) =>
+  nodes.find((node) => normalizedRelativePath(node.relativePath) === normalizedRelativePath(relativePath));
+
+const expandPathToFile = async (relativePath: string) => {
+  const parts = pathParts(relativePath);
+  if (rootNodes.value.length === 0) {
+    await loadChildren();
+  }
+  if (parts.length <= 1) return;
+
+  let currentNodes = rootNodes.value;
+  const directoryParts = parts.slice(0, -1);
+  for (let index = 0; index < directoryParts.length; index += 1) {
+    const directoryPath = directoryParts.slice(0, index + 1).join("/");
+    const directoryNode = findNode(currentNodes, directoryPath);
+    if (!directoryNode || directoryNode.kind !== "directory") return;
+
+    if (!directoryNode.loaded) {
+      await loadChildren(directoryNode);
+    } else {
+      directoryNode.expanded = true;
+    }
+    currentNodes = directoryNode.children || [];
   }
 };
 
@@ -165,6 +328,7 @@ const openFile = async (node: TreeNode, edit = false) => {
     selectedFile.value = result;
     draftContent.value = result?.content || "";
     isEditing.value = Boolean(edit && result?.editable);
+    resetFindState(false);
     if (result?.relativePath) {
       emit("opened", result.relativePath);
     }
@@ -174,15 +338,17 @@ const openFile = async (node: TreeNode, edit = false) => {
 };
 
 const openRelativePath = async (relativePath: string) => {
-  const normalizedPath = relativePath.trim();
+  const normalizedPath = normalizedRelativePath(relativePath.trim());
   if (!normalizedPath) return;
   isLoadingFile.value = true;
   statusMessage.value = "";
   try {
+    await expandPathToFile(normalizedPath);
     const result = await store.readProjectFile(props.project.id, normalizedPath);
     selectedFile.value = result;
     draftContent.value = result?.content || "";
     isEditing.value = false;
+    resetFindState(false);
     if (result?.relativePath) {
       emit("opened", result.relativePath);
     }
@@ -211,6 +377,7 @@ const saveFile = async () => {
 const enterEdit = () => {
   if (canEdit.value) {
     isEditing.value = true;
+    void nextTick(syncTextareaScroll);
   }
 };
 
@@ -218,10 +385,194 @@ const exitEdit = () => {
   isEditing.value = false;
 };
 
-const handleKeydown = (event: KeyboardEvent) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+const resetFindState = (keepOpen: boolean) => {
+  findQuery.value = "";
+  replaceValue.value = "";
+  activeMatchIndex.value = 0;
+  isReplaceOpen.value = false;
+  if (!keepOpen) {
+    isFindOpen.value = false;
+  }
+};
+
+const focusFindInput = () => {
+  void nextTick(() => {
+    findInputRef.value?.focus();
+    findInputRef.value?.select();
+  });
+};
+
+const focusReplaceControls = () => {
+  void nextTick(() => {
+    const input = findQuery.value ? replaceInputRef.value : findInputRef.value;
+    input?.focus();
+    input?.select();
+  });
+};
+
+const openFind = () => {
+  if (!canSearchCurrentFile.value) return;
+  isFindOpen.value = true;
+  focusFindInput();
+};
+
+const openReplace = () => {
+  if (!canReplaceCurrentFile.value) return;
+  if (!isEditing.value) {
+    isEditing.value = true;
+    void nextTick(syncTextareaScroll);
+  }
+  isFindOpen.value = true;
+  isReplaceOpen.value = true;
+  focusReplaceControls();
+};
+
+const closeFind = () => {
+  resetFindState(false);
+  textareaRef.value?.focus();
+};
+
+const setActiveMatchIndex = (index: number) => {
+  const count = searchMatches.value.length;
+  if (count === 0) {
+    activeMatchIndex.value = 0;
+    return;
+  }
+  activeMatchIndex.value = ((index % count) + count) % count;
+};
+
+const selectActiveMatchInTextarea = () => {
+  const match = activeMatch.value;
+  if (!match || !isEditing.value) return;
+  void nextTick(() => {
+    textareaRef.value?.setSelectionRange(match.start, match.end);
+  });
+};
+
+const scrollActiveMatchIntoView = () => {
+  const match = activeMatch.value;
+  const scrollElement = codeScrollRef.value;
+  if (!match || !scrollElement) return;
+
+  const beforeMatch = draftContent.value.slice(0, match.start);
+  const lineIndex = beforeMatch.split("\n").length - 1;
+  const lineStart = beforeMatch.lastIndexOf("\n") + 1;
+  const columnIndex = beforeMatch.slice(lineStart).replace(/\t/g, "  ").length;
+  const computedStyle = window.getComputedStyle(scrollElement);
+  const lineHeight = Number.parseFloat(computedStyle.lineHeight) || 20;
+  const characterWidth = (Number.parseFloat(computedStyle.fontSize) || 12) * 0.62;
+  const targetTop = Math.max(0, lineIndex * lineHeight - scrollElement.clientHeight / 2 + lineHeight);
+  const targetLeft = Math.max(0, columnIndex * characterWidth - scrollElement.clientWidth / 3);
+  scrollElement.scrollTop = targetTop;
+  scrollElement.scrollLeft = targetLeft;
+  syncTextareaScroll();
+};
+
+const goToMatch = (direction: 1 | -1) => {
+  if (!hasMatches.value) return;
+  setActiveMatchIndex(activeMatchIndex.value + direction);
+  void nextTick(() => {
+    scrollActiveMatchIntoView();
+    selectActiveMatchInTextarea();
+    replaceInputRef.value?.focus();
+  });
+};
+
+const replaceActiveMatch = () => {
+  if (!canReplaceCurrentFile.value || !findQuery.value || !activeMatch.value) return;
+  if (!isEditing.value) {
+    isEditing.value = true;
+  }
+
+  const match = activeMatch.value;
+  const nextSearchOffset = match.start + replaceValue.value.length;
+  const nextContent = `${draftContent.value.slice(0, match.start)}${replaceValue.value}${draftContent.value.slice(
+    match.end,
+  )}`;
+  draftContent.value = nextContent;
+  const nextIndex = searchMatches.value.findIndex((nextMatch) => nextMatch.start >= nextSearchOffset);
+  activeMatchIndex.value = searchMatches.value.length === 0 ? 0 : nextIndex === -1 ? 0 : nextIndex;
+  void nextTick(() => {
+    scrollActiveMatchIntoView();
+    selectActiveMatchInTextarea();
+  });
+};
+
+const replaceAllMatches = () => {
+  if (!canReplaceCurrentFile.value || !findQuery.value || !hasMatches.value) return;
+  if (!isEditing.value) {
+    isEditing.value = true;
+  }
+  draftContent.value = draftContent.value.split(findQuery.value).join(replaceValue.value);
+  activeMatchIndex.value = 0;
+  void nextTick(syncTextareaScroll);
+};
+
+const handleFindKeydown = (event: KeyboardEvent) => {
+  if (event.key === "Enter") {
     event.preventDefault();
-    void saveFile();
+    goToMatch(event.shiftKey ? -1 : 1);
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFind();
+  }
+};
+
+const handleReplaceKeydown = (event: KeyboardEvent) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    replaceActiveMatch();
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFind();
+  }
+};
+
+const syncTextareaScroll = () => {
+  const scrollElement = codeScrollRef.value;
+  const textarea = textareaRef.value;
+  if (!scrollElement || !textarea) return;
+  textarea.scrollTop = scrollElement.scrollTop;
+  textarea.scrollLeft = scrollElement.scrollLeft;
+};
+
+const syncCodeScrollFromTextarea = () => {
+  const scrollElement = codeScrollRef.value;
+  const textarea = textareaRef.value;
+  if (!scrollElement || !textarea) return;
+  scrollElement.scrollTop = textarea.scrollTop;
+  scrollElement.scrollLeft = textarea.scrollLeft;
+};
+
+const handleCodeScroll = () => {
+  syncTextareaScroll();
+};
+
+const handleKeydown = (event: KeyboardEvent) => {
+  const key = event.key.toLowerCase();
+  if ((event.ctrlKey || event.metaKey) && key === "s") {
+    if (isEditing.value || canSave.value) {
+      event.preventDefault();
+      void saveFile();
+    }
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && key === "f") {
+    if (canSearchCurrentFile.value) {
+      event.preventDefault();
+      openFind();
+    }
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && key === "h") {
+    if (canReplaceCurrentFile.value) {
+      event.preventDefault();
+      openReplace();
+    }
   }
 };
 
@@ -240,9 +591,10 @@ const endResize = () => {
 };
 
 onMounted(() => {
-  void loadChildren();
   if (props.openRelativePath) {
     void openRelativePath(props.openRelativePath);
+  } else {
+    void loadChildren();
   }
   window.addEventListener("keydown", handleKeydown);
   window.addEventListener("mousemove", handleResize);
@@ -258,11 +610,25 @@ onUnmounted(() => {
 watch(
   () => props.openRelativePath,
   (relativePath) => {
-    if (relativePath && relativePath !== selectedRelativePath.value) {
-      void openRelativePath(relativePath);
+    if (!relativePath) return;
+    if (normalizedRelativePath(relativePath) === normalizedRelativePath(selectedRelativePath.value)) {
+      emit("opened", selectedRelativePath.value);
+      return;
     }
+    void openRelativePath(relativePath);
   },
 );
+
+watch(searchMatches, (matches) => {
+  if (matches.length === 0) {
+    activeMatchIndex.value = 0;
+    return;
+  }
+  if (activeMatchIndex.value >= matches.length) {
+    activeMatchIndex.value = matches.length - 1;
+  }
+  void nextTick(scrollActiveMatchIntoView);
+});
 </script>
 
 <template>
@@ -306,12 +672,22 @@ watch(
           <div class="flex shrink-0 items-center gap-2">
             <button
               type="button"
+              @click="openFind"
+              :disabled="!canSearchCurrentFile"
+              class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Find in file"
+              title="Find in file"
+            >
+              <Search :size="13" />
+            </button>
+            <button
+              type="button"
               v-if="!isEditing"
               @click="enterEdit"
               :disabled="!canEdit"
               :class="
                 cn(
-                  'flex h-7 items-center justify-center rounded border border-border-subtle bg-transparent px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                  'flex h-7 w-16 items-center justify-center rounded border border-border-subtle bg-transparent px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
                   'gap-1.5 text-on-surface-variant hover:bg-surface hover:text-primary',
                 )
               "
@@ -328,7 +704,7 @@ watch(
               :disabled="!canSave"
               :class="
                 cn(
-                  'flex h-7 items-center gap-1.5 rounded border border-border-subtle px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed',
+                  'flex h-7 w-7 items-center justify-center rounded border border-border-subtle text-xs font-bold transition-colors disabled:cursor-not-allowed',
                   canSave
                     ? 'bg-primary text-on-primary hover:bg-primary/90'
                     : 'bg-surface-container-low text-on-surface-variant opacity-60',
@@ -338,13 +714,12 @@ watch(
               title="Save file"
             >
               <Save :size="13" />
-              Save
             </button>
             <button
               v-if="isEditing"
               type="button"
               @click="exitEdit"
-              class="flex h-7 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+              class="flex h-7 w-16 items-center justify-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
               aria-label="Done editing"
               title="Done editing"
             >
@@ -354,54 +729,169 @@ watch(
           </div>
         </div>
 
-        <div class="min-h-0 flex-1 overflow-hidden bg-surface-container-lowest">
-          <div v-if="isLoadingFile" class="p-6 text-sm text-on-surface-variant">Loading...</div>
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest">
           <div
-            v-else-if="!selectedFile"
-            class="flex h-full items-center justify-center text-sm text-on-surface-variant"
+            v-if="isFindOpen && canSearchCurrentFile"
+            class="file-find-widget"
+            role="search"
+            aria-label="Find and replace in current file"
           >
-            Select a file to preview.
+            <div class="flex min-w-0 items-center gap-1">
+              <button
+                v-if="canReplaceCurrentFile"
+                type="button"
+                class="file-find-icon-button h-7 w-6"
+                aria-label="Toggle replace"
+                title="Toggle replace"
+                @click="isReplaceOpen ? (isReplaceOpen = false) : openReplace()"
+              >
+                <ChevronDown :size="14" :class="cn('transition-transform', !isReplaceOpen && '-rotate-90')" />
+              </button>
+              <span v-else class="w-6 shrink-0" />
+              <div class="file-find-input-wrap">
+                <Search :size="12" class="mr-1.5 shrink-0 text-on-surface-variant" />
+                <input
+                  ref="findInputRef"
+                  v-model="findQuery"
+                  type="text"
+                  class="min-w-0 flex-1 bg-transparent text-xs text-on-surface outline-none placeholder:text-on-surface-variant"
+                  placeholder="Find"
+                  aria-label="Find in current file"
+                  @keydown="handleFindKeydown"
+                />
+                <span
+                  v-if="matchStatusLabel"
+                  class="ml-2 shrink-0 whitespace-nowrap font-mono text-[10px] text-on-surface-variant"
+                >
+                  {{ matchStatusLabel }}
+                </span>
+              </div>
+              <button
+                type="button"
+                class="file-find-icon-button h-7 w-7 disabled:cursor-not-allowed disabled:opacity-35"
+                :disabled="!hasMatches"
+                aria-label="Previous match"
+                title="Previous match"
+                @click="goToMatch(-1)"
+              >
+                <ChevronUp :size="14" />
+              </button>
+              <button
+                type="button"
+                class="file-find-icon-button h-7 w-7 disabled:cursor-not-allowed disabled:opacity-35"
+                :disabled="!hasMatches"
+                aria-label="Next match"
+                title="Next match"
+                @click="goToMatch(1)"
+              >
+                <ChevronDown :size="14" />
+              </button>
+              <button
+                type="button"
+                class="file-find-icon-button h-7 w-7 hover:text-on-surface"
+                aria-label="Close find"
+                title="Close find"
+                @click="closeFind"
+              >
+                <X :size="14" />
+              </button>
+            </div>
+            <div v-if="isReplaceOpen && canReplaceCurrentFile" class="flex min-w-0 items-center gap-1 pl-7">
+              <input
+                ref="replaceInputRef"
+                v-model="replaceValue"
+                type="text"
+                class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface-container-low px-2 text-xs text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary focus:bg-surface-container-lowest"
+                placeholder="Replace"
+                aria-label="Replace with"
+                @keydown="handleReplaceKeydown"
+              />
+              <button
+                type="button"
+                class="file-find-icon-button h-7 w-7 border border-border-subtle disabled:cursor-not-allowed disabled:opacity-35"
+                :disabled="!hasMatches"
+                aria-label="Replace current match"
+                title="Replace current match"
+                @click="replaceActiveMatch"
+              >
+                <Replace :size="13" />
+              </button>
+              <button
+                type="button"
+                class="file-find-icon-button h-7 w-7 border border-border-subtle disabled:cursor-not-allowed disabled:opacity-35"
+                :disabled="!hasMatches"
+                aria-label="Replace all matches"
+                title="Replace all matches"
+                @click="replaceAllMatches"
+              >
+                <ReplaceAll :size="13" />
+              </button>
+            </div>
           </div>
-          <div
-            v-else-if="selectedFile.previewKind === 'text' && isMarkdownPreview && !isEditing"
-            class="h-full bg-surface-container-lowest"
-          >
+
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <div v-if="isLoadingFile" class="p-6 text-sm text-on-surface-variant">Loading...</div>
             <div
-              class="memo-rendered themed-scrollbar h-full overflow-auto px-6 py-5 text-on-surface"
-              v-html="renderedMarkdown"
-            />
-          </div>
-          <div
-            v-else-if="selectedFile.previewKind === 'text'"
-            :class="
-              cn(
-                'grid h-full grid-cols-[3rem_minmax(0,1fr)] overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs leading-5 [font-family:Consolas,\'JetBrains_Mono\',\'Fira_Code\',ui-monospace,SFMono-Regular,Menlo,Monaco,monospace]',
-              )
-            "
-          >
-            <pre
-              class="themed-scrollbar select-none overflow-hidden border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 py-4 text-right text-on-surface-variant/70"
-              >{{ lineNumbers }}</pre
+              v-else-if="!selectedFile"
+              class="flex h-full items-center justify-center text-sm text-on-surface-variant"
             >
-            <textarea
-              v-if="isEditing"
-              v-model="draftContent"
-              class="themed-scrollbar h-full w-full resize-none bg-transparent p-4 text-on-surface outline-none"
-              @dblclick="enterEdit"
-            />
-            <pre v-else class="themed-scrollbar min-w-0 overflow-auto bg-[var(--code-preview-bg)] p-4 text-on-surface">
-              <code class="hljs" v-html="renderedCode" />
-            </pre>
-          </div>
-          <div v-else-if="selectedFile.previewKind === 'image'" class="flex h-full items-center justify-center p-6">
-            <img :src="selectedFile.dataUrl" :alt="selectedFile.name" class="max-h-full max-w-full object-contain" />
-          </div>
-          <div
-            v-else
-            class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-on-surface-variant"
-          >
-            <FileImage :size="28" />
-            <span>{{ selectedFile.message || "Preview unavailable." }}</span>
+              Select a file to preview.
+            </div>
+            <div
+              v-else-if="selectedFile.previewKind === 'text' && isMarkdownPreview && !isEditing && !isFindOpen"
+              class="h-full bg-surface-container-lowest"
+            >
+              <div
+                class="memo-rendered themed-scrollbar h-full overflow-auto px-6 py-5 text-on-surface"
+                v-html="renderedMarkdown"
+              />
+            </div>
+            <div
+              v-else-if="selectedFile.previewKind === 'text'"
+              :class="
+                cn(
+                  'file-code-surface h-full overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs leading-5 [font-family:Consolas,\'JetBrains_Mono\',\'Fira_Code\',ui-monospace,SFMono-Regular,Menlo,Monaco,monospace]',
+                )
+              "
+            >
+              <div
+                ref="codeScrollRef"
+                class="themed-scrollbar file-code-scroll"
+                :style="editorContentStyle"
+                @scroll="handleCodeScroll"
+              >
+                <pre
+                  class="file-code-gutter select-none border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 py-4 text-right text-on-surface-variant/70"
+                  >{{ lineNumbers }}</pre
+                >
+                <div class="file-code-main">
+                  <pre
+                    class="file-code-layer bg-[var(--code-preview-bg)] p-4 text-on-surface"
+                  ><code class="hljs" v-html="highlightedCodeWithMatches" /></pre>
+                  <textarea
+                    v-if="isEditing"
+                    ref="textareaRef"
+                    v-model="draftContent"
+                    class="file-code-textarea themed-scrollbar p-4 text-on-surface outline-none"
+                    spellcheck="false"
+                    wrap="off"
+                    aria-label="Edit file content"
+                    @scroll="syncCodeScrollFromTextarea"
+                    @dblclick="enterEdit"
+                  />
+                </div>
+              </div>
+            </div>
+            <div v-else-if="selectedFile.previewKind === 'image'" class="flex h-full items-center justify-center p-6">
+              <img :src="selectedFile.dataUrl" :alt="selectedFile.name" class="max-h-full max-w-full object-contain" />
+            </div>
+            <div
+              v-else
+              class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-on-surface-variant"
+            >
+              <FileImage :size="28" />
+              <span>{{ selectedFile.message || "Preview unavailable." }}</span>
+            </div>
           </div>
         </div>
       </section>

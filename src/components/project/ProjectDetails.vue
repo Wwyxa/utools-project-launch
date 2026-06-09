@@ -161,8 +161,10 @@ const handleOpenGitFile = (relativePath: string) => {
   activeTab.value = "files";
 };
 
+const normalizedRelativePath = (relativePath: string) => relativePath.replace(/\\/g, "/");
+
 const handleFileOpened = (relativePath: string) => {
-  if (fileOpenRequest.value === relativePath) {
+  if (normalizedRelativePath(fileOpenRequest.value) === normalizedRelativePath(relativePath)) {
     fileOpenRequest.value = "";
   }
 };
