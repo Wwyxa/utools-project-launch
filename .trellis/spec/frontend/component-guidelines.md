@@ -161,6 +161,21 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 
 **Related**: `src/components/project/FilesTab.vue`, `src/index.css`.
 
+### Convention: File Viewer Highlighted Editing
+
+**What**: The Files tab code viewer/editor keeps one shared no-wrap code surface for read and edit states. Edit mode overlays a transparent textarea on top of the highlighted code layer instead of swapping to a visually different plain textarea.
+
+**Why**: Switching to a normal textarea loses syntax highlighting, wraps long lines differently, and makes the compact file viewer feel like two unrelated tools.
+
+**Rules**:
+
+- Keep the gutter, code layer, and textarea on the same font, line height, padding, tab size, and no-wrap behavior.
+- Synchronize vertical and horizontal scroll between the textarea and highlighted layer.
+- Search match marks should be injected into the full highlighted HTML by source offsets. Do not split the source into independent highlighted slices around matches, because a match can cut through strings, tags, or comments and break token coloring.
+- Keep find/replace controls current-file scoped and compact; avoid large panels or repository-wide search UI unless the task explicitly asks for it.
+
+**Related**: `src/components/project/FilesTab.vue`, `src/index.css`, `src/lib/markdown.ts`.
+
 ### Convention: Semantic Status Surfaces
 
 **What**: When a component represents running, success, warning, error, or info state, use the shared semantic tokens from `src/index.css` instead of inventing a local palette.
