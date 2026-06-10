@@ -57,7 +57,7 @@ The current uTools integration follows this rule: UI components call store actio
 
 ### 2. Signatures
 
-- `Project` includes display metadata such as `type`, `kind`, optional `icon`, optional `quickLink`, and optional grouping metadata like `group`.
+- `Project` includes display metadata such as `type`, `kind`, optional `icon`, optional `quickLink`, optional grouping metadata like `group`, and visibility metadata `visibility?: "public" | "private"` plus `ownerDeviceId?: string`.
 - `ProjectFormValue` includes the same editable metadata fields, with optional persisted project fields normalized to form-safe strings.
 - Store persistence path: `saveProjectForm()` -> `persistProjects()` -> `bridge.saveProjects(...)`.
 - uTools preload persistence path: `writeStoredProjects(projects)` -> per-project docs containing `project: toStoredProject(project)`.
@@ -70,6 +70,8 @@ The current uTools integration follows this rule: UI components call store actio
 - `type`, `kind`, and `icon` are linked metadata: icon selection may update type/kind, and all three must round-trip together.
 - `quickLink` is a project-level optional URL string. Trim it when moving between persisted projects, hydrated projects, form drafts, and saved projects; keep missing/legacy values as an empty string in form state and absent/empty in project state.
 - `group` is project-level display metadata. Trim it at every boundary and treat missing or whitespace-only values as the ungrouped bucket in Dashboard UI while keeping form state as an empty string.
+- `visibility` controls cross-device display only, not whether a project is stored. Missing legacy values normalize to `"public"`; new project forms default to `"private"` so they stay on the current device unless explicitly made public.
+- `ownerDeviceId` is generated and stored in device-local browser storage. Private projects render only when `ownerDeviceId` matches the current device id; hidden private projects must remain in the project array so saving current-device changes does not delete other devices' private projects from shared storage.
 - Components must call store actions for project quick links. Do not call `window.open`, `shell.openExternal`, or `bridge.openPath` directly from `ProjectCard.vue`.
 - `bridge.openPath` may receive both file-system paths and quick-link URLs. The browser fallback and uTools preload must keep file paths opening through the existing path behavior while routing `http://`, `https://`, protocol-relative URLs, `mailto:`, and `utools:` URLs through external URL opening.
 - Path inspection may infer metadata for new/blank forms, but it must not overwrite an explicit user-selected icon when the draft already has one.
@@ -82,6 +84,8 @@ The current uTools integration follows this rule: UI components call store actio
 - Whitespace-only `quickLink` -> normalize to `""` before persisting or rendering.
 - Missing persisted `group` -> hydrate/form value is `""`; dashboard displays the project under the localized ungrouped label.
 - Whitespace-only `group` -> normalize to `""` before persisting, grouping, or rendering.
+- Missing persisted `visibility` -> normalize to `"public"` for backward compatibility.
+- Private project with a different `ownerDeviceId` -> keep it in state/persistence but exclude it from dashboard lists, search-open matching, path availability checks, refreshes, and sort operations.
 - Configured URL-like `quickLink` -> open externally through the bridge and prevent card click bubbling in the component action.
 - `bridge.openPath` receives a normal local folder/file path -> keep existing path opening behavior, not external URL handling.
 - Missing persisted `type` or `kind` -> keep existing defaults or normalize to a safe custom project type.
@@ -95,6 +99,8 @@ The current uTools integration follows this rule: UI components call store actio
 - Base: older stored projects without `icon` still load with an inferred icon.
 - Base: older stored projects without `quickLink` still open edit forms with an empty quick-link field.
 - Base: older stored projects without `group` still open edit forms with an empty group field and appear under the ungrouped dashboard section.
+- Base: older stored projects without `visibility` still appear on every device as public projects.
+- Bad: filtering private projects out before persistence, which can remove another device's private projects the next time the current device saves.
 - Bad: adding `Project.icon`, `Project.quickLink`, `Project.group`, or similar display metadata and store persistence but forgetting `public/preload.js#toStoredProject`, causing uTools db docs to drop the field.
 
 ### 6. Tests Required
@@ -105,6 +111,7 @@ The current uTools integration follows this rule: UI components call store actio
 - Manual smoke test in browser preview: save and reload from fallback storage.
 - Regression check: trigger path inspection after choosing an icon and verify the explicit icon is not reset unexpectedly.
 - Regression check: projects without quick links should not gain an empty dashboard action slot.
+- Regression check: create a private project, confirm it persists with the current `ownerDeviceId`, and confirm another device id would hide it without deleting it.
 
 ### 7. Wrong vs Correct
 
@@ -131,6 +138,8 @@ function toStoredProject(project) {
     icon: project.icon || "custom",
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
+    visibility: project.visibility === "private" ? "private" : "public",
+    ownerDeviceId: project.ownerDeviceId || getCurrentDeviceId(),
   };
 }
 ```
@@ -148,6 +157,7 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 ### 2. Signatures
 
 - `terminalPreferences` and `editorPreferences` live in the Pinia store.
+- Terminal/editor preference storage keys are device-local (`utools-project-launch.local-settings.v1` and `utools-project-launch.local-editor-settings.v1`). Legacy shared keys may be read as a migration fallback, but writes must go only to device-local storage.
 - Store actions own updates: `setDefaultTerminal(...)`, `setDefaultEditor(...)`, and custom command setters.
 - Project actions own launches: `openProjectInTerminal(projectId)` and `openProjectInEditor(projectId)`.
 
@@ -156,25 +166,30 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - Settings components update preferences only through store actions.
 - Project detail components launch external tools only through project-id store actions.
 - Store actions must clone current preferences before passing them to the bridge to avoid accidental mutation during async work.
+- Default terminal and editor preferences are machine-specific. Do not write them to uTools shared `dbStorage`, because command names and install paths vary across synced devices.
 - Failed launches should append a project log entry instead of throwing into the component.
 
 ### 4. Validation & Error Matrix
 
 - Project id missing -> no-op.
 - Project path unavailable -> no-op and leave controls disabled in the component.
+- Missing device-local terminal/editor preference -> read the legacy shared key once as fallback, then persist future edits only under the local key.
 - Bridge returns `launched: false` -> append an `ERROR` log with the bridge message.
 - Bridge throws -> catch in the store and append an `ERROR` log.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: settings selects Cursor, the store persists the preference, and the detail-page editor button uses it.
+- Good: device A selects Windows Terminal while device B selects PowerShell, and each device keeps its own preference after shared project data syncs.
 - Base: browser preview keeps the action safe and records unsupported behavior through fallback results.
 - Bad: settings writes localStorage directly or a component spawns an editor command.
+- Bad: terminal/editor preferences are saved through uTools `dbStorage`, causing one device's external tool choice to overwrite another device's local setup.
 
 ### 6. Tests Required
 
 - `npm run lint` should verify store action and bridge types.
 - Manual smoke test should cover changing editor settings, reloading, and launching from a project detail page.
+- Manual smoke test should cover changing terminal/editor settings on one device without changing another synced device's settings.
 
 ### 7. Wrong vs Correct
 

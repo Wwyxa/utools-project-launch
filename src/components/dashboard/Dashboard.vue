@@ -86,7 +86,7 @@ const hasSearchQuery = computed(() => normalizedSearchQuery.value.length > 0);
 const hasFilteredOutProjects = computed(
   () =>
     hasSearchQuery.value &&
-    store.projects.length > 0 &&
+    store.visibleProjects.length > 0 &&
     projects.value.length === 0 &&
     unavailableProjects.value.length === 0,
 );
@@ -285,7 +285,7 @@ const handleProjectDragEnd = () => {
     </p>
 
     <div
-      v-if="store.projects.length === 0"
+      v-if="store.visibleProjects.length === 0"
       class="m-6 border border-dashed border-border-subtle rounded-xl p-8 text-center"
     >
       <p class="text-sm text-on-surface-variant mb-4">{{ t.dashboard.empty }}</p>

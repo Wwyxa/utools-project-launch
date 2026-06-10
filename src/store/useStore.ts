@@ -32,6 +32,7 @@ import type {
   ProjectFileWriteResult,
   ProjectIconKey,
   ProjectKind,
+  ProjectVisibility,
   ProjectScript,
   ProjectScriptFormValue,
   TerminalPreferences,
@@ -54,6 +55,7 @@ const createAiPromptModeId = () => `custom-${Date.now()}`;
 const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
 const createProjectId = () => `project-${Date.now()}`;
+const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
 let projectConfigMessageClearTimer: number | null = null;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
@@ -101,6 +103,31 @@ function normalizeProjectGroup(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeProjectVisibility(value: unknown): ProjectVisibility {
+  return value === "private" ? "private" : "public";
+}
+
+function loadCurrentDeviceId(): string {
+  try {
+    const stored = window.localStorage?.getItem(deviceIdStorageKey);
+    if (stored) {
+      return stored;
+    }
+
+    const nextId = window.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage?.setItem(deviceIdStorageKey, nextId);
+    return nextId;
+  } catch (error) {
+    return "device-fallback";
+  }
+}
+
+const currentDeviceId = loadCurrentDeviceId();
+
+function isProjectVisibleOnCurrentDevice(project: Project): boolean {
+  return normalizeProjectVisibility(project.visibility) === "public" || project.ownerDeviceId === currentDeviceId;
+}
+
 function toPersistedProject(project: Project, sortOrder?: number): Project {
   const persistedStatus = project.pathExists === false ? ProjectStatus.WARNING : ProjectStatus.STOPPED;
   const persistedSortOrder =
@@ -110,6 +137,8 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
     id: project.id,
     name: project.name,
     path: project.path,
+    visibility: normalizeProjectVisibility(project.visibility),
+    ownerDeviceId: project.ownerDeviceId || currentDeviceId,
     type: project.type,
     kind: project.kind,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
@@ -246,6 +275,7 @@ function formFromProject(project: Project): ProjectFormValue {
     id: project.id,
     name: project.name,
     path: project.path,
+    visibility: normalizeProjectVisibility(project.visibility),
     type: project.type,
     kind: project.kind,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
@@ -302,6 +332,8 @@ function inferProjectIcon(kind: ProjectKind, type = "", name = ""): ProjectIconK
 function hydrateProject(project: Project): Project {
   return {
     ...project,
+    visibility: normalizeProjectVisibility(project.visibility),
+    ownerDeviceId: project.ownerDeviceId || currentDeviceId,
     icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
@@ -539,6 +571,7 @@ function createBlankProjectForm(): ProjectFormValue {
     id: null,
     name: "",
     path: "",
+    visibility: "private",
     type: "Node.js",
     kind: "node",
     icon: "node",
@@ -646,8 +679,11 @@ export const useStore = defineStore("app", {
   }),
 
   getters: {
-    availableProjects: (state): Project[] => state.projects.filter((project) => project.pathExists !== false),
-    unavailableProjects: (state): Project[] => state.projects.filter((project) => project.pathExists === false),
+    visibleProjects: (state): Project[] => state.projects.filter(isProjectVisibleOnCurrentDevice),
+    availableProjects: (state): Project[] =>
+      state.projects.filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false),
+    unavailableProjects: (state): Project[] =>
+      state.projects.filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists === false),
     selectedProject: (state): Project | undefined =>
       state.projects.find((project) => project.id === state.selectedProjectId),
     pendingDeleteProject: (state): Project | undefined =>
@@ -665,7 +701,9 @@ export const useStore = defineStore("app", {
         const storedProjects = await bridge.loadProjects();
         if (this.supportsBridge || storedProjects.length > 0) {
           this.projects = storedProjects.map(hydrateProject);
-          this.selectedProjectId = storedProjects.some((project) => project.id === this.selectedProjectId)
+          this.selectedProjectId = this.projects.some(
+            (project) => project.id === this.selectedProjectId && isProjectVisibleOnCurrentDevice(project),
+          )
             ? this.selectedProjectId
             : null;
         }
@@ -699,6 +737,9 @@ export const useStore = defineStore("app", {
     async refreshProjectAvailability() {
       await Promise.all(
         this.projects.map(async (project) => {
+          if (!isProjectVisibleOnCurrentDevice(project)) {
+            return;
+          }
           const exists = await bridge.pathExists(project.path);
           project.pathExists = exists;
           project.unavailableReason = exists ? "" : "当前设备无法访问该路径";
@@ -961,8 +1002,12 @@ export const useStore = defineStore("app", {
       }
 
       const matchedProject =
-        this.projects.find((project) => project.name.toLowerCase() === normalizedQuery) ||
-        this.projects.find((project) => project.name.toLowerCase().includes(normalizedQuery));
+        this.projects.find(
+          (project) => isProjectVisibleOnCurrentDevice(project) && project.name.toLowerCase() === normalizedQuery,
+        ) ||
+        this.projects.find(
+          (project) => isProjectVisibleOnCurrentDevice(project) && project.name.toLowerCase().includes(normalizedQuery),
+        );
       if (!matchedProject) {
         return false;
       }
@@ -1172,6 +1217,8 @@ export const useStore = defineStore("app", {
         id: projectId,
         name: payload.name.trim(),
         path: payload.path.trim(),
+        visibility: payload.visibility,
+        ownerDeviceId: payload.visibility === "private" ? currentDeviceId : existingProject?.ownerDeviceId || currentDeviceId,
         type: payload.type,
         kind: payload.kind,
         icon: payload.icon,
@@ -1286,7 +1333,7 @@ export const useStore = defineStore("app", {
       await this.refreshProjectAvailability();
       await Promise.all(
         this.projects
-          .filter((project) => project.pathExists !== false)
+          .filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false)
           .map((project) => this.refreshGitSnapshot(project.id)),
       );
     },
@@ -1297,7 +1344,8 @@ export const useStore = defineStore("app", {
       }
 
       const isUnavailable = project.pathExists === false;
-      const isSameSection = (item: Project) => (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+      const isSameSection = (item: Project) =>
+        isProjectVisibleOnCurrentDevice(item) && (isUnavailable ? item.pathExists === false : item.pathExists !== false);
       const sectionProjects = this.projects.filter(isSameSection);
       const sectionProjectIds = new Set(sectionProjects.map((item) => item.id));
       const scopedSectionProjects = (scopeProjectIds || [])
@@ -1352,12 +1400,13 @@ export const useStore = defineStore("app", {
 
       const project = this.projects.find((item) => item.id === projectId);
       const targetProject = this.projects.find((item) => item.id === targetProjectId);
-      if (!project || !targetProject) {
+      if (!project || !targetProject || !isProjectVisibleOnCurrentDevice(project)) {
         return false;
       }
 
       const isUnavailable = project.pathExists === false;
-      const isSameSection = (item: Project) => (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+      const isSameSection = (item: Project) =>
+        isProjectVisibleOnCurrentDevice(item) && (isUnavailable ? item.pathExists === false : item.pathExists !== false);
       if (!isSameSection(targetProject)) {
         return false;
       }

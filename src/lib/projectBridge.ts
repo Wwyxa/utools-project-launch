@@ -33,7 +33,9 @@ import type {
 
 const fallbackStorageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
+const localTerminalPreferencesStorageKey = "utools-project-launch.local-settings.v1";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
+const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
@@ -212,11 +214,9 @@ const normalizeAiPreferences = (value: unknown): AiPreferences => {
 
 const readStoredTerminalPreferences = (): TerminalPreferences => {
   try {
-    if (window.utools?.dbStorage) {
-      return normalizeTerminalPreferences(window.utools.dbStorage.getItem(terminalPreferencesStorageKey));
-    }
-
-    const raw = window.localStorage?.getItem(terminalPreferencesStorageKey);
+    const raw =
+      window.localStorage?.getItem(localTerminalPreferencesStorageKey) ||
+      window.localStorage?.getItem(terminalPreferencesStorageKey);
     if (!raw) {
       return defaultTerminalPreferences();
     }
@@ -231,12 +231,7 @@ const writeStoredTerminalPreferences = (preferences: TerminalPreferences) => {
   const normalized = normalizeTerminalPreferences(preferences);
 
   try {
-    if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(terminalPreferencesStorageKey, normalized);
-      return;
-    }
-
-    window.localStorage?.setItem(terminalPreferencesStorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(localTerminalPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
@@ -244,11 +239,9 @@ const writeStoredTerminalPreferences = (preferences: TerminalPreferences) => {
 
 const readStoredEditorPreferences = (): EditorPreferences => {
   try {
-    if (window.utools?.dbStorage) {
-      return normalizeEditorPreferences(window.utools.dbStorage.getItem(editorPreferencesStorageKey));
-    }
-
-    const raw = window.localStorage?.getItem(editorPreferencesStorageKey);
+    const raw =
+      window.localStorage?.getItem(localEditorPreferencesStorageKey) ||
+      window.localStorage?.getItem(editorPreferencesStorageKey);
     return raw ? normalizeEditorPreferences(JSON.parse(raw)) : defaultEditorPreferences();
   } catch (error) {
     return defaultEditorPreferences();
@@ -258,11 +251,7 @@ const readStoredEditorPreferences = (): EditorPreferences => {
 const writeStoredEditorPreferences = (preferences: EditorPreferences) => {
   const normalized = normalizeEditorPreferences(preferences);
   try {
-    if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(editorPreferencesStorageKey, normalized);
-      return;
-    }
-    window.localStorage?.setItem(editorPreferencesStorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(localEditorPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }

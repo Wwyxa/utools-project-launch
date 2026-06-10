@@ -11,9 +11,12 @@ const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
+const localTerminalPreferencesStorageKey = "utools-project-launch.local-settings.v1";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
+const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
+const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
 const gitCommitFieldSeparator = "\x1f";
@@ -244,6 +247,21 @@ function normalizeEditorPreferences(value) {
   };
 }
 
+function getCurrentDeviceId() {
+  try {
+    const stored = window.localStorage?.getItem(deviceIdStorageKey);
+    if (stored) {
+      return stored;
+    }
+
+    const nextId = globalThis.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage?.setItem(deviceIdStorageKey, nextId);
+    return nextId;
+  } catch (error) {
+    return "device-fallback";
+  }
+}
+
 function getDefaultEnvironmentPreferences() {
   return { enabledToolKeys: ["node", "npm", "pnpm", "python", "go", "git"] };
 }
@@ -343,11 +361,9 @@ function normalizeAiPreferences(value) {
 
 function readTerminalPreferences() {
   try {
-    if (window.utools?.dbStorage) {
-      return normalizeTerminalPreferences(window.utools.dbStorage.getItem(terminalPreferencesStorageKey));
-    }
-
-    const raw = window.localStorage?.getItem(terminalPreferencesStorageKey);
+    const raw =
+      window.localStorage?.getItem(localTerminalPreferencesStorageKey) ||
+      window.localStorage?.getItem(terminalPreferencesStorageKey);
     if (!raw) {
       return getDefaultTerminalPreferences();
     }
@@ -362,12 +378,7 @@ function saveTerminalPreferences(preferences) {
   const normalized = normalizeTerminalPreferences(preferences);
 
   try {
-    if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(terminalPreferencesStorageKey, normalized);
-      return;
-    }
-
-    window.localStorage?.setItem(terminalPreferencesStorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(localTerminalPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
@@ -375,10 +386,9 @@ function saveTerminalPreferences(preferences) {
 
 function readEditorPreferences() {
   try {
-    if (window.utools?.dbStorage) {
-      return normalizeEditorPreferences(window.utools.dbStorage.getItem(editorPreferencesStorageKey));
-    }
-    const raw = window.localStorage?.getItem(editorPreferencesStorageKey);
+    const raw =
+      window.localStorage?.getItem(localEditorPreferencesStorageKey) ||
+      window.localStorage?.getItem(editorPreferencesStorageKey);
     return raw ? normalizeEditorPreferences(JSON.parse(raw)) : getDefaultEditorPreferences();
   } catch (error) {
     return getDefaultEditorPreferences();
@@ -388,11 +398,7 @@ function readEditorPreferences() {
 function saveEditorPreferences(preferences) {
   const normalized = normalizeEditorPreferences(preferences);
   try {
-    if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(editorPreferencesStorageKey, normalized);
-      return;
-    }
-    window.localStorage?.setItem(editorPreferencesStorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(localEditorPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
@@ -1939,10 +1945,13 @@ function openPath(targetPath) {
 }
 
 function toStoredProject(project, index = 0) {
+  const visibility = project.visibility === "private" ? "private" : "public";
   return {
     id: project.id,
     name: project.name,
     path: project.path,
+    visibility,
+    ownerDeviceId: project.ownerDeviceId || getCurrentDeviceId(),
     type: project.type || "Custom",
     kind: project.kind || "custom",
     icon: project.icon || "custom",

@@ -183,7 +183,40 @@ const handleScriptDrop = (targetScriptId: string) => {
                 class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
               />
             </label>
-            <label class="space-y-1.5 md:col-span-6">
+            <div class="space-y-1.5 md:col-span-3">
+              <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.visibility }}</span>
+              <div class="grid grid-cols-2 rounded-lg border border-border-subtle bg-surface-container-low p-0.5">
+                <button
+                  type="button"
+                  @click="store.updateProjectForm({ visibility: 'private' })"
+                  :class="
+                    cn(
+                      'rounded-md px-2 py-1.5 text-xs font-bold transition-colors',
+                      form.visibility === 'private'
+                        ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                        : 'text-on-surface-variant hover:bg-surface-container',
+                    )
+                  "
+                >
+                  {{ t.modal.visibilityPrivate }}
+                </button>
+                <button
+                  type="button"
+                  @click="store.updateProjectForm({ visibility: 'public' })"
+                  :class="
+                    cn(
+                      'rounded-md px-2 py-1.5 text-xs font-bold transition-colors',
+                      form.visibility === 'public'
+                        ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                        : 'text-on-surface-variant hover:bg-surface-container',
+                    )
+                  "
+                >
+                  {{ t.modal.visibilityPublic }}
+                </button>
+              </div>
+            </div>
+            <label class="space-y-1.5 md:col-span-3">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.quickLink }}</span>
               <div class="flex gap-2">
                 <input

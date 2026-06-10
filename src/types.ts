@@ -29,6 +29,7 @@ export type ProjectIconKey =
 
 export type DefaultTerminalKind = "builtin" | "windows-terminal" | "powershell" | "cmd" | "custom";
 export type DefaultEditorKind = "vscode" | "cursor" | "custom";
+export type ProjectVisibility = "public" | "private";
 export type EnvironmentToolKey = "node" | "npm" | "pnpm" | "yarn" | "python" | "pip" | "go" | "git" | "docker";
 export type EnvironmentToolStatus = "available" | "missing" | "error";
 export type AiProviderKind = "utools" | "openai-compatible" | "anthropic-compatible";
@@ -277,6 +278,7 @@ export interface ProjectFormValue {
   id: string | null;
   name: string;
   path: string;
+  visibility: ProjectVisibility;
   type: string;
   kind: ProjectKind;
   icon: ProjectIconKey;
@@ -293,6 +295,8 @@ export interface Project {
   id: string;
   name: string;
   path: string;
+  visibility?: ProjectVisibility;
+  ownerDeviceId?: string;
   type: string;
   kind: ProjectKind;
   icon?: ProjectIconKey;
