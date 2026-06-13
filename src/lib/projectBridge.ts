@@ -38,6 +38,7 @@ const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
+const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
 
 要求：
@@ -353,7 +354,25 @@ const unavailableGitAction = (message = "浏览器预览无法执行 Git 写操�
   message,
 });
 
+const loadFallbackDeviceId = (): string => {
+  try {
+    const stored = window.localStorage?.getItem(deviceIdStorageKey)?.trim();
+    if (stored) {
+      return stored;
+    }
+
+    const nextId = window.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage?.setItem(deviceIdStorageKey, nextId);
+    return nextId;
+  } catch (error) {
+    return "device-fallback";
+  }
+};
+
 const fallbackBridge: ProjectBridge = {
+  loadDeviceId() {
+    return loadFallbackDeviceId();
+  },
   async loadProjects() {
     try {
       const raw = window.localStorage?.getItem(fallbackStorageKey);

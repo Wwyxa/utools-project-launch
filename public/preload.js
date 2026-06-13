@@ -17,6 +17,7 @@ const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-set
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const deviceIdStorageKey = "utools-project-launch.device-id.v1";
+const deviceIdFileName = "device-id.v1";
 const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
 const gitCommitFieldSeparator = "\x1f";
@@ -247,19 +248,71 @@ function normalizeEditorPreferences(value) {
   };
 }
 
-function getCurrentDeviceId() {
-  try {
-    const stored = window.localStorage?.getItem(deviceIdStorageKey);
-    if (stored) {
-      return stored;
-    }
+function normalizeDeviceId(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
-    const nextId = globalThis.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    window.localStorage?.setItem(deviceIdStorageKey, nextId);
-    return nextId;
+function getDeviceIdFilePath() {
+  const overrideDir = normalizeDeviceId(process.env.UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR);
+  const baseDir = overrideDir || path.join(os.homedir(), ".utools-project-launch");
+  return path.join(baseDir, deviceIdFileName);
+}
+
+function readDeviceIdFile() {
+  try {
+    return normalizeDeviceId(fs.readFileSync(getDeviceIdFilePath(), "utf8"));
   } catch (error) {
-    return "device-fallback";
+    return "";
   }
+}
+
+function writeDeviceIdFile(deviceId) {
+  try {
+    const filePath = getDeviceIdFilePath();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, `${deviceId}\n`, "utf8");
+  } catch (error) {
+    // The renderer localStorage fallback still keeps browser preview usable if the file cannot be written.
+  }
+}
+
+function readBrowserDeviceId() {
+  try {
+    return normalizeDeviceId(window.localStorage?.getItem(deviceIdStorageKey));
+  } catch (error) {
+    return "";
+  }
+}
+
+function writeBrowserDeviceId(deviceId) {
+  try {
+    window.localStorage?.setItem(deviceIdStorageKey, deviceId);
+  } catch (error) {
+    // Keep device id persistence best-effort for browser preview and restricted webviews.
+  }
+}
+
+function createDeviceId() {
+  return globalThis.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getCurrentDeviceId() {
+  const fileDeviceId = readDeviceIdFile();
+  if (fileDeviceId) {
+    writeBrowserDeviceId(fileDeviceId);
+    return fileDeviceId;
+  }
+
+  const browserDeviceId = readBrowserDeviceId();
+  if (browserDeviceId) {
+    writeDeviceIdFile(browserDeviceId);
+    return browserDeviceId;
+  }
+
+  const nextId = createDeviceId();
+  writeDeviceIdFile(nextId);
+  writeBrowserDeviceId(nextId);
+  return nextId;
 }
 
 function getDefaultEnvironmentPreferences() {
@@ -2066,21 +2119,59 @@ function readProjectDocs() {
     .filter((doc) => doc && typeof doc._id === "string" && doc._id.startsWith(projectDocPrefix));
 }
 
+function normalizeStoredProjects(projects, fallbackIndexOffset = 0) {
+  return Array.isArray(projects)
+    ? projects.map((project, index) => toStoredProject(project, fallbackIndexOffset + index))
+    : [];
+}
+
+function mergeStoredProjects(legacyProjects, docProjects) {
+  const mergedByProjectId = new Map();
+
+  normalizeStoredProjects(legacyProjects).forEach((project) => {
+    if (typeof project.id === "string" && project.id) {
+      mergedByProjectId.set(project.id, project);
+    }
+  });
+
+  normalizeStoredProjects(docProjects, Array.isArray(legacyProjects) ? legacyProjects.length : 0).forEach((project) => {
+    if (typeof project.id === "string" && project.id) {
+      mergedByProjectId.set(project.id, project);
+    }
+  });
+
+  return sortProjectsByStoredOrder(Array.from(mergedByProjectId.values()));
+}
+
+function hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects) {
+  const docProjectIds = new Set(
+    docProjects
+      .map((project) => project?.id)
+      .filter((projectId) => typeof projectId === "string" && projectId),
+  );
+  return legacyProjects.some(
+    (project) => typeof project?.id === "string" && project.id && !docProjectIds.has(project.id),
+  );
+}
+
 function readProjects() {
   try {
     const docs = readProjectDocs();
-    if (docs.length > 0) {
-      return sortProjectsByStoredOrder(docs.map((doc) => doc.project).filter(Boolean));
-    }
-
+    const docProjects = docs.map((doc) => doc.project).filter(Boolean);
     const legacyProjects = readLegacyStoredProjects();
-    if (legacyProjects.length > 0 && window.utools?.db?.put) {
-      writeStoredProjects(legacyProjects);
+    const mergedProjects = mergeStoredProjects(legacyProjects, docProjects);
+
+    if (
+      legacyProjects.length > 0 &&
+      window.utools?.db?.put &&
+      hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects)
+    ) {
+      writeStoredProjects(mergedProjects);
     }
-    return sortProjectsByStoredOrder(legacyProjects);
+    return mergedProjects;
   } catch (error) {
     logStorageError("read projects", error);
-    return sortProjectsByStoredOrder(readLegacyStoredProjects());
+    return sortProjectsByStoredOrder(normalizeStoredProjects(readLegacyStoredProjects()));
   }
 }
 
@@ -2874,6 +2965,7 @@ function registerProcessCleanupHooks() {
 registerProcessCleanupHooks();
 
 window.projectBridge = {
+  loadDeviceId: getCurrentDeviceId,
   loadProjects: readProjects,
   saveProjects: writeStoredProjects,
   inspectProjectPath,

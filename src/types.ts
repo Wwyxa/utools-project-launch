@@ -466,6 +466,7 @@ export interface ProjectBridgeEvent {
 }
 
 export interface ProjectBridge {
+  loadDeviceId(): string;
   loadProjects(): Promise<Project[]>;
   saveProjects(projects: Project[]): Promise<void>;
   loadTerminalPreferences(): TerminalPreferences;

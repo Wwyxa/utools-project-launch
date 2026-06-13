@@ -61,6 +61,7 @@ The current uTools integration follows this rule: UI components call store actio
 - `ProjectFormValue` includes the same editable metadata fields, with optional persisted project fields normalized to form-safe strings.
 - Store persistence path: `saveProjectForm()` -> `persistProjects()` -> `bridge.saveProjects(...)`.
 - uTools preload persistence path: `writeStoredProjects(projects)` -> per-project docs containing `project: toStoredProject(project)`.
+- Device id boundary: `ProjectBridge.loadDeviceId(): string`; uTools preload resolves it from stable machine-local storage, while browser fallback may use `localStorage`.
 - Quick link launch path: dashboard/card action -> `openProjectQuickLink(projectId)` -> `bridge.openPath(quickLink)` -> browser fallback `window.open(...)` or uTools preload `shell.openExternal(...)` for URL-like targets.
 
 ### 3. Contracts
@@ -71,7 +72,8 @@ The current uTools integration follows this rule: UI components call store actio
 - `quickLink` is a project-level optional URL string. Trim it when moving between persisted projects, hydrated projects, form drafts, and saved projects; keep missing/legacy values as an empty string in form state and absent/empty in project state.
 - `group` is project-level display metadata. Trim it at every boundary and treat missing or whitespace-only values as the ungrouped bucket in Dashboard UI while keeping form state as an empty string.
 - `visibility` controls cross-device display only, not whether a project is stored. Missing legacy values normalize to `"public"`; new project forms default to `"private"` so they stay on the current device unless explicitly made public.
-- `ownerDeviceId` is generated and stored in device-local browser storage. Private projects render only when `ownerDeviceId` matches the current device id; hidden private projects must remain in the project array so saving current-device changes does not delete other devices' private projects from shared storage.
+- `ownerDeviceId` is generated from a stable machine-local device id supplied by `ProjectBridge.loadDeviceId()`. In uTools, preload must persist that id outside volatile renderer `localStorage` so restarting the uTools app keeps the same id; browser preview may fall back to `localStorage`.
+- Private projects render only when `ownerDeviceId` matches the current device id; hidden private projects must remain in the project array so saving current-device changes does not delete other devices' private projects from shared storage.
 - Components must call store actions for project quick links. Do not call `window.open`, `shell.openExternal`, or `bridge.openPath` directly from `ProjectCard.vue`.
 - `bridge.openPath` may receive both file-system paths and quick-link URLs. The browser fallback and uTools preload must keep file paths opening through the existing path behavior while routing `http://`, `https://`, protocol-relative URLs, `mailto:`, and `utools:` URLs through external URL opening.
 - Path inspection may infer metadata for new/blank forms, but it must not overwrite an explicit user-selected icon when the draft already has one.
@@ -85,6 +87,9 @@ The current uTools integration follows this rule: UI components call store actio
 - Missing persisted `group` -> hydrate/form value is `""`; dashboard displays the project under the localized ungrouped label.
 - Whitespace-only `group` -> normalize to `""` before persisting, grouping, or rendering.
 - Missing persisted `visibility` -> normalize to `"public"` for backward compatibility.
+- uTools restart after creating private projects -> `ProjectBridge.loadDeviceId()` returns the same machine-local id, so matching `ownerDeviceId` projects remain visible.
+- Mixed per-project docs plus legacy `utools-project-launch.projects.v1` list -> merge both sources by project id, prefer doc records on conflicts, and keep legacy-only projects visible as public projects.
+- Missing persisted `scripts`, `env`, `type`, `kind`, or `status` -> hydrate safe defaults instead of aborting the whole project catalog load.
 - Private project with a different `ownerDeviceId` -> keep it in state/persistence but exclude it from dashboard lists, search-open matching, path availability checks, refreshes, and sort operations.
 - Configured URL-like `quickLink` -> open externally through the bridge and prevent card click bubbling in the component action.
 - `bridge.openPath` receives a normal local folder/file path -> keep existing path opening behavior, not external URL handling.
@@ -112,6 +117,8 @@ The current uTools integration follows this rule: UI components call store actio
 - Regression check: trigger path inspection after choosing an icon and verify the explicit icon is not reset unexpectedly.
 - Regression check: projects without quick links should not gain an empty dashboard action slot.
 - Regression check: create a private project, confirm it persists with the current `ownerDeviceId`, and confirm another device id would hide it without deleting it.
+- Regression check: restart the uTools app after creating a private project and confirm the project remains visible because `ProjectBridge.loadDeviceId()` is stable.
+- Regression check: run `npm run validate:project-storage` after changing project storage migration, visibility, or legacy hydration code.
 
 ### 7. Wrong vs Correct
 

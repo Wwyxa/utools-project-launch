@@ -55,8 +55,10 @@ const createAiPromptModeId = () => `custom-${Date.now()}`;
 const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
 const createProjectId = () => `project-${Date.now()}`;
-const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
+const projectKinds = new Set<ProjectKind>(["node", "python", "go", "executable", "custom"]);
+const projectScriptStatuses = new Set<ProjectScript["status"]>(["IDLE", "RUNNING", "STOPPING", "ERROR", "STOPPED"]);
+const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>(["manual", "package-json", "preset"]);
 let projectConfigMessageClearTimer: number | null = null;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
 const gitStatusRefreshPromises = new Map<string, Promise<void>>();
@@ -107,28 +109,67 @@ function normalizeProjectVisibility(value: unknown): ProjectVisibility {
   return value === "private" ? "private" : "public";
 }
 
-function loadCurrentDeviceId(): string {
-  try {
-    const stored = window.localStorage?.getItem(deviceIdStorageKey);
-    if (stored) {
-      return stored;
-    }
-
-    const nextId = window.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    window.localStorage?.setItem(deviceIdStorageKey, nextId);
-    return nextId;
-  } catch (error) {
-    return "device-fallback";
-  }
+function normalizeProjectKind(value: unknown): ProjectKind {
+  return typeof value === "string" && projectKinds.has(value as ProjectKind) ? (value as ProjectKind) : "custom";
 }
 
-const currentDeviceId = loadCurrentDeviceId();
+function normalizeProjectStatus(value: unknown): ProjectStatus {
+  return Object.values(ProjectStatus).includes(value as ProjectStatus) ? (value as ProjectStatus) : ProjectStatus.STOPPED;
+}
+
+function normalizeProjectEnv(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, string>>((env, [key, entryValue]) => {
+    env[key] = typeof entryValue === "string" ? entryValue : String(entryValue ?? "");
+    return env;
+  }, {});
+}
+
+function normalizeProjectScripts(projectId: string, value: unknown): ProjectScript[] {
+  const scripts = Array.isArray(value) ? value : [];
+  const fallbackProjectId = projectId || "project";
+
+  return scripts.reduce<ProjectScript[]>((normalizedScripts, script, index) => {
+    if (!script || typeof script !== "object") {
+      return normalizedScripts;
+    }
+
+    const candidate = script as Partial<ProjectScript>;
+    const source = projectScriptSources.has(candidate.source as NonNullable<ProjectScript["source"]>)
+      ? (candidate.source as NonNullable<ProjectScript["source"]>)
+      : "manual";
+    const status = projectScriptStatuses.has(candidate.status as ProjectScript["status"])
+      ? (candidate.status as ProjectScript["status"])
+      : "IDLE";
+
+    normalizedScripts.push({
+      id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : createScriptId(fallbackProjectId, index),
+      name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name : "start",
+      command: typeof candidate.command === "string" ? candidate.command : "",
+      status,
+      cwd: typeof candidate.cwd === "string" && candidate.cwd.trim() ? candidate.cwd : ".",
+      pid: typeof candidate.pid === "number" ? candidate.pid : undefined,
+      note: typeof candidate.note === "string" ? candidate.note : "",
+      source,
+    });
+
+    return normalizedScripts;
+  }, []);
+}
+
+const currentDeviceId = bridge.loadDeviceId();
 
 function isProjectVisibleOnCurrentDevice(project: Project): boolean {
   return normalizeProjectVisibility(project.visibility) === "public" || project.ownerDeviceId === currentDeviceId;
 }
 
 function toPersistedProject(project: Project, sortOrder?: number): Project {
+  const projectKind = normalizeProjectKind(project.kind);
+  const projectType = typeof project.type === "string" && project.type.trim() ? project.type : "Custom";
+  const projectScripts = normalizeProjectScripts(project.id, project.scripts);
   const persistedStatus = project.pathExists === false ? ProjectStatus.WARNING : ProjectStatus.STOPPED;
   const persistedSortOrder =
     typeof sortOrder === "number" && Number.isFinite(sortOrder) ? sortOrder : resolveProjectSortOrder(project);
@@ -139,15 +180,15 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
     path: project.path,
     visibility: normalizeProjectVisibility(project.visibility),
     ownerDeviceId: project.ownerDeviceId || currentDeviceId,
-    type: project.type,
-    kind: project.kind,
-    icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
+    type: projectType,
+    kind: projectKind,
+    icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     description: project.description || "",
     status: persistedStatus,
     lastUpdated: project.lastUpdated || "",
-    scripts: project.scripts.map((script) => ({
+    scripts: projectScripts.map((script) => ({
       id: script.id,
       name: script.name,
       command: script.command,
@@ -156,7 +197,7 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
       source: script.source || "manual",
       status: "IDLE",
     })),
-    env: project.env || {},
+    env: normalizeProjectEnv(project.env),
     branch: project.branch || "main",
     memo: project.memo || "",
     todos: project.todos || [],
@@ -169,6 +210,7 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
 }
 
 function isImportableProject(project: Project): boolean {
+  const scripts = Array.isArray(project.scripts) ? project.scripts : [];
   return Boolean(
     project &&
     typeof project.id === "string" &&
@@ -176,8 +218,7 @@ function isImportableProject(project: Project): boolean {
     project.name.trim() &&
     typeof project.path === "string" &&
     project.path.trim() &&
-    Array.isArray(project.scripts) &&
-    project.scripts.every((script) => typeof script.name === "string" && typeof script.command === "string"),
+    scripts.every((script) => typeof script.name === "string" && typeof script.command === "string"),
   );
 }
 
@@ -271,25 +312,30 @@ function scriptFromForm(projectId: string, script: ProjectScriptFormValue, index
 }
 
 function formFromProject(project: Project): ProjectFormValue {
+  const projectKind = normalizeProjectKind(project.kind);
+  const projectType = typeof project.type === "string" && project.type.trim() ? project.type : "Custom";
+  const projectEnv = normalizeProjectEnv(project.env);
+  const projectScripts = normalizeProjectScripts(project.id, project.scripts);
+
   return {
     id: project.id,
     name: project.name,
     path: project.path,
     visibility: normalizeProjectVisibility(project.visibility),
-    type: project.type,
-    kind: project.kind,
-    icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
+    type: projectType,
+    kind: projectKind,
+    icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     description: project.description || "",
     branch: project.branch || "main",
     memo: project.memo || "",
-    envEntries: Object.entries(project.env).map(([key, value]) => ({
+    envEntries: Object.entries(projectEnv).map(([key, value]) => ({
       id: `${project.id}-${key}`,
       key,
       value,
     })),
-    scripts: project.scripts.map((script) => ({
+    scripts: projectScripts.map((script) => ({
       id: script.id,
       name: script.name,
       command: script.command,
@@ -330,13 +376,20 @@ function inferProjectIcon(kind: ProjectKind, type = "", name = ""): ProjectIconK
 }
 
 function hydrateProject(project: Project): Project {
+  const projectKind = normalizeProjectKind(project.kind);
+  const projectType = typeof project.type === "string" && project.type.trim() ? project.type : "Custom";
+
   return {
     ...project,
+    type: projectType,
+    kind: projectKind,
     visibility: normalizeProjectVisibility(project.visibility),
     ownerDeviceId: project.ownerDeviceId || currentDeviceId,
-    icon: project.icon || inferProjectIcon(project.kind, project.type, project.name),
+    icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
+    status: normalizeProjectStatus(project.status),
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
+    env: normalizeProjectEnv(project.env),
     branch: project.branch || project.git?.branch || "main",
     description: project.description || "",
     memo: project.memo || "",
@@ -347,26 +400,19 @@ function hydrateProject(project: Project): Project {
     sortOrder: resolveProjectSortOrder(project),
     createdAt: project.createdAt || new Date().toISOString(),
     updatedAt: project.updatedAt || new Date().toISOString(),
-    scripts: project.scripts.map((script, index) => ({
-      id: script.id || createScriptId(project.id, index),
-      name: script.name || "start",
-      command: script.command || "",
-      status: script.status || "IDLE",
-      cwd: script.cwd || ".",
-      note: script.note || "",
-      source: script.source || "manual",
-    })),
+    scripts: normalizeProjectScripts(project.id, project.scripts),
   };
 }
 
 function deriveProjectStatus(project: Project): ProjectStatus {
+  const scripts = normalizeProjectScripts(project.id, project.scripts);
   if (project.pathExists === false) {
     return ProjectStatus.WARNING;
   }
-  if (project.scripts.some((script) => script.status === "RUNNING" || script.status === "STOPPING")) {
+  if (scripts.some((script) => script.status === "RUNNING" || script.status === "STOPPING")) {
     return ProjectStatus.RUNNING;
   }
-  if (project.scripts.some((script) => script.status === "ERROR")) {
+  if (scripts.some((script) => script.status === "ERROR")) {
     return ProjectStatus.ERROR;
   }
   return ProjectStatus.STOPPED;

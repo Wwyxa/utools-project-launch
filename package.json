@@ -10,7 +10,8 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "lint": "tsc --noEmit",
     "type-check": "tsc --noEmit",
-    "validate:ai-reasoning": "node scripts/validate-ai-reasoning.mjs"
+    "validate:ai-reasoning": "node scripts/validate-ai-reasoning.mjs",
+    "validate:project-storage": "node scripts/validate-project-storage-compat.mjs"
   },
   "dependencies": {
     "@types/markdown-it": "^14.1.2",
