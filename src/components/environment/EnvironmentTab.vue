@@ -120,10 +120,9 @@ watch(
           :key="tool.key"
           class="min-w-0 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-3"
         >
-          <div class="mb-2 flex items-start justify-between gap-3">
+          <div class="mb-2 flex items-center justify-between gap-3">
             <div class="min-w-0">
               <h3 class="truncate text-sm font-bold text-on-surface">{{ tool.name }}</h3>
-              <p class="mt-0.5 truncate font-mono text-[11px] text-on-surface-variant">{{ tool.key }}</p>
             </div>
             <span
               class="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface px-2 py-0.5 text-[11px] font-bold text-on-surface-variant"
@@ -154,10 +153,9 @@ watch(
           :key="tool.key"
           class="min-w-0 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-3"
         >
-          <div class="mb-2 flex items-start justify-between gap-3">
+          <div class="mb-2 flex items-center justify-between gap-3">
             <div class="min-w-0">
               <h3 class="truncate text-sm font-bold text-on-surface">{{ tool.name }}</h3>
-              <p class="mt-0.5 truncate font-mono text-[11px] text-on-surface-variant">{{ tool.key }}</p>
             </div>
             <span :class="statusClass(resultByKey.get(tool.key))">
               <CheckCircle2 v-if="resultByKey.get(tool.key)?.status === 'available'" :size="12" />

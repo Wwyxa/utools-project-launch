@@ -529,7 +529,16 @@ function runToolCommand(command, args) {
     };
 
     try {
-      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      const commandLine = [command, ...args].map(quoteShellToken).join(" ");
+      const shellPath = process.env.SHELL || "/bin/sh";
+      const shellName = path.basename(shellPath);
+      const child =
+        process.platform === "win32"
+          ? spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: true })
+          : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], {
+              stdio: ["ignore", "pipe", "pipe"],
+              windowsHide: true,
+            });
       timeout = setTimeout(() => {
         timedOut = true;
         child.kill();
@@ -1032,6 +1041,10 @@ function splitCommandLine(commandLine) {
 
 function formatCommandLine(executable, args) {
   return [executable, ...args].join(" ");
+}
+
+function quoteShellToken(token) {
+  return `'${String(token).replace(/'/g, `'\\''`)}'`;
 }
 
 function launchDetachedProcess(executable, args, cwd) {
