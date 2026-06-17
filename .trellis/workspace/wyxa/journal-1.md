@@ -1178,3 +1178,37 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: 修复开发环境工具检测
+
+**Date**: 2026-06-17
+**Task**: 修复开发环境工具检测
+**Branch**: `master`
+
+### Summary
+
+修复开发环境工具检测在 Windows 和 macOS nvm 场景下找不到命令的问题，优化环境卡片重复标题，并记录 preload shell 检测约定。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `86c8158` | (see git log) |
+| `acafaec` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

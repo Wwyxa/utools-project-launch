@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 33
-- **Last Active**: 2026-06-09
+- **Total Sessions**: 34
+- **Last Active**: 2026-06-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1180 | Active |
+| `journal-1.md` | ~1214 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 34 | 2026-06-17 | 修复开发环境工具检测 | `86c8158`, `acafaec` | `master` |
 | 33 | 2026-06-09 | 增强文件 Tab 查看与编辑体验 | `7dab7ad`, `4037c05`, `71e0006` | `master` |
 | 32 | 2026-06-08 | Git 功能性能和 UI 优化 | `64c8028`, `935ef8a`, `57cdc57` | `master` |
 | 31 | 2026-06-08 | Git 操作与提交信息生成 | `eec7ffd`, `df0b5a9`, `b62e6c6` | `master` |
