@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Environment detection is exposed through the frontend preload bridge and must follow project bridge conventions."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Defines required lint/build checks and quality standards for frontend/preload changes."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Covers preload bridge contract expectations and boundary safety."}

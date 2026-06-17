@@ -214,6 +214,69 @@ store.setDefaultEditor("cursor");
 
 Let store actions persist preferences and keep bridge state synchronized.
 
+## Scenario: Environment Tool Detection Bridge
+
+### 1. Scope / Trigger
+
+- Trigger: the Environment tab asks the uTools preload bridge to detect local command-line tools such as Node.js, npm, pnpm, Git, and Docker.
+
+### 2. Signatures
+
+- Preload helper: `runToolCommand(command, args): Promise<{ ok: boolean; stdout?: string; stderr?: string; message?: string }>`.
+- Detection path: `inspectEnvironmentTools()` -> `runToolCommand(tool.command, tool.versionArgs)` plus platform path lookup through `where` on Windows or `command -v` elsewhere.
+- Shell quoting helper: `quoteShellToken(token)` wraps macOS/Linux command tokens before passing them through the user's shell.
+
+### 3. Contracts
+
+- Windows detection should execute through `spawn(command, args, { shell: true, windowsHide: true })` so terminal-visible `.cmd` shims such as `npm` and `pnpm` resolve correctly.
+- macOS/Linux detection should execute through the user's `process.env.SHELL` when available; non-`sh` shells should use `-ilc` so nvm and similar version managers can initialize PATH before running the command.
+- Keep the tool list and detection sequence stable: version check first, path lookup second.
+- Preserve the existing 5 second timeout, stdout/stderr decoding, and non-throwing result shape for missing tools.
+- Only hard-coded tool commands and arguments may enter the shell-backed path; quote every token before composing the macOS/Linux command line.
+
+### 4. Validation & Error Matrix
+
+- Tool missing from PATH -> return `ok: false` with the existing error/message behavior.
+- Tool installed through nvm on macOS -> login/interactive shell loads the version manager before `node --version` or package manager checks run.
+- npm/pnpm shim available in Windows terminal -> `shell: true` lets the shell resolve the command.
+- Command hangs -> kill after 5 seconds and return a timeout failure result.
+- Command writes non-UTF-8 or localized output -> decode through the shared process output decoder.
+
+### 5. Good/Base/Bad Cases
+
+- Good: macOS user with Node installed through nvm sees node, npm, and pnpm detected in Environment.
+- Good: Windows user who can run `npm` and `pnpm` in the terminal sees both tools detected.
+- Base: globally installed tools still work with ordinary PATH lookup.
+- Bad: using direct `spawn(command, args)` for environment detection, which misses shell-initialized PATH entries.
+- Bad: using `/bin/sh -lc` for all macOS users and expecting nvm to load when the user's actual setup lives in zsh or bash startup files.
+
+### 6. Tests Required
+
+- Run `npm run lint` and `npm run build` after changing preload environment detection.
+- Manual smoke test in uTools on Windows: confirm terminal-visible npm and pnpm are detected.
+- Manual smoke test in uTools on macOS with nvm: confirm node, npm, and pnpm are detected.
+- Manual smoke test for a missing command: confirm the Environment tab reports unavailable without blocking the rest of detection.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+```
+
+This bypasses shell initialization and can miss tools that are available in the user's terminal.
+
+#### Correct
+
+```js
+process.platform === "win32"
+  ? spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: true })
+  : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+```
+
+Use shell execution deliberately for environment detection, while keeping command tokens quoted and the result contract unchanged.
+
 ## Scenario: Streaming AI Bridge Actions
 
 ### 1. Scope / Trigger

@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Review environment detection against frontend bridge conventions."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify lint/build expectations and avoid unrelated UI/backend assumptions."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Check bridge boundary changes for type and contract consistency."}
