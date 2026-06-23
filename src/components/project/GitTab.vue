@@ -2571,7 +2571,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       @click.self="closeDiffDialog"
     >
       <div
-        class="flex h-[70vh] w-[80vw] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+        class="flex h-[85vh] w-[90vw] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
       >
         <div
           class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
