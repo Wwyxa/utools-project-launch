@@ -204,6 +204,10 @@ export interface ProjectGitActionResult {
   isDetachedHead?: boolean;
 }
 
+export interface ProjectGitBulkFileActionOptions {
+  all?: boolean;
+}
+
 export interface ProjectGitCommitMessageDiffResult {
   ok: boolean;
   scope: "staged" | "working-tree";
@@ -510,9 +514,21 @@ export interface ProjectBridge {
   stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
   unstageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
   discardGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
-  stageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>;
-  unstageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>;
-  discardGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>;
+  stageGitFiles(
+    projectPath: string,
+    relativePaths: string[],
+    options?: ProjectGitBulkFileActionOptions,
+  ): Promise<ProjectGitActionResult>;
+  unstageGitFiles(
+    projectPath: string,
+    relativePaths: string[],
+    options?: ProjectGitBulkFileActionOptions,
+  ): Promise<ProjectGitActionResult>;
+  discardGitFiles(
+    projectPath: string,
+    relativePaths: string[],
+    options?: ProjectGitBulkFileActionOptions,
+  ): Promise<ProjectGitActionResult>;
   commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>;
   switchGitBranch(
     projectPath: string,

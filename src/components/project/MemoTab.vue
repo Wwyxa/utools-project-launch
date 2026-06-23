@@ -1,11 +1,27 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { Bold, Check, CheckSquare, Code, Edit3, GripVertical, Link, List, Plus, Save, Trash2 } from "lucide-vue-next";
+import {
+  Bold,
+  Check,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Code,
+  Edit3,
+  GripVertical,
+  Link,
+  List,
+  Plus,
+  Save,
+  Trash2,
+} from "lucide-vue-next";
 import { Project } from "../../types";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { renderMarkdown } from "../../lib/markdown";
+
+type CollapsedMemoPanel = "tasks" | "memo";
 
 const props = defineProps<{
   project: Project;
@@ -19,13 +35,37 @@ const draftContent = ref(store.memoContent[props.project.id] || "");
 const newTodoText = ref("");
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const draggedTodoId = ref<string | null>(null);
+const collapsedMemoPanel = ref<CollapsedMemoPanel | null>(null);
 let saveTimer: number | undefined;
 
 const content = computed(() => store.memoContent[props.project.id] || "");
 const projectTodos = computed(() => store.todos[props.project.id] || []);
 const hasMemo = computed(() => content.value.trim().length > 0);
+const isMemoTasksPanelCollapsed = computed(() => collapsedMemoPanel.value === "tasks");
+const isMemoContentPanelCollapsed = computed(() => collapsedMemoPanel.value === "memo");
+const memoGridColumns = computed(() => {
+  if (isMemoTasksPanelCollapsed.value) {
+    return "2rem minmax(0,1fr)";
+  }
+  if (isMemoContentPanelCollapsed.value) {
+    return "minmax(0,1fr) 2rem";
+  }
+  return "minmax(12rem,0.64fr) minmax(0,1.36fr)";
+});
 
 const renderedMemo = computed(() => renderMarkdown(content.value));
+
+const collapseMemoTasksPanel = () => {
+  collapsedMemoPanel.value = "tasks";
+};
+
+const collapseMemoContentPanel = () => {
+  collapsedMemoPanel.value = "memo";
+};
+
+const expandMemoPanels = () => {
+  collapsedMemoPanel.value = null;
+};
 
 const flushMemo = () => {
   window.clearTimeout(saveTimer);
@@ -120,8 +160,54 @@ onBeforeUnmount(flushMemo);
 </script>
 
 <template>
-  <div class="grid h-full min-h-0 grid-cols-[minmax(12rem,0.64fr)_minmax(0,1.36fr)] gap-2 overflow-hidden">
-    <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
+  <div class="relative grid h-full min-h-0 gap-2 overflow-visible" :style="{ gridTemplateColumns: memoGridColumns }">
+    <div
+      v-if="!collapsedMemoPanel"
+      class="pointer-events-none absolute inset-x-0 top-0 z-30 grid gap-2"
+      :style="{ gridTemplateColumns: memoGridColumns }"
+    >
+      <div class="pointer-events-none flex min-w-0 justify-end">
+        <div
+          class="pointer-events-auto flex translate-x-[calc(50%+0.25rem)] translate-y-1 items-center overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container-high shadow-md"
+        >
+          <button
+            type="button"
+            class="flex h-4 w-4 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+            title="收起左侧任务列表"
+            aria-label="收起左侧任务列表"
+            @click.stop="collapseMemoTasksPanel"
+          >
+            <ChevronLeft :size="9" />
+          </button>
+          <button
+            type="button"
+            class="flex h-4 w-4 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+            title="收起右侧备忘面板"
+            aria-label="收起右侧备忘面板"
+            @click.stop="collapseMemoContentPanel"
+          >
+            <ChevronRight :size="9" />
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <button
+      v-if="isMemoTasksPanelCollapsed"
+      type="button"
+      class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
+      title="展开任务列表"
+      aria-label="展开任务列表"
+      @click="expandMemoPanels"
+    >
+      <span
+        class="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
+      >
+        <ChevronRight :size="14" />
+      </span>
+    </button>
+
+    <section v-else class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
       <div class="flex h-10 items-center justify-between gap-3 border-b border-border-subtle px-4">
         <h3 class="flex items-center gap-2 text-sm font-bold text-on-surface">
           <CheckSquare :size="16" class="text-primary" />
@@ -211,7 +297,23 @@ onBeforeUnmount(flushMemo);
       </div>
     </section>
 
+    <button
+      v-if="isMemoContentPanelCollapsed"
+      type="button"
+      class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
+      title="展开备忘面板"
+      aria-label="展开备忘面板"
+      @click="expandMemoPanels"
+    >
+      <span
+        class="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
+      >
+        <ChevronLeft :size="14" />
+      </span>
+    </button>
+
     <section
+      v-else
       class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       @dblclick.self="enterEdit"
     >

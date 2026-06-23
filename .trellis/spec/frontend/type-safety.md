@@ -163,6 +163,81 @@ const body = commitTooltipBody(commit);
 
 Keep tooltip parsing explicit and format-aware so the dense row can show the raw subject while the tooltip shows a readable title plus markdown body.
 
+## Scenario: Git Bulk File Action Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: Git file write actions cross `GitTab.vue`, Pinia store actions, `ProjectBridge`, and the uTools preload Git implementation.
+- Trigger: bulk actions such as stage-all / unstage-all / discard-all must operate on the complete live Git status, not only the file paths currently rendered in the UI.
+- This scenario requires code-spec depth because it changes a cross-layer bridge signature and user-visible write behavior.
+
+### 2. Signatures
+
+- `ProjectGitBulkFileActionOptions = { all?: boolean }`
+- `ProjectBridge.stageGitFiles(projectPath: string, relativePaths: string[], options?: ProjectGitBulkFileActionOptions): Promise<ProjectGitActionResult>`
+- `ProjectBridge.unstageGitFiles(projectPath: string, relativePaths: string[], options?: ProjectGitBulkFileActionOptions): Promise<ProjectGitActionResult>`
+- `ProjectBridge.discardGitFiles(projectPath: string, relativePaths: string[], options?: ProjectGitBulkFileActionOptions): Promise<ProjectGitActionResult>`
+- Store actions mirror the bridge signature with `projectId` instead of `projectPath`.
+- Preload implementations accept the same third `options` argument and return `ProjectGitActionResult` with `ok`, `message`, optional `count`, and optional `paths`.
+
+### 3. Contracts
+
+- `relativePaths` is the exact set selected by the UI when `options.all` is missing or false.
+- `options.all === true` means preload must ignore UI pagination/stale rendered file limits and collect the complete current Git status directly from `git status --porcelain=v1 -z`.
+- Stage-all filters live status entries to files with unstaged work, including untracked files.
+- Unstage-all filters live status entries to files with staged work.
+- Discard-all filters live status entries to all changed paths, then applies the existing discard behavior per path.
+- Components should still pass the visible paths for context/count fallback, but preload owns all-mode completeness.
+- Git write actions must show a loading toast before the bridge call and keep success/warning/error feedback visible after the status refresh starts.
+
+### 4. Validation & Error Matrix
+
+- Missing Git repository -> return `{ ok: false, message: "未检测到 Git 仓库。" }`.
+- `options.all !== true` and `relativePaths` is empty -> return a zero-count failure message for that operation.
+- `options.all === true` and no matching live status entries -> return a zero-count failure message for that operation.
+- Git command failure -> return `{ ok: false, count, paths, message }` using the first Git error text.
+- Discard failure after partial success -> return the underlying failure with `count`/`paths` for completed paths and a message noting the partial count.
+- Status refresh after a successful write -> bump the project Git mutation version and refresh status so UI rows reflect the new staged/unstaged state.
+
+### 5. Good/Base/Bad Cases
+
+- Good: 110 unstaged files are rendered with only 80 visible from stale UI state, stage-all passes `{ all: true }`, preload stages all 110 live status entries, and toast reports `已暂存 110 个文件。`.
+- Good: stage-selected passes explicit selected paths without `{ all: true }`, so only selected paths are touched.
+- Base: 3 modified files are visible; stage-all stages those 3 and refreshes the Git status snapshot.
+- Bad: deriving stage-all exclusively from `props.project.git.files` or another rendered list; stale or limited UI state can silently skip files.
+- Bad: clearing the Git toast immediately after stage/unstage success; the following status refresh can hide the user-visible operation result.
+
+### 6. Tests Required
+
+- `npm run lint` to verify `src/types.ts`, store actions, fallback bridge, and component calls agree on the bulk action options signature.
+- `npm run build` to verify Vue templates and bridge consumers compile.
+- `node --check public/preload.js` after changing preload Git action code.
+- Manual smoke test with more than 80 changed files: click stage-all and assert the toast count equals the full live Git status count.
+- Manual smoke test for unstage-all after stage-all: assert all staged files return to unstaged and the toast count is complete.
+- Manual smoke test for selected/single-file operations: assert they do not unexpectedly expand to all files.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const paths = stageableFiles.value.map((file) => file.path);
+await store.stageGitFiles(projectId, paths);
+setGitActionResult("idle", "");
+```
+
+This treats the rendered file list as complete and hides the operation result before the user can see it.
+
+#### Correct
+
+```ts
+const paths = stageableFiles.value.map((file) => file.path);
+const result = await store.stageGitFiles(projectId, paths, { all: true });
+setGitActionResult(result.ok ? "success" : "error", result.message);
+```
+
+Keep the UI-triggered all action explicit, let preload collect live Git status, and preserve the operation result toast through the follow-up refresh.
+
 ## Scenario: Editor Launch Bridge Boundary
 
 ### 1. Scope / Trigger

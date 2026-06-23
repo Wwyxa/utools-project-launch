@@ -51,6 +51,7 @@ import { renderMarkdown } from "../../lib/markdown";
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
 type GitFileActionName = "stage" | "unstage" | "discard";
+type CollapsedGitPanel = "files" | "graph";
 type ActiveGitFileAction = { action: GitFileActionName; path: string };
 type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
 type AppDialogKind = "danger" | "warning";
@@ -98,6 +99,9 @@ const gitActionState = ref<GitActionState>("idle");
 const activeGitAction = ref("");
 const activeGitFileActions = ref<ActiveGitFileAction[]>([]);
 const bulkActionProgress = ref({ current: 0, total: 0 });
+const gitToastMessage = ref("");
+const gitToastState = ref<Exclude<GitActionState, "idle">>("loading");
+const gitToastTimer = ref<number | undefined>();
 const selectedGitFilePath = ref("");
 const commitMessage = ref("");
 const commitMessageTextareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -107,6 +111,21 @@ const confirmationDialog = ref<AppActionDialog | null>(null);
 const isConfirmationRunning = ref(false);
 const commitMessageTextareaMinHeight = 60;
 const commitMessageTextareaMaxHeight = 192;
+const collapsedGitPanel = ref<CollapsedGitPanel | null>(null);
+const isGitFilesPanelCollapsed = computed(() => collapsedGitPanel.value === "files");
+const isGitGraphPanelCollapsed = computed(() => collapsedGitPanel.value === "graph");
+
+const collapseGitFilesPanel = () => {
+  collapsedGitPanel.value = "files";
+};
+
+const collapseGitGraphPanel = () => {
+  collapsedGitPanel.value = "graph";
+};
+
+const expandGitPanels = () => {
+  collapsedGitPanel.value = null;
+};
 
 const resizeCommitMessageTextarea = () => {
   const textarea = commitMessageTextareaRef.value;
@@ -202,6 +221,11 @@ const globalLoadingMessage = computed(() => {
     return "正在生成 commit message...";
   }
 
+  // 显式 Git 写操作提示优先于后续刷新状态，避免操作结果一闪而过。
+  if (gitToastMessage.value) {
+    return gitToastMessage.value;
+  }
+
   // Git 刷新操作
   if (isGitSnapshotRefreshing.value) {
     return "正在刷新 Git 快照...";
@@ -221,15 +245,29 @@ const globalLoadingMessage = computed(() => {
     return gitBulkActionProgressMessage(action, bulkActionProgress.value.current, bulkActionProgress.value.total);
   }
 
-  // 其他 Git 操作
-  if (gitActionState.value === "loading" && gitActionMessage.value) {
-    return gitActionMessage.value;
-  }
-
   return "";
 });
 
 const showGlobalLoadingBar = computed(() => Boolean(globalLoadingMessage.value));
+const isGitToastVisible = computed(() => Boolean(gitToastMessage.value));
+const globalLoadingIconClass = computed(() => {
+  if (isGitToastVisible.value && gitToastState.value === "success") return "border-status-running bg-status-running";
+  if (isGitToastVisible.value && gitToastState.value === "warning") return "border-status-warning bg-status-warning";
+  if (isGitToastVisible.value && gitToastState.value === "error") return "border-status-error bg-status-error";
+  return "animate-spin border-primary border-t-transparent";
+});
+const globalLoadingTextClass = computed(() => {
+  if (isGitToastVisible.value && gitToastState.value === "success") return "text-status-running";
+  if (isGitToastVisible.value && gitToastState.value === "warning") return "text-status-warning";
+  if (isGitToastVisible.value && gitToastState.value === "error") return "text-status-error";
+  return "text-primary";
+});
+const globalLoadingBorderClass = computed(() => {
+  if (isGitToastVisible.value && gitToastState.value === "success") return "border-status-running/30";
+  if (isGitToastVisible.value && gitToastState.value === "warning") return "border-status-warning/30";
+  if (isGitToastVisible.value && gitToastState.value === "error") return "border-status-error/30";
+  return "border-primary/30";
+});
 
 const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.project.path);
 const isLoadingMore = ref(false);
@@ -319,6 +357,18 @@ const closeFloatingControls = () => {
 const setGitActionResult = (state: GitActionState, message: string) => {
   gitActionState.value = state;
   gitActionMessage.value = message;
+  window.clearTimeout(gitToastTimer.value);
+  if (state === "idle" || !message) {
+    gitToastMessage.value = "";
+    return;
+  }
+  gitToastState.value = state;
+  gitToastMessage.value = message;
+  if (state !== "loading") {
+    gitToastTimer.value = window.setTimeout(() => {
+      gitToastMessage.value = "";
+    }, 2200);
+  }
 };
 
 const isDirtyGitWriteBlock = (result: ProjectGitActionResult, options: { force?: boolean }) =>
@@ -399,43 +449,27 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
   bulkActionProgress.value = { current: 0, total: totalFiles };
 
   // 显示初始进度
-  setGitActionResult("loading", gitBulkActionProgressMessage(action, 0, totalFiles));
+  setGitActionResult("loading", gitBulkActionLoadingMessage(action, totalFiles));
   await waitForVisualFeedback();
-
-  // 启动一个进度模拟器（预估时间）
-  const progressInterval = setInterval(
-    () => {
-      if (bulkActionProgress.value.current < totalFiles - 1) {
-        bulkActionProgress.value.current++;
-      }
-    },
-    Math.max(50, Math.min(200, 1000 / totalFiles)),
-  );
 
   try {
     const paths = targetFiles.map((file) => file.path);
     const result =
       action === "stage"
-        ? await store.stageGitFiles(props.project.id, paths)
+        ? await store.stageGitFiles(props.project.id, paths, { all: true })
         : action === "unstage"
-          ? await store.unstageGitFiles(props.project.id, paths)
-          : await store.discardGitFiles(props.project.id, paths);
+          ? await store.unstageGitFiles(props.project.id, paths, { all: true })
+          : await store.discardGitFiles(props.project.id, paths, { all: true });
 
-    clearInterval(progressInterval);
-    bulkActionProgress.value.current = totalFiles;
+    bulkActionProgress.value.current = result?.count || totalFiles;
 
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法执行 Git 操作。");
       return;
     }
 
-    if (action === "stage" || action === "unstage") {
-      setGitActionResult("idle", "");
-    } else {
-      setGitActionResult(result.ok ? "success" : "error", result.message);
-    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
   } catch (error) {
-    clearInterval(progressInterval);
     setGitActionResult("error", error instanceof Error ? error.message : "Git 操作失败。");
   } finally {
     activeGitAction.value = "";
@@ -447,7 +481,7 @@ const executeGitFileAction = async (action: GitFileActionName, file: ProjectGitF
   if (activeGitAction.value || isGitFileBusy(file)) return;
 
   activeGitFileActions.value = [...activeGitFileActions.value, { action, path: file.path }];
-  setGitActionResult("loading", action === "discard" ? gitFileActionLoadingMessage(action) : "");
+  setGitActionResult("loading", gitFileActionLoadingMessage(action));
   await waitForVisualFeedback();
   try {
     const result =
@@ -460,11 +494,12 @@ const executeGitFileAction = async (action: GitFileActionName, file: ProjectGitF
       setGitActionResult("warning", "当前项目不可用，无法执行 Git 操作。");
       return;
     }
-    if (result.ok && (action === "stage" || action === "unstage")) {
+    
+    if (action === "stage" || action === "unstage") {
       setGitActionResult("idle", "");
-      return;
+    } else {
+      setGitActionResult(result.ok ? "success" : "error", result.message);
     }
-    setGitActionResult(result.ok ? "success" : "error", result.message);
   } catch (error) {
     setGitActionResult("error", error instanceof Error ? error.message : "Git 操作失败。");
   } finally {
@@ -1341,6 +1376,7 @@ const hideCommitTooltip = () => {
 onBeforeUnmount(() => {
   hideCommitTooltip();
   window.clearTimeout(copiedTimer.value);
+  window.clearTimeout(gitToastTimer.value);
   stopWatchingDiffDialog();
   window.removeEventListener("keydown", handleEscapeKey);
 });
@@ -1630,7 +1666,15 @@ const graphRowColumns = computed(
   () => `${graphSelectionColumnWidth}px ${graphColumnWidth.value}px 3.25rem minmax(14rem, 1fr)`,
 );
 const graphRowMinWidth = computed(() => `max(24rem, calc(${graphColumnWidth.value}px + 18.5rem))`);
-const gitGridColumns = "minmax(15rem,0.46fr) minmax(0,1.54fr)";
+const gitGridColumns = computed(() => {
+  if (isGitFilesPanelCollapsed.value) {
+    return "2rem minmax(0,1fr)";
+  }
+  if (isGitGraphPanelCollapsed.value) {
+    return "minmax(0,1fr) 2rem";
+  }
+  return "minmax(15rem,0.46fr) minmax(0,1.54fr)";
+});
 const commitDateLabel = (value?: string) => formatCommitTime(value).text;
 
 const fileLabel = (status: string) => {
@@ -1823,12 +1867,17 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
     <Transition name="slide-up">
       <div
         v-if="showGlobalLoadingBar"
-        class="fixed top-16 right-4 z-50 border border-primary/30 rounded-lg bg-surface shadow-lg px-3 py-2.5 flex items-center gap-2.5 max-w-xs"
+        :class="
+          cn(
+            'fixed right-4 top-16 z-50 flex max-w-xs items-center gap-2.5 rounded-lg border bg-surface px-3 py-2.5 shadow-lg',
+            globalLoadingBorderClass,
+          )
+        "
       >
         <div class="flex h-4 w-4 items-center justify-center shrink-0">
-          <div class="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+          <div :class="cn('h-3 w-3 rounded-full border-2', globalLoadingIconClass)"></div>
         </div>
-        <span class="text-xs font-medium text-primary">{{ globalLoadingMessage }}</span>
+        <span :class="cn('text-xs font-medium', globalLoadingTextClass)">{{ globalLoadingMessage }}</span>
       </div>
     </Transition>
 
@@ -1907,8 +1956,53 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </div>
     </div>
 
-    <div class="grid min-h-0 flex-1 gap-2 overflow-hidden" :style="{ gridTemplateColumns: gitGridColumns }">
+    <div class="relative grid min-h-0 flex-1 gap-2 overflow-visible" :style="{ gridTemplateColumns: gitGridColumns }">
       <div
+        v-if="!collapsedGitPanel"
+        class="pointer-events-none absolute inset-x-0 top-0 z-30 grid gap-2"
+        :style="{ gridTemplateColumns: gitGridColumns }"
+      >
+        <div class="pointer-events-none flex min-w-0 justify-end">
+          <div
+            class="pointer-events-auto flex translate-x-[calc(50%+0.25rem)] translate-y-1 items-center overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container-high shadow-md"
+          >
+            <button
+              type="button"
+              class="flex h-4 w-4 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+              title="收起左侧变更文件面板"
+              aria-label="收起左侧变更文件面板"
+              @click.stop="collapseGitFilesPanel"
+            >
+              <ChevronLeft :size="9" />
+            </button>
+            <button
+              type="button"
+              class="flex h-4 w-4 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+              title="收起右侧提交图面板"
+              aria-label="收起右侧提交图面板"
+              @click.stop="collapseGitGraphPanel"
+            >
+              <ChevronRight :size="9" />
+            </button>
+          </div>
+        </div>
+      </div>
+      <button
+        v-if="isGitFilesPanelCollapsed"
+        type="button"
+        class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
+        title="展开变更文件面板"
+        aria-label="展开变更文件面板"
+        @click="expandGitPanels"
+      >
+        <span
+          class="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
+        >
+          <ChevronRight :size="14" />
+        </span>
+      </button>
+      <div
+        v-else
         class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       >
         <div class="border-b border-border-subtle bg-surface px-2 py-1.5">
@@ -2047,7 +2141,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 <span
                   :class="
                     cn(
-                      'min-w-0 truncate font-mono text-[11px] font-bold leading-4',
+                      'max-w-full shrink-0 truncate font-mono text-[11px] font-bold leading-4',
                       file.status === 'DELETED' ? 'text-on-surface-variant line-through' : 'text-on-surface',
                     )
                   "
@@ -2056,7 +2150,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 </span>
                 <span
                   v-if="gitFileDirectory(file)"
-                  class="hidden min-w-0 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65 sm:inline"
+                  class="min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65"
                 >
                   {{ gitFileDirectory(file) }}
                 </span>
@@ -2127,13 +2221,31 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </div>
       </div>
 
+      <button
+        v-if="isGitGraphPanelCollapsed"
+        type="button"
+        class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
+        title="展开提交图面板"
+        aria-label="展开提交图面板"
+        @click="expandGitPanels"
+      >
+        <span
+          class="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
+        >
+          <ChevronLeft :size="14" />
+        </span>
+      </button>
+
       <div
+        v-else
         class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
       >
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
         >
-          <h3 class="text-sm font-bold text-on-surface">{{ t.git.graph }}</h3>
+          <div class="flex min-w-0 items-center gap-1.5">
+            <h3 class="min-w-0 truncate text-sm font-bold text-on-surface">{{ t.git.graph }}</h3>
+          </div>
           <div class="flex items-center gap-1 shrink-0">
             <button
               @click="scrollGitPanel('graph', 'top')"

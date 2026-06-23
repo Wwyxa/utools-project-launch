@@ -1585,6 +1585,20 @@ function uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus) {
   return { actionPaths: Array.from(actionPaths), displayPaths: Array.from(new Set(displayPaths)) };
 }
 
+function allGitActionPaths(repositoryPath, filterStatus) {
+  const actionPaths = new Set();
+  const displayPaths = [];
+  readGitStatusEntries(repositoryPath).forEach((status) => {
+    if (!filterStatus(status, status.path)) {
+      return;
+    }
+    gitFileActionPaths(repositoryPath, status, status.path).forEach((filePath) => actionPaths.add(filePath));
+    displayPaths.push(status.path);
+  });
+
+  return { actionPaths: Array.from(actionPaths), displayPaths: Array.from(new Set(displayPaths)) };
+}
+
 function hasUncommittedGitChanges(repositoryPath) {
   const status = runGit(repositoryPath, ["status", "--porcelain"]);
   return Boolean(status && status.trim());
@@ -1722,16 +1736,17 @@ function discardGitFile(projectPath, relativePath) {
   }
 }
 
-function stageGitFiles(projectPath, relativePaths) {
+function stageGitFiles(projectPath, relativePaths, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
     return { ok: false, message: "未检测到 Git 仓库。" };
   }
 
   try {
-    const { actionPaths, displayPaths } = uniqueGitActionPaths(repositoryPath, relativePaths, (status) =>
-      Boolean(status && (status.unstaged || (!status.staged && status.unstaged !== false))),
-    );
+    const filterStatus = (status) => Boolean(status && (status.unstaged || (!status.staged && status.unstaged !== false)));
+    const { actionPaths, displayPaths } = options?.all
+      ? allGitActionPaths(repositoryPath, filterStatus)
+      : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
     if (actionPaths.length === 0) {
       return { ok: false, count: 0, paths: [], message: "没有可暂存的文件变更。" };
     }
@@ -1749,16 +1764,17 @@ function stageGitFiles(projectPath, relativePaths) {
   }
 }
 
-function unstageGitFiles(projectPath, relativePaths) {
+function unstageGitFiles(projectPath, relativePaths, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
     return { ok: false, message: "未检测到 Git 仓库。" };
   }
 
   try {
-    const { actionPaths, displayPaths } = uniqueGitActionPaths(repositoryPath, relativePaths, (status) =>
-      Boolean(status?.staged),
-    );
+    const filterStatus = (status) => Boolean(status?.staged);
+    const { actionPaths, displayPaths } = options?.all
+      ? allGitActionPaths(repositoryPath, filterStatus)
+      : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
     if (actionPaths.length === 0) {
       return { ok: false, count: 0, paths: [], message: "没有可取消暂存的文件。" };
     }
@@ -1781,8 +1797,14 @@ function unstageGitFiles(projectPath, relativePaths) {
   }
 }
 
-function discardGitFiles(projectPath, relativePaths) {
-  const requestedPaths = Array.isArray(relativePaths) ? Array.from(new Set(relativePaths)) : [];
+function discardGitFiles(projectPath, relativePaths, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  const requestedPaths =
+    options?.all && repositoryPath
+      ? allGitActionPaths(repositoryPath, (status) => Boolean(status)).displayPaths
+      : Array.isArray(relativePaths)
+        ? Array.from(new Set(relativePaths))
+        : [];
   if (requestedPaths.length === 0) {
     return { ok: false, count: 0, paths: [], message: "没有可丢弃的文件变更。" };
   }

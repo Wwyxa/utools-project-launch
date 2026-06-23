@@ -1701,39 +1701,51 @@ export const useStore = defineStore("app", {
       }
       return result;
     },
-    async stageGitFiles(projectId: string, relativePaths: string[]): Promise<ProjectGitActionResult | null> {
+    async stageGitFiles(
+      projectId: string,
+      relativePaths: string[],
+      options: { all?: boolean } = {},
+    ): Promise<ProjectGitActionResult | null> {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {
         return null;
       }
 
-      const result = await bridge.stageGitFiles(project.path, relativePaths);
+      const result = await bridge.stageGitFiles(project.path, relativePaths, options);
       if (result.ok) {
         bumpGitMutationVersion(projectId);
         await this.refreshGitStatusSnapshot(projectId);
       }
       return result;
     },
-    async unstageGitFiles(projectId: string, relativePaths: string[]): Promise<ProjectGitActionResult | null> {
+    async unstageGitFiles(
+      projectId: string,
+      relativePaths: string[],
+      options: { all?: boolean } = {},
+    ): Promise<ProjectGitActionResult | null> {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {
         return null;
       }
 
-      const result = await bridge.unstageGitFiles(project.path, relativePaths);
+      const result = await bridge.unstageGitFiles(project.path, relativePaths, options);
       if (result.ok) {
         bumpGitMutationVersion(projectId);
         await this.refreshGitStatusSnapshot(projectId);
       }
       return result;
     },
-    async discardGitFiles(projectId: string, relativePaths: string[]): Promise<ProjectGitActionResult | null> {
+    async discardGitFiles(
+      projectId: string,
+      relativePaths: string[],
+      options: { all?: boolean } = {},
+    ): Promise<ProjectGitActionResult | null> {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {
         return null;
       }
 
-      const result = await bridge.discardGitFiles(project.path, relativePaths);
+      const result = await bridge.discardGitFiles(project.path, relativePaths, options);
       if (result.ok) {
         bumpGitMutationVersion(projectId);
         await this.refreshGitSnapshot(projectId, { force: true });
