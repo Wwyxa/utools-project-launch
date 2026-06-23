@@ -106,7 +106,7 @@ const commitMessageAiState = ref<AiState>("idle");
 const confirmationDialog = ref<AppActionDialog | null>(null);
 const isConfirmationRunning = ref(false);
 const commitMessageTextareaMinHeight = 60;
-const commitMessageTextareaMaxHeight = 124;
+const commitMessageTextareaMaxHeight = 192;
 
 const resizeCommitMessageTextarea = () => {
   const textarea = commitMessageTextareaRef.value;
@@ -201,7 +201,7 @@ const globalLoadingMessage = computed(() => {
   if (commitMessageAiState.value === "loading") {
     return "正在生成 commit message...";
   }
-  
+
   // Git 刷新操作
   if (isGitSnapshotRefreshing.value) {
     return "正在刷新 Git 快照...";
@@ -209,23 +209,23 @@ const globalLoadingMessage = computed(() => {
   if (isGitStatusRefreshing.value) {
     return "正在更新 Git 状态...";
   }
-  
+
   // 加载更多提交
   if (isLoadingMore.value) {
     return "正在加载更多提交...";
   }
-  
+
   // 批量操作进度
   if (activeGitAction.value && bulkActionProgress.value.total > 0) {
     const action = activeGitAction.value.replace("bulk:", "") as GitFileActionName;
     return gitBulkActionProgressMessage(action, bulkActionProgress.value.current, bulkActionProgress.value.total);
   }
-  
+
   // 其他 Git 操作
   if (gitActionState.value === "loading" && gitActionMessage.value) {
     return gitActionMessage.value;
   }
-  
+
   return "";
 });
 
@@ -397,18 +397,21 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
   activeGitAction.value = `bulk:${action}`;
   const totalFiles = targetFiles.length;
   bulkActionProgress.value = { current: 0, total: totalFiles };
-  
+
   // 显示初始进度
   setGitActionResult("loading", gitBulkActionProgressMessage(action, 0, totalFiles));
   await waitForVisualFeedback();
-  
+
   // 启动一个进度模拟器（预估时间）
-  const progressInterval = setInterval(() => {
-    if (bulkActionProgress.value.current < totalFiles - 1) {
-      bulkActionProgress.value.current++;
-    }
-  }, Math.max(50, Math.min(200, 1000 / totalFiles)));
-  
+  const progressInterval = setInterval(
+    () => {
+      if (bulkActionProgress.value.current < totalFiles - 1) {
+        bulkActionProgress.value.current++;
+      }
+    },
+    Math.max(50, Math.min(200, 1000 / totalFiles)),
+  );
+
   try {
     const paths = targetFiles.map((file) => file.path);
     const result =
@@ -417,15 +420,15 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
         : action === "unstage"
           ? await store.unstageGitFiles(props.project.id, paths)
           : await store.discardGitFiles(props.project.id, paths);
-    
+
     clearInterval(progressInterval);
     bulkActionProgress.value.current = totalFiles;
-    
+
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法执行 Git 操作。");
       return;
     }
-    
+
     if (action === "stage" || action === "unstage") {
       setGitActionResult("idle", "");
     } else {
@@ -632,7 +635,9 @@ const selectedCommitLocalBranchNames = computed(() => {
     .filter((refName) => localBranches.has(refName));
 });
 const canCheckoutSelectedCommit = computed(
-  () => Boolean(selectedCommit.value) && (!isSelectedCommitDetachedHead.value || selectedCommitLocalBranchNames.value.length > 0),
+  () =>
+    Boolean(selectedCommit.value) &&
+    (!isSelectedCommitDetachedHead.value || selectedCommitLocalBranchNames.value.length > 0),
 );
 const selectedCommitCheckoutTitle = computed(() => {
   if (isSelectedCommitDetachedHead.value && selectedCommitLocalBranchNames.value.length === 0) {
@@ -669,7 +674,10 @@ const executeCheckoutCommit = async (commit: ProjectGitCommitSummary, options: {
   if (!commit || activeGitAction.value || activeGitFileActions.value.length > 0) return;
 
   activeGitAction.value = `checkout:${commit.hash}`;
-  setGitActionResult("loading", options.force ? `正在强制切换到提交 ${commit.hash}...` : `正在切换到提交 ${commit.hash}...`);
+  setGitActionResult(
+    "loading",
+    options.force ? `正在强制切换到提交 ${commit.hash}...` : `正在切换到提交 ${commit.hash}...`,
+  );
   await waitForVisualFeedback();
   try {
     const result = await store.checkoutGitCommit(props.project.id, commit.hash, options);
@@ -1904,35 +1912,37 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       >
         <div class="border-b border-border-subtle bg-surface px-2 py-1.5">
-          <div class="flex min-w-0 items-start gap-1.5">
+          <div class="flex min-w-0 flex-col gap-1.5">
             <textarea
               ref="commitMessageTextareaRef"
               v-model="commitMessage"
               rows="1"
-              class="themed-scrollbar h-[3.75rem] max-h-[7.75rem] min-h-[3.75rem] min-w-0 flex-1 resize-none overflow-hidden rounded border border-transparent bg-surface-container-low px-2 py-1.5 text-xs leading-4 text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/55 focus:border-primary/45 focus:bg-surface"
+              class="themed-scrollbar h-[3.75rem] max-h-[12rem] min-h-[3.75rem] w-full min-w-0 shrink-0 resize-none overflow-hidden rounded border border-transparent bg-surface-container-low px-2 py-1.5 text-xs leading-4 text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/55 focus:border-primary/45 focus:bg-surface"
               placeholder="输入 commit message..."
               @input="resizeCommitMessageTextarea"
             ></textarea>
-            <div class="flex shrink-0 flex-col items-center gap-1">
+            <div class="flex items-center gap-1.5">
               <button
                 type="button"
-                class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                class="flex h-6 flex-1 items-center justify-center gap-1 rounded border border-border-subtle bg-primary px-2 text-xs font-medium text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
                 :disabled="isAnyGitWriteRunning || !hasStagedChanges || !commitMessage.trim()"
                 :title="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
                 :aria-label="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
                 @click="handleCommitStaged"
               >
-                <GitCommitHorizontal :size="13" :class="activeGitAction === 'commit' ? 'animate-pulse' : ''" />
+                <Check :size="12" :class="activeGitAction === 'commit' ? 'animate-pulse' : ''" :stroke-width="2.5" />
+                <span>提交</span>
               </button>
               <button
                 type="button"
-                class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-60"
+                class="flex h-6 flex-1 items-center justify-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-medium text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-60"
                 :disabled="isAnyGitWriteRunning || commitMessageAiState === 'loading'"
                 :title="commitMessageAiState === 'loading' ? '正在生成 commit message' : 'AI 生成 commit message'"
                 :aria-label="commitMessageAiState === 'loading' ? '正在生成 commit message' : 'AI 生成 commit message'"
                 @click="generateCommitMessage"
               >
-                <WandSparkles :size="13" :class="commitMessageAiState === 'loading' ? 'animate-pulse' : ''" />
+                <WandSparkles :size="12" :class="commitMessageAiState === 'loading' ? 'animate-pulse' : ''" />
+                <span>AI 生成</span>
               </button>
             </div>
           </div>
@@ -2634,11 +2644,16 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         >
           <div class="min-w-0 flex-1 py-0.5">
             <div class="flex min-w-0 items-center">
-              <span class="block min-w-0 truncate text-sm font-semibold leading-5 text-on-surface" :title="selectedCommit.message">
+              <span
+                class="block min-w-0 truncate text-sm font-semibold leading-5 text-on-surface"
+                :title="selectedCommit.message"
+              >
                 {{ selectedCommit.message }}
               </span>
             </div>
-            <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-medium leading-4 text-on-surface-variant">
+            <div
+              class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-medium leading-4 text-on-surface-variant"
+            >
               <button
                 type="button"
                 class="inline-flex h-5 max-w-28 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-1.5 font-mono font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
