@@ -1212,3 +1212,40 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: 优化 GitTab 交互体验：Loading 提示、Diff 高亮、未跟踪文件夹、Commit 输入框
+
+**Date**: 2026-06-23
+**Task**: 优化 GitTab 交互体验：Loading 提示、Diff 高亮、未跟踪文件夹、Commit 输入框
+**Branch**: `master`
+
+### Summary
+
+实现全局 Loading Toast 提示、批量操作进度反馈、Diff 语义化高亮、ESC 关闭弹窗、修复未跟踪文件夹展开和 Diff 查看、优化 commit message 输入框布局
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `09a66e6` | (see git log) |
+| `584cc00` | (see git log) |
+| `22ced2d` | (see git log) |
+| `420f887` | (see git log) |
+| `ae9cd06` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
