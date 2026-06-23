@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend spec index - verify code follows project conventions"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Check Vue component patterns and composition API usage"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify Pinia store patterns"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify code standards and check for forbidden patterns"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Check TypeScript type safety and validation"}
+{"file": ".trellis/tasks/06-23-git-tab-interaction-ux/prd.md", "reason": "Verify implementation matches requirements"}
