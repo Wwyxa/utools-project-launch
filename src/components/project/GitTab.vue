@@ -1294,6 +1294,20 @@ const closeDiffDialog = () => {
   isDiffDialogOpen.value = false;
 };
 
+const handleEscapeKey = (event: KeyboardEvent) => {
+  if (event.key === "Escape" && isDiffDialogOpen.value) {
+    closeDiffDialog();
+  }
+};
+
+const stopWatchingDiffDialog = watch(isDiffDialogOpen, (isOpen) => {
+  if (isOpen) {
+    window.addEventListener("keydown", handleEscapeKey);
+  } else {
+    window.removeEventListener("keydown", handleEscapeKey);
+  }
+});
+
 const showCommitTooltip = (event: MouseEvent, commit: ProjectGitCommitSummary) => {
   window.clearTimeout(commitTooltipTimer);
   pendingCommitTooltip.value = { commit, x: event.clientX, y: event.clientY };
@@ -1319,6 +1333,8 @@ const hideCommitTooltip = () => {
 onBeforeUnmount(() => {
   hideCommitTooltip();
   window.clearTimeout(copiedTimer.value);
+  stopWatchingDiffDialog();
+  window.removeEventListener("keydown", handleEscapeKey);
 });
 
 watch(
@@ -2555,7 +2571,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       @click.self="closeDiffDialog"
     >
       <div
-        class="flex h-[min(42rem,86vh)] w-[min(58rem,92vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+        class="flex h-[70vh] w-[80vw] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
       >
         <div
           class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
@@ -2584,11 +2600,12 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               :key="line.id"
               :class="
                 cn(
-                  'grid grid-cols-[3.25rem_minmax(0,1fr)] whitespace-pre text-on-surface',
-                  line.kind === 'add' && 'bg-status-running/10 text-on-surface',
-                  line.kind === 'delete' && 'bg-status-error/10 text-on-surface',
-                  line.kind === 'hunk' && 'bg-secondary/10 text-secondary',
-                  line.kind === 'meta' && 'bg-surface-container-low text-on-surface-variant',
+                  'grid grid-cols-[3.25rem_minmax(0,1fr)] whitespace-pre',
+                  line.kind === 'add' && 'bg-green-500/15 text-green-700 dark:bg-green-400/10 dark:text-green-300',
+                  line.kind === 'delete' && 'bg-red-500/15 text-red-700 dark:bg-red-400/10 dark:text-red-300',
+                  line.kind === 'hunk' && 'bg-blue-500/10 text-blue-600 dark:bg-blue-400/8 dark:text-blue-400',
+                  line.kind === 'meta' && 'bg-surface-container-low text-on-surface-variant/70',
+                  line.kind === 'context' && 'text-on-surface',
                 )
               "
             >
