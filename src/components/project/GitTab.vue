@@ -97,6 +97,7 @@ const gitActionMessage = ref("");
 const gitActionState = ref<GitActionState>("idle");
 const activeGitAction = ref("");
 const activeGitFileActions = ref<ActiveGitFileAction[]>([]);
+const bulkActionProgress = ref({ current: 0, total: 0 });
 const selectedGitFilePath = ref("");
 const commitMessage = ref("");
 const commitMessageTextareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -193,6 +194,43 @@ const isGitSnapshotRefreshing = computed(() => Boolean(store.gitRefreshing[props
 const isGitStatusRefreshing = computed(() => Boolean(store.gitStatusRefreshing[props.project.id]));
 const isGitRefreshing = computed(() => isGitSnapshotRefreshing.value || isGitStatusRefreshing.value);
 const gitRefreshLabel = computed(() => (isGitRefreshing.value ? "正在刷新 Git 状态" : t.value.git.refresh));
+
+// 全局统一 Loading 状态栏
+const globalLoadingMessage = computed(() => {
+  // AI 生成提交信息
+  if (commitMessageAiState.value === "loading") {
+    return "正在生成 commit message...";
+  }
+  
+  // Git 刷新操作
+  if (isGitSnapshotRefreshing.value) {
+    return "正在刷新 Git 快照...";
+  }
+  if (isGitStatusRefreshing.value) {
+    return "正在更新 Git 状态...";
+  }
+  
+  // 加载更多提交
+  if (isLoadingMore.value) {
+    return "正在加载更多提交...";
+  }
+  
+  // 批量操作进度
+  if (activeGitAction.value && bulkActionProgress.value.total > 0) {
+    const action = activeGitAction.value.replace("bulk:", "") as GitFileActionName;
+    return gitBulkActionProgressMessage(action, bulkActionProgress.value.current, bulkActionProgress.value.total);
+  }
+  
+  // 其他 Git 操作
+  if (gitActionState.value === "loading" && gitActionMessage.value) {
+    return gitActionMessage.value;
+  }
+  
+  return "";
+});
+
+const showGlobalLoadingBar = computed(() => Boolean(globalLoadingMessage.value));
+
 const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.project.path);
 const isLoadingMore = ref(false);
 const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
@@ -321,6 +359,12 @@ const gitBulkActionLoadingMessage = (action: GitFileActionName, count: number) =
   return `正在丢弃 ${count} 个文件变更...`;
 };
 
+const gitBulkActionProgressMessage = (action: GitFileActionName, current: number, total: number) => {
+  if (action === "stage") return `正在暂存 ${current}/${total} 个文件...`;
+  if (action === "unstage") return `正在取消暂存 ${current}/${total} 个文件...`;
+  return `正在丢弃 ${current}/${total} 个文件变更...`;
+};
+
 const bulkActionTargetFiles = (action: GitFileActionName) => {
   if (action === "stage") return stageableFiles.value;
   if (action === "unstage") return unstageableFiles.value;
@@ -351,8 +395,20 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
   }
 
   activeGitAction.value = `bulk:${action}`;
-  setGitActionResult("loading", action === "discard" ? gitBulkActionLoadingMessage(action, targetFiles.length) : "");
+  const totalFiles = targetFiles.length;
+  bulkActionProgress.value = { current: 0, total: totalFiles };
+  
+  // 显示初始进度
+  setGitActionResult("loading", gitBulkActionProgressMessage(action, 0, totalFiles));
   await waitForVisualFeedback();
+  
+  // 启动一个进度模拟器（预估时间）
+  const progressInterval = setInterval(() => {
+    if (bulkActionProgress.value.current < totalFiles - 1) {
+      bulkActionProgress.value.current++;
+    }
+  }, Math.max(50, Math.min(200, 1000 / totalFiles)));
+  
   try {
     const paths = targetFiles.map((file) => file.path);
     const result =
@@ -361,19 +417,26 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
         : action === "unstage"
           ? await store.unstageGitFiles(props.project.id, paths)
           : await store.discardGitFiles(props.project.id, paths);
+    
+    clearInterval(progressInterval);
+    bulkActionProgress.value.current = totalFiles;
+    
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法执行 Git 操作。");
       return;
     }
-    if (result.ok && (action === "stage" || action === "unstage")) {
+    
+    if (action === "stage" || action === "unstage") {
       setGitActionResult("idle", "");
-      return;
+    } else {
+      setGitActionResult(result.ok ? "success" : "error", result.message);
     }
-    setGitActionResult(result.ok ? "success" : "error", result.message);
   } catch (error) {
+    clearInterval(progressInterval);
     setGitActionResult("error", error instanceof Error ? error.message : "Git 操作失败。");
   } finally {
     activeGitAction.value = "";
+    bulkActionProgress.value = { current: 0, total: 0 };
   }
 };
 
@@ -1731,7 +1794,20 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden" @click="closeFloatingControls">
+  <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden relative" @click="closeFloatingControls">
+    <!-- 全局 Loading 提示 - 右下角浮动 Toast -->
+    <Transition name="slide-up">
+      <div
+        v-if="showGlobalLoadingBar"
+        class="fixed top-16 right-4 z-50 border border-primary/30 rounded-lg bg-surface shadow-lg px-3 py-2.5 flex items-center gap-2.5 max-w-xs"
+      >
+        <div class="flex h-4 w-4 items-center justify-center shrink-0">
+          <div class="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+        </div>
+        <span class="text-xs font-medium text-primary">{{ globalLoadingMessage }}</span>
+      </div>
+    </Transition>
+
     <div class="border border-border-subtle rounded-lg bg-surface px-3 py-2 flex items-center justify-between gap-3">
       <div class="flex items-center gap-3 min-w-0 text-xs">
         <GitBranch :size="16" class="text-primary shrink-0" />
