@@ -2158,9 +2158,7 @@ function mergeStoredProjects(legacyProjects, docProjects) {
 
 function hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects) {
   const docProjectIds = new Set(
-    docProjects
-      .map((project) => project?.id)
-      .filter((projectId) => typeof projectId === "string" && projectId),
+    docProjects.map((project) => project?.id).filter((projectId) => typeof projectId === "string" && projectId),
   );
   return legacyProjects.some(
     (project) => typeof project?.id === "string" && project.id && !docProjectIds.has(project.id),
@@ -2422,10 +2420,28 @@ function readGitFileDiff(projectPath, relativePath) {
   const status = getGitFileStatus(repositoryPath, diffPath);
   const headDiff = runGitDiff(repositoryPath, ["diff", "--", diffPath]);
   const cachedDiff = runGitDiff(repositoryPath, ["diff", "--cached", "--", diffPath]);
-  const untrackedDiff =
-    status?.status === "UNTRACKED" && fs.existsSync(resolved.targetPath)
-      ? runGitDiff(repositoryPath, ["diff", "--no-index", "--", os.devNull, diffPath])
-      : "";
+
+  const isFileUntracked =
+    status?.status === "UNTRACKED" ||
+    (fs.existsSync(resolved.targetPath) &&
+      fs.statSync(resolved.targetPath).isFile() &&
+      runGitResult(repositoryPath, ["ls-files", "--error-unmatch", "--", diffPath]).status !== 0);
+
+  let untrackedDiff = "";
+  if (isFileUntracked) {
+    const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
+    untrackedDiff = runGitDiff(repositoryPath, ["diff", "--no-index", "--", nullDevice, diffPath]) || "";
+    if (!untrackedDiff) {
+      try {
+        const content = fs.readFileSync(resolved.targetPath, "utf-8");
+        const lines = content.split(/\r?\n/);
+        untrackedDiff = `diff --git a/${diffPath} b/${diffPath}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${diffPath}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join("\n")}`;
+      } catch (readErr) {
+        untrackedDiff = "";
+      }
+    }
+  }
+
   const diff = [cachedDiff, headDiff, untrackedDiff].filter(Boolean).join("\n");
 
   return {
@@ -2671,15 +2687,68 @@ async function readGitStatusSnapshot(projectPath) {
     const additions = pathStats?.additions ?? originalPathStats?.additions ?? 0;
     const deletions = pathStats?.deletions ?? originalPathStats?.deletions ?? 0;
 
-    fileMap.set(entry.path, {
-      path: entry.path,
-      originalPath: entry.originalPath,
-      additions,
-      deletions,
-      status: entry.status,
-      staged: entry.staged,
-      unstaged: entry.unstaged,
-    });
+    // 如果路径以 / 结尾，说明是未跟踪的文件夹，需要展开
+    if (entry.path.endsWith("/") || entry.path.endsWith("\\")) {
+      const folderPath = path.join(repositoryPath, entry.path);
+      try {
+        // 递归读取文件夹下的所有文件
+        const expandedFiles = [];
+        function walkDir(dirPath, basePath) {
+          const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+          for (const ent of entries) {
+            const fullPath = path.join(dirPath, ent.name);
+            const relativePath = path.relative(repositoryPath, fullPath).replace(/\\/g, "/");
+            if (ent.isDirectory()) {
+              walkDir(fullPath, basePath);
+            } else if (ent.isFile()) {
+              // 计算新文件的行数作为 additions
+              let lineCount = 0;
+              try {
+                const content = fs.readFileSync(fullPath, "utf-8");
+                lineCount = content.split(/\r?\n/).length;
+              } catch (err) {
+                lineCount = 0;
+              }
+              expandedFiles.push({
+                path: relativePath,
+                originalPath: undefined,
+                additions: lineCount,
+                deletions: 0,
+                status: "UNTRACKED",
+                staged: false,
+                unstaged: true,
+              });
+            }
+          }
+        }
+        walkDir(folderPath, entry.path);
+        // 将展开的文件添加到 fileMap
+        expandedFiles.forEach((file) => {
+          fileMap.set(file.path, file);
+        });
+      } catch (err) {
+        // 如果读取失败，保留原始文件夹条目（稍后过滤）
+        fileMap.set(entry.path, {
+          path: entry.path,
+          originalPath: entry.originalPath,
+          additions,
+          deletions,
+          status: entry.status,
+          staged: entry.staged,
+          unstaged: entry.unstaged,
+        });
+      }
+    } else {
+      fileMap.set(entry.path, {
+        path: entry.path,
+        originalPath: entry.originalPath,
+        additions,
+        deletions,
+        status: entry.status,
+        staged: entry.staged,
+        unstaged: entry.unstaged,
+      });
+    }
   });
 
   const branchLine = branchOutput ? String(branchOutput).split(/\r?\n/)[0] : "";
@@ -2695,7 +2764,10 @@ async function readGitStatusSnapshot(projectPath) {
     isDetachedHead,
     ahead: aheadMatch ? Number(aheadMatch[1]) : 0,
     behind: behindMatch ? Number(behindMatch[1]) : 0,
-    files: Array.from(fileMap.values()),
+    files: Array.from(fileMap.values()).filter((file) => {
+      // 过滤掉文件夹条目（路径以 / 或 \ 结尾）
+      return !file.path.endsWith("/") && !file.path.endsWith("\\");
+    }),
     branches,
     repositoryPath,
     lastRefreshedAt: now,
