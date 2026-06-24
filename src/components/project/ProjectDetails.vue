@@ -321,7 +321,7 @@ watch(() => props.project.id, scheduleInitialGitRefresh);
                   class="inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant"
                 >
                   <Folder :size="12" />
-                  {{ project.git?.branch || project.branch || "main" }}
+                  {{ project.git?.branch || "main" }}
                 </span>
                 <span
                   class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border-subtle bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant"

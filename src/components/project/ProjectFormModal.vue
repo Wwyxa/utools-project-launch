@@ -165,15 +165,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                 </button>
               </div>
             </div>
-            <label class="space-y-1.5 md:col-span-3">
-              <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.branch }}</span>
-              <input
-                :value="form.branch"
-                @input="(event) => store.updateProjectForm({ branch: (event.target as HTMLInputElement).value })"
-                class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
-              />
-            </label>
-            <label class="space-y-1.5 md:col-span-3">
+            <label class="space-y-1.5 md:col-span-4">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.group }}</span>
               <input
                 :value="form.group"
@@ -216,7 +208,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                 </button>
               </div>
             </div>
-            <label class="space-y-1.5 md:col-span-3">
+            <label class="space-y-1.5 md:col-span-5">
               <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.quickLink }}</span>
               <div class="flex gap-2">
                 <input

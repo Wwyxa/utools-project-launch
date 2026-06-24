@@ -114,7 +114,9 @@ function normalizeProjectKind(value: unknown): ProjectKind {
 }
 
 function normalizeProjectStatus(value: unknown): ProjectStatus {
-  return Object.values(ProjectStatus).includes(value as ProjectStatus) ? (value as ProjectStatus) : ProjectStatus.STOPPED;
+  return Object.values(ProjectStatus).includes(value as ProjectStatus)
+    ? (value as ProjectStatus)
+    : ProjectStatus.STOPPED;
 }
 
 function normalizeProjectEnv(value: unknown): Record<string, string> {
@@ -146,7 +148,10 @@ function normalizeProjectScripts(projectId: string, value: unknown): ProjectScri
       : "IDLE";
 
     normalizedScripts.push({
-      id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : createScriptId(fallbackProjectId, index),
+      id:
+        typeof candidate.id === "string" && candidate.id.trim()
+          ? candidate.id
+          : createScriptId(fallbackProjectId, index),
       name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name : "start",
       command: typeof candidate.command === "string" ? candidate.command : "",
       status,
@@ -198,7 +203,6 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
       status: "IDLE",
     })),
     env: normalizeProjectEnv(project.env),
-    branch: project.branch || "main",
     memo: project.memo || "",
     todos: project.todos || [],
     git: null,
@@ -328,7 +332,6 @@ function formFromProject(project: Project): ProjectFormValue {
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     description: project.description || "",
-    branch: project.branch || "main",
     memo: project.memo || "",
     envEntries: Object.entries(projectEnv).map(([key, value]) => ({
       id: `${project.id}-${key}`,
@@ -390,7 +393,6 @@ function hydrateProject(project: Project): Project {
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     env: normalizeProjectEnv(project.env),
-    branch: project.branch || project.git?.branch || "main",
     description: project.description || "",
     memo: project.memo || "",
     todos: project.todos || [],
@@ -624,7 +626,6 @@ function createBlankProjectForm(): ProjectFormValue {
     quickLink: "",
     group: "",
     description: "",
-    branch: "main",
     memo: "",
     envEntries: [],
     scripts: [
@@ -1130,7 +1131,6 @@ export const useStore = defineStore("app", {
               result.type || this.projectFormDraft.type,
               result.name || currentName,
             ),
-          branch: result.branch || this.projectFormDraft.branch,
           scripts: scripts.length > 0 ? scripts : this.projectFormDraft.scripts,
         };
         await this.refreshProjectFormCwdSuggestions(projectPath);
@@ -1264,7 +1264,8 @@ export const useStore = defineStore("app", {
         name: payload.name.trim(),
         path: payload.path.trim(),
         visibility: payload.visibility,
-        ownerDeviceId: payload.visibility === "private" ? currentDeviceId : existingProject?.ownerDeviceId || currentDeviceId,
+        ownerDeviceId:
+          payload.visibility === "private" ? currentDeviceId : existingProject?.ownerDeviceId || currentDeviceId,
         type: payload.type,
         kind: payload.kind,
         icon: payload.icon,
@@ -1284,7 +1285,6 @@ export const useStore = defineStore("app", {
         lastUpdated: new Date().toLocaleString(),
         scripts,
         env,
-        branch: payload.branch,
         memo: payload.memo,
         todos: this.todos[projectId] || existingProject?.todos || [],
         git: existingProject?.git || null,
@@ -1391,7 +1391,8 @@ export const useStore = defineStore("app", {
 
       const isUnavailable = project.pathExists === false;
       const isSameSection = (item: Project) =>
-        isProjectVisibleOnCurrentDevice(item) && (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+        isProjectVisibleOnCurrentDevice(item) &&
+        (isUnavailable ? item.pathExists === false : item.pathExists !== false);
       const sectionProjects = this.projects.filter(isSameSection);
       const sectionProjectIds = new Set(sectionProjects.map((item) => item.id));
       const scopedSectionProjects = (scopeProjectIds || [])
@@ -1452,7 +1453,8 @@ export const useStore = defineStore("app", {
 
       const isUnavailable = project.pathExists === false;
       const isSameSection = (item: Project) =>
-        isProjectVisibleOnCurrentDevice(item) && (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+        isProjectVisibleOnCurrentDevice(item) &&
+        (isUnavailable ? item.pathExists === false : item.pathExists !== false);
       if (!isSameSection(targetProject)) {
         return false;
       }
@@ -1553,7 +1555,6 @@ export const useStore = defineStore("app", {
           }
           project.git = normalizeGitSnapshot(snapshot);
           if (project.git) {
-            project.branch = project.git.branch;
             project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
             this.stagedFiles[projectId] = project.git.files;
           }
@@ -1589,7 +1590,6 @@ export const useStore = defineStore("app", {
             const startedAtVersion = gitMutationVersion(projectId);
             const statusSnapshot = await bridge.readGitStatusSnapshot(project.path);
             project.git = mergeGitStatusSnapshot(project.git, statusSnapshot);
-            project.branch = project.git.branch;
             this.stagedFiles[projectId] = project.git.files;
             needsAnotherRead = startedAtVersion !== gitMutationVersion(projectId);
           }
@@ -1796,7 +1796,7 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.checkoutGitCommit(project.path, commitHash, {
         ...options,
-        preferredBranch: project.branch || project.git?.branch,
+        preferredBranch: project.git?.branch,
       });
       if (result.ok) {
         bumpGitMutationVersion(projectId);

@@ -289,7 +289,6 @@ export interface ProjectFormValue {
   quickLink: string;
   group: string;
   description: string;
-  branch: string;
   memo: string;
   envEntries: ProjectEnvironmentEntry[];
   scripts: ProjectScriptFormValue[];
@@ -311,7 +310,6 @@ export interface Project {
   lastUpdated?: string;
   scripts: ProjectScript[];
   env: Record<string, string>;
-  branch?: string;
   memo?: string;
   todos?: TodoItem[];
   git?: ProjectGitSnapshot | null;
@@ -334,7 +332,6 @@ export interface ProjectPathInspection {
   name?: string;
   type?: string;
   kind?: ProjectKind;
-  branch?: string;
   scripts: ProjectBridgePackageScript[];
   packagePath: string | null;
   git?: ProjectBridgeGitSnapshot | null;

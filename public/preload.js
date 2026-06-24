@@ -1743,7 +1743,8 @@ function stageGitFiles(projectPath, relativePaths, options = {}) {
   }
 
   try {
-    const filterStatus = (status) => Boolean(status && (status.unstaged || (!status.staged && status.unstaged !== false)));
+    const filterStatus = (status) =>
+      Boolean(status && (status.unstaged || (!status.staged && status.unstaged !== false)));
     const { actionPaths, displayPaths } = options?.all
       ? allGitActionPaths(repositoryPath, filterStatus)
       : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
@@ -2060,7 +2061,6 @@ function toStoredProject(project, index = 0) {
         }))
       : [],
     env: project.env || {},
-    branch: project.branch || "main",
     memo: project.memo || "",
     todos: Array.isArray(project.todos) ? project.todos : [],
     gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || "",

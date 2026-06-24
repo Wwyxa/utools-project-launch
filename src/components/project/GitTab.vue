@@ -170,13 +170,13 @@ const bulkSecondaryGitFileAction = computed<Exclude<GitFileActionName, "discard"
 const branchOptions = computed(() => {
   const branches = snapshot.value?.branches || [];
   if (branches.length > 0) return branches;
-  return [{ name: snapshot.value?.branch || props.project.branch || "main", current: true }];
+  return [{ name: snapshot.value?.branch || "main", current: true }];
 });
 const currentGitRefLabel = computed(() => {
   if (snapshot.value?.isDetachedHead) {
     return snapshot.value.headHash ? `HEAD @ ${snapshot.value.headHash}` : "detached HEAD";
   }
-  return snapshot.value?.branch || props.project.branch || "main";
+  return snapshot.value?.branch || "main";
 });
 const commitKeyword = ref("");
 const commitAuthor = ref("");
@@ -494,7 +494,7 @@ const executeGitFileAction = async (action: GitFileActionName, file: ProjectGitF
       setGitActionResult("warning", "当前项目不可用，无法执行 Git 操作。");
       return;
     }
-    
+
     if (action === "stage" || action === "unstage") {
       setGitActionResult("idle", "");
     } else {
