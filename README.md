@@ -1,60 +1,56 @@
-# uTools 项目管理器
+# uTools Project Launch
 
-项目/服务启动与管理，可以用来管理前端、后端、脚本工具或桌面程序项目，提供启动脚本配置、运行日志、文件浏览、Git 状态、备忘待办和开发环境检测等功能。
+一个给开发者用的项目快捷启动与管理工具。把常用项目、启动脚本、运行日志、Git 状态、文件预览、备忘待办和本机开发环境检测收进同一个轻量插件里，适合管理前端、后端、脚本工具、桌面程序或任何需要频繁启动的本地工程。
 
-## 功能介绍
+<!-- 在这里插入项目总览截图，例如 docs/screenshots/dashboard.png -->
 
-### 项目集中管理
+## 为什么做它
 
-- 支持手动添加本地项目，记录项目名称、目录、类型、图标、说明、默认分支、环境变量和启动脚本。
-- 支持 Node.js、Python、Go、已编译可执行文件和自定义项目类型，适配前端、后端、主程序、辅助任务等不同项目形态。
-- 项目总览提供搜索、刷新、拖拽排序和不可用项目提示，目录丢失时会单独标记，避免误以为项目仍可启动。
-- 支持从 uTools 指令直接打开项目管理器，也可以通过项目名称快速进入指定项目的启动区。
+本地开发项目一多，常见动作会变得很分散：找目录、开终端、跑脚本、看日志、查 Git 改动、记启动说明、检查 Node/Python/Go/Git 是否可用。uTools Project Launch 把这些高频动作集中到 uTools 里，用一个入口完成项目定位、启动、观察和轻量维护。
 
-### 启动脚本与运行日志
+## 主要功能
 
-- 每个项目可以配置多个启动命令，并为命令设置工作目录、分组说明和环境变量。
-- 支持启动、停止单个脚本，并在项目卡片和详情页展示运行中、停止中、异常、空闲等状态。
-- 在 uTools preload 中使用 Node.js 能力执行本地命令，实时收集 stdout/stderr 输出并回传到运行日志。
-- 运行日志支持清空、筛选、自动滚动、跳转顶部/底部，并可向正在运行的脚本发送一行输入，适合处理交互式命令。
-- 插件退出或分离时会尽量清理已启动的进程，减少后台命令遗留。
+- **项目启动台**：添加本地项目，记录名称、路径、类型、图标、分组、说明、默认分支、环境变量和启动脚本。
+- **脚本运行与日志**：为每个项目配置多个命令，支持启动、停止、状态展示、日志筛选、自动滚动和向运行中的脚本发送输入。
+- **文件浏览与轻量编辑**：内置文件树、文本预览、代码高亮、Markdown 渲染、图片识别、查找替换和可编辑文本保存。
+- **Git 工作区面板**：查看分支、ahead/behind、变更文件、diff、提交历史和提交详情，并支持常用暂存、撤销、提交、切换分支等本地操作。
+- **AI 辅助分析**：可对 Git 变更或提交范围生成总结、分析、评估，也可根据 diff 生成 commit message；支持 uTools 内置模型、OpenAI 兼容接口和 Anthropic 兼容接口。
+- **备忘与待办**：每个项目维护独立 Markdown 备忘和待办清单，用来记录启动方式、排障经验、发布事项或团队约定。
+- **开发环境检测**：检测 Node.js、npm、pnpm、Yarn、Python、pip、Go、Git、Docker 的可用性、版本和路径。
+- **偏好与迁移**：支持中英文界面、浅色/深色/跟随系统主题、默认终端/编辑器配置，以及项目配置导入导出。
 
-### 文件浏览与轻量编辑
+## 界面预览
 
-- 项目详情页内置文件树，可展开目录并浏览项目文件，自动忽略 `node_modules`、`.git`、`dist`、`build` 等常见大目录。
-- 支持文本文件预览、代码高亮、Markdown 渲染和常见图片文件识别。
-- 对可编辑文本文件提供编辑与保存能力，并支持 `Ctrl/Cmd + S` 快捷保存。
-- Git 变更文件可以跳转到文件页查看，方便从状态检查直接进入源码定位。
+![首页总览](docs/screenshots/首页总览.png)
 
-### Git 状态与 AI 分析
+![脚本运行](docs/screenshots/脚本运行.png)
 
-- Git 面板以只读方式展示当前分支、ahead/behind、工作区变更文件、最近提交和提交详情，不执行提交、推送、拉取等写操作。
-- 支持查看文件 diff、打开变更文件、加载更多提交，并按关键词、作者、起止日期筛选提交记录。
-- 支持对当前筛选范围或单个提交调用 AI 生成总结、分析或评估，输出会以 Markdown 形式展示。
-- AI 提供方支持 uTools 内置模型、OpenAI 兼容接口和 Anthropic 兼容接口，并允许自定义分析模式提示词。
+![Git 状态](docs/screenshots/Git状态.png)
 
-### 备忘、待办与项目上下文
+<!-- 在这里插入 Git 面板或文件预览截图 -->
 
-- 每个项目都可以维护独立备忘，用于记录启动说明、发布备注、团队约定或排障经验。
-- 支持项目待办清单，可新增、完成和拖拽排序待办事项。
-- 项目概览会汇总脚本数量、运行状态、待办完成情况、备忘内容和最近提交，帮助快速判断项目当前状态。
+## 技术栈
 
-### 开发环境检测与偏好设置
+- Vue 3 + TypeScript
+- Vite 6
+- Pinia
+- Tailwind CSS 4
+- lucide-vue-next
+- markdown-it + highlight.js
+- uTools preload + Node.js 本地能力
 
-- 内置开发环境检测页，可查看 Node.js、npm、pnpm、Yarn、Python、pip、Go、Git、Docker 等工具的可用性、版本、路径和检测时间。
-- 支持按需启用环境检测项，避免界面展示不关心的工具。
-- 支持浅色、深色和跟随系统主题，并提供简体中文与 English 界面切换。
-- 支持配置默认外部终端和编辑器，包括 Windows Terminal、PowerShell、CMD、VS Code、Cursor 以及自定义命令。
-- 支持导入、导出项目配置，便于迁移或备份本地项目清单。
-
-## 开发
+## 快速开始
 
 ```bash
 npm install
 npm run dev
 ```
 
-本地开发服务默认运行在 `http://localhost:3421`。
+开发服务默认运行在：
+
+```text
+http://localhost:3421
+```
 
 ## 构建
 
@@ -63,28 +59,72 @@ npm run lint
 npm run build
 ```
 
-构建产物输出到 `dist/`。根据 uTools 插件目录要求，加载或打包插件时应选择构建后的 `dist/plugin.json`，不要把整个项目根目录作为插件包。
+构建产物输出到 `dist/`。uTools 加载插件时请选择构建后的 `dist/plugin.json`，不要直接选择项目根目录。
 
-构建后的关键文件结构：
+构建后的关键文件通常包括：
 
 ```text
 dist/
 ├── index.html
 ├── plugin.json
 ├── preload.js
+├── logo.png
 ├── logo.svg
 └── assets/
 ```
 
-## uTools 加载
+## 在 uTools 中加载
 
 1. 执行 `npm run build`。
 2. 打开 uTools 开发者工具。
 3. 选择工程配置文件 `dist/plugin.json`。
-4. 在 uTools 中通过 “项目管理”、“项目启动器” 或 `project manager` 指令打开插件。
+4. 在 uTools 中通过 `PM`、`project manager` 或项目名称关键字打开插件。
 
-## 说明
+## 常用脚本
 
-- `public/plugin.json`、`public/preload.js` 和 `public/logo.svg` 会被 Vite 复制到 `dist/`。
-- `preload.js` 按 uTools 要求保持为可读 CommonJS 文件，不参与前端打包和压缩。
-- 当前 Git 功能为只读展示，不执行提交、推送、拉取等写操作。
+| 命令                               | 说明                                |
+| ---------------------------------- | ----------------------------------- |
+| `npm run dev`                      | 启动 Vite 开发服务，默认端口 `3421` |
+| `npm run build`                    | 构建 uTools 插件产物                |
+| `npm run preview`                  | 本地预览构建结果                    |
+| `npm run lint`                     | 执行 TypeScript 类型检查            |
+| `npm run type-check`               | 同 `lint`，执行 TypeScript 类型检查 |
+| `npm run clean`                    | 删除 `dist/` 构建目录               |
+| `npm run validate:ai-reasoning`    | 校验 AI reasoning 解析兼容性        |
+| `npm run validate:project-storage` | 校验项目存储兼容性                  |
+
+## 项目结构
+
+```text
+src/
+├── App.vue                  # 应用入口与 uTools 生命周期处理
+├── components/
+│   ├── dashboard/            # 项目总览与项目卡片
+│   ├── environment/          # 开发环境检测
+│   ├── layout/               # 设置页
+│   ├── project/              # 项目详情、脚本、文件、Git、备忘
+│   └── terminal/             # 运行日志终端
+├── lib/                      # i18n、Markdown、桥接与工具函数
+├── store/                    # Pinia 状态与业务动作
+└── types.ts                  # 共享类型定义
+
+public/
+├── plugin.json               # uTools 插件配置
+├── preload.js                # uTools preload，本地文件/进程/Git 能力
+├── logo.png
+└── logo.svg
+```
+
+## 数据与权限说明
+
+- 项目配置、偏好设置、AI 配置、备忘和待办主要保存在本地 uTools / 浏览器存储中。
+- `preload.js` 会使用 Node.js 能力访问本地项目目录、启动/停止命令、读取文件、执行 Git 命令和检测开发工具版本。
+- Git 写操作仅围绕本地工作区展开，例如暂存、撤销、提交、切换分支或检出提交；使用前建议确认当前工作区状态。
+- AI 分析会把选定的 Git 信息或 diff 发送给你配置的模型提供方；涉及私有项目时请先确认模型与接口策略。
+
+## 适合谁
+
+- 同时维护多个本地项目的开发者。
+- 需要频繁切换项目、启动服务和查看日志的人。
+- 想把 Git 观察、备忘、待办和环境检查放进一个轻量桌面入口的人。
+- 使用 uTools 作为日常启动器，并希望把开发工作流也收进 uTools 的人。
