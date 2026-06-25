@@ -90,3 +90,13 @@ If a test runner is added later, prefer focused component or store tests around 
 **Fix**: Reuse the custom dropdown pattern already used in project details and settings panels. Make the popup a local floating layer with shared tokens, a compact row height, and upward placement when needed.
 
 **Prevention**: When adding a new dropdown-like control, ask whether the browser popup can be clipped or whether it needs to match the app's own surface. If the answer is yes, default to the shared floating pattern instead of a plain native input.
+
+### Common Mistake: Leaving Orphaned Locale Keys After Replacing Copy
+
+**Symptom**: A loading string disappears from the UI, but the old locale key still exists in both language blocks and slowly drifts out of sync with the actual template.
+
+**Cause**: `as const` keeps locale keys aligned between languages, but it does not remove dead keys. When copy is replaced with skeleton UI, a modal shell, or another structural pattern, the old string reference drops out of the component while the locale entry stays behind.
+
+**Fix**: Delete the unused key from both locales in the same change and confirm the template no longer references it.
+
+**Prevention**: Whenever you replace a single-line visible string with structural UI, search the locale file for the old key and remove every occurrence before finishing the change.

@@ -176,16 +176,47 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 
 **Related**: `src/components/project/FilesTab.vue`, `src/index.css`, `src/lib/markdown.ts`.
 
-### Convention: Semantic Status Surfaces
+### Convention: Shared Skeleton Loading States
 
-**What**: When a component represents running, success, warning, error, or info state, use the shared semantic tokens from `src/index.css` instead of inventing a local palette.
+**What**: Loading regions in files, Git, and environment panels use a shared `.skeleton` utility class from `src/index.css` instead of repeating long `animate-pulse rounded bg-surface-container-high` class strings.
 
-**Why**: Dashboard cards, project overview badges, Git metadata, and terminal logs feel inconsistent when each surface picks its own shade of green or red.
+**Why**: The shared class keeps loading states visually consistent, makes EnvironmentTab the same reference surface as FilesTab and GitTab, and lets each loading region focus only on its own width/height and grid layout.
 
 **Example**:
 
 ```vue
-<span class="border border-status-running/30 bg-status-running/10 text-status-running">
+<div v-if="isLoadingTree" class="space-y-1.5 p-1" aria-busy="true">
+  <div class="skeleton h-3 w-24" />
+  <div class="skeleton h-3 w-20" />
+</div>
+
+<div v-if="isLoadingFile" aria-busy="true">
+  <div class="grid grid-cols-[3rem_1fr] gap-2">
+    <span class="skeleton h-2.5 w-6" />
+    <span class="skeleton h-2.5 w-full" />
+  </div>
+</div>
+```
+
+**Rules**:
+
+- Put `aria-busy="true"` on the loading container only while the content is actually loading.
+- Use `w-*` / `h-*` utilities to shape each placeholder row or block; the base class should stay tiny.
+- When a loading string is replaced by skeleton UI, remove the now-unused locale keys from both locales in the same change.
+
+**Related**: `src/index.css`, `src/components/environment/EnvironmentTab.vue`, `src/components/project/FilesTab.vue`, `src/components/project/GitTab.vue`, `src/components/project/FileTreeNode.vue`.
+
+### Convention: Semantic Status Surfaces
+
+**What**: When a component represents running, success, warning, error, or info state, use the shared semantic tokens from `src/index.css` instead of inventing a local palette.
+
+**Why**: Dashboard cards, project overview badges, Git metadata, and terminal logs feel inconsistent when each surface picks its own shade of green or red. Running states often read better as a pulsing dot plus label than as pulsing text; keep that dot consistent across cards, terminal state chips, and script rows.
+
+**Example**:
+
+```vue
+<span class="inline-flex items-center gap-1 border border-status-running/30 bg-status-running/10 text-status-running">
+  <span class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse shadow-[0_0_8px_rgba(46,175,125,0.9)]" />
   Running
 </span>
 ```
@@ -205,6 +236,30 @@ const filesPanelOpen = ref(true);
 ```
 
 **Related**: `src/components/project/GitTab.vue`.
+
+### Convention: Teleported Modal Entry Transitions
+
+**What**: Dialog shells and other teleported overlays use a shared `.scale-*` Vue transition in `src/index.css`. The transition wraps the `v-if` root inside the existing `Teleport`.
+
+**Why**: This gives modals a soft entry and exit without hard cuts, while keeping the overlay layer outside panel overflow and away from clipped stacking contexts.
+
+**Example**:
+
+```vue
+<Teleport to="body">
+  <Transition name="scale">
+    <div v-if="showDialog" class="fixed inset-0 z-50 flex items-center justify-center">...</div>
+  </Transition>
+</Teleport>
+```
+
+**Rules**:
+
+- Use `.scale-enter-active/.scale-leave-active` for full dialog shells; keep `fade` for lightweight floating controls.
+- Do not wrap one side of a paired `v-if` / `v-else` switch in its own transition, because it breaks the replacement pair.
+- Leave half-panel content switches unanimated unless a manual regression proves the resize behavior stays stable.
+
+**Related**: `src/index.css`, `src/components/project/GitTab.vue`, `src/components/project/ProjectFormModal.vue`, `src/App.vue`.
 
 ### Convention: Collapsible AI Reasoning Results
 

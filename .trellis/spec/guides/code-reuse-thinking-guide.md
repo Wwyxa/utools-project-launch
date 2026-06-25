@@ -9,6 +9,7 @@
 **Duplicated code is the #1 source of inconsistency bugs.**
 
 When you copy-paste or rewrite existing logic:
+
 - Bug fixes don't propagate
 - Behavior diverges over time
 - Codebase becomes harder to understand
@@ -29,11 +30,11 @@ grep -r "keyword" .
 
 ### Step 2: Ask These Questions
 
-| Question | If Yes... |
-|----------|-----------|
-| Does a similar function exist? | Use or extend it |
-| Is this pattern used elsewhere? | Follow the existing pattern |
-| Could this be a shared utility? | Create it in the right place |
+| Question                             | If Yes...                    |
+| ------------------------------------ | ---------------------------- |
+| Does a similar function exist?       | Use or extend it             |
+| Is this pattern used elsewhere?      | Follow the existing pattern  |
+| Could this be a shared utility?      | Create it in the right place |
 | Am I copying code from another file? | **STOP** - extract to shared |
 
 ---
@@ -63,11 +64,13 @@ grep -r "keyword" .
 ## When to Abstract
 
 **Abstract when**:
+
 - Same code appears 3+ times
 - Logic is complex enough to have bugs
 - Multiple people might need this
 
 **Don't abstract when**:
+
 - Only used once
 - Trivial one-liner
 - Abstraction would be more complex than duplication
@@ -81,6 +84,7 @@ When you've made similar changes to multiple files:
 1. **Review**: Did you catch all instances?
 2. **Search**: Run grep to find any missed
 3. **Consider**: Should this be abstracted?
+4. **Locale cleanup**: If a visible string was replaced by skeleton UI or another structural pattern, search both locale blocks for the old key and delete dead entries in the same change.
 
 ---
 
@@ -91,6 +95,7 @@ When you've made similar changes to multiple files:
 **Symptom**: Init works perfectly, but update creates files at wrong paths or misses files entirely.
 
 **Prevention checklist**:
+
 - [ ] When migrating directory structures, search for ALL code paths that reference the old structure
 - [ ] If one path is auto-derived (glob/copy) and another is manually listed, the manual one needs updating
 - [ ] Add a regression test that compares outputs from both mechanisms
