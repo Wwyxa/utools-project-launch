@@ -1,1 +1,6 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/06-25-loading-polish/prd.md", "reason": "验收标准逐条核对(骨架/aria-busy/双主题/模态过渡/面板折叠过渡/ScriptsTab 脉动/无性能退化/lint)"}
+{"file": ".trellis/tasks/06-25-loading-polish/design.md", "reason": "设计契约核对:.skeleton 定义/各加载点骨架形态/.scale 过渡/Scale 范围/ScriptsTab 运行态点/i18n 孤儿 key 清理"}
+{"file": ".trellis/tasks/06-25-loading-polish/implement.md", "reason": "S9 全量验收清单与 grep 断言逐条 run(grep Loading.../正在读取变更/files.loading/git.diffLoading/dark:)"}
+{"file": ".trellis/tasks/06-25-ui-polish/prd.md", "reason": "跨子任务验收标准:加载无纯文本空白/双主题无新增 dark/圆角卡片头一致/现有功能回归/lint"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "lint+build 基线、硬编码颜色/i18n 对齐/无障碍名校验标准"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "语义 token、cn 组合、scopedCSS 边界——核对 .skeleton/.scale 是否落在全局 index.css 而非误入 scoped"}

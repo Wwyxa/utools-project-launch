@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/06-25-ui-polish/prd.md", "reason": "父任务跨子任务工程约束(语义token/双主题/i18n对齐/enum值导入/执行顺序)与任务地图"}
+{"file": ".trellis/tasks/06-25-loading-polish/prd.md", "reason": "本任务 PRD:骨架抽象/FilesTab+GitTab 加载态/进场过渡/运行脉动四需求与验收标准"}
+{"file": ".trellis/tasks/06-25-loading-polish/design.md", "reason": "本任务设计:.skeleton 基类/.scale 过渡类/各加载点骨架形态/Scale 模态范围/ScriptsTab 脉动/Gate A/B"}
+{"file": ".trellis/tasks/06-25-loading-polish/implement.md", "reason": "本任务执行计划:S1-S9 有序步骤/验证/回退点/校验阶段"}
+{"file": ".trellis/tasks/archive/2026-06/06-25-visual-hierarchy/design.md", "reason": "子任务2 已落地规范源头(.ui-panel-header/GitTab padding 三桶/Terminal dark 清零),本任务改 FilesTab/GitTab 须沿用勿回退"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "语义 token/cn 组合/scopedCSS 仅小过渡边界,指导 .skeleton/.scale 基类的归属(全局 index.css 而非 scoped)"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "禁止项(硬编码颜色当有语义 token/未抽取共用类串/图标缺无障碍名)与 lint+build+手动回归基线"}
