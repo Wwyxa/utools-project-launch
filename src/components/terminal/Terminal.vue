@@ -162,17 +162,17 @@ onMounted(() => {
 
 <template>
   <div
-    class="h-full min-h-[14rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm dark:border-slate-700/80 dark:bg-[#0d1117] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_16px_40px_rgba(0,0,0,0.18)]"
+    class="h-full min-h-[14rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm"
   >
     <div
-      class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3 dark:border-slate-700/80 dark:bg-[#111820]"
+      class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3"
     >
       <div class="flex items-center gap-2 min-w-0 flex-1">
         <div class="flex items-center gap-2 min-w-0 shrink-0">
-          <TerminalIcon :size="14" class="text-on-surface-variant dark:text-slate-400" />
-          <span class="text-xs font-semibold text-on-surface dark:text-slate-100">{{ t.terminal.title }}</span>
+          <TerminalIcon :size="14" class="text-on-surface-variant" />
+          <span class="text-xs font-semibold text-on-surface">{{ t.terminal.title }}</span>
         </div>
-        <div class="h-4 w-px bg-border-subtle dark:bg-slate-700" />
+        <div class="h-4 w-px bg-border-subtle" />
         <div class="flex items-center gap-1 overflow-x-auto min-w-0">
           <div
             v-for="target in logTargets"
@@ -181,8 +181,8 @@ onMounted(() => {
               cn(
                 'h-6 rounded text-[10px] font-semibold whitespace-nowrap border transition-colors flex items-center overflow-hidden',
                 selectedScriptId === target.id
-                  ? 'bg-primary/10 text-primary border-primary/40 dark:bg-emerald-400/15 dark:text-emerald-100 dark:border-emerald-400/50'
-                  : 'bg-surface text-on-surface-variant border-border-subtle hover:bg-surface-container dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-800',
+                  ? 'bg-primary/10 text-primary border-primary/40'
+                  : 'bg-surface text-on-surface-variant border-border-subtle hover:bg-surface-container',
               )
             "
           >
@@ -219,7 +219,7 @@ onMounted(() => {
         </div>
         <button
           @click="scrollToTop"
-          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
+          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
           :disabled="filteredLogs.length === 0"
           :title="t.terminal.scrollToTop"
           :aria-label="t.terminal.scrollToTop"
@@ -228,7 +228,7 @@ onMounted(() => {
         </button>
         <button
           @click="scrollToBottom"
-          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
+          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
           :disabled="filteredLogs.length === 0"
           :title="t.terminal.scrollToBottom"
           :aria-label="t.terminal.scrollToBottom"
@@ -237,7 +237,7 @@ onMounted(() => {
         </button>
         <button
           @click="handleClear"
-          class="flex items-center gap-1.5 px-2 py-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface-variant transition-colors shrink-0 dark:text-slate-400 dark:hover:text-emerald-200 dark:hover:bg-slate-800"
+          class="flex items-center gap-1.5 px-2 py-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface-variant transition-colors shrink-0"
           :title="t.terminal.clear"
           :aria-label="t.terminal.clear"
         >
@@ -250,44 +250,44 @@ onMounted(() => {
         <div class="relative">
           <Search
             :size="12"
-            class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60 dark:text-slate-500"
+            class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60"
           />
           <input
             v-model="query"
             type="text"
             :placeholder="t.terminal.filter"
-            class="bg-surface border border-border-subtle rounded px-7 py-1 text-[10px] text-on-surface placeholder:text-on-surface-variant w-32 focus:outline-none focus:border-primary dark:bg-slate-950 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400"
+            class="bg-surface border border-border-subtle rounded px-7 py-1 text-[10px] text-on-surface placeholder:text-on-surface-variant w-32 focus:outline-none focus:border-primary"
           />
         </div>
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 bg-surface-container-lowest dark:bg-[#0d1117]">
+    <div class="min-h-0 flex-1 bg-surface-container-lowest">
       <div
         ref="scrollRef"
         @scroll="handleLogScroll"
         @wheel="handleLogWheel"
-        class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-on-surface dark:text-slate-300 [overscroll-behavior-y:contain]"
+        class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-on-surface [overscroll-behavior-y:contain]"
       >
         <div v-for="(log, index) in filteredLogs" :key="index" class="flex mb-1 group">
-          <span class="w-20 text-right mr-4 shrink-0 text-on-surface-variant/70 select-none dark:text-slate-500">
+          <span class="w-20 text-right mr-4 shrink-0 text-on-surface-variant/70 select-none">
             {{ log.timestamp }}
           </span>
           <span :class="cn('break-all', resolveLogTone(log.message, log.type))">
             {{ log.message }}
           </span>
         </div>
-        <div v-if="logTargets.length === 0" class="text-on-surface-variant italic dark:text-slate-500">
+        <div v-if="logTargets.length === 0" class="text-on-surface-variant italic">
           {{ t.terminal.ready }}
         </div>
-        <div v-else-if="filteredLogs.length === 0" class="text-on-surface-variant italic dark:text-slate-500">
+        <div v-else-if="filteredLogs.length === 0" class="text-on-surface-variant italic">
           {{ t.terminal.empty }}
         </div>
-        <div class="animate-pulse text-primary dark:text-emerald-300 mt-1">_</div>
+        <div class="animate-pulse text-primary mt-1">_</div>
       </div>
     </div>
     <form
-      class="flex items-center gap-2 border-t border-border-subtle bg-surface-container-low px-3 py-2 dark:border-slate-700/80 dark:bg-[#111820]"
+      class="flex items-center gap-2 border-t border-border-subtle bg-surface-container-low px-3 py-2"
       @submit.prevent="handleInputSubmit"
     >
       <input
@@ -295,12 +295,12 @@ onMounted(() => {
         type="text"
         :disabled="!canSendInput"
         :placeholder="terminalInputPlaceholder"
-        class="min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 py-1 font-mono text-xs text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-55 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400"
+        class="min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 py-1 font-mono text-xs text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-55"
       />
       <button
         type="submit"
         :disabled="!canSendInput"
-        class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400 dark:hover:border-emerald-400/60 dark:hover:text-emerald-200"
+        class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
         :title="t.terminal.sendInput"
         :aria-label="t.terminal.sendInput"
       >
