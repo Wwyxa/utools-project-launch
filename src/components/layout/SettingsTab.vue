@@ -173,9 +173,9 @@ watch(
     </header>
 
     <div class="grid gap-2.5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-3 shadow-sm">
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center gap-2">
-          <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.general }}</h3>
+          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.general }}</h3>
         </div>
         <div class="space-y-2.5">
           <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
@@ -229,7 +229,7 @@ watch(
         <div class="mb-2.5 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
             <MonitorCog :size="15" class="text-primary" />
-            <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.environment }}</h3>
+            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.environment }}</h3>
           </div>
           <button
             type="button"
@@ -503,7 +503,7 @@ watch(
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center gap-2">
-          <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultTerminal }}</h3>
+          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultTerminal }}</h3>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
           <div
@@ -554,7 +554,7 @@ watch(
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center gap-2">
-          <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultEditor }}</h3>
+          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultEditor }}</h3>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
           <div
@@ -603,7 +603,7 @@ watch(
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
-            <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.projectConfig }}</h3>
+            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectConfig }}</h3>
           </div>
           <p
             v-if="store.projectConfigMessage || store.projectStorageMessage"
@@ -634,7 +634,7 @@ watch(
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center gap-2">
-          <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.about }}</h3>
+          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.about }}</h3>
         </div>
         <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-container-low px-3 py-2">
           <div class="flex items-center gap-2 text-sm text-on-surface-variant">

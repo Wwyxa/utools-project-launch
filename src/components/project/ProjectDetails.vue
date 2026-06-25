@@ -9,12 +9,12 @@ import {
   Pencil,
   ArrowLeft,
   RefreshCw,
-  StickyNote,
   TerminalSquare,
   Trash2,
 } from "lucide-vue-next";
 import { Project, ProjectStatus } from "../../types";
 import { cn } from "../../lib/utils";
+import { formatRelativeTime } from "../../lib/time";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import ScriptsTab from "./ScriptsTab.vue";
@@ -57,44 +57,7 @@ const hasGitSnapshot = computed(() => Boolean(props.project.git?.repositoryPath)
 const latestCommit = computed(() => props.project.git?.commits?.[0]);
 const projectTodos = computed(() => store.todos[props.project.id] || props.project.todos || []);
 const memoContent = computed(() => store.memoContent[props.project.id] || props.project.memo || "");
-const runningScriptCount = computed(() => props.project.scripts.filter((script) => script.status === "RUNNING").length);
-const stoppingScriptCount = computed(
-  () => props.project.scripts.filter((script) => script.status === "STOPPING").length,
-);
-const activeScriptCount = computed(() => runningScriptCount.value + stoppingScriptCount.value);
-const overviewMetrics = computed(() => [
-  {
-    icon: TerminalSquare,
-    label: t.value.projectDetails.scripts,
-    value: `${props.project.scripts.length}`,
-    detail:
-      activeScriptCount.value > 0
-        ? `${activeScriptCount.value} ${stoppingScriptCount.value > 0 ? t.value.common.stopping : t.value.common.running}`
-        : t.value.scripts.ready,
-    tone: activeScriptCount.value > 0 ? "running" : "neutral",
-  },
-  {
-    icon: CheckSquare,
-    label: t.value.memo.taskList,
-    value: `${projectTodos.value.filter((todo) => !todo.completed).length}/${projectTodos.value.length}`,
-    detail: t.value.memo.taskList,
-    tone: "neutral",
-  },
-  {
-    icon: StickyNote,
-    label: t.value.memo.title,
-    value: memoContent.value.trim() ? `${memoContent.value.trim().split(/\s+/).length}` : "0",
-    detail: t.value.memo.title,
-    tone: memoContent.value.trim() ? "info" : "neutral",
-  },
-  {
-    icon: GitCommitHorizontal,
-    label: t.value.git.commits,
-    value: latestCommit.value?.hash || "--",
-    detail: latestCommit.value?.message || t.value.git.noRepo,
-    tone: hasGitSnapshot.value ? "info" : "neutral",
-  },
-]);
+const openTodoCount = computed(() => projectTodos.value.filter((todo) => !todo.completed).length);
 const statusToneClass = computed(() => {
   if (props.project.status === ProjectStatus.RUNNING) {
     return "border-status-running/30 bg-status-running/10 text-status-running";
@@ -127,15 +90,6 @@ const refreshButtonClass = computed(() =>
       : "disabled:cursor-not-allowed disabled:opacity-45",
   ),
 );
-const metricToneClass = (tone: string) => {
-  if (tone === "running") {
-    return "border-status-running/25 bg-status-running/10 text-status-running";
-  }
-  if (tone === "info") {
-    return "border-status-info/25 bg-status-info/10 text-status-info";
-  }
-  return "border-border-subtle bg-surface-container-low text-on-surface-variant";
-};
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
@@ -341,22 +295,35 @@ watch(() => props.project.id, scheduleInitialGitRefresh);
           </div>
         </section>
 
-        <section class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <section class="grid grid-cols-1 gap-2 md:grid-cols-2">
           <div
-            v-for="metric in overviewMetrics"
-            :key="metric.label"
-            :class="cn('min-w-0 rounded-lg border p-3', metricToneClass(metric.tone))"
+            class="min-w-0 rounded-lg border border-border-subtle bg-surface-container-low p-3"
+            :class="hasGitSnapshot ? 'border-status-info/25' : ''"
           >
-            <div class="mb-2 flex items-center gap-2 text-xs font-semibold">
-              <component :is="metric.icon" :size="14" />
-              <span>{{ metric.label }}</span>
+            <div class="mb-2 flex items-center gap-2 text-xs font-semibold text-on-surface-variant">
+              <GitCommitHorizontal :size="14" />
+              <span>{{ t.git.commits }}</span>
             </div>
-            <div class="min-w-0 truncate font-mono text-sm font-bold text-on-surface" :title="metric.value">
-              {{ metric.value }}
+            <div class="min-w-0 truncate font-mono text-sm font-bold text-on-surface" :title="latestCommit?.message || t.git.noRepo">
+              {{ latestCommit?.hash || "--" }}
             </div>
-            <div class="mt-1 truncate text-[11px] text-on-surface-variant" :title="metric.detail">
-              {{ metric.detail }}
+            <div
+              class="mt-1 truncate text-[11px] text-on-surface-variant"
+              :title="latestCommit?.message || t.git.noRepo"
+            >
+              {{ latestCommit?.message || t.git.noRepo }}
+              <span v-if="latestCommit" class="ml-1 text-on-surface-variant/70">· {{ formatRelativeTime(latestCommit.date) }}</span>
             </div>
+          </div>
+          <div class="min-w-0 rounded-lg border border-border-subtle bg-surface-container-low p-3">
+            <div class="mb-2 flex items-center gap-2 text-xs font-semibold text-on-surface-variant">
+              <CheckSquare :size="14" />
+              <span>{{ t.memo.taskList }}</span>
+            </div>
+            <div class="min-w-0 truncate font-mono text-sm font-bold text-on-surface" :title="`${openTodoCount}/${projectTodos.length}`">
+              {{ openTodoCount }}/{{ projectTodos.length }}
+            </div>
+            <div class="mt-1 truncate text-[11px] text-on-surface-variant">{{ t.memo.title }}</div>
           </div>
         </section>
 

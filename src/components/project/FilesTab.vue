@@ -16,6 +16,7 @@ import {
 import type { Project, ProjectFileReadResult, ProjectFileTreeEntry } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
+import { useI18n } from "../../lib/i18n";
 import { highlightCode, isMarkdownFile, renderMarkdown } from "../../lib/markdown";
 import FileTreeNode, { type TreeNode } from "./FileTreeNode.vue";
 
@@ -31,6 +32,7 @@ const emit = defineEmits<{
 }>();
 
 const store = useStore();
+const t = useI18n();
 const rootNodes = ref<TreeNode[]>([]);
 const selectedFile = ref<ProjectFileReadResult | null>(null);
 const draftContent = ref("");
@@ -155,7 +157,7 @@ const hasMatches = computed(() => searchMatches.value.length > 0);
 const activeMatch = computed(() => (hasMatches.value ? searchMatches.value[activeMatchIndex.value] : null));
 const matchStatusLabel = computed(() => {
   if (!findQuery.value) return "";
-  if (!hasMatches.value) return "No results";
+  if (!hasMatches.value) return t.value.files.noResults;
   return `${activeMatchIndex.value + 1}/${searchMatches.value.length}`;
 });
 
@@ -368,7 +370,9 @@ const saveFile = async () => {
       content: draftContent.value,
       size: new Blob([draftContent.value]).size,
     };
-    statusMessage.value = result ? `Saved ${new Date(result.savedAt).toLocaleTimeString()}` : "Saved";
+    statusMessage.value = result
+      ? t.value.files.savedAt.replace("{time}", new Date(result.savedAt).toLocaleTimeString())
+      : t.value.files.saved;
   } finally {
     isSaving.value = false;
   }
@@ -635,12 +639,14 @@ watch(searchMatches, (matches) => {
   <div class="h-full min-h-0 overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
     <div class="flex h-full min-w-0">
       <aside :style="treeStyle" class="min-w-[220px] shrink-0 border-r border-border-subtle bg-surface-container-low">
-        <div class="flex h-9 items-center gap-2 border-b border-border-subtle px-3 text-xs font-bold text-on-surface">
-          <Folder :size="14" class="text-primary" />
-          <span class="truncate">{{ project.name }}</span>
+        <div class="ui-panel-header">
+          <div class="ui-panel-title">
+            <Folder :size="14" class="text-primary" />
+            <span class="truncate">{{ project.name }}</span>
+          </div>
         </div>
         <div class="themed-scrollbar h-[calc(100%-2.25rem)] overflow-auto p-2 text-xs">
-          <div v-if="isLoadingTree" class="p-2 text-on-surface-variant">Loading...</div>
+          <div v-if="isLoadingTree" class="p-2 text-on-surface-variant">{{ t.files.loading }}</div>
           <FileTreeNode
             v-for="node in rootNodes"
             :key="node.relativePath"
@@ -649,24 +655,22 @@ watch(searchMatches, (matches) => {
             @toggle="toggleDirectory"
             @open="openFile"
           />
-          <div v-if="!isLoadingTree && rootNodes.length === 0" class="p-2 text-on-surface-variant">No files.</div>
+          <div v-if="!isLoadingTree && rootNodes.length === 0" class="p-2 text-on-surface-variant">{{ t.files.noFiles }}</div>
         </div>
       </aside>
 
       <div class="w-1 cursor-col-resize bg-border-subtle hover:bg-primary" @mousedown="beginResize" />
 
       <section class="flex min-w-0 flex-1 flex-col">
-        <div
-          class="flex h-9 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-3"
-        >
+        <div class="ui-panel-header">
           <div class="min-w-0 text-xs">
             <span class="truncate font-mono font-bold text-on-surface">{{
-              selectedFile?.relativePath || "No file selected"
+              selectedFile?.relativePath || t.files.noFileSelected
             }}</span>
             <span v-if="selectedFile" class="ml-2 text-on-surface-variant">{{ formatSize(selectedFile.size) }}</span>
-            <span v-if="isDirty" class="ml-2 font-bold text-status-error">Unsaved</span>
+            <span v-if="isDirty" class="ml-2 font-bold text-status-error">{{ t.files.unsaved }}</span>
             <span v-else-if="selectedFile" class="ml-2 text-on-surface-variant">{{
-              statusMessage || (isEditing ? "Editing" : "Read only")
+              statusMessage || (isEditing ? t.files.editing : t.files.readOnly)
             }}</span>
           </div>
           <div class="flex shrink-0 items-center gap-2">
@@ -675,8 +679,8 @@ watch(searchMatches, (matches) => {
               @click="openFind"
               :disabled="!canSearchCurrentFile"
               class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Find in file"
-              title="Find in file"
+              :aria-label="t.files.findInFile"
+              :title="t.files.findInFile"
             >
               <Search :size="13" />
             </button>
@@ -691,11 +695,11 @@ watch(searchMatches, (matches) => {
                   'gap-1.5 text-on-surface-variant hover:bg-surface hover:text-primary',
                 )
               "
-              aria-label="Edit file"
-              title="Edit file"
+              :aria-label="t.files.editFile"
+              :title="t.files.editFile"
             >
               <Edit3 :size="13" />
-              <span>Edit</span>
+              <span>{{ t.files.edit }}</span>
             </button>
             <button
               v-if="isEditing"
@@ -710,8 +714,8 @@ watch(searchMatches, (matches) => {
                     : 'bg-surface-container-low text-on-surface-variant opacity-60',
                 )
               "
-              aria-label="Save file"
-              title="Save file"
+              :aria-label="t.files.saveFile"
+              :title="t.files.saveFile"
             >
               <Save :size="13" />
             </button>
@@ -720,11 +724,11 @@ watch(searchMatches, (matches) => {
               type="button"
               @click="exitEdit"
               class="flex h-7 w-16 items-center justify-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-              aria-label="Done editing"
-              title="Done editing"
+              :aria-label="t.files.doneEditing"
+              :title="t.files.doneEditing"
             >
               <Check :size="13" />
-              Done
+              {{ t.files.done }}
             </button>
           </div>
         </div>
@@ -734,15 +738,15 @@ watch(searchMatches, (matches) => {
             v-if="isFindOpen && canSearchCurrentFile"
             class="file-find-widget"
             role="search"
-            aria-label="Find and replace in current file"
+            :aria-label="t.files.findReplaceAria"
           >
             <div class="flex min-w-0 items-center gap-1">
               <button
                 v-if="canReplaceCurrentFile"
                 type="button"
                 class="file-find-icon-button h-7 w-6"
-                aria-label="Toggle replace"
-                title="Toggle replace"
+                :aria-label="t.files.toggleReplace"
+                :title="t.files.toggleReplace"
                 @click="isReplaceOpen ? (isReplaceOpen = false) : openReplace()"
               >
                 <ChevronDown :size="14" :class="cn('transition-transform', !isReplaceOpen && '-rotate-90')" />
@@ -755,8 +759,8 @@ watch(searchMatches, (matches) => {
                   v-model="findQuery"
                   type="text"
                   class="min-w-0 flex-1 bg-transparent text-xs text-on-surface outline-none placeholder:text-on-surface-variant"
-                  placeholder="Find"
-                  aria-label="Find in current file"
+                  :placeholder="t.files.findPlaceholder"
+                  :aria-label="t.files.findInCurrentFile"
                   @keydown="handleFindKeydown"
                 />
                 <span
@@ -770,8 +774,8 @@ watch(searchMatches, (matches) => {
                 type="button"
                 class="file-find-icon-button h-7 w-7 disabled:cursor-not-allowed disabled:opacity-35"
                 :disabled="!hasMatches"
-                aria-label="Previous match"
-                title="Previous match"
+                :aria-label="t.files.previousMatch"
+                :title="t.files.previousMatch"
                 @click="goToMatch(-1)"
               >
                 <ChevronUp :size="14" />
@@ -780,8 +784,8 @@ watch(searchMatches, (matches) => {
                 type="button"
                 class="file-find-icon-button h-7 w-7 disabled:cursor-not-allowed disabled:opacity-35"
                 :disabled="!hasMatches"
-                aria-label="Next match"
-                title="Next match"
+                :aria-label="t.files.nextMatch"
+                :title="t.files.nextMatch"
                 @click="goToMatch(1)"
               >
                 <ChevronDown :size="14" />
@@ -789,8 +793,8 @@ watch(searchMatches, (matches) => {
               <button
                 type="button"
                 class="file-find-icon-button h-7 w-7 hover:text-on-surface"
-                aria-label="Close find"
-                title="Close find"
+                :aria-label="t.files.closeFind"
+                :title="t.files.closeFind"
                 @click="closeFind"
               >
                 <X :size="14" />
@@ -802,16 +806,16 @@ watch(searchMatches, (matches) => {
                 v-model="replaceValue"
                 type="text"
                 class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface-container-low px-2 text-xs text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary focus:bg-surface-container-lowest"
-                placeholder="Replace"
-                aria-label="Replace with"
+                :placeholder="t.files.replacePlaceholder"
+                :aria-label="t.files.replaceWith"
                 @keydown="handleReplaceKeydown"
               />
               <button
                 type="button"
                 class="file-find-icon-button h-7 w-7 border border-border-subtle disabled:cursor-not-allowed disabled:opacity-35"
                 :disabled="!hasMatches"
-                aria-label="Replace current match"
-                title="Replace current match"
+                :aria-label="t.files.replaceCurrentMatch"
+                :title="t.files.replaceCurrentMatch"
                 @click="replaceActiveMatch"
               >
                 <Replace :size="13" />
@@ -820,8 +824,8 @@ watch(searchMatches, (matches) => {
                 type="button"
                 class="file-find-icon-button h-7 w-7 border border-border-subtle disabled:cursor-not-allowed disabled:opacity-35"
                 :disabled="!hasMatches"
-                aria-label="Replace all matches"
-                title="Replace all matches"
+                :aria-label="t.files.replaceAllMatches"
+                :title="t.files.replaceAllMatches"
                 @click="replaceAllMatches"
               >
                 <ReplaceAll :size="13" />
@@ -830,12 +834,12 @@ watch(searchMatches, (matches) => {
           </div>
 
           <div class="min-h-0 flex-1 overflow-hidden">
-            <div v-if="isLoadingFile" class="p-6 text-sm text-on-surface-variant">Loading...</div>
+            <div v-if="isLoadingFile" class="p-6 text-sm text-on-surface-variant">{{ t.files.loading }}</div>
             <div
               v-else-if="!selectedFile"
               class="flex h-full items-center justify-center text-sm text-on-surface-variant"
             >
-              Select a file to preview.
+              {{ t.files.selectToPreview }}
             </div>
             <div
               v-else-if="selectedFile.previewKind === 'text' && isMarkdownPreview && !isEditing && !isFindOpen"
@@ -875,7 +879,7 @@ watch(searchMatches, (matches) => {
                     class="file-code-textarea themed-scrollbar p-4 text-on-surface outline-none"
                     spellcheck="false"
                     wrap="off"
-                    aria-label="Edit file content"
+                    :aria-label="t.files.editFileContent"
                     @scroll="syncCodeScrollFromTextarea"
                     @dblclick="enterEdit"
                   />
@@ -890,7 +894,7 @@ watch(searchMatches, (matches) => {
               class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-on-surface-variant"
             >
               <FileImage :size="28" />
-              <span>{{ selectedFile.message || "Preview unavailable." }}</span>
+              <span>{{ selectedFile.message || t.files.previewUnavailable }}</span>
             </div>
           </div>
         </div>
