@@ -409,6 +409,18 @@
   transform: translateY(-50%);
 }
 
+.ui-panel-header {
+  @apply flex h-9 items-center justify-between gap-2 border-b border-border-subtle bg-surface-container-low px-3;
+}
+
+.ui-panel-title {
+  @apply flex items-center gap-2 text-xs font-bold text-on-surface;
+}
+
+.ui-panel-meta {
+  @apply text-[10px] font-bold text-on-surface-variant;
+}
+
 .mode-menu-popover,
 .date-picker-popover {
   position: absolute;

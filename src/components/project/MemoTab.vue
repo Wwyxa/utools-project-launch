@@ -208,12 +208,12 @@ onBeforeUnmount(flushMemo);
     </button>
 
     <section v-else class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
-      <div class="flex h-10 items-center justify-between gap-3 border-b border-border-subtle px-4">
-        <h3 class="flex items-center gap-2 text-sm font-bold text-on-surface">
-          <CheckSquare :size="16" class="text-primary" />
-          {{ t.memo.taskList }}
-        </h3>
-        <span class="text-[10px] font-bold text-on-surface-variant">{{ projectTodos.length }}</span>
+<div class="ui-panel-header">
+          <div class="ui-panel-title">
+            <CheckSquare :size="14" class="text-primary" />
+            <h3 class="flex items-center gap-2">{{ t.memo.taskList }}</h3>
+          </div>
+          <span class="ui-panel-meta">{{ projectTodos.length }}</span>
       </div>
 
       <form class="flex gap-1.5 border-b border-border-subtle px-2.5 py-2" @submit.prevent="addTodo">
@@ -317,7 +317,7 @@ onBeforeUnmount(flushMemo);
       class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       @dblclick.self="enterEdit"
     >
-      <div class="flex h-10 items-center justify-between gap-3 border-b border-border-subtle px-4">
+      <div class="ui-panel-header">
         <div v-if="isEditing" class="flex items-center gap-1">
           <button
             v-for="action in toolbarActions"
@@ -331,7 +331,7 @@ onBeforeUnmount(flushMemo);
             <component :is="action.icon" :size="15" />
           </button>
         </div>
-        <div v-else class="text-sm font-bold text-on-surface">{{ t.memo.title }}</div>
+        <div v-else class="text-xs font-bold text-on-surface">{{ t.memo.title }}</div>
 
         <div class="flex items-center gap-2">
           <div class="flex items-center gap-1.5 text-[10px] font-bold text-on-surface-variant">

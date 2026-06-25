@@ -1869,7 +1869,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         v-if="showGlobalLoadingBar"
         :class="
           cn(
-            'fixed right-4 top-16 z-50 flex max-w-xs items-center gap-2.5 rounded-lg border bg-surface px-3 py-2.5 shadow-lg',
+            'fixed right-4 top-16 z-50 flex max-w-xs items-center gap-2.5 rounded-lg border bg-surface px-3 py-2 shadow-lg',
             globalLoadingBorderClass,
           )
         "
@@ -2042,11 +2042,12 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </div>
         </div>
 
-        <div
-          class="flex h-8 items-center justify-between gap-1 border-b border-border-subtle bg-surface-container-low px-2"
-        >
+        <div class="ui-panel-header">
+          <div class="ui-panel-title">
+            <FileSearch :size="14" class="text-primary" />
+            <h3 class="min-w-0 truncate">{{ t.git.files }}</h3>
+          </div>
           <div class="flex min-w-0 items-center gap-1.5">
-            <h3 class="min-w-0 truncate text-[11px] font-bold text-on-surface">{{ t.git.files }}</h3>
             <span
               v-if="stageableFiles.length > 0"
               class="hidden shrink-0 font-mono text-[10px] font-semibold text-status-warning sm:inline"
@@ -2243,8 +2244,9 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         <div
           class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
         >
-          <div class="flex min-w-0 items-center gap-1.5">
-            <h3 class="min-w-0 truncate text-sm font-bold text-on-surface">{{ t.git.graph }}</h3>
+          <div class="ui-panel-title">
+            <GitBranch :size="14" class="text-primary" />
+            <h3 class="min-w-0 truncate">{{ t.git.graph }}</h3>
           </div>
           <div class="flex items-center gap-1 shrink-0">
             <button
@@ -2830,7 +2832,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest p-2.5">
           <div class="grid min-h-0 flex-1 grid-cols-[minmax(13rem,0.78fr)_minmax(0,1.22fr)] gap-2.5">
             <section
-              class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface px-2.5 py-2.5"
+              class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface p-3"
             >
               <div class="mb-2 flex items-center justify-between gap-2">
                 <h4 class="text-xs font-bold text-on-surface">{{ t.git.changedFiles }}</h4>
@@ -2868,14 +2870,14 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                     <ClipboardCopy :size="12" />
                   </button>
                   <div
-                    class="memo-rendered ai-markdown-result max-h-40 overflow-auto rounded border border-border-subtle bg-surface-container-low px-2 py-2 pr-8 text-on-surface lg:max-h-52"
+                    class="memo-rendered ai-markdown-result max-h-40 overflow-auto rounded border border-border-subtle bg-surface-container-low p-3 pr-8 text-on-surface lg:max-h-52"
                     v-html="renderedCommitBody"
                   ></div>
                 </div>
               </div>
             </section>
 
-            <section class="flex min-h-0 flex-col rounded-lg border border-border-subtle bg-surface px-2.5 py-2.5">
+            <section class="flex min-h-0 flex-col rounded-lg border border-border-subtle bg-surface p-3">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-2">
                   <Sparkles :size="14" class="shrink-0 text-primary" />
@@ -3035,7 +3037,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         class="commit-tooltip-panel pointer-events-none fixed z-[70] w-max overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
         :style="commitTooltipStyle"
       >
-        <div class="border-b border-border-subtle bg-surface-container-low px-3 py-2.5">
+        <div class="border-b border-border-subtle bg-surface-container-low px-3 py-2">
           <p v-if="commitTooltipTitle(commitTooltip.commit)" class="text-[12px] font-bold leading-5 text-on-surface">
             {{ commitTooltipTitle(commitTooltip.commit) }}
           </p>
@@ -3071,7 +3073,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </div>
         <div
           v-if="commitTooltipBody(commitTooltip.commit)"
-          class="commit-tooltip-body max-h-52 overflow-auto px-3 py-2.5"
+          class="commit-tooltip-body max-h-52 overflow-auto px-3 py-2"
         >
           <div
             class="memo-rendered commit-tooltip-rendered block text-on-surface"

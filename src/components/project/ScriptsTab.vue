@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ChevronDown, ChevronUp, Play, Square } from "lucide-vue-next";
+import { ChevronDown, ChevronUp, Play, Square, TerminalSquare } from "lucide-vue-next";
 import { Project } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -94,7 +94,15 @@ const handleStop = async (scriptId: string) => {
     </div>
 
     <div v-else :class="scriptListPanelFrameClass">
-      <div class="themed-scrollbar h-full overflow-auto rounded-lg border border-border-subtle bg-surface shadow-sm">
+      <div class="flex h-full flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
+        <div class="ui-panel-header">
+          <div class="ui-panel-title">
+            <TerminalSquare :size="14" class="text-primary" />
+            <span>{{ t.projectDetails.scripts }}</span>
+          </div>
+          <span class="ui-panel-meta">{{ scripts.length }}</span>
+        </div>
+        <div class="themed-scrollbar min-h-0 flex-1 overflow-auto">
         <div
           v-for="script in scripts"
           :key="script.id"
@@ -155,6 +163,7 @@ const handleStop = async (scriptId: string) => {
           >
             <Play :size="12" fill="currentColor" /> {{ t.scripts.startScript }}
           </button>
+        </div>
         </div>
         </div>
       </div>
