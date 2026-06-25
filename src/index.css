@@ -421,6 +421,11 @@
   @apply text-[10px] font-bold text-on-surface-variant;
 }
 
+/* 骨架占位条：脉动 + 底色 + 圆角，宽高由各处 w/h 工具类叠加 */
+.skeleton {
+  @apply animate-pulse rounded bg-surface-container-high;
+}
+
 .mode-menu-popover,
 .date-picker-popover {
   position: absolute;
@@ -966,4 +971,18 @@
 .slide-up-leave-to {
   transform: translateY(-0.5rem);
   opacity: 0;
+}
+
+/* Vue transition: scale (modal / dialog entry) */
+.scale-enter-active,
+.scale-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.scale-enter-from,
+.scale-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
 }

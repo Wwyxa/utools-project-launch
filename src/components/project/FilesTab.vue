@@ -646,7 +646,24 @@ watch(searchMatches, (matches) => {
           </div>
         </div>
         <div class="themed-scrollbar h-[calc(100%-2.25rem)] overflow-auto p-2 text-xs">
-          <div v-if="isLoadingTree" class="p-2 text-on-surface-variant">{{ t.files.loading }}</div>
+          <div v-if="isLoadingTree" class="space-y-1.5 p-1" aria-busy="true">
+            <div
+              v-for="row in 8"
+              :key="row"
+              :class="[
+                'flex items-center gap-1.5',
+                row % 3 === 0 ? 'pl-6' : row % 3 === 1 ? 'pl-9' : 'pl-3',
+              ]"
+            >
+              <span class="skeleton h-3.5 w-3.5" />
+              <span
+                :class="[
+                  'skeleton h-3',
+                  row % 4 === 0 ? 'w-28' : row % 4 === 1 ? 'w-20' : row % 4 === 2 ? 'w-32' : 'w-24',
+                ]"
+              />
+            </div>
+          </div>
           <FileTreeNode
             v-for="node in rootNodes"
             :key="node.relativePath"
@@ -834,7 +851,25 @@ watch(searchMatches, (matches) => {
           </div>
 
           <div class="min-h-0 flex-1 overflow-hidden">
-            <div v-if="isLoadingFile" class="p-6 text-sm text-on-surface-variant">{{ t.files.loading }}</div>
+            <div
+              v-if="isLoadingFile"
+              class="themed-scrollbar h-full overflow-auto bg-[var(--code-preview-bg)] px-2 py-3 font-mono text-xs leading-5"
+              aria-busy="true"
+            >
+              <div
+                v-for="row in 12"
+                :key="row"
+                class="grid grid-cols-[3rem_minmax(0,1fr)] gap-2 px-2 py-0.5"
+              >
+                <span class="skeleton h-2.5 w-6" />
+                <span
+                  :class="[
+                    'skeleton h-2.5',
+                    row % 4 === 0 ? 'w-full' : row % 4 === 1 ? 'w-3/4' : row % 4 === 2 ? 'w-5/6' : 'w-2/3',
+                  ]"
+                />
+              </div>
+            </div>
             <div
               v-else-if="!selectedFile"
               class="flex h-full items-center justify-center text-sm text-on-surface-variant"

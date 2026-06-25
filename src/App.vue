@@ -161,6 +161,7 @@ onUnmounted(() => {
     </div>
     <ProjectFormModal />
     <Teleport to="body">
+      <Transition name="scale">
       <div
         v-if="store.pendingDeleteProject"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
@@ -194,6 +195,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+      </Transition>
     </Teleport>
   </div>
 </template>

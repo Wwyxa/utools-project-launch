@@ -134,15 +134,15 @@ watch(
           <div class="space-y-2 text-xs">
             <div class="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2">
               <span class="text-on-surface-variant">{{ t.environment.version }}</span>
-              <span class="h-3 w-24 animate-pulse rounded bg-surface-container-high" />
+              <span class="skeleton h-3 w-24" />
             </div>
             <div class="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2">
               <span class="text-on-surface-variant">{{ t.environment.path }}</span>
-              <span class="h-3 w-full animate-pulse rounded bg-surface-container-high" />
+              <span class="skeleton h-3 w-full" />
             </div>
             <div class="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2">
               <span class="text-on-surface-variant">{{ t.environment.checkedAt }}</span>
-              <span class="h-3 w-32 animate-pulse rounded bg-surface-container-high" />
+              <span class="skeleton h-3 w-32" />
             </div>
           </div>
         </article>

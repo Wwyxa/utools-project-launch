@@ -109,7 +109,7 @@ const handleDoubleClick = () => {
       <span v-else class="w-[13px] shrink-0" />
       <component :is="fileIcon" :size="14" :class="cn('shrink-0', isSelected ? 'text-primary' : fileIconClass)" />
       <span class="truncate font-medium">{{ node.name }}</span>
-      <span v-if="node.loading" class="ml-auto shrink-0 text-[10px] text-on-surface-variant">...</span>
+      <span v-if="node.loading" class="ml-auto shrink-0 skeleton h-2.5 w-10" />
     </button>
 
     <div v-if="node.expanded" class="border-l border-border-subtle/70">

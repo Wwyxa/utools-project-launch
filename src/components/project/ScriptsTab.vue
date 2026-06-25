@@ -117,7 +117,7 @@ const handleStop = async (scriptId: string) => {
         <div
           :class="
             cn(
-              'px-2 py-0.5 rounded-full text-[9px] font-bold border justify-self-start',
+              'px-2 py-0.5 rounded-full text-[9px] font-bold border justify-self-start inline-flex items-center gap-1',
               script.status === 'RUNNING'
                 ? 'bg-status-running/10 text-status-running border-status-running/20'
                 : script.status === 'STOPPING'
@@ -128,6 +128,10 @@ const handleStop = async (scriptId: string) => {
             )
           "
         >
+          <span
+            v-if="script.status === 'RUNNING'"
+            class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse shadow-[0_0_8px_rgba(46,175,125,0.9)]"
+          />
           {{ scriptStatusLabel(script.status) }}
         </div>
         <div class="font-mono text-xs text-on-surface-variant truncate" :title="script.command">
@@ -167,6 +171,7 @@ const handleStop = async (scriptId: string) => {
         </div>
         </div>
       </div>
+      <Transition name="fade">
       <div
         v-if="showScriptsCollapseControls"
         class="pointer-events-none absolute bottom-0 left-1/2 z-30 -translate-x-1/2 translate-y-[calc(50%+0.375rem)]"
@@ -194,6 +199,7 @@ const handleStop = async (scriptId: string) => {
           </button>
         </div>
       </div>
+      </Transition>
     </div>
 
     <button

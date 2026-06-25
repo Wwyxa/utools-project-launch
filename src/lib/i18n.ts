@@ -167,7 +167,6 @@ const messages = {
       viewDiff: "查看 diff",
       diffTitle: "文件 diff",
       diffEmpty: "请选择变更文件查看 diff。",
-      diffLoading: "正在读取 diff...",
       diffUnavailable: "该文件暂无可显示的 diff。",
       fileDeleted: "删除的文件无法在文件页打开。",
       hideFiles: "收起变更文件",
@@ -188,7 +187,6 @@ const messages = {
       aiUnavailable: "请先在设置中配置 AI。",
     },
     files: {
-      loading: "加载中…",
       noFiles: "暂无文件。",
       noFileSelected: "未选择文件",
       selectToPreview: "在左侧选择文件以预览。",
@@ -498,7 +496,6 @@ const messages = {
       viewDiff: "View diff",
       diffTitle: "File diff",
       diffEmpty: "Select a changed file to view its diff.",
-      diffLoading: "Reading diff...",
       diffUnavailable: "No diff is available for this file.",
       fileDeleted: "Deleted files cannot be opened in the Files tab.",
       hideFiles: "Collapse changed files",
@@ -519,7 +516,6 @@ const messages = {
       aiUnavailable: "Configure AI in Settings first.",
     },
     files: {
-      loading: "Loading...",
       noFiles: "No files.",
       noFileSelected: "No file selected",
       selectToPreview: "Select a file to preview.",

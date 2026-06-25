@@ -1957,6 +1957,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
     </div>
 
     <div class="relative grid min-h-0 flex-1 gap-2 overflow-visible" :style="{ gridTemplateColumns: gitGridColumns }">
+      <Transition name="fade">
       <div
         v-if="!collapsedGitPanel"
         class="pointer-events-none absolute inset-x-0 top-0 z-30 grid gap-2"
@@ -1987,6 +1988,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </div>
         </div>
       </div>
+      </Transition>
       <button
         v-if="isGitFilesPanelCollapsed"
         type="button"
@@ -2586,6 +2588,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </Transition>
     </section>
 
+    <Transition name="scale">
     <div
       v-if="isAiDialogOpen"
       class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
@@ -2688,7 +2691,9 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </div>
       </div>
     </div>
+    </Transition>
 
+    <Transition name="scale">
     <div
       v-if="isDiffDialogOpen"
       class="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
@@ -2717,7 +2722,21 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </button>
         </div>
         <div class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest">
-          <div v-if="isLoadingDiff" class="p-5 text-sm text-on-surface-variant">{{ t.git.diffLoading }}</div>
+          <div v-if="isLoadingDiff" class="space-y-1.5 py-3" aria-busy="true">
+            <div
+              v-for="row in 10"
+              :key="row"
+              class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-center"
+            >
+              <span class="skeleton ml-auto mr-2 h-3 w-8" />
+              <span
+                :class="[
+                  'skeleton h-3 mr-1',
+                  row % 4 === 0 ? 'w-full' : row % 4 === 1 ? 'w-3/4' : row % 4 === 2 ? 'w-5/6' : 'w-2/3',
+                ]"
+              />
+            </div>
+          </div>
           <div v-else-if="selectedDiff?.diff" class="min-w-max py-3 font-mono text-xs leading-5">
             <div
               v-for="line in diffLines"
@@ -2745,6 +2764,9 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </div>
       </div>
     </div>
+    </Transition>
+
+    <Transition name="scale">
     <div
       v-if="isCommitDetailOpen && selectedCommit"
       class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
@@ -2853,7 +2875,16 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                     <span v-if="file.deletions > 0" class="ml-1 text-status-error">-{{ file.deletions }}</span>
                   </span>
                 </button>
-                <p v-if="isLoadingCommitFiles" class="text-xs text-on-surface-variant">正在读取变更文件...</p>
+                <div v-if="isLoadingCommitFiles" class="space-y-1" aria-busy="true">
+                  <div
+                    v-for="row in 5"
+                    :key="row"
+                    class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border-subtle bg-surface-container-low px-2 py-1.5"
+                  >
+                    <span :class="['skeleton h-3', row % 2 === 0 ? 'w-full' : 'w-3/4']" />
+                    <span class="skeleton h-3 w-8" />
+                  </div>
+                </div>
                 <p v-else-if="selectedCommitFiles.length === 0" class="text-xs text-on-surface-variant">
                   该提交暂无可显示的变更文件。
                 </p>
@@ -2962,7 +2993,10 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </div>
       </div>
     </div>
+    </Transition>
+
     <Teleport to="body">
+      <Transition name="scale">
       <div
         v-if="confirmationDialog"
         class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
@@ -3032,6 +3066,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </div>
         </div>
       </div>
+      </Transition>
       <div
         v-if="commitTooltip"
         class="commit-tooltip-panel pointer-events-none fixed z-[70] w-max overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
