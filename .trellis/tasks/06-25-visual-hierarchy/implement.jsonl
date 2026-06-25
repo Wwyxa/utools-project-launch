@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/06-25-ui-polish/prd.md", "reason": "父任务跨子任务工程约束(语义token/双主题/i18n对齐/enum值导入)与执行顺序"}
+{"file": ".trellis/tasks/archive/2026-06/06-25-dashboard-first-impression/prd.md", "reason": "子任务1已交付范围与已沉淀约束,避免重复实施首页统计带等已否决项"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "语义token/cn组合/标题层次/scopedCSS边界约定,指导卡片头工具类与Token统一"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "禁止项(硬编码颜色当已有token/复制类串未抽取/图标无障碍名)与lint+build+手动回归测试基线"}
+{"file": "/memories/repo/utools-project-launch.md", "reason": "工程约束沉淀:time.ts复用/enum值导入/i18n孤儿key删除/dark仅语义token"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端spec索引入口,定位component/quality/type-safety等可用规范"}

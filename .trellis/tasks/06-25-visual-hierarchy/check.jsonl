@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/06-25-ui-polish/prd.md", "reason": "跨子任务验收标准(无英文硬编码/暗色无slate/双主题一致/lint+build)与本任务上界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验收核对禁止项(硬编码色当已有token/未抽取类串/图标无障碍名)与lint+build+手动回归基线"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "验收核对语义token使用/标题层次/语义元素与cn组合是否遵循"}
+{"file": "/memories/repo/utools-project-launch.md", "reason": "约束核对:dark仅语义token/i18n两locale对齐/枚举值导入/孤儿key清理"}

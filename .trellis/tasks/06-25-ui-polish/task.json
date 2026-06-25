@@ -1,0 +1,30 @@
+{
+  "id": "ui-polish",
+  "name": "ui-polish",
+  "title": "UI 观感与视觉层次提升",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "wyxa",
+  "assignee": "wyxa",
+  "createdAt": "2026-06-25",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-25-dashboard-first-impression",
+    "06-25-visual-hierarchy",
+    "06-25-loading-polish"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
