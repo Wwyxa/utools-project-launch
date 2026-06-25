@@ -456,7 +456,6 @@ const fallbackBridge: ProjectBridge = {
     return {
       pathExists: Boolean(projectPath.trim()),
       name,
-      branch: "main",
       scripts: [],
       packagePath: null,
       git: emptyGitSnapshot(),

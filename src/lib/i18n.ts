@@ -69,7 +69,6 @@ const messages = {
     dashboard: {
       title: "项目总览",
       description: "管理你的本地开发项目、启动命令和运行状态。",
-      empty: "先创建一个项目，然后开始管理启动命令与 Git 状态。",
       createHint: "创建项目",
       unavailableProjects: "需要重新定位的项目",
       ungroupedProjects: "未分组",
@@ -79,6 +78,9 @@ const messages = {
       doneSorting: "完成",
       sortProjects: "调整项目顺序",
       finishSorting: "完成项目排序",
+      emptyTitle: "还没有项目",
+      emptySubtitle: "添加你的第一个开发项目，集中管理启动命令与运行状态。",
+      emptyImport: "从配置导入",
     },
     projectKinds: {
       node: "Node.js",
@@ -366,7 +368,6 @@ const messages = {
     dashboard: {
       title: "Projects Overview",
       description: "Manage local projects, launch commands, and runtime status.",
-      empty: "Create a project first, then manage launch commands and Git state here.",
       createHint: "Create Project",
       unavailableProjects: "Projects needing relocation",
       ungroupedProjects: "Ungrouped",
@@ -376,6 +377,9 @@ const messages = {
       doneSorting: "Done",
       sortProjects: "Reorder projects",
       finishSorting: "Finish sorting projects",
+      emptyTitle: "No projects yet",
+      emptySubtitle: "Add your first project to manage launch commands and runtime status in one place.",
+      emptyImport: "Import config",
     },
     projectKinds: {
       node: "Node.js",

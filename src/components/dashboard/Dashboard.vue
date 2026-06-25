@@ -5,7 +5,17 @@ import ProjectCard from "./ProjectCard.vue";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import type { Project } from "../../types";
-import { Search, RefreshCw, Plus, Settings, ChevronDown, ArrowUpDown, MonitorCog } from "lucide-vue-next";
+import {
+  Search,
+  RefreshCw,
+  Plus,
+  Settings,
+  ChevronDown,
+  ArrowUpDown,
+  MonitorCog,
+  PackageOpen,
+  Download,
+} from "lucide-vue-next";
 
 const store = useStore();
 const t = useI18n();
@@ -286,15 +296,27 @@ const handleProjectDragEnd = () => {
 
     <div
       v-if="store.visibleProjects.length === 0"
-      class="m-6 border border-dashed border-border-subtle rounded-xl p-8 text-center"
+      class="m-6 flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-subtle px-6 py-12 text-center"
     >
-      <p class="text-sm text-on-surface-variant mb-4">{{ t.dashboard.empty }}</p>
-      <button
-        @click="store.openCreateProjectForm"
-        class="toolbar-primary-button px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
-      >
-        {{ t.dashboard.createHint }}
-      </button>
+      <PackageOpen :size="40" class="text-primary/60" aria-hidden="true" />
+      <h2 class="text-base font-bold text-on-surface">{{ t.dashboard.emptyTitle }}</h2>
+      <p class="max-w-sm text-sm text-on-surface-variant">{{ t.dashboard.emptySubtitle }}</p>
+      <div class="mt-1 flex flex-wrap items-center justify-center gap-2">
+        <button
+          @click="store.openCreateProjectForm"
+          class="toolbar-primary-button inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition-colors"
+        >
+          <Plus :size="16" aria-hidden="true" />
+          {{ t.dashboard.createHint }}
+        </button>
+        <button
+          @click="store.importProjectConfig"
+          class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle bg-surface-container-lowest px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-low"
+        >
+          <Download :size="16" aria-hidden="true" />
+          {{ t.dashboard.emptyImport }}
+        </button>
+      </div>
     </div>
 
     <div

@@ -17,6 +17,7 @@ import { Project, ProjectStatus, ProjectIconKey } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import { formatAbsoluteTime, formatRelativeTime } from "../../lib/time";
 import ProjectIcon from "../project/ProjectIcon.vue";
 
 const props = defineProps<{
@@ -218,69 +219,6 @@ const latestGitCommitAt = computed(
   () => props.project.gitLatestCommitAt || props.project.git?.commits?.[0]?.date || "",
 );
 
-const formatAbsoluteTime = (value?: string) => {
-  if (!value) {
-    return "";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(date);
-};
-
-const formatRelativeTime = (value?: string) => {
-  if (!value) {
-    return "--";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const diffMs = Date.now() - date.getTime();
-  const absDiff = Math.abs(diffMs);
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  const month = 30 * day;
-  const year = 365 * day;
-
-  if (absDiff < minute) {
-    return diffMs >= 0 ? "刚刚" : "即将";
-  }
-  if (absDiff < hour) {
-    const minutes = Math.max(1, Math.round(absDiff / minute));
-    return diffMs >= 0 ? `${minutes} 分钟前` : `${minutes} 分钟后`;
-  }
-  if (absDiff < day) {
-    const hours = Math.max(1, Math.round(absDiff / hour));
-    return diffMs >= 0 ? `${hours} 小时前` : `${hours} 小时后`;
-  }
-  if (absDiff < month) {
-    const days = Math.max(1, Math.round(absDiff / day));
-    return diffMs >= 0 ? `${days} 天前` : `${days} 天后`;
-  }
-  if (absDiff < year) {
-    const months = Math.max(1, Math.round(absDiff / month));
-    return diffMs >= 0 ? `${months} 个月前` : `${months} 个月后`;
-  }
-
-  const years = Math.max(1, Math.round(absDiff / year));
-  return diffMs >= 0 ? `${years} 年前` : `${years} 年后`;
-};
-
 const cardTimeMeta = computed(() => {
   const sourceTime =
     latestGitCommitAt.value || props.project.updatedAt || props.project.createdAt || props.project.lastUpdated;
@@ -417,7 +355,7 @@ const handleDelete = (event: MouseEvent) => {
       )
     "
   >
-    <div class="p-2.5 min-h-36 h-full flex flex-col">
+    <div class="p-3 min-h-36 h-full flex flex-col">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5 min-w-0">
@@ -472,10 +410,10 @@ const handleDelete = (event: MouseEvent) => {
         </div>
       </div>
 
-      <p v-if="project.description" class="text-[11px] text-on-surface-variant/85 mt-1 line-clamp-1">
+      <p v-if="project.description" class="text-xs text-on-surface-variant/80 mt-1 line-clamp-1">
         {{ project.description }}
       </p>
-      <p class="font-mono text-[10px] text-on-surface-variant/75 mt-0.5 max-w-full truncate" :title="project.path">
+      <p class="font-mono text-[11px] text-on-surface-variant/60 mt-0.5 max-w-full truncate" :title="project.path">
         {{ displayPath }}
       </p>
       <p v-if="isUnavailable" class="text-[11px] text-status-warning mt-1 line-clamp-1">
@@ -485,7 +423,7 @@ const handleDelete = (event: MouseEvent) => {
       <div
         v-if="prioritizedScripts.length > 0"
         ref="scriptRowRef"
-        class="flex min-w-0 items-center justify-start gap-1.5 mt-3 mb-2 flex-nowrap overflow-visible"
+        class="flex min-w-0 items-center justify-start gap-1.5 mt-3 mb-2.5 flex-nowrap overflow-visible"
       >
         <button
           v-for="script in visibleScripts"

@@ -483,7 +483,6 @@ const demoProjects: Project[] = [
     description: "Frontend plus backend app with package scripts.",
     status: ProjectStatus.RUNNING,
     lastUpdated: "2h ago",
-    branch: "feature/memo-integration",
     scripts: [
       {
         id: "project-node-1-script-1",
