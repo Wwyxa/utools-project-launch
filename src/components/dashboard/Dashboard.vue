@@ -319,10 +319,7 @@ const handleProjectDragEnd = () => {
       </div>
     </div>
 
-    <div
-      v-if="projects.length > 0"
-      class="grid grid-cols-[repeat(auto-fill,minmax(15.5rem,1fr))] items-stretch gap-2.5 px-5 pt-2 pb-5"
-    >
+    <div v-if="projects.length > 0" class="[column-fill:balance] gap-2.5 px-5 pt-2 pb-5" style="column-width: 15.5rem">
       <ProjectCard
         v-for="project in projects"
         :key="project.id"
@@ -368,9 +365,7 @@ const handleProjectDragEnd = () => {
         <span>{{ t.dashboard.unavailableProjects }} ({{ unavailableProjects.length }})</span>
         <ChevronDown :size="16" class="text-on-surface-variant" />
       </summary>
-      <div
-        class="grid grid-cols-[repeat(auto-fill,minmax(15.5rem,1fr))] items-stretch gap-2.5 border-t border-border-subtle p-3"
-      >
+      <div class="gap-2.5 border-t border-border-subtle p-3" style="column-width: 15.5rem">
         <ProjectCard
           v-for="project in unavailableProjects"
           :key="project.id"

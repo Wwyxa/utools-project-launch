@@ -7,6 +7,8 @@ export enum ProjectStatus {
 
 export type Locale = "zh-CN" | "en-US";
 
+export type ProjectCardStyle = "default" | "tiny";
+
 export type ProjectKind = "node" | "python" | "go" | "executable" | "custom";
 
 export type ProjectIconKey =
@@ -286,6 +288,7 @@ export interface ProjectFormValue {
   type: string;
   kind: ProjectKind;
   icon: ProjectIconKey;
+  cardStyle: ProjectCardStyle;
   quickLink: string;
   group: string;
   description: string;
@@ -303,6 +306,7 @@ export interface Project {
   type: string;
   kind: ProjectKind;
   icon?: ProjectIconKey;
+  cardStyle?: ProjectCardStyle;
   quickLink?: string;
   group?: string;
   status: ProjectStatus;
