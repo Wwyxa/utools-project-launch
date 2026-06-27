@@ -326,11 +326,7 @@ const handleProjectDragEnd = () => {
     <!-- Project sections -->
     <div v-if="projects.length > 0">
       <!-- Tiny cards: compact grid row -->
-      <div
-        v-if="hasTinyProjects"
-        class="px-5 pt-2"
-        :class="{ 'pb-2 border-b border-border-subtle mb-1': hasRegularProjects }"
-      >
+      <div v-if="hasTinyProjects" class="px-5 pt-2" :class="{ 'pb-2': hasRegularProjects }">
         <div class="flex flex-wrap gap-2">
           <ProjectCard
             v-for="project in tinyProjects"
