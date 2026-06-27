@@ -89,6 +89,10 @@ const projectGroupFilters = computed<ProjectGroupFilter[]>(() => {
     ...Array.from(filters.values()),
   ];
 });
+const tinyProjects = computed(() => projects.value.filter((p) => p.cardStyle === "tiny"));
+const regularProjects = computed(() => projects.value.filter((p) => p.cardStyle !== "tiny"));
+const hasTinyProjects = computed(() => tinyProjects.value.length > 0);
+const hasRegularProjects = computed(() => regularProjects.value.length > 0);
 const visibleProjectIds = computed(() => projects.value.map((project) => project.id));
 const hasProjectGroupFilters = computed(() => projectGroupFilters.value.length > 1);
 const hasSortableProjects = computed(() => projects.value.length > 0);
@@ -319,22 +323,55 @@ const handleProjectDragEnd = () => {
       </div>
     </div>
 
-    <div v-if="projects.length > 0" class="[column-fill:balance] gap-2.5 px-5 pt-2 pb-5" style="column-width: 15.5rem">
-      <ProjectCard
-        v-for="project in projects"
-        :key="project.id"
-        :project="project"
-        :is-sorting="isSortingProjects"
-        :is-dragging="draggingProjectId === project.id"
-        :show-group-badge="showProjectGroupBadge"
-        :group-label="projectGroupName(project) || t.dashboard.ungroupedProjects"
-        :draggable="isSortingProjects"
-        @dragstart="handleProjectDragStart($event, project.id)"
-        @dragover="handleProjectDragOver"
-        @drop="handleProjectDrop($event, project.id, visibleProjectIds)"
-        @dragend="handleProjectDragEnd"
-        @select="store.setSelectedProject"
-      />
+    <!-- Project sections -->
+    <div v-if="projects.length > 0">
+      <!-- Tiny cards: compact grid row -->
+      <div
+        v-if="hasTinyProjects"
+        class="px-5 pt-2"
+        :class="{ 'pb-2 border-b border-border-subtle mb-1': hasRegularProjects }"
+      >
+        <div class="flex flex-wrap gap-2">
+          <ProjectCard
+            v-for="project in tinyProjects"
+            :key="project.id"
+            :project="project"
+            :is-sorting="isSortingProjects"
+            :is-dragging="draggingProjectId === project.id"
+            :show-group-badge="showProjectGroupBadge"
+            :group-label="projectGroupName(project) || t.dashboard.ungroupedProjects"
+            :draggable="isSortingProjects"
+            @dragstart="handleProjectDragStart($event, project.id)"
+            @dragover="handleProjectDragOver"
+            @drop="handleProjectDrop($event, project.id, visibleProjectIds)"
+            @dragend="handleProjectDragEnd"
+            @select="store.setSelectedProject"
+          />
+        </div>
+      </div>
+
+      <!-- Regular cards: grid layout -->
+      <div
+        v-if="hasRegularProjects"
+        class="grid gap-2.5 px-5 pt-2 pb-5"
+        style="grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr))"
+      >
+        <ProjectCard
+          v-for="project in regularProjects"
+          :key="project.id"
+          :project="project"
+          :is-sorting="isSortingProjects"
+          :is-dragging="draggingProjectId === project.id"
+          :show-group-badge="showProjectGroupBadge"
+          :group-label="projectGroupName(project) || t.dashboard.ungroupedProjects"
+          :draggable="isSortingProjects"
+          @dragstart="handleProjectDragStart($event, project.id)"
+          @dragover="handleProjectDragOver"
+          @drop="handleProjectDrop($event, project.id, visibleProjectIds)"
+          @dragend="handleProjectDragEnd"
+          @select="store.setSelectedProject"
+        />
+      </div>
     </div>
 
     <div
@@ -365,7 +402,10 @@ const handleProjectDragEnd = () => {
         <span>{{ t.dashboard.unavailableProjects }} ({{ unavailableProjects.length }})</span>
         <ChevronDown :size="16" class="text-on-surface-variant" />
       </summary>
-      <div class="gap-2.5 border-t border-border-subtle p-3" style="column-width: 15.5rem">
+      <div
+        class="grid gap-2.5 border-t border-border-subtle p-3"
+        style="grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr))"
+      >
         <ProjectCard
           v-for="project in unavailableProjects"
           :key="project.id"

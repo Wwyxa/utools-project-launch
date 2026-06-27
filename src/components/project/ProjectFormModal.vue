@@ -199,70 +199,72 @@ const handleScriptDrop = (targetScriptId: string) => {
                   </button>
                 </div>
               </label>
-              <div class="space-y-1.5 md:col-span-2">
-                <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.visibility }}</span>
-                <div class="flex w-fit rounded-lg border border-border-subtle bg-surface-container-low p-1">
-                  <button
-                    type="button"
-                    @click="store.updateProjectForm({ visibility: 'private' })"
-                    :class="
-                      cn(
-                        'rounded-md px-4 py-1.5 text-xs font-bold transition-colors',
-                        form.visibility === 'private'
-                          ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
-                          : 'text-on-surface-variant hover:bg-surface-container',
-                      )
-                    "
-                  >
-                    {{ t.modal.visibilityPrivate }}
-                  </button>
-                  <button
-                    type="button"
-                    @click="store.updateProjectForm({ visibility: 'public' })"
-                    :class="
-                      cn(
-                        'rounded-md px-4 py-1.5 text-xs font-bold transition-colors',
-                        form.visibility === 'public'
-                          ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
-                          : 'text-on-surface-variant hover:bg-surface-container',
-                      )
-                    "
-                  >
-                    {{ t.modal.visibilityPublic }}
-                  </button>
+              <div class="flex flex-wrap items-end gap-4 md:col-span-6">
+                <div class="space-y-1.5">
+                  <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.visibility }}</span>
+                  <div class="flex w-fit rounded-lg border border-border-subtle bg-surface-container-low p-1">
+                    <button
+                      type="button"
+                      @click="store.updateProjectForm({ visibility: 'private' })"
+                      :class="
+                        cn(
+                          'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                          form.visibility === 'private'
+                            ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                            : 'text-on-surface-variant hover:bg-surface-container',
+                        )
+                      "
+                    >
+                      {{ t.modal.visibilityPrivate }}
+                    </button>
+                    <button
+                      type="button"
+                      @click="store.updateProjectForm({ visibility: 'public' })"
+                      :class="
+                        cn(
+                          'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                          form.visibility === 'public'
+                            ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                            : 'text-on-surface-variant hover:bg-surface-container',
+                        )
+                      "
+                    >
+                      {{ t.modal.visibilityPublic }}
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div class="space-y-1.5 md:col-span-2">
-                <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.cardStyle }}</span>
-                <div class="flex w-fit rounded-lg border border-border-subtle bg-surface-container-low p-1">
-                  <button
-                    type="button"
-                    @click="store.updateProjectForm({ cardStyle: 'default' })"
-                    :class="
-                      cn(
-                        'rounded-md px-4 py-1.5 text-xs font-bold transition-colors',
-                        form.cardStyle === 'default'
-                          ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
-                          : 'text-on-surface-variant hover:bg-surface-container',
-                      )
-                    "
-                  >
-                    {{ t.modal.cardStyleDefault }}
-                  </button>
-                  <button
-                    type="button"
-                    @click="store.updateProjectForm({ cardStyle: 'tiny' })"
-                    :class="
-                      cn(
-                        'rounded-md px-4 py-1.5 text-xs font-bold transition-colors',
-                        form.cardStyle === 'tiny'
-                          ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
-                          : 'text-on-surface-variant hover:bg-surface-container',
-                      )
-                    "
-                  >
-                    {{ t.modal.cardStyleTiny }}
-                  </button>
+                <div class="space-y-1.5">
+                  <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.cardStyle }}</span>
+                  <div class="flex w-fit rounded-lg border border-border-subtle bg-surface-container-low p-1">
+                    <button
+                      type="button"
+                      @click="store.updateProjectForm({ cardStyle: 'default' })"
+                      :class="
+                        cn(
+                          'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                          form.cardStyle === 'default'
+                            ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                            : 'text-on-surface-variant hover:bg-surface-container',
+                        )
+                      "
+                    >
+                      {{ t.modal.cardStyleDefault }}
+                    </button>
+                    <button
+                      type="button"
+                      @click="store.updateProjectForm({ cardStyle: 'tiny' })"
+                      :class="
+                        cn(
+                          'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                          form.cardStyle === 'tiny'
+                            ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                            : 'text-on-surface-variant hover:bg-surface-container',
+                        )
+                      "
+                    >
+                      {{ t.modal.cardStyleTiny }}
+                    </button>
+                  </div>
                 </div>
               </div>
               <label class="space-y-1.5 md:col-span-12">

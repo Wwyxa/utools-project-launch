@@ -351,19 +351,20 @@ const handleDelete = (event: MouseEvent) => {
 </script>
 
 <template>
-  <div
-    @click="handleCardSelect"
-    :class="
-      cn(
-        'group relative mb-2.5 break-inside-avoid border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
-        isRunning &&
-          'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
-        isDragging && 'opacity-55 scale-[0.99]',
-        isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
-      )
-    "
-  >
-    <template v-if="isTiny">
+  <div v-if="isTiny" class="group relative flex items-center">
+    <div
+      @click="handleCardSelect"
+      :class="
+        cn(
+          'relative border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
+          'flex shrink-0 min-w-[8rem] max-w-[14rem] after:absolute after:inset-x-0 after:top-full after:h-8',
+          isRunning &&
+            'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
+          isDragging && 'opacity-55 scale-[0.99]',
+          isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
+        )
+      "
+    >
       <div class="flex items-center gap-1.5 py-1.5 px-2.5 min-h-0">
         <span
           class="inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden"
@@ -372,17 +373,20 @@ const handleDelete = (event: MouseEvent) => {
         >
           <ProjectIcon :icon="projectStack.kind" size="sm" />
         </span>
-        <h3 class="min-w-0 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
+        <h3
+          class="min-w-0 flex-1 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors"
+        >
           {{ project.name }}
         </h3>
+        <GripVertical v-if="isSorting" :size="14" class="shrink-0 text-on-surface-variant/55" />
         <button
-          v-if="tinyRunTarget"
+          v-else-if="tinyRunTarget"
           type="button"
           @click.stop="handleScriptToggle($event, tinyRunTarget.id, tinyRunTarget.status)"
           :disabled="isUnavailable || tinyRunTarget.status === 'STOPPING'"
           :class="
             cn(
-              'inline-flex shrink-0 items-center justify-center h-5 w-5 rounded transition-colors',
+              'inline-flex shrink-0 items-center justify-center h-6 w-6 rounded transition-colors',
               tinyRunTarget.status === 'RUNNING'
                 ? 'text-status-running hover:bg-status-running/10'
                 : tinyRunTarget.status === 'STOPPING'
@@ -395,362 +399,365 @@ const handleDelete = (event: MouseEvent) => {
         >
           <Square
             v-if="tinyRunTarget.status === 'RUNNING' || tinyRunTarget.status === 'STOPPING'"
-            :size="11"
+            :size="13"
             fill="currentColor"
           />
-          <Play v-else :size="11" fill="currentColor" />
+          <Play v-else :size="13" fill="currentColor" />
         </button>
-        <span
-          v-if="isRunning"
-          class="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-running/25 bg-status-running/10 px-1.5 py-0.5 text-[9px] font-bold text-status-running"
+      </div>
+      <div
+        :class="
+          cn(
+            'absolute top-[calc(100%+0.25rem)] right-0 z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
+            'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
+          )
+        "
+        @click.stop
+      >
+        <button
+          v-if="quickLink && !isSorting"
+          type="button"
+          @click="handleOpenQuickLink"
+          class="p-0.5 text-on-surface-variant/60 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          :title="t.projectActions.openQuickLink"
+          :aria-label="t.projectActions.openQuickLink"
         >
-          <span class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse" />
-          {{ t.common.running }}
-        </span>
-        <span
-          v-else-if="isError"
-          class="inline-flex shrink-0 items-center gap-1 rounded-full bg-status-error/10 px-1.5 py-0.5 text-[9px] font-bold text-status-error"
+          <Link2 :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleOpenTerminal"
+          class="p-0.5 text-on-surface-variant/70 hover:text-status-running rounded hover:bg-on-surface/5 transition-colors"
+          :disabled="isUnavailable"
+          :title="t.projectActions.openInTerminal"
+          :aria-label="t.projectActions.openInTerminal"
         >
-          <span class="w-1.5 h-1.5 rounded-full bg-status-error" />
-          {{ t.common.error }}
-        </span>
-        <div class="ml-auto flex shrink-0 items-center gap-0.5">
+          <TerminalSquare :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleOpenEditor"
+          class="p-0.5 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          :disabled="isUnavailable"
+          :title="t.projectActions.openInEditor"
+          :aria-label="t.projectActions.openInEditor"
+        >
+          <Code2 :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleOpenFolder"
+          class="p-0.5 text-on-surface-variant/70 hover:text-on-surface rounded hover:bg-on-surface/5 transition-colors"
+          :disabled="isUnavailable"
+          :title="t.common.openFolder"
+          :aria-label="t.common.openFolder"
+        >
+          <FolderOpen :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleEdit"
+          class="p-0.5 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          :title="t.common.edit"
+          :aria-label="t.common.edit"
+        >
+          <Pencil :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleDelete"
+          class="p-0.5 text-on-surface-variant/70 hover:text-status-error rounded hover:bg-on-surface/5 transition-colors"
+          :title="t.projectActions.deleteProject"
+          :aria-label="t.projectActions.deleteProject"
+        >
+          <Trash2 :size="13" />
+        </button>
+      </div>
+      <div
+        :class="
+          cn(
+            'absolute -left-px -top-px -bottom-px w-[5px] rounded-l-lg rounded-r-none pointer-events-none',
+            isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'transparent',
+          )
+        "
+      />
+    </div>
+  </div>
+  <div
+    v-else
+    @click="handleCardSelect"
+    :class="
+      cn(
+        'group relative mb-2.5 border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
+        isRunning &&
+          'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
+        isDragging && 'opacity-55 scale-[0.99]',
+        isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
+      )
+    "
+  >
+    <div class="p-3 min-h-36 h-full flex flex-col">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span
+              class="inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden"
+              :title="projectStack.title"
+              :aria-label="projectStack.title"
+            >
+              <ProjectIcon :icon="projectStack.kind" size="sm" />
+            </span>
+            <h3 class="min-w-0 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
+              {{ project.name }}
+            </h3>
+            <span
+              v-if="isRunning"
+              class="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-running/25 bg-status-running/10 px-1.5 py-0.5 text-[9px] font-bold text-status-running"
+            >
+              <span class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse" />
+              {{ t.common.running }}
+            </span>
+          </div>
+        </div>
+
+        <div v-if="isSorting || quickLink || isError" class="flex shrink-0 items-center justify-end gap-1">
           <button
             v-if="quickLink && !isSorting"
             type="button"
             @click="handleOpenQuickLink"
-            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:text-primary"
+            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-surface-container hover:text-primary"
             :title="t.projectActions.openQuickLink"
             :aria-label="t.projectActions.openQuickLink"
           >
             <Link2 :size="13" />
           </button>
-          <GripVertical v-if="isSorting" :size="14" class="shrink-0 text-on-surface-variant/55" />
-          <template v-else>
-            <div
-              :class="
-                cn(
-                  'flex items-center gap-0.5 transition-all',
-                  'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
-                )
+
+          <GripVertical v-if="isSorting" :size="16" class="shrink-0 text-on-surface-variant/55" />
+
+          <div
+            v-else-if="isError"
+            :class="
+              cn(
+                'shrink-0 inline-flex max-w-[4.25rem] items-center gap-1 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap',
+                'bg-status-error/10 text-status-error',
+              )
+            "
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-status-error" />
+            <span class="truncate">
+              {{ t.common.error }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <p v-if="project.description" class="text-xs text-on-surface-variant/80 mt-1 line-clamp-1">
+        {{ project.description }}
+      </p>
+      <p class="font-mono text-[11px] text-on-surface-variant/60 mt-0.5 max-w-full truncate" :title="project.path">
+        {{ displayPath }}
+      </p>
+      <p v-if="isUnavailable" class="text-[11px] text-status-warning mt-1 line-clamp-1">
+        {{ project.unavailableReason || "当前设备无法访问该路径" }}
+      </p>
+
+      <div
+        v-if="prioritizedScripts.length > 0"
+        ref="scriptRowRef"
+        class="flex min-w-0 items-center justify-start gap-1.5 mt-3 mb-2.5 flex-nowrap overflow-visible"
+      >
+        <button
+          v-for="script in visibleScripts"
+          :key="script.id"
+          :title="script.command"
+          @click="handleScriptToggle($event, script.id, script.status)"
+          :disabled="isUnavailable || script.status === 'STOPPING'"
+          :class="
+            cn(
+              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
+              script.status === 'RUNNING'
+                ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
+                : script.status === 'STOPPING'
+                  ? 'text-status-warning bg-status-warning/10 border-status-warning/30 cursor-wait'
+                  : 'text-on-surface-variant bg-surface-variant border-transparent hover:text-on-surface hover:bg-surface-container-high',
+            )
+          "
+        >
+          <Square
+            v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
+            :size="8"
+            class="shrink-0"
+            fill="currentColor"
+          />
+          <Play v-else :size="9" class="shrink-0" fill="currentColor" />
+          <span>{{ script.name }}</span>
+        </button>
+        <div v-if="hiddenScriptCount > 0" ref="moreScriptsRef" class="relative shrink-0">
+          <button
+            type="button"
+            @click="toggleMoreScripts"
+            class="inline-flex flex-none items-center justify-center whitespace-nowrap text-[10px] font-bold text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded border border-transparent transition-colors hover:text-on-surface hover:bg-surface-container-high"
+            aria-haspopup="menu"
+            :aria-expanded="moreScriptsOpen"
+            :aria-label="`显示 ${hiddenScriptCount} 个隐藏脚本`"
+            :title="
+              hiddenRunningCount > 0
+                ? t.projectActions.moreRunning.replace('{count}', String(hiddenRunningCount))
+                : undefined
+            "
+          >
+            <ChevronDown :size="10" />
+          </button>
+          <div
+            v-if="moreScriptsOpen"
+            class="absolute right-0 top-[calc(100%+0.25rem)] z-30 w-44 overflow-hidden rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-1 shadow-[0_18px_44px_rgba(0,0,0,0.20),0_0_0_1px_rgba(255,255,255,0.45)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
+            @click.stop
+            role="menu"
+          >
+            <button
+              v-for="script in hiddenScripts"
+              :key="script.id"
+              type="button"
+              @click="handleScriptToggle($event, script.id, script.status)"
+              :disabled="isUnavailable || script.status === 'STOPPING'"
+              class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface disabled:opacity-50"
+              :title="script.command"
+              :aria-label="
+                script.status === 'RUNNING'
+                  ? `${t.scripts.stopScript}: ${script.name}`
+                  : script.status === 'STOPPING'
+                    ? `${t.common.stopping}: ${script.name}`
+                    : `${t.scripts.startScript}: ${script.name}`
               "
-              @click.stop
+              role="menuitem"
             >
-              <button
-                @click.stop="handleOpenTerminal"
-                class="p-0.5 text-on-surface-variant/70 hover:text-status-running rounded hover:bg-on-surface/5 transition-colors"
-                :disabled="isUnavailable"
-                :title="t.projectActions.openInTerminal"
-                :aria-label="t.projectActions.openInTerminal"
-              >
-                <TerminalSquare :size="13" />
-              </button>
-              <button
-                @click.stop="handleOpenEditor"
-                class="p-0.5 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
-                :disabled="isUnavailable"
-                :title="t.projectActions.openInEditor"
-                :aria-label="t.projectActions.openInEditor"
-              >
-                <Code2 :size="13" />
-              </button>
-              <button
-                @click.stop="handleOpenFolder"
-                class="p-0.5 text-on-surface-variant/70 hover:text-on-surface rounded hover:bg-on-surface/5 transition-colors"
-                :disabled="isUnavailable"
-                :title="t.common.openFolder"
-                :aria-label="t.common.openFolder"
-              >
-                <FolderOpen :size="13" />
-              </button>
-              <button
-                @click.stop="handleEdit"
-                class="p-0.5 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
-                :title="t.common.edit"
-                :aria-label="t.common.edit"
-              >
-                <Pencil :size="13" />
-              </button>
-              <button
-                @click.stop="handleDelete"
-                class="p-0.5 text-on-surface-variant/70 hover:text-status-error rounded hover:bg-on-surface/5 transition-colors"
-                :title="t.projectActions.deleteProject"
-                :aria-label="t.projectActions.deleteProject"
-              >
-                <Trash2 :size="13" />
-              </button>
-            </div>
+              <Square
+                v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
+                :size="9"
+                :class="script.status === 'STOPPING' ? 'shrink-0 text-status-warning' : 'shrink-0 text-status-running'"
+                fill="currentColor"
+              />
+              <Play v-else :size="10" class="shrink-0" fill="currentColor" />
+              <span class="truncate">{{ script.name }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="prioritizedScripts.length > 0"
+        ref="scriptMeasureRef"
+        class="pointer-events-none fixed -left-[10000px] top-0 flex items-center gap-1.5 opacity-0"
+        aria-hidden="true"
+      >
+        <span
+          v-for="script in prioritizedScripts"
+          :key="script.id"
+          data-script-measure-button
+          :class="
+            cn(
+              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border',
+              script.status === 'RUNNING'
+                ? 'border-status-running/30'
+                : script.status === 'STOPPING'
+                  ? 'border-status-warning/30'
+                  : 'border-transparent',
+            )
+          "
+        >
+          <Square
+            v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
+            :size="8"
+            class="shrink-0"
+            fill="currentColor"
+          />
+          <Play v-else :size="9" class="shrink-0" fill="currentColor" />
+          <span>{{ script.name }}</span>
+        </span>
+        <span
+          data-script-more-measure
+          class="inline-flex flex-none items-center justify-center whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border border-transparent"
+        >
+          <ChevronDown :size="10" />
+        </span>
+      </div>
+
+      <div
+        class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_6.75rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2"
+      >
+        <div class="min-w-0 text-[11px] text-on-surface-variant">
+          <span v-if="isError" class="flex min-w-0 items-center gap-1 truncate text-status-error">
+            <AlertTriangle :size="12" class="shrink-0" /> {{ project.git?.statusText || "Exit code 1" }}
+          </span>
+          <span
+            v-else
+            class="flex min-w-0 items-center gap-1 truncate"
+            :title="cardTimeMeta.title || cardTimeMeta.value"
+          >
+            <span class="shrink-0 text-[11px] text-on-surface-variant/85">{{ cardTimeMeta.symbol }}</span>
+            <span class="truncate">{{ cardTimeMeta.value }}</span>
+          </span>
+        </div>
+        <div
+          :class="
+            cn(
+              'flex w-[6.75rem] shrink-0 items-center justify-end gap-0.5 transition-all',
+              isSorting
+                ? 'opacity-100'
+                : 'opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:pointer-events-auto',
+            )
+          "
+          @click.stop
+        >
+          <template v-if="isSorting" />
+          <template v-else>
+            <button
+              @click.stop="handleOpenTerminal"
+              class="p-1 text-on-surface-variant/70 hover:text-status-running rounded hover:bg-on-surface/5 transition-colors"
+              :disabled="isUnavailable"
+              :title="t.projectActions.openInTerminal"
+              :aria-label="t.projectActions.openInTerminal"
+            >
+              <TerminalSquare :size="15" />
+            </button>
+            <button
+              @click.stop="handleOpenEditor"
+              class="p-1 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+              :disabled="isUnavailable"
+              :title="t.projectActions.openInEditor"
+              :aria-label="t.projectActions.openInEditor"
+            >
+              <Code2 :size="15" />
+            </button>
+            <button
+              @click.stop="handleOpenFolder"
+              class="p-1 text-on-surface-variant/70 hover:text-on-surface rounded hover:bg-on-surface/5 transition-colors"
+              :disabled="isUnavailable"
+              :title="t.common.openFolder"
+              :aria-label="t.common.openFolder"
+            >
+              <FolderOpen :size="15" />
+            </button>
+            <button
+              @click.stop="handleEdit"
+              class="p-1 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+              :title="t.common.edit"
+              :aria-label="t.common.edit"
+            >
+              <Pencil :size="15" />
+            </button>
+            <button
+              @click.stop="handleDelete"
+              class="p-1 text-on-surface-variant/70 hover:text-status-error rounded hover:bg-on-surface/5 transition-colors"
+              :title="t.projectActions.deleteProject"
+              :aria-label="t.projectActions.deleteProject"
+            >
+              <Trash2 :size="15" />
+            </button>
           </template>
         </div>
       </div>
-    </template>
-    <template v-else>
-      <div class="p-3 min-h-36 h-full flex flex-col">
-        <div class="flex items-start justify-between gap-2">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5 min-w-0">
-              <span
-                class="inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden"
-                :title="projectStack.title"
-                :aria-label="projectStack.title"
-              >
-                <ProjectIcon :icon="projectStack.kind" size="sm" />
-              </span>
-              <h3 class="min-w-0 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
-                {{ project.name }}
-              </h3>
-              <span
-                v-if="isRunning"
-                class="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-running/25 bg-status-running/10 px-1.5 py-0.5 text-[9px] font-bold text-status-running"
-              >
-                <span class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse" />
-                {{ t.common.running }}
-              </span>
-            </div>
-          </div>
-
-          <div v-if="isSorting || quickLink || isError" class="flex shrink-0 items-center justify-end gap-1">
-            <button
-              v-if="quickLink && !isSorting"
-              type="button"
-              @click="handleOpenQuickLink"
-              class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-surface-container hover:text-primary"
-              :title="t.projectActions.openQuickLink"
-              :aria-label="t.projectActions.openQuickLink"
-            >
-              <Link2 :size="13" />
-            </button>
-
-            <GripVertical v-if="isSorting" :size="16" class="shrink-0 text-on-surface-variant/55" />
-
-            <div
-              v-else-if="isError"
-              :class="
-                cn(
-                  'shrink-0 inline-flex max-w-[4.25rem] items-center gap-1 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap',
-                  'bg-status-error/10 text-status-error',
-                )
-              "
-            >
-              <span class="w-1.5 h-1.5 rounded-full bg-status-error" />
-              <span class="truncate">
-                {{ t.common.error }}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <p v-if="project.description" class="text-xs text-on-surface-variant/80 mt-1 line-clamp-1">
-          {{ project.description }}
-        </p>
-        <p class="font-mono text-[11px] text-on-surface-variant/60 mt-0.5 max-w-full truncate" :title="project.path">
-          {{ displayPath }}
-        </p>
-        <p v-if="isUnavailable" class="text-[11px] text-status-warning mt-1 line-clamp-1">
-          {{ project.unavailableReason || "当前设备无法访问该路径" }}
-        </p>
-
-        <div
-          v-if="prioritizedScripts.length > 0"
-          ref="scriptRowRef"
-          class="flex min-w-0 items-center justify-start gap-1.5 mt-3 mb-2.5 flex-nowrap overflow-visible"
-        >
-          <button
-            v-for="script in visibleScripts"
-            :key="script.id"
-            :title="script.command"
-            @click="handleScriptToggle($event, script.id, script.status)"
-            :disabled="isUnavailable || script.status === 'STOPPING'"
-            :class="
-              cn(
-                'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
-                script.status === 'RUNNING'
-                  ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
-                  : script.status === 'STOPPING'
-                    ? 'text-status-warning bg-status-warning/10 border-status-warning/30 cursor-wait'
-                    : 'text-on-surface-variant bg-surface-variant border-transparent hover:text-on-surface hover:bg-surface-container-high',
-              )
-            "
-          >
-            <Square
-              v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
-              :size="8"
-              class="shrink-0"
-              fill="currentColor"
-            />
-            <Play v-else :size="9" class="shrink-0" fill="currentColor" />
-            <span>{{ script.name }}</span>
-          </button>
-          <div v-if="hiddenScriptCount > 0" ref="moreScriptsRef" class="relative shrink-0">
-            <button
-              type="button"
-              @click="toggleMoreScripts"
-              class="inline-flex flex-none items-center justify-center whitespace-nowrap text-[10px] font-bold text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded border border-transparent transition-colors hover:text-on-surface hover:bg-surface-container-high"
-              aria-haspopup="menu"
-              :aria-expanded="moreScriptsOpen"
-              :aria-label="`显示 ${hiddenScriptCount} 个隐藏脚本`"
-              :title="
-                hiddenRunningCount > 0
-                  ? t.projectActions.moreRunning.replace('{count}', String(hiddenRunningCount))
-                  : undefined
-              "
-            >
-              <ChevronDown :size="10" />
-            </button>
-            <div
-              v-if="moreScriptsOpen"
-              class="absolute right-0 top-[calc(100%+0.25rem)] z-30 w-44 overflow-hidden rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-1 shadow-[0_18px_44px_rgba(0,0,0,0.20),0_0_0_1px_rgba(255,255,255,0.45)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
-              @click.stop
-              role="menu"
-            >
-              <button
-                v-for="script in hiddenScripts"
-                :key="script.id"
-                type="button"
-                @click="handleScriptToggle($event, script.id, script.status)"
-                :disabled="isUnavailable || script.status === 'STOPPING'"
-                class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface disabled:opacity-50"
-                :title="script.command"
-                :aria-label="
-                  script.status === 'RUNNING'
-                    ? `${t.scripts.stopScript}: ${script.name}`
-                    : script.status === 'STOPPING'
-                      ? `${t.common.stopping}: ${script.name}`
-                      : `${t.scripts.startScript}: ${script.name}`
-                "
-                role="menuitem"
-              >
-                <Square
-                  v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
-                  :size="9"
-                  :class="
-                    script.status === 'STOPPING' ? 'shrink-0 text-status-warning' : 'shrink-0 text-status-running'
-                  "
-                  fill="currentColor"
-                />
-                <Play v-else :size="10" class="shrink-0" fill="currentColor" />
-                <span class="truncate">{{ script.name }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-if="prioritizedScripts.length > 0"
-          ref="scriptMeasureRef"
-          class="pointer-events-none fixed -left-[10000px] top-0 flex items-center gap-1.5 opacity-0"
-          aria-hidden="true"
-        >
-          <span
-            v-for="script in prioritizedScripts"
-            :key="script.id"
-            data-script-measure-button
-            :class="
-              cn(
-                'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border',
-                script.status === 'RUNNING'
-                  ? 'border-status-running/30'
-                  : script.status === 'STOPPING'
-                    ? 'border-status-warning/30'
-                    : 'border-transparent',
-              )
-            "
-          >
-            <Square
-              v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
-              :size="8"
-              class="shrink-0"
-              fill="currentColor"
-            />
-            <Play v-else :size="9" class="shrink-0" fill="currentColor" />
-            <span>{{ script.name }}</span>
-          </span>
-          <span
-            data-script-more-measure
-            class="inline-flex flex-none items-center justify-center whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border border-transparent"
-          >
-            <ChevronDown :size="10" />
-          </span>
-        </div>
-
-        <div
-          class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_6.75rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2"
-        >
-          <div class="min-w-0 text-[11px] text-on-surface-variant">
-            <span v-if="isError" class="flex min-w-0 items-center gap-1 truncate text-status-error">
-              <AlertTriangle :size="12" class="shrink-0" /> {{ project.git?.statusText || "Exit code 1" }}
-            </span>
-            <span
-              v-else
-              class="flex min-w-0 items-center gap-1 truncate"
-              :title="cardTimeMeta.title || cardTimeMeta.value"
-            >
-              <span class="shrink-0 text-[11px] text-on-surface-variant/85">{{ cardTimeMeta.symbol }}</span>
-              <span class="truncate">{{ cardTimeMeta.value }}</span>
-            </span>
-          </div>
-          <div
-            :class="
-              cn(
-                'flex w-[6.75rem] shrink-0 items-center justify-end gap-0.5 transition-all',
-                isSorting
-                  ? 'opacity-100'
-                  : 'opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:pointer-events-auto',
-              )
-            "
-            @click.stop
-          >
-            <template v-if="isSorting" />
-            <template v-else>
-              <button
-                @click.stop="handleOpenTerminal"
-                class="p-1 text-on-surface-variant/70 hover:text-status-running rounded hover:bg-on-surface/5 transition-colors"
-                :disabled="isUnavailable"
-                :title="t.projectActions.openInTerminal"
-                :aria-label="t.projectActions.openInTerminal"
-              >
-                <TerminalSquare :size="15" />
-              </button>
-              <button
-                @click.stop="handleOpenEditor"
-                class="p-1 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
-                :disabled="isUnavailable"
-                :title="t.projectActions.openInEditor"
-                :aria-label="t.projectActions.openInEditor"
-              >
-                <Code2 :size="15" />
-              </button>
-              <button
-                @click.stop="handleOpenFolder"
-                class="p-1 text-on-surface-variant/70 hover:text-on-surface rounded hover:bg-on-surface/5 transition-colors"
-                :disabled="isUnavailable"
-                :title="t.common.openFolder"
-                :aria-label="t.common.openFolder"
-              >
-                <FolderOpen :size="15" />
-              </button>
-              <button
-                @click.stop="handleEdit"
-                class="p-1 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
-                :title="t.common.edit"
-                :aria-label="t.common.edit"
-              >
-                <Pencil :size="15" />
-              </button>
-              <button
-                @click.stop="handleDelete"
-                class="p-1 text-on-surface-variant/70 hover:text-status-error rounded hover:bg-on-surface/5 transition-colors"
-                :title="t.projectActions.deleteProject"
-                :aria-label="t.projectActions.deleteProject"
-              >
-                <Trash2 :size="15" />
-              </button>
-            </template>
-          </div>
-        </div>
-      </div>
-    </template>
-
+    </div>
     <div
       :class="
         cn(
