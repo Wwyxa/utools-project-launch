@@ -2044,6 +2044,7 @@ function toStoredProject(project, index = 0) {
     type: project.type || "Custom",
     kind: project.kind || "custom",
     icon: project.icon || "custom",
+    cardStyle: project.cardStyle || "default",
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     status: "STOPPED",

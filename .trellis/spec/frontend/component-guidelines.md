@@ -498,6 +498,52 @@ const fileIcon = computed(() => {
 - For dense panels with variable-width rows such as Git history or file trees, combine `min-w-0` on flex/grid children with explicit `overflow-x-auto` or a fixed minimum row width so narrow windows do not clip the right edge of the content.
 - For floating UI inside clipped/scrolling panels, render the floating layer outside the panel with `Teleport` and keep positioning logic minimal. Over-calculated placement can be worse than a simple above/below rule in compact windows.
 
+### Convention: Tiny Card Layout
+
+**What**: Projects with `cardStyle === "tiny"` render as compact single-row cards in a dedicated top section, separated from regular cards which use a CSS Grid layout.
+
+**Why**: Mixing tiny and regular cards in the same masonry/grid creates uneven column heights and visual chaos. Separating them into distinct sections gives each layout its own rhythm.
+
+**Layout Rules**:
+
+- Tiny cards use a `flex-wrap gap-2` container, not a fixed-column grid. This lets cards pack tightly based on actual content width.
+- Each tiny card has `min-w-[8rem] max-w-[14rem]` for uniform but adaptive sizing.
+- Regular cards use `grid grid-cols-[repeat(auto-fill,minmax(15.5rem,1fr))]`.
+- When both sections exist, add a `border-b border-border-subtle` divider on the tiny section.
+
+**Hover Action Buttons**:
+
+- Tiny card action buttons (terminal, editor, folder, edit, delete) are positioned outside the card border using `absolute top-[calc(100%+0.25rem)] right-0` **inside the card div** (not a sibling wrapper), so `right-0` aligns to the card's right edge.
+- The card div needs `after:absolute after:inset-x-0 after:top-full after:h-8` to bridge the gap between the card and the buttons, preventing hover state loss when the mouse moves downward.
+- Action buttons have a distinct floating surface: `rounded-md border border-outline-variant/60 bg-surface-container-lowest shadow-md z-30`.
+- The run button stays inside the card border, after the project name.
+
+**Example**:
+
+```vue
+<!-- Group wrapper (no positioning role) -->
+<div class="group relative flex items-center">
+  <!-- Card border (relative positioning context) -->
+  <div class="relative ... after:absolute after:inset-x-0 after:top-full after:h-8">
+    <div class="flex items-center gap-1.5 py-1.5 px-2.5">
+      <ProjectIcon ... />
+      <h3 class="min-w-0 flex-1 truncate ...">{{ project.name }}</h3>
+      <button class="h-6 w-6 ..."><!-- run --></button>
+    </div>
+    <!-- Action buttons (absolute, right-aligned, below card) -->
+    <div class="absolute top-[calc(100%+0.25rem)] right-0 z-30
+                opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto
+                rounded-md border bg-surface-container-lowest shadow-md ...">
+      <!-- terminal, editor, folder, edit, delete -->
+    </div>
+    <!-- Status accent bar -->
+    <div class="absolute -left-px -top-px -bottom-px w-[5px] ..." />
+  </div>
+</div>
+```
+
+**Related**: `src/components/dashboard/ProjectCard.vue`, `src/components/dashboard/Dashboard.vue`.
+
 ---
 
 ## Common Mistakes
@@ -510,6 +556,7 @@ const fileIcon = computed(() => {
 - Letting nested action buttons bubble to the card root and trigger unintended navigation
 - Forgetting `min-w-0` on nested panel children, which causes wide rows to truncate or hide the rightmost content on smaller screens
 - Coloring normal startup/readiness output as error red just because it arrived on stderr; reserve error tones for true failures and use semantic content to classify logs
+- Positioning hover-revealed action buttons as siblings outside the card div without a hover bridge — the mouse loses hover state crossing the gap and buttons become unclickable. Always add `after:absolute after:inset-x-0 after:top-full after:h-*` on the positioning parent to bridge the gap
 
 ### 布局与间距
 

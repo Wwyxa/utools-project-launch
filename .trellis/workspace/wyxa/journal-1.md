@@ -1249,3 +1249,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Tiny Card 样式系统
+
+**Date**: 2026-06-27
+**Task**: Tiny Card 样式系统
+**Branch**: `tiny-card`
+
+### Summary
+
+实现项目卡片样式系统：新增 cardStyle 字段（default/tiny），tiny 模式单行紧凑布局，CSS columns 瀑布流混排，表单四字段合并一行，全链路持久化
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `516eda8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

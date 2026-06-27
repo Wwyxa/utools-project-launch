@@ -46,7 +46,15 @@ let visibleScriptMeasureFrame: number | null = null;
 
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
+const isTiny = computed(() => props.project.cardStyle === "tiny");
 const isUnavailable = computed(() => props.project.pathExists === false);
+const tinyRunTarget = computed(() => {
+  const running = props.project.scripts.find((s) => s.status === "RUNNING");
+  if (running) return running;
+  const stopping = props.project.scripts.find((s) => s.status === "STOPPING");
+  if (stopping) return stopping;
+  return props.project.scripts[0] || null;
+});
 const quickLink = computed(() => props.project.quickLink?.trim() || "");
 const displayGroupLabel = computed(() => props.groupLabel?.trim() || props.project.group?.trim() || "");
 const activeScripts = computed(() =>
@@ -343,11 +351,144 @@ const handleDelete = (event: MouseEvent) => {
 </script>
 
 <template>
+  <div v-if="isTiny" class="group relative flex items-center">
+    <div
+      @click="handleCardSelect"
+      :class="
+        cn(
+          'relative border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
+          'flex shrink-0 min-w-[8rem] max-w-[14rem] after:absolute after:inset-x-0 after:top-full after:h-8',
+          isRunning &&
+            'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
+          isDragging && 'opacity-55 scale-[0.99]',
+          isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
+        )
+      "
+    >
+      <div class="flex items-center gap-1.5 py-1.5 px-2.5 min-h-0">
+        <span
+          class="inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden"
+          :title="projectStack.title"
+          :aria-label="projectStack.title"
+        >
+          <ProjectIcon :icon="projectStack.kind" size="sm" />
+        </span>
+        <h3
+          class="min-w-0 flex-1 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors"
+        >
+          {{ project.name }}
+        </h3>
+        <GripVertical v-if="isSorting" :size="14" class="shrink-0 text-on-surface-variant/55" />
+        <button
+          v-else-if="tinyRunTarget"
+          type="button"
+          @click.stop="handleScriptToggle($event, tinyRunTarget.id, tinyRunTarget.status)"
+          :disabled="isUnavailable || tinyRunTarget.status === 'STOPPING'"
+          :class="
+            cn(
+              'inline-flex shrink-0 items-center justify-center h-6 w-6 rounded transition-colors',
+              tinyRunTarget.status === 'RUNNING'
+                ? 'text-status-running hover:bg-status-running/10'
+                : tinyRunTarget.status === 'STOPPING'
+                  ? 'text-status-warning cursor-wait'
+                  : 'text-on-surface-variant/60 hover:text-status-running hover:bg-on-surface/5',
+            )
+          "
+          :title="tinyRunTarget.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript"
+          :aria-label="tinyRunTarget.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript"
+        >
+          <Square
+            v-if="tinyRunTarget.status === 'RUNNING' || tinyRunTarget.status === 'STOPPING'"
+            :size="13"
+            fill="currentColor"
+          />
+          <Play v-else :size="13" fill="currentColor" />
+        </button>
+      </div>
+      <div
+        :class="
+          cn(
+            'absolute top-[calc(100%+0.25rem)] right-0 z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
+            'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
+          )
+        "
+        @click.stop
+      >
+        <button
+          v-if="quickLink && !isSorting"
+          type="button"
+          @click="handleOpenQuickLink"
+          class="p-0.5 text-on-surface-variant/60 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          :title="t.projectActions.openQuickLink"
+          :aria-label="t.projectActions.openQuickLink"
+        >
+          <Link2 :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleOpenTerminal"
+          class="p-0.5 text-on-surface-variant/70 hover:text-status-running rounded hover:bg-on-surface/5 transition-colors"
+          :disabled="isUnavailable"
+          :title="t.projectActions.openInTerminal"
+          :aria-label="t.projectActions.openInTerminal"
+        >
+          <TerminalSquare :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleOpenEditor"
+          class="p-0.5 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          :disabled="isUnavailable"
+          :title="t.projectActions.openInEditor"
+          :aria-label="t.projectActions.openInEditor"
+        >
+          <Code2 :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleOpenFolder"
+          class="p-0.5 text-on-surface-variant/70 hover:text-on-surface rounded hover:bg-on-surface/5 transition-colors"
+          :disabled="isUnavailable"
+          :title="t.common.openFolder"
+          :aria-label="t.common.openFolder"
+        >
+          <FolderOpen :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleEdit"
+          class="p-0.5 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          :title="t.common.edit"
+          :aria-label="t.common.edit"
+        >
+          <Pencil :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
+          @click.stop="handleDelete"
+          class="p-0.5 text-on-surface-variant/70 hover:text-status-error rounded hover:bg-on-surface/5 transition-colors"
+          :title="t.projectActions.deleteProject"
+          :aria-label="t.projectActions.deleteProject"
+        >
+          <Trash2 :size="13" />
+        </button>
+      </div>
+      <div
+        :class="
+          cn(
+            'absolute -left-px -top-px -bottom-px w-[5px] rounded-l-lg rounded-r-none pointer-events-none',
+            isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'transparent',
+          )
+        "
+      />
+    </div>
+  </div>
   <div
+    v-else
     @click="handleCardSelect"
     :class="
       cn(
-        'group relative self-stretch border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
+        'group relative mb-2.5 border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
         isRunning &&
           'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
         isDragging && 'opacity-55 scale-[0.99]',
@@ -617,7 +758,6 @@ const handleDelete = (event: MouseEvent) => {
         </div>
       </div>
     </div>
-
     <div
       :class="
         cn(
