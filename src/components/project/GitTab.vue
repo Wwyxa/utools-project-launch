@@ -5,12 +5,14 @@ import {
   ArrowUpToLine,
   CircleAlert,
   CircleCheck,
+  CloudDownload,
+  CloudUpload,
   ClipboardCopy,
   FileSearch,
   GitBranch,
+  GitPullRequestArrow,
   UserCircle,
   Clock3,
-  RefreshCw,
   X,
   Sparkles,
   Filter,
@@ -34,6 +36,7 @@ import {
   type ProjectGitCommitSummary,
   type ProjectGitFileChange,
   type ProjectGitFileDiffResult,
+  type ProjectGitRemoteSummary,
 } from "../../types";
 import AiReasoningResult from "./AiReasoningResult.vue";
 import {
@@ -51,6 +54,8 @@ import { renderMarkdown } from "../../lib/markdown";
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
 type GitFileActionName = "stage" | "unstage" | "discard";
+type GitRemoteActionName = "fetch" | "pull" | "push";
+type RemoteDialogMode = "add" | "edit";
 type CollapsedGitPanel = "files" | "graph";
 type ActiveGitFileAction = { action: GitFileActionName; path: string };
 type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
@@ -94,6 +99,11 @@ const commitAiState = ref<AiState>("idle");
 const openDatePickerKind = ref<"since" | "until" | null>(null);
 const datePickerMonth = ref(new Date());
 const isBranchMenuOpen = ref(false);
+const isRemoteMenuOpen = ref(false);
+const isRemoteDialogOpen = ref(false);
+const remoteDialogMode = ref<RemoteDialogMode>("add");
+const remoteFormName = ref("");
+const remoteFormUrl = ref("");
 const gitActionMessage = ref("");
 const gitActionState = ref<GitActionState>("idle");
 const activeGitAction = ref("");
@@ -209,10 +219,23 @@ const commits = computed(() => {
   });
 });
 const snapshot = computed(() => props.project.git);
+const remotes = computed(() => snapshot.value?.remotes || []);
+const upstream = computed(() => snapshot.value?.upstream || null);
+const hasUpstream = computed(() => Boolean(upstream.value));
+const upstreamLabel = computed(() => upstream.value?.ref || "未设置 upstream");
+const remoteStatusText = computed(() => {
+  if (upstream.value) {
+    return upstream.value.ref;
+  }
+  if (remotes.value.length > 0) {
+    return "当前分支未设置 upstream";
+  }
+  return "未配置 remote";
+});
+const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWriteRunning.value);
 const isGitSnapshotRefreshing = computed(() => Boolean(store.gitRefreshing[props.project.id]));
 const isGitStatusRefreshing = computed(() => Boolean(store.gitStatusRefreshing[props.project.id]));
 const isGitRefreshing = computed(() => isGitSnapshotRefreshing.value || isGitStatusRefreshing.value);
-const gitRefreshLabel = computed(() => (isGitRefreshing.value ? "正在刷新 Git 状态" : t.value.git.refresh));
 
 // 全局统一 Loading 状态栏
 const globalLoadingMessage = computed(() => {
@@ -320,11 +343,6 @@ const commitTooltipStyle = computed(() => {
   };
 });
 
-const handleRefresh = async () => {
-  if (isGitRefreshing.value) return;
-  await store.refreshGitSnapshot(props.project.id);
-};
-
 const clearCommitFilters = () => {
   commitKeyword.value = "";
   commitAuthor.value = "";
@@ -351,7 +369,157 @@ const closeFloatingControls = () => {
   isAiModeMenuOpen.value = false;
   isCommitAiModeMenuOpen.value = false;
   isBranchMenuOpen.value = false;
+  isRemoteMenuOpen.value = false;
   openDatePickerKind.value = null;
+};
+
+const remoteActionLabel = (action: GitRemoteActionName) => {
+  if (action === "fetch") return "Fetch";
+  if (action === "pull") return "Pull";
+  return "Push";
+};
+
+const remoteActionLoadingMessage = (action: GitRemoteActionName) => {
+  if (action === "fetch") return "正在执行 Git fetch...";
+  if (action === "pull") return "正在执行 Git pull...";
+  return "正在执行 Git push...";
+};
+
+const remoteActionTitle = (action: GitRemoteActionName) => {
+  if (!hasUpstream.value) return "当前分支未设置 upstream，无法执行远程操作";
+  return `${remoteActionLabel(action)} ${upstreamLabel.value}`;
+};
+
+const executeGitRemoteAction = async (action: GitRemoteActionName) => {
+  if (isAnyGitWriteRunning.value) return;
+  if (!hasUpstream.value) {
+    setGitActionResult("warning", "当前分支未设置 upstream，无法执行远程操作。");
+    return;
+  }
+
+  activeGitAction.value = `remote:${action}`;
+  setGitActionResult("loading", remoteActionLoadingMessage(action));
+  await waitForVisualFeedback();
+  try {
+    const result =
+      action === "fetch"
+        ? await store.fetchGitRemote(props.project.id)
+        : action === "pull"
+          ? await store.pullGitRemote(props.project.id)
+          : await store.pushGitRemote(props.project.id);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法执行远程 Git 操作。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      clearCommitSelection();
+    }
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "远程 Git 操作失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const openAddRemoteDialog = () => {
+  if (isAnyGitWriteRunning.value) return;
+  isRemoteMenuOpen.value = false;
+  remoteDialogMode.value = "add";
+  remoteFormName.value = "";
+  remoteFormUrl.value = "";
+  isRemoteDialogOpen.value = true;
+};
+
+const openEditRemoteDialog = (remote: ProjectGitRemoteSummary) => {
+  if (isAnyGitWriteRunning.value) return;
+  isRemoteMenuOpen.value = false;
+  remoteDialogMode.value = "edit";
+  remoteFormName.value = remote.name;
+  remoteFormUrl.value = remote.fetchUrl || remote.pushUrl;
+  isRemoteDialogOpen.value = true;
+};
+
+const closeRemoteDialog = () => {
+  if (isAnyGitWriteRunning.value) return;
+  isRemoteDialogOpen.value = false;
+};
+
+const validateRemoteForm = () => {
+  const name = remoteFormName.value.trim();
+  const url = remoteFormUrl.value.trim();
+  if (!name) return "请输入 remote 名称。";
+  if (name.startsWith("-")) return "remote 名称不能以 - 开头。";
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) return "remote 名称只能包含字母、数字、点、下划线和短横线。";
+  if (!url) return "请输入 remote URL。";
+  if (/[\u0000-\u001f\u007f]/.test(url)) return "remote URL 不能包含控制字符。";
+  return "";
+};
+
+const submitRemoteDialog = async () => {
+  if (isAnyGitWriteRunning.value) return;
+  const validationMessage = validateRemoteForm();
+  if (validationMessage) {
+    setGitActionResult("warning", validationMessage);
+    return;
+  }
+
+  const name = remoteFormName.value.trim();
+  const url = remoteFormUrl.value.trim();
+  const action = remoteDialogMode.value === "add" ? "add" : "set-url";
+  activeGitAction.value = `remote:${action}:${name}`;
+  setGitActionResult("loading", remoteDialogMode.value === "add" ? "正在添加 remote..." : "正在更新 remote URL...");
+  await waitForVisualFeedback();
+  try {
+    const result =
+      remoteDialogMode.value === "add"
+        ? await store.addGitRemote(props.project.id, name, url)
+        : await store.setGitRemoteUrl(props.project.id, name, url);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法更新 remote。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      isRemoteDialogOpen.value = false;
+    }
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "更新 remote 失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const executeRemoveRemote = async (remoteName: string) => {
+  if (isAnyGitWriteRunning.value) return;
+  activeGitAction.value = `remote:remove:${remoteName}`;
+  setGitActionResult("loading", `正在删除 remote：${remoteName}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.removeGitRemote(props.project.id, remoteName);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法删除 remote。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "删除 remote 失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestRemoveRemote = (remote: ProjectGitRemoteSummary) => {
+  if (isAnyGitWriteRunning.value) return;
+  confirmationDialog.value = {
+    kind: "danger",
+    title: "删除 Git remote",
+    message: `此操作会从当前仓库删除 remote：${remote.name}。`,
+    detail: remote.fetchUrl || remote.pushUrl,
+    confirmLabel: "删除 remote",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeRemoveRemote(remote.name),
+  };
 };
 
 const setGitActionResult = (state: GitActionState, message: string) => {
@@ -1918,6 +2086,88 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         <span class="text-on-surface-variant whitespace-nowrap">
           {{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}
         </span>
+        <div class="relative min-w-0" @click.stop>
+          <button
+            type="button"
+            :class="
+              cn(
+                'flex max-w-56 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors hover:bg-surface-variant',
+                upstream
+                  ? 'border-primary/25 bg-primary/10 text-primary'
+                  : remotes.length > 0
+                    ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                    : 'border-border-subtle bg-surface-container-low text-on-surface-variant',
+              )
+            "
+            :title="remoteStatusText"
+            aria-label="Git remote 状态"
+            @click="isRemoteMenuOpen = !isRemoteMenuOpen"
+          >
+            <span class="min-w-0 truncate">{{ remoteStatusText }}</span>
+            <ChevronDown :size="11" class="shrink-0" />
+          </button>
+          <div v-if="isRemoteMenuOpen" class="mode-menu-popover min-w-72" @click.stop>
+            <div class="border-b border-border-subtle px-2 py-1.5">
+              <div class="truncate text-[10px] font-bold uppercase text-on-surface-variant">Remote</div>
+            </div>
+            <div v-if="remotes.length > 0" class="max-h-52 overflow-y-auto py-1">
+              <div
+                v-for="remote in remotes"
+                :key="remote.name"
+                class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2 py-1.5 hover:bg-surface-variant"
+              >
+                <div class="min-w-0">
+                  <div class="flex min-w-0 items-center gap-1.5">
+                    <span class="truncate font-mono text-[11px] font-bold text-on-surface">{{ remote.name }}</span>
+                    <span
+                      v-if="upstream?.remote === remote.name"
+                      class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1.5 py-px text-[9px] font-bold text-primary"
+                    >
+                      upstream
+                    </span>
+                  </div>
+                  <p class="truncate font-mono text-[10px] text-on-surface-variant" :title="remote.fetchUrl">
+                    {{ remote.fetchUrl || remote.pushUrl }}
+                  </p>
+                </div>
+                <div class="flex shrink-0 items-center gap-px">
+                  <button
+                    type="button"
+                    class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="isAnyGitWriteRunning"
+                    :title="`编辑 ${remote.name} URL`"
+                    :aria-label="`编辑 ${remote.name} URL`"
+                    @click="openEditRemoteDialog(remote)"
+                  >
+                    <SlidersHorizontal :size="12" />
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-status-error disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="isAnyGitWriteRunning"
+                    :title="`删除 ${remote.name}`"
+                    :aria-label="`删除 ${remote.name}`"
+                    @click="requestRemoveRemote(remote)"
+                  >
+                    <X :size="12" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="px-2 py-2 text-[11px] text-on-surface-variant">暂无 remote</div>
+            <div class="border-t border-border-subtle p-1">
+              <button
+                type="button"
+                class="mode-menu-item"
+                :disabled="isAnyGitWriteRunning"
+                @click="openAddRemoteDialog"
+              >
+                <span>添加 Git remote</span>
+                <Plus :size="13" />
+              </button>
+            </div>
+          </div>
+        </div>
         <span class="text-on-surface-variant truncate">{{ snapshot?.statusText || t.git.noRepo }}</span>
         <span
           v-if="gitActionMessage"
@@ -1943,51 +2193,72 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </span>
         <span class="text-on-surface-variant truncate hidden lg:inline">{{ repositoryPath }}</span>
       </div>
-      <div class="flex gap-2 shrink-0">
+      <div class="flex gap-1.5 shrink-0">
         <button
-          @click="handleRefresh"
-          :disabled="isGitRefreshing"
-          class="h-8 px-3 rounded border border-border-subtle bg-surface text-on-surface hover:bg-surface-variant text-xs font-bold flex items-center gap-2 transition-colors"
-          :title="gitRefreshLabel"
-          :aria-label="gitRefreshLabel"
+          type="button"
+          class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="!canRunRemoteOperation"
+          :title="remoteActionTitle('fetch')"
+          :aria-label="remoteActionTitle('fetch')"
+          @click="executeGitRemoteAction('fetch')"
         >
-          <RefreshCw :size="14" :class="isGitRefreshing && 'animate-spin'" />
+          <CloudDownload :size="14" :class="activeGitAction === 'remote:fetch' ? 'animate-pulse' : ''" />
+        </button>
+        <button
+          type="button"
+          class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="!canRunRemoteOperation"
+          :title="remoteActionTitle('pull')"
+          :aria-label="remoteActionTitle('pull')"
+          @click="executeGitRemoteAction('pull')"
+        >
+          <GitPullRequestArrow :size="14" :class="activeGitAction === 'remote:pull' ? 'animate-pulse' : ''" />
+        </button>
+        <button
+          type="button"
+          class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="!canRunRemoteOperation"
+          :title="remoteActionTitle('push')"
+          :aria-label="remoteActionTitle('push')"
+          @click="executeGitRemoteAction('push')"
+        >
+          <CloudUpload :size="14" :class="activeGitAction === 'remote:push' ? 'animate-pulse' : ''" />
         </button>
       </div>
     </div>
 
     <div class="relative grid min-h-0 flex-1 gap-2 overflow-visible" :style="{ gridTemplateColumns: gitGridColumns }">
       <Transition name="fade">
-      <div
-        v-if="!collapsedGitPanel"
-        class="pointer-events-none absolute inset-x-0 top-0 z-30 grid gap-2"
-        :style="{ gridTemplateColumns: gitGridColumns }"
-      >
-        <div class="pointer-events-none flex min-w-0 justify-end">
-          <div
-            class="pointer-events-auto flex translate-x-[calc(50%+0.25rem)] translate-y-1 items-center overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container-high shadow-md"
-          >
-            <button
-              type="button"
-              class="flex h-4 w-4 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-              title="收起左侧变更文件面板"
-              aria-label="收起左侧变更文件面板"
-              @click.stop="collapseGitFilesPanel"
+        <div
+          v-if="!collapsedGitPanel"
+          class="pointer-events-none absolute inset-x-0 top-0 z-30 grid gap-2"
+          :style="{ gridTemplateColumns: gitGridColumns }"
+        >
+          <div class="pointer-events-none flex min-w-0 justify-end">
+            <div
+              class="pointer-events-auto flex translate-x-[calc(50%+0.25rem)] translate-y-1 items-center overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container-high shadow-md"
             >
-              <ChevronLeft :size="9" />
-            </button>
-            <button
-              type="button"
-              class="flex h-4 w-4 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-              title="收起右侧提交图面板"
-              aria-label="收起右侧提交图面板"
-              @click.stop="collapseGitGraphPanel"
-            >
-              <ChevronRight :size="9" />
-            </button>
+              <button
+                type="button"
+                class="flex h-4 w-4 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                title="收起左侧变更文件面板"
+                aria-label="收起左侧变更文件面板"
+                @click.stop="collapseGitFilesPanel"
+              >
+                <ChevronLeft :size="9" />
+              </button>
+              <button
+                type="button"
+                class="flex h-4 w-4 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                title="收起右侧提交图面板"
+                aria-label="收起右侧提交图面板"
+                @click.stop="collapseGitGraphPanel"
+              >
+                <ChevronRight :size="9" />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
       </Transition>
       <button
         v-if="isGitFilesPanelCollapsed"
@@ -2589,483 +2860,556 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
     </section>
 
     <Transition name="scale">
-    <div
-      v-if="isAiDialogOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
-      @click.self="closeAiDialog"
-    >
       <div
-        class="flex h-[min(46rem,90vh)] w-[min(58rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
-        @click.stop
+        v-if="isRemoteDialogOpen"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        @click.self="closeRemoteDialog"
       >
         <div
-          class="flex items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-3"
+          class="w-[min(28rem,94vw)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+          @click.stop
         >
-          <div class="min-w-0">
-            <h3 class="text-sm font-bold text-on-surface">AI 生成</h3>
-            <p class="truncate text-[10px] font-medium text-on-surface-variant">{{ filterStatusSummary }}</p>
+          <div
+            class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
+          >
+            <div class="min-w-0">
+              <h3 class="text-sm font-bold text-on-surface">
+                {{ remoteDialogMode === "add" ? "添加 Git remote" : "编辑 Git remote" }}
+              </h3>
+              <p class="truncate text-[10px] font-medium text-on-surface-variant">
+                {{ remoteDialogMode === "add" ? "配置远程仓库地址" : remoteFormName }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="isAnyGitWriteRunning"
+              :title="t.common.close"
+              :aria-label="t.common.close"
+              @click="closeRemoteDialog"
+            >
+              <X :size="15" />
+            </button>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="space-y-3 p-4">
+            <label class="block text-xs font-bold text-on-surface">
+              <span>Remote 名称</span>
+              <input
+                v-model="remoteFormName"
+                type="text"
+                class="ui-field mt-1 w-full font-mono"
+                :disabled="remoteDialogMode === 'edit' || isAnyGitWriteRunning"
+                placeholder="origin"
+              />
+            </label>
+            <label class="block text-xs font-bold text-on-surface">
+              <span>Remote URL</span>
+              <input
+                v-model="remoteFormUrl"
+                type="text"
+                class="ui-field mt-1 w-full font-mono"
+                :disabled="isAnyGitWriteRunning"
+                placeholder="git@github.com:owner/repo.git"
+              />
+            </label>
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="isAnyGitWriteRunning"
+                @click="closeRemoteDialog"
+              >
+                {{ t.common.cancel }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                :disabled="isAnyGitWriteRunning"
+                @click="submitRemoteDialog"
+              >
+                <Check :size="13" />
+                {{ remoteDialogMode === "add" ? "添加" : "保存" }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="scale">
+      <div
+        v-if="isAiDialogOpen"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        @click.self="closeAiDialog"
+      >
+        <div
+          class="flex h-[min(46rem,90vh)] w-[min(58rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+          @click.stop
+        >
+          <div
+            class="flex items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-3"
+          >
+            <div class="min-w-0">
+              <h3 class="text-sm font-bold text-on-surface">AI 生成</h3>
+              <p class="truncate text-[10px] font-medium text-on-surface-variant">{{ filterStatusSummary }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                :title="t.common.close"
+                :aria-label="t.common.close"
+                @click="closeAiDialog"
+              >
+                <X :size="15" />
+              </button>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
+            <div class="flex shrink-0 flex-wrap items-end gap-2">
+              <label class="block w-48 text-xs font-semibold uppercase text-on-surface-variant">
+                <div class="relative mt-1">
+                  <button
+                    type="button"
+                    class="ui-field flex w-full items-center justify-between gap-2 text-left font-semibold normal-case"
+                    @click.stop="isAiModeMenuOpen = !isAiModeMenuOpen"
+                  >
+                    <span>{{ aiModeLabel }}</span>
+                    <ChevronDown :size="14" class="text-on-surface-variant" />
+                  </button>
+                  <div v-if="isAiModeMenuOpen" class="mode-menu-popover" @click.stop>
+                    <button
+                      v-for="option in aiModeOptions"
+                      :key="option.id"
+                      type="button"
+                      :class="cn('mode-menu-item', aiMode === option.id && 'bg-primary/10 text-primary')"
+                      @click="selectAiMode(option.id)"
+                    >
+                      <span>{{ option.name }}</span>
+                      <Check v-if="aiMode === option.id" :size="13" />
+                    </button>
+                  </div>
+                </div>
+              </label>
+              <label
+                class="mb-0.5 inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold normal-case text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                title="包含代码 diff 上下文"
+              >
+                <input
+                  v-model="aiDialogIncludeDiffContext"
+                  type="checkbox"
+                  class="h-3 w-3 accent-primary"
+                  :disabled="isAiDialogGenerating"
+                />
+                <span>Diff</span>
+              </label>
+              <button
+                type="button"
+                class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                :disabled="isAiDialogGenerating"
+                @click="generateAiAnalysis"
+              >
+                <Sparkles :size="13" />
+                {{ isAiDialogGenerating ? "生成中" : "生成" }}
+              </button>
+            </div>
+            <div
+              class="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
+            >
+              <button
+                v-if="aiDialogCopyContent"
+                type="button"
+                class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
+                :title="copyLabel(aiDialogCopyContent)"
+                :aria-label="copyLabel(aiDialogCopyContent)"
+                @click="copyText(aiDialogCopyContent)"
+              >
+                <ClipboardCopy :size="12" />
+              </button>
+              <div class="ai-result-panel h-full overflow-auto p-3">
+                <AiReasoningResult v-if="hasAiDialogDisplayResult" :result="aiDialogDisplayResult" />
+                <div
+                  v-else-if="aiDialogPanelHint"
+                  :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+                >
+                  {{ aiDialogPanelHint }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="scale">
+      <div
+        v-if="isDiffDialogOpen"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        @click.self="closeDiffDialog"
+      >
+        <div
+          class="flex h-[85vh] w-[90vw] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+        >
+          <div
+            class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
+          >
+            <div class="min-w-0">
+              <h3 class="text-sm font-bold text-on-surface">{{ t.git.diffTitle }}</h3>
+              <p v-if="selectedDiff" class="truncate font-mono text-[10px] font-bold text-on-surface-variant">
+                {{ selectedDiff.path }}
+              </p>
+            </div>
             <button
               type="button"
               class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
               :title="t.common.close"
               :aria-label="t.common.close"
-              @click="closeAiDialog"
+              @click="closeDiffDialog"
             >
               <X :size="15" />
             </button>
           </div>
-        </div>
-        <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
-          <div class="flex shrink-0 flex-wrap items-end gap-2">
-            <label class="block w-48 text-xs font-semibold uppercase text-on-surface-variant">
-              <div class="relative mt-1">
-                <button
-                  type="button"
-                  class="ui-field flex w-full items-center justify-between gap-2 text-left font-semibold normal-case"
-                  @click.stop="isAiModeMenuOpen = !isAiModeMenuOpen"
-                >
-                  <span>{{ aiModeLabel }}</span>
-                  <ChevronDown :size="14" class="text-on-surface-variant" />
-                </button>
-                <div v-if="isAiModeMenuOpen" class="mode-menu-popover" @click.stop>
-                  <button
-                    v-for="option in aiModeOptions"
-                    :key="option.id"
-                    type="button"
-                    :class="cn('mode-menu-item', aiMode === option.id && 'bg-primary/10 text-primary')"
-                    @click="selectAiMode(option.id)"
-                  >
-                    <span>{{ option.name }}</span>
-                    <Check v-if="aiMode === option.id" :size="13" />
-                  </button>
-                </div>
+          <div class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest">
+            <div v-if="isLoadingDiff" class="space-y-1.5 py-3" aria-busy="true">
+              <div v-for="row in 10" :key="row" class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-center">
+                <span class="skeleton ml-auto mr-2 h-3 w-8" />
+                <span
+                  :class="[
+                    'skeleton h-3 mr-1',
+                    row % 4 === 0 ? 'w-full' : row % 4 === 1 ? 'w-3/4' : row % 4 === 2 ? 'w-5/6' : 'w-2/3',
+                  ]"
+                />
               </div>
-            </label>
-            <label
-              class="mb-0.5 inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold normal-case text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-              title="包含代码 diff 上下文"
-            >
-              <input
-                v-model="aiDialogIncludeDiffContext"
-                type="checkbox"
-                class="h-3 w-3 accent-primary"
-                :disabled="isAiDialogGenerating"
-              />
-              <span>Diff</span>
-            </label>
-            <button
-              type="button"
-              class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
-              :disabled="isAiDialogGenerating"
-              @click="generateAiAnalysis"
-            >
-              <Sparkles :size="13" />
-              {{ isAiDialogGenerating ? "生成中" : "生成" }}
-            </button>
-          </div>
-          <div
-            class="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
-          >
-            <button
-              v-if="aiDialogCopyContent"
-              type="button"
-              class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
-              :title="copyLabel(aiDialogCopyContent)"
-              :aria-label="copyLabel(aiDialogCopyContent)"
-              @click="copyText(aiDialogCopyContent)"
-            >
-              <ClipboardCopy :size="12" />
-            </button>
-            <div class="ai-result-panel h-full overflow-auto p-3">
-              <AiReasoningResult v-if="hasAiDialogDisplayResult" :result="aiDialogDisplayResult" />
+            </div>
+            <div v-else-if="selectedDiff?.diff" class="min-w-max py-3 font-mono text-xs leading-5">
               <div
-                v-else-if="aiDialogPanelHint"
-                :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
-              >
-                {{ aiDialogPanelHint }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    </Transition>
-
-    <Transition name="scale">
-    <div
-      v-if="isDiffDialogOpen"
-      class="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
-      @click.self="closeDiffDialog"
-    >
-      <div
-        class="flex h-[85vh] w-[90vw] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
-      >
-        <div
-          class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
-        >
-          <div class="min-w-0">
-            <h3 class="text-sm font-bold text-on-surface">{{ t.git.diffTitle }}</h3>
-            <p v-if="selectedDiff" class="truncate font-mono text-[10px] font-bold text-on-surface-variant">
-              {{ selectedDiff.path }}
-            </p>
-          </div>
-          <button
-            type="button"
-            class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-            :title="t.common.close"
-            :aria-label="t.common.close"
-            @click="closeDiffDialog"
-          >
-            <X :size="15" />
-          </button>
-        </div>
-        <div class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest">
-          <div v-if="isLoadingDiff" class="space-y-1.5 py-3" aria-busy="true">
-            <div
-              v-for="row in 10"
-              :key="row"
-              class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-center"
-            >
-              <span class="skeleton ml-auto mr-2 h-3 w-8" />
-              <span
-                :class="[
-                  'skeleton h-3 mr-1',
-                  row % 4 === 0 ? 'w-full' : row % 4 === 1 ? 'w-3/4' : row % 4 === 2 ? 'w-5/6' : 'w-2/3',
-                ]"
-              />
-            </div>
-          </div>
-          <div v-else-if="selectedDiff?.diff" class="min-w-max py-3 font-mono text-xs leading-5">
-            <div
-              v-for="line in diffLines"
-              :key="line.id"
-              :class="
-                cn(
-                  'grid grid-cols-[3.25rem_minmax(0,1fr)] whitespace-pre',
-                  line.kind === 'add' && 'bg-green-500/15 text-green-700 dark:bg-green-400/10 dark:text-green-300',
-                  line.kind === 'delete' && 'bg-red-500/15 text-red-700 dark:bg-red-400/10 dark:text-red-300',
-                  line.kind === 'hunk' && 'bg-blue-500/10 text-blue-600 dark:bg-blue-400/8 dark:text-blue-400',
-                  line.kind === 'meta' && 'bg-surface-container-low text-on-surface-variant/70',
-                  line.kind === 'context' && 'text-on-surface',
-                )
-              "
-            >
-              <span class="select-none border-r border-border-subtle px-2 text-right text-on-surface-variant/60">
-                {{ line.number }}
-              </span>
-              <span class="px-3">{{ line.content || " " }}</span>
-            </div>
-          </div>
-          <div v-else class="p-5 text-sm text-on-surface-variant">
-            {{ selectedDiff?.message || t.git.diffEmpty }}
-          </div>
-        </div>
-      </div>
-    </div>
-    </Transition>
-
-    <Transition name="scale">
-    <div
-      v-if="isCommitDetailOpen && selectedCommit"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
-      @click.self="closeCommitDetails"
-    >
-      <div
-        class="flex h-[min(46rem,90vh)] w-[min(58rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
-      >
-        <div
-          class="flex min-h-14 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-2"
-        >
-          <div class="min-w-0 flex-1 py-0.5">
-            <div class="flex min-w-0 items-center">
-              <span
-                class="block min-w-0 truncate text-sm font-semibold leading-5 text-on-surface"
-                :title="selectedCommit.message"
-              >
-                {{ selectedCommit.message }}
-              </span>
-            </div>
-            <div
-              class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-medium leading-4 text-on-surface-variant"
-            >
-              <button
-                type="button"
-                class="inline-flex h-5 max-w-28 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-1.5 font-mono font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                :title="copyLabel(selectedCommit.hash)"
-                :aria-label="copyLabel(selectedCommit.hash)"
-                @click="copyText(selectedCommit.hash)"
-              >
-                <span class="truncate">{{ selectedCommit.hash }}</span>
-                <ClipboardCopy :size="10" />
-              </button>
-              <span class="max-w-28 truncate" :title="selectedCommit.author">{{ selectedCommit.author }}</span>
-              <span class="text-on-surface-variant/60">·</span>
-              <span class="shrink-0" :title="formatAbsoluteTime(selectedCommit.date)">
-                {{ commitDateLabel(selectedCommit.date) }}
-              </span>
-              <span
-                v-if="isSelectedCommitCurrentHead"
+                v-for="line in diffLines"
+                :key="line.id"
                 :class="
                   cn(
-                    'shrink-0 rounded-full border px-1.5 py-px text-[9px] font-bold leading-3',
-                    isSelectedCommitDetachedHead
-                      ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
-                      : 'border-primary/30 bg-primary/10 text-primary',
+                    'grid grid-cols-[3.25rem_minmax(0,1fr)] whitespace-pre',
+                    line.kind === 'add' && 'bg-green-500/15 text-green-700 dark:bg-green-400/10 dark:text-green-300',
+                    line.kind === 'delete' && 'bg-red-500/15 text-red-700 dark:bg-red-400/10 dark:text-red-300',
+                    line.kind === 'hunk' && 'bg-blue-500/10 text-blue-600 dark:bg-blue-400/8 dark:text-blue-400',
+                    line.kind === 'meta' && 'bg-surface-container-low text-on-surface-variant/70',
+                    line.kind === 'context' && 'text-on-surface',
                   )
                 "
               >
-                {{ isSelectedCommitDetachedHead ? "detached HEAD" : "当前 HEAD" }}
-              </span>
-              <span
-                v-for="refName in selectedCommitRefs"
-                :key="refName"
-                :class="cn(refClass(refName), 'max-w-28 shrink-0')"
-                :title="refName"
-              >
-                {{ refName }}
-              </span>
+                <span class="select-none border-r border-border-subtle px-2 text-right text-on-surface-variant/60">
+                  {{ line.number }}
+                </span>
+                <span class="px-3">{{ line.content || " " }}</span>
+              </div>
             </div>
-          </div>
-          <div class="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              class="inline-flex h-7 max-w-32 items-center gap-1.5 rounded border border-primary/25 bg-primary/10 px-2 text-[10px] font-bold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-55"
-              :disabled="isGitActionRunning || !canCheckoutSelectedCommit"
-              :title="selectedCommitCheckoutTitle"
-              :aria-label="selectedCommitCheckoutAriaLabel"
-              @click="handleCheckoutSelectedCommit"
-            >
-              <GitCommitHorizontal :size="12" />
-              <span class="truncate">{{ selectedCommitCheckoutLabel }}</span>
-            </button>
-            <button
-              type="button"
-              class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-              :title="t.common.close"
-              :aria-label="t.common.close"
-              @click="closeCommitDetails"
-            >
-              <X :size="15" />
-            </button>
-          </div>
-        </div>
-        <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest p-2.5">
-          <div class="grid min-h-0 flex-1 grid-cols-[minmax(13rem,0.78fr)_minmax(0,1.22fr)] gap-2.5">
-            <section
-              class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface p-3"
-            >
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-on-surface">{{ t.git.changedFiles }}</h4>
-                <span class="text-[10px] font-bold text-on-surface-variant">{{ selectedCommitFiles.length }}</span>
-              </div>
-              <div class="themed-scrollbar min-h-24 flex-1 space-y-1 overflow-auto pr-1">
-                <button
-                  v-for="file in selectedCommitFiles"
-                  :key="`detail-${file.path}`"
-                  type="button"
-                  class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border-subtle bg-surface-container-low px-2 py-1.5 text-left font-mono text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-container hover:text-primary"
-                  :title="file.path"
-                  @click="handleViewDiff(file)"
-                >
-                  <span class="truncate">{{ file.path }}</span>
-                  <span class="whitespace-nowrap">
-                    <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
-                    <span v-if="file.deletions > 0" class="ml-1 text-status-error">-{{ file.deletions }}</span>
-                  </span>
-                </button>
-                <div v-if="isLoadingCommitFiles" class="space-y-1" aria-busy="true">
-                  <div
-                    v-for="row in 5"
-                    :key="row"
-                    class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border-subtle bg-surface-container-low px-2 py-1.5"
-                  >
-                    <span :class="['skeleton h-3', row % 2 === 0 ? 'w-full' : 'w-3/4']" />
-                    <span class="skeleton h-3 w-8" />
-                  </div>
-                </div>
-                <p v-else-if="selectedCommitFiles.length === 0" class="text-xs text-on-surface-variant">
-                  该提交暂无可显示的变更文件。
-                </p>
-              </div>
-              <div class="mt-2 shrink-0 border-t border-border-subtle pt-2">
-                <div class="relative">
-                  <button
-                    type="button"
-                    class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
-                    :title="copyLabel(commitBodyContent)"
-                    :aria-label="copyLabel(commitBodyContent)"
-                    @click="copyText(commitBodyContent)"
-                  >
-                    <ClipboardCopy :size="12" />
-                  </button>
-                  <div
-                    class="memo-rendered ai-markdown-result max-h-40 overflow-auto rounded border border-border-subtle bg-surface-container-low p-3 pr-8 text-on-surface lg:max-h-52"
-                    v-html="renderedCommitBody"
-                  ></div>
-                </div>
-              </div>
-            </section>
-
-            <section class="flex min-h-0 flex-col rounded-lg border border-border-subtle bg-surface p-3">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex min-w-0 items-center gap-2">
-                  <Sparkles :size="14" class="shrink-0 text-primary" />
-                  <div class="min-w-0">
-                    <h4 class="text-xs font-bold text-on-surface">{{ t.git.aiSummary }}</h4>
-                    <p class="truncate text-[10px] font-medium text-on-surface-variant">
-                      {{ aiResponseModeHint }}
-                    </p>
-                  </div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <div class="relative w-28">
-                    <button
-                      type="button"
-                      class="ui-field flex h-8 w-full items-center justify-between gap-2 px-2 text-left text-xs font-bold"
-                      @click.stop="isCommitAiModeMenuOpen = !isCommitAiModeMenuOpen"
-                    >
-                      <span>{{ commitAiModeLabel }}</span>
-                      <ChevronDown :size="13" class="text-on-surface-variant" />
-                    </button>
-                    <div v-if="isCommitAiModeMenuOpen" class="mode-menu-popover" @click.stop>
-                      <button
-                        v-for="option in aiModeOptions"
-                        :key="`commit-${option.id}`"
-                        type="button"
-                        :class="cn('mode-menu-item', commitAiMode === option.id && 'bg-primary/10 text-primary')"
-                        @click="selectCommitAiMode(option.id)"
-                      >
-                        <span>{{ option.name }}</span>
-                        <Check v-if="commitAiMode === option.id" :size="13" />
-                      </button>
-                    </div>
-                  </div>
-                  <label
-                    class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                    title="包含代码 diff 上下文"
-                  >
-                    <input
-                      v-model="commitAiIncludeDiffContext"
-                      type="checkbox"
-                      class="h-3 w-3 accent-primary"
-                      :disabled="commitAiState === 'loading'"
-                    />
-                    <span>Diff</span>
-                  </label>
-                  <button
-                    type="button"
-                    class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
-                    :disabled="commitAiState === 'loading'"
-                    @click="generateCommitAiAnalysis"
-                  >
-                    <Sparkles :size="13" />
-                    {{ commitAiState === "loading" ? "生成中" : "生成" }}
-                  </button>
-                </div>
-              </div>
-              <div
-                class="relative mt-2 min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
-              >
-                <button
-                  v-if="commitAiCopyContent"
-                  type="button"
-                  class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
-                  :title="copyLabel(commitAiCopyContent)"
-                  :aria-label="copyLabel(commitAiCopyContent)"
-                  @click="copyText(commitAiCopyContent)"
-                >
-                  <ClipboardCopy :size="12" />
-                </button>
-                <div class="ai-result-panel h-full overflow-auto p-3">
-                  <AiReasoningResult v-if="hasCommitAiDisplayResult" :result="commitAiDisplayResult" />
-                  <div
-                    v-else-if="commitAiPanelHint"
-                    :class="commitAiState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
-                  >
-                    {{ commitAiPanelHint }}
-                  </div>
-                </div>
-              </div>
-            </section>
+            <div v-else class="p-5 text-sm text-on-surface-variant">
+              {{ selectedDiff?.message || t.git.diffEmpty }}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Transition>
+
+    <Transition name="scale">
+      <div
+        v-if="isCommitDetailOpen && selectedCommit"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        @click.self="closeCommitDetails"
+      >
+        <div
+          class="flex h-[min(46rem,90vh)] w-[min(58rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+        >
+          <div
+            class="flex min-h-14 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-2"
+          >
+            <div class="min-w-0 flex-1 py-0.5">
+              <div class="flex min-w-0 items-center">
+                <span
+                  class="block min-w-0 truncate text-sm font-semibold leading-5 text-on-surface"
+                  :title="selectedCommit.message"
+                >
+                  {{ selectedCommit.message }}
+                </span>
+              </div>
+              <div
+                class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-medium leading-4 text-on-surface-variant"
+              >
+                <button
+                  type="button"
+                  class="inline-flex h-5 max-w-28 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-1.5 font-mono font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                  :title="copyLabel(selectedCommit.hash)"
+                  :aria-label="copyLabel(selectedCommit.hash)"
+                  @click="copyText(selectedCommit.hash)"
+                >
+                  <span class="truncate">{{ selectedCommit.hash }}</span>
+                  <ClipboardCopy :size="10" />
+                </button>
+                <span class="max-w-28 truncate" :title="selectedCommit.author">{{ selectedCommit.author }}</span>
+                <span class="text-on-surface-variant/60">·</span>
+                <span class="shrink-0" :title="formatAbsoluteTime(selectedCommit.date)">
+                  {{ commitDateLabel(selectedCommit.date) }}
+                </span>
+                <span
+                  v-if="isSelectedCommitCurrentHead"
+                  :class="
+                    cn(
+                      'shrink-0 rounded-full border px-1.5 py-px text-[9px] font-bold leading-3',
+                      isSelectedCommitDetachedHead
+                        ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                        : 'border-primary/30 bg-primary/10 text-primary',
+                    )
+                  "
+                >
+                  {{ isSelectedCommitDetachedHead ? "detached HEAD" : "当前 HEAD" }}
+                </span>
+                <span
+                  v-for="refName in selectedCommitRefs"
+                  :key="refName"
+                  :class="cn(refClass(refName), 'max-w-28 shrink-0')"
+                  :title="refName"
+                >
+                  {{ refName }}
+                </span>
+              </div>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                class="inline-flex h-7 max-w-32 items-center gap-1.5 rounded border border-primary/25 bg-primary/10 px-2 text-[10px] font-bold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-55"
+                :disabled="isGitActionRunning || !canCheckoutSelectedCommit"
+                :title="selectedCommitCheckoutTitle"
+                :aria-label="selectedCommitCheckoutAriaLabel"
+                @click="handleCheckoutSelectedCommit"
+              >
+                <GitCommitHorizontal :size="12" />
+                <span class="truncate">{{ selectedCommitCheckoutLabel }}</span>
+              </button>
+              <button
+                type="button"
+                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                :title="t.common.close"
+                :aria-label="t.common.close"
+                @click="closeCommitDetails"
+              >
+                <X :size="15" />
+              </button>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest p-2.5">
+            <div class="grid min-h-0 flex-1 grid-cols-[minmax(13rem,0.78fr)_minmax(0,1.22fr)] gap-2.5">
+              <section
+                class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface p-3"
+              >
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <h4 class="text-xs font-bold text-on-surface">{{ t.git.changedFiles }}</h4>
+                  <span class="text-[10px] font-bold text-on-surface-variant">{{ selectedCommitFiles.length }}</span>
+                </div>
+                <div class="themed-scrollbar min-h-24 flex-1 space-y-1 overflow-auto pr-1">
+                  <button
+                    v-for="file in selectedCommitFiles"
+                    :key="`detail-${file.path}`"
+                    type="button"
+                    class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border-subtle bg-surface-container-low px-2 py-1.5 text-left font-mono text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-container hover:text-primary"
+                    :title="file.path"
+                    @click="handleViewDiff(file)"
+                  >
+                    <span class="truncate">{{ file.path }}</span>
+                    <span class="whitespace-nowrap">
+                      <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
+                      <span v-if="file.deletions > 0" class="ml-1 text-status-error">-{{ file.deletions }}</span>
+                    </span>
+                  </button>
+                  <div v-if="isLoadingCommitFiles" class="space-y-1" aria-busy="true">
+                    <div
+                      v-for="row in 5"
+                      :key="row"
+                      class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border-subtle bg-surface-container-low px-2 py-1.5"
+                    >
+                      <span :class="['skeleton h-3', row % 2 === 0 ? 'w-full' : 'w-3/4']" />
+                      <span class="skeleton h-3 w-8" />
+                    </div>
+                  </div>
+                  <p v-else-if="selectedCommitFiles.length === 0" class="text-xs text-on-surface-variant">
+                    该提交暂无可显示的变更文件。
+                  </p>
+                </div>
+                <div class="mt-2 shrink-0 border-t border-border-subtle pt-2">
+                  <div class="relative">
+                    <button
+                      type="button"
+                      class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
+                      :title="copyLabel(commitBodyContent)"
+                      :aria-label="copyLabel(commitBodyContent)"
+                      @click="copyText(commitBodyContent)"
+                    >
+                      <ClipboardCopy :size="12" />
+                    </button>
+                    <div
+                      class="memo-rendered ai-markdown-result max-h-40 overflow-auto rounded border border-border-subtle bg-surface-container-low p-3 pr-8 text-on-surface lg:max-h-52"
+                      v-html="renderedCommitBody"
+                    ></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="flex min-h-0 flex-col rounded-lg border border-border-subtle bg-surface p-3">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <Sparkles :size="14" class="shrink-0 text-primary" />
+                    <div class="min-w-0">
+                      <h4 class="text-xs font-bold text-on-surface">{{ t.git.aiSummary }}</h4>
+                      <p class="truncate text-[10px] font-medium text-on-surface-variant">
+                        {{ aiResponseModeHint }}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="relative w-28">
+                      <button
+                        type="button"
+                        class="ui-field flex h-8 w-full items-center justify-between gap-2 px-2 text-left text-xs font-bold"
+                        @click.stop="isCommitAiModeMenuOpen = !isCommitAiModeMenuOpen"
+                      >
+                        <span>{{ commitAiModeLabel }}</span>
+                        <ChevronDown :size="13" class="text-on-surface-variant" />
+                      </button>
+                      <div v-if="isCommitAiModeMenuOpen" class="mode-menu-popover" @click.stop>
+                        <button
+                          v-for="option in aiModeOptions"
+                          :key="`commit-${option.id}`"
+                          type="button"
+                          :class="cn('mode-menu-item', commitAiMode === option.id && 'bg-primary/10 text-primary')"
+                          @click="selectCommitAiMode(option.id)"
+                        >
+                          <span>{{ option.name }}</span>
+                          <Check v-if="commitAiMode === option.id" :size="13" />
+                        </button>
+                      </div>
+                    </div>
+                    <label
+                      class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                      title="包含代码 diff 上下文"
+                    >
+                      <input
+                        v-model="commitAiIncludeDiffContext"
+                        type="checkbox"
+                        class="h-3 w-3 accent-primary"
+                        :disabled="commitAiState === 'loading'"
+                      />
+                      <span>Diff</span>
+                    </label>
+                    <button
+                      type="button"
+                      class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                      :disabled="commitAiState === 'loading'"
+                      @click="generateCommitAiAnalysis"
+                    >
+                      <Sparkles :size="13" />
+                      {{ commitAiState === "loading" ? "生成中" : "生成" }}
+                    </button>
+                  </div>
+                </div>
+                <div
+                  class="relative mt-2 min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
+                >
+                  <button
+                    v-if="commitAiCopyContent"
+                    type="button"
+                    class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
+                    :title="copyLabel(commitAiCopyContent)"
+                    :aria-label="copyLabel(commitAiCopyContent)"
+                    @click="copyText(commitAiCopyContent)"
+                  >
+                    <ClipboardCopy :size="12" />
+                  </button>
+                  <div class="ai-result-panel h-full overflow-auto p-3">
+                    <AiReasoningResult v-if="hasCommitAiDisplayResult" :result="commitAiDisplayResult" />
+                    <div
+                      v-else-if="commitAiPanelHint"
+                      :class="commitAiState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+                    >
+                      {{ commitAiPanelHint }}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
     </Transition>
 
     <Teleport to="body">
       <Transition name="scale">
-      <div
-        v-if="confirmationDialog"
-        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
-        @click.self="closeConfirmationDialog"
-      >
         <div
-          class="w-[min(24rem,92vw)] overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
-          role="dialog"
-          aria-modal="true"
-          @click.stop
+          v-if="confirmationDialog"
+          class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+          @click.self="closeConfirmationDialog"
         >
-          <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
-            <div class="flex items-start gap-3">
-              <div
-                :class="
-                  cn(
-                    'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
-                    (confirmationDialog.kind || 'danger') === 'warning'
-                      ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
-                      : 'border-status-error/30 bg-status-error/10 text-status-error',
-                  )
-                "
-              >
-                <CircleAlert v-if="(confirmationDialog.kind || 'danger') === 'warning'" :size="16" />
-                <Undo v-else :size="16" />
-              </div>
-              <div class="min-w-0">
-                <h3 class="text-sm font-bold text-on-surface">{{ confirmationDialog.title }}</h3>
-                <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ confirmationDialog.message }}</p>
+          <div
+            class="w-[min(24rem,92vw)] overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            @click.stop
+          >
+            <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
+              <div class="flex items-start gap-3">
+                <div
+                  :class="
+                    cn(
+                      'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
+                      (confirmationDialog.kind || 'danger') === 'warning'
+                        ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                        : 'border-status-error/30 bg-status-error/10 text-status-error',
+                    )
+                  "
+                >
+                  <CircleAlert v-if="(confirmationDialog.kind || 'danger') === 'warning'" :size="16" />
+                  <Undo v-else :size="16" />
+                </div>
+                <div class="min-w-0">
+                  <h3 class="text-sm font-bold text-on-surface">{{ confirmationDialog.title }}</h3>
+                  <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ confirmationDialog.message }}</p>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="px-4 py-3">
-            <p
-              v-if="confirmationDialog.detail"
-              class="rounded border border-border-subtle bg-surface-container-low px-2 py-2 font-mono text-[11px] font-bold text-on-surface-variant break-all"
-            >
-              {{ confirmationDialog.detail }}
-            </p>
-            <div class="mt-4 flex justify-end gap-2">
-              <button
-                v-if="(confirmationDialog.kind || 'danger') === 'danger' || confirmationDialog.cancelLabel"
-                type="button"
-                class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
-                :disabled="isConfirmationRunning"
-                @click="closeConfirmationDialog"
+            <div class="px-4 py-3">
+              <p
+                v-if="confirmationDialog.detail"
+                class="rounded border border-border-subtle bg-surface-container-low px-2 py-2 font-mono text-[11px] font-bold text-on-surface-variant break-all"
               >
-                {{ confirmationDialog.cancelLabel || t.common.cancel }}
-              </button>
-              <button
-                type="button"
-                :class="
-                  cn(
-                    'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors disabled:cursor-wait disabled:opacity-70',
-                    (confirmationDialog.kind || 'danger') === 'warning'
-                      ? 'border-primary/30 bg-primary text-on-primary hover:bg-primary/90'
-                      : 'border-status-error/30 bg-status-error text-on-error hover:bg-status-error/90',
-                  )
-                "
-                :disabled="isConfirmationRunning"
-                @click="confirmRiskyAction"
-              >
-                <Undo v-if="(confirmationDialog.kind || 'danger') === 'danger'" :size="13" />
-                {{ isConfirmationRunning ? "处理中" : confirmationDialog.confirmLabel }}
-              </button>
+                {{ confirmationDialog.detail }}
+              </p>
+              <div class="mt-4 flex justify-end gap-2">
+                <button
+                  v-if="(confirmationDialog.kind || 'danger') === 'danger' || confirmationDialog.cancelLabel"
+                  type="button"
+                  class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+                  :disabled="isConfirmationRunning"
+                  @click="closeConfirmationDialog"
+                >
+                  {{ confirmationDialog.cancelLabel || t.common.cancel }}
+                </button>
+                <button
+                  type="button"
+                  :class="
+                    cn(
+                      'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors disabled:cursor-wait disabled:opacity-70',
+                      (confirmationDialog.kind || 'danger') === 'warning'
+                        ? 'border-primary/30 bg-primary text-on-primary hover:bg-primary/90'
+                        : 'border-status-error/30 bg-status-error text-on-error hover:bg-status-error/90',
+                    )
+                  "
+                  :disabled="isConfirmationRunning"
+                  @click="confirmRiskyAction"
+                >
+                  <Undo v-if="(confirmationDialog.kind || 'danger') === 'danger'" :size="13" />
+                  {{ isConfirmationRunning ? "处理中" : confirmationDialog.confirmLabel }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       </Transition>
       <div
         v-if="commitTooltip"

@@ -255,6 +255,8 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
     files: snapshot.files || [],
     commits: snapshot.commits || [],
     branches: snapshot.branches || [],
+    remotes: snapshot.remotes || [],
+    upstream: snapshot.upstream || null,
     hasMoreCommits: snapshot.hasMoreCommits || false,
     repositoryPath: snapshot.repositoryPath || "",
     lastRefreshedAt: snapshot.lastRefreshedAt || new Date().toISOString(),
@@ -275,6 +277,8 @@ function mergeGitStatusSnapshot(
     files: statusSnapshot.files || [],
     commits: currentSnapshot?.commits || [],
     branches: statusSnapshot.branches || currentSnapshot?.branches || [],
+    remotes: statusSnapshot.remotes || currentSnapshot?.remotes || [],
+    upstream: statusSnapshot.upstream || null,
     hasMoreCommits: currentSnapshot?.hasMoreCommits || false,
     repositoryPath: statusSnapshot.repositoryPath || currentSnapshot?.repositoryPath || "",
     lastRefreshedAt: statusSnapshot.lastRefreshedAt || new Date().toISOString(),
@@ -290,6 +294,19 @@ function mergeGitCommitPage(currentSnapshot: ProjectGitSnapshot, commitPage: Pro
     repositoryPath: commitPage.repositoryPath || currentSnapshot.repositoryPath,
     lastRefreshedAt: commitPage.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
   };
+}
+
+async function runGitRemoteMutation(
+  projectId: string,
+  project: Project,
+  action: (projectPath: string) => Promise<ProjectGitActionResult>,
+  refreshGitSnapshot: (projectId: string, options: { force?: boolean }) => Promise<void> | undefined,
+) {
+  const result = await action(project.path);
+  bumpGitMutationVersion(projectId);
+  bumpGitRefMutationVersion(projectId);
+  await refreshGitSnapshot(projectId, { force: true });
+  return result;
 }
 
 function replaceGitCommitPage(
@@ -1801,6 +1818,83 @@ export const useStore = defineStore("app", {
         await this.refreshGitSnapshot(projectId, { force: true });
       }
       return result;
+    },
+    async fetchGitRemote(projectId: string): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return runGitRemoteMutation(projectId, project, bridge.fetchGitRemote, (id, options) =>
+        this.refreshGitSnapshot(id, options),
+      );
+    },
+    async pullGitRemote(projectId: string): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return runGitRemoteMutation(projectId, project, bridge.pullGitRemote, (id, options) =>
+        this.refreshGitSnapshot(id, options),
+      );
+    },
+    async pushGitRemote(projectId: string): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return runGitRemoteMutation(projectId, project, bridge.pushGitRemote, (id, options) =>
+        this.refreshGitSnapshot(id, options),
+      );
+    },
+    async addGitRemote(
+      projectId: string,
+      remoteName: string,
+      remoteUrl: string,
+    ): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return runGitRemoteMutation(
+        projectId,
+        project,
+        (projectPath) => bridge.addGitRemote(projectPath, remoteName, remoteUrl),
+        (id, options) => this.refreshGitSnapshot(id, options),
+      );
+    },
+    async setGitRemoteUrl(
+      projectId: string,
+      remoteName: string,
+      remoteUrl: string,
+    ): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return runGitRemoteMutation(
+        projectId,
+        project,
+        (projectPath) => bridge.setGitRemoteUrl(projectPath, remoteName, remoteUrl),
+        (id, options) => this.refreshGitSnapshot(id, options),
+      );
+    },
+    async removeGitRemote(projectId: string, remoteName: string): Promise<ProjectGitActionResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return runGitRemoteMutation(
+        projectId,
+        project,
+        (projectPath) => bridge.removeGitRemote(projectPath, remoteName),
+        (id, options) => this.refreshGitSnapshot(id, options),
+      );
     },
     async writeProjectFile(
       projectId: string,

@@ -1357,6 +1357,32 @@ function runGitResult(startPath, args) {
   };
 }
 
+function runGitRemoteCommandResult(startPath, args) {
+  const resolvedPath = expandPath(startPath);
+
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      ["-C", resolvedPath, ...args],
+      {
+        encoding: "utf8",
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
+        timeout: 120000,
+        windowsHide: true,
+      },
+      (error, stdout, stderr) => {
+        const status = error ? (typeof error.code === "number" ? error.code : 1) : 0;
+        const timeoutMessage = error?.killed ? "远程 Git 操作超时，请检查网络或认证配置。" : "";
+        resolve({
+          status,
+          stdout: String(stdout || ""),
+          stderr: String(stderr || timeoutMessage || error?.message || ""),
+        });
+      },
+    );
+  });
+}
+
 function firstGitError(result, fallback) {
   return String(result.stderr || result.stdout || fallback || "Git 操作失败。").trim();
 }
@@ -1505,6 +1531,126 @@ async function readGitBranchesAsync(repositoryPath) {
       return branchName ? { name: branchName, current: String(marker || "").trim() === "*" } : null;
     })
     .filter(Boolean);
+}
+
+async function readGitRemotesAsync(repositoryPath) {
+  const output = await runGitAsync(repositoryPath, ["remote", "-v"]);
+  if (!output) {
+    return [];
+  }
+
+  const remotes = new Map();
+  output.split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^(\S+)\s+(.+)\s+\((fetch|push)\)$/);
+    if (!match) {
+      return;
+    }
+    const [, name, url, kind] = match;
+    const current = remotes.get(name) || { name, fetchUrl: "", pushUrl: "" };
+    if (kind === "fetch") {
+      current.fetchUrl = url.trim();
+    } else {
+      current.pushUrl = url.trim();
+    }
+    remotes.set(name, current);
+  });
+
+  return Array.from(remotes.values()).map((remote) => ({
+    ...remote,
+    pushUrl: remote.pushUrl || remote.fetchUrl,
+  }));
+}
+
+async function readGitUpstreamAsync(repositoryPath) {
+  const ref = String(
+    (await runGitAsync(repositoryPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])) || "",
+  ).trim();
+  if (!ref || !ref.includes("/")) {
+    return null;
+  }
+
+  const [remote, ...branchParts] = ref.split("/");
+  const branch = branchParts.join("/");
+  if (!remote || !branch) {
+    return null;
+  }
+
+  const counts = String(
+    (await runGitAsync(repositoryPath, ["rev-list", "--left-right", "--count", "HEAD...@{u}"])) || "",
+  )
+    .trim()
+    .split(/\s+/);
+  const ahead = Number(counts[0]) || 0;
+  const behind = Number(counts[1]) || 0;
+
+  return { remote, branch, ref, ahead, behind };
+}
+
+function normalizeGitRemoteName(remoteName) {
+  return typeof remoteName === "string" ? remoteName.trim() : "";
+}
+
+function normalizeGitRemoteUrl(remoteUrl) {
+  return typeof remoteUrl === "string" ? remoteUrl.trim() : "";
+}
+
+function validateGitRemoteName(remoteName) {
+  if (!remoteName) {
+    return "请输入 remote 名称。";
+  }
+  if (remoteName.startsWith("-")) {
+    return "remote 名称不能以 - 开头。";
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(remoteName)) {
+    return "remote 名称只能包含字母、数字、点、下划线和短横线。";
+  }
+  return "";
+}
+
+function validateGitRemoteUrl(remoteUrl) {
+  if (!remoteUrl) {
+    return "请输入 remote URL。";
+  }
+  if (/[\u0000-\u001f\u007f]/.test(remoteUrl)) {
+    return "remote URL 不能包含控制字符。";
+  }
+  return "";
+}
+
+async function resolveGitRemoteOperation(projectPath) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  const upstream = await readGitUpstreamAsync(repositoryPath);
+  if (!upstream) {
+    return { ok: false, repositoryPath, message: "当前分支未设置 upstream，无法执行远程操作。" };
+  }
+
+  return { ok: true, repositoryPath, upstream };
+}
+
+async function runGitRemoteResult(projectPath, args, successMessage) {
+  const remoteContext = await resolveGitRemoteOperation(projectPath);
+  if (!remoteContext.ok) {
+    return { ok: false, message: remoteContext.message };
+  }
+
+  const result = await runGitRemoteCommandResult(remoteContext.repositoryPath, args(remoteContext.upstream));
+  return result.status === 0
+    ? {
+        ok: true,
+        remote: remoteContext.upstream.remote,
+        branch: remoteContext.upstream.branch,
+        message: successMessage(remoteContext.upstream),
+      }
+    : {
+        ok: false,
+        remote: remoteContext.upstream.remote,
+        branch: remoteContext.upstream.branch,
+        message: firstGitError(result, "远程 Git 操作失败。"),
+      };
 }
 
 function readGitLocalBranchTips(repositoryPath) {
@@ -2674,6 +2820,8 @@ async function readGitStatusSnapshot(projectPath) {
       behind: 0,
       files: [],
       branches: [],
+      remotes: [],
+      upstream: null,
       repositoryPath: "",
       lastRefreshedAt: now,
       statusText: "未检测到 Git 仓库",
@@ -2688,6 +2836,8 @@ async function readGitStatusSnapshot(projectPath) {
     numstatOutput,
     cachedNumstatOutput,
     branches,
+    remotes,
+    upstream,
   ] = await Promise.all([
     runGitAsync(repositoryPath, ["status", "--short", "--branch"]),
     runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
@@ -2696,6 +2846,8 @@ async function readGitStatusSnapshot(projectPath) {
     collectNumstatAsync(repositoryPath, ["diff", "--numstat"]),
     collectNumstatAsync(repositoryPath, ["diff", "--cached", "--numstat"]),
     readGitBranchesAsync(repositoryPath),
+    readGitRemotesAsync(repositoryPath),
+    readGitUpstreamAsync(repositoryPath),
   ]);
   const symbolicBranch = String(symbolicBranchOutput || "").trim();
   const headHash = String(headHashOutput || "").trim();
@@ -2780,22 +2932,111 @@ async function readGitStatusSnapshot(projectPath) {
   const upstreamInfo = branchMatch?.[2] || "";
   const aheadMatch = upstreamInfo.match(/ahead\s+(\d+)/);
   const behindMatch = upstreamInfo.match(/behind\s+(\d+)/);
+  const ahead = upstream?.ahead ?? (aheadMatch ? Number(aheadMatch[1]) : 0);
+  const behind = upstream?.behind ?? (behindMatch ? Number(behindMatch[1]) : 0);
 
   return {
     branch,
     headHash,
     isDetachedHead,
-    ahead: aheadMatch ? Number(aheadMatch[1]) : 0,
-    behind: behindMatch ? Number(behindMatch[1]) : 0,
+    ahead,
+    behind,
     files: Array.from(fileMap.values()).filter((file) => {
       // 过滤掉文件夹条目（路径以 / 或 \ 结尾）
       return !file.path.endsWith("/") && !file.path.endsWith("\\");
     }),
     branches,
+    remotes,
+    upstream,
     repositoryPath,
     lastRefreshedAt: now,
     statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${fileMap.size === 0 ? "工作区干净" : `${fileMap.size} 个文件变更`}`,
   };
+}
+
+function fetchGitRemote(projectPath) {
+  return runGitRemoteResult(
+    projectPath,
+    (upstream) => ["fetch", "--prune", upstream.remote],
+    (upstream) => `已从 ${upstream.remote} 获取远程更新。`,
+  );
+}
+
+function pullGitRemote(projectPath) {
+  return runGitRemoteResult(
+    projectPath,
+    (upstream) => ["pull", "--ff", "--no-rebase", upstream.remote, upstream.branch],
+    (upstream) => `已从 ${upstream.ref} 拉取更新。`,
+  );
+}
+
+function pushGitRemote(projectPath) {
+  return runGitRemoteResult(
+    projectPath,
+    (upstream) => ["push", upstream.remote, `HEAD:${upstream.branch}`],
+    (upstream) => `已推送到 ${upstream.ref}。`,
+  );
+}
+
+async function addGitRemote(projectPath, remoteName, remoteUrl) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const name = normalizeGitRemoteName(remoteName);
+  const url = normalizeGitRemoteUrl(remoteUrl);
+  const nameError = validateGitRemoteName(name);
+  const urlError = validateGitRemoteUrl(url);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (nameError) {
+    return { ok: false, message: nameError };
+  }
+  if (urlError) {
+    return { ok: false, remote: name, message: urlError };
+  }
+
+  const result = runGitResult(repositoryPath, ["remote", "add", name, url]);
+  return result.status === 0
+    ? { ok: true, remote: name, message: `已添加 remote：${name}。` }
+    : { ok: false, remote: name, message: firstGitError(result, "添加 remote 失败。") };
+}
+
+async function setGitRemoteUrl(projectPath, remoteName, remoteUrl) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const name = normalizeGitRemoteName(remoteName);
+  const url = normalizeGitRemoteUrl(remoteUrl);
+  const nameError = validateGitRemoteName(name);
+  const urlError = validateGitRemoteUrl(url);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (nameError) {
+    return { ok: false, message: nameError };
+  }
+  if (urlError) {
+    return { ok: false, remote: name, message: urlError };
+  }
+
+  const result = runGitResult(repositoryPath, ["remote", "set-url", name, url]);
+  return result.status === 0
+    ? { ok: true, remote: name, message: `已更新 ${name} 的 URL。` }
+    : { ok: false, remote: name, message: firstGitError(result, "更新 remote URL 失败。") };
+}
+
+async function removeGitRemote(projectPath, remoteName) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const name = normalizeGitRemoteName(remoteName);
+  const nameError = validateGitRemoteName(name);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (nameError) {
+    return { ok: false, message: nameError };
+  }
+
+  const result = runGitResult(repositoryPath, ["remote", "remove", name]);
+  return result.status === 0
+    ? { ok: true, remote: name, message: `已删除 remote：${name}。` }
+    : { ok: false, remote: name, message: firstGitError(result, "删除 remote 失败。") };
 }
 
 async function readGitCommits(projectPath, options = {}) {
@@ -3147,6 +3388,12 @@ window.projectBridge = {
   commitGitStaged,
   switchGitBranch,
   checkoutGitCommit,
+  fetchGitRemote,
+  pullGitRemote,
+  pushGitRemote,
+  addGitRemote,
+  setGitRemoteUrl,
+  removeGitRemote,
   listProjectFiles,
   readProjectFile,
   writeProjectFile,

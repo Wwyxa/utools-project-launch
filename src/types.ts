@@ -195,6 +195,20 @@ export interface ProjectGitBranchSummary {
   current: boolean;
 }
 
+export interface ProjectGitRemoteSummary {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
+}
+
+export interface ProjectGitUpstreamSummary {
+  remote: string;
+  branch: string;
+  ref: string;
+  ahead: number;
+  behind: number;
+}
+
 export interface ProjectGitActionResult {
   ok: boolean;
   message: string;
@@ -202,6 +216,7 @@ export interface ProjectGitActionResult {
   paths?: string[];
   count?: number;
   branch?: string;
+  remote?: string;
   commitHash?: string;
   isDetachedHead?: boolean;
 }
@@ -239,6 +254,8 @@ export interface ProjectGitSnapshot {
   files: ProjectGitFileChange[];
   commits: ProjectGitCommitSummary[];
   branches?: ProjectGitBranchSummary[];
+  remotes?: ProjectGitRemoteSummary[];
+  upstream?: ProjectGitUpstreamSummary | null;
   hasMoreCommits?: boolean;
   repositoryPath: string;
   lastRefreshedAt: string;
@@ -253,6 +270,8 @@ export interface ProjectGitStatusSnapshot {
   behind: number;
   files: ProjectGitFileChange[];
   branches?: ProjectGitBranchSummary[];
+  remotes?: ProjectGitRemoteSummary[];
+  upstream?: ProjectGitUpstreamSummary | null;
   repositoryPath: string;
   lastRefreshedAt: string;
   statusText: string;
@@ -541,6 +560,12 @@ export interface ProjectBridge {
     commitHash: string,
     options?: { force?: boolean; preferredBranch?: string },
   ): Promise<ProjectGitActionResult>;
+  fetchGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
+  pullGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
+  pushGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
+  addGitRemote(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
+  setGitRemoteUrl(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
+  removeGitRemote(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileListResult>;
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;

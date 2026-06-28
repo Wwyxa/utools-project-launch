@@ -317,6 +317,8 @@ const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   files: [],
   commits: [],
   branches: [],
+  remotes: [],
+  upstream: null,
   hasMoreCommits: false,
   repositoryPath: "",
   lastRefreshedAt: new Date().toISOString(),
@@ -333,6 +335,8 @@ const emptyGitStatusSnapshot = (): ProjectBridgeGitStatusSnapshot => {
     behind: snapshot.behind,
     files: snapshot.files,
     branches: snapshot.branches,
+    remotes: snapshot.remotes,
+    upstream: snapshot.upstream,
     repositoryPath: snapshot.repositoryPath,
     lastRefreshedAt: snapshot.lastRefreshedAt,
     statusText: snapshot.statusText,
@@ -558,6 +562,24 @@ const fallbackBridge: ProjectBridge = {
     _options: { force?: boolean; preferredBranch?: string } = {},
   ): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法切换到 Git 提交。");
+  },
+  async fetchGitRemote(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法执行 Git fetch。");
+  },
+  async pullGitRemote(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法执行 Git pull。");
+  },
+  async pushGitRemote(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法执行 Git push。");
+  },
+  async addGitRemote(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法添加 Git remote。");
+  },
+  async setGitRemoteUrl(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法修改 Git remote URL。");
+  },
+  async removeGitRemote(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法删除 Git remote。");
   },
   async listProjectFiles(projectPath: string, relativePath = ""): Promise<ProjectFileListResult> {
     return { rootPath: projectPath, relativePath, entries: [] };

@@ -238,6 +238,82 @@ setGitActionResult(result.ok ? "success" : "error", result.message);
 
 Keep the UI-triggered all action explicit, let preload collect live Git status, and preserve the operation result toast through the follow-up refresh.
 
+## Scenario: Git Remote Operations Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: Git remote status and write operations cross `GitTab.vue`, Pinia store actions, `ProjectBridge`, and `public/preload.js` Git execution.
+- Trigger: remote commands may hit network and credentials, so they have stricter process-execution requirements than local-only Git actions.
+
+### 2. Signatures
+
+- `ProjectGitRemoteSummary = { name: string; fetchUrl: string; pushUrl: string }`.
+- `ProjectGitUpstreamSummary = { remote: string; branch: string; ref: string; ahead: number; behind: number }`.
+- `ProjectGitSnapshot` and `ProjectGitStatusSnapshot` include `remotes: ProjectGitRemoteSummary[]` and `upstream: ProjectGitUpstreamSummary | null`.
+- Bridge methods: `fetchGitRemote(projectPath)`, `pullGitRemote(projectPath)`, `pushGitRemote(projectPath)`, `addGitRemote(projectPath, remoteName, remoteUrl)`, `setGitRemoteUrl(projectPath, remoteName, remoteUrl)`, `removeGitRemote(projectPath, remoteName)`.
+- Store actions mirror the bridge methods with `projectId` replacing `projectPath`.
+
+### 3. Contracts
+
+- Remote status belongs in the existing Git snapshot contract, not in duplicated component-local remote state.
+- Browser fallback snapshots must explicitly return `remotes: []` and `upstream: null` so consumers can distinguish "no remote" from a missing field.
+- Fetch, pull, and push operate only on the current branch upstream. Do not add force push, rebase pull, or `push -u` without a new requirement and updated spec.
+- Preload validates remote names and URLs before invoking Git. Remote names are non-empty, cannot start with `-`, and only contain letters, digits, `.`, `_`, and `-`. Remote URLs are non-empty and cannot contain control characters.
+- Remote network commands must use async process execution with a timeout and `GIT_TERMINAL_PROMPT=0` / `GCM_INTERACTIVE=Never`; do not run them through blocking `spawnSync` or commands that can wait forever for credentials.
+- Store remote mutations refresh the full Git snapshot after every result, including failures, because `pull` can fetch before merge failure and remote refs may still change.
+- GitTab keeps remote controls in the existing top Git status panel; use a compact popover for remote list management instead of adding a separate full-width remote panel.
+
+### 4. Validation & Error Matrix
+
+- Missing Git repository -> return `{ ok: false, message: "未检测到 Git 仓库。" }`.
+- Missing upstream for fetch/pull/push -> return a clear failure and keep buttons disabled in the UI.
+- Empty or invalid remote name -> return the validation message before running Git.
+- Empty or control-character remote URL -> return the validation message before running Git.
+- Remote command timeout -> return a timeout message and refresh the Git snapshot afterward.
+- Git authentication failure with prompts disabled -> return the Git error text to the UI without blocking the plugin.
+- Successful add/set-url/remove -> refresh the full Git snapshot so `remotes` and `upstream` are current.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a repository with `origin/main` upstream shows one compact upstream chip, enables fetch/pull/push, and refreshes ahead/behind after each operation.
+- Good: a repository with remotes but no current upstream shows the remote list but disables fetch/pull/push with a clear tooltip.
+- Base: browser preview has no real Git bridge; snapshots still include empty remote fields and remote actions return unsupported messages.
+- Bad: adding a separate component-local remote list that can drift from `ProjectGitSnapshot.remotes`.
+- Bad: running `git pull` with `spawnSync`; a credential prompt can freeze the uTools preload process.
+- Bad: refreshing only on successful remote operations; failed `pull` may still update fetched refs and leave UI stale.
+
+### 6. Tests Required
+
+- `node --check public/preload.js` after changing preload remote command helpers.
+- `npm run lint` after changing shared Git remote types, bridge methods, store actions, or GitTab calls.
+- `npm run build` after changing GitTab remote UI or shared snapshot fields.
+- Manual smoke test in browser preview: GitTab top panel shows no-remote state, disabled fetch/pull/push, and the add remote dialog opens.
+- Manual smoke test in uTools with a real repository: fetch/pull/push update status feedback and refresh ahead/behind.
+- Manual smoke test in uTools with no upstream: remote operations remain disabled or return a clear warning.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+const result = spawnSync("git", ["-C", repositoryPath, "pull"], { encoding: "utf8" });
+```
+
+This can block the preload process indefinitely when Git asks for credentials or waits on the network.
+
+#### Correct
+
+```js
+execFile(
+  "git",
+  ["-C", repositoryPath, "pull", "--ff", "--no-rebase", upstream.remote, upstream.branch],
+  { env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" }, timeout: 120000 },
+  callback,
+);
+```
+
+Use async execution with disabled interactive prompts and a timeout so remote Git failures return to the UI safely.
+
 ## Scenario: Editor Launch Bridge Boundary
 
 ### 1. Scope / Trigger
