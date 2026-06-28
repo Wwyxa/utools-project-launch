@@ -1282,3 +1282,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: Git 远程仓库操作
+
+**Date**: 2026-06-28
+**Task**: Git 远程仓库操作
+**Branch**: `master`
+
+### Summary
+
+为 Git Tab 增加 remote/upstream 状态展示、fetch/pull/push 远程操作，以及 remote add/remove/set-url 管理，并完成前端类型边界规范记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f686dc5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
