@@ -2897,19 +2897,31 @@ function runCommand(payload) {
     shell: true,
     windowsHide: true,
   });
+  const childPid = typeof child.pid === "number" ? child.pid : -1;
+  let processSettled = false;
 
-  activeProcesses.set(child.pid, child);
-  activeProcessMetadata.set(child.pid, {
-    projectId: payload.projectId,
-    scriptId: payload.scriptId,
-  });
-  launchedProcessIds.add(child.pid);
+  if (childPid > 0) {
+    activeProcesses.set(childPid, child);
+    activeProcessMetadata.set(childPid, {
+      projectId: payload.projectId,
+      scriptId: payload.scriptId,
+    });
+    launchedProcessIds.add(childPid);
+  }
+
+  const cleanupProcess = () => {
+    if (childPid > 0) {
+      activeProcesses.delete(childPid);
+      activeProcessMetadata.delete(childPid);
+      launchedProcessIds.delete(childPid);
+    }
+  };
 
   emit({
     type: "started",
     projectId: payload.projectId,
     scriptId: payload.scriptId,
-    pid: child.pid,
+    pid: childPid,
     message: payload.command,
   });
 
@@ -2918,7 +2930,7 @@ function runCommand(payload) {
       type: "stdout",
       projectId: payload.projectId,
       scriptId: payload.scriptId,
-      pid: child.pid,
+      pid: childPid,
       message: decodeStdout(chunk),
     });
   });
@@ -2928,21 +2940,43 @@ function runCommand(payload) {
       type: "stderr",
       projectId: payload.projectId,
       scriptId: payload.scriptId,
-      pid: child.pid,
+      pid: childPid,
       message: decodeStderr(chunk),
     });
   });
 
+  child.on("error", (error) => {
+    if (processSettled) {
+      return;
+    }
+
+    processSettled = true;
+    cleanupProcess();
+    if (childPid > 0) {
+      userStoppedProcesses.delete(childPid);
+    }
+    emit({
+      type: "error",
+      projectId: payload.projectId,
+      scriptId: payload.scriptId,
+      pid: childPid,
+      message: error?.message || "command failed",
+    });
+  });
+
   child.on("close", (code, signal) => {
-    activeProcesses.delete(child.pid);
-    activeProcessMetadata.delete(child.pid);
-    launchedProcessIds.delete(child.pid);
-    const stoppedByUser = userStoppedProcesses.delete(child.pid);
+    if (processSettled) {
+      return;
+    }
+
+    processSettled = true;
+    cleanupProcess();
+    const stoppedByUser = childPid > 0 ? userStoppedProcesses.delete(childPid) : false;
     emit({
       type: "exit",
       projectId: payload.projectId,
       scriptId: payload.scriptId,
-      pid: child.pid,
+      pid: childPid,
       code,
       signal,
       stoppedByUser,
@@ -2950,7 +2984,7 @@ function runCommand(payload) {
   });
 
   return {
-    pid: child.pid,
+    pid: childPid,
     startedAt: new Date().toISOString(),
     command: payload.command,
     cwd: resolvedCwd,

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { aiStreamChunkRawText } from "../lib/aiReasoning";
 import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
+import { deriveProjectStatus, mergeScriptRuntimeState } from "../lib/projectRuntimeState";
 import { DEFAULT_AI_PROMPT_MODES, ProjectStatus } from "../types";
 import type {
   AiPreferences,
@@ -406,20 +407,6 @@ function hydrateProject(project: Project): Project {
     updatedAt: project.updatedAt || new Date().toISOString(),
     scripts: normalizeProjectScripts(project.id, project.scripts),
   };
-}
-
-function deriveProjectStatus(project: Project): ProjectStatus {
-  const scripts = normalizeProjectScripts(project.id, project.scripts);
-  if (project.pathExists === false) {
-    return ProjectStatus.WARNING;
-  }
-  if (scripts.some((script) => script.status === "RUNNING" || script.status === "STOPPING")) {
-    return ProjectStatus.RUNNING;
-  }
-  if (scripts.some((script) => script.status === "ERROR")) {
-    return ProjectStatus.ERROR;
-  }
-  return ProjectStatus.STOPPED;
 }
 
 function createLogEntry(message: string, type: LogEntry["type"]): LogEntry {
@@ -1252,15 +1239,16 @@ export const useStore = defineStore("app", {
       const projectId = payload.id || createProjectId();
       const now = new Date().toISOString();
       const env = envFromEntries(payload.envEntries);
-      const scripts = payload.scripts
+      const formScripts = payload.scripts
         .filter((script) => script.name.trim() && script.command.trim())
         .map((script, index) => scriptFromForm(projectId, script, index));
-      if (scripts.length === 0) {
+      if (formScripts.length === 0) {
         this.projectFormInspectionMessage = "请至少填写一个可运行脚本。";
         return null;
       }
-      const pathExists = await bridge.pathExists(payload.path);
       const existingProject = this.projects.find((item) => item.id === projectId);
+      const pathExists = await bridge.pathExists(payload.path);
+      const scripts = pathExists ? mergeScriptRuntimeState(formScripts, existingProject?.scripts || []) : formScripts;
       const project: Project = hydrateProject({
         id: projectId,
         name: payload.name.trim(),
@@ -1296,6 +1284,7 @@ export const useStore = defineStore("app", {
         createdAt: existingProject?.createdAt || now,
         updatedAt: now,
       });
+      project.status = deriveProjectStatus(project);
 
       const existingIndex = this.projects.findIndex((item) => item.id === projectId);
       if (existingIndex >= 0) {
@@ -1365,9 +1354,12 @@ export const useStore = defineStore("app", {
 
       const result = await bridge.readPackageScripts(project.path);
       if (result.scripts.length > 0) {
-        const previousScripts = new Map<string, ProjectScript>(project.scripts.map((script) => [script.name, script]));
-        project.scripts = result.scripts.map((script, index) => ({
-          id: previousScripts.get(script.name)?.id || `${project.id}-package-${index + 1}`,
+        const previousScripts = project.scripts;
+        const previousScriptsByName = new Map<string, ProjectScript>(
+          previousScripts.map((script) => [script.name, script]),
+        );
+        const refreshedScripts: ProjectScript[] = result.scripts.map((script, index) => ({
+          id: previousScriptsByName.get(script.name)?.id || `${project.id}-package-${index + 1}`,
           name: script.name,
           command: script.command,
           status: "IDLE",
@@ -1375,6 +1367,8 @@ export const useStore = defineStore("app", {
           note: script.note || (result.packagePath ? `package.json: ${result.packagePath}` : ""),
           source: script.source || "package-json",
         }));
+        project.scripts = mergeScriptRuntimeState(refreshedScripts, previousScripts);
+        project.status = deriveProjectStatus(project);
         await this.persistProjects();
       }
     },
@@ -1834,20 +1828,39 @@ export const useStore = defineStore("app", {
         return null;
       }
 
-      const result = await bridge.runCommand({
-        projectId,
-        scriptId,
-        command: script.command,
-        cwd: resolveScriptCwd(project.path, script.cwd),
-        env: project.env,
-        label: `${project.name} / ${script.name}`,
-      });
-
       script.status = "RUNNING";
-      script.pid = result.pid;
-      project.status = ProjectStatus.RUNNING;
+      script.pid = undefined;
+      project.status = deriveProjectStatus(project);
       project.lastUpdated = new Date().toLocaleString();
-      return result;
+
+      try {
+        const result = await bridge.runCommand({
+          projectId,
+          scriptId,
+          command: script.command,
+          cwd: resolveScriptCwd(project.path, script.cwd),
+          env: project.env,
+          label: `${project.name} / ${script.name}`,
+        });
+
+        if (script.status === "RUNNING") {
+          script.pid = result.pid;
+          project.status = deriveProjectStatus(project);
+          project.lastUpdated = new Date().toLocaleString();
+        }
+        return result;
+      } catch (error) {
+        script.status = "ERROR";
+        script.pid = undefined;
+        project.status = deriveProjectStatus(project);
+        project.lastUpdated = new Date().toLocaleString();
+        this.addLog(
+          projectId,
+          createLogEntry(error instanceof Error ? error.message : "command failed", "ERROR"),
+          scriptId,
+        );
+        return null;
+      }
     },
     async launchAllScripts(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);
@@ -2161,7 +2174,7 @@ export const useStore = defineStore("app", {
           script.pid = event.pid;
         }
         if (project) {
-          project.status = ProjectStatus.RUNNING;
+          project.status = deriveProjectStatus(project);
           project.lastUpdated = new Date().toLocaleString();
         }
         this.addLog(event.projectId, createLogEntry(`started (pid ${event.pid})`, "SUCCESS"), event.scriptId);

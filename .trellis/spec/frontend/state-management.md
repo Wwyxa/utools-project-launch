@@ -49,6 +49,99 @@ If the app later talks to a real backend or file system adapter, keep the fetche
 
 The current uTools integration follows this rule: UI components call store actions, store actions call `src/lib/projectBridge.ts`, and the bridge delegates to `window.projectBridge` from `public/preload.js` when running inside uTools.
 
+## Scenario: Project Script Runtime State Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: project scripts are launched from the dashboard or project details, process events arrive from the uTools preload bridge, and the Pinia store updates script rows, terminal logs, and project-level status.
+- Trigger: script arrays can also be rebuilt by project form saves or package script refreshes while one or more scripts are still running.
+- This requires code-spec depth because runtime process state crosses `public/preload.js`, `ProjectBridgeEvent`, store actions, persisted project normalization, and multiple UI consumers.
+
+### 2. Signatures
+
+- `ProjectScript.status`: `"IDLE" | "RUNNING" | "STOPPING" | "ERROR" | "STOPPED"`.
+- Active runtime statuses: `"RUNNING" | "STOPPING"`.
+- Store helper: `deriveProjectStatus(project: Pick<Project, "pathExists" | "scripts">): ProjectStatus`.
+- Store helper: `mergeScriptRuntimeState(nextScripts: ProjectScript[], previousScripts: ProjectScript[]): ProjectScript[]`.
+- Store launch path: `launchScript(projectId: string, scriptId: string)` -> `bridge.runCommand(...)`.
+- Bridge event shape: `ProjectBridgeEvent = { type: "started" | "stdout" | "stderr" | "stdin" | "exit" | "error"; projectId: string; scriptId: string; pid: number; message?: string; code?: number | null; signal?: string | null; stoppedByUser?: boolean }`.
+- Preload command path: `runCommand(payload)` emits `started`, stream events, then exactly one terminal `exit` or `error` event for the script.
+
+### 3. Contracts
+
+- Project-level runtime status is derived from script statuses, not assigned independently by components or one-off action branches.
+- `RUNNING` or `STOPPING` scripts take priority over `ERROR` scripts when deriving project status. A project with one failed script and one still-running script remains `ProjectStatus.RUNNING`.
+- A script failure updates only the matching `scriptId`; it must not reset other scripts in the same project.
+- Rebuilding a project's script array must call `mergeScriptRuntimeState(...)` when the project path still exists. This preserves `RUNNING` / `STOPPING` and `pid` for matching scripts by id or name.
+- Persisted projects must still be written with stopped runtime state through `toPersistedProject(...)`; preserving active runtime state is an in-memory session concern, not a storage contract.
+- `launchScript(...)` may optimistically mark the target script as `RUNNING`, but after `bridge.runCommand(...)` resolves it must not overwrite a newer `exit` or `error` event that already changed the script status.
+- Preload `runCommand(...)` must clean `activeProcesses`, `activeProcessMetadata`, `launchedProcessIds`, and `userStoppedProcesses` for both `close` and `error` paths.
+- Preload `runCommand(...)` must guard process settlement so a process emits only one terminal state event to the renderer.
+
+### 4. Validation & Error Matrix
+
+- One script exits with non-zero code while another script is `RUNNING` -> failed script becomes `ERROR`; running script stays `RUNNING`; project stays `RUNNING`.
+- One script is manually stopped while another script is `RUNNING` -> stopped script becomes `STOPPED`; running script stays `RUNNING`; project stays `RUNNING`.
+- All scripts are `IDLE` / `STOPPED` and one script is `ERROR` -> project becomes `ERROR`.
+- All scripts are `IDLE` / `STOPPED` with no errors -> project becomes `STOPPED`.
+- Project path becomes unavailable -> project becomes `WARNING`, all script runtime state is cleared, and pids are removed.
+- Project form save while script id or name still matches an active script -> keep active status and pid in memory.
+- Package script refresh while script name still matches an active script -> keep active status and pid in memory.
+- `bridge.runCommand(...)` throws -> only the launched script becomes `ERROR`; logs receive an error entry; project status is re-derived from all scripts.
+- Preload spawn emits `error` before `close` -> renderer receives one `error` event and process maps are cleaned once.
+
+### 5. Good/Base/Bad Cases
+
+- Good: project has `dev` running and `api` fails with exit code 1; the `api` row shows error, the `dev` row still shows running, and the dashboard card remains running.
+- Good: user edits project metadata while `dev` is running; after save, the `dev` script still has `RUNNING` status and its existing pid.
+- Good: package scripts are refreshed while `dev` is running; the refreshed script command/note update, but active runtime status and pid survive.
+- Base: browser fallback `runCommand(...)` returns a pid without real process events; the store keeps the script running until the user changes state or reloads.
+- Bad: rebuilding `project.scripts` from form/package data with every `status: "IDLE"`, which makes a still-running process appear stopped.
+- Bad: setting `project.status = ProjectStatus.ERROR` directly after one script failure, which hides other active scripts from project-level UI.
+- Bad: assigning `script.status = "RUNNING"` after `bridge.runCommand(...)` without checking whether an `exit` event already marked the script as `ERROR`.
+
+### 6. Tests Required
+
+- `npm run lint` after changing `ProjectScript`, `ProjectBridgeEvent`, `launchScript`, `handleBridgeEvent`, or runtime-state helpers.
+- `npm run build` after changing script runtime state because dashboard cards, project details, and terminal tabs consume the same store state.
+- `node --check public/preload.js` after changing preload process launch, stream, stop, or cleanup behavior.
+- Manual smoke test in uTools: start two scripts, make one fail, and assert the other script row and dashboard card remain running.
+- Manual smoke test in uTools: save project metadata while a script is running and assert the script status and stop button remain correct.
+- Manual smoke test in uTools: refresh/import package scripts while a script is running and assert the active runtime state survives for matching script names.
+- Regression assertion point: a non-zero exit event changes only `event.scriptId` and derives `project.status` from the complete script list.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+project.scripts = result.scripts.map((script) => ({
+  id: script.name,
+  name: script.name,
+  command: script.command,
+  status: "IDLE",
+}));
+project.status = ProjectStatus.STOPPED;
+```
+
+This discards in-memory process state when the script list is rebuilt, even though the OS process may still be running.
+
+#### Correct
+
+```ts
+const previousScripts = project.scripts;
+const refreshedScripts: ProjectScript[] = result.scripts.map((script) => ({
+  id: previousByName.get(script.name)?.id || script.name,
+  name: script.name,
+  command: script.command,
+  status: "IDLE",
+}));
+project.scripts = mergeScriptRuntimeState(refreshedScripts, previousScripts);
+project.status = deriveProjectStatus(project);
+```
+
+Keep script runtime state centralized so project-level UI reflects the whole script list, not only the last script event.
+
 ## Scenario: Project Metadata Persistence Boundary
 
 ### 1. Scope / Trigger
@@ -272,7 +365,10 @@ This bypasses shell initialization and can miss tools that are available in the 
 ```js
 process.platform === "win32"
   ? spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: true })
-  : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+  : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
 ```
 
 Use shell execution deliberately for environment detection, while keeping command tokens quoted and the result contract unchanged.
