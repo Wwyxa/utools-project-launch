@@ -644,8 +644,8 @@ watch(
             >
           </div>
           <a
-            href="https://github.com/wyxa/utools-project-launch"
-            target="_blank"
+            href="https://github.com/Wwyxa/utools-project-launch"
+            target="https://github.com/Wwyxa/utools-project-launch"
             class="inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:underline"
           >
             <Github :size="14" />
