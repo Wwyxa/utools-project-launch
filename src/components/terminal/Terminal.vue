@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  ClipboardCopy,
+  Eraser,
   Search,
   SendHorizontal,
   Terminal as TerminalIcon,
@@ -27,19 +29,35 @@ const inputLine = ref("");
 const selectedScriptId = ref("");
 const closedAt = ref<Record<string, number>>({});
 const shouldFollowLogs = ref(true);
+const copiedTerminal = ref(false);
+const copiedTimer = ref<number | null>(null);
+const contextMenuPosition = ref<{ x: number; y: number } | null>(null);
 
 const logFollowThreshold = 32;
+const contextMenuWidth = 176;
+const contextMenuHeight = 72;
 
 const isNearBottom = (element: HTMLDivElement) =>
   element.scrollHeight - element.scrollTop - element.clientHeight <= logFollowThreshold;
 
 const logTargets = computed(() =>
   (props.scripts || [])
-    .map((script) => ({
-      ...script,
-      count: store.scriptLogs[props.projectId]?.[script.id]?.length || 0,
-    }))
-    .filter((script) => script.count > 0 && script.count > (closedAt.value[script.id] ?? -1)),
+    .map((script) => {
+      const logs = store.scriptLogs[props.projectId]?.[script.id];
+      return {
+        ...script,
+        count: logs?.length || 0,
+        hasLogBucket: Boolean(logs),
+      };
+    })
+    .filter((script) => {
+      const closedLogCount = closedAt.value[script.id];
+      const isClosed = closedLogCount !== undefined && script.count <= closedLogCount;
+      const isCurrentClearedTerminal =
+        script.id === selectedScriptId.value && script.count === 0 && script.hasLogBucket && !isClosed;
+
+      return isCurrentClearedTerminal || (script.count > 0 && !isClosed);
+    }),
 );
 const projectLogs = computed(() =>
   selectedScriptId.value ? store.scriptLogs[props.projectId]?.[selectedScriptId.value] || [] : [],
@@ -57,6 +75,16 @@ const filteredLogs = computed(() => {
 
   return projectLogs.value.filter((log) => log.message.toLowerCase().includes(normalized));
 });
+const currentLogText = computed(() => filteredLogs.value.map((log) => `[${log.timestamp}] ${log.message}`).join("\n"));
+const copyCurrentLabel = computed(() => (copiedTerminal.value ? t.value.common.copied : t.value.terminal.copyCurrent));
+const hasCurrentLogs = computed(() => filteredLogs.value.length > 0);
+const hasAnyLogs = computed(() =>
+  Object.values(store.scriptLogs[props.projectId] || {}).some((logs) => logs.length > 0),
+);
+const contextMenuStyle = computed(() => ({
+  left: `${contextMenuPosition.value?.x || 0}px`,
+  top: `${contextMenuPosition.value?.y || 0}px`,
+}));
 
 const resolveLogTone = (message: string, type: string) => {
   const normalized = message.toLowerCase();
@@ -111,6 +139,26 @@ const handleLogWheel = (event: WheelEvent) => {
   transferWheelAtScrollBoundary(event, scrollRef.value);
 };
 
+const closeContextMenu = () => {
+  contextMenuPosition.value = null;
+};
+
+const openContextMenu = (event: MouseEvent) => {
+  event.preventDefault();
+  const maxX = Math.max(8, window.innerWidth - contextMenuWidth - 8);
+  const maxY = Math.max(8, window.innerHeight - contextMenuHeight - 8);
+  contextMenuPosition.value = {
+    x: Math.min(Math.max(8, event.clientX), maxX),
+    y: Math.min(Math.max(8, event.clientY), maxY),
+  };
+};
+
+const handleWindowKeydown = (event: KeyboardEvent) => {
+  if (event.key === "Escape") {
+    closeContextMenu();
+  }
+};
+
 const closeTarget = (scriptId: string) => {
   closedAt.value = {
     ...closedAt.value,
@@ -122,6 +170,37 @@ const handleClear = () => {
   store.clearLogs(props.projectId);
   closedAt.value = {};
   selectedScriptId.value = "";
+  closeContextMenu();
+};
+
+const handleClearCurrent = () => {
+  if (!selectedScriptId.value) {
+    return;
+  }
+
+  store.clearScriptLogs(props.projectId, selectedScriptId.value);
+  closeContextMenu();
+};
+
+const handleCopyCurrent = async () => {
+  if (!currentLogText.value) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(currentLogText.value);
+    copiedTerminal.value = true;
+    if (copiedTimer.value) {
+      window.clearTimeout(copiedTimer.value);
+    }
+    copiedTimer.value = window.setTimeout(() => {
+      copiedTerminal.value = false;
+      copiedTimer.value = null;
+    }, 1200);
+  } catch (error) {
+    copiedTerminal.value = false;
+  }
+  closeContextMenu();
 };
 
 const handleInputSubmit = async () => {
@@ -156,7 +235,16 @@ watch(
   { immediate: true },
 );
 onMounted(() => {
+  window.addEventListener("click", closeContextMenu);
+  window.addEventListener("keydown", handleWindowKeydown);
   void scrollToBottom();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("click", closeContextMenu);
+  window.removeEventListener("keydown", handleWindowKeydown);
+  if (copiedTimer.value) {
+    window.clearTimeout(copiedTimer.value);
+  }
 });
 </script>
 
@@ -237,21 +325,18 @@ onMounted(() => {
         </button>
         <button
           @click="handleClear"
-          class="flex items-center gap-1.5 px-2 py-1 text-on-surface-variant hover:text-primary rounded hover:bg-surface-variant transition-colors shrink-0"
-          :title="t.terminal.clear"
-          :aria-label="t.terminal.clear"
+          class="p-1 text-on-surface-variant hover:text-status-error rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="!hasAnyLogs"
+          :title="t.terminal.clearAll"
+          :aria-label="t.terminal.clearAll"
         >
           <Trash2 :size="12" />
-          <span class="text-[10px] font-medium">{{ t.terminal.clear }}</span>
         </button>
       </div>
 
       <div class="flex items-center gap-2 shrink-0">
         <div class="relative">
-          <Search
-            :size="12"
-            class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60"
-          />
+          <Search :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60" />
           <input
             v-model="query"
             type="text"
@@ -267,6 +352,7 @@ onMounted(() => {
         ref="scrollRef"
         @scroll="handleLogScroll"
         @wheel="handleLogWheel"
+        @contextmenu="openContextMenu"
         class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-on-surface [overscroll-behavior-y:contain]"
       >
         <div v-for="(log, index) in filteredLogs" :key="index" class="flex mb-1 group">
@@ -286,6 +372,39 @@ onMounted(() => {
         <div class="animate-pulse text-primary mt-1">_</div>
       </div>
     </div>
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="contextMenuPosition"
+          class="fixed z-50 w-44 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-high py-1 text-xs text-on-surface shadow-lg"
+          :style="contextMenuStyle"
+          role="menu"
+          @click.stop
+          @contextmenu.prevent
+        >
+          <button
+            type="button"
+            role="menuitem"
+            class="flex h-8 w-full items-center gap-2 px-2.5 text-left transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="!hasCurrentLogs"
+            @click="handleCopyCurrent"
+          >
+            <ClipboardCopy :size="13" class="text-on-surface-variant" />
+            <span class="min-w-0 truncate">{{ copyCurrentLabel }}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="flex h-8 w-full items-center gap-2 px-2.5 text-left transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="!selectedScriptId || projectLogs.length === 0"
+            @click="handleClearCurrent"
+          >
+            <Eraser :size="13" class="text-on-surface-variant" />
+            <span class="min-w-0 truncate">{{ t.terminal.clearCurrent }}</span>
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
     <form
       class="flex items-center gap-2 border-t border-border-subtle bg-surface-container-low px-3 py-2"
       @submit.prevent="handleInputSubmit"

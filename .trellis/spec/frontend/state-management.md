@@ -72,6 +72,7 @@ The current uTools integration follows this rule: UI components call store actio
 - Project-level runtime status is derived from script statuses, not assigned independently by components or one-off action branches.
 - `RUNNING` or `STOPPING` scripts take priority over `ERROR` scripts when deriving project status. A project with one failed script and one still-running script remains `ProjectStatus.RUNNING`.
 - A script failure updates only the matching `scriptId`; it must not reset other scripts in the same project.
+- Runtime log output is mirrored in both `logs[projectId]` and `scriptLogs[projectId][scriptId]`. Any per-script log mutation, such as clearing the current terminal, must keep both collections aligned so project-level readers do not show stale entries.
 - Rebuilding a project's script array must call `mergeScriptRuntimeState(...)` when the project path still exists. This preserves `RUNNING` / `STOPPING` and `pid` for matching scripts by id or name.
 - Persisted projects must still be written with stopped runtime state through `toPersistedProject(...)`; preserving active runtime state is an in-memory session concern, not a storage contract.
 - `launchScript(...)` may optimistically mark the target script as `RUNNING`, but after `bridge.runCommand(...)` resolves it must not overwrite a newer `exit` or `error` event that already changed the script status.
@@ -85,6 +86,7 @@ The current uTools integration follows this rule: UI components call store actio
 - All scripts are `IDLE` / `STOPPED` and one script is `ERROR` -> project becomes `ERROR`.
 - All scripts are `IDLE` / `STOPPED` with no errors -> project becomes `STOPPED`.
 - Project path becomes unavailable -> project becomes `WARNING`, all script runtime state is cleared, and pids are removed.
+- Clearing one script's terminal output -> empties `scriptLogs[projectId][scriptId]`, removes the same log entry objects from `logs[projectId]`, keeps the selected terminal tab/context visible, and does not touch other scripts.
 - Project form save while script id or name still matches an active script -> keep active status and pid in memory.
 - Package script refresh while script name still matches an active script -> keep active status and pid in memory.
 - `bridge.runCommand(...)` throws -> only the launched script becomes `ERROR`; logs receive an error entry; project status is re-derived from all scripts.

@@ -228,7 +228,9 @@ const messages = {
     },
     terminal: {
       title: "运行日志",
-      clear: "清空",
+      clearCurrent: "清空当前日志",
+      clearAll: "清空全部日志",
+      copyCurrent: "复制当前日志",
       autoScroll: "自动滚动",
       filter: "筛选日志",
       scrollToTop: "回到顶部",
@@ -560,7 +562,9 @@ const messages = {
     },
     terminal: {
       title: "Runtime Log",
-      clear: "Clear",
+      clearCurrent: "Clear current log",
+      clearAll: "Clear all logs",
+      copyCurrent: "Copy current log",
       autoScroll: "Auto Scroll",
       filter: "Filter log",
       scrollToTop: "Scroll to top",

@@ -223,6 +223,20 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 
 **Related**: `src/index.css`, `src/components/dashboard/ProjectCard.vue`, `src/components/project/ProjectDetails.vue`, `src/components/terminal/Terminal.vue`.
 
+### Convention: Terminal Output Context Menu
+
+**What**: Actions that operate on the currently selected terminal output, such as copying the current log or clearing the selected script log, live in the terminal output area's right-click context menu. Project-wide actions such as clearing all runtime logs stay in the panel header.
+
+**Why**: The terminal header is already dense with script chips, scroll controls, and filtering, but global destructive actions still need an always-visible home. Keeping current-terminal actions in a local context menu preserves horizontal space while making their scope obvious.
+
+**Rules**:
+
+- Attach the custom context menu to the log output surface, not text-entry inputs, so normal typing controls keep their expected behavior.
+- Teleport floating menus to `body`, give them semantic token surfaces, border, and shadow, and close them on outside click or Escape.
+- Keep destructive options visually distinct with status tokens, and disable unavailable actions rather than hiding them when the menu is open.
+
+**Related**: `src/components/terminal/Terminal.vue`, `src/store/useStore.ts`.
+
 ### Convention: Collapsible Dense Panels
 
 **What**: Dense data-heavy panels may use a small local collapse toggle to reclaim vertical space in narrow windows, but they should still render an explicit empty state when there is no data.

@@ -2152,6 +2152,16 @@ export const useStore = defineStore("app", {
       this.logs[projectId] = [];
       this.scriptLogs[projectId] = {};
     },
+    clearScriptLogs(projectId: string, scriptId: string) {
+      const scriptEntries = this.scriptLogs[projectId]?.[scriptId] || [];
+      if (scriptEntries.length > 0) {
+        const entriesToRemove = new Set(scriptEntries);
+        this.logs[projectId] = (this.logs[projectId] || []).filter((log) => !entriesToRemove.has(log));
+      }
+      if (this.scriptLogs[projectId]) {
+        this.scriptLogs[projectId][scriptId] = [];
+      }
+    },
     addTodo(projectId: string, text: string) {
       if (!this.todos[projectId]) {
         this.todos[projectId] = [];
