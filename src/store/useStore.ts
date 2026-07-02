@@ -2182,6 +2182,17 @@ export const useStore = defineStore("app", {
         this.syncProjectTodos(projectId);
       }
     },
+    updateTodo(projectId: string, todoId: string, text: string) {
+      const trimmedText = text.trim();
+      const todo = this.todos[projectId]?.find((item) => item.id === todoId);
+      if (!todo || !trimmedText || todo.text === trimmedText) {
+        return;
+      }
+
+      todo.text = trimmedText;
+      this.todos[projectId] = [...this.todos[projectId]];
+      this.syncProjectTodos(projectId);
+    },
     deleteTodo(projectId: string, todoId: string) {
       this.todos[projectId] = (this.todos[projectId] || []).filter((item) => item.id !== todoId);
       this.syncProjectTodos(projectId);

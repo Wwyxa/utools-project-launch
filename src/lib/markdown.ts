@@ -13,6 +13,7 @@ import java from "highlight.js/lib/languages/java";
 import javascript from "highlight.js/lib/languages/javascript";
 import json from "highlight.js/lib/languages/json";
 import markdownLanguage from "highlight.js/lib/languages/markdown";
+import powershell from "highlight.js/lib/languages/powershell";
 import python from "highlight.js/lib/languages/python";
 import rust from "highlight.js/lib/languages/rust";
 import shell from "highlight.js/lib/languages/shell";
@@ -33,15 +34,20 @@ const languages: Array<[string, LanguageFn]> = [
   ["ini", ini],
   ["java", java],
   ["javascript", javascript],
+  ["jsx", javascript],
   ["json", json],
   ["markdown", markdownLanguage],
   ["md", markdownLanguage],
+  ["powershell", powershell],
+  ["ps1", powershell],
   ["python", python],
   ["rust", rust],
   ["shell", shell],
   ["sql", sql],
   ["ts", typescript],
+  ["tsx", typescript],
   ["typescript", typescript],
+  ["vue", xml],
   ["xml", xml],
   ["yaml", yaml],
 ];

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
   Bold,
   Check,
@@ -33,6 +33,9 @@ const t = useI18n();
 const isEditing = ref(false);
 const draftContent = ref(store.memoContent[props.project.id] || "");
 const newTodoText = ref("");
+const editingTodoId = ref<string | null>(null);
+const editingTodoText = ref("");
+const editingTodoInputRef = ref<HTMLInputElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const draggedTodoId = ref<string | null>(null);
 const collapsedMemoPanel = ref<CollapsedMemoPanel | null>(null);
@@ -50,7 +53,7 @@ const memoGridColumns = computed(() => {
   if (isMemoContentPanelCollapsed.value) {
     return "minmax(0,1fr) 2rem";
   }
-  return "minmax(12rem,0.64fr) minmax(0,1.36fr)";
+  return "minmax(12rem,0.58fr) minmax(0,1.42fr)";
 });
 
 const renderedMemo = computed(() => renderMarkdown(content.value));
@@ -96,7 +99,32 @@ const addTodo = () => {
 };
 
 const deleteTodo = (todoId: string) => {
+  if (editingTodoId.value === todoId) {
+    editingTodoId.value = null;
+    editingTodoText.value = "";
+  }
   store.deleteTodo(props.project.id, todoId);
+};
+
+const startTodoEdit = (todoId: string, text: string) => {
+  editingTodoId.value = todoId;
+  editingTodoText.value = text;
+  void nextTick(() => {
+    editingTodoInputRef.value?.focus();
+    editingTodoInputRef.value?.select();
+  });
+};
+
+const cancelTodoEdit = () => {
+  editingTodoId.value = null;
+  editingTodoText.value = "";
+};
+
+const commitTodoEdit = () => {
+  const todoId = editingTodoId.value;
+  if (!todoId) return;
+  store.updateTodo(props.project.id, todoId, editingTodoText.value);
+  cancelTodoEdit();
 };
 
 const handleTodoDragStart = (event: DragEvent, todoId: string) => {
@@ -153,6 +181,7 @@ watch(
     draftContent.value = store.memoContent[props.project.id] || "";
     isEditing.value = false;
     newTodoText.value = "";
+    cancelTodoEdit();
   },
 );
 
@@ -208,7 +237,7 @@ onBeforeUnmount(flushMemo);
     </button>
 
     <section v-else class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
-<div class="ui-panel-header">
+      <div class="ui-panel-header">
           <div class="ui-panel-title">
             <CheckSquare :size="14" class="text-primary" />
             <h3 class="flex items-center gap-2">{{ t.memo.taskList }}</h3>
@@ -216,7 +245,7 @@ onBeforeUnmount(flushMemo);
           <span class="ui-panel-meta">{{ projectTodos.length }}</span>
       </div>
 
-      <form class="flex gap-1.5 border-b border-border-subtle px-2.5 py-2" @submit.prevent="addTodo">
+      <form class="flex gap-1.5 border-b border-border-subtle px-2 py-2" @submit.prevent="addTodo">
         <input
           v-model="newTodoText"
           class="min-w-0 flex-1 rounded border border-transparent bg-surface-container-lowest px-2 py-1.5 text-xs text-on-surface outline-none placeholder:text-on-surface-variant transition-colors hover:bg-surface-container-low focus:border-primary/70 focus:bg-surface-container-lowest dark:bg-surface-container-low dark:hover:bg-surface-container dark:focus:bg-surface-container-lowest"
@@ -233,7 +262,7 @@ onBeforeUnmount(flushMemo);
         </button>
       </form>
 
-      <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+      <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <div class="space-y-1">
           <div
             v-for="todo in projectTodos"
@@ -243,7 +272,7 @@ onBeforeUnmount(flushMemo);
             @dragend="draggedTodoId = null"
             :class="
               cn(
-                'group flex min-h-7 items-start gap-1.5 rounded px-1 py-1 transition-colors hover:bg-surface-variant',
+                'group flex min-h-7 items-start gap-1 rounded px-1 py-1 transition-colors hover:bg-surface-variant',
                 draggedTodoId === todo.id && 'opacity-55 ring-1 ring-primary/30',
               )
             "
@@ -252,13 +281,13 @@ onBeforeUnmount(flushMemo);
             <button
               type="button"
               draggable="true"
-              class="mt-0.5 hidden h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-variant/60 opacity-0 transition-opacity hover:bg-surface-container-high hover:text-primary group-hover:opacity-100 focus:opacity-100 sm:flex"
+              class="mt-1 hidden h-3 w-3 shrink-0 items-center justify-center rounded text-on-surface-variant/60 opacity-0 transition-opacity hover:bg-surface-container-high hover:text-primary group-hover:opacity-100 focus:opacity-100 sm:flex"
               :aria-label="t.memo.moveTask"
               :title="t.memo.moveTask"
               @dragstart="handleTodoDragStart($event, todo.id)"
               @dragend="draggedTodoId = null"
             >
-              <GripVertical :size="13" />
+              <GripVertical :size="10" />
             </button>
             <input
               type="checkbox"
@@ -267,6 +296,7 @@ onBeforeUnmount(flushMemo);
               class="mt-0.5 h-3.5 w-3.5 rounded border-outline-variant text-primary focus:ring-primary"
             />
             <span
+              v-if="editingTodoId !== todo.id"
               :class="
                 cn(
                   'line-clamp-2 min-w-0 flex-1 break-words text-xs font-medium leading-5 transition-colors',
@@ -274,9 +304,19 @@ onBeforeUnmount(flushMemo);
                 )
               "
               :title="todo.text"
+              @dblclick="startTodoEdit(todo.id, todo.text)"
             >
               {{ todo.text }}
             </span>
+            <input
+              v-else
+              ref="editingTodoInputRef"
+              v-model="editingTodoText"
+              class="min-w-0 flex-1 rounded border border-primary/50 bg-surface-container-lowest px-2 py-1 text-xs font-medium leading-5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              @keydown.enter.prevent="commitTodoEdit"
+              @keydown.esc.prevent="cancelTodoEdit"
+              @blur="commitTodoEdit"
+            />
             <button
               type="button"
               class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-on-surface-variant opacity-0 transition-opacity hover:bg-status-error/10 hover:text-status-error group-hover:opacity-100 focus:opacity-100"
@@ -366,17 +406,17 @@ onBeforeUnmount(flushMemo);
         v-if="isEditing"
         ref="textareaRef"
         v-model="draftContent"
-        class="themed-scrollbar min-h-0 flex-1 resize-none bg-surface-container-lowest px-5 py-6 text-sm leading-relaxed text-on-surface outline-none"
+        class="themed-scrollbar min-h-0 flex-1 resize-none bg-surface-container-lowest px-4 py-4 text-[12px] leading-6 text-on-surface outline-none"
         :placeholder="t.memo.placeholder"
         @input="scheduleSave"
       />
       <div
         v-else
-        class="themed-scrollbar min-h-0 flex-1 overflow-y-auto bg-surface-container-lowest px-5 py-6 text-on-surface"
+        class="themed-scrollbar min-h-0 flex-1 overflow-y-auto bg-surface-container-lowest px-4 py-4 text-[12px] leading-6 text-on-surface"
         @dblclick="enterEdit"
       >
         <div v-if="hasMemo" class="memo-rendered" v-html="renderedMemo" />
-        <div v-else class="flex h-full items-center justify-center text-sm text-on-surface-variant">
+        <div v-else class="flex h-full items-center justify-center text-[12px] leading-6 text-on-surface-variant">
           {{ t.memo.placeholder }}
         </div>
       </div>
