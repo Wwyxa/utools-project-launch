@@ -239,12 +239,20 @@ const cardTimeMeta = computed(() => {
   }
   return { symbol: "•", title: "", value: "--" };
 });
+const lowSignalCardErrorPatterns = [
+  /^exited with code (?:\d+|unknown)$/i,
+  /\ba complete log of this run can be found in:/i,
+];
+const isLowSignalCardErrorMessage = (message: string) =>
+  lowSignalCardErrorPatterns.some((pattern) => pattern.test(message.trim()));
+
 const cardErrorMessage = computed(() => {
-  const latestErrorLog = [...(store.logs[props.project.id] || [])]
+  const errorLogs = [...(store.logs[props.project.id] || [])]
     .reverse()
-    .find((log) => log.type === "ERROR" && log.message.trim());
-  if (latestErrorLog) {
-    return latestErrorLog.message.trim();
+    .filter((log) => log.type === "ERROR" && log.message.trim());
+  const specificErrorLog = errorLogs.find((log) => !isLowSignalCardErrorMessage(log.message));
+  if (specificErrorLog) {
+    return specificErrorLog.message.trim();
   }
 
   const erroredScript = props.project.scripts.find((script) => script.status === "ERROR");
@@ -701,7 +709,8 @@ const handleDelete = (event: MouseEvent) => {
             class="flex min-w-0 items-center gap-1 truncate text-status-error"
             :title="cardErrorMessage"
           >
-            <AlertTriangle :size="12" class="shrink-0" /> {{ cardErrorMessage }}
+            <AlertTriangle :size="12" class="shrink-0" />
+            <span class="truncate">{{ cardErrorMessage }}</span>
           </span>
           <span
             v-else
