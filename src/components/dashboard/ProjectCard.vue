@@ -239,6 +239,17 @@ const cardTimeMeta = computed(() => {
   }
   return { symbol: "•", title: "", value: "--" };
 });
+const cardErrorMessage = computed(() => {
+  const latestErrorLog = [...(store.logs[props.project.id] || [])]
+    .reverse()
+    .find((log) => log.type === "ERROR" && log.message.trim());
+  if (latestErrorLog) {
+    return latestErrorLog.message.trim();
+  }
+
+  const erroredScript = props.project.scripts.find((script) => script.status === "ERROR");
+  return erroredScript ? `${erroredScript.name}: ${t.value.common.error}` : "Exit code 1";
+});
 
 const handleCardSelect = () => {
   if (props.isSorting) {
@@ -356,10 +367,10 @@ const handleDelete = (event: MouseEvent) => {
       @click="handleCardSelect"
       :class="
         cn(
-          'relative border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
+          'relative border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
           'flex shrink-0 min-w-[8rem] max-w-[14rem] after:absolute after:inset-x-0 after:top-full after:h-8',
           isRunning &&
-            'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
+            'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
           isDragging && 'opacity-55 scale-[0.99]',
           isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
         )
@@ -488,9 +499,9 @@ const handleDelete = (event: MouseEvent) => {
     @click="handleCardSelect"
     :class="
       cn(
-        'group relative mb-2.5 border border-border-subtle rounded-lg bg-surface transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_10px_24px_rgba(0,0,0,0.07)] focus-within:border-primary/50',
+        'group relative mb-2.5 border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
         isRunning &&
-          'border-status-running/55 bg-status-running/[0.035] shadow-[0_0_0_1px_rgba(46,175,125,0.14),0_12px_28px_rgba(46,175,125,0.12)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
+          'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
         isDragging && 'opacity-55 scale-[0.99]',
         isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
       )
@@ -538,12 +549,11 @@ const handleDelete = (event: MouseEvent) => {
             v-else-if="isError"
             :class="
               cn(
-                'shrink-0 inline-flex max-w-[4.25rem] items-center gap-1 px-1.5 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap',
-                'bg-status-error/10 text-status-error',
+                'inline-flex shrink-0 items-center gap-1 rounded-full border border-status-error/25 bg-status-error/10 px-1.5 py-0.5 text-[9px] font-bold text-status-error',
               )
             "
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-status-error" />
+            <span class="h-1.5 w-1.5 rounded-full bg-status-error" />
             <span class="truncate">
               {{ t.common.error }}
             </span>
@@ -686,8 +696,12 @@ const handleDelete = (event: MouseEvent) => {
         class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_6.75rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2"
       >
         <div class="min-w-0 text-[11px] text-on-surface-variant">
-          <span v-if="isError" class="flex min-w-0 items-center gap-1 truncate text-status-error">
-            <AlertTriangle :size="12" class="shrink-0" /> {{ project.git?.statusText || "Exit code 1" }}
+          <span
+            v-if="isError"
+            class="flex min-w-0 items-center gap-1 truncate text-status-error"
+            :title="cardErrorMessage"
+          >
+            <AlertTriangle :size="12" class="shrink-0" /> {{ cardErrorMessage }}
           </span>
           <span
             v-else
