@@ -1003,13 +1003,20 @@
 /* Vue transition: scale (modal / dialog entry) */
 .scale-enter-active,
 .scale-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+  transition: background-color 0.16s ease;
+}
+
+.scale-enter-active > *,
+.scale-leave-active > * {
+  transition: transform 0.16s ease;
 }
 
 .scale-enter-from,
 .scale-leave-to {
-  opacity: 0;
+  background-color: transparent !important;
+}
+
+.scale-enter-from > *,
+.scale-leave-to > * {
   transform: scale(0.96);
 }
