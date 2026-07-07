@@ -215,6 +215,10 @@
   scrollbar-width: none;
 }
 
+.themed-scrollbar {
+  scrollbar-gutter: stable;
+}
+
 .themed-scrollbar::-webkit-scrollbar,
 *::-webkit-scrollbar {
   width: 10px;

@@ -35,6 +35,7 @@ There is no dedicated test runner configured yet, so the quality baseline is typ
 - Keep feature folders aligned with the current domain split
 - Use `lucide-vue-next` icons already available in the repo
 - Keep text, spacing, and color aligned with the design tokens in `src/index.css`
+- Keep main themed scroll containers on `.themed-scrollbar` so `scrollbar-gutter: stable` reserves scrollbar space and prevents dashboard width jitter when vertical overflow appears
 
 ---
 
