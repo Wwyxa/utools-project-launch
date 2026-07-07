@@ -1348,3 +1348,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: 优化自动化任务补跑与概览
+
+**Date**: 2026-07-07
+**Task**: 优化自动化任务补跑与概览
+**Branch**: `master`
+
+### Summary
+
+实现错过任务处理策略和持久化兼容，扩展任务概览的错过任务、立即执行、忽略与状态反馈，并统一定时执行文案和运行中显示。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0bc7320` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
