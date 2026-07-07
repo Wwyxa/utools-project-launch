@@ -4,13 +4,15 @@ import { useStore } from "../../store/useStore";
 import ProjectCard from "./ProjectCard.vue";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
-import type { Project } from "../../types";
+import type { Project, ProjectAutomationHistoryEntry } from "../../types";
 import {
   Search,
   RefreshCw,
   Plus,
   Settings,
   ChevronDown,
+  CalendarClock,
+  X,
   ArrowUpDown,
   MonitorCog,
   PackageOpen,
@@ -23,6 +25,7 @@ const t = useI18n();
 const searchQuery = ref("");
 const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
+const automationOverviewOpen = ref(false);
 const draggingProjectId = ref<string | null>(null);
 const selectedProjectGroupKey = ref("all");
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
@@ -149,6 +152,66 @@ watch(visibleProjectIds, (projectIds) => {
 });
 
 const showProjectGroupBadge = computed(() => selectedProjectGroupKey.value === "all" && hasProjectGroupFilters.value);
+const automationHistoryTime = (entry: ProjectAutomationHistoryEntry) =>
+  new Date(entry.endedAt || entry.startedAt || entry.plannedAt || 0).getTime();
+const sortedAutomationHistory = (history: ProjectAutomationHistoryEntry[]) =>
+  [...history].sort((left, right) => automationHistoryTime(right) - automationHistoryTime(left));
+const automationTasks = computed(() =>
+  store.visibleProjects.flatMap((project) =>
+    (project.automationTasks || []).map((task) => ({
+      project,
+      task,
+      latestHistory: sortedAutomationHistory(task.history)[0],
+      nextEntry: task.enabled
+        ? task.dailyPlans
+            .flatMap((plan) => plan.entries)
+            .filter((entry) => entry.status === "pending" && new Date(entry.plannedAt).getTime() > Date.now())
+            .sort((left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime())[0] || null
+        : null,
+    })),
+  ),
+);
+const automationSummary = computed(() => {
+  const enabled = automationTasks.value.filter((item) => item.task.enabled).length;
+  const running = Object.keys(store.automationActiveProjectRuns).length;
+  const failed = automationTasks.value.filter((item) => item.latestHistory?.status === "failed").length;
+  const missed = automationTasks.value.filter((item) => item.latestHistory?.status === "missed").length;
+  return { total: automationTasks.value.length, enabled, running, failed, missed };
+});
+const upcomingAutomationTasks = computed(() =>
+  automationTasks.value
+    .filter((item) => item.nextEntry)
+    .sort(
+      (left, right) =>
+        new Date(left.nextEntry?.plannedAt || 0).getTime() - new Date(right.nextEntry?.plannedAt || 0).getTime(),
+    )
+    .slice(0, 6),
+);
+const recentAutomationTasks = computed(() =>
+  automationTasks.value
+    .filter((item) => item.latestHistory)
+    .sort(
+      (left, right) =>
+        new Date(right.latestHistory?.endedAt || right.latestHistory?.plannedAt || 0).getTime() -
+        new Date(left.latestHistory?.endedAt || left.latestHistory?.plannedAt || 0).getTime(),
+    )
+    .slice(0, 6),
+);
+
+const automationStatusLabel = (status?: string) => {
+  if (status === "completed") return t.value.automation.completed;
+  if (status === "failed") return t.value.automation.failed;
+  if (status === "skipped") return t.value.automation.skipped;
+  if (status === "missed") return t.value.automation.missed;
+  return t.value.automation.pending;
+};
+
+const formatAutomationDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : t.value.common.never);
+
+const openProjectAutomation = (projectId: string) => {
+  automationOverviewOpen.value = false;
+  store.openProjectAutomation(projectId);
+};
 
 const handleProjectDragStart = (event: DragEvent, projectId: string) => {
   if (!isSortingProjects.value || !event.dataTransfer) {
@@ -217,6 +280,21 @@ const handleProjectDragEnd = () => {
               <span class="text-xs font-semibold">{{
                 isSortingProjects ? t.dashboard.doneSorting : t.dashboard.sort
               }}</span>
+            </button>
+            <button
+              @click="automationOverviewOpen = !automationOverviewOpen"
+              :class="
+                cn(
+                  'toolbar-icon-button h-8 px-2 rounded-lg flex items-center gap-1.5 transition-colors',
+                  automationOverviewOpen && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
+                )
+              "
+              :title="t.automation.overview"
+              :aria-label="t.automation.overview"
+              :aria-pressed="automationOverviewOpen"
+            >
+              <CalendarClock :size="16" />
+              <span class="text-xs font-semibold">{{ automationSummary.enabled }}/{{ automationSummary.total }}</span>
             </button>
             <button
               @click="store.setActiveTab('environment')"
@@ -297,6 +375,97 @@ const handleProjectDragEnd = () => {
     <p v-if="store.projectStorageMessage" class="px-6 pt-3 text-xs text-on-surface-variant">
       {{ store.projectStorageMessage }}
     </p>
+
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="automationOverviewOpen"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          @click.self="automationOverviewOpen = false"
+        >
+          <section
+            class="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
+          >
+            <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+              <div class="min-w-0">
+                <h2 class="text-sm font-bold text-on-surface">{{ t.automation.overview }}</h2>
+                <p class="mt-0.5 text-xs text-on-surface-variant">
+                  {{
+                    t.automation.summary
+                      .replace("{enabled}", String(automationSummary.enabled))
+                      .replace("{total}", String(automationSummary.total))
+                      .replace("{running}", String(automationSummary.running))
+                      .replace("{failed}", String(automationSummary.failed))
+                      .replace("{missed}", String(automationSummary.missed))
+                  }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                :title="t.common.close"
+                :aria-label="t.common.close"
+                @click="automationOverviewOpen = false"
+              >
+                <X :size="16" />
+              </button>
+            </div>
+            <div class="themed-scrollbar grid min-h-0 gap-3 overflow-auto p-4 md:grid-cols-2">
+              <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.nextRun }}</div>
+                <div v-if="upcomingAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
+                  {{ t.common.noData }}
+                </div>
+                <button
+                  v-for="item in upcomingAutomationTasks"
+                  :key="`${item.project.id}-${item.task.id}-next`"
+                  type="button"
+                  class="mb-1.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
+                  @click="openProjectAutomation(item.project.id)"
+                >
+                  <span class="min-w-0">
+                    <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
+                    <span class="block truncate text-on-surface-variant">{{ item.project.name }}</span>
+                  </span>
+                  <span class="shrink-0 font-mono text-[10px] text-on-surface-variant">{{
+                    formatAutomationDateTime(item.nextEntry?.plannedAt)
+                  }}</span>
+                </button>
+              </div>
+              <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.recentResults }}</div>
+                <div v-if="recentAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
+                  {{ t.common.noData }}
+                </div>
+                <button
+                  v-for="item in recentAutomationTasks"
+                  :key="`${item.project.id}-${item.task.id}-recent`"
+                  type="button"
+                  class="mb-1.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
+                  @click="openProjectAutomation(item.project.id)"
+                >
+                  <span class="min-w-0">
+                    <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
+                    <span class="block truncate text-on-surface-variant">
+                      {{ item.project.name }} ·
+                      {{ formatAutomationDateTime(item.latestHistory?.endedAt || item.latestHistory?.plannedAt) }}
+                    </span>
+                    <span v-if="item.latestHistory?.reason" class="block truncate text-[10px] text-on-surface-variant">
+                      {{ item.latestHistory.reason }}
+                    </span>
+                  </span>
+                  <span
+                    class="shrink-0 rounded-full border border-border-subtle bg-surface-container-low px-2 py-0.5 text-[10px] font-bold text-on-surface-variant"
+                  >
+                    {{ automationStatusLabel(item.latestHistory?.status) }}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </Transition>
+    </Teleport>
 
     <div
       v-if="store.visibleProjects.length === 0"

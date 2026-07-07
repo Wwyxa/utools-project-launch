@@ -1,5 +1,11 @@
 import { defineStore } from "pinia";
 import { aiStreamChunkRawText } from "../lib/aiReasoning";
+import {
+  dateKey,
+  generateAutomationDailyPlan,
+  getNextAutomationPlanEntry,
+  validateAutomationSchedule,
+} from "../lib/automationScheduler";
 import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
 import { deriveProjectStatus, mergeScriptRuntimeState } from "../lib/projectRuntimeState";
 import { DEFAULT_AI_PROMPT_MODES, ProjectStatus } from "../types";
@@ -17,6 +23,15 @@ import type {
   Locale,
   LogEntry,
   Project,
+  ProjectAutomationDailyPlan,
+  ProjectAutomationExitConfig,
+  ProjectAutomationHistoryEntry,
+  ProjectAutomationInputStep,
+  ProjectAutomationPlanEntry,
+  ProjectAutomationSchedule,
+  ProjectAutomationScriptInputConfig,
+  ProjectAutomationScriptResult,
+  ProjectAutomationTask,
   ProjectGitActionResult,
   ProjectGitCommitPage,
   ProjectGitCommitMessageDiffResult,
@@ -56,11 +71,22 @@ const createAiPromptModeId = () => `custom-${Date.now()}`;
 const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
 const createProjectId = () => `project-${Date.now()}`;
+const createAutomationTaskId = () => `automation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const createAutomationRunId = () => `automation-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const defaultAutomationSchedule = (): ProjectAutomationSchedule => ({
+  type: "fixed",
+  startTime: "09:00",
+  dailyCount: 1,
+  intervalMinutes: 60,
+});
 const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
+const AUTOMATION_HISTORY_LIMIT = 20;
+const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 const projectKinds = new Set<ProjectKind>(["node", "python", "go", "executable", "custom"]);
 const projectScriptStatuses = new Set<ProjectScript["status"]>(["IDLE", "RUNNING", "STOPPING", "ERROR", "STOPPED"]);
 const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>(["manual", "package-json", "preset"]);
 let projectConfigMessageClearTimer: number | null = null;
+let automationSchedulerTimer: number | null = null;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
 const gitStatusRefreshPromises = new Map<string, Promise<void>>();
 const gitSnapshotRefreshTokens = new Map<string, symbol>();
@@ -68,6 +94,69 @@ const gitMutationVersions = new Map<string, number>();
 const gitRefMutationVersions = new Map<string, number>();
 const ansiControlPattern =
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+
+interface AutomationScriptRuntimeContext {
+  runId: string;
+  projectId: string;
+  scriptId: string;
+  scriptName: string;
+  startedAt: string;
+  steps: ProjectAutomationInputStep[];
+  exitConfig?: ProjectAutomationExitConfig;
+  output: string;
+  stepIndex: number;
+  waitingStepIndex: number | null;
+  inputCompleted: boolean;
+  settled: boolean;
+  stopRequestedByAutomationExit: boolean;
+  timers: number[];
+  runtimeTimer: number | null;
+  resolve: (result: ProjectAutomationScriptResult) => void;
+}
+
+const automationScriptContexts = new Map<string, AutomationScriptRuntimeContext>();
+
+function automationScriptContextKey(projectId: string, scriptId: string) {
+  return `${projectId}::${scriptId}`;
+}
+
+function clearAutomationSchedulerTimer() {
+  if (automationSchedulerTimer) {
+    window.clearTimeout(automationSchedulerTimer);
+    automationSchedulerTimer = null;
+  }
+}
+
+function clearAutomationContextTimers(context: AutomationScriptRuntimeContext) {
+  context.timers.forEach((timer) => window.clearTimeout(timer));
+  context.timers = [];
+  if (context.runtimeTimer) {
+    window.clearTimeout(context.runtimeTimer);
+    context.runtimeTimer = null;
+  }
+}
+
+function clearAutomationStepTimers(context: AutomationScriptRuntimeContext) {
+  context.timers.forEach((timer) => window.clearTimeout(timer));
+  context.timers = [];
+  context.waitingStepIndex = null;
+}
+
+function settleAutomationScriptContext(context: AutomationScriptRuntimeContext, result: ProjectAutomationScriptResult) {
+  if (context.settled) {
+    return;
+  }
+  context.settled = true;
+  clearAutomationContextTimers(context);
+  automationScriptContexts.delete(automationScriptContextKey(context.projectId, context.scriptId));
+  context.resolve(result);
+}
+
+function shouldAutomationExitOnOutput(context: AutomationScriptRuntimeContext) {
+  return Boolean(
+    context.inputCompleted && context.exitConfig?.matchText && context.output.includes(context.exitConfig.matchText),
+  );
+}
 
 function cancelProjectConfigMessageClear() {
   if (projectConfigMessageClearTimer) {
@@ -166,6 +255,200 @@ function normalizeProjectScripts(projectId: string, value: unknown): ProjectScri
   }, []);
 }
 
+function normalizeAutomationSchedule(value: unknown): ProjectAutomationSchedule {
+  if (!value || typeof value !== "object") {
+    return defaultAutomationSchedule();
+  }
+
+  const candidate = value as Partial<ProjectAutomationSchedule>;
+  if (candidate.type === "random") {
+    const schedule: ProjectAutomationSchedule = {
+      type: "random",
+      windowStart: typeof candidate.windowStart === "string" ? candidate.windowStart : "09:00",
+      windowEnd: typeof candidate.windowEnd === "string" ? candidate.windowEnd : "18:00",
+      dailyCount: Number.isInteger(candidate.dailyCount) ? Number(candidate.dailyCount) : 1,
+      minIntervalMinutes: Number.isInteger(candidate.minIntervalMinutes) ? Number(candidate.minIntervalMinutes) : 30,
+      maxIntervalMinutes: Number.isInteger(candidate.maxIntervalMinutes) ? Number(candidate.maxIntervalMinutes) : 180,
+    };
+    return validateAutomationSchedule(schedule).valid ? schedule : defaultAutomationSchedule();
+  }
+
+  const schedule: ProjectAutomationSchedule = {
+    type: "fixed",
+    startTime: typeof candidate.startTime === "string" ? candidate.startTime : "09:00",
+    dailyCount: Number.isInteger(candidate.dailyCount) ? Number(candidate.dailyCount) : 1,
+    intervalMinutes: Number.isInteger(candidate.intervalMinutes) ? Number(candidate.intervalMinutes) : 60,
+  };
+  return validateAutomationSchedule(schedule).valid ? schedule : defaultAutomationSchedule();
+}
+
+function normalizeAutomationInputSteps(value: unknown): ProjectAutomationInputStep[] {
+  const steps = Array.isArray(value) ? value : [];
+  return steps.reduce<ProjectAutomationInputStep[]>((normalizedSteps, step, index) => {
+    if (!step || typeof step !== "object") {
+      return normalizedSteps;
+    }
+
+    const candidate = step as Partial<ProjectAutomationInputStep>;
+    normalizedSteps.push({
+      id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `input-step-${index + 1}`,
+      mode: candidate.mode === "output-match" ? "output-match" : "delay",
+      value: typeof candidate.value === "string" ? candidate.value : "",
+      delayMs: Number.isFinite(candidate.delayMs) ? Math.max(0, Number(candidate.delayMs)) : 1000,
+      matchText: typeof candidate.matchText === "string" ? candidate.matchText : "",
+      timeoutMs: Number.isFinite(candidate.timeoutMs) ? Math.max(1000, Number(candidate.timeoutMs)) : 30000,
+    });
+    return normalizedSteps;
+  }, []);
+}
+
+function normalizeAutomationInputConfigs(value: unknown): ProjectAutomationScriptInputConfig[] {
+  const configs = Array.isArray(value) ? value : [];
+  return configs.reduce<ProjectAutomationScriptInputConfig[]>((normalizedConfigs, config) => {
+    if (!config || typeof config !== "object") {
+      return normalizedConfigs;
+    }
+
+    const candidate = config as Partial<ProjectAutomationScriptInputConfig>;
+    if (typeof candidate.scriptId !== "string" || !candidate.scriptId.trim()) {
+      return normalizedConfigs;
+    }
+    normalizedConfigs.push({ scriptId: candidate.scriptId, steps: normalizeAutomationInputSteps(candidate.steps) });
+    return normalizedConfigs;
+  }, []);
+}
+
+function normalizeAutomationExitConfigs(value: unknown): ProjectAutomationExitConfig[] {
+  const configs = Array.isArray(value) ? value : [];
+  return configs.reduce<ProjectAutomationExitConfig[]>((normalizedConfigs, config) => {
+    if (!config || typeof config !== "object") {
+      return normalizedConfigs;
+    }
+
+    const candidate = config as Partial<ProjectAutomationExitConfig>;
+    if (typeof candidate.scriptId !== "string" || !candidate.scriptId.trim()) {
+      return normalizedConfigs;
+    }
+    normalizedConfigs.push({
+      scriptId: candidate.scriptId,
+      enabled: Boolean(candidate.enabled),
+      matchText: typeof candidate.matchText === "string" ? candidate.matchText : "",
+    });
+    return normalizedConfigs;
+  }, []);
+}
+
+function normalizeAutomationDailyPlans(value: unknown): ProjectAutomationDailyPlan[] {
+  const plans = Array.isArray(value) ? value : [];
+  return plans.reduce<ProjectAutomationDailyPlan[]>((normalizedPlans, plan) => {
+    if (!plan || typeof plan !== "object") {
+      return normalizedPlans;
+    }
+
+    const candidate = plan as Partial<ProjectAutomationDailyPlan>;
+    const entries = Array.isArray(candidate.entries)
+      ? candidate.entries.reduce<ProjectAutomationPlanEntry[]>((normalizedEntries, entry, index) => {
+          if (!entry || typeof entry !== "object") {
+            return normalizedEntries;
+          }
+          const planEntry = entry as Partial<ProjectAutomationPlanEntry>;
+          if (typeof planEntry.plannedAt !== "string" || !planEntry.plannedAt.trim()) {
+            return normalizedEntries;
+          }
+          normalizedEntries.push({
+            id: typeof planEntry.id === "string" && planEntry.id.trim() ? planEntry.id : `plan-entry-${index + 1}`,
+            plannedAt: planEntry.plannedAt,
+            status:
+              planEntry.status === "running" ||
+              planEntry.status === "completed" ||
+              planEntry.status === "failed" ||
+              planEntry.status === "skipped" ||
+              planEntry.status === "missed"
+                ? planEntry.status
+                : "pending",
+            runId: typeof planEntry.runId === "string" ? planEntry.runId : undefined,
+            reason: typeof planEntry.reason === "string" ? planEntry.reason : undefined,
+          });
+          return normalizedEntries;
+        }, [])
+      : [];
+    if (typeof candidate.date === "string" && candidate.date.trim()) {
+      normalizedPlans.push({ date: candidate.date, entries });
+    }
+    return normalizedPlans;
+  }, []);
+}
+
+function normalizeAutomationHistory(value: unknown): ProjectAutomationHistoryEntry[] {
+  const history = Array.isArray(value) ? value : [];
+  return history
+    .reduce<ProjectAutomationHistoryEntry[]>((normalizedHistory, entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        return normalizedHistory;
+      }
+      const candidate = entry as Partial<ProjectAutomationHistoryEntry>;
+      normalizedHistory.push({
+        id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `automation-history-${index + 1}`,
+        taskId: typeof candidate.taskId === "string" ? candidate.taskId : "",
+        taskName: typeof candidate.taskName === "string" ? candidate.taskName : "",
+        projectId: typeof candidate.projectId === "string" ? candidate.projectId : "",
+        projectName: typeof candidate.projectName === "string" ? candidate.projectName : "",
+        plannedAt: typeof candidate.plannedAt === "string" ? candidate.plannedAt : "",
+        startedAt: typeof candidate.startedAt === "string" ? candidate.startedAt : undefined,
+        endedAt: typeof candidate.endedAt === "string" ? candidate.endedAt : undefined,
+        status:
+          candidate.status === "failed" || candidate.status === "skipped" || candidate.status === "missed"
+            ? candidate.status
+            : "completed",
+        reason: typeof candidate.reason === "string" ? candidate.reason : undefined,
+        scriptResults: Array.isArray(candidate.scriptResults) ? candidate.scriptResults : [],
+      });
+      return normalizedHistory;
+    }, [])
+    .sort(
+      (left, right) =>
+        new Date(right.endedAt || right.startedAt || right.plannedAt || 0).getTime() -
+        new Date(left.endedAt || left.startedAt || left.plannedAt || 0).getTime(),
+    )
+    .slice(0, AUTOMATION_HISTORY_LIMIT);
+}
+
+function normalizeAutomationTasks(projectId: string, value: unknown): ProjectAutomationTask[] {
+  const tasks = Array.isArray(value) ? value : [];
+  return tasks.reduce<ProjectAutomationTask[]>((normalizedTasks, task, index) => {
+    if (!task || typeof task !== "object") {
+      return normalizedTasks;
+    }
+
+    const candidate = task as Partial<ProjectAutomationTask>;
+    const now = new Date().toISOString();
+    const automationTask: ProjectAutomationTask = {
+      id:
+        typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `${projectId}-automation-${index + 1}`,
+      name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name : `任务 ${index + 1}`,
+      enabled: Boolean(candidate.enabled),
+      scriptIds: Array.isArray(candidate.scriptIds)
+        ? candidate.scriptIds.filter(
+            (scriptId): scriptId is string => typeof scriptId === "string" && scriptId.trim().length > 0,
+          )
+        : [],
+      schedule: normalizeAutomationSchedule(candidate.schedule),
+      notifyEnabled: candidate.notifyEnabled !== false,
+      maxScriptRuntimeMinutes: Number.isFinite(candidate.maxScriptRuntimeMinutes)
+        ? Math.max(1, Number(candidate.maxScriptRuntimeMinutes))
+        : DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES,
+      inputConfigs: normalizeAutomationInputConfigs(candidate.inputConfigs),
+      exitConfigs: normalizeAutomationExitConfigs(candidate.exitConfigs),
+      dailyPlans: normalizeAutomationDailyPlans(candidate.dailyPlans),
+      history: normalizeAutomationHistory(candidate.history),
+      createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : now,
+      updatedAt: typeof candidate.updatedAt === "string" ? candidate.updatedAt : now,
+    };
+    normalizedTasks.push(automationTask);
+    return normalizedTasks;
+  }, []);
+}
+
 const currentDeviceId = bridge.loadDeviceId();
 
 function isProjectVisibleOnCurrentDevice(project: Project): boolean {
@@ -203,6 +486,11 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
       note: script.note || "",
       source: script.source || "manual",
       status: "IDLE",
+    })),
+    automationTasks: normalizeAutomationTasks(project.id, project.automationTasks).map((task) => ({
+      ...task,
+      dailyPlans: normalizeAutomationDailyPlans(task.dailyPlans),
+      history: normalizeAutomationHistory(task.history),
     })),
     env: normalizeProjectEnv(project.env),
     memo: project.memo || "",
@@ -423,6 +711,7 @@ function hydrateProject(project: Project): Project {
     createdAt: project.createdAt || new Date().toISOString(),
     updatedAt: project.updatedAt || new Date().toISOString(),
     scripts: normalizeProjectScripts(project.id, project.scripts),
+    automationTasks: normalizeAutomationTasks(project.id, project.automationTasks),
   };
 }
 
@@ -682,6 +971,9 @@ export const useStore = defineStore("app", {
     pendingDeleteProjectId: null as string | null,
     projects: supportsRealProjectBridge() ? [] : demoProjects,
     selectedProjectId: null as string | null,
+    automationActiveProjectRuns: {} as Record<string, string>,
+    automationNextTimerAt: "",
+    projectDetailsTabRequest: null as { projectId: string; tab: "automation"; requestedAt: number } | null,
     logs: {
       "project-node-1": [
         { timestamp: "10:42:01", message: "> npm run dev", type: "INFO" },
@@ -773,6 +1065,7 @@ export const useStore = defineStore("app", {
         this.scriptLogs[project.id] = this.scriptLogs[project.id] || {};
         this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
       });
+      this.recomputeAutomationPlans();
     },
     async persistProjects() {
       try {
@@ -1292,6 +1585,7 @@ export const useStore = defineStore("app", {
               : ProjectStatus.WARNING,
         lastUpdated: new Date().toLocaleString(),
         scripts,
+        automationTasks: existingProject?.automationTasks || [],
         env,
         memo: payload.memo,
         todos: this.todos[projectId] || existingProject?.todos || [],
@@ -1333,6 +1627,7 @@ export const useStore = defineStore("app", {
       delete this.stagedFiles[projectId];
       delete this.todos[projectId];
       delete this.memoContent[projectId];
+      delete this.automationActiveProjectRuns[projectId];
 
       if (this.selectedProjectId === projectId) {
         this.selectedProjectId = null;
@@ -1343,6 +1638,7 @@ export const useStore = defineStore("app", {
         this.closeProjectForm();
       }
 
+      this.scheduleAutomationTimer();
       await this.persistProjects();
       return true;
     },
@@ -1908,6 +2204,576 @@ export const useStore = defineStore("app", {
 
       return bridge.writeProjectFile(project.path, relativePath, content);
     },
+    automationTaskValidation(projectId: string, task: ProjectAutomationTask) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return { valid: false, message: "项目不存在。" };
+      }
+      if (!task.name.trim()) {
+        return { valid: false, message: "请填写任务名称。" };
+      }
+      if (task.scriptIds.length === 0) {
+        return { valid: false, message: "请至少选择一个脚本。" };
+      }
+      const missingScriptId = task.scriptIds.find(
+        (scriptId) => !project.scripts.some((script) => script.id === scriptId),
+      );
+      if (missingScriptId) {
+        return { valid: false, message: `脚本不存在：${missingScriptId}` };
+      }
+      const scheduleValidation = validateAutomationSchedule(task.schedule);
+      if (!scheduleValidation.valid) {
+        return scheduleValidation;
+      }
+      const invalidMatchStep = task.inputConfigs
+        .flatMap((config) => config.steps)
+        .find((step) => step.mode === "output-match" && (!step.matchText.trim() || step.timeoutMs < 1000));
+      if (invalidMatchStep) {
+        return { valid: false, message: "输出匹配输入需要匹配文本和超时时间。" };
+      }
+      const invalidExit = task.exitConfigs.find((config) => config.enabled && !config.matchText.trim());
+      if (invalidExit) {
+        return { valid: false, message: "关键词退出需要填写匹配文本。" };
+      }
+      return { valid: true, message: "" };
+    },
+    scheduleAutomationTimer() {
+      clearAutomationSchedulerTimer();
+      const now = new Date();
+      const today = dateKey(now);
+      const upcoming: Array<{ projectId: string; taskId: string; entry: ProjectAutomationPlanEntry }> = [];
+
+      this.projects.forEach((project) => {
+        project.automationTasks = normalizeAutomationTasks(project.id, project.automationTasks);
+        project.automationTasks.forEach((task) => {
+          if (!task.enabled) {
+            return;
+          }
+          const existingPlan = task.dailyPlans.find((plan) => plan.date === today);
+          if (!existingPlan) {
+            task.dailyPlans = [generateAutomationDailyPlan(task.id, task.schedule, today), ...task.dailyPlans].slice(
+              0,
+              7,
+            );
+          }
+          const nextEntry = getNextAutomationPlanEntry(task.dailyPlans, now);
+          if (nextEntry) {
+            upcoming.push({ projectId: project.id, taskId: task.id, entry: nextEntry });
+          }
+        });
+      });
+
+      upcoming.sort(
+        (left, right) => new Date(left.entry.plannedAt).getTime() - new Date(right.entry.plannedAt).getTime(),
+      );
+      const next = upcoming[0];
+      this.automationNextTimerAt = next?.entry.plannedAt || "";
+      if (!next) {
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 5, 0);
+        automationSchedulerTimer = window.setTimeout(
+          () => {
+            this.recomputeAutomationPlans();
+          },
+          Math.max(1000, Math.min(tomorrow.getTime() - now.getTime(), 2_147_483_647)),
+        );
+        return;
+      }
+      const delay = Math.max(0, Math.min(new Date(next.entry.plannedAt).getTime() - now.getTime(), 2_147_483_647));
+      automationSchedulerTimer = window.setTimeout(() => {
+        void this.runDueAutomationPlans();
+      }, delay);
+    },
+    markMissedAutomationPlans() {
+      const nowTime = Date.now();
+      let changed = false;
+      this.projects.forEach((project) => {
+        project.automationTasks?.forEach((task) => {
+          if (!task.enabled) {
+            return;
+          }
+          task.dailyPlans.forEach((plan) => {
+            plan.entries.forEach((entry) => {
+              if (entry.status === "pending" && new Date(entry.plannedAt).getTime() < nowTime - 60_000) {
+                this.finishAutomationPlanEntry(project, task, entry, "missed", "插件未运行或计划时间已错过。", []);
+                changed = true;
+              }
+            });
+          });
+        });
+      });
+      if (changed) {
+        void this.persistProjects();
+      }
+    },
+    async runDueAutomationPlans() {
+      const nowTime = Date.now();
+      const dueEntries: Array<{ project: Project; task: ProjectAutomationTask; entry: ProjectAutomationPlanEntry }> =
+        [];
+      this.projects.forEach((project) => {
+        project.automationTasks?.forEach((task) => {
+          if (!task.enabled) {
+            return;
+          }
+          task.dailyPlans.forEach((plan) => {
+            plan.entries.forEach((entry) => {
+              if (entry.status === "pending" && new Date(entry.plannedAt).getTime() <= nowTime) {
+                dueEntries.push({ project, task, entry });
+              }
+            });
+          });
+        });
+      });
+
+      for (const due of dueEntries) {
+        if (this.automationActiveProjectRuns[due.project.id]) {
+          this.finishAutomationPlanEntry(due.project, due.task, due.entry, "skipped", "同项目已有任务正在运行。", []);
+          continue;
+        }
+        void this.runAutomationTask(due.project.id, due.task.id, due.entry.id);
+      }
+
+      this.scheduleAutomationTimer();
+      void this.persistProjects();
+    },
+    recomputeAutomationPlans(projectId?: string) {
+      const today = dateKey();
+      this.projects
+        .filter((project) => !projectId || project.id === projectId)
+        .forEach((project) => {
+          project.automationTasks = normalizeAutomationTasks(project.id, project.automationTasks).map((task) => {
+            const todayPlan = task.dailyPlans.find((plan) => plan.date === today);
+            return {
+              ...task,
+              dailyPlans: todayPlan
+                ? [todayPlan, ...task.dailyPlans.filter((plan) => plan.date !== today)].slice(0, 7)
+                : [generateAutomationDailyPlan(task.id, task.schedule, today), ...task.dailyPlans].slice(0, 7),
+            };
+          });
+        });
+      this.markMissedAutomationPlans();
+      this.scheduleAutomationTimer();
+    },
+    createAutomationTask(projectId: string, patch: Partial<ProjectAutomationTask>) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return { ok: false, message: "项目不存在。" };
+      }
+      const now = new Date().toISOString();
+      const firstScriptId = project.scripts[0]?.id;
+      const task: ProjectAutomationTask = normalizeAutomationTasks(projectId, [
+        {
+          id: createAutomationTaskId(),
+          name: patch.name || "任务",
+          enabled: patch.enabled ?? true,
+          scriptIds: patch.scriptIds?.length ? patch.scriptIds : firstScriptId ? [firstScriptId] : [],
+          schedule: patch.schedule || defaultAutomationSchedule(),
+          notifyEnabled: patch.notifyEnabled ?? true,
+          maxScriptRuntimeMinutes: patch.maxScriptRuntimeMinutes || DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES,
+          inputConfigs: patch.inputConfigs || [],
+          exitConfigs: patch.exitConfigs || [],
+          dailyPlans: [],
+          history: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      ])[0];
+      const validation = this.automationTaskValidation(projectId, task);
+      if (!validation.valid) {
+        return { ok: false, message: validation.message };
+      }
+      task.dailyPlans = [generateAutomationDailyPlan(task.id, task.schedule, dateKey())];
+      project.automationTasks = [task, ...(project.automationTasks || [])];
+      project.updatedAt = now;
+      this.scheduleAutomationTimer();
+      void this.persistProjects();
+      return { ok: true, message: "", task };
+    },
+    updateAutomationTask(projectId: string, taskId: string, patch: Partial<ProjectAutomationTask>) {
+      const project = this.projects.find((item) => item.id === projectId);
+      const task = project?.automationTasks?.find((item) => item.id === taskId);
+      if (!project || !task) {
+        return { ok: false, message: "任务不存在。" };
+      }
+      const nextTask: ProjectAutomationTask = normalizeAutomationTasks(projectId, [
+        {
+          ...task,
+          ...patch,
+          dailyPlans: patch.schedule ? [] : task.dailyPlans,
+          updatedAt: new Date().toISOString(),
+        },
+      ])[0];
+      const validation = this.automationTaskValidation(projectId, nextTask);
+      if (!validation.valid) {
+        return { ok: false, message: validation.message };
+      }
+      if (patch.schedule || !nextTask.dailyPlans.some((plan) => plan.date === dateKey())) {
+        nextTask.dailyPlans = [generateAutomationDailyPlan(nextTask.id, nextTask.schedule, dateKey())];
+      }
+      Object.assign(task, nextTask);
+      project.updatedAt = new Date().toISOString();
+      this.scheduleAutomationTimer();
+      void this.persistProjects();
+      return { ok: true, message: "", task };
+    },
+    deleteAutomationTask(projectId: string, taskId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return false;
+      }
+      project.automationTasks = (project.automationTasks || []).filter((task) => task.id !== taskId);
+      project.updatedAt = new Date().toISOString();
+      this.scheduleAutomationTimer();
+      void this.persistProjects();
+      return true;
+    },
+    openProjectAutomation(projectId: string) {
+      this.selectedProjectId = projectId;
+      this.activeTab = "projects";
+      this.projectDetailsTabRequest = { projectId, tab: "automation", requestedAt: Date.now() };
+    },
+    finishAutomationPlanEntry(
+      project: Project,
+      task: ProjectAutomationTask,
+      entry: ProjectAutomationPlanEntry,
+      status: ProjectAutomationHistoryEntry["status"],
+      reason: string,
+      scriptResults: ProjectAutomationScriptResult[],
+      runId = entry.runId || createAutomationRunId(),
+    ) {
+      entry.status = status;
+      entry.runId = runId;
+      entry.reason = reason || undefined;
+      const endedAt = new Date().toISOString();
+      task.history = [
+        {
+          id: runId,
+          taskId: task.id,
+          taskName: task.name,
+          projectId: project.id,
+          projectName: project.name,
+          plannedAt: entry.plannedAt,
+          startedAt: status === "missed" || status === "skipped" ? undefined : endedAt,
+          endedAt,
+          status,
+          reason: reason || undefined,
+          scriptResults,
+        },
+        ...task.history,
+      ].slice(0, AUTOMATION_HISTORY_LIMIT);
+      task.updatedAt = endedAt;
+      if (task.notifyEnabled) {
+        try {
+          window.utools?.showNotification?.(
+            `任务“${task.name}”${status === "completed" ? "已完成" : status === "missed" ? "已错过" : status === "skipped" ? "已跳过" : "失败"}${reason ? `：${reason}` : ""}`,
+          );
+        } catch (error) {
+          // Notifications are best-effort and must not affect automation execution.
+        }
+      }
+    },
+    async runAutomationTask(projectId: string, taskId: string, entryId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      const task = project?.automationTasks?.find((item) => item.id === taskId);
+      const entry = task?.dailyPlans.flatMap((plan) => plan.entries).find((item) => item.id === entryId);
+      if (!project || !task || !entry || entry.status !== "pending") {
+        return;
+      }
+      const runId = createAutomationRunId();
+      entry.status = "running";
+      entry.runId = runId;
+      this.automationActiveProjectRuns[projectId] = runId;
+      const scriptResults: ProjectAutomationScriptResult[] = [];
+      let finalStatus: ProjectAutomationHistoryEntry["status"] = "completed";
+      let finalReason = "";
+      const startedAt = new Date().toISOString();
+
+      try {
+        for (const scriptId of task.scriptIds) {
+          const script = project.scripts.find((item) => item.id === scriptId);
+          if (!script) {
+            finalStatus = "failed";
+            finalReason = `脚本不存在：${scriptId}`;
+            scriptResults.push({ scriptId, scriptName: scriptId, status: "failed", reason: finalReason });
+            break;
+          }
+          if (
+            project.pathExists === false ||
+            !script.command.trim() ||
+            script.status === "RUNNING" ||
+            script.status === "STOPPING"
+          ) {
+            const scriptBusy = script.status === "RUNNING" || script.status === "STOPPING";
+            finalStatus = scriptBusy ? "skipped" : "failed";
+            finalReason =
+              project.pathExists === false
+                ? "项目路径不可用。"
+                : !script.command.trim()
+                  ? "脚本命令为空。"
+                  : "脚本已在运行或停止中。";
+            scriptResults.push({
+              scriptId,
+              scriptName: script.name,
+              status: scriptBusy ? "skipped" : "failed",
+              reason: finalReason,
+            });
+            break;
+          }
+
+          const inputConfig = task.inputConfigs.find((config) => config.scriptId === scriptId);
+          const exitConfig = task.exitConfigs.find(
+            (config) => config.scriptId === scriptId && config.enabled && config.matchText.trim(),
+          );
+          const result = await this.runAutomationScript(
+            projectId,
+            scriptId,
+            inputConfig?.steps || [],
+            exitConfig,
+            task.maxScriptRuntimeMinutes,
+          );
+          scriptResults.push(result);
+          if (result.status !== "completed") {
+            finalStatus = "failed";
+            finalReason = result.reason || `${script.name} 执行失败。`;
+            break;
+          }
+        }
+      } catch (error) {
+        if (finalStatus === "completed") {
+          finalStatus = "failed";
+          finalReason = error instanceof Error ? error.message : "任务执行失败。";
+        }
+      }
+
+      delete this.automationActiveProjectRuns[projectId];
+      entry.status = finalStatus;
+      const endedAt = new Date().toISOString();
+      task.history = [
+        {
+          id: runId,
+          taskId: task.id,
+          taskName: task.name,
+          projectId: project.id,
+          projectName: project.name,
+          plannedAt: entry.plannedAt,
+          startedAt,
+          endedAt,
+          status: finalStatus,
+          reason: finalReason || undefined,
+          scriptResults,
+        },
+        ...task.history,
+      ].slice(0, AUTOMATION_HISTORY_LIMIT);
+      entry.reason = finalReason || undefined;
+      task.updatedAt = endedAt;
+      if (task.notifyEnabled) {
+        try {
+          window.utools?.showNotification?.(
+            `任务“${task.name}”${finalStatus === "completed" ? "已完成" : "失败"}${finalReason ? `：${finalReason}` : ""}`,
+          );
+        } catch (error) {
+          // Notifications are best-effort and must not affect automation execution.
+        }
+      }
+      this.scheduleAutomationTimer();
+      void this.persistProjects();
+    },
+    runAutomationScript(
+      projectId: string,
+      scriptId: string,
+      steps: ProjectAutomationInputStep[],
+      exitConfig: ProjectAutomationExitConfig | undefined,
+      maxRuntimeMinutes: number,
+    ): Promise<ProjectAutomationScriptResult> {
+      const project = this.projects.find((item) => item.id === projectId);
+      const script = project?.scripts.find((item) => item.id === scriptId);
+      if (!project || !script) {
+        return Promise.resolve({ scriptId, scriptName: scriptId, status: "failed", reason: "脚本不存在。" });
+      }
+      const startedAt = new Date().toISOString();
+      return new Promise((resolve) => {
+        const context: AutomationScriptRuntimeContext = {
+          runId: createAutomationRunId(),
+          projectId,
+          scriptId,
+          scriptName: script.name,
+          startedAt,
+          steps,
+          exitConfig,
+          output: "",
+          stepIndex: 0,
+          waitingStepIndex: null,
+          inputCompleted: steps.length === 0,
+          settled: false,
+          stopRequestedByAutomationExit: false,
+          timers: [],
+          runtimeTimer: null,
+          resolve,
+        };
+        automationScriptContexts.set(automationScriptContextKey(projectId, scriptId), context);
+        context.runtimeTimer = window.setTimeout(
+          () => {
+            void this.stopScript(projectId, scriptId);
+            settleAutomationScriptContext(context, {
+              scriptId,
+              scriptName: script.name,
+              status: "timeout",
+              startedAt,
+              endedAt: new Date().toISOString(),
+              reason: `脚本运行超过 ${maxRuntimeMinutes} 分钟。`,
+            });
+          },
+          Math.max(1, maxRuntimeMinutes) * 60_000,
+        );
+
+        void this.launchScript(projectId, scriptId).then((result) => {
+          if (!result) {
+            settleAutomationScriptContext(context, {
+              scriptId,
+              scriptName: script.name,
+              status: "failed",
+              startedAt,
+              endedAt: new Date().toISOString(),
+              reason: "脚本启动失败。",
+            });
+            return;
+          }
+          this.advanceAutomationInputStep(context);
+        });
+      });
+    },
+    async sendAutomationInput(context: AutomationScriptRuntimeContext, value: string) {
+      let result: Awaited<ReturnType<typeof this.sendScriptInput>>;
+      try {
+        result = await this.sendScriptInput(context.projectId, context.scriptId, value);
+      } catch (error) {
+        result = { sent: false, message: error instanceof Error ? error.message : "自动输入发送失败。" };
+      }
+      if (!result.sent) {
+        void this.stopScript(context.projectId, context.scriptId);
+        settleAutomationScriptContext(context, {
+          scriptId: context.scriptId,
+          scriptName: context.scriptName,
+          status: "failed",
+          startedAt: context.startedAt,
+          endedAt: new Date().toISOString(),
+          reason: result.message || "自动输入发送失败。",
+        });
+        return false;
+      }
+      return true;
+    },
+    advanceAutomationInputStep(context: AutomationScriptRuntimeContext) {
+      if (context.settled) {
+        return;
+      }
+      clearAutomationStepTimers(context);
+      const step = context.steps[context.stepIndex];
+      if (!step) {
+        context.inputCompleted = true;
+        if (shouldAutomationExitOnOutput(context)) {
+          context.stopRequestedByAutomationExit = true;
+          void this.stopScript(context.projectId, context.scriptId);
+        }
+        return;
+      }
+      if (step.mode === "delay") {
+        const timer = window.setTimeout(
+          () => {
+            void this.sendAutomationInput(context, step.value).then((sent) => {
+              if (!sent || context.settled) {
+                return;
+              }
+              context.stepIndex += 1;
+              this.advanceAutomationInputStep(context);
+            });
+          },
+          Math.max(0, step.delayMs),
+        );
+        context.timers.push(timer);
+        return;
+      }
+
+      context.waitingStepIndex = context.stepIndex;
+      const timeout = window.setTimeout(
+        () => {
+          void this.stopScript(context.projectId, context.scriptId);
+          settleAutomationScriptContext(context, {
+            scriptId: context.scriptId,
+            scriptName: context.scriptName,
+            status: "failed",
+            startedAt: context.startedAt,
+            endedAt: new Date().toISOString(),
+            reason: `等待输出匹配“${step.matchText}”超时。`,
+          });
+        },
+        Math.max(1000, step.timeoutMs),
+      );
+      context.timers.push(timeout);
+      if (step.matchText.trim() && context.output.includes(step.matchText)) {
+        void this.consumeAutomationOutputMatch(context);
+      }
+    },
+    async consumeAutomationOutputMatch(context: AutomationScriptRuntimeContext) {
+      const step = context.steps[context.stepIndex];
+      if (!step || step.mode !== "output-match" || context.waitingStepIndex !== context.stepIndex) {
+        return;
+      }
+      clearAutomationStepTimers(context);
+      const sent = await this.sendAutomationInput(context, step.value);
+      if (!sent || context.settled) {
+        return;
+      }
+      context.stepIndex += 1;
+      this.advanceAutomationInputStep(context);
+    },
+    handleAutomationBridgeEvent(event: ProjectBridgeEvent) {
+      const context = automationScriptContexts.get(automationScriptContextKey(event.projectId, event.scriptId));
+      if (!context || context.settled) {
+        return;
+      }
+      if (event.type === "stdout" || event.type === "stderr") {
+        context.output += event.message || "";
+        const currentStep = context.steps[context.stepIndex];
+        if (
+          currentStep?.mode === "output-match" &&
+          currentStep.matchText.trim() &&
+          context.output.includes(currentStep.matchText)
+        ) {
+          void this.consumeAutomationOutputMatch(context);
+        }
+        if (shouldAutomationExitOnOutput(context)) {
+          context.stopRequestedByAutomationExit = true;
+          void this.stopScript(event.projectId, event.scriptId);
+        }
+      }
+      if (event.type === "exit") {
+        const success = event.code === 0 || context.stopRequestedByAutomationExit;
+        settleAutomationScriptContext(context, {
+          scriptId: context.scriptId,
+          scriptName: context.scriptName,
+          status: success ? "completed" : event.stoppedByUser ? "stopped" : "failed",
+          startedAt: context.startedAt,
+          endedAt: new Date().toISOString(),
+          reason: success
+            ? undefined
+            : event.stoppedByUser
+              ? "脚本已被手动停止。"
+              : `脚本退出码 ${event.code ?? "unknown"}。`,
+        });
+      }
+      if (event.type === "error") {
+        settleAutomationScriptContext(context, {
+          scriptId: context.scriptId,
+          scriptName: context.scriptName,
+          status: "failed",
+          startedAt: context.startedAt,
+          endedAt: new Date().toISOString(),
+          reason: event.message || "脚本执行错误。",
+        });
+      }
+    },
     async launchScript(projectId: string, scriptId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const script = project?.scripts.find((item) => item.id === scriptId);
@@ -2276,6 +3142,7 @@ export const useStore = defineStore("app", {
 
       this.projects = [...accepted, ...this.projects];
       await this.refreshProjectAvailability();
+      this.recomputeAutomationPlans();
       await this.persistProjects();
       this.setProjectConfigMessage(`已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`);
     },
@@ -2346,6 +3213,7 @@ export const useStore = defineStore("app", {
           event.scriptId,
         );
       }
+      this.handleAutomationBridgeEvent(event);
     },
   },
 });

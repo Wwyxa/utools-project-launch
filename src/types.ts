@@ -174,6 +174,98 @@ export interface ProjectScript {
   source?: "manual" | "package-json" | "preset";
 }
 
+export type ProjectAutomationSchedule =
+  | {
+      type: "fixed";
+      startTime: string;
+      dailyCount: number;
+      intervalMinutes: number;
+    }
+  | {
+      type: "random";
+      windowStart: string;
+      windowEnd: string;
+      dailyCount: number;
+      minIntervalMinutes: number;
+      maxIntervalMinutes: number;
+    };
+
+export interface ProjectAutomationInputStep {
+  id: string;
+  mode: "delay" | "output-match";
+  value: string;
+  delayMs: number;
+  matchText: string;
+  timeoutMs: number;
+}
+
+export interface ProjectAutomationScriptInputConfig {
+  scriptId: string;
+  steps: ProjectAutomationInputStep[];
+}
+
+export interface ProjectAutomationExitConfig {
+  scriptId: string;
+  enabled: boolean;
+  matchText: string;
+}
+
+export type ProjectAutomationPlanEntryStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "missed";
+
+export interface ProjectAutomationPlanEntry {
+  id: string;
+  plannedAt: string;
+  status: ProjectAutomationPlanEntryStatus;
+  runId?: string;
+  reason?: string;
+}
+
+export interface ProjectAutomationDailyPlan {
+  date: string;
+  entries: ProjectAutomationPlanEntry[];
+}
+
+export type ProjectAutomationHistoryStatus = "completed" | "failed" | "skipped" | "missed";
+
+export interface ProjectAutomationScriptResult {
+  scriptId: string;
+  scriptName: string;
+  status: "completed" | "failed" | "skipped" | "timeout" | "stopped";
+  startedAt?: string;
+  endedAt?: string;
+  reason?: string;
+}
+
+export interface ProjectAutomationHistoryEntry {
+  id: string;
+  taskId: string;
+  taskName: string;
+  projectId: string;
+  projectName: string;
+  plannedAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  status: ProjectAutomationHistoryStatus;
+  reason?: string;
+  scriptResults: ProjectAutomationScriptResult[];
+}
+
+export interface ProjectAutomationTask {
+  id: string;
+  name: string;
+  enabled: boolean;
+  scriptIds: string[];
+  schedule: ProjectAutomationSchedule;
+  notifyEnabled: boolean;
+  maxScriptRuntimeMinutes: number;
+  inputConfigs: ProjectAutomationScriptInputConfig[];
+  exitConfigs: ProjectAutomationExitConfig[];
+  dailyPlans: ProjectAutomationDailyPlan[];
+  history: ProjectAutomationHistoryEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ProjectGitFileChange {
   path: string;
   originalPath?: string;
@@ -332,6 +424,7 @@ export interface Project {
   description?: string;
   lastUpdated?: string;
   scripts: ProjectScript[];
+  automationTasks?: ProjectAutomationTask[];
   env: Record<string, string>;
   memo?: string;
   todos?: TodoItem[];

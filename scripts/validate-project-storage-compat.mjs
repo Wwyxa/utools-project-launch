@@ -67,7 +67,9 @@ function createBridge({ docs = [], legacyProjects = [], localDeviceId = "device-
       utools: {
         db: {
           allDocs(prefix) {
-            return Array.from(docsById.values()).filter((doc) => doc._id.startsWith(prefix)).map(clone);
+            return Array.from(docsById.values())
+              .filter((doc) => doc._id.startsWith(prefix))
+              .map(clone);
           },
           get(id) {
             return docsById.has(id) ? clone(docsById.get(id)) : { error: true, message: "not found" };
@@ -115,6 +117,43 @@ const privateDocProject = {
   kind: "node",
   scripts: [{ id: "private-script", name: "dev", command: "npm run dev", status: "IDLE" }],
   env: {},
+  automationTasks: [
+    {
+      id: "automation-1",
+      name: "Daily Check",
+      enabled: true,
+      scriptIds: ["private-script"],
+      schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+      notifyEnabled: true,
+      maxScriptRuntimeMinutes: 30,
+      inputConfigs: [
+        {
+          scriptId: "private-script",
+          steps: [{ id: "step-1", mode: "delay", value: "yes", delayMs: 1000, matchText: "", timeoutMs: 30000 }],
+        },
+      ],
+      exitConfigs: [{ scriptId: "private-script", enabled: true, matchText: "done" }],
+      dailyPlans: [
+        {
+          date: "2026-07-07",
+          entries: [{ id: "entry-1", plannedAt: "2026-07-07T09:00:00", status: "pending" }],
+        },
+      ],
+      history: Array.from({ length: 22 }, (_, index) => ({
+        id: `history-${index}`,
+        taskId: "automation-1",
+        taskName: "Daily Check",
+        projectId: "private-project",
+        projectName: "Private Project",
+        plannedAt: "2026-07-07T09:00:00",
+        endedAt: "2026-07-07T09:01:00",
+        status: "completed",
+        scriptResults: [],
+      })),
+      createdAt: "2026-07-07T00:00:00.000Z",
+      updatedAt: "2026-07-07T00:00:00.000Z",
+    },
+  ],
 };
 
 const { bridge, docsById } = createBridge({
@@ -135,13 +174,37 @@ assert.deepEqual(
   [],
   "legacy projects without scripts should normalize to an empty array",
 );
+assert.deepEqual(
+  clone(loadedLegacyProject.automationTasks),
+  [],
+  "legacy projects without automation tasks should normalize to an empty array",
+);
 assert.deepEqual(clone(loadedLegacyProject.env), {}, "legacy projects without env should normalize to an empty object");
 assert.equal(loadedLegacyProject.type, "Custom", "legacy projects without type should keep a safe custom type");
 assert.equal(loadedLegacyProject.kind, "custom", "legacy projects without kind should keep a safe custom kind");
 assert.ok(loadedPrivateProject, "private docs from other devices should remain in shared storage results");
 assert.equal(loadedPrivateProject.visibility, "private");
 assert.equal(loadedPrivateProject.ownerDeviceId, "other-device");
+assert.equal(loadedPrivateProject.automationTasks.length, 1, "automation tasks should survive project doc loading");
+assert.equal(
+  loadedPrivateProject.automationTasks[0].history.length,
+  20,
+  "automation task history should be capped during storage normalization",
+);
+assert.equal(
+  loadedPrivateProject.automationTasks[0].inputConfigs[0].steps[0].value,
+  "yes",
+  "automation input configs should remain plain text through storage",
+);
 assert.ok(docsById.has(`${projectDocPrefix}${legacyProject.id}`), "legacy-only projects should be migrated to docs");
+
+bridge.saveProjects([loadedPrivateProject]);
+const savedPrivateDoc = docsById.get(`${projectDocPrefix}${privateDocProject.id}`);
+assert.equal(
+  savedPrivateDoc.project.automationTasks[0].exitConfigs[0].matchText,
+  "done",
+  "automation exit configs should persist through project doc writes",
+);
 
 const persistedDeviceDir = fs.mkdtempSync(path.join(os.tmpdir(), "utools-project-launch-device-"));
 try {

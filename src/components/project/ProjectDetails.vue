@@ -21,6 +21,7 @@ import ScriptsTab from "./ScriptsTab.vue";
 import GitTab from "./GitTab.vue";
 import MemoTab from "./MemoTab.vue";
 import FilesTab from "./FilesTab.vue";
+import AutomationTab from "./AutomationTab.vue";
 
 const props = defineProps<{
   project: Project;
@@ -28,13 +29,14 @@ const props = defineProps<{
 
 const store = useStore();
 const t = useI18n();
-type TabId = "info" | "scripts" | "files" | "git" | "memo";
+type TabId = "info" | "scripts" | "automation" | "files" | "git" | "memo";
 const activeTab = ref<TabId>("scripts");
 const fileOpenRequest = ref("");
 
 const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
   { id: "info", label: t.value.projectDetails.overview },
   { id: "scripts", label: t.value.projectDetails.scripts },
+  { id: "automation", label: t.value.projectDetails.automation },
   { id: "files", label: t.value.projectDetails.files },
   { id: "git", label: t.value.projectDetails.git },
   { id: "memo", label: t.value.projectDetails.memo },
@@ -135,6 +137,16 @@ const scheduleInitialGitRefresh = () => {
 onMounted(scheduleInitialGitRefresh);
 
 watch(() => props.project.id, scheduleInitialGitRefresh);
+
+watch(
+  () => store.projectDetailsTabRequest,
+  (request) => {
+    if (request?.projectId === props.project.id) {
+      activeTab.value = request.tab;
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -249,7 +261,11 @@ watch(() => props.project.id, scheduleInitialGitRefresh);
       :class="
         cn(
           'themed-scrollbar min-h-0 flex-1 pr-1 [color-scheme:inherit]',
-          activeTab === 'files' || activeTab === 'scripts' || activeTab === 'git' || activeTab === 'memo'
+          activeTab === 'files' ||
+            activeTab === 'scripts' ||
+            activeTab === 'git' ||
+            activeTab === 'memo' ||
+            activeTab === 'automation'
             ? 'overflow-hidden'
             : 'space-y-3 overflow-y-auto',
         )
@@ -304,7 +320,10 @@ watch(() => props.project.id, scheduleInitialGitRefresh);
               <GitCommitHorizontal :size="14" />
               <span>{{ t.git.commits }}</span>
             </div>
-            <div class="min-w-0 truncate font-mono text-sm font-bold text-on-surface" :title="latestCommit?.message || t.git.noRepo">
+            <div
+              class="min-w-0 truncate font-mono text-sm font-bold text-on-surface"
+              :title="latestCommit?.message || t.git.noRepo"
+            >
               {{ latestCommit?.hash || "--" }}
             </div>
             <div
@@ -312,7 +331,9 @@ watch(() => props.project.id, scheduleInitialGitRefresh);
               :title="latestCommit?.message || t.git.noRepo"
             >
               {{ latestCommit?.message || t.git.noRepo }}
-              <span v-if="latestCommit" class="ml-1 text-on-surface-variant/70">· {{ formatRelativeTime(latestCommit.date) }}</span>
+              <span v-if="latestCommit" class="ml-1 text-on-surface-variant/70"
+                >· {{ formatRelativeTime(latestCommit.date) }}</span
+              >
             </div>
           </div>
           <div class="min-w-0 rounded-lg border border-border-subtle bg-surface-container-low p-3">
@@ -320,7 +341,10 @@ watch(() => props.project.id, scheduleInitialGitRefresh);
               <CheckSquare :size="14" />
               <span>{{ t.memo.taskList }}</span>
             </div>
-            <div class="min-w-0 truncate font-mono text-sm font-bold text-on-surface" :title="`${openTodoCount}/${projectTodos.length}`">
+            <div
+              class="min-w-0 truncate font-mono text-sm font-bold text-on-surface"
+              :title="`${openTodoCount}/${projectTodos.length}`"
+            >
               {{ openTodoCount }}/{{ projectTodos.length }}
             </div>
             <div class="mt-1 truncate text-[11px] text-on-surface-variant">{{ t.memo.title }}</div>
@@ -353,6 +377,7 @@ watch(() => props.project.id, scheduleInitialGitRefresh);
       </div>
 
       <ScriptsTab v-if="activeTab === 'scripts'" :project="project" />
+      <AutomationTab v-if="activeTab === 'automation'" :project="project" />
       <FilesTab
         v-if="activeTab === 'files'"
         :project="project"

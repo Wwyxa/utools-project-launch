@@ -2207,6 +2207,15 @@ function toStoredProject(project, index = 0) {
           status: "IDLE",
         }))
       : [],
+    automationTasks: Array.isArray(project.automationTasks)
+      ? project.automationTasks.map((task) => ({
+          ...task,
+          history: Array.isArray(task.history) ? task.history.slice(0, 20) : [],
+          dailyPlans: Array.isArray(task.dailyPlans) ? task.dailyPlans : [],
+          inputConfigs: Array.isArray(task.inputConfigs) ? task.inputConfigs : [],
+          exitConfigs: Array.isArray(task.exitConfigs) ? task.exitConfigs : [],
+        }))
+      : [],
     env: project.env || {},
     memo: project.memo || "",
     todos: Array.isArray(project.todos) ? project.todos : [],
