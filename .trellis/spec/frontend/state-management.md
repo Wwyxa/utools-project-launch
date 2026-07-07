@@ -248,6 +248,102 @@ function toStoredProject(project) {
 
 Keep persisted project docs aligned with the shared `Project` shape whenever the UI adds metadata that must survive restart.
 
+## Scenario: Automation Task Missed-Run Policy
+
+### 1. Scope / Trigger
+
+- Trigger: automation task scheduling fields are edited in `AutomationTab.vue`, normalized in the Pinia store, persisted through browser fallback or uTools preload storage, then hydrated after plugin restart.
+- This requires code-spec depth because task behavior depends on a persisted `ProjectAutomationTask` shape crossing `src/types.ts`, `src/store/useStore.ts`, `public/preload.js`, and storage compatibility checks.
+
+### 2. Signatures
+
+- `ProjectAutomationMissedPolicy = "grace-run" | "run-now" | "mark-missed"`.
+- `ProjectAutomationTask.missedPolicy: ProjectAutomationMissedPolicy`.
+- `ProjectAutomationTask.missedGraceMinutes: number`.
+- Store action: `runAutomationTaskNow(projectId: string, taskId: string): boolean` creates a current-time pending entry and starts the existing automation execution flow.
+- Store normalization: `normalizeAutomationTasks(projectId, value)` must fill missing legacy values with `missedPolicy: "grace-run"` and `missedGraceMinutes: 5`.
+- uTools preload persistence path: `toStoredProject(project).automationTasks[]` must preserve `missedPolicy`, `missedGraceMinutes`, `history`, `dailyPlans`, `inputConfigs`, and `exitConfigs`.
+
+### 3. Contracts
+
+- Random daily plans remain deterministic for a given task/date; missed-run policy must not reshuffle random entries when the app opens later in the day.
+- `grace-run` runs overdue pending entries only while `now - plannedAt <= missedGraceMinutes * 60_000`; later entries become `missed`.
+- `run-now` runs overdue pending entries whenever the app becomes available.
+- `mark-missed` marks overdue pending entries missed without running them.
+- `runDueAutomationPlans()` must apply missed policy before collecting due entries, so delayed timers or sleep/resume paths cannot run entries that should now be missed.
+- UI components should pass task updates through store actions; components should not mutate `dailyPlans` or `history` directly.
+- Dashboard and detail-page run-now controls must call `runAutomationTaskNow(...)`; they must not rewrite missed history entries or call `runAutomationTask(...)` with an old missed entry.
+- `runAutomationTaskNow(...)` should reject missing, scriptless, or already-running project tasks and return `false` without mutating history.
+- Task `enabled` controls scheduled execution only. Manual run-now controls should still run disabled tasks when their scripts are otherwise runnable.
+- Dashboard missed-task ignore controls should call the store, preserve the original missed history row, and append a skipped/ignored history row so the task no longer appears as currently missed.
+- UI task running state must be derived from that task's own `dailyPlans[].entries[].status === "running"`, not from `automationActiveProjectRuns[projectId]`. The project-level active run map only prevents concurrent automation within a project.
+- Dashboard run-now buttons for sibling tasks should not silently disable because `automationActiveProjectRuns[projectId]` is set. Let the click reach `runAutomationTaskNow(...)`, then show the returned success/blocked feedback.
+
+### 4. Validation & Error Matrix
+
+- Missing `missedPolicy` in legacy storage -> normalize to `"grace-run"`.
+- Missing `missedGraceMinutes` in legacy storage -> normalize to `5`.
+- Negative or non-finite grace value -> normalize or validate to a non-negative minute count before scheduling.
+- App opens within grace after planned time -> pending entry remains runnable and `runDueAutomationPlans()` starts it.
+- App opens after grace -> `markMissedAutomationPlans()` records a missed history entry and the due runner skips it.
+- `run-now` overdue entry -> remains pending through missed marking and is picked up by the due runner.
+- `mark-missed` overdue entry -> becomes missed before the due runner collects entries.
+- Run-now on a missed task -> preserves the missed history row, appends a current-time plan entry, and records the new execution as a separate history row.
+- Run-now while another task in the same project is active -> returns `false` and leaves the plan/history unchanged.
+- Ignore on a missed task -> appends a skipped history row with the missed planned time and leaves the old missed row intact.
+- Disabled task run-now -> allowed when scripts exist and no same-project automation is active.
+- One task running in a project -> only that task displays `running`; sibling tasks continue showing their own latest history or pending state.
+- Same-project sibling run-now click while one task is active -> button remains clickable, `runAutomationTaskNow(...)` returns `false`, and the dashboard shows a blocked feedback message.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a 09:00 task with default policy opens at 09:03 and runs immediately.
+- Good: a 09:00 task with default policy opens at 10:00 and records `missed`.
+- Good: a 09:00 task with `run-now` opens at 10:00 and runs immediately.
+- Base: older stored tasks without missed-run fields load with the default grace policy.
+- Bad: adding fields only to `ProjectAutomationTask` and the Vue form while omitting `public/preload.js#toStoredProject`, because the setting works until plugin restart and then disappears.
+- Bad: checking only the timer path and forgetting app startup/recompute, because overdue pending entries can remain stuck or run outside policy after sleep/resume.
+
+### 6. Tests Required
+
+- `npm run type-check` after changing automation task types, store scheduling, or the Automation tab.
+- `npm run validate:project-storage` after adding, removing, or renaming persisted automation task fields.
+- `node --check public/preload.js` after changing preload storage normalization.
+- `npm run build` after changing Vue templates or scheduling state consumed by the UI.
+- Manual smoke test in browser/uTools: create tasks for each missed policy, reload/open after the planned time, and verify the pending/history status matches the policy.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+interface ProjectAutomationTask {
+  missedPolicy: ProjectAutomationMissedPolicy;
+}
+```
+
+Adding the type alone does not preserve the field through uTools project-doc writes.
+
+#### Correct
+
+```ts
+const automationTask: ProjectAutomationTask = {
+  ...candidate,
+  missedPolicy: normalizeAutomationMissedPolicy(candidate.missedPolicy),
+  missedGraceMinutes: normalizeAutomationMissedGraceMinutes(candidate.missedGraceMinutes),
+};
+```
+
+```js
+automationTasks: project.automationTasks.map((task) => ({
+  ...task,
+  missedPolicy: task.missedPolicy || "grace-run",
+  missedGraceMinutes: Number.isFinite(task.missedGraceMinutes) ? Math.max(0, Math.floor(task.missedGraceMinutes)) : 5,
+}));
+```
+
+Keep store normalization and preload persistence aligned with the shared task type.
+
 ## Scenario: Project File Browser Bridge
 
 ## Scenario: External Tool Preferences

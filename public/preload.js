@@ -2210,6 +2210,10 @@ function toStoredProject(project, index = 0) {
     automationTasks: Array.isArray(project.automationTasks)
       ? project.automationTasks.map((task) => ({
           ...task,
+          missedPolicy: task.missedPolicy || "grace-run",
+          missedGraceMinutes: Number.isFinite(task.missedGraceMinutes)
+            ? Math.max(0, Math.floor(task.missedGraceMinutes))
+            : 5,
           history: Array.isArray(task.history) ? task.history.slice(0, 20) : [],
           dailyPlans: Array.isArray(task.dailyPlans) ? task.dailyPlans : [],
           inputConfigs: Array.isArray(task.inputConfigs) ? task.inputConfigs : [],

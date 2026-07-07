@@ -13,6 +13,8 @@ import {
   ChevronDown,
   CalendarClock,
   X,
+  Play,
+  Eye,
   ArrowUpDown,
   MonitorCog,
   PackageOpen,
@@ -26,6 +28,7 @@ const searchQuery = ref("");
 const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
 const automationOverviewOpen = ref(false);
+const automationOverviewFeedback = ref("");
 const draggingProjectId = ref<string | null>(null);
 const selectedProjectGroupKey = ref("all");
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
@@ -158,22 +161,45 @@ const sortedAutomationHistory = (history: ProjectAutomationHistoryEntry[]) =>
   [...history].sort((left, right) => automationHistoryTime(right) - automationHistoryTime(left));
 const automationTasks = computed(() =>
   store.visibleProjects.flatMap((project) =>
-    (project.automationTasks || []).map((task) => ({
-      project,
-      task,
-      latestHistory: sortedAutomationHistory(task.history)[0],
-      nextEntry: task.enabled
-        ? task.dailyPlans
-            .flatMap((plan) => plan.entries)
-            .filter((entry) => entry.status === "pending" && new Date(entry.plannedAt).getTime() > Date.now())
-            .sort((left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime())[0] || null
-        : null,
-    })),
+    (project.automationTasks || []).map((task) => {
+      const entries = task.dailyPlans.flatMap((plan) => plan.entries);
+      const runningEntry = entries.find((entry) => entry.status === "running") || null;
+      return {
+        project,
+        task,
+        runningEntry,
+        currentStatus: runningEntry ? "running" : sortedAutomationHistory(task.history)[0]?.status || "pending",
+        latestHistory: sortedAutomationHistory(task.history)[0],
+        nextEntry: task.enabled
+          ? entries
+              .filter((entry) => entry.status === "pending" && new Date(entry.plannedAt).getTime() > Date.now())
+              .sort((left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime())[0] ||
+            null
+          : null,
+      };
+    }),
   ),
+);
+const missedAutomationTasks = computed(() =>
+  automationTasks.value
+    .filter((item) => !item.runningEntry && item.latestHistory?.status === "missed")
+    .sort(
+      (left, right) =>
+        new Date(right.latestHistory?.endedAt || right.latestHistory?.plannedAt || 0).getTime() -
+        new Date(left.latestHistory?.endedAt || left.latestHistory?.plannedAt || 0).getTime(),
+    ),
+);
+const automationProjectGroups = computed(() =>
+  store.visibleProjects
+    .map((project) => ({
+      project,
+      tasks: automationTasks.value.filter((item) => item.project.id === project.id),
+    }))
+    .filter((group) => group.tasks.length > 0),
 );
 const automationSummary = computed(() => {
   const enabled = automationTasks.value.filter((item) => item.task.enabled).length;
-  const running = Object.keys(store.automationActiveProjectRuns).length;
+  const running = automationTasks.value.filter((item) => item.runningEntry).length;
   const failed = automationTasks.value.filter((item) => item.latestHistory?.status === "failed").length;
   const missed = automationTasks.value.filter((item) => item.latestHistory?.status === "missed").length;
   return { total: automationTasks.value.length, enabled, running, failed, missed };
@@ -203,14 +229,45 @@ const automationStatusLabel = (status?: string) => {
   if (status === "failed") return t.value.automation.failed;
   if (status === "skipped") return t.value.automation.skipped;
   if (status === "missed") return t.value.automation.missed;
+  if (status === "running") return t.value.common.running;
   return t.value.automation.pending;
 };
+
+const automationStatusClass = (status?: string) =>
+  status === "running"
+    ? "border-status-info/30 bg-status-info/10 text-status-info"
+    : status === "completed"
+      ? "border-status-running/30 bg-status-running/10 text-status-running"
+      : status === "failed"
+        ? "border-status-error/30 bg-status-error/10 text-status-error"
+        : status === "skipped" || status === "missed"
+          ? "border-status-warning/30 bg-status-warning/10 text-status-warning"
+          : "border-border-subtle bg-surface text-on-surface-variant";
+
+const isAutomationTaskRunning = (projectId: string, taskId: string) =>
+  Boolean(automationTasks.value.find((item) => item.project.id === projectId && item.task.id === taskId)?.runningEntry);
 
 const formatAutomationDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : t.value.common.never);
 
 const openProjectAutomation = (projectId: string) => {
   automationOverviewOpen.value = false;
+  automationOverviewFeedback.value = "";
   store.openProjectAutomation(projectId);
+};
+
+const runAutomationTaskNow = (projectId: string, taskId: string) => {
+  const started = store.runAutomationTaskNow(projectId, taskId);
+  automationOverviewFeedback.value = started ? t.value.automation.runStarted : t.value.automation.runBlocked;
+};
+
+const ignoreMissedAutomationTask = (projectId: string, taskId: string) => {
+  void store.ignoreMissedAutomationTask(projectId, taskId);
+};
+
+const canRunAutomationTaskNow = (projectId: string, taskId: string) => {
+  const project = store.visibleProjects.find((item) => item.id === projectId);
+  const task = project?.automationTasks?.find((item) => item.id === taskId);
+  return Boolean(task && task.scriptIds.length > 0 && !isAutomationTaskRunning(projectId, taskId));
 };
 
 const handleProjectDragStart = (event: DragEvent, projectId: string) => {
@@ -410,56 +467,190 @@ const handleProjectDragEnd = () => {
                 <X :size="16" />
               </button>
             </div>
-            <div class="themed-scrollbar grid min-h-0 gap-3 overflow-auto p-4 md:grid-cols-2">
-              <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
-                <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.nextRun }}</div>
-                <div v-if="upcomingAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
-                  {{ t.common.noData }}
-                </div>
-                <button
-                  v-for="item in upcomingAutomationTasks"
-                  :key="`${item.project.id}-${item.task.id}-next`"
-                  type="button"
-                  class="mb-1.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
-                  @click="openProjectAutomation(item.project.id)"
-                >
-                  <span class="min-w-0">
-                    <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
-                    <span class="block truncate text-on-surface-variant">{{ item.project.name }}</span>
+            <div class="themed-scrollbar min-h-0 space-y-3 overflow-auto p-4">
+              <p
+                v-if="automationOverviewFeedback"
+                class="rounded-lg border border-status-info/20 bg-status-info/10 px-3 py-2 text-xs font-semibold text-status-info"
+              >
+                {{ automationOverviewFeedback }}
+              </p>
+              <div
+                v-if="missedAutomationTasks.length > 0"
+                class="rounded-lg border border-status-warning/30 bg-status-warning/10 p-3"
+              >
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <div class="text-xs font-bold text-status-warning">{{ t.automation.missedTasks }}</div>
+                  <span
+                    class="rounded-full border border-status-warning/30 bg-surface px-2 py-0.5 text-[10px] font-bold text-status-warning"
+                  >
+                    {{ missedAutomationTasks.length }}
                   </span>
-                  <span class="shrink-0 font-mono text-[10px] text-on-surface-variant">{{
-                    formatAutomationDateTime(item.nextEntry?.plannedAt)
-                  }}</span>
-                </button>
-              </div>
-              <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
-                <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.recentResults }}</div>
-                <div v-if="recentAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
-                  {{ t.common.noData }}
                 </div>
-                <button
-                  v-for="item in recentAutomationTasks"
-                  :key="`${item.project.id}-${item.task.id}-recent`"
-                  type="button"
-                  class="mb-1.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
-                  @click="openProjectAutomation(item.project.id)"
+                <div
+                  v-for="item in missedAutomationTasks"
+                  :key="`${item.project.id}-${item.task.id}-missed`"
+                  class="mb-1.5 flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-xs"
                 >
-                  <span class="min-w-0">
+                  <button
+                    type="button"
+                    class="min-w-0 flex-1 text-left"
+                    @click="openProjectAutomation(item.project.id)"
+                  >
                     <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
                     <span class="block truncate text-on-surface-variant">
-                      {{ item.project.name }} ·
-                      {{ formatAutomationDateTime(item.latestHistory?.endedAt || item.latestHistory?.plannedAt) }}
+                      {{ item.project.name }} · {{ formatAutomationDateTime(item.latestHistory?.plannedAt) }}
                     </span>
-                    <span v-if="item.latestHistory?.reason" class="block truncate text-[10px] text-on-surface-variant">
-                      {{ item.latestHistory.reason }}
-                    </span>
-                  </span>
-                  <span
-                    class="shrink-0 rounded-full border border-border-subtle bg-surface-container-low px-2 py-0.5 text-[10px] font-bold text-on-surface-variant"
+                  </button>
+                  <div class="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
+                      :title="t.automation.runNow"
+                      :aria-label="t.automation.runNow"
+                      @click="runAutomationTaskNow(item.project.id, item.task.id)"
+                    >
+                      <Play :size="13" />
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-status-warning/10 hover:text-status-warning"
+                      :title="t.automation.ignoreMissed"
+                      :aria-label="t.automation.ignoreMissed"
+                      @click="ignoreMissedAutomationTask(item.project.id, item.task.id)"
+                    >
+                      <X :size="13" />
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                      :title="t.automation.viewTask"
+                      :aria-label="t.automation.viewTask"
+                      @click="openProjectAutomation(item.project.id)"
+                    >
+                      <Eye :size="13" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="grid gap-3 md:grid-cols-2">
+                <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                  <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.nextRun }}</div>
+                  <div v-if="upcomingAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
+                    {{ t.common.noData }}
+                  </div>
+                  <button
+                    v-for="item in upcomingAutomationTasks"
+                    :key="`${item.project.id}-${item.task.id}-next`"
+                    type="button"
+                    class="mb-1.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
+                    @click="openProjectAutomation(item.project.id)"
                   >
-                    {{ automationStatusLabel(item.latestHistory?.status) }}
-                  </span>
-                </button>
+                    <span class="min-w-0">
+                      <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
+                      <span class="block truncate text-on-surface-variant">{{ item.project.name }}</span>
+                    </span>
+                    <span class="shrink-0 font-mono text-[10px] text-on-surface-variant">{{
+                      formatAutomationDateTime(item.nextEntry?.plannedAt)
+                    }}</span>
+                  </button>
+                </div>
+                <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                  <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.recentResults }}</div>
+                  <div v-if="recentAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
+                    {{ t.common.noData }}
+                  </div>
+                  <button
+                    v-for="item in recentAutomationTasks"
+                    :key="`${item.project.id}-${item.task.id}-recent`"
+                    type="button"
+                    class="mb-1.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
+                    @click="openProjectAutomation(item.project.id)"
+                  >
+                    <span class="min-w-0">
+                      <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
+                      <span class="block truncate text-on-surface-variant">
+                        {{ item.project.name }} ·
+                        {{ formatAutomationDateTime(item.latestHistory?.endedAt || item.latestHistory?.plannedAt) }}
+                      </span>
+                      <span
+                        v-if="item.latestHistory?.reason"
+                        class="block truncate text-[10px] text-on-surface-variant"
+                      >
+                        {{ item.latestHistory.reason }}
+                      </span>
+                    </span>
+                    <span
+                      class="shrink-0 rounded-full border border-border-subtle bg-surface-container-low px-2 py-0.5 text-[10px] font-bold text-on-surface-variant"
+                    >
+                      {{ automationStatusLabel(item.latestHistory?.status) }}
+                    </span>
+                  </button>
+                </div>
+              </div>
+              <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.allTasks }}</div>
+                <div v-if="automationProjectGroups.length === 0" class="text-xs text-on-surface-variant">
+                  {{ t.common.noData }}
+                </div>
+                <div
+                  v-for="group in automationProjectGroups"
+                  :key="group.project.id"
+                  class="mb-2 rounded-lg border border-border-subtle bg-surface p-2"
+                >
+                  <div class="mb-1.5 flex items-center gap-2">
+                    <span class="truncate text-xs font-bold text-on-surface">{{ group.project.name }}</span>
+                  </div>
+                  <div class="space-y-1">
+                    <div
+                      v-for="item in group.tasks"
+                      :key="`${item.project.id}-${item.task.id}-project`"
+                      class="flex items-center justify-between gap-2 rounded-md bg-surface-container-low px-2 py-1.5 text-xs"
+                    >
+                      <span class="min-w-0">
+                        <span class="block truncate font-semibold text-on-surface">{{ item.task.name }}</span>
+                        <span class="block truncate text-[10px] text-on-surface-variant">
+                          {{ formatAutomationDateTime(item.runningEntry?.plannedAt || item.nextEntry?.plannedAt) }}
+                        </span>
+                      </span>
+                      <div class="flex shrink-0 items-center justify-end gap-1">
+                        <span
+                          :class="
+                            cn(
+                              'inline-flex min-w-14 items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                              automationStatusClass(item.currentStatus),
+                            )
+                          "
+                        >
+                          <span
+                            v-if="item.currentStatus === 'running'"
+                            class="h-1.5 w-1.5 rounded-full bg-status-info animate-pulse"
+                          />
+                          {{ automationStatusLabel(item.currentStatus) }}
+                        </span>
+                        <button
+                          type="button"
+                          class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                          :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
+                          :title="t.automation.runNow"
+                          :aria-label="t.automation.runNow"
+                          @click="runAutomationTaskNow(item.project.id, item.task.id)"
+                        >
+                          <Play :size="12" />
+                        </button>
+                        <button
+                          type="button"
+                          class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                          :title="t.automation.viewTask"
+                          :aria-label="t.automation.viewTask"
+                          @click="openProjectAutomation(item.project.id)"
+                        >
+                          <Eye :size="12" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>

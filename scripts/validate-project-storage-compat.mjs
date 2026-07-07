@@ -124,6 +124,8 @@ const privateDocProject = {
       enabled: true,
       scriptIds: ["private-script"],
       schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+      missedPolicy: "grace-run",
+      missedGraceMinutes: 5,
       notifyEnabled: true,
       maxScriptRuntimeMinutes: 30,
       inputConfigs: [
@@ -196,6 +198,16 @@ assert.equal(
   "yes",
   "automation input configs should remain plain text through storage",
 );
+assert.equal(
+  loadedPrivateProject.automationTasks[0].missedPolicy,
+  "grace-run",
+  "automation missed policy should survive project doc loading",
+);
+assert.equal(
+  loadedPrivateProject.automationTasks[0].missedGraceMinutes,
+  5,
+  "automation missed grace should survive project doc loading",
+);
 assert.ok(docsById.has(`${projectDocPrefix}${legacyProject.id}`), "legacy-only projects should be migrated to docs");
 
 bridge.saveProjects([loadedPrivateProject]);
@@ -204,6 +216,16 @@ assert.equal(
   savedPrivateDoc.project.automationTasks[0].exitConfigs[0].matchText,
   "done",
   "automation exit configs should persist through project doc writes",
+);
+assert.equal(
+  savedPrivateDoc.project.automationTasks[0].missedPolicy,
+  "grace-run",
+  "automation missed policy should persist through project doc writes",
+);
+assert.equal(
+  savedPrivateDoc.project.automationTasks[0].missedGraceMinutes,
+  5,
+  "automation missed grace should persist through project doc writes",
 );
 
 const persistedDeviceDir = fs.mkdtempSync(path.join(os.tmpdir(), "utools-project-launch-device-"));

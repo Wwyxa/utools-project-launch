@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Clock,
   History,
+  Play,
   Plus,
   Power,
   Trash2,
@@ -18,6 +19,7 @@ import type {
   ProjectAutomationExitConfig,
   ProjectAutomationHistoryEntry,
   ProjectAutomationInputStep,
+  ProjectAutomationMissedPolicy,
   ProjectAutomationSchedule,
   ProjectAutomationTask,
 } from "../../types";
@@ -46,6 +48,8 @@ interface AutomationFormState {
   windowEnd: string;
   minIntervalMinutes: number;
   maxIntervalMinutes: number;
+  missedPolicy: ProjectAutomationMissedPolicy;
+  missedGraceMinutes: number;
   notifyEnabled: boolean;
   maxScriptRuntimeMinutes: number;
   inputConfigs: Record<string, ProjectAutomationInputStep[]>;
@@ -64,6 +68,8 @@ const createDefaultForm = (): AutomationFormState => ({
   windowEnd: "18:00",
   minIntervalMinutes: 30,
   maxIntervalMinutes: 180,
+  missedPolicy: "grace-run",
+  missedGraceMinutes: 5,
   notifyEnabled: true,
   maxScriptRuntimeMinutes: 30,
   inputConfigs: {},
@@ -134,6 +140,8 @@ const loadTask = (task: ProjectAutomationTask) => {
     form.minIntervalMinutes = task.schedule.minIntervalMinutes;
     form.maxIntervalMinutes = task.schedule.maxIntervalMinutes;
   }
+  form.missedPolicy = task.missedPolicy;
+  form.missedGraceMinutes = task.missedGraceMinutes;
   form.notifyEnabled = task.notifyEnabled;
   form.maxScriptRuntimeMinutes = task.maxScriptRuntimeMinutes;
   form.inputConfigs = Object.fromEntries(task.inputConfigs.map((config) => [config.scriptId, [...config.steps]]));
@@ -210,6 +218,8 @@ const saveTask = () => {
     enabled: form.enabled,
     scriptIds: form.scriptIds,
     schedule: scheduleFromForm(),
+    missedPolicy: form.missedPolicy,
+    missedGraceMinutes: Number(form.missedGraceMinutes),
     notifyEnabled: form.notifyEnabled,
     maxScriptRuntimeMinutes: Number(form.maxScriptRuntimeMinutes),
     inputConfigs: inputConfigsFromForm(),
@@ -240,6 +250,11 @@ const historyTime = (entry: ProjectAutomationHistoryEntry) =>
 const taskHistory = (task: ProjectAutomationTask) =>
   [...task.history].sort((left, right) => historyTime(right) - historyTime(left));
 const latestHistory = (task: ProjectAutomationTask) => taskHistory(task)[0];
+const runningEntry = (task: ProjectAutomationTask) =>
+  task.dailyPlans.flatMap((plan) => plan.entries).find((entry) => entry.status === "running") || null;
+const taskCurrentStatus = (task: ProjectAutomationTask) =>
+  runningEntry(task)?.status || latestHistory(task)?.status || "pending";
+const canRunTaskNow = (task: ProjectAutomationTask) => !runningEntry(task) && task.scriptIds.length > 0;
 
 const statusLabel = (status: string) => {
   if (status === "completed") return t.value.automation.completed;
@@ -251,13 +266,15 @@ const statusLabel = (status: string) => {
 };
 
 const statusClass = (status: string) =>
-  status === "completed"
-    ? "border-status-running/30 bg-status-running/10 text-status-running"
-    : status === "failed"
-      ? "border-status-error/30 bg-status-error/10 text-status-error"
-      : status === "skipped" || status === "missed"
-        ? "border-status-warning/30 bg-status-warning/10 text-status-warning"
-        : "border-border-subtle bg-surface-container-low text-on-surface-variant";
+  status === "running"
+    ? "border-status-info/30 bg-status-info/10 text-status-info"
+    : status === "completed"
+      ? "border-status-running/30 bg-status-running/10 text-status-running"
+      : status === "failed"
+        ? "border-status-error/30 bg-status-error/10 text-status-error"
+        : status === "skipped" || status === "missed"
+          ? "border-status-warning/30 bg-status-warning/10 text-status-warning"
+          : "border-border-subtle bg-surface-container-low text-on-surface-variant";
 </script>
 
 <template>
@@ -320,18 +337,22 @@ const statusClass = (status: string) =>
                 >
                   {{ task.enabled ? t.automation.enabled : t.automation.disabled }}
                 </span>
-                <span
-                  v-if="activeProjectRunId"
-                  class="rounded-full border border-status-info/30 bg-status-info/10 px-2 py-0.5 text-[10px] font-bold text-status-info"
-                >
-                  {{ t.common.running }}
-                </span>
               </div>
               <p class="mt-1 truncate text-xs text-on-surface-variant">
                 {{ task.scriptIds.map(scriptName).join(" -> ") }}
               </p>
             </div>
             <div class="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="!canRunTaskNow(task)"
+                :title="t.automation.runNow"
+                :aria-label="t.automation.runNow"
+                @click="store.runAutomationTaskNow(project.id, task.id)"
+              >
+                <Play :size="14" />
+              </button>
               <button
                 type="button"
                 :class="
@@ -386,12 +407,16 @@ const statusClass = (status: string) =>
               <div
                 :class="
                   cn(
-                    'mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                    statusClass(latestHistory(task)?.status || 'pending'),
+                    'mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                    statusClass(taskCurrentStatus(task)),
                   )
                 "
               >
-                {{ statusLabel(latestHistory(task)?.status || "pending") }}
+                <span
+                  v-if="taskCurrentStatus(task) === 'running'"
+                  class="h-1.5 w-1.5 rounded-full bg-status-info animate-pulse"
+                />
+                {{ statusLabel(taskCurrentStatus(task)) }}
               </div>
             </div>
             <div class="rounded-lg border border-border-subtle bg-surface px-2 py-2">
@@ -655,6 +680,28 @@ const statusClass = (status: string) =>
                         v-model.number="form.maxIntervalMinutes"
                         type="number"
                         min="1"
+                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
+                      />
+                    </label>
+                  </div>
+                  <div class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
+                    <label>
+                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.missedPolicy }}</span>
+                      <select
+                        v-model="form.missedPolicy"
+                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-on-surface"
+                      >
+                        <option value="grace-run">{{ t.automation.missedPolicyGraceRun }}</option>
+                        <option value="run-now">{{ t.automation.missedPolicyRunNow }}</option>
+                        <option value="mark-missed">{{ t.automation.missedPolicyMarkMissed }}</option>
+                      </select>
+                    </label>
+                    <label v-if="form.missedPolicy === 'grace-run'">
+                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.missedGrace }}</span>
+                      <input
+                        v-model.number="form.missedGraceMinutes"
+                        type="number"
+                        min="0"
                         class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
                       />
                     </label>

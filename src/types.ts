@@ -210,6 +210,8 @@ export interface ProjectAutomationExitConfig {
   matchText: string;
 }
 
+export type ProjectAutomationMissedPolicy = "grace-run" | "run-now" | "mark-missed";
+
 export type ProjectAutomationPlanEntryStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "missed";
 
 export interface ProjectAutomationPlanEntry {
@@ -256,6 +258,8 @@ export interface ProjectAutomationTask {
   enabled: boolean;
   scriptIds: string[];
   schedule: ProjectAutomationSchedule;
+  missedPolicy: ProjectAutomationMissedPolicy;
+  missedGraceMinutes: number;
   notifyEnabled: boolean;
   maxScriptRuntimeMinutes: number;
   inputConfigs: ProjectAutomationScriptInputConfig[];

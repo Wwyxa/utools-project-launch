@@ -27,6 +27,7 @@ import type {
   ProjectAutomationExitConfig,
   ProjectAutomationHistoryEntry,
   ProjectAutomationInputStep,
+  ProjectAutomationMissedPolicy,
   ProjectAutomationPlanEntry,
   ProjectAutomationSchedule,
   ProjectAutomationScriptInputConfig,
@@ -82,9 +83,11 @@ const defaultAutomationSchedule = (): ProjectAutomationSchedule => ({
 const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
 const AUTOMATION_HISTORY_LIMIT = 20;
 const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
+const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
 const projectKinds = new Set<ProjectKind>(["node", "python", "go", "executable", "custom"]);
 const projectScriptStatuses = new Set<ProjectScript["status"]>(["IDLE", "RUNNING", "STOPPING", "ERROR", "STOPPED"]);
 const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>(["manual", "package-json", "preset"]);
+const automationMissedPolicies = new Set<ProjectAutomationMissedPolicy>(["grace-run", "run-now", "mark-missed"]);
 let projectConfigMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
@@ -282,6 +285,16 @@ function normalizeAutomationSchedule(value: unknown): ProjectAutomationSchedule 
   return validateAutomationSchedule(schedule).valid ? schedule : defaultAutomationSchedule();
 }
 
+function normalizeAutomationMissedPolicy(value: unknown): ProjectAutomationMissedPolicy {
+  return typeof value === "string" && automationMissedPolicies.has(value as ProjectAutomationMissedPolicy)
+    ? (value as ProjectAutomationMissedPolicy)
+    : "grace-run";
+}
+
+function normalizeAutomationMissedGraceMinutes(value: unknown): number {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(Number(value))) : DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES;
+}
+
 function normalizeAutomationInputSteps(value: unknown): ProjectAutomationInputStep[] {
   const steps = Array.isArray(value) ? value : [];
   return steps.reduce<ProjectAutomationInputStep[]>((normalizedSteps, step, index) => {
@@ -433,6 +446,8 @@ function normalizeAutomationTasks(projectId: string, value: unknown): ProjectAut
           )
         : [],
       schedule: normalizeAutomationSchedule(candidate.schedule),
+      missedPolicy: normalizeAutomationMissedPolicy(candidate.missedPolicy),
+      missedGraceMinutes: normalizeAutomationMissedGraceMinutes(candidate.missedGraceMinutes),
       notifyEnabled: candidate.notifyEnabled !== false,
       maxScriptRuntimeMinutes: Number.isFinite(candidate.maxScriptRuntimeMinutes)
         ? Math.max(1, Number(candidate.maxScriptRuntimeMinutes))
@@ -2225,6 +2240,9 @@ export const useStore = defineStore("app", {
       if (!scheduleValidation.valid) {
         return scheduleValidation;
       }
+      if (task.missedPolicy === "grace-run" && task.missedGraceMinutes < 0) {
+        return { valid: false, message: "错过宽限时间不能小于 0。" };
+      }
       const invalidMatchStep = task.inputConfigs
         .flatMap((config) => config.steps)
         .find((step) => step.mode === "output-match" && (!step.matchText.trim() || step.timeoutMs < 1000));
@@ -2295,7 +2313,14 @@ export const useStore = defineStore("app", {
           }
           task.dailyPlans.forEach((plan) => {
             plan.entries.forEach((entry) => {
-              if (entry.status === "pending" && new Date(entry.plannedAt).getTime() < nowTime - 60_000) {
+              const plannedTime = new Date(entry.plannedAt).getTime();
+              const graceMs = task.missedPolicy === "grace-run" ? task.missedGraceMinutes * 60_000 : 0;
+              const shouldMiss =
+                entry.status === "pending" &&
+                plannedTime < nowTime &&
+                (task.missedPolicy === "mark-missed" ||
+                  (task.missedPolicy === "grace-run" && nowTime - plannedTime > graceMs));
+              if (shouldMiss) {
                 this.finishAutomationPlanEntry(project, task, entry, "missed", "插件未运行或计划时间已错过。", []);
                 changed = true;
               }
@@ -2308,6 +2333,7 @@ export const useStore = defineStore("app", {
       }
     },
     async runDueAutomationPlans() {
+      this.markMissedAutomationPlans();
       const nowTime = Date.now();
       const dueEntries: Array<{ project: Project; task: ProjectAutomationTask; entry: ProjectAutomationPlanEntry }> =
         [];
@@ -2353,7 +2379,7 @@ export const useStore = defineStore("app", {
           });
         });
       this.markMissedAutomationPlans();
-      this.scheduleAutomationTimer();
+      void this.runDueAutomationPlans();
     },
     createAutomationTask(projectId: string, patch: Partial<ProjectAutomationTask>) {
       const project = this.projects.find((item) => item.id === projectId);
@@ -2375,6 +2401,8 @@ export const useStore = defineStore("app", {
           exitConfigs: patch.exitConfigs || [],
           dailyPlans: [],
           history: [],
+          missedPolicy: patch.missedPolicy || "grace-run",
+          missedGraceMinutes: patch.missedGraceMinutes ?? DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES,
           createdAt: now,
           updatedAt: now,
         },
@@ -2578,6 +2606,62 @@ export const useStore = defineStore("app", {
       }
       this.scheduleAutomationTimer();
       void this.persistProjects();
+    },
+    runAutomationTaskNow(projectId: string, taskId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      const task = project?.automationTasks?.find((item) => item.id === taskId);
+      if (!project || !task || task.scriptIds.length === 0 || this.automationActiveProjectRuns[projectId]) {
+        return false;
+      }
+
+      const now = new Date();
+      const today = dateKey(now);
+      let todayPlan = task.dailyPlans.find((plan) => plan.date === today);
+      if (!todayPlan) {
+        todayPlan = generateAutomationDailyPlan(task.id, task.schedule, today);
+        task.dailyPlans = [todayPlan, ...task.dailyPlans].slice(0, 7);
+      }
+
+      const plannedAt = now.toISOString();
+      const manualEntry: ProjectAutomationPlanEntry = {
+        id: `${task.id}-${plannedAt}-manual`,
+        plannedAt,
+        status: "pending",
+        reason: "手动立即执行。",
+      };
+      todayPlan.entries = [...todayPlan.entries, manualEntry].sort(
+        (left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime(),
+      );
+      void this.runAutomationTask(projectId, taskId, manualEntry.id);
+      return true;
+    },
+    ignoreMissedAutomationTask(projectId: string, taskId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      const task = project?.automationTasks?.find((item) => item.id === taskId);
+      const missedEntry = task?.history.find((entry) => entry.status === "missed");
+      if (!project || !task || !missedEntry) {
+        return false;
+      }
+
+      const endedAt = new Date().toISOString();
+      task.history = [
+        {
+          id: createAutomationRunId(),
+          taskId: task.id,
+          taskName: task.name,
+          projectId: project.id,
+          projectName: project.name,
+          plannedAt: missedEntry.plannedAt,
+          endedAt,
+          status: "skipped",
+          reason: "已忽略错过任务。",
+          scriptResults: [],
+        },
+        ...task.history,
+      ].slice(0, AUTOMATION_HISTORY_LIMIT);
+      task.updatedAt = endedAt;
+      void this.persistProjects();
+      return true;
     },
     runAutomationScript(
       projectId: string,
