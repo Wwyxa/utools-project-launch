@@ -1315,3 +1315,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: 实现项目任务自动化
+
+**Date**: 2026-07-07
+**Task**: 实现项目任务自动化
+**Branch**: `master`
+
+### Summary
+
+完成项目任务自动化：新增任务调度、复用现有脚本执行链路、补齐任务管理界面、Dashboard 概览弹窗、执行历史展示和存储兼容验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `232cdf3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
