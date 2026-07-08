@@ -630,6 +630,9 @@ const fallbackBridge: ProjectBridge = {
   async stopProcess(): Promise<void> {
     return undefined;
   },
+  async getProcessStatus(): Promise<{ active: boolean }> {
+    return { active: true };
+  },
   async sendProcessInput(): Promise<{ sent: boolean; message?: string }> {
     return { sent: false, message: "浏览器预览无法向运行进程发送输入。" };
   },

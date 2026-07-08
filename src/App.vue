@@ -31,8 +31,19 @@ const handlePluginEnter = async (action?: unknown) => {
   if (!store.projectsLoaded) {
     await store.loadProjects();
   }
+  void store.reconcileRuntimeProcessState();
   if (searchText) {
     store.openProjectByName(searchText);
+  }
+};
+
+const handleRuntimeResume = () => {
+  void store.reconcileRuntimeProcessState();
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === "visible") {
+    handleRuntimeResume();
   }
 };
 
@@ -122,6 +133,8 @@ onMounted(() => {
     pluginOutHookRegistered = true;
   }
   window.addEventListener("project-bridge-event", handleBridgeEvent);
+  window.addEventListener("focus", handleRuntimeResume);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("keydown", handleGlobalEscape, true);
   window.addEventListener("keyup", handleGlobalEscape, true);
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", updateTheme);
@@ -129,6 +142,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("project-bridge-event", handleBridgeEvent);
+  window.removeEventListener("focus", handleRuntimeResume);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   window.removeEventListener("keydown", handleGlobalEscape, true);
   window.removeEventListener("keyup", handleGlobalEscape, true);
   window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", updateTheme);
@@ -162,39 +177,39 @@ onUnmounted(() => {
     <ProjectFormModal />
     <Teleport to="body">
       <Transition name="scale">
-      <div
-        v-if="store.pendingDeleteProject"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-        @click.self="store.cancelDeleteProject"
-      >
-        <div class="w-full max-w-sm rounded-xl border border-border-subtle bg-surface p-5 shadow-2xl">
-          <h2 class="text-base font-bold text-on-surface">{{ store.pendingDeleteProject.name }}</h2>
-          <p class="mt-2 text-sm text-on-surface-variant">
-            {{ store.pendingDeleteProject ? store.pendingDeleteProject.path : "" }}
-          </p>
-          <p class="mt-4 text-sm text-on-surface-variant">
-            {{
-              store.pendingDeleteProject
-                ? storeMessages.projectActions.deleteConfirm.replace("{name}", store.pendingDeleteProject.name)
-                : ""
-            }}
-          </p>
-          <div class="mt-5 flex justify-end gap-2">
-            <button
-              @click="store.cancelDeleteProject"
-              class="rounded-lg border border-border-subtle bg-surface px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-variant"
-            >
-              {{ storeMessages.common.cancel }}
-            </button>
-            <button
-              @click="store.confirmDeleteProject"
-              class="rounded-lg bg-status-error px-4 py-2 text-sm font-bold text-white hover:bg-status-error/90"
-            >
-              {{ storeMessages.common.delete }}
-            </button>
+        <div
+          v-if="store.pendingDeleteProject"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+          @click.self="store.cancelDeleteProject"
+        >
+          <div class="w-full max-w-sm rounded-xl border border-border-subtle bg-surface p-5 shadow-2xl">
+            <h2 class="text-base font-bold text-on-surface">{{ store.pendingDeleteProject.name }}</h2>
+            <p class="mt-2 text-sm text-on-surface-variant">
+              {{ store.pendingDeleteProject ? store.pendingDeleteProject.path : "" }}
+            </p>
+            <p class="mt-4 text-sm text-on-surface-variant">
+              {{
+                store.pendingDeleteProject
+                  ? storeMessages.projectActions.deleteConfirm.replace("{name}", store.pendingDeleteProject.name)
+                  : ""
+              }}
+            </p>
+            <div class="mt-5 flex justify-end gap-2">
+              <button
+                @click="store.cancelDeleteProject"
+                class="rounded-lg border border-border-subtle bg-surface px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-variant"
+              >
+                {{ storeMessages.common.cancel }}
+              </button>
+              <button
+                @click="store.confirmDeleteProject"
+                class="rounded-lg bg-status-error px-4 py-2 text-sm font-bold text-white hover:bg-status-error/90"
+              >
+                {{ storeMessages.common.delete }}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
       </Transition>
     </Teleport>
   </div>

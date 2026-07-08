@@ -1081,6 +1081,7 @@ export const useStore = defineStore("app", {
         this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
       });
       this.recomputeAutomationPlans();
+      void this.reconcileRuntimeProcessState();
     },
     async persistProjects() {
       try {
@@ -2329,6 +2330,102 @@ export const useStore = defineStore("app", {
         });
       });
       if (changed) {
+        void this.persistProjects();
+      }
+    },
+    reconcileOrphanedAutomationRuns() {
+      let changed = false;
+      this.projects.forEach((project) => {
+        project.automationTasks?.forEach((task) => {
+          task.dailyPlans.forEach((plan) => {
+            plan.entries.forEach((entry) => {
+              if (entry.status !== "running") {
+                return;
+              }
+
+              const hasActiveRun = this.automationActiveProjectRuns[project.id] === entry.runId;
+              const hasRunningScript = task.scriptIds.some((scriptId) => {
+                const script = project.scripts.find((item) => item.id === scriptId);
+                return script?.status === "RUNNING" || script?.status === "STOPPING";
+              });
+              const hasAutomationContext = task.scriptIds.some((scriptId) =>
+                automationScriptContexts.has(automationScriptContextKey(project.id, scriptId)),
+              );
+              if (hasRunningScript || hasAutomationContext) {
+                return;
+              }
+              if (hasActiveRun) {
+                delete this.automationActiveProjectRuns[project.id];
+              }
+
+              this.finishAutomationPlanEntry(
+                project,
+                task,
+                entry,
+                "failed",
+                "任务运行状态已失效，已在应用恢复时重置。",
+                [],
+                entry.runId,
+              );
+              changed = true;
+            });
+          });
+        });
+      });
+      return changed;
+    },
+    async reconcileRuntimeProcessState() {
+      const runningScripts = this.projects.flatMap((project) =>
+        project.scripts
+          .filter((script) => (script.status === "RUNNING" || script.status === "STOPPING") && script.pid)
+          .map((script) => ({ project, script, pid: script.pid as number })),
+      );
+      let changed = false;
+
+      const statuses = await Promise.all(
+        runningScripts.map(async ({ project, script, pid }) => {
+          try {
+            return { project, script, pid, status: await bridge.getProcessStatus(pid) };
+          } catch (error) {
+            return { project, script, pid, status: { active: true } };
+          }
+        }),
+      );
+
+      statuses.forEach(({ project, script, pid, status }) => {
+        if (status.active) {
+          return;
+        }
+
+        changed = true;
+        if (status.error) {
+          this.handleBridgeEvent({
+            type: "error",
+            projectId: project.id,
+            scriptId: script.id,
+            pid,
+            message: status.error,
+          });
+          return;
+        }
+
+        this.handleBridgeEvent({
+          type: "exit",
+          projectId: project.id,
+          scriptId: script.id,
+          pid,
+          code: status.code ?? 0,
+          signal: status.signal ?? null,
+          stoppedByUser: Boolean(status.stoppedByUser || script.status === "STOPPING"),
+        });
+      });
+
+      await Promise.resolve();
+      if (this.reconcileOrphanedAutomationRuns()) {
+        changed = true;
+      }
+      if (changed) {
+        this.scheduleAutomationTimer();
         void this.persistProjects();
       }
     },

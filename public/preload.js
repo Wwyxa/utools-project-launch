@@ -7,6 +7,8 @@ const { shell } = require("electron");
 
 const activeProcesses = new Map();
 const activeProcessMetadata = new Map();
+const completedProcessResults = new Map();
+const completedProcessResultLimit = 100;
 const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
@@ -3171,6 +3173,17 @@ function runCommand(payload) {
     }
   };
 
+  const rememberCompletedProcessResult = (result) => {
+    if (childPid <= 0) {
+      return;
+    }
+    completedProcessResults.set(childPid, result);
+    while (completedProcessResults.size > completedProcessResultLimit) {
+      const oldestPid = completedProcessResults.keys().next().value;
+      completedProcessResults.delete(oldestPid);
+    }
+  };
+
   emit({
     type: "started",
     projectId: payload.projectId,
@@ -3205,6 +3218,7 @@ function runCommand(payload) {
     }
 
     processSettled = true;
+    rememberCompletedProcessResult({ error: error?.message || "command failed" });
     cleanupProcess();
     if (childPid > 0) {
       userStoppedProcesses.delete(childPid);
@@ -3224,8 +3238,9 @@ function runCommand(payload) {
     }
 
     processSettled = true;
-    cleanupProcess();
     const stoppedByUser = childPid > 0 ? userStoppedProcesses.delete(childPid) : false;
+    rememberCompletedProcessResult({ code, signal, stoppedByUser });
+    cleanupProcess();
     emit({
       type: "exit",
       projectId: payload.projectId,
@@ -3243,6 +3258,19 @@ function runCommand(payload) {
     command: payload.command,
     cwd: resolvedCwd,
   };
+}
+
+function getProcessStatus(pid) {
+  if (activeProcesses.has(pid)) {
+    return { active: true };
+  }
+
+  const result = completedProcessResults.get(pid);
+  if (result) {
+    return { active: false, ...result };
+  }
+
+  return { active: false };
 }
 
 function stopWindowsProcessTree(pid) {
@@ -3414,6 +3442,7 @@ window.projectBridge = {
   openEditor,
   runCommand,
   stopProcess,
+  getProcessStatus,
   sendProcessInput,
   stopAllProcesses,
   openPath,
