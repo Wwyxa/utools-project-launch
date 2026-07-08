@@ -6,6 +6,8 @@ import {
   Bell,
   BellOff,
   CalendarClock,
+  Check,
+  ChevronDown,
   Clock,
   History,
   Play,
@@ -35,6 +37,7 @@ const t = useI18n();
 const editingTaskId = ref<string | null>(null);
 const formDialogOpen = ref(false);
 const feedback = ref("");
+const isMissedPolicyMenuOpen = ref(false);
 
 interface AutomationFormState {
   name: string;
@@ -80,11 +83,22 @@ const form = reactive<AutomationFormState>(createDefaultForm());
 const tasks = computed(() => props.project.automationTasks || []);
 const activeProjectRunId = computed(() => store.automationActiveProjectRuns[props.project.id] || "");
 const today = computed(() => dateKey());
+const missedPolicyOptions = computed<{ id: ProjectAutomationMissedPolicy; label: string }[]>(() => [
+  { id: "grace-run", label: t.value.automation.missedPolicyGraceRun },
+  { id: "run-now", label: t.value.automation.missedPolicyRunNow },
+  { id: "mark-missed", label: t.value.automation.missedPolicyMarkMissed },
+]);
+const missedPolicyLabel = computed(
+  () =>
+    missedPolicyOptions.value.find((option) => option.id === form.missedPolicy)?.label ||
+    t.value.automation.missedPolicyGraceRun,
+);
 
 const resetForm = () => {
   Object.assign(form, createDefaultForm());
   editingTaskId.value = null;
   feedback.value = "";
+  isMissedPolicyMenuOpen.value = false;
 };
 
 const openCreateTask = () => {
@@ -125,6 +139,7 @@ const exitConfigsFromForm = () =>
 const loadTask = (task: ProjectAutomationTask) => {
   editingTaskId.value = task.id;
   feedback.value = "";
+  isMissedPolicyMenuOpen.value = false;
   form.name = task.name;
   form.enabled = task.enabled;
   form.scriptIds = [...task.scriptIds];
@@ -170,6 +185,11 @@ const moveSelectedScript = (scriptId: string, direction: "up" | "down") => {
   const [scriptIdToMove] = nextScriptIds.splice(currentIndex, 1);
   nextScriptIds.splice(targetIndex, 0, scriptIdToMove);
   form.scriptIds = nextScriptIds;
+};
+
+const selectMissedPolicy = (policy: ProjectAutomationMissedPolicy) => {
+  form.missedPolicy = policy;
+  isMissedPolicyMenuOpen.value = false;
 };
 
 const selectedScripts = computed(() =>
@@ -479,7 +499,7 @@ const statusClass = (status: string) =>
         <div v-if="formDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
           <div
             class="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
-            @click.stop
+            @click.stop="isMissedPolicyMenuOpen = false"
           >
             <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
               <div class="min-w-0">
@@ -685,17 +705,36 @@ const statusClass = (status: string) =>
                     </label>
                   </div>
                   <div class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
-                    <label>
+                    <div>
                       <span class="mb-1 block text-on-surface-variant">{{ t.automation.missedPolicy }}</span>
-                      <select
-                        v-model="form.missedPolicy"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-on-surface"
-                      >
-                        <option value="grace-run">{{ t.automation.missedPolicyGraceRun }}</option>
-                        <option value="run-now">{{ t.automation.missedPolicyRunNow }}</option>
-                        <option value="mark-missed">{{ t.automation.missedPolicyMarkMissed }}</option>
-                      </select>
-                    </label>
+                      <div class="relative" @click.stop>
+                        <button
+                          type="button"
+                          class="ui-field flex w-full items-center justify-between gap-2 text-left font-normal"
+                          @click="isMissedPolicyMenuOpen = !isMissedPolicyMenuOpen"
+                        >
+                          <span>{{ missedPolicyLabel }}</span>
+                          <ChevronDown :size="14" class="text-on-surface-variant" />
+                        </button>
+                        <div v-if="isMissedPolicyMenuOpen" class="mode-menu-popover" @click.stop>
+                          <button
+                            v-for="option in missedPolicyOptions"
+                            :key="option.id"
+                            type="button"
+                            :class="
+                              cn(
+                                'mode-menu-item text-xs font-normal',
+                                form.missedPolicy === option.id && 'bg-primary/10 text-primary',
+                              )
+                            "
+                            @click="selectMissedPolicy(option.id)"
+                          >
+                            <span>{{ option.label }}</span>
+                            <Check v-if="form.missedPolicy === option.id" :size="13" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                     <label v-if="form.missedPolicy === 'grace-run'">
                       <span class="mb-1 block text-on-surface-variant">{{ t.automation.missedGrace }}</span>
                       <input

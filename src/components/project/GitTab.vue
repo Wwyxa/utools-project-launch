@@ -2967,7 +2967,8 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </div>
           <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
             <div class="flex shrink-0 flex-wrap items-end gap-2">
-              <label class="block w-48 text-xs font-semibold uppercase text-on-surface-variant">
+              <div class="block w-48 text-xs font-semibold uppercase text-on-surface-variant">
+                <span>模式</span>
                 <div class="relative mt-1">
                   <button
                     type="button"
@@ -2990,7 +2991,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                     </button>
                   </div>
                 </div>
-              </label>
+              </div>
               <label
                 class="mb-0.5 inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold normal-case text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
                 title="包含代码 diff 上下文"
