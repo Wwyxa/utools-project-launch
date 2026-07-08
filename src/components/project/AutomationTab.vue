@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Copy,
   History,
   Play,
   Plus,
@@ -166,6 +167,11 @@ const loadTask = (task: ProjectAutomationTask) => {
 const openEditTask = (task: ProjectAutomationTask) => {
   loadTask(task);
   formDialogOpen.value = true;
+};
+
+const duplicateTask = (task: ProjectAutomationTask) => {
+  const result = store.duplicateAutomationTask(props.project.id, task.id, `${task.name} (${t.value.common.copy})`);
+  feedback.value = result.message;
 };
 
 const toggleScript = (scriptId: string) => {
@@ -398,6 +404,15 @@ const statusClass = (status: string) =>
               >
                 <Bell v-if="task.notifyEnabled" :size="14" />
                 <BellOff v-else :size="14" />
+              </button>
+              <button
+                type="button"
+                class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                :title="t.common.copy"
+                :aria-label="t.common.copy"
+                @click="duplicateTask(task)"
+              >
+                <Copy :size="14" />
               </button>
               <button
                 type="button"

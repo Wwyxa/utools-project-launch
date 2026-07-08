@@ -2418,6 +2418,48 @@ export const useStore = defineStore("app", {
       void this.persistProjects();
       return { ok: true, message: "", task };
     },
+    duplicateAutomationTask(projectId: string, taskId: string, name: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      const sourceTask = project?.automationTasks?.find((item) => item.id === taskId);
+      if (!project || !sourceTask) {
+        return { ok: false, message: "任务不存在。" };
+      }
+
+      const now = new Date().toISOString();
+      const task: ProjectAutomationTask = normalizeAutomationTasks(projectId, [
+        {
+          ...sourceTask,
+          id: createAutomationTaskId(),
+          name,
+          scriptIds: [...sourceTask.scriptIds],
+          inputConfigs: sourceTask.inputConfigs.map((config) => ({
+            scriptId: config.scriptId,
+            steps: config.steps.map((step) => ({ ...step })),
+          })),
+          exitConfigs: sourceTask.exitConfigs.map((config) => ({ ...config })),
+          dailyPlans: [],
+          history: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      ])[0];
+      const validation = this.automationTaskValidation(projectId, task);
+      if (!validation.valid) {
+        return { ok: false, message: validation.message };
+      }
+
+      task.dailyPlans = [generateAutomationDailyPlan(task.id, task.schedule, dateKey())];
+      const sourceIndex = (project.automationTasks || []).findIndex((item) => item.id === taskId);
+      project.automationTasks = [
+        ...(project.automationTasks || []).slice(0, sourceIndex + 1),
+        task,
+        ...(project.automationTasks || []).slice(sourceIndex + 1),
+      ];
+      project.updatedAt = now;
+      this.scheduleAutomationTimer();
+      void this.persistProjects();
+      return { ok: true, message: "", task };
+    },
     updateAutomationTask(projectId: string, taskId: string, patch: Partial<ProjectAutomationTask>) {
       const project = this.projects.find((item) => item.id === projectId);
       const task = project?.automationTasks?.find((item) => item.id === taskId);
