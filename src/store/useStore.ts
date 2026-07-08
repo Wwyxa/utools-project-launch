@@ -2333,14 +2333,14 @@ export const useStore = defineStore("app", {
         void this.persistProjects();
       }
     },
-    reconcileOrphanedAutomationRuns() {
+    async reconcileOrphanedAutomationRuns() {
       let changed = false;
-      this.projects.forEach((project) => {
-        project.automationTasks?.forEach((task) => {
-          task.dailyPlans.forEach((plan) => {
-            plan.entries.forEach((entry) => {
+      for (const project of this.projects) {
+        for (const task of project.automationTasks || []) {
+          for (const plan of task.dailyPlans) {
+            for (const entry of plan.entries) {
               if (entry.status !== "running") {
-                return;
+                continue;
               }
 
               const hasActiveRun = this.automationActiveProjectRuns[project.id] === entry.runId;
@@ -2352,26 +2352,80 @@ export const useStore = defineStore("app", {
                 automationScriptContexts.has(automationScriptContextKey(project.id, scriptId)),
               );
               if (hasRunningScript || hasAutomationContext) {
-                return;
+                continue;
               }
               if (hasActiveRun) {
                 delete this.automationActiveProjectRuns[project.id];
+              }
+
+              const matchingHistory = task.history.find(
+                (historyEntry) => historyEntry.id === entry.runId || historyEntry.plannedAt === entry.plannedAt,
+              );
+              if (matchingHistory) {
+                entry.status = matchingHistory.status;
+                entry.runId = matchingHistory.id;
+                entry.reason = matchingHistory.reason;
+                changed = true;
+                continue;
+              }
+
+              const recentResults = await Promise.all(
+                task.scriptIds.map(async (scriptId) => {
+                  try {
+                    return { scriptId, result: await bridge.getRecentProcessResult(project.id, scriptId) };
+                  } catch (error) {
+                    return { scriptId, result: null };
+                  }
+                }),
+              );
+              const entryPlannedTime = new Date(entry.plannedAt).getTime();
+              const relevantResults = recentResults.filter(({ result }) => {
+                if (!result?.endedAt) {
+                  return false;
+                }
+                return new Date(result.endedAt).getTime() >= entryPlannedTime;
+              });
+
+              if (relevantResults.length === task.scriptIds.length && relevantResults.length > 0) {
+                const failedResult = relevantResults.find(({ result }) => result?.error || result?.code !== 0);
+                this.finishAutomationPlanEntry(
+                  project,
+                  task,
+                  entry,
+                  failedResult ? "failed" : "completed",
+                  failedResult
+                    ? failedResult.result?.error || `脚本退出码 ${failedResult.result?.code ?? "unknown"}。`
+                    : "",
+                  relevantResults.map(({ scriptId, result }) => ({
+                    scriptId,
+                    scriptName: project.scripts.find((script) => script.id === scriptId)?.name || scriptId,
+                    status: result?.error || result?.code !== 0 ? "failed" : "completed",
+                    endedAt: result?.endedAt,
+                    reason:
+                      result?.error || (result?.code !== 0 ? `脚本退出码 ${result?.code ?? "unknown"}。` : undefined),
+                  })),
+                  entry.runId,
+                  false,
+                );
+                changed = true;
+                continue;
               }
 
               this.finishAutomationPlanEntry(
                 project,
                 task,
                 entry,
-                "failed",
-                "任务运行状态已失效，已在应用恢复时重置。",
+                "skipped",
+                "任务运行状态已失效，已在应用恢复时忽略。",
                 [],
                 entry.runId,
+                false,
               );
               changed = true;
-            });
-          });
-        });
-      });
+            }
+          }
+        }
+      }
       return changed;
     },
     async reconcileRuntimeProcessState() {
@@ -2421,7 +2475,7 @@ export const useStore = defineStore("app", {
       });
 
       await Promise.resolve();
-      if (this.reconcileOrphanedAutomationRuns()) {
+      if (await this.reconcileOrphanedAutomationRuns()) {
         changed = true;
       }
       if (changed) {
@@ -2608,6 +2662,7 @@ export const useStore = defineStore("app", {
       reason: string,
       scriptResults: ProjectAutomationScriptResult[],
       runId = entry.runId || createAutomationRunId(),
+      notify = true,
     ) {
       entry.status = status;
       entry.runId = runId;
@@ -2630,7 +2685,7 @@ export const useStore = defineStore("app", {
         ...task.history,
       ].slice(0, AUTOMATION_HISTORY_LIMIT);
       task.updatedAt = endedAt;
-      if (task.notifyEnabled) {
+      if (notify && task.notifyEnabled) {
         try {
           window.utools?.showNotification?.(
             `任务“${task.name}”${status === "completed" ? "已完成" : status === "missed" ? "已错过" : status === "skipped" ? "已跳过" : "失败"}${reason ? `：${reason}` : ""}`,

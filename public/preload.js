@@ -8,6 +8,7 @@ const { shell } = require("electron");
 const activeProcesses = new Map();
 const activeProcessMetadata = new Map();
 const completedProcessResults = new Map();
+const completedProcessResultsByScript = new Map();
 const completedProcessResultLimit = 100;
 const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
@@ -30,6 +31,10 @@ const editorKinds = new Set(["vscode", "cursor", "custom"]);
 const aiProviderKinds = new Set(["utools", "openai-compatible", "anthropic-compatible"]);
 const aiPromptModeKinds = new Set(["git-analysis", "commit-message"]);
 const aiCommitMessageModeId = "commit-message";
+
+function processScriptKey(projectId, scriptId) {
+  return `${projectId || ""}::${scriptId || ""}`;
+}
 const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
 
 要求：
@@ -3177,10 +3182,16 @@ function runCommand(payload) {
     if (childPid <= 0) {
       return;
     }
-    completedProcessResults.set(childPid, result);
+    const resultWithEndedAt = { ...result, endedAt: new Date().toISOString() };
+    completedProcessResults.set(childPid, resultWithEndedAt);
+    completedProcessResultsByScript.set(processScriptKey(payload.projectId, payload.scriptId), resultWithEndedAt);
     while (completedProcessResults.size > completedProcessResultLimit) {
       const oldestPid = completedProcessResults.keys().next().value;
       completedProcessResults.delete(oldestPid);
+    }
+    while (completedProcessResultsByScript.size > completedProcessResultLimit) {
+      const oldestKey = completedProcessResultsByScript.keys().next().value;
+      completedProcessResultsByScript.delete(oldestKey);
     }
   };
 
@@ -3271,6 +3282,11 @@ function getProcessStatus(pid) {
   }
 
   return { active: false };
+}
+
+function getRecentProcessResult(projectId, scriptId) {
+  const result = completedProcessResultsByScript.get(processScriptKey(projectId, scriptId));
+  return result ? { active: false, ...result } : null;
 }
 
 function stopWindowsProcessTree(pid) {
@@ -3443,6 +3459,7 @@ window.projectBridge = {
   runCommand,
   stopProcess,
   getProcessStatus,
+  getRecentProcessResult,
   sendProcessInput,
   stopAllProcesses,
   openPath,

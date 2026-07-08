@@ -502,6 +502,7 @@ export interface ProjectBridgeProcessStatusResult {
   signal?: string | null;
   stoppedByUser?: boolean;
   error?: string;
+  endedAt?: string;
 }
 
 export interface ProjectBridgeTerminalLaunchPayload {
@@ -686,6 +687,7 @@ export interface ProjectBridge {
   }): Promise<ProjectBridgeRunResult>;
   stopProcess(pid: number): Promise<void>;
   getProcessStatus(pid: number): Promise<ProjectBridgeProcessStatusResult>;
+  getRecentProcessResult(projectId: string, scriptId: string): Promise<ProjectBridgeProcessStatusResult | null>;
   sendProcessInput(pid: number, input: string): Promise<ProjectBridgeSendInputResult>;
   stopAllProcesses(): Promise<void>;
   openPath(path: string): Promise<void>;
