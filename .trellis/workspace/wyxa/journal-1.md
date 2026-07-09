@@ -1381,3 +1381,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: 首页待办快捷入口
+
+**Date**: 2026-07-09
+**Task**: 首页待办快捷入口
+**Branch**: `master`
+
+### Summary
+
+新增首页未完成待办快捷入口，支持聚合查看、直接勾选完成并跳转项目备忘页；同时优化工具栏排序按钮和待办总览密度。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ed535ca` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
