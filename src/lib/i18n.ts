@@ -81,6 +81,10 @@ const messages = {
       emptyTitle: "还没有项目",
       emptySubtitle: "添加你的第一个开发项目，集中管理启动命令与运行状态。",
       emptyImport: "从配置导入",
+      todoOverview: "未完成待办",
+      todoSummary: "{count} 个未完成待办，来自 {projects} 个项目。",
+      todoEmpty: "当前没有未完成待办。",
+      completeTodo: "完成待办：{todo}",
     },
     projectKinds: {
       node: "Node.js",
@@ -487,6 +491,10 @@ const messages = {
       emptyTitle: "No projects yet",
       emptySubtitle: "Add your first project to manage launch commands and runtime status in one place.",
       emptyImport: "Import config",
+      todoOverview: "Open Todos",
+      todoSummary: "{count} open todos across {projects} projects.",
+      todoEmpty: "No open todos right now.",
+      completeTodo: "Complete todo: {todo}",
     },
     projectKinds: {
       node: "Node.js",

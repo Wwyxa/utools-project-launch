@@ -20,7 +20,9 @@ import {
   MonitorCog,
   PackageOpen,
   Download,
+  CheckSquare,
 } from "lucide-vue-next";
+import type { TodoItem } from "../../types";
 
 const store = useStore();
 const t = useI18n();
@@ -29,6 +31,7 @@ const searchQuery = ref("");
 const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
 const automationOverviewOpen = ref(false);
+const todoOverviewOpen = ref(false);
 const automationOverviewFeedback = ref("");
 const draggingProjectId = ref<string | null>(null);
 const selectedProjectGroupKey = ref("all");
@@ -41,14 +44,20 @@ interface ProjectGroupFilter {
   count: number;
 }
 
+interface ProjectTodoGroup {
+  project: Project;
+  todos: TodoItem[];
+}
+
 const projectMatchesSearch = (project: Project, query: string) =>
   project.name.toLowerCase().includes(query) ||
   project.path.toLowerCase().includes(query) ||
   project.type.toLowerCase().includes(query);
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (!automationOverviewOpen.value) return;
+  if (!automationOverviewOpen.value && !todoOverviewOpen.value) return;
   automationOverviewOpen.value = false;
+  todoOverviewOpen.value = false;
   event.detail.handle();
 };
 
@@ -239,6 +248,15 @@ const recentAutomationTasks = computed(() =>
     )
     .slice(0, 6),
 );
+const todoProjectGroups = computed<ProjectTodoGroup[]>(() =>
+  store.visibleProjects
+    .map((project) => ({
+      project,
+      todos: (store.todos[project.id] || project.todos || []).filter((todo) => !todo.completed),
+    }))
+    .filter((group) => group.todos.length > 0),
+);
+const openTodoCount = computed(() => todoProjectGroups.value.reduce((total, group) => total + group.todos.length, 0));
 
 const automationStatusLabel = (status?: string) => {
   if (status === "completed") return t.value.automation.completed;
@@ -264,6 +282,30 @@ const isAutomationTaskRunning = (projectId: string, taskId: string) =>
   Boolean(automationTasks.value.find((item) => item.project.id === projectId && item.task.id === taskId)?.runningEntry);
 
 const formatAutomationDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : t.value.common.never);
+
+const toggleTodoOverview = () => {
+  todoOverviewOpen.value = !todoOverviewOpen.value;
+  if (todoOverviewOpen.value) {
+    automationOverviewOpen.value = false;
+    automationOverviewFeedback.value = "";
+  }
+};
+
+const toggleAutomationOverview = () => {
+  automationOverviewOpen.value = !automationOverviewOpen.value;
+  if (automationOverviewOpen.value) {
+    todoOverviewOpen.value = false;
+  }
+};
+
+const openProjectMemo = (projectId: string) => {
+  todoOverviewOpen.value = false;
+  store.openProjectMemo(projectId);
+};
+
+const completeTodo = (projectId: string, todoId: string) => {
+  store.toggleTodo(projectId, todoId);
+};
 
 const openProjectAutomation = (projectId: string) => {
   automationOverviewOpen.value = false;
@@ -337,25 +379,22 @@ const handleProjectDragEnd = () => {
           </div>
           <div class="flex items-center gap-2">
             <button
-              v-if="hasSortableProjects"
-              @click="toggleSortingProjects"
+              @click="toggleTodoOverview"
               :class="
                 cn(
                   'toolbar-icon-button h-8 px-2 rounded-lg flex items-center gap-1.5 transition-colors',
-                  isSortingProjects && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
+                  todoOverviewOpen && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
                 )
               "
-              :title="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
-              :aria-label="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
-              :aria-pressed="isSortingProjects"
+              :title="t.dashboard.todoOverview"
+              :aria-label="t.dashboard.todoOverview"
+              :aria-pressed="todoOverviewOpen"
             >
-              <ArrowUpDown :size="16" />
-              <span class="text-xs font-semibold">{{
-                isSortingProjects ? t.dashboard.doneSorting : t.dashboard.sort
-              }}</span>
+              <CheckSquare :size="16" />
+              <span class="text-xs font-semibold">{{ openTodoCount }}</span>
             </button>
             <button
-              @click="automationOverviewOpen = !automationOverviewOpen"
+              @click="toggleAutomationOverview"
               :class="
                 cn(
                   'toolbar-icon-button h-8 px-2 rounded-lg flex items-center gap-1.5 transition-colors',
@@ -384,6 +423,21 @@ const handleProjectDragEnd = () => {
               :aria-label="t.sidebar.settings"
             >
               <Settings :size="18" />
+            </button>
+            <button
+              v-if="hasSortableProjects"
+              @click="toggleSortingProjects"
+              :class="
+                cn(
+                  'toolbar-icon-button p-1.5 rounded-lg transition-colors',
+                  isSortingProjects && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
+                )
+              "
+              :title="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
+              :aria-label="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
+              :aria-pressed="isSortingProjects"
+            >
+              <ArrowUpDown :size="18" />
             </button>
             <button
               @click="handleRefreshAll"
@@ -448,6 +502,99 @@ const handleProjectDragEnd = () => {
     <p v-if="store.projectStorageMessage" class="px-6 pt-3 text-xs text-on-surface-variant">
       {{ store.projectStorageMessage }}
     </p>
+
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="todoOverviewOpen"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          @click.self="todoOverviewOpen = false"
+        >
+          <section
+            class="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
+          >
+            <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+              <div class="min-w-0">
+                <h2 class="text-sm font-bold text-on-surface">{{ t.dashboard.todoOverview }}</h2>
+                <p class="mt-0.5 text-xs text-on-surface-variant">
+                  {{
+                    t.dashboard.todoSummary
+                      .replace("{count}", String(openTodoCount))
+                      .replace("{projects}", String(todoProjectGroups.length))
+                  }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                :title="t.common.close"
+                :aria-label="t.common.close"
+                @click="todoOverviewOpen = false"
+              >
+                <X :size="16" />
+              </button>
+            </div>
+            <div class="themed-scrollbar min-h-0 overflow-auto p-3">
+              <div
+                v-if="todoProjectGroups.length === 0"
+                class="rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-sm text-on-surface-variant"
+              >
+                {{ t.dashboard.todoEmpty }}
+              </div>
+              <div v-else class="overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low">
+                <div
+                  v-for="group in todoProjectGroups"
+                  :key="group.project.id"
+                  class="border-b border-border-subtle last:border-b-0"
+                >
+                  <div class="flex items-center justify-between gap-2 bg-surface-container-low px-2.5 py-1.5">
+                    <button
+                      type="button"
+                      class="min-w-0 truncate text-left text-xs font-bold text-on-surface hover:text-primary"
+                      :title="group.project.name"
+                      @click="openProjectMemo(group.project.id)"
+                    >
+                      {{ group.project.name }}
+                    </button>
+                    <span
+                      class="shrink-0 rounded-full border border-border-subtle bg-surface px-2 py-0.5 text-[10px] font-bold text-on-surface-variant"
+                    >
+                      {{ group.todos.length }}
+                    </span>
+                  </div>
+                  <div class="divide-y divide-border-subtle/60 bg-surface">
+                    <div
+                      v-for="todo in group.todos"
+                      :key="todo.id"
+                      class="flex items-start gap-2 px-2.5 py-1.5 text-sm transition-colors hover:bg-surface-variant/70"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="todo.completed"
+                        class="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-outline-variant text-primary focus:ring-primary"
+                        :aria-label="t.dashboard.completeTodo.replace('{todo}', todo.text)"
+                        :title="t.dashboard.completeTodo.replace('{todo}', todo.text)"
+                        @change="completeTodo(group.project.id, todo.id)"
+                      />
+                      <button
+                        type="button"
+                        class="min-w-0 flex-1 text-left"
+                        :title="todo.text"
+                        @click="openProjectMemo(group.project.id)"
+                      >
+                        <span class="line-clamp-2 break-words font-medium leading-5 text-on-surface">{{
+                          todo.text
+                        }}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <Transition name="scale">
