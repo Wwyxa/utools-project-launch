@@ -27,8 +27,6 @@
 
 ![Git 状态](docs/screenshots/Git状态.png)
 
-<!-- 在这里插入 Git 面板或文件预览截图 -->
-
 ## 技术栈
 
 - Vue 3 + TypeScript
