@@ -541,13 +541,13 @@ const handleProjectDragEnd = () => {
               >
                 {{ t.dashboard.todoEmpty }}
               </div>
-              <div v-else class="overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low">
+              <div v-else class="space-y-2">
                 <div
                   v-for="group in todoProjectGroups"
                   :key="group.project.id"
-                  class="border-b border-border-subtle last:border-b-0"
+                  class="border-b border-[color:color-mix(in_srgb,var(--color-border-subtle)_38%,transparent)] pb-2 last:border-b-0 last:pb-0"
                 >
-                  <div class="flex items-center justify-between gap-2 bg-surface-container-low px-2.5 py-1.5">
+                  <div class="flex items-center justify-between gap-2 px-1.5 py-1">
                     <button
                       type="button"
                       class="min-w-0 truncate text-left text-xs font-bold text-on-surface hover:text-primary"
@@ -562,11 +562,11 @@ const handleProjectDragEnd = () => {
                       {{ group.todos.length }}
                     </span>
                   </div>
-                  <div class="divide-y divide-border-subtle/60 bg-surface">
+                  <div class="space-y-0.5">
                     <div
                       v-for="todo in group.todos"
                       :key="todo.id"
-                      class="flex items-start gap-2 px-2.5 py-1.5 text-sm transition-colors hover:bg-surface-variant/70"
+                      class="flex items-start gap-2 rounded-md px-1.5 py-1.5 text-sm transition-colors hover:bg-[color:color-mix(in_srgb,var(--color-surface-container-high)_46%,transparent)]"
                     >
                       <input
                         type="checkbox"
