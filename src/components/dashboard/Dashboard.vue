@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useStore } from "../../store/useStore";
 import ProjectCard from "./ProjectCard.vue";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import type { Project, ProjectAutomationHistoryEntry } from "../../types";
 import {
   Search,
@@ -32,6 +33,7 @@ const automationOverviewFeedback = ref("");
 const draggingProjectId = ref<string | null>(null);
 const selectedProjectGroupKey = ref("all");
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
+let stopAppEscapeListener = () => {};
 
 interface ProjectGroupFilter {
   key: string;
@@ -43,6 +45,20 @@ const projectMatchesSearch = (project: Project, query: string) =>
   project.name.toLowerCase().includes(query) ||
   project.path.toLowerCase().includes(query) ||
   project.type.toLowerCase().includes(query);
+
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (!automationOverviewOpen.value) return;
+  automationOverviewOpen.value = false;
+  event.detail.handle();
+};
+
+onMounted(() => {
+  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+});
+
+onUnmounted(() => {
+  stopAppEscapeListener();
+});
 
 const projectGroupKey = (groupName: string) => (groupName ? `group:${groupName}` : "ungrouped");
 const projectGroupName = (project: Project) => project.group?.trim() || "";

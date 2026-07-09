@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -50,6 +50,7 @@ import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/u
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
@@ -124,6 +125,7 @@ const commitMessageTextareaMaxHeight = 192;
 const collapsedGitPanel = ref<CollapsedGitPanel | null>(null);
 const isGitFilesPanelCollapsed = computed(() => collapsedGitPanel.value === "files");
 const isGitGraphPanelCollapsed = computed(() => collapsedGitPanel.value === "graph");
+let stopAppEscapeListener = () => {};
 
 const collapseGitFilesPanel = () => {
   collapsedGitPanel.value = "files";
@@ -371,6 +373,50 @@ const closeFloatingControls = () => {
   isBranchMenuOpen.value = false;
   isRemoteMenuOpen.value = false;
   openDatePickerKind.value = null;
+};
+
+const hasFloatingControlsOpen = () =>
+  isAiModeMenuOpen.value ||
+  isCommitAiModeMenuOpen.value ||
+  isBranchMenuOpen.value ||
+  isRemoteMenuOpen.value ||
+  Boolean(openDatePickerKind.value);
+
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (confirmationDialog.value) {
+    closeConfirmationDialog();
+    event.detail.handle();
+    return;
+  }
+
+  if (isDiffDialogOpen.value) {
+    closeDiffDialog();
+    event.detail.handle();
+    return;
+  }
+
+  if (isRemoteDialogOpen.value) {
+    closeRemoteDialog();
+    event.detail.handle();
+    return;
+  }
+
+  if (isAiDialogOpen.value) {
+    closeAiDialog();
+    event.detail.handle();
+    return;
+  }
+
+  if (hasFloatingControlsOpen()) {
+    closeFloatingControls();
+    event.detail.handle();
+    return;
+  }
+
+  if (isCommitDetailOpen.value) {
+    closeCommitDetails();
+    event.detail.handle();
+  }
 };
 
 const remoteActionLabel = (action: GitRemoteActionName) => {
@@ -1547,6 +1593,11 @@ onBeforeUnmount(() => {
   window.clearTimeout(gitToastTimer.value);
   stopWatchingDiffDialog();
   window.removeEventListener("keydown", handleEscapeKey);
+  stopAppEscapeListener();
+});
+
+onMounted(() => {
+  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 
 watch(

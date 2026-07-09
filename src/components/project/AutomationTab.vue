@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import {
   ArrowDown,
   ArrowUp,
@@ -30,6 +30,7 @@ import { dateKey, generateAutomationDailyPlan, getNextAutomationPlanEntry } from
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 
 const props = defineProps<{ project: Project }>();
 
@@ -39,6 +40,7 @@ const editingTaskId = ref<string | null>(null);
 const formDialogOpen = ref(false);
 const feedback = ref("");
 const isMissedPolicyMenuOpen = ref(false);
+let stopAppEscapeListener = () => {};
 
 interface AutomationFormState {
   name: string;
@@ -111,6 +113,27 @@ const closeForm = () => {
   formDialogOpen.value = false;
   resetForm();
 };
+
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (isMissedPolicyMenuOpen.value) {
+    isMissedPolicyMenuOpen.value = false;
+    event.detail.handle();
+    return;
+  }
+
+  if (formDialogOpen.value) {
+    closeForm();
+    event.detail.handle();
+  }
+};
+
+onMounted(() => {
+  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+});
+
+onUnmounted(() => {
+  stopAppEscapeListener();
+});
 
 const scheduleFromForm = (): ProjectAutomationSchedule =>
   form.scheduleType === "fixed"

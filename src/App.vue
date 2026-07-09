@@ -7,6 +7,7 @@ import ProjectFormModal from "./components/project/ProjectFormModal.vue";
 import SettingsTab from "./components/layout/SettingsTab.vue";
 import EnvironmentTab from "./components/environment/EnvironmentTab.vue";
 import { useI18n } from "./lib/i18n";
+import { requestAppEscape } from "./lib/escape";
 import type { ProjectBridgeEvent } from "./types";
 
 const store = useStore();
@@ -68,11 +69,11 @@ const handleGlobalEscape = (event: KeyboardEvent) => {
 
   consumeEscape(event);
 
-  if (isTextEntryTarget(event.target)) {
+  if (event.type !== "keydown") {
     return;
   }
 
-  if (event.type !== "keydown") {
+  if (requestAppEscape(event)) {
     return;
   }
 
@@ -83,6 +84,10 @@ const handleGlobalEscape = (event: KeyboardEvent) => {
 
   if (store.pendingDeleteProject) {
     store.cancelDeleteProject();
+    return;
+  }
+
+  if (isTextEntryTarget(event.target)) {
     return;
   }
 

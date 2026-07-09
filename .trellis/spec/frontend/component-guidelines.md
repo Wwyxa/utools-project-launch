@@ -99,18 +99,32 @@ Current UI already uses those patterns in places like `src/components/layout/Top
 
 ### Convention: Global Escape Back Handling
 
-**What**: `src/App.vue` owns a capture-phase `keydown` listener that closes the project form first, then dismisses delete confirmation, then returns from project details, then returns from settings.
+**What**: `src/App.vue` owns a capture-phase `keydown` listener. It first dispatches `requestAppEscape(event)` from `src/lib/escape.ts` so mounted child dialogs and floating menus can close themselves, then closes store-owned project dialogs, then returns from project details, then returns from settings.
 
-**Why**: Escape should feel like a consistent exit path without overriding typing inside inputs, textareas, selects, or contenteditable regions.
+**Why**: Escape should feel like a consistent exit path across app-level views and locally owned modal state. Child components often own their own dialog refs, and the capture-phase listener would otherwise swallow their native `keydown` handlers.
 
 **Example**:
 
 ```ts
-const isTextEntryTarget = (target: EventTarget | null) =>
-  target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (!dialogOpen.value) return;
+  dialogOpen.value = false;
+  event.detail.handle();
+};
+
+onMounted(() => {
+  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+});
 ```
 
-**Related**: `src/App.vue`.
+**Rules**:
+
+- Dialogs and floating menus with component-local state should register `addAppEscapeRequestListener(...)` and call `event.detail.handle()` only after they actually close or intentionally keep focus inside the popup.
+- Close nested floating controls before their parent dialog when both are open.
+- Keep page-level back behavior in `src/App.vue`; do not add independent global Escape listeners for detail/settings navigation.
+- Preserve the text-entry guard for page-level back behavior, but allow dialog dismissal to run before that guard.
+
+**Related**: `src/App.vue`, `src/lib/escape.ts`.
 
 ### Convention: Conditional Advanced Inputs
 

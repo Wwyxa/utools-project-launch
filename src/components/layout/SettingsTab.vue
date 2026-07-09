@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ArrowLeft,
   Brain,
@@ -21,6 +21,7 @@ import {
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import type { AiProviderKind, DefaultEditorKind, DefaultTerminalKind, EnvironmentToolKey } from "../../types";
 
 const store = useStore();
@@ -42,6 +43,7 @@ const environmentOptions: Array<{ key: EnvironmentToolKey; label: string }> = [
   { key: "docker", label: "Docker" },
 ];
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
+let stopAppEscapeListener = () => {};
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
 const editorUsesCustomCommand = computed(() => store.editorPreferences.kind === "custom");
@@ -101,6 +103,12 @@ const selectAiModel = (model: string) => {
   isAiModelMenuOpen.value = false;
 };
 
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (!isAiModelMenuOpen.value) return;
+  isAiModelMenuOpen.value = false;
+  event.detail.handle();
+};
+
 const handleTestAi = async () => {
   await store.testAiConfiguration();
 };
@@ -136,6 +144,11 @@ const aiTestTitle = computed(() => {
 
 onMounted(() => {
   void loadAiModels();
+  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+});
+
+onUnmounted(() => {
+  stopAppEscapeListener();
 });
 
 watch(

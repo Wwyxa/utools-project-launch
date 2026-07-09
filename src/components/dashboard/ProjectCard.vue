@@ -18,6 +18,7 @@ import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { formatAbsoluteTime, formatRelativeTime } from "../../lib/time";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import ProjectIcon from "../project/ProjectIcon.vue";
 
 const props = defineProps<{
@@ -38,6 +39,7 @@ const moreScriptsOpen = ref(false);
 const moreScriptsRef = ref<HTMLElement | null>(null);
 const scriptRowRef = ref<HTMLElement | null>(null);
 const scriptMeasureRef = ref<HTMLElement | null>(null);
+let stopAppEscapeListener = () => {};
 const visibleScriptLimit = ref(3);
 const maxVisibleScriptButtons = 3;
 const scriptButtonGapFallback = 6;
@@ -341,6 +343,18 @@ const handleDocumentKeyDown = (event: KeyboardEvent) => {
   }
 };
 
+const closeMoreScripts = () => {
+  moreScriptsOpen.value = false;
+  document.removeEventListener("pointerdown", handleDocumentPointerDown);
+  document.removeEventListener("keydown", handleDocumentKeyDown);
+};
+
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (!moreScriptsOpen.value) return;
+  closeMoreScripts();
+  event.detail.handle();
+};
+
 const toggleMoreScripts = (event: MouseEvent) => {
   event.stopPropagation();
   moreScriptsOpen.value = !moreScriptsOpen.value;
@@ -348,10 +362,13 @@ const toggleMoreScripts = (event: MouseEvent) => {
     document.addEventListener("pointerdown", handleDocumentPointerDown);
     document.addEventListener("keydown", handleDocumentKeyDown);
   } else {
-    document.removeEventListener("pointerdown", handleDocumentPointerDown);
-    document.removeEventListener("keydown", handleDocumentKeyDown);
+    closeMoreScripts();
   }
 };
+
+onMounted(() => {
+  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+});
 
 onBeforeUnmount(() => {
   if (visibleScriptMeasureFrame !== null) {
@@ -359,8 +376,8 @@ onBeforeUnmount(() => {
   }
   scriptRowResizeObserver?.disconnect();
   window.removeEventListener("resize", scheduleVisibleScriptMeasure);
-  document.removeEventListener("pointerdown", handleDocumentPointerDown);
-  document.removeEventListener("keydown", handleDocumentKeyDown);
+  closeMoreScripts();
+  stopAppEscapeListener();
 });
 
 const handleDelete = (event: MouseEvent) => {
