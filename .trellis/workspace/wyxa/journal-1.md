@@ -1414,3 +1414,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: 修复后台自动化恢复误判
+
+**Date**: 2026-07-10
+**Task**: 修复后台自动化恢复误判
+**Branch**: `master`
+
+### Summary
+
+修复后台自动化进程结果跨批次关联和输出匹配成功语义丢失，补充并发恢复、停止竞态与真实 preload/store 回归验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e11d0b9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
