@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check runtime settlement, project/script status, automation scheduling, and persistence invariants."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check shared bridge types and all boundary implementations remain synchronized."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check required type-check and build quality gates."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check true non-zero exits remain failures and lifecycle cleanup behavior is unchanged."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Check process results remain attributable to the correct script and run."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check automationRunId survives every layer and exact recovery round-trip."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check no stale script-only result lookup or duplicated identity logic remains."}

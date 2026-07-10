@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines preload-to-bridge-to-Pinia runtime state contracts, settlement, persistence, and automation scheduling behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Requires shared bridge contracts in src/types.ts and synchronized real/fallback implementations."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Defines TypeScript and build quality gates for frontend/store changes."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Defines process exit/error semantics and uTools lifecycle cleanup boundaries."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Defines process lifecycle event attribution and user-visible exit logging contracts."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The automation run identity must round-trip across store, bridge, preload cache, and recovery."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Requires searching all bridge/cache call sites before changing shared identifiers and APIs."}
