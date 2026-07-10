@@ -38,6 +38,8 @@ import type {
   ProjectGitCommitMessageDiffResult,
   ProjectConfigFile,
   ProjectBridgeEvent,
+  ProjectBridgeProcessStatusResult,
+  ProjectBridgeStopProcessOptions,
   ProjectEnvironmentEntry,
   ProjectFormValue,
   ProjectGitFileChange,
@@ -90,6 +92,7 @@ const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>(["man
 const automationMissedPolicies = new Set<ProjectAutomationMissedPolicy>(["grace-run", "run-now", "mark-missed"]);
 let projectConfigMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
+let runtimeReconciliationPromise: Promise<void> | null = null;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
 const gitStatusRefreshPromises = new Map<string, Promise<void>>();
 const gitSnapshotRefreshTokens = new Map<string, symbol>();
@@ -159,6 +162,12 @@ function shouldAutomationExitOnOutput(context: AutomationScriptRuntimeContext) {
   return Boolean(
     context.inputCompleted && context.exitConfig?.matchText && context.output.includes(context.exitConfig.matchText),
   );
+}
+
+function isSuccessfulAutomationProcessResult(
+  result: Pick<ProjectBridgeProcessStatusResult, "code" | "error" | "automationExitMatched"> | null | undefined,
+) {
+  return Boolean(result && !result.error && (result.code === 0 || result.automationExitMatched === true));
 }
 
 function cancelProjectConfigMessageClear() {
@@ -738,9 +747,13 @@ function createLogEntry(message: string, type: LogEntry["type"]): LogEntry {
   };
 }
 
-function scheduleProcessStop(pid: number) {
+function scheduleProcessStop(pid: number, options?: ProjectBridgeStopProcessOptions) {
+  if (options?.automationExitMatched === true) {
+    void bridge.stopProcess(pid, options).catch(() => undefined);
+    return;
+  }
   window.setTimeout(() => {
-    void bridge.stopProcess(pid).catch(() => undefined);
+    void bridge.stopProcess(pid, options).catch(() => undefined);
   }, 0);
 }
 
@@ -1080,8 +1093,8 @@ export const useStore = defineStore("app", {
         this.scriptLogs[project.id] = this.scriptLogs[project.id] || {};
         this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
       });
+      await this.reconcileRuntimeProcessState();
       this.recomputeAutomationPlans();
-      void this.reconcileRuntimeProcessState();
     },
     async persistProjects() {
       try {
@@ -2343,7 +2356,7 @@ export const useStore = defineStore("app", {
                 continue;
               }
 
-              const hasActiveRun = this.automationActiveProjectRuns[project.id] === entry.runId;
+              const hasActiveRun = Boolean(entry.runId) && this.automationActiveProjectRuns[project.id] === entry.runId;
               const hasRunningScript = task.scriptIds.some((scriptId) => {
                 const script = project.scripts.find((item) => item.id === scriptId);
                 return script?.status === "RUNNING" || script?.status === "STOPPING";
@@ -2358,9 +2371,9 @@ export const useStore = defineStore("app", {
                 delete this.automationActiveProjectRuns[project.id];
               }
 
-              const matchingHistory = task.history.find(
-                (historyEntry) => historyEntry.id === entry.runId || historyEntry.plannedAt === entry.plannedAt,
-              );
+              const matchingHistory = entry.runId
+                ? task.history.find((historyEntry) => historyEntry.id === entry.runId)
+                : undefined;
               if (matchingHistory) {
                 entry.status = matchingHistory.status;
                 entry.runId = matchingHistory.id;
@@ -2372,7 +2385,10 @@ export const useStore = defineStore("app", {
               const recentResults = await Promise.all(
                 task.scriptIds.map(async (scriptId) => {
                   try {
-                    return { scriptId, result: await bridge.getRecentProcessResult(project.id, scriptId) };
+                    const result = entry.runId
+                      ? await bridge.getAutomationProcessResult(project.id, scriptId, entry.runId)
+                      : null;
+                    return { scriptId, result };
                   } catch (error) {
                     return { scriptId, result: null };
                   }
@@ -2380,14 +2396,14 @@ export const useStore = defineStore("app", {
               );
               const entryPlannedTime = new Date(entry.plannedAt).getTime();
               const relevantResults = recentResults.filter(({ result }) => {
-                if (!result?.endedAt) {
+                if (!entry.runId || result?.automationRunId !== entry.runId || !result.endedAt) {
                   return false;
                 }
                 return new Date(result.endedAt).getTime() >= entryPlannedTime;
               });
 
               if (relevantResults.length === task.scriptIds.length && relevantResults.length > 0) {
-                const failedResult = relevantResults.find(({ result }) => result?.error || result?.code !== 0);
+                const failedResult = relevantResults.find(({ result }) => !isSuccessfulAutomationProcessResult(result));
                 this.finishAutomationPlanEntry(
                   project,
                   task,
@@ -2396,14 +2412,16 @@ export const useStore = defineStore("app", {
                   failedResult
                     ? failedResult.result?.error || `脚本退出码 ${failedResult.result?.code ?? "unknown"}。`
                     : "",
-                  relevantResults.map(({ scriptId, result }) => ({
-                    scriptId,
-                    scriptName: project.scripts.find((script) => script.id === scriptId)?.name || scriptId,
-                    status: result?.error || result?.code !== 0 ? "failed" : "completed",
-                    endedAt: result?.endedAt,
-                    reason:
-                      result?.error || (result?.code !== 0 ? `脚本退出码 ${result?.code ?? "unknown"}。` : undefined),
-                  })),
+                  relevantResults.map(({ scriptId, result }) => {
+                    const failed = !isSuccessfulAutomationProcessResult(result);
+                    return {
+                      scriptId,
+                      scriptName: project.scripts.find((script) => script.id === scriptId)?.name || scriptId,
+                      status: failed ? "failed" : "completed",
+                      endedAt: result?.endedAt,
+                      reason: failed ? result?.error || `脚本退出码 ${result?.code ?? "unknown"}。` : undefined,
+                    };
+                  }),
                   entry.runId,
                   false,
                 );
@@ -2428,60 +2446,78 @@ export const useStore = defineStore("app", {
       }
       return changed;
     },
-    async reconcileRuntimeProcessState() {
-      const runningScripts = this.projects.flatMap((project) =>
-        project.scripts
-          .filter((script) => (script.status === "RUNNING" || script.status === "STOPPING") && script.pid)
-          .map((script) => ({ project, script, pid: script.pid as number })),
-      );
-      let changed = false;
+    reconcileRuntimeProcessState() {
+      if (runtimeReconciliationPromise) {
+        return runtimeReconciliationPromise;
+      }
 
-      const statuses = await Promise.all(
-        runningScripts.map(async ({ project, script, pid }) => {
-          try {
-            return { project, script, pid, status: await bridge.getProcessStatus(pid) };
-          } catch (error) {
-            return { project, script, pid, status: { active: true } };
+      const reconciliation = async () => {
+        const runningScripts = this.projects.flatMap((project) =>
+          project.scripts
+            .filter((script) => (script.status === "RUNNING" || script.status === "STOPPING") && script.pid)
+            .map((script) => ({ project, script, pid: script.pid as number })),
+        );
+        let changed = false;
+
+        const statuses = await Promise.all(
+          runningScripts.map(async ({ project, script, pid }) => {
+            try {
+              return { project, script, pid, status: await bridge.getProcessStatus(pid) };
+            } catch (error) {
+              return { project, script, pid, status: { active: true } };
+            }
+          }),
+        );
+
+        statuses.forEach(({ project, script, pid, status }) => {
+          if (status.active) {
+            return;
           }
-        }),
-      );
 
-      statuses.forEach(({ project, script, pid, status }) => {
-        if (status.active) {
-          return;
-        }
+          changed = true;
+          if (status.error) {
+            this.handleBridgeEvent({
+              type: "error",
+              projectId: project.id,
+              scriptId: script.id,
+              pid,
+              automationRunId: status.automationRunId,
+              automationExitMatched: status.automationExitMatched,
+              message: status.error,
+            });
+            return;
+          }
 
-        changed = true;
-        if (status.error) {
           this.handleBridgeEvent({
-            type: "error",
+            type: "exit",
             projectId: project.id,
             scriptId: script.id,
             pid,
-            message: status.error,
+            code: status.code ?? 0,
+            signal: status.signal ?? null,
+            stoppedByUser: Boolean(status.stoppedByUser || script.status === "STOPPING"),
+            automationRunId: status.automationRunId,
+            automationExitMatched: status.automationExitMatched,
           });
-          return;
-        }
-
-        this.handleBridgeEvent({
-          type: "exit",
-          projectId: project.id,
-          scriptId: script.id,
-          pid,
-          code: status.code ?? 0,
-          signal: status.signal ?? null,
-          stoppedByUser: Boolean(status.stoppedByUser || script.status === "STOPPING"),
         });
-      });
 
-      await Promise.resolve();
-      if (await this.reconcileOrphanedAutomationRuns()) {
-        changed = true;
-      }
-      if (changed) {
-        this.scheduleAutomationTimer();
-        void this.persistProjects();
-      }
+        await Promise.resolve();
+        if (await this.reconcileOrphanedAutomationRuns()) {
+          changed = true;
+        }
+        if (changed) {
+          this.scheduleAutomationTimer();
+          void this.persistProjects();
+        }
+      };
+
+      const sharedPromise = reconciliation().finally(() => {
+        if (runtimeReconciliationPromise === sharedPromise) {
+          runtimeReconciliationPromise = null;
+        }
+      });
+      runtimeReconciliationPromise = sharedPromise;
+      return sharedPromise;
     },
     async runDueAutomationPlans() {
       this.markMissedAutomationPlans();
@@ -2755,6 +2791,7 @@ export const useStore = defineStore("app", {
           const result = await this.runAutomationScript(
             projectId,
             scriptId,
+            runId,
             inputConfig?.steps || [],
             exitConfig,
             task.maxScriptRuntimeMinutes,
@@ -2865,6 +2902,7 @@ export const useStore = defineStore("app", {
     runAutomationScript(
       projectId: string,
       scriptId: string,
+      automationRunId: string,
       steps: ProjectAutomationInputStep[],
       exitConfig: ProjectAutomationExitConfig | undefined,
       maxRuntimeMinutes: number,
@@ -2877,7 +2915,7 @@ export const useStore = defineStore("app", {
       const startedAt = new Date().toISOString();
       return new Promise((resolve) => {
         const context: AutomationScriptRuntimeContext = {
-          runId: createAutomationRunId(),
+          runId: automationRunId,
           projectId,
           scriptId,
           scriptName: script.name,
@@ -2910,7 +2948,7 @@ export const useStore = defineStore("app", {
           Math.max(1, maxRuntimeMinutes) * 60_000,
         );
 
-        void this.launchScript(projectId, scriptId).then((result) => {
+        void this.launchScript(projectId, scriptId, automationRunId).then((result) => {
           if (!result) {
             settleAutomationScriptContext(context, {
               scriptId,
@@ -2957,7 +2995,10 @@ export const useStore = defineStore("app", {
         context.inputCompleted = true;
         if (shouldAutomationExitOnOutput(context)) {
           context.stopRequestedByAutomationExit = true;
-          void this.stopScript(context.projectId, context.scriptId);
+          void this.stopScript(context.projectId, context.scriptId, {
+            automationRunId: context.runId,
+            automationExitMatched: true,
+          });
         }
         return;
       }
@@ -3013,7 +3054,7 @@ export const useStore = defineStore("app", {
     },
     handleAutomationBridgeEvent(event: ProjectBridgeEvent) {
       const context = automationScriptContexts.get(automationScriptContextKey(event.projectId, event.scriptId));
-      if (!context || context.settled) {
+      if (!context || context.settled || event.automationRunId !== context.runId) {
         return;
       }
       if (event.type === "stdout" || event.type === "stderr") {
@@ -3026,13 +3067,16 @@ export const useStore = defineStore("app", {
         ) {
           void this.consumeAutomationOutputMatch(context);
         }
-        if (shouldAutomationExitOnOutput(context)) {
+        if (!context.stopRequestedByAutomationExit && shouldAutomationExitOnOutput(context)) {
           context.stopRequestedByAutomationExit = true;
-          void this.stopScript(event.projectId, event.scriptId);
+          void this.stopScript(event.projectId, event.scriptId, {
+            automationRunId: context.runId,
+            automationExitMatched: true,
+          });
         }
       }
       if (event.type === "exit") {
-        const success = event.code === 0 || context.stopRequestedByAutomationExit;
+        const success = isSuccessfulAutomationProcessResult(event);
         settleAutomationScriptContext(context, {
           scriptId: context.scriptId,
           scriptName: context.scriptName,
@@ -3057,7 +3101,7 @@ export const useStore = defineStore("app", {
         });
       }
     },
-    async launchScript(projectId: string, scriptId: string) {
+    async launchScript(projectId: string, scriptId: string, automationRunId?: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const script = project?.scripts.find((item) => item.id === scriptId);
       if (
@@ -3084,6 +3128,7 @@ export const useStore = defineStore("app", {
           cwd: resolveScriptCwd(project.path, script.cwd),
           env: project.env,
           label: `${project.name} / ${script.name}`,
+          automationRunId,
         });
 
         if (script.status === "RUNNING") {
@@ -3123,7 +3168,7 @@ export const useStore = defineStore("app", {
       }
       return results;
     },
-    async stopScript(projectId: string, scriptId: string) {
+    async stopScript(projectId: string, scriptId: string, stopOptions?: ProjectBridgeStopProcessOptions) {
       const project = this.projects.find((item) => item.id === projectId);
       const script = project?.scripts.find((item) => item.id === scriptId);
       if (!project || !script || script.status !== "RUNNING") {
@@ -3138,7 +3183,7 @@ export const useStore = defineStore("app", {
       void this.persistProjects();
 
       if (pid) {
-        scheduleProcessStop(pid);
+        scheduleProcessStop(pid, stopOptions);
       } else {
         this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "SUCCESS"), scriptId);
       }
@@ -3430,6 +3475,12 @@ export const useStore = defineStore("app", {
       this.setProjectConfigMessage(`已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`);
     },
     handleBridgeEvent(event: ProjectBridgeEvent) {
+      const automationContext = automationScriptContexts.get(
+        automationScriptContextKey(event.projectId, event.scriptId),
+      );
+      if (automationContext && event.automationRunId !== automationContext.runId) {
+        return;
+      }
       const project = this.projects.find((item) => item.id === event.projectId);
       const script = project?.scripts.find((item) => item.id === event.scriptId);
 
@@ -3462,7 +3513,7 @@ export const useStore = defineStore("app", {
 
       if (event.type === "exit") {
         const isStopped = Boolean(event.stoppedByUser || script?.status === "STOPPING");
-        const isSuccess = event.code === 0;
+        const isSuccess = isSuccessfulAutomationProcessResult(event);
         if (script) {
           script.status = isStopped ? "STOPPED" : isSuccess ? "IDLE" : "ERROR";
           script.pid = undefined;

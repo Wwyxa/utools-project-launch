@@ -344,6 +344,90 @@ automationTasks: project.automationTasks.map((task) => ({
 
 Keep store normalization and preload persistence aligned with the shared task type.
 
+## Scenario: Automation Process Result Recovery Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: an automation script finishes while the renderer is unavailable, then project loading, focus, or visibility recovery must settle the persisted running plan.
+- This requires code-spec depth because one run identity crosses the automation scheduler, Pinia store, project bridge types, uTools preload process metadata, completed-result cache, and recovery history.
+
+### 2. Signatures
+
+- `ProjectBridgeRunCommandPayload.automationRunId?: string` identifies the owning automation run; manual launches omit it.
+- `ProjectBridgeStopProcessOptions = { automationRunId?: string; automationExitMatched?: boolean }` carries an output-match stop reason without breaking `stopProcess(pid)` callers.
+- `ProjectBridgeProcessStatusResult` preserves optional `automationRunId` and `automationExitMatched` fields on completed automation results.
+- `ProjectBridgeEvent` preserves the same optional fields on process events.
+- `ProjectBridge.getAutomationProcessResult(projectId, scriptId, automationRunId)` returns only the exact batch result or `null`.
+- Store launch path: `runAutomationTask()` -> `runAutomationScript(..., automationRunId)` -> `launchScript(..., automationRunId)` -> `bridge.runCommand(...)`.
+
+### 3. Contracts
+
+- Completed automation results are indexed by `projectId + scriptId + automationRunId`. Do not restore a plan from the latest result for only a project and script.
+- Manual launches do not carry `automationRunId` and must not write into or evict the automation batch index.
+- Every script in one automation task receives the same outer plan `runId`; a later task run receives a different id.
+- Project loading must await runtime and orphan reconciliation before recomputing plans or starting due work, so a new run cannot overwrite evidence needed by an older run.
+- Focus, visibility, and initialization recovery share one in-flight reconciliation operation. The shared operation must clear after both success and failure so later recovery can retry.
+- An orphan without exact results for every configured script becomes `skipped`. Time proximity or a script-only recent result is not evidence of ownership.
+- Preload records `automationExitMatched: true` only when stop options contain the same `automationRunId` as the PID's active process metadata. A mismatched or missing run id must not create the marker.
+- Output-match stop paths pass both the current context run id and `automationExitMatched: true`. Manual stops, input/runtime timeouts, and plugin cleanup do not pass the marker.
+- Marker-bearing output-match stops must enter the bridge in the same event turn. Do not defer them through `setTimeout(0)`, because the process can close before preload records the marker.
+- A completed process is successful only when it has no explicit `error` and either `code === 0` or `automationExitMatched === true`. An explicit `error` always wins over the marker.
+- Windows `4294967295` remains failed without the marker. Do not normalize that code or any other non-zero code globally.
+- Preload retains run identity and output-match semantics in PID results, batch results, and terminal events, then clears the per-PID marker on close/error cleanup.
+- While an automation context is active, store event handling rejects missing or different `automationRunId` values before mutating script runtime state or settling the context.
+- One recovery writes one plan status and one history row whose script results agree with the recovered terminal status.
+
+### 4. Validation & Error Matrix
+
+- Batch A succeeds, then a manual run or batch B fails -> recovering A remains completed.
+- Batch A fails, then batch B succeeds -> recovering A remains failed with A's exit code.
+- One batch has multiple scripts -> recovery requires one exact result per script and preserves each script result.
+- Missing run id or missing exact result -> mark the old running entry skipped without guessing.
+- Concurrent recovery triggers -> one bridge query set and one history row.
+- Reconciliation throws -> all current callers observe the failure, the shared operation clears, and the next request can retry.
+- A due `run-now` plan exists during project load -> it starts only after old running entries are reconciled; missed-policy evaluation still runs before due collection.
+- Output match stops a Windows process with code `4294967295` -> exact batch recovery completes the script and plan.
+- The same code without `automationExitMatched` -> recovery fails and retains the exit code reason.
+- Stop options contain a stale run id -> preload ignores the marker and recovery fails.
+- Manual or timeout stop -> no output-match marker is cached.
+- Process close before a deferred output-match stop -> prevented by issuing marker-bearing stops immediately; the completed result retains the marker.
+- Result contains both `error` and `automationExitMatched: true` -> recovery fails with the explicit error.
+- A stale or identity-less terminal event arrives during a newer run -> current script state and automation context remain unchanged.
+- PID is reused after close/error -> the new process cannot inherit the previous marker.
+
+### 5. Good/Base/Bad Cases
+
+- Good: an automation output condition matches, preload validates the run id, and a renderer restart recovers the raw non-zero process result as completed from the structured marker.
+- Base: a normal code `0` result completes with or without an automation marker.
+- Bad: treating all `4294967295` results as successful, which hides real `exit -1` failures.
+- Bad: trusting an `automationExitMatched` option without comparing its run id to active PID metadata.
+- Bad: using renderer-only context state as the success source, because it disappears when the renderer closes.
+
+### 6. Tests Required
+
+- Run `npm run validate:process-results` after changing automation launch identity, preload process-result caches, recovery order, or reconciliation concurrency.
+- Run `npm run type-check` after changing bridge payload/result signatures or store actions.
+- Run `node --check public/preload.js` after changing process metadata, settlement, cache, or cleanup behavior.
+- Run `npm run validate:project-storage` and `npm run build` after changing project loading or persisted automation plans.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const success = code === 0 || code === 4294967295;
+```
+
+This converts a real Windows `exit -1` failure into success for every process.
+
+#### Correct
+
+```ts
+const success = !result.error && (result.code === 0 || result.automationExitMatched === true);
+```
+
+Persist and validate the stop reason instead of inferring intent from a platform-specific exit code.
+
 ## Scenario: Project File Browser Bridge
 
 ## Scenario: External Tool Preferences

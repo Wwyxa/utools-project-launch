@@ -8,10 +8,11 @@ const { shell } = require("electron");
 const activeProcesses = new Map();
 const activeProcessMetadata = new Map();
 const completedProcessResults = new Map();
-const completedProcessResultsByScript = new Map();
+const completedAutomationProcessResults = new Map();
 const completedProcessResultLimit = 100;
 const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
+const automationExitMatchedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const localTerminalPreferencesStorageKey = "utools-project-launch.local-settings.v1";
@@ -32,8 +33,8 @@ const aiProviderKinds = new Set(["utools", "openai-compatible", "anthropic-compa
 const aiPromptModeKinds = new Set(["git-analysis", "commit-message"]);
 const aiCommitMessageModeId = "commit-message";
 
-function processScriptKey(projectId, scriptId) {
-  return `${projectId || ""}::${scriptId || ""}`;
+function automationProcessKey(projectId, scriptId, automationRunId) {
+  return `${projectId || ""}::${scriptId || ""}::${automationRunId || ""}`;
 }
 const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
 
@@ -3166,6 +3167,7 @@ function runCommand(payload) {
     activeProcessMetadata.set(childPid, {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
+      automationRunId: payload.automationRunId,
     });
     launchedProcessIds.add(childPid);
   }
@@ -3175,6 +3177,7 @@ function runCommand(payload) {
       activeProcesses.delete(childPid);
       activeProcessMetadata.delete(childPid);
       launchedProcessIds.delete(childPid);
+      automationExitMatchedProcesses.delete(childPid);
     }
   };
 
@@ -3182,16 +3185,25 @@ function runCommand(payload) {
     if (childPid <= 0) {
       return;
     }
-    const resultWithEndedAt = { ...result, endedAt: new Date().toISOString() };
+    const resultWithEndedAt = {
+      ...result,
+      endedAt: new Date().toISOString(),
+      automationRunId: payload.automationRunId,
+    };
     completedProcessResults.set(childPid, resultWithEndedAt);
-    completedProcessResultsByScript.set(processScriptKey(payload.projectId, payload.scriptId), resultWithEndedAt);
+    if (payload.automationRunId) {
+      completedAutomationProcessResults.set(
+        automationProcessKey(payload.projectId, payload.scriptId, payload.automationRunId),
+        resultWithEndedAt,
+      );
+    }
     while (completedProcessResults.size > completedProcessResultLimit) {
       const oldestPid = completedProcessResults.keys().next().value;
       completedProcessResults.delete(oldestPid);
     }
-    while (completedProcessResultsByScript.size > completedProcessResultLimit) {
-      const oldestKey = completedProcessResultsByScript.keys().next().value;
-      completedProcessResultsByScript.delete(oldestKey);
+    while (completedAutomationProcessResults.size > completedProcessResultLimit) {
+      const oldestKey = completedAutomationProcessResults.keys().next().value;
+      completedAutomationProcessResults.delete(oldestKey);
     }
   };
 
@@ -3200,6 +3212,7 @@ function runCommand(payload) {
     projectId: payload.projectId,
     scriptId: payload.scriptId,
     pid: childPid,
+    automationRunId: payload.automationRunId,
     message: payload.command,
   });
 
@@ -3209,6 +3222,7 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
+      automationRunId: payload.automationRunId,
       message: decodeStdout(chunk),
     });
   });
@@ -3219,6 +3233,7 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
+      automationRunId: payload.automationRunId,
       message: decodeStderr(chunk),
     });
   });
@@ -3229,7 +3244,11 @@ function runCommand(payload) {
     }
 
     processSettled = true;
-    rememberCompletedProcessResult({ error: error?.message || "command failed" });
+    const automationExitMatched = childPid > 0 && automationExitMatchedProcesses.has(childPid);
+    rememberCompletedProcessResult({
+      error: error?.message || "command failed",
+      ...(automationExitMatched ? { automationExitMatched: true } : {}),
+    });
     cleanupProcess();
     if (childPid > 0) {
       userStoppedProcesses.delete(childPid);
@@ -3239,6 +3258,8 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
+      automationRunId: payload.automationRunId,
+      ...(automationExitMatched ? { automationExitMatched: true } : {}),
       message: error?.message || "command failed",
     });
   });
@@ -3250,13 +3271,21 @@ function runCommand(payload) {
 
     processSettled = true;
     const stoppedByUser = childPid > 0 ? userStoppedProcesses.delete(childPid) : false;
-    rememberCompletedProcessResult({ code, signal, stoppedByUser });
+    const automationExitMatched = childPid > 0 && automationExitMatchedProcesses.has(childPid);
+    rememberCompletedProcessResult({
+      code,
+      signal,
+      stoppedByUser,
+      ...(automationExitMatched ? { automationExitMatched: true } : {}),
+    });
     cleanupProcess();
     emit({
       type: "exit",
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
+      automationRunId: payload.automationRunId,
+      ...(automationExitMatched ? { automationExitMatched: true } : {}),
       code,
       signal,
       stoppedByUser,
@@ -3284,8 +3313,8 @@ function getProcessStatus(pid) {
   return { active: false };
 }
 
-function getRecentProcessResult(projectId, scriptId) {
-  const result = completedProcessResultsByScript.get(processScriptKey(projectId, scriptId));
+function getAutomationProcessResult(projectId, scriptId, automationRunId) {
+  const result = completedAutomationProcessResults.get(automationProcessKey(projectId, scriptId, automationRunId));
   return result ? { active: false, ...result } : null;
 }
 
@@ -3326,8 +3355,18 @@ function stopWindowsProcessTree(pid) {
   });
 }
 
-async function stopProcess(pid) {
+async function stopProcess(pid, options) {
   const child = activeProcesses.get(pid);
+  const metadata = activeProcessMetadata.get(pid);
+
+  if (
+    child &&
+    options?.automationExitMatched === true &&
+    typeof options.automationRunId === "string" &&
+    options.automationRunId === metadata?.automationRunId
+  ) {
+    automationExitMatchedProcesses.add(pid);
+  }
 
   if (child) {
     userStoppedProcesses.add(pid);
@@ -3373,6 +3412,7 @@ async function sendProcessInput(pid, input) {
         projectId: metadata.projectId,
         scriptId: metadata.scriptId,
         pid,
+        automationRunId: metadata.automationRunId,
         message: String(input ?? ""),
       });
       resolve({ sent: true });
@@ -3459,7 +3499,7 @@ window.projectBridge = {
   runCommand,
   stopProcess,
   getProcessStatus,
-  getRecentProcessResult,
+  getAutomationProcessResult,
   sendProcessInput,
   stopAllProcesses,
   openPath,

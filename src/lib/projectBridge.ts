@@ -24,6 +24,7 @@ import type {
   ProjectBridgeEditorLaunchPayload,
   ProjectBridgeEditorLaunchResult,
   ProjectBridgeRunResult,
+  ProjectBridgeStopProcessOptions,
   ProjectFileListResult,
   ProjectFileReadResult,
   ProjectFileWriteResult,
@@ -627,13 +628,13 @@ const fallbackBridge: ProjectBridge = {
       cwd: payload.cwd,
     };
   },
-  async stopProcess(): Promise<void> {
+  async stopProcess(_pid: number, _options?: ProjectBridgeStopProcessOptions): Promise<void> {
     return undefined;
   },
   async getProcessStatus(): Promise<{ active: boolean }> {
     return { active: true };
   },
-  async getRecentProcessResult(): Promise<null> {
+  async getAutomationProcessResult(): Promise<null> {
     return null;
   },
   async sendProcessInput(): Promise<{ sent: boolean; message?: string }> {

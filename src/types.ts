@@ -491,6 +491,21 @@ export interface ProjectBridgeRunResult {
   cwd: string;
 }
 
+export interface ProjectBridgeRunCommandPayload {
+  projectId: string;
+  scriptId: string;
+  command: string;
+  cwd: string;
+  env: Record<string, string>;
+  label: string;
+  automationRunId?: string;
+}
+
+export interface ProjectBridgeStopProcessOptions {
+  automationRunId?: string;
+  automationExitMatched?: boolean;
+}
+
 export interface ProjectBridgeSendInputResult {
   sent: boolean;
   message?: string;
@@ -503,6 +518,8 @@ export interface ProjectBridgeProcessStatusResult {
   stoppedByUser?: boolean;
   error?: string;
   endedAt?: string;
+  automationRunId?: string;
+  automationExitMatched?: boolean;
 }
 
 export interface ProjectBridgeTerminalLaunchPayload {
@@ -593,6 +610,8 @@ export interface ProjectBridgeEvent {
   code?: number | null;
   signal?: string | null;
   stoppedByUser?: boolean;
+  automationRunId?: string;
+  automationExitMatched?: boolean;
 }
 
 export interface ProjectBridge {
@@ -677,17 +696,14 @@ export interface ProjectBridge {
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;
   openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult>;
   openEditor(payload: ProjectBridgeEditorLaunchPayload): Promise<ProjectBridgeEditorLaunchResult>;
-  runCommand(payload: {
-    projectId: string;
-    scriptId: string;
-    command: string;
-    cwd: string;
-    env: Record<string, string>;
-    label: string;
-  }): Promise<ProjectBridgeRunResult>;
-  stopProcess(pid: number): Promise<void>;
+  runCommand(payload: ProjectBridgeRunCommandPayload): Promise<ProjectBridgeRunResult>;
+  stopProcess(pid: number, options?: ProjectBridgeStopProcessOptions): Promise<void>;
   getProcessStatus(pid: number): Promise<ProjectBridgeProcessStatusResult>;
-  getRecentProcessResult(projectId: string, scriptId: string): Promise<ProjectBridgeProcessStatusResult | null>;
+  getAutomationProcessResult(
+    projectId: string,
+    scriptId: string,
+    automationRunId: string,
+  ): Promise<ProjectBridgeProcessStatusResult | null>;
   sendProcessInput(pid: number, input: string): Promise<ProjectBridgeSendInputResult>;
   stopAllProcesses(): Promise<void>;
   openPath(path: string): Promise<void>;
