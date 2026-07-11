@@ -15,7 +15,6 @@ import {
   CalendarClock,
   X,
   Play,
-  Eye,
   ArrowUpDown,
   MonitorCog,
   PackageOpen,
@@ -652,18 +651,19 @@ const handleProjectDragEnd = () => {
                 <div
                   v-for="item in missedAutomationTasks"
                   :key="`${item.project.id}-${item.task.id}-missed`"
-                  class="mb-1.5 flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-xs"
+                  class="mb-1.5 flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-xs transition-colors hover:bg-surface-variant"
+                  role="button"
+                  tabindex="0"
+                  @click="openProjectAutomation(item.project.id)"
+                  @keydown.enter.self="openProjectAutomation(item.project.id)"
+                  @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
                 >
-                  <button
-                    type="button"
-                    class="min-w-0 flex-1 text-left"
-                    @click="openProjectAutomation(item.project.id)"
-                  >
+                  <div class="min-w-0 flex-1 text-left">
                     <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
                     <span class="block truncate text-on-surface-variant">
                       {{ item.project.name }} · {{ formatAutomationDateTime(item.latestHistory?.plannedAt) }}
                     </span>
-                  </button>
+                  </div>
                   <div class="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
@@ -671,7 +671,7 @@ const handleProjectDragEnd = () => {
                       :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
                       :title="t.automation.runNow"
                       :aria-label="t.automation.runNow"
-                      @click="runAutomationTaskNow(item.project.id, item.task.id)"
+                      @click.stop="runAutomationTaskNow(item.project.id, item.task.id)"
                     >
                       <Play :size="13" />
                     </button>
@@ -680,18 +680,9 @@ const handleProjectDragEnd = () => {
                       class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-status-warning/10 hover:text-status-warning"
                       :title="t.automation.ignoreMissed"
                       :aria-label="t.automation.ignoreMissed"
-                      @click="ignoreMissedAutomationTask(item.project.id, item.task.id)"
+                      @click.stop="ignoreMissedAutomationTask(item.project.id, item.task.id)"
                     >
                       <X :size="13" />
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
-                      :title="t.automation.viewTask"
-                      :aria-label="t.automation.viewTask"
-                      @click="openProjectAutomation(item.project.id)"
-                    >
-                      <Eye :size="13" />
                     </button>
                   </div>
                 </div>
@@ -768,7 +759,12 @@ const handleProjectDragEnd = () => {
                     <div
                       v-for="item in group.tasks"
                       :key="`${item.project.id}-${item.task.id}-project`"
-                      class="flex items-center justify-between gap-2 rounded-md bg-surface-container-low px-2 py-1.5 text-xs"
+                      class="flex cursor-pointer items-center justify-between gap-2 rounded-md bg-surface-container-low px-2 py-1.5 text-xs transition-colors hover:bg-surface-variant"
+                      role="button"
+                      tabindex="0"
+                      @click="openProjectAutomation(item.project.id)"
+                      @keydown.enter.self="openProjectAutomation(item.project.id)"
+                      @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
                     >
                       <span class="min-w-0">
                         <span class="block truncate font-semibold text-on-surface">{{ item.task.name }}</span>
@@ -797,18 +793,9 @@ const handleProjectDragEnd = () => {
                           :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
                           :title="t.automation.runNow"
                           :aria-label="t.automation.runNow"
-                          @click="runAutomationTaskNow(item.project.id, item.task.id)"
+                          @click.stop="runAutomationTaskNow(item.project.id, item.task.id)"
                         >
                           <Play :size="12" />
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-surface-variant"
-                          :title="t.automation.viewTask"
-                          :aria-label="t.automation.viewTask"
-                          @click="openProjectAutomation(item.project.id)"
-                        >
-                          <Eye :size="12" />
                         </button>
                       </div>
                     </div>
