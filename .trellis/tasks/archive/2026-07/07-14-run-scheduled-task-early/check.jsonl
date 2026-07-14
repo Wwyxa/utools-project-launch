@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review icon-button accessibility, compact UI behavior, and established Vue patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review automation state transitions, project concurrency, and manual-run contracts."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check for typed action boundaries and absence of duplicated or widened models."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run and assess the required TypeScript, build, and layout checks."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check end-to-end selection, validation, mutation, feedback, and persistence flow."}

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Follow Vue component, icon-button accessibility, Tailwind, and semantic token conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Preserve automation scheduling contracts and keep validation/mutation in Pinia actions."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Keep store action and locale usage type-safe without duplicating domain models."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply required frontend validation and UI quality checks."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify component-to-store data flow and error handling across the feature boundary."}
