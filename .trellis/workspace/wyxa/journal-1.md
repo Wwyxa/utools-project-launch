@@ -1447,3 +1447,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: 计划任务提前执行
+
+**Date**: 2026-07-14
+**Task**: 计划任务提前执行
+**Branch**: `master`
+
+### Summary
+
+为任务页及首页任务概览的未来计划条目增加提前执行入口，复用原计划条目并完善并发校验、反馈、无障碍交互与状态规范；类型检查、构建和手动验证均通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c332d31` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
