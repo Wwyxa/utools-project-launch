@@ -269,6 +269,26 @@
   backdrop-filter: blur(12px);
 }
 
+.dashboard-group-region {
+  scrollbar-color: auto;
+  scrollbar-width: auto;
+}
+
+.dashboard-group-region::-webkit-scrollbar {
+  height: 4px;
+}
+
+.dashboard-group-region::-webkit-scrollbar-track,
+.dashboard-group-region::-webkit-scrollbar-track-piece,
+.dashboard-group-region::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.dashboard-group-region::-webkit-scrollbar-thumb {
+  border: 0;
+  background: color-mix(in srgb, var(--scrollbar-thumb) 68%, transparent);
+}
+
 .toolbar-search {
   background: var(--toolbar-control-bg);
   border: 1px solid var(--color-border-subtle);

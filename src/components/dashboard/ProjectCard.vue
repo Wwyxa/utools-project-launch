@@ -524,7 +524,7 @@ const handleDelete = (event: MouseEvent) => {
     @click="handleCardSelect"
     :class="
       cn(
-        'group relative mb-2.5 border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
+        'group relative border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
         isRunning &&
           'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
         isDragging && 'opacity-55 scale-[0.99]',

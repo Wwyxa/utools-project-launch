@@ -101,3 +101,33 @@ If a test runner is added later, prefer focused component or store tests around 
 **Fix**: Delete the unused key from both locales in the same change and confirm the template no longer references it.
 
 **Prevention**: Whenever you replace a single-line visible string with structural UI, search the locale file for the old key and remove every occurrence before finishing the change.
+
+### Common Mistake: End-Aligning a Horizontally Scrollable Toolbar
+
+**Symptom**: A compact toolbar looks correctly right-aligned at its normal width, but its first buttons disappear into an unreachable negative overflow area when the viewport narrows.
+
+**Cause**: Applying `justify-end` directly to an overflowing flex row positions excess content before the scroll origin. The browser can scroll toward the end of the row, but not backward into that negative start-side overflow.
+
+**Fix**: Keep the outer dashboard toolbar non-scrollable with `overflow-x-clip`. Put `overflow-x-auto` only on the `min-w-0 flex-1` group region, and keep the intrinsic action region as a `w-max shrink-0` sibling. Use compact padding and gaps below `sm` instead of a fixed minimum row width.
+
+```vue
+<div class="overflow-x-clip px-3 sm:px-6">
+	<div class="flex min-w-0 items-center gap-2 sm:gap-4">
+		<div class="min-w-0 flex-1 overflow-x-auto"><!-- group chips --></div>
+		<div class="w-max shrink-0"><!-- compact toolbar actions --></div>
+	</div>
+</div>
+```
+
+When an action region swaps between a button row and an absolute overlay such as search, do not hard-code the region width from one browser measurement. Keep the complete button row in normal flow with `w-max` so it owns the intrinsic region width, then place the alternate state with `absolute inset-0`. The hidden in-flow row may use opacity, `inert`, and `pointer-events-none`, but it must continue sizing the region.
+
+```vue
+<div class="relative h-8 w-max shrink-0">
+	<div class="absolute inset-0"><!-- search overlay --></div>
+	<div class="flex h-8 w-max items-center gap-2"><!-- sizing action row --></div>
+</div>
+```
+
+Do not put `overflow-x-auto` on this fixed action region. A transformed hidden layer can also increase `scrollWidth` even though it is transparent; keep its translation toward existing interior space or explicitly clip it after confirming that controls and focus rings remain visible.
+
+**Prevention**: Test the toolbar at normal, compact, and actual host-like dimensions. For uTools, include a narrow CSS viewport with `deviceScaleFactor: 1.25`. Assert that the action region and its sizing row have equal widths, `clientWidth === scrollWidth` for the action region and outer toolbar, first and last controls fit, and only the group region gains `scrollWidth > clientWidth` when chips are forced to overflow. At widths below the intrinsic action width, the outer toolbar may clip, but it must keep `scrollLeft === 0`, expose no scrollbar, and preserve geometry throughout search transitions.
