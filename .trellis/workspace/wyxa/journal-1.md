@@ -1480,3 +1480,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: 优化首页工具栏与项目布局
+
+**Date**: 2026-07-14
+**Task**: 优化首页工具栏与项目布局
+**Branch**: `master`
+
+### Summary
+
+重构首页分组与搜索工具栏，修复 uTools 紧凑窗口滚动和刷新按钮尺寸问题，并统一项目卡片间距。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a2a2f2c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
