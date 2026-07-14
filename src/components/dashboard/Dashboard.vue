@@ -194,12 +194,10 @@ const automationTasks = computed(() =>
         runningEntry,
         currentStatus: runningEntry ? "running" : sortedAutomationHistory(task.history)[0]?.status || "pending",
         latestHistory: sortedAutomationHistory(task.history)[0],
-        nextEntry: task.enabled
-          ? entries
-              .filter((entry) => entry.status === "pending" && new Date(entry.plannedAt).getTime() > Date.now())
-              .sort((left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime())[0] ||
-            null
-          : null,
+        nextEntry:
+          entries
+            .filter((entry) => entry.status === "pending" && new Date(entry.plannedAt).getTime() > Date.now())
+            .sort((left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime())[0] || null,
       };
     }),
   ),
@@ -314,6 +312,11 @@ const openProjectAutomation = (projectId: string) => {
 
 const runAutomationTaskNow = (projectId: string, taskId: string) => {
   const started = store.runAutomationTaskNow(projectId, taskId);
+  automationOverviewFeedback.value = started ? t.value.automation.runStarted : t.value.automation.runBlocked;
+};
+
+const runAutomationPlanEntryEarly = (projectId: string, taskId: string, entryId: string) => {
+  const started = store.runAutomationPlanEntryEarly(projectId, taskId, entryId);
   automationOverviewFeedback.value = started ? t.value.automation.runStarted : t.value.automation.runBlocked;
 };
 
@@ -633,6 +636,8 @@ const handleProjectDragEnd = () => {
               <p
                 v-if="automationOverviewFeedback"
                 class="rounded-lg border border-status-info/20 bg-status-info/10 px-3 py-2 text-xs font-semibold text-status-info"
+                role="status"
+                aria-live="polite"
               >
                 {{ automationOverviewFeedback }}
               </p>
@@ -693,21 +698,42 @@ const handleProjectDragEnd = () => {
                   <div v-if="upcomingAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
                     {{ t.common.noData }}
                   </div>
-                  <button
+                  <div
                     v-for="item in upcomingAutomationTasks"
                     :key="`${item.project.id}-${item.task.id}-next`"
-                    type="button"
-                    class="mb-1.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
+                    class="mb-1.5 flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
+                    role="button"
+                    tabindex="0"
                     @click="openProjectAutomation(item.project.id)"
+                    @keydown.enter.self="openProjectAutomation(item.project.id)"
+                    @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
                   >
-                    <span class="min-w-0">
+                    <span class="min-w-0 flex-1">
                       <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
                       <span class="block truncate text-on-surface-variant">{{ item.project.name }}</span>
                     </span>
-                    <span class="shrink-0 font-mono text-[10px] text-on-surface-variant">{{
-                      formatAutomationDateTime(item.nextEntry?.plannedAt)
-                    }}</span>
-                  </button>
+                    <span class="flex min-w-0 max-w-[70%] shrink items-center gap-1">
+                      <span
+                        class="min-w-0 truncate font-mono text-[10px] text-on-surface-variant"
+                        :title="formatAutomationDateTime(item.nextEntry?.plannedAt)"
+                      >
+                        {{ formatAutomationDateTime(item.nextEntry?.plannedAt) }}
+                      </span>
+                      <button
+                        v-if="item.nextEntry"
+                        type="button"
+                        class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                        :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
+                        :title="t.automation.runEarly"
+                        :aria-label="t.automation.runEarly"
+                        @click.stop="runAutomationPlanEntryEarly(item.project.id, item.task.id, item.nextEntry.id)"
+                        @keydown.enter.stop
+                        @keydown.space.stop
+                      >
+                        <Play :size="13" />
+                      </button>
+                    </span>
+                  </div>
                 </div>
                 <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
                   <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.recentResults }}</div>

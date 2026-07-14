@@ -23,6 +23,7 @@ import type {
   ProjectAutomationHistoryEntry,
   ProjectAutomationInputStep,
   ProjectAutomationMissedPolicy,
+  ProjectAutomationPlanEntry,
   ProjectAutomationSchedule,
   ProjectAutomationTask,
 } from "../../types";
@@ -39,6 +40,7 @@ const t = useI18n();
 const editingTaskId = ref<string | null>(null);
 const formDialogOpen = ref(false);
 const feedback = ref("");
+const actionFeedback = ref<{ message: string; tone: "success" | "warning" } | null>(null);
 const isMissedPolicyMenuOpen = ref(false);
 let stopAppEscapeListener = () => {};
 
@@ -304,6 +306,16 @@ const runningEntry = (task: ProjectAutomationTask) =>
 const taskCurrentStatus = (task: ProjectAutomationTask) =>
   runningEntry(task)?.status || latestHistory(task)?.status || "pending";
 const canRunTaskNow = (task: ProjectAutomationTask) => !runningEntry(task) && task.scriptIds.length > 0;
+const isFuturePendingPlanEntry = (entry: ProjectAutomationPlanEntry) =>
+  entry.status === "pending" && new Date(entry.plannedAt).getTime() > Date.now();
+const canRunPlanEntryEarly = (task: ProjectAutomationTask) => !runningEntry(task) && task.scriptIds.length > 0;
+const runPlanEntryEarly = (task: ProjectAutomationTask, entry: ProjectAutomationPlanEntry) => {
+  const started = store.runAutomationPlanEntryEarly(props.project.id, task.id, entry.id);
+  actionFeedback.value = {
+    message: started ? t.value.automation.runStarted : t.value.automation.runBlocked,
+    tone: started ? "success" : "warning",
+  };
+};
 
 const statusLabel = (status: string) => {
   if (status === "completed") return t.value.automation.completed;
@@ -351,6 +363,21 @@ const statusClass = (status: string) =>
         </div>
       </div>
       <div class="themed-scrollbar h-full min-h-0 space-y-3 overflow-auto p-3 pb-12">
+        <div
+          v-if="actionFeedback"
+          :class="
+            cn(
+              'sticky top-0 z-10 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm',
+              actionFeedback.tone === 'success'
+                ? 'border-status-running/30 bg-status-running/10 text-status-running'
+                : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+            )
+          "
+          role="status"
+          aria-live="polite"
+        >
+          {{ actionFeedback.message }}
+        </div>
         <div
           v-if="tasks.length === 0"
           class="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border-subtle bg-surface-container-low p-6 text-sm text-on-surface-variant"
@@ -496,6 +523,17 @@ const statusClass = (status: string) =>
               "
             >
               <Clock :size="11" /> {{ formatTime(entry.plannedAt) }} · {{ statusLabel(entry.status) }}
+              <button
+                v-if="isFuturePendingPlanEntry(entry)"
+                type="button"
+                class="ml-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-surface text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="!canRunPlanEntryEarly(task)"
+                :title="t.automation.runEarly"
+                :aria-label="t.automation.runEarly"
+                @click="runPlanEntryEarly(task, entry)"
+              >
+                <Play :size="10" />
+              </button>
             </span>
           </div>
           <details class="mt-3 rounded-lg border border-border-subtle bg-surface px-3 py-2">

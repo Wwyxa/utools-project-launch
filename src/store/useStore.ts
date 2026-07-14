@@ -2843,6 +2843,29 @@ export const useStore = defineStore("app", {
       this.scheduleAutomationTimer();
       void this.persistProjects();
     },
+    runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      const task = project?.automationTasks?.find((item) => item.id === taskId);
+      const entry = task?.dailyPlans
+        .find((plan) => plan.date === dateKey())
+        ?.entries.find((item) => item.id === entryId);
+      const plannedAtTime = entry ? new Date(entry.plannedAt).getTime() : Number.NaN;
+      if (
+        !project ||
+        !task ||
+        !entry ||
+        entry.status !== "pending" ||
+        !Number.isFinite(plannedAtTime) ||
+        plannedAtTime <= Date.now() ||
+        task.scriptIds.length === 0 ||
+        this.automationActiveProjectRuns[projectId]
+      ) {
+        return false;
+      }
+
+      void this.runAutomationTask(projectId, taskId, entryId);
+      return true;
+    },
     runAutomationTaskNow(projectId: string, taskId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const task = project?.automationTasks?.find((item) => item.id === taskId);

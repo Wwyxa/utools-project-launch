@@ -253,6 +253,7 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 ### 1. Scope / Trigger
 
 - Trigger: automation task scheduling fields are edited in `AutomationTab.vue`, normalized in the Pinia store, persisted through browser fallback or uTools preload storage, then hydrated after plugin restart.
+- Trigger: generated plan entries are exposed for explicit early execution from both `AutomationTab.vue` and the Dashboard task overview.
 - This requires code-spec depth because task behavior depends on a persisted `ProjectAutomationTask` shape crossing `src/types.ts`, `src/store/useStore.ts`, `public/preload.js`, and storage compatibility checks.
 
 ### 2. Signatures
@@ -261,6 +262,7 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - `ProjectAutomationTask.missedPolicy: ProjectAutomationMissedPolicy`.
 - `ProjectAutomationTask.missedGraceMinutes: number`.
 - Store action: `runAutomationTaskNow(projectId: string, taskId: string): boolean` creates a current-time pending entry and starts the existing automation execution flow.
+- Store action: `runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string): boolean` starts one already-generated future entry through the existing automation execution flow without creating a manual entry.
 - Store normalization: `normalizeAutomationTasks(projectId, value)` must fill missing legacy values with `missedPolicy: "grace-run"` and `missedGraceMinutes: 5`.
 - uTools preload persistence path: `toStoredProject(project).automationTasks[]` must preserve `missedPolicy`, `missedGraceMinutes`, `history`, `dailyPlans`, `inputConfigs`, and `exitConfigs`.
 
@@ -274,7 +276,13 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - UI components should pass task updates through store actions; components should not mutate `dailyPlans` or `history` directly.
 - Dashboard and detail-page run-now controls must call `runAutomationTaskNow(...)`; they must not rewrite missed history entries or call `runAutomationTask(...)` with an old missed entry.
 - `runAutomationTaskNow(...)` should reject missing, scriptless, or already-running project tasks and return `false` without mutating history.
+- `runAutomationPlanEntryEarly(...)` must resolve `entryId` only from today's plan and accept it only while the entry is `pending`, has a finite `plannedAt`, and remains strictly in the future at the store boundary.
+- Early execution must pass the original `entryId` to `runAutomationTask(...)`. It must preserve the entry's original `plannedAt`, consume that entry's status, and never append the `manual` entry used by task-level run-now.
+- Entry-level early-run controls may pre-filter obvious unavailable states, but the store action remains the final race-safe validation boundary. The first accepted run synchronously changes the entry from `pending` to `running` before awaiting scripts, preventing a second click or due timer from starting it again.
 - Task `enabled` controls scheduled execution only. Manual run-now controls should still run disabled tasks when their scripts are otherwise runnable.
+- Task `enabled` also must not block explicit early execution of an already-generated future entry.
+- Dashboard `upcomingAutomationTasks[].nextEntry` must select the earliest future `pending` entry regardless of `task.enabled`, then pass that exact entry id to `runAutomationPlanEntryEarly(...)`. Hiding disabled tasks here would make an allowed explicit action unreachable.
+- Dashboard early-run controls must keep the task-overview row's mouse and Enter/Space detail navigation, stop action-button events from triggering that navigation, and report the action's boolean result through the overview feedback region.
 - Dashboard missed-task ignore controls should call the store, preserve the original missed history row, and append a skipped/ignored history row so the task no longer appears as currently missed.
 - UI task running state must be derived from that task's own `dailyPlans[].entries[].status === "running"`, not from `automationActiveProjectRuns[projectId]`. The project-level active run map only prevents concurrent automation within a project.
 - Dashboard run-now buttons for sibling tasks should not silently disable because `automationActiveProjectRuns[projectId]` is set. Let the click reach `runAutomationTaskNow(...)`, then show the returned success/blocked feedback.
@@ -292,6 +300,11 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - Run-now while another task in the same project is active -> returns `false` and leaves the plan/history unchanged.
 - Ignore on a missed task -> appends a skipped history row with the missed planned time and leaves the old missed row intact.
 - Disabled task run-now -> allowed when scripts exist and no same-project automation is active.
+- Disabled task early-run on a valid future entry -> allowed when scripts exist and no same-project automation is active.
+- Disabled task with a generated future entry -> remains visible in Dashboard's next-run list and exposes the early-run control.
+- Early-run target belongs to another date, is due/past, has an invalid date, or is no longer `pending` -> return `false` without changing the plan or history.
+- Two early-run clicks race for the same entry -> the first accepted call synchronously marks it `running`; the second returns `false` or reaches no runnable entry, and only one history row is produced.
+- Early-run completes before the original time -> the due scheduler ignores the completed/failed entry because it is no longer `pending`.
 - One task running in a project -> only that task displays `running`; sibling tasks continue showing their own latest history or pending state.
 - Same-project sibling run-now click while one task is active -> button remains clickable, `runAutomationTaskNow(...)` returns `false`, and the dashboard shows a blocked feedback message.
 
@@ -300,17 +313,25 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - Good: a 09:00 task with default policy opens at 09:03 and runs immediately.
 - Good: a 09:00 task with default policy opens at 10:00 and records `missed`.
 - Good: a 09:00 task with `run-now` opens at 10:00 and runs immediately.
+- Good: at 08:30 the user runs the already-generated 09:00 entry early; the 09:00 entry becomes running/completed, history keeps `plannedAt = 09:00`, and no second run occurs at 09:00.
 - Base: older stored tasks without missed-run fields load with the default grace policy.
+- Base: disabling scheduled execution still allows the user to explicitly run a generated future entry early.
+- Base: Dashboard next-run row opens project automation details, while its nested early-run control consumes the listed entry without navigating.
 - Bad: adding fields only to `ProjectAutomationTask` and the Vue form while omitting `public/preload.js#toStoredProject`, because the setting works until plugin restart and then disappears.
 - Bad: checking only the timer path and forgetting app startup/recompute, because overdue pending entries can remain stuck or run outside policy after sleep/resume.
+- Bad: implementing early execution by calling `runAutomationTaskNow(...)`, because that appends a separate current-time `manual` entry and leaves the selected future entry pending for a duplicate scheduled run.
+- Bad: gating Dashboard `nextEntry` with `task.enabled`, because disabled tasks may still have generated future entries that are valid explicit early-run targets.
 
 ### 6. Tests Required
 
 - `npm run type-check` after changing automation task types, store scheduling, or the Automation tab.
+- `npm run build` after adding or changing entry-level scheduling controls in the Automation tab.
 - `npm run validate:project-storage` after adding, removing, or renaming persisted automation task fields.
 - `node --check public/preload.js` after changing preload storage normalization.
 - `npm run build` after changing Vue templates or scheduling state consumed by the UI.
 - Manual smoke test in browser/uTools: create tasks for each missed policy, reload/open after the planned time, and verify the pending/history status matches the policy.
+- Manual smoke test in browser/uTools: run one of multiple future entries early, assert the selected entry is consumed with its original `plannedAt`, no `manual` entry is added, and the original due time does not trigger it again.
+- Manual smoke test in the Dashboard task overview: verify enabled and disabled tasks with future entries appear in the next-run list, the action button remains visible at narrow widths, and action clicks do not open project details.
 
 ### 7. Wrong vs Correct
 
@@ -343,6 +364,47 @@ automationTasks: project.automationTasks.map((task) => ({
 ```
 
 Keep store normalization and preload persistence aligned with the shared task type.
+
+#### Wrong
+
+```ts
+runAutomationPlanEntryEarly(projectId: string, taskId: string) {
+  return this.runAutomationTaskNow(projectId, taskId);
+}
+```
+
+This creates a separate manual plan entry and leaves the user's selected generated entry eligible for its original timer.
+
+#### Correct
+
+```ts
+runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string) {
+  const entry = todayPlan?.entries.find((item) => item.id === entryId);
+  if (!entry || entry.status !== "pending" || new Date(entry.plannedAt).getTime() <= Date.now()) {
+    return false;
+  }
+  void this.runAutomationTask(projectId, taskId, entry.id);
+  return true;
+}
+```
+
+Consume the original generated entry and revalidate time/status at the store boundary so UI staleness cannot create a duplicate run.
+
+#### Wrong
+
+```ts
+nextEntry: task.enabled ? findNextPendingEntry(task.dailyPlans) : null;
+```
+
+This treats the scheduling toggle as an explicit-action permission and hides valid generated entries from the Dashboard.
+
+#### Correct
+
+```ts
+nextEntry: findNextPendingEntry(task.dailyPlans);
+```
+
+Derive Dashboard visibility from the generated entry state; let the scheduler check `enabled`, and let the store action enforce early-run validity and project concurrency.
 
 ## Scenario: Automation Process Result Recovery Boundary
 
