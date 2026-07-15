@@ -22,10 +22,12 @@ import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import { getProjectBridge } from "../../lib/projectBridge";
 import type { AiProviderKind, DefaultEditorKind, DefaultTerminalKind, EnvironmentToolKey } from "../../types";
 
 const store = useStore();
 const t = useI18n();
+const githubRepositoryUrl = "https://github.com/Wwyxa/utools-project-launch";
 
 const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
 const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
@@ -111,6 +113,10 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
 
 const handleTestAi = async () => {
   await store.testAiConfiguration();
+};
+
+const handleOpenGithubRepository = async () => {
+  await getProjectBridge().openPath(githubRepositoryUrl);
 };
 
 const handleAddAiMode = () => {
@@ -653,12 +659,14 @@ watch(
           <div class="flex items-center gap-2 text-sm text-on-surface-variant">
             <span class="font-medium">{{ t.settings.version }}</span>
             <span class="rounded-full bg-surface-variant px-2 py-0.5 font-mono text-xs text-on-surface-variant"
-              >v1.4.0</span
+              >v1.4.6</span
             >
           </div>
           <a
-            href="https://github.com/Wwyxa/utools-project-launch"
-            target="https://github.com/Wwyxa/utools-project-launch"
+            :href="githubRepositoryUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            @click.prevent="handleOpenGithubRepository"
             class="inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:underline"
           >
             <Github :size="14" />
