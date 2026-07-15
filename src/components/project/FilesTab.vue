@@ -637,7 +637,7 @@ watch(searchMatches, (matches) => {
 <template>
   <div
     ref="splitContainerRef"
-    class="grid h-full min-h-0 overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
+    class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
     :style="gridTemplateStyle"
   >
     <aside ref="treePaneRef" class="min-w-0 bg-surface-container-low">
