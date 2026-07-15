@@ -704,7 +704,7 @@ watch(searchMatches, (matches) => {
       />
     </div>
 
-    <section class="flex min-w-0 flex-1 flex-col">
+    <section class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="ui-panel-header">
         <div class="min-w-0 text-xs">
           <span class="truncate font-mono font-bold text-on-surface">{{
