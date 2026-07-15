@@ -1513,3 +1513,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 44: 统一项目详情分栏交互
+
+**Date**: 2026-07-15
+**Task**: 统一项目详情分栏交互
+**Branch**: `master`
+
+### Summary
+
+优化备忘待办空间利用率，统一备忘、文件、Git 与脚本面板的水平或纵向拖拽分栏交互，移除无效收起控件与项目详情右侧空白，并调整文件和 Git 左栏默认宽度及下限。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe8b705` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
