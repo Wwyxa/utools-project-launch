@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend quality-check entry point."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review component boundaries, accessibility, visual tokens, and interaction cleanup."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify resize state remains UI-only and follows the required lifetime."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review composable and event typing."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run required lint, build, and layout regression checks."}

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package entry point and pre-development routing."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Vue Composition API, Tailwind layout, accessibility, and domain component conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep visual resize state outside Pinia while preserving the intended renderer-session lifetime."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Type Pointer Events and reusable composable contracts without any or duplicated models."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required frontend validation and layout sanity checks."}
