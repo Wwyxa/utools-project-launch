@@ -15,7 +15,6 @@ import {
   Clock3,
   X,
   Sparkles,
-  Filter,
   SlidersHorizontal,
   WandSparkles,
   ChevronDown,
@@ -2521,33 +2520,231 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       <div
         class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
       >
-        <div
-          class="px-3 py-2 border-b border-border-subtle flex items-center justify-between gap-2 bg-surface-container-low"
-        >
-          <div class="ui-panel-title">
-            <GitBranch :size="14" class="text-primary" />
-            <h3 class="min-w-0 truncate">{{ t.git.graph }}</h3>
+        <div class="border-b border-border-subtle bg-surface-container-low">
+          <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
+              <div class="ui-panel-title">
+                <GitBranch :size="14" class="text-primary" />
+                <h3 class="min-w-0 truncate">{{ t.git.graph }}</h3>
+              </div>
+              <span
+                v-if="selectedCommitCount > 0"
+                class="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
+              >
+                已选 {{ selectedCommitCount }}
+              </span>
+              <span
+                v-if="hasCommitFilters"
+                class="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
+              >
+                {{ commits.length }}
+              </span>
+            </div>
+            <div class="flex flex-wrap items-center justify-end gap-1">
+              <button
+                type="button"
+                class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45"
+                :disabled="commits.length === 0 || areAllVisibleCommitsSelected"
+                title="选择全部可见提交"
+                aria-label="选择全部可见提交"
+                @click="selectVisibleCommits"
+              >
+                <Check :size="13" />
+              </button>
+              <button
+                v-if="selectedCommitCount > 0"
+                type="button"
+                class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                title="清空提交选择"
+                aria-label="清空提交选择"
+                @click="clearCommitSelection"
+              >
+                <X :size="13" />
+              </button>
+              <button
+                type="button"
+                :class="
+                  cn(
+                    'inline-flex h-7 w-7 items-center justify-center rounded border transition-colors',
+                    showCommitFilters || hasCommitFilters
+                      ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/15'
+                      : 'border-border-subtle bg-transparent text-on-surface hover:bg-surface-variant',
+                  )
+                "
+                :title="showCommitFilters ? t.common.close : '筛选提交'"
+                :aria-label="showCommitFilters ? t.common.close : '筛选提交'"
+                :aria-pressed="showCommitFilters"
+                @click="toggleCommitFilters"
+              >
+                <SlidersHorizontal :size="13" />
+              </button>
+              <button
+                type="button"
+                class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
+                :disabled="!store.aiPreferences.model && store.aiPreferences.provider === 'utools'"
+                title="AI 分析提交"
+                aria-label="AI 分析提交"
+                @click="openAiDialog"
+              >
+                <WandSparkles :size="13" />
+              </button>
+              <span class="mx-0.5 h-4 w-px bg-border-subtle" aria-hidden="true" />
+              <button
+                @click="scrollGitPanel('graph', 'top')"
+                class="rounded p-1 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="commits.length === 0"
+                :title="t.git.scrollGraphToTop"
+                :aria-label="t.git.scrollGraphToTop"
+              >
+                <ArrowUpToLine :size="12" />
+              </button>
+              <button
+                @click="scrollGitPanel('graph', 'bottom')"
+                class="rounded p-1 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="commits.length === 0"
+                :title="t.git.scrollGraphToBottom"
+                :aria-label="t.git.scrollGraphToBottom"
+              >
+                <ArrowDownToLine :size="12" />
+              </button>
+            </div>
           </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <button
-              @click="scrollGitPanel('graph', 'top')"
-              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="commits.length === 0"
-              :title="t.git.scrollGraphToTop"
-              :aria-label="t.git.scrollGraphToTop"
-            >
-              <ArrowUpToLine :size="12" />
-            </button>
-            <button
-              @click="scrollGitPanel('graph', 'bottom')"
-              class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="commits.length === 0"
-              :title="t.git.scrollGraphToBottom"
-              :aria-label="t.git.scrollGraphToBottom"
-            >
-              <ArrowDownToLine :size="12" />
-            </button>
-          </div>
+          <Transition name="fade">
+            <div v-if="showCommitFilters" class="border-t border-border-subtle px-3 py-1.5">
+              <div
+                class="grid gap-1.5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(8.5rem,0.75fr)_minmax(8.5rem,0.75fr)_2rem]"
+              >
+                <input
+                  v-model="commitKeyword"
+                  type="text"
+                  class="ui-field ui-field-compact"
+                  :placeholder="t.git.keyword"
+                />
+                <input
+                  v-model="commitAuthor"
+                  type="text"
+                  class="ui-field ui-field-compact"
+                  :placeholder="t.git.author"
+                />
+                <div class="relative">
+                  <button
+                    type="button"
+                    class="ui-field ui-field-compact flex w-full items-center justify-between gap-2 text-left"
+                    @click.stop="openDatePicker('since')"
+                  >
+                    <span :class="commitSince ? 'text-on-surface' : 'text-on-surface-variant/70'">
+                      {{ commitSince || t.git.since }}
+                    </span>
+                    <CalendarDays :size="13" class="text-on-surface-variant" />
+                  </button>
+                  <div v-if="openDatePickerKind === 'since'" class="date-picker-popover" @click.stop>
+                    <div class="mb-2 flex items-center justify-between gap-2">
+                      <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
+                        <ChevronLeft :size="14" />
+                      </button>
+                      <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
+                      <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
+                        <ChevronRight :size="14" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                      <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
+                    </div>
+                    <div class="mt-1 grid grid-cols-7 gap-1">
+                      <button
+                        v-for="day in datePickerDays"
+                        :key="`since-${day.value}`"
+                        type="button"
+                        :class="
+                          cn(
+                            'date-picker-day',
+                            !day.isCurrentMonth && 'text-on-surface-variant/35',
+                            day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                            day.isSelected && 'border-primary bg-primary text-on-primary',
+                          )
+                        "
+                        @click="selectDatePickerDay(day.value)"
+                      >
+                        {{ day.label }}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                      @click="clearDatePickerValue"
+                    >
+                      清除日期
+                    </button>
+                  </div>
+                </div>
+                <div class="relative">
+                  <button
+                    type="button"
+                    class="ui-field ui-field-compact flex w-full items-center justify-between gap-2 text-left"
+                    @click.stop="openDatePicker('until')"
+                  >
+                    <span :class="commitUntil ? 'text-on-surface' : 'text-on-surface-variant/70'">
+                      {{ commitUntil || t.git.until }}
+                    </span>
+                    <CalendarDays :size="13" class="text-on-surface-variant" />
+                  </button>
+                  <div
+                    v-if="openDatePickerKind === 'until'"
+                    class="date-picker-popover date-picker-popover-end"
+                    @click.stop
+                  >
+                    <div class="mb-2 flex items-center justify-between gap-2">
+                      <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
+                        <ChevronLeft :size="14" />
+                      </button>
+                      <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
+                      <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
+                        <ChevronRight :size="14" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                      <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
+                    </div>
+                    <div class="mt-1 grid grid-cols-7 gap-1">
+                      <button
+                        v-for="day in datePickerDays"
+                        :key="`until-${day.value}`"
+                        type="button"
+                        :class="
+                          cn(
+                            'date-picker-day',
+                            !day.isCurrentMonth && 'text-on-surface-variant/35',
+                            day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                            day.isSelected && 'border-primary bg-primary text-on-primary',
+                          )
+                        "
+                        @click="selectDatePickerDay(day.value)"
+                      >
+                        {{ day.label }}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                      @click="clearDatePickerValue"
+                    >
+                      清除日期
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-45"
+                  :disabled="!hasCommitFilters"
+                  :title="t.git.clearFilters"
+                  :aria-label="t.git.clearFilters"
+                  @click="clearCommitFilters"
+                >
+                  <X :size="13" />
+                </button>
+              </div>
+            </div>
+          </Transition>
         </div>
         <div
           ref="graphScrollRef"
@@ -2677,194 +2874,6 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </div>
       </div>
     </div>
-
-    <section class="rounded-lg border border-border-subtle bg-surface px-3 py-2 shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <Filter :size="14" class="text-primary" />
-          <h3 class="text-xs font-bold text-on-surface">{{ t.git.filters }}</h3>
-          <span
-            v-if="selectedCommitCount > 0"
-            class="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
-          >
-            已选 {{ selectedCommitCount }}
-          </span>
-          <span
-            v-if="hasCommitFilters"
-            class="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
-          >
-            {{ commits.length }}
-          </span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-2.5 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45"
-            :disabled="commits.length === 0 || areAllVisibleCommitsSelected"
-            @click="selectVisibleCommits"
-          >
-            <Check :size="13" />
-            全选可见
-          </button>
-          <button
-            v-if="selectedCommitCount > 0"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-2.5 py-1.5 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-            @click="clearCommitSelection"
-          >
-            <X :size="13" />
-            清空选择
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-2.5 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-            @click="toggleCommitFilters"
-          >
-            <SlidersHorizontal :size="13" />
-            {{ showCommitFilters ? t.common.close : "筛选" }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 py-1.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90"
-            :disabled="!store.aiPreferences.model && store.aiPreferences.provider === 'utools'"
-            @click="openAiDialog"
-          >
-            <WandSparkles :size="13" />
-            AI生成
-          </button>
-        </div>
-      </div>
-      <Transition name="fade">
-        <div v-if="showCommitFilters" class="mt-3">
-          <div
-            class="grid gap-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(8.5rem,0.75fr)_minmax(8.5rem,0.75fr)_2.25rem]"
-          >
-            <input v-model="commitKeyword" type="text" class="ui-field" :placeholder="t.git.keyword" />
-            <input v-model="commitAuthor" type="text" class="ui-field" :placeholder="t.git.author" />
-            <div class="relative">
-              <button
-                type="button"
-                class="ui-field flex w-full items-center justify-between gap-2 text-left"
-                @click.stop="openDatePicker('since')"
-              >
-                <span :class="commitSince ? 'text-on-surface' : 'text-on-surface-variant/70'">
-                  {{ commitSince || t.git.since }}
-                </span>
-                <CalendarDays :size="14" class="text-on-surface-variant" />
-              </button>
-              <div
-                v-if="openDatePickerKind === 'since'"
-                class="date-picker-popover date-picker-popover-above"
-                @click.stop
-              >
-                <div class="mb-2 flex items-center justify-between gap-2">
-                  <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
-                    <ChevronLeft :size="14" />
-                  </button>
-                  <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
-                  <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
-                    <ChevronRight :size="14" />
-                  </button>
-                </div>
-                <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-                  <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
-                </div>
-                <div class="mt-1 grid grid-cols-7 gap-1">
-                  <button
-                    v-for="day in datePickerDays"
-                    :key="`since-${day.value}`"
-                    type="button"
-                    :class="
-                      cn(
-                        'date-picker-day',
-                        !day.isCurrentMonth && 'text-on-surface-variant/35',
-                        day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                        day.isSelected && 'border-primary bg-primary text-on-primary',
-                      )
-                    "
-                    @click="selectDatePickerDay(day.value)"
-                  >
-                    {{ day.label }}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                  @click="clearDatePickerValue"
-                >
-                  清除日期
-                </button>
-              </div>
-            </div>
-            <div class="relative">
-              <button
-                type="button"
-                class="ui-field flex w-full items-center justify-between gap-2 text-left"
-                @click.stop="openDatePicker('until')"
-              >
-                <span :class="commitUntil ? 'text-on-surface' : 'text-on-surface-variant/70'">
-                  {{ commitUntil || t.git.until }}
-                </span>
-                <CalendarDays :size="14" class="text-on-surface-variant" />
-              </button>
-              <div
-                v-if="openDatePickerKind === 'until'"
-                class="date-picker-popover date-picker-popover-above"
-                @click.stop
-              >
-                <div class="mb-2 flex items-center justify-between gap-2">
-                  <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
-                    <ChevronLeft :size="14" />
-                  </button>
-                  <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
-                  <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
-                    <ChevronRight :size="14" />
-                  </button>
-                </div>
-                <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-                  <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
-                </div>
-                <div class="mt-1 grid grid-cols-7 gap-1">
-                  <button
-                    v-for="day in datePickerDays"
-                    :key="`until-${day.value}`"
-                    type="button"
-                    :class="
-                      cn(
-                        'date-picker-day',
-                        !day.isCurrentMonth && 'text-on-surface-variant/35',
-                        day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                        day.isSelected && 'border-primary bg-primary text-on-primary',
-                      )
-                    "
-                    @click="selectDatePickerDay(day.value)"
-                  >
-                    {{ day.label }}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                  @click="clearDatePickerValue"
-                >
-                  清除日期
-                </button>
-              </div>
-            </div>
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-45"
-              :disabled="!hasCommitFilters"
-              :title="t.git.clearFilters"
-              :aria-label="t.git.clearFilters"
-              @click="clearCommitFilters"
-            >
-              <X :size="14" />
-            </button>
-          </div>
-        </div>
-      </Transition>
-    </section>
 
     <Transition name="scale">
       <div

@@ -395,6 +395,15 @@
     background-color 160ms ease;
 }
 
+.ui-field-compact {
+  min-height: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  padding: 0 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
 .ui-field:hover {
   background: var(--color-surface-container);
 }
@@ -497,6 +506,11 @@
 .date-picker-popover-above {
   top: auto;
   bottom: calc(100% + 0.375rem);
+}
+
+.date-picker-popover-end {
+  right: 0;
+  left: auto;
 }
 
 .popover-above {
