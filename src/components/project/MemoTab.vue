@@ -1,27 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import {
-  Bold,
-  Check,
-  CheckSquare,
-  ChevronLeft,
-  ChevronRight,
-  Code,
-  Edit3,
-  GripVertical,
-  Link,
-  List,
-  Plus,
-  Save,
-  Trash2,
-} from "lucide-vue-next";
+import { Bold, Check, CheckSquare, Code, Edit3, GripVertical, Link, List, Plus, Save, Trash2 } from "lucide-vue-next";
 import { Project } from "../../types";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { renderMarkdown } from "../../lib/markdown";
-
-type CollapsedMemoPanel = "tasks" | "memo";
+import { useResizableSplit } from "../../composables/useResizableSplit";
 
 const props = defineProps<{
   project: Project;
@@ -38,37 +23,32 @@ const editingTodoText = ref("");
 const editingTodoInputRef = ref<HTMLInputElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const draggedTodoId = ref<string | null>(null);
-const collapsedMemoPanel = ref<CollapsedMemoPanel | null>(null);
+const splitContainerRef = ref<HTMLElement | null>(null);
+const tasksPanelRef = ref<HTMLElement | null>(null);
 let saveTimer: number | undefined;
 
 const content = computed(() => store.memoContent[props.project.id] || "");
 const projectTodos = computed(() => store.todos[props.project.id] || []);
 const hasMemo = computed(() => content.value.trim().length > 0);
-const isMemoTasksPanelCollapsed = computed(() => collapsedMemoPanel.value === "tasks");
-const isMemoContentPanelCollapsed = computed(() => collapsedMemoPanel.value === "memo");
-const memoGridColumns = computed(() => {
-  if (isMemoTasksPanelCollapsed.value) {
-    return "2rem minmax(0,1fr)";
-  }
-  if (isMemoContentPanelCollapsed.value) {
-    return "minmax(0,1fr) 2rem";
-  }
-  return "minmax(12rem,0.58fr) minmax(0,1.42fr)";
+const {
+  bounds: splitBounds,
+  firstSize,
+  gridTemplateStyle,
+  handleSeparatorKeydown,
+  isResizing,
+  separatorOrientation,
+  startResize,
+} = useResizableSplit({
+  containerRef: splitContainerRef,
+  firstPaneRef: tasksPanelRef,
+  layoutKey: "memo-main",
+  orientation: "horizontal",
+  defaultFirstRatio: 0.29,
+  minFirstSize: 192,
+  minSecondSize: 288,
 });
 
 const renderedMemo = computed(() => renderMarkdown(content.value));
-
-const collapseMemoTasksPanel = () => {
-  collapsedMemoPanel.value = "tasks";
-};
-
-const collapseMemoContentPanel = () => {
-  collapsedMemoPanel.value = "memo";
-};
-
-const expandMemoPanels = () => {
-  collapsedMemoPanel.value = null;
-};
 
 const flushMemo = () => {
   window.clearTimeout(saveTimer);
@@ -189,60 +169,17 @@ onBeforeUnmount(flushMemo);
 </script>
 
 <template>
-  <div class="relative grid h-full min-h-0 gap-2 overflow-visible" :style="{ gridTemplateColumns: memoGridColumns }">
-    <div
-      v-if="!collapsedMemoPanel"
-      class="pointer-events-none absolute inset-x-0 top-0 z-30 grid gap-2"
-      :style="{ gridTemplateColumns: memoGridColumns }"
+  <div ref="splitContainerRef" class="relative grid h-full min-h-0 overflow-hidden" :style="gridTemplateStyle">
+    <section
+      ref="tasksPanelRef"
+      class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
     >
-      <div class="pointer-events-none flex min-w-0 justify-end">
-        <div
-          class="pointer-events-auto flex translate-x-[calc(50%+0.25rem)] translate-y-1 items-center overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container-high shadow-md"
-        >
-          <button
-            type="button"
-            class="flex h-4 w-4 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-            title="收起左侧任务列表"
-            aria-label="收起左侧任务列表"
-            @click.stop="collapseMemoTasksPanel"
-          >
-            <ChevronLeft :size="9" />
-          </button>
-          <button
-            type="button"
-            class="flex h-4 w-4 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-            title="收起右侧备忘面板"
-            aria-label="收起右侧备忘面板"
-            @click.stop="collapseMemoContentPanel"
-          >
-            <ChevronRight :size="9" />
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <button
-      v-if="isMemoTasksPanelCollapsed"
-      type="button"
-      class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
-      title="展开任务列表"
-      aria-label="展开任务列表"
-      @click="expandMemoPanels"
-    >
-      <span
-        class="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
-      >
-        <ChevronRight :size="14" />
-      </span>
-    </button>
-
-    <section v-else class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
       <div class="ui-panel-header">
-          <div class="ui-panel-title">
-            <CheckSquare :size="14" class="text-primary" />
-            <h3 class="flex items-center gap-2">{{ t.memo.taskList }}</h3>
-          </div>
-          <span class="ui-panel-meta">{{ projectTodos.length }}</span>
+        <div class="ui-panel-title">
+          <CheckSquare :size="14" class="text-primary" />
+          <h3 class="flex items-center gap-2">{{ t.memo.taskList }}</h3>
+        </div>
+        <span class="ui-panel-meta">{{ projectTodos.length }}</span>
       </div>
 
       <form class="flex gap-1.5 border-b border-border-subtle px-2 py-2" @submit.prevent="addTodo">
@@ -262,7 +199,7 @@ onBeforeUnmount(flushMemo);
         </button>
       </form>
 
-      <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
+      <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-1 py-2">
         <div class="space-y-1">
           <div
             v-for="todo in projectTodos"
@@ -272,7 +209,7 @@ onBeforeUnmount(flushMemo);
             @dragend="draggedTodoId = null"
             :class="
               cn(
-                'group flex min-h-7 items-start gap-1 rounded px-1 py-1 transition-colors hover:bg-surface-variant',
+                'group relative flex min-h-7 items-start gap-1 rounded py-1 pl-3 transition-colors hover:bg-surface-variant focus-within:bg-surface-variant',
                 draggedTodoId === todo.id && 'opacity-55 ring-1 ring-primary/30',
               )
             "
@@ -281,7 +218,7 @@ onBeforeUnmount(flushMemo);
             <button
               type="button"
               draggable="true"
-              class="mt-1 hidden h-3 w-3 shrink-0 items-center justify-center rounded text-on-surface-variant/60 opacity-0 transition-opacity hover:bg-surface-container-high hover:text-primary group-hover:opacity-100 focus:opacity-100 sm:flex"
+              class="absolute left-0 top-2 flex h-3 w-3 items-center justify-center rounded text-on-surface-variant/60 opacity-0 transition-opacity hover:bg-surface-container-high hover:text-primary group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100"
               :aria-label="t.memo.moveTask"
               :title="t.memo.moveTask"
               @dragstart="handleTodoDragStart($event, todo.id)"
@@ -292,6 +229,7 @@ onBeforeUnmount(flushMemo);
             <input
               type="checkbox"
               :checked="todo.completed"
+              :aria-label="todo.text"
               @change="store.toggleTodo(project.id, todo.id)"
               class="mt-0.5 h-3.5 w-3.5 rounded border-outline-variant text-primary focus:ring-primary"
             />
@@ -312,6 +250,7 @@ onBeforeUnmount(flushMemo);
               v-else
               ref="editingTodoInputRef"
               v-model="editingTodoText"
+              :aria-label="`${t.common.edit}: ${todo.text}`"
               class="min-w-0 flex-1 rounded border border-primary/50 bg-surface-container-lowest px-2 py-1 text-xs font-medium leading-5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
               @keydown.enter.prevent="commitTodoEdit"
               @keydown.esc.prevent="cancelTodoEdit"
@@ -319,7 +258,7 @@ onBeforeUnmount(flushMemo);
             />
             <button
               type="button"
-              class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-on-surface-variant opacity-0 transition-opacity hover:bg-status-error/10 hover:text-status-error group-hover:opacity-100 focus:opacity-100"
+              class="absolute right-0 top-1 flex h-5 w-4 items-center justify-center rounded text-on-surface-variant opacity-0 transition-opacity hover:bg-status-error/10 hover:text-status-error group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100"
               :aria-label="t.common.delete"
               :title="t.common.delete"
               @click.prevent="deleteTodo(todo.id)"
@@ -337,23 +276,29 @@ onBeforeUnmount(flushMemo);
       </div>
     </section>
 
-    <button
-      v-if="isMemoContentPanelCollapsed"
-      type="button"
-      class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
-      title="展开备忘面板"
-      aria-label="展开备忘面板"
-      @click="expandMemoPanels"
+    <div
+      role="separator"
+      :aria-orientation="separatorOrientation"
+      :aria-label="t.memo.resizePanels"
+      :aria-valuemin="Math.round(splitBounds.min)"
+      :aria-valuemax="Math.round(splitBounds.max)"
+      :aria-valuenow="Math.round(firstSize ?? 0)"
+      tabindex="0"
+      :class="cn('group/split relative z-20 cursor-col-resize touch-none outline-none', isResizing && 'bg-primary/10')"
+      @pointerdown="startResize"
+      @keydown="handleSeparatorKeydown"
     >
       <span
-        class="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
-      >
-        <ChevronLeft :size="14" />
-      </span>
-    </button>
+        :class="
+          cn(
+            'absolute inset-y-2 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-border-subtle transition-colors group-hover/split:bg-primary group-focus/split:bg-primary',
+            isResizing && 'bg-primary',
+          )
+        "
+      />
+    </div>
 
     <section
-      v-else
       class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       @dblclick.self="enterEdit"
     >

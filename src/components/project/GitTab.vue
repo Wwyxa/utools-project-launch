@@ -51,13 +51,13 @@ import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import { useResizableSplit } from "../../composables/useResizableSplit";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
 type GitFileActionName = "stage" | "unstage" | "discard";
 type GitRemoteActionName = "fetch" | "pull" | "push";
 type RemoteDialogMode = "add" | "edit";
-type CollapsedGitPanel = "files" | "graph";
 type ActiveGitFileAction = { action: GitFileActionName; path: string };
 type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
 type AppDialogKind = "danger" | "warning";
@@ -81,6 +81,8 @@ const emit = defineEmits<{
 
 const store = useStore();
 const t = useI18n();
+const splitContainerRef = ref<HTMLElement | null>(null);
+const filesPaneRef = ref<HTMLElement | null>(null);
 const filesScrollRef = ref<HTMLDivElement | null>(null);
 const graphScrollRef = ref<HTMLDivElement | null>(null);
 const showCommitFilters = ref(false);
@@ -122,22 +124,23 @@ const confirmationDialog = ref<AppActionDialog | null>(null);
 const isConfirmationRunning = ref(false);
 const commitMessageTextareaMinHeight = 60;
 const commitMessageTextareaMaxHeight = 192;
-const collapsedGitPanel = ref<CollapsedGitPanel | null>(null);
-const isGitFilesPanelCollapsed = computed(() => collapsedGitPanel.value === "files");
-const isGitGraphPanelCollapsed = computed(() => collapsedGitPanel.value === "graph");
+const {
+  bounds: splitBounds,
+  firstSize,
+  gridTemplateStyle,
+  handleSeparatorKeydown,
+  isResizing,
+  startResize,
+} = useResizableSplit({
+  containerRef: splitContainerRef,
+  firstPaneRef: filesPaneRef,
+  layoutKey: "git-main",
+  orientation: "horizontal",
+  defaultFirstRatio: 0.28,
+  minFirstSize: 200,
+  minSecondSize: 360,
+});
 let stopAppEscapeListener = () => {};
-
-const collapseGitFilesPanel = () => {
-  collapsedGitPanel.value = "files";
-};
-
-const collapseGitGraphPanel = () => {
-  collapsedGitPanel.value = "graph";
-};
-
-const expandGitPanels = () => {
-  collapsedGitPanel.value = null;
-};
 
 const resizeCommitMessageTextarea = () => {
   const textarea = commitMessageTextareaRef.value;
@@ -1885,15 +1888,6 @@ const graphRowColumns = computed(
   () => `${graphSelectionColumnWidth}px ${graphColumnWidth.value}px 3.25rem minmax(14rem, 1fr)`,
 );
 const graphRowMinWidth = computed(() => `max(24rem, calc(${graphColumnWidth.value}px + 18.5rem))`);
-const gitGridColumns = computed(() => {
-  if (isGitFilesPanelCollapsed.value) {
-    return "2rem minmax(0,1fr)";
-  }
-  if (isGitGraphPanelCollapsed.value) {
-    return "minmax(0,1fr) 2rem";
-  }
-  return "minmax(15rem,0.46fr) minmax(0,1.54fr)";
-});
 const commitDateLabel = (value?: string) => formatCommitTime(value).text;
 
 const fileLabel = (status: string) => {
@@ -2278,55 +2272,9 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </div>
     </div>
 
-    <div class="relative grid min-h-0 flex-1 gap-2 overflow-visible" :style="{ gridTemplateColumns: gitGridColumns }">
-      <Transition name="fade">
-        <div
-          v-if="!collapsedGitPanel"
-          class="pointer-events-none absolute inset-x-0 top-0 z-30 grid gap-2"
-          :style="{ gridTemplateColumns: gitGridColumns }"
-        >
-          <div class="pointer-events-none flex min-w-0 justify-end">
-            <div
-              class="pointer-events-auto flex translate-x-[calc(50%+0.25rem)] translate-y-1 items-center overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container-high shadow-md"
-            >
-              <button
-                type="button"
-                class="flex h-4 w-4 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-                title="收起左侧变更文件面板"
-                aria-label="收起左侧变更文件面板"
-                @click.stop="collapseGitFilesPanel"
-              >
-                <ChevronLeft :size="9" />
-              </button>
-              <button
-                type="button"
-                class="flex h-4 w-4 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-                title="收起右侧提交图面板"
-                aria-label="收起右侧提交图面板"
-                @click.stop="collapseGitGraphPanel"
-              >
-                <ChevronRight :size="9" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-      <button
-        v-if="isGitFilesPanelCollapsed"
-        type="button"
-        class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
-        title="展开变更文件面板"
-        aria-label="展开变更文件面板"
-        @click="expandGitPanels"
-      >
-        <span
-          class="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
-        >
-          <ChevronRight :size="14" />
-        </span>
-      </button>
+    <div ref="splitContainerRef" class="relative grid min-h-0 flex-1 overflow-hidden" :style="gridTemplateStyle">
       <div
-        v-else
+        ref="filesPaneRef"
         class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       >
         <div class="border-b border-border-subtle bg-surface px-2 py-1.5">
@@ -2546,23 +2494,31 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         </div>
       </div>
 
-      <button
-        v-if="isGitGraphPanelCollapsed"
-        type="button"
-        class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low shadow-sm"
-        title="展开提交图面板"
-        aria-label="展开提交图面板"
-        @click="expandGitPanels"
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        :aria-label="t.git.resizePanels"
+        :aria-valuemin="Math.round(splitBounds.min)"
+        :aria-valuemax="Math.round(splitBounds.max)"
+        :aria-valuenow="Math.round(firstSize ?? 0)"
+        tabindex="0"
+        :class="
+          cn('group/split relative z-20 cursor-col-resize touch-none outline-none', isResizing && 'bg-primary/10')
+        "
+        @pointerdown="startResize"
+        @keydown="handleSeparatorKeydown"
       >
         <span
-          class="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
-        >
-          <ChevronLeft :size="14" />
-        </span>
-      </button>
+          :class="
+            cn(
+              'absolute inset-y-2 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-border-subtle transition-colors group-hover/split:bg-primary group-focus/split:bg-primary',
+              isResizing && 'bg-primary',
+            )
+          "
+        />
+      </div>
 
       <div
-        v-else
         class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
       >
         <div

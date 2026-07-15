@@ -265,6 +265,40 @@ const filesPanelOpen = ref(true);
 
 **Related**: `src/components/project/GitTab.vue`.
 
+### Convention: Resizable Split Panels
+
+**What**: Side-by-side and stacked project panels use the shared `useResizableSplit(...)` composable when users need to adjust the divider directly. The composable owns pointer tracking, keyboard adjustment, renderer-session size memory, resize bounds, and cleanup; each tab owns only its panel refs, orientation, and minimum sizes.
+
+**Why**: Independent resize implementations drift on pointer cancellation, narrow-window behavior, axis semantics, and remembered size lifetime. A shared interaction keeps Memo, Files, Git, Scripts, and later panel migrations consistent without moving visual state into Pinia or project persistence.
+
+**Contract**:
+
+- Keep visual size preferences in renderer memory under a stable layout key. Do not store them in project data, Pinia, preload storage, or `localStorage` unless a separate requirement explicitly asks for restart persistence.
+- Use `orientation: "horizontal"` for left/right panes and `orientation: "vertical"` for top/bottom panes. Horizontal layouts expose a vertical separator with left/right arrow keys and `col-resize`; vertical layouts expose a horizontal separator with up/down arrow keys and `row-resize`.
+- Start from the rendered first-panel width or height so the first drag does not jump when the default layout is ratio-based. On `pointerdown`, read that DOM size before any container measurement that can update the reactive grid template; otherwise the measurement can replace the visible ratio track with a stale or clamped pixel size before the drag origin is captured.
+- Clamp both panes against explicit minimum sizes. When the container is narrower or shorter than both minimums plus the separator, degrade proportionally and keep every computed size non-negative.
+- Use Pointer Events with a primary-button guard, pointer capture, and window-level move/end listeners. End the interaction on `pointerup`, `pointercancel`, `lostpointercapture`, window blur, and component unmount; always restore body cursor and text-selection styles, even when capture release fails.
+- Observe the split container with `ResizeObserver` and re-clamp the remembered first-panel size whenever its available width or height changes.
+- Expose the divider as a focusable `separator` with the axis-appropriate `aria-orientation`, an accessible label, current/min/max values, arrow-key adjustment, `touch-none`, and visible hover/focus/active feedback.
+- Once the first track becomes a fixed pixel size, the remaining content track must be `minmax(0, 1fr)`. A lone fractional track below `1fr`, such as `0.71fr`, reserves only that fraction of the leftover space and leaves an empty strip at the container edge.
+
+```ts
+// Correct after the first pane switches to a measured pixel size.
+return `${firstSize}px ${separatorSize}px minmax(0, 1fr)`;
+
+// Wrong: the second pane uses only 71% of the remaining space.
+return `${firstSize}px ${separatorSize}px minmax(0, 0.71fr)`;
+```
+
+**Validation**:
+
+- Assert that the two pane sizes plus separator size equal the split container's corresponding client dimension within subpixel tolerance.
+- Drag by a known horizontal or vertical delta and assert the first pane changes by that delta until a minimum/maximum boundary is reached.
+- Switch away from and back to the tab and assert renderer-session size recovery; reload the renderer and assert the default ratio returns.
+- Check desktop and narrow viewports for no unintended overflow, non-overlapping panels, axis-correct keyboard adjustment, and cleanup after releasing outside the divider.
+
+**Related**: `src/composables/useResizableSplit.ts`, `src/components/project/MemoTab.vue`, `src/components/project/FilesTab.vue`, `src/components/project/GitTab.vue`, `src/components/project/ScriptsTab.vue`.
+
 ### Convention: Teleported Modal Entry Transitions
 
 **What**: Dialog shells and other teleported overlays use a shared `.scale-*` Vue transition in `src/index.css`. The transition wraps the `v-if` root inside the existing `Teleport`.

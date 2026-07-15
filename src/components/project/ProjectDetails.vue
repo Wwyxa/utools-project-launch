@@ -260,18 +260,18 @@ watch(
     <div
       :class="
         cn(
-          'themed-scrollbar min-h-0 flex-1 pr-1 [color-scheme:inherit]',
+          'min-h-0 flex-1 [color-scheme:inherit]',
           activeTab === 'files' ||
             activeTab === 'scripts' ||
             activeTab === 'git' ||
             activeTab === 'memo' ||
             activeTab === 'automation'
             ? 'overflow-hidden'
-            : 'space-y-3 overflow-y-auto',
+            : 'themed-scrollbar space-y-3 overflow-y-auto',
         )
       "
     >
-      <div v-if="activeTab === 'info'" class="min-h-full space-y-3 overflow-y-auto pr-1">
+      <div v-if="activeTab === 'info'" class="min-h-full space-y-3">
         <section class="rounded-lg border border-border-subtle bg-surface p-3 shadow-sm">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0 flex-1">

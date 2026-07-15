@@ -18,6 +18,7 @@ import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { highlightCode, isMarkdownFile, renderMarkdown } from "../../lib/markdown";
+import { useResizableSplit } from "../../composables/useResizableSplit";
 import FileTreeNode, { type TreeNode } from "./FileTreeNode.vue";
 
 type SearchMatch = { start: number; end: number };
@@ -40,8 +41,8 @@ const isEditing = ref(false);
 const isLoadingTree = ref(false);
 const isLoadingFile = ref(false);
 const isSaving = ref(false);
-const treeWidth = ref(280);
-const isResizing = ref(false);
+const splitContainerRef = ref<HTMLElement | null>(null);
+const treePaneRef = ref<HTMLElement | null>(null);
 const statusMessage = ref("");
 const codeScrollRef = ref<HTMLDivElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -67,7 +68,23 @@ const canEdit = computed(() => Boolean(selectedFile.value?.editable));
 const canSave = computed(() => canEdit.value && isDirty.value && !isSaving.value);
 const canSearchCurrentFile = computed(() => selectedFile.value?.previewKind === "text");
 const canReplaceCurrentFile = computed(() => selectedFile.value?.previewKind === "text" && canEdit.value);
-const treeStyle = computed(() => ({ width: `${treeWidth.value}px` }));
+const {
+  bounds: splitBounds,
+  firstSize,
+  gridTemplateStyle,
+  handleSeparatorKeydown,
+  isResizing,
+  separatorOrientation,
+  startResize,
+} = useResizableSplit({
+  containerRef: splitContainerRef,
+  firstPaneRef: treePaneRef,
+  layoutKey: "files-main",
+  orientation: "horizontal",
+  defaultFirstRatio: 0.24,
+  minFirstSize: 180,
+  minSecondSize: 320,
+});
 const lineNumbers = computed(() =>
   draftContent.value
     .split("\n")
@@ -580,20 +597,6 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 };
 
-const beginResize = (event: MouseEvent) => {
-  isResizing.value = true;
-  event.preventDefault();
-};
-
-const handleResize = (event: MouseEvent) => {
-  if (!isResizing.value) return;
-  treeWidth.value = Math.min(420, Math.max(220, event.clientX - 96));
-};
-
-const endResize = () => {
-  isResizing.value = false;
-};
-
 onMounted(() => {
   if (props.openRelativePath) {
     void openRelativePath(props.openRelativePath);
@@ -601,14 +604,10 @@ onMounted(() => {
     void loadChildren();
   }
   window.addEventListener("keydown", handleKeydown);
-  window.addEventListener("mousemove", handleResize);
-  window.addEventListener("mouseup", endResize);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
-  window.removeEventListener("mousemove", handleResize);
-  window.removeEventListener("mouseup", endResize);
 });
 
 watch(
@@ -636,304 +635,326 @@ watch(searchMatches, (matches) => {
 </script>
 
 <template>
-  <div class="h-full min-h-0 overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
-    <div class="flex h-full min-w-0">
-      <aside :style="treeStyle" class="min-w-[220px] shrink-0 border-r border-border-subtle bg-surface-container-low">
-        <div class="ui-panel-header">
-          <div class="ui-panel-title">
-            <Folder :size="14" class="text-primary" />
-            <span class="truncate">{{ project.name }}</span>
+  <div
+    ref="splitContainerRef"
+    class="grid h-full min-h-0 overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
+    :style="gridTemplateStyle"
+  >
+    <aside ref="treePaneRef" class="min-w-0 bg-surface-container-low">
+      <div class="ui-panel-header">
+        <div class="ui-panel-title">
+          <Folder :size="14" class="text-primary" />
+          <span class="truncate">{{ project.name }}</span>
+        </div>
+      </div>
+      <div class="themed-scrollbar h-[calc(100%-2.25rem)] overflow-auto p-2 text-xs">
+        <div v-if="isLoadingTree" class="space-y-1.5 p-1" aria-busy="true">
+          <div
+            v-for="row in 8"
+            :key="row"
+            :class="['flex items-center gap-1.5', row % 3 === 0 ? 'pl-6' : row % 3 === 1 ? 'pl-9' : 'pl-3']"
+          >
+            <span class="skeleton h-3.5 w-3.5" />
+            <span
+              :class="[
+                'skeleton h-3',
+                row % 4 === 0 ? 'w-28' : row % 4 === 1 ? 'w-20' : row % 4 === 2 ? 'w-32' : 'w-24',
+              ]"
+            />
           </div>
         </div>
-        <div class="themed-scrollbar h-[calc(100%-2.25rem)] overflow-auto p-2 text-xs">
-          <div v-if="isLoadingTree" class="space-y-1.5 p-1" aria-busy="true">
-            <div
-              v-for="row in 8"
-              :key="row"
-              :class="[
-                'flex items-center gap-1.5',
-                row % 3 === 0 ? 'pl-6' : row % 3 === 1 ? 'pl-9' : 'pl-3',
-              ]"
+        <FileTreeNode
+          v-for="node in rootNodes"
+          :key="node.relativePath"
+          :node="node"
+          :selected-relative-path="selectedRelativePath"
+          @toggle="toggleDirectory"
+          @open="openFile"
+        />
+        <div v-if="!isLoadingTree && rootNodes.length === 0" class="p-2 text-on-surface-variant">
+          {{ t.files.noFiles }}
+        </div>
+      </div>
+    </aside>
+
+    <div
+      role="separator"
+      :aria-orientation="separatorOrientation"
+      :aria-label="t.files.resizePanels"
+      :aria-valuemin="Math.round(splitBounds.min)"
+      :aria-valuemax="Math.round(splitBounds.max)"
+      :aria-valuenow="Math.round(firstSize ?? 0)"
+      tabindex="0"
+      :class="
+        cn(
+          'group/split relative z-20 cursor-col-resize touch-none border-x border-border-subtle bg-surface outline-none',
+          isResizing && 'bg-primary/10',
+        )
+      "
+      @pointerdown="startResize"
+      @keydown="handleSeparatorKeydown"
+    >
+      <span
+        :class="
+          cn(
+            'absolute inset-y-2 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-border-subtle transition-colors group-hover/split:bg-primary group-focus/split:bg-primary',
+            isResizing && 'bg-primary',
+          )
+        "
+      />
+    </div>
+
+    <section class="flex min-w-0 flex-1 flex-col">
+      <div class="ui-panel-header">
+        <div class="min-w-0 text-xs">
+          <span class="truncate font-mono font-bold text-on-surface">{{
+            selectedFile?.relativePath || t.files.noFileSelected
+          }}</span>
+          <span v-if="selectedFile" class="ml-2 text-on-surface-variant">{{ formatSize(selectedFile.size) }}</span>
+          <span v-if="isDirty" class="ml-2 font-bold text-status-error">{{ t.files.unsaved }}</span>
+          <span v-else-if="selectedFile" class="ml-2 text-on-surface-variant">{{
+            statusMessage || (isEditing ? t.files.editing : t.files.readOnly)
+          }}</span>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            @click="openFind"
+            :disabled="!canSearchCurrentFile"
+            class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            :aria-label="t.files.findInFile"
+            :title="t.files.findInFile"
+          >
+            <Search :size="13" />
+          </button>
+          <button
+            type="button"
+            v-if="!isEditing"
+            @click="enterEdit"
+            :disabled="!canEdit"
+            :class="
+              cn(
+                'flex h-7 w-16 items-center justify-center rounded border border-border-subtle bg-transparent px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                'gap-1.5 text-on-surface-variant hover:bg-surface hover:text-primary',
+              )
+            "
+            :aria-label="t.files.editFile"
+            :title="t.files.editFile"
+          >
+            <Edit3 :size="13" />
+            <span>{{ t.files.edit }}</span>
+          </button>
+          <button
+            v-if="isEditing"
+            type="button"
+            @click="saveFile"
+            :disabled="!canSave"
+            :class="
+              cn(
+                'flex h-7 w-7 items-center justify-center rounded border border-border-subtle text-xs font-bold transition-colors disabled:cursor-not-allowed',
+                canSave
+                  ? 'bg-primary text-on-primary hover:bg-primary/90'
+                  : 'bg-surface-container-low text-on-surface-variant opacity-60',
+              )
+            "
+            :aria-label="t.files.saveFile"
+            :title="t.files.saveFile"
+          >
+            <Save :size="13" />
+          </button>
+          <button
+            v-if="isEditing"
+            type="button"
+            @click="exitEdit"
+            class="flex h-7 w-16 items-center justify-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+            :aria-label="t.files.doneEditing"
+            :title="t.files.doneEditing"
+          >
+            <Check :size="13" />
+            {{ t.files.done }}
+          </button>
+        </div>
+      </div>
+
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest">
+        <div
+          v-if="isFindOpen && canSearchCurrentFile"
+          class="file-find-widget"
+          role="search"
+          :aria-label="t.files.findReplaceAria"
+        >
+          <div class="flex min-w-0 items-center gap-1">
+            <button
+              v-if="canReplaceCurrentFile"
+              type="button"
+              class="file-find-icon-button h-7 w-6"
+              :aria-label="t.files.toggleReplace"
+              :title="t.files.toggleReplace"
+              @click="isReplaceOpen ? (isReplaceOpen = false) : openReplace()"
             >
-              <span class="skeleton h-3.5 w-3.5" />
+              <ChevronDown :size="14" :class="cn('transition-transform', !isReplaceOpen && '-rotate-90')" />
+            </button>
+            <span v-else class="w-6 shrink-0" />
+            <div class="file-find-input-wrap">
+              <Search :size="12" class="mr-1.5 shrink-0 text-on-surface-variant" />
+              <input
+                ref="findInputRef"
+                v-model="findQuery"
+                type="text"
+                class="min-w-0 flex-1 bg-transparent text-xs text-on-surface outline-none placeholder:text-on-surface-variant"
+                :placeholder="t.files.findPlaceholder"
+                :aria-label="t.files.findInCurrentFile"
+                @keydown="handleFindKeydown"
+              />
+              <span
+                v-if="matchStatusLabel"
+                class="ml-2 shrink-0 whitespace-nowrap font-mono text-[10px] text-on-surface-variant"
+              >
+                {{ matchStatusLabel }}
+              </span>
+            </div>
+            <button
+              type="button"
+              class="file-find-icon-button h-7 w-7 disabled:cursor-not-allowed disabled:opacity-35"
+              :disabled="!hasMatches"
+              :aria-label="t.files.previousMatch"
+              :title="t.files.previousMatch"
+              @click="goToMatch(-1)"
+            >
+              <ChevronUp :size="14" />
+            </button>
+            <button
+              type="button"
+              class="file-find-icon-button h-7 w-7 disabled:cursor-not-allowed disabled:opacity-35"
+              :disabled="!hasMatches"
+              :aria-label="t.files.nextMatch"
+              :title="t.files.nextMatch"
+              @click="goToMatch(1)"
+            >
+              <ChevronDown :size="14" />
+            </button>
+            <button
+              type="button"
+              class="file-find-icon-button h-7 w-7 hover:text-on-surface"
+              :aria-label="t.files.closeFind"
+              :title="t.files.closeFind"
+              @click="closeFind"
+            >
+              <X :size="14" />
+            </button>
+          </div>
+          <div v-if="isReplaceOpen && canReplaceCurrentFile" class="flex min-w-0 items-center gap-1 pl-7">
+            <input
+              ref="replaceInputRef"
+              v-model="replaceValue"
+              type="text"
+              class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface-container-low px-2 text-xs text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary focus:bg-surface-container-lowest"
+              :placeholder="t.files.replacePlaceholder"
+              :aria-label="t.files.replaceWith"
+              @keydown="handleReplaceKeydown"
+            />
+            <button
+              type="button"
+              class="file-find-icon-button h-7 w-7 border border-border-subtle disabled:cursor-not-allowed disabled:opacity-35"
+              :disabled="!hasMatches"
+              :aria-label="t.files.replaceCurrentMatch"
+              :title="t.files.replaceCurrentMatch"
+              @click="replaceActiveMatch"
+            >
+              <Replace :size="13" />
+            </button>
+            <button
+              type="button"
+              class="file-find-icon-button h-7 w-7 border border-border-subtle disabled:cursor-not-allowed disabled:opacity-35"
+              :disabled="!hasMatches"
+              :aria-label="t.files.replaceAllMatches"
+              :title="t.files.replaceAllMatches"
+              @click="replaceAllMatches"
+            >
+              <ReplaceAll :size="13" />
+            </button>
+          </div>
+        </div>
+
+        <div class="min-h-0 flex-1 overflow-hidden">
+          <div
+            v-if="isLoadingFile"
+            class="themed-scrollbar h-full overflow-auto bg-[var(--code-preview-bg)] px-2 py-3 font-mono text-xs leading-5"
+            aria-busy="true"
+          >
+            <div v-for="row in 12" :key="row" class="grid grid-cols-[3rem_minmax(0,1fr)] gap-2 px-2 py-0.5">
+              <span class="skeleton h-2.5 w-6" />
               <span
                 :class="[
-                  'skeleton h-3',
-                  row % 4 === 0 ? 'w-28' : row % 4 === 1 ? 'w-20' : row % 4 === 2 ? 'w-32' : 'w-24',
+                  'skeleton h-2.5',
+                  row % 4 === 0 ? 'w-full' : row % 4 === 1 ? 'w-3/4' : row % 4 === 2 ? 'w-5/6' : 'w-2/3',
                 ]"
               />
             </div>
           </div>
-          <FileTreeNode
-            v-for="node in rootNodes"
-            :key="node.relativePath"
-            :node="node"
-            :selected-relative-path="selectedRelativePath"
-            @toggle="toggleDirectory"
-            @open="openFile"
-          />
-          <div v-if="!isLoadingTree && rootNodes.length === 0" class="p-2 text-on-surface-variant">{{ t.files.noFiles }}</div>
-        </div>
-      </aside>
-
-      <div class="w-1 cursor-col-resize bg-border-subtle hover:bg-primary" @mousedown="beginResize" />
-
-      <section class="flex min-w-0 flex-1 flex-col">
-        <div class="ui-panel-header">
-          <div class="min-w-0 text-xs">
-            <span class="truncate font-mono font-bold text-on-surface">{{
-              selectedFile?.relativePath || t.files.noFileSelected
-            }}</span>
-            <span v-if="selectedFile" class="ml-2 text-on-surface-variant">{{ formatSize(selectedFile.size) }}</span>
-            <span v-if="isDirty" class="ml-2 font-bold text-status-error">{{ t.files.unsaved }}</span>
-            <span v-else-if="selectedFile" class="ml-2 text-on-surface-variant">{{
-              statusMessage || (isEditing ? t.files.editing : t.files.readOnly)
-            }}</span>
-          </div>
-          <div class="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              @click="openFind"
-              :disabled="!canSearchCurrentFile"
-              class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-              :aria-label="t.files.findInFile"
-              :title="t.files.findInFile"
-            >
-              <Search :size="13" />
-            </button>
-            <button
-              type="button"
-              v-if="!isEditing"
-              @click="enterEdit"
-              :disabled="!canEdit"
-              :class="
-                cn(
-                  'flex h-7 w-16 items-center justify-center rounded border border-border-subtle bg-transparent px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-                  'gap-1.5 text-on-surface-variant hover:bg-surface hover:text-primary',
-                )
-              "
-              :aria-label="t.files.editFile"
-              :title="t.files.editFile"
-            >
-              <Edit3 :size="13" />
-              <span>{{ t.files.edit }}</span>
-            </button>
-            <button
-              v-if="isEditing"
-              type="button"
-              @click="saveFile"
-              :disabled="!canSave"
-              :class="
-                cn(
-                  'flex h-7 w-7 items-center justify-center rounded border border-border-subtle text-xs font-bold transition-colors disabled:cursor-not-allowed',
-                  canSave
-                    ? 'bg-primary text-on-primary hover:bg-primary/90'
-                    : 'bg-surface-container-low text-on-surface-variant opacity-60',
-                )
-              "
-              :aria-label="t.files.saveFile"
-              :title="t.files.saveFile"
-            >
-              <Save :size="13" />
-            </button>
-            <button
-              v-if="isEditing"
-              type="button"
-              @click="exitEdit"
-              class="flex h-7 w-16 items-center justify-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-              :aria-label="t.files.doneEditing"
-              :title="t.files.doneEditing"
-            >
-              <Check :size="13" />
-              {{ t.files.done }}
-            </button>
-          </div>
-        </div>
-
-        <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest">
           <div
-            v-if="isFindOpen && canSearchCurrentFile"
-            class="file-find-widget"
-            role="search"
-            :aria-label="t.files.findReplaceAria"
+            v-else-if="!selectedFile"
+            class="flex h-full items-center justify-center text-sm text-on-surface-variant"
           >
-            <div class="flex min-w-0 items-center gap-1">
-              <button
-                v-if="canReplaceCurrentFile"
-                type="button"
-                class="file-find-icon-button h-7 w-6"
-                :aria-label="t.files.toggleReplace"
-                :title="t.files.toggleReplace"
-                @click="isReplaceOpen ? (isReplaceOpen = false) : openReplace()"
+            {{ t.files.selectToPreview }}
+          </div>
+          <div
+            v-else-if="selectedFile.previewKind === 'text' && isMarkdownPreview && !isEditing && !isFindOpen"
+            class="h-full bg-surface-container-lowest"
+          >
+            <div
+              class="memo-rendered themed-scrollbar h-full overflow-auto px-6 py-5 text-on-surface"
+              v-html="renderedMarkdown"
+            />
+          </div>
+          <div
+            v-else-if="selectedFile.previewKind === 'text'"
+            :class="
+              cn(
+                'file-code-surface h-full overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs leading-5 [font-family:Consolas,\'JetBrains_Mono\',\'Fira_Code\',ui-monospace,SFMono-Regular,Menlo,Monaco,monospace]',
+              )
+            "
+          >
+            <div
+              ref="codeScrollRef"
+              class="themed-scrollbar file-code-scroll"
+              :style="editorContentStyle"
+              @scroll="handleCodeScroll"
+            >
+              <pre
+                class="file-code-gutter select-none border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 py-4 text-right text-on-surface-variant/70"
+                >{{ lineNumbers }}</pre
               >
-                <ChevronDown :size="14" :class="cn('transition-transform', !isReplaceOpen && '-rotate-90')" />
-              </button>
-              <span v-else class="w-6 shrink-0" />
-              <div class="file-find-input-wrap">
-                <Search :size="12" class="mr-1.5 shrink-0 text-on-surface-variant" />
-                <input
-                  ref="findInputRef"
-                  v-model="findQuery"
-                  type="text"
-                  class="min-w-0 flex-1 bg-transparent text-xs text-on-surface outline-none placeholder:text-on-surface-variant"
-                  :placeholder="t.files.findPlaceholder"
-                  :aria-label="t.files.findInCurrentFile"
-                  @keydown="handleFindKeydown"
+              <div class="file-code-main">
+                <pre
+                  class="file-code-layer bg-[var(--code-preview-bg)] p-4 text-on-surface"
+                ><code class="hljs" v-html="highlightedCodeWithMatches" /></pre>
+                <textarea
+                  v-if="isEditing"
+                  ref="textareaRef"
+                  v-model="draftContent"
+                  class="file-code-textarea themed-scrollbar p-4 text-on-surface outline-none"
+                  spellcheck="false"
+                  wrap="off"
+                  :aria-label="t.files.editFileContent"
+                  @scroll="syncCodeScrollFromTextarea"
+                  @dblclick="enterEdit"
                 />
-                <span
-                  v-if="matchStatusLabel"
-                  class="ml-2 shrink-0 whitespace-nowrap font-mono text-[10px] text-on-surface-variant"
-                >
-                  {{ matchStatusLabel }}
-                </span>
               </div>
-              <button
-                type="button"
-                class="file-find-icon-button h-7 w-7 disabled:cursor-not-allowed disabled:opacity-35"
-                :disabled="!hasMatches"
-                :aria-label="t.files.previousMatch"
-                :title="t.files.previousMatch"
-                @click="goToMatch(-1)"
-              >
-                <ChevronUp :size="14" />
-              </button>
-              <button
-                type="button"
-                class="file-find-icon-button h-7 w-7 disabled:cursor-not-allowed disabled:opacity-35"
-                :disabled="!hasMatches"
-                :aria-label="t.files.nextMatch"
-                :title="t.files.nextMatch"
-                @click="goToMatch(1)"
-              >
-                <ChevronDown :size="14" />
-              </button>
-              <button
-                type="button"
-                class="file-find-icon-button h-7 w-7 hover:text-on-surface"
-                :aria-label="t.files.closeFind"
-                :title="t.files.closeFind"
-                @click="closeFind"
-              >
-                <X :size="14" />
-              </button>
-            </div>
-            <div v-if="isReplaceOpen && canReplaceCurrentFile" class="flex min-w-0 items-center gap-1 pl-7">
-              <input
-                ref="replaceInputRef"
-                v-model="replaceValue"
-                type="text"
-                class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface-container-low px-2 text-xs text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary focus:bg-surface-container-lowest"
-                :placeholder="t.files.replacePlaceholder"
-                :aria-label="t.files.replaceWith"
-                @keydown="handleReplaceKeydown"
-              />
-              <button
-                type="button"
-                class="file-find-icon-button h-7 w-7 border border-border-subtle disabled:cursor-not-allowed disabled:opacity-35"
-                :disabled="!hasMatches"
-                :aria-label="t.files.replaceCurrentMatch"
-                :title="t.files.replaceCurrentMatch"
-                @click="replaceActiveMatch"
-              >
-                <Replace :size="13" />
-              </button>
-              <button
-                type="button"
-                class="file-find-icon-button h-7 w-7 border border-border-subtle disabled:cursor-not-allowed disabled:opacity-35"
-                :disabled="!hasMatches"
-                :aria-label="t.files.replaceAllMatches"
-                :title="t.files.replaceAllMatches"
-                @click="replaceAllMatches"
-              >
-                <ReplaceAll :size="13" />
-              </button>
             </div>
           </div>
-
-          <div class="min-h-0 flex-1 overflow-hidden">
-            <div
-              v-if="isLoadingFile"
-              class="themed-scrollbar h-full overflow-auto bg-[var(--code-preview-bg)] px-2 py-3 font-mono text-xs leading-5"
-              aria-busy="true"
-            >
-              <div
-                v-for="row in 12"
-                :key="row"
-                class="grid grid-cols-[3rem_minmax(0,1fr)] gap-2 px-2 py-0.5"
-              >
-                <span class="skeleton h-2.5 w-6" />
-                <span
-                  :class="[
-                    'skeleton h-2.5',
-                    row % 4 === 0 ? 'w-full' : row % 4 === 1 ? 'w-3/4' : row % 4 === 2 ? 'w-5/6' : 'w-2/3',
-                  ]"
-                />
-              </div>
-            </div>
-            <div
-              v-else-if="!selectedFile"
-              class="flex h-full items-center justify-center text-sm text-on-surface-variant"
-            >
-              {{ t.files.selectToPreview }}
-            </div>
-            <div
-              v-else-if="selectedFile.previewKind === 'text' && isMarkdownPreview && !isEditing && !isFindOpen"
-              class="h-full bg-surface-container-lowest"
-            >
-              <div
-                class="memo-rendered themed-scrollbar h-full overflow-auto px-6 py-5 text-on-surface"
-                v-html="renderedMarkdown"
-              />
-            </div>
-            <div
-              v-else-if="selectedFile.previewKind === 'text'"
-              :class="
-                cn(
-                  'file-code-surface h-full overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs leading-5 [font-family:Consolas,\'JetBrains_Mono\',\'Fira_Code\',ui-monospace,SFMono-Regular,Menlo,Monaco,monospace]',
-                )
-              "
-            >
-              <div
-                ref="codeScrollRef"
-                class="themed-scrollbar file-code-scroll"
-                :style="editorContentStyle"
-                @scroll="handleCodeScroll"
-              >
-                <pre
-                  class="file-code-gutter select-none border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 py-4 text-right text-on-surface-variant/70"
-                  >{{ lineNumbers }}</pre
-                >
-                <div class="file-code-main">
-                  <pre
-                    class="file-code-layer bg-[var(--code-preview-bg)] p-4 text-on-surface"
-                  ><code class="hljs" v-html="highlightedCodeWithMatches" /></pre>
-                  <textarea
-                    v-if="isEditing"
-                    ref="textareaRef"
-                    v-model="draftContent"
-                    class="file-code-textarea themed-scrollbar p-4 text-on-surface outline-none"
-                    spellcheck="false"
-                    wrap="off"
-                    :aria-label="t.files.editFileContent"
-                    @scroll="syncCodeScrollFromTextarea"
-                    @dblclick="enterEdit"
-                  />
-                </div>
-              </div>
-            </div>
-            <div v-else-if="selectedFile.previewKind === 'image'" class="flex h-full items-center justify-center p-6">
-              <img :src="selectedFile.dataUrl" :alt="selectedFile.name" class="max-h-full max-w-full object-contain" />
-            </div>
-            <div
-              v-else
-              class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-on-surface-variant"
-            >
-              <FileImage :size="28" />
-              <span>{{ selectedFile.message || t.files.previewUnavailable }}</span>
-            </div>
+          <div v-else-if="selectedFile.previewKind === 'image'" class="flex h-full items-center justify-center p-6">
+            <img :src="selectedFile.dataUrl" :alt="selectedFile.name" class="max-h-full max-w-full object-contain" />
+          </div>
+          <div
+            v-else
+            class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-on-surface-variant"
+          >
+            <FileImage :size="28" />
+            <span>{{ selectedFile.message || t.files.previewUnavailable }}</span>
           </div>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   </div>
 </template>
