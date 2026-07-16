@@ -73,6 +73,22 @@ Semantic elements are preferred: buttons for actions, inputs for search and edit
 
 Current UI already uses those patterns in places like `src/components/layout/TopBar.vue` and `src/components/project/MemoTab.vue`. When adding icon-only controls, give them an accessible name instead of relying on the icon itself.
 
+### Convention: Keyboard-Driven Detail Tabs
+
+**What**: Detail pages expose Tab and left/right arrow keys as page-scoped tab-switching shortcuts while focus is on any non-editable detail control or temporarily falls back to the document body. The active tab still uses roving focus and receives focus after a keyboard switch.
+
+**Why**: Handlers attached only to tab buttons stop working as soon as focus moves to a header or content action. A detail-root bubbling handler still misses events when a view transition or host focus handoff leaves `document.body` active. Initial autofocus masks both scope errors in shallow tests, while native Tab resumes traversing buttons instead of switching project tabs.
+
+**Rules**:
+
+- Give the tablist and tab buttons `tablist` / `tab` semantics, `aria-selected`, `aria-controls`, and an active-only `tabindex="0"`.
+- After mount or project replacement, wait for Vue's next DOM update and focus the active tab.
+- Register a bubbling `window` keydown listener only while the detail component is mounted and remove it on unmount. Accept targets inside the detail root plus `document` / `body` fallback targets; ignore targets in teleported UI, open store-owned dialogs, modified or already-prevented events, editable targets, and `role="separator"` controls.
+- Cycle Tab / Shift+Tab and left/right arrows across the tab list, then focus the newly active tab. Keep the selected underline as the focus cue and suppress the browser's extra outline/ring on these tab buttons.
+- Verify entry behavior before clicking a tab, explicitly blur focus back to `body` and retry both key families, repeat the shortcut after focusing a header button, test the last-to-first cycle, and confirm inputs, dialogs, and resizable separators retain their own keyboard behavior.
+
+**Related**: `src/components/project/ProjectDetails.vue`.
+
 ### Convention: Left-Side Back Buttons
 
 **What**: Detail and settings headers place the return action on the left with an `ArrowLeft` icon button.

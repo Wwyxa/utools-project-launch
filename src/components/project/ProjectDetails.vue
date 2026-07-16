@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   CheckSquare,
   Code2,
@@ -32,6 +32,8 @@ const t = useI18n();
 type TabId = "info" | "scripts" | "automation" | "files" | "git" | "memo";
 const activeTab = ref<TabId>("scripts");
 const fileOpenRequest = ref("");
+const detailsRootRef = ref<HTMLElement | null>(null);
+const tabListRef = ref<HTMLElement | null>(null);
 
 const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
   { id: "info", label: t.value.projectDetails.overview },
@@ -112,6 +114,53 @@ const handleDelete = () => {
   store.requestDeleteProject(props.project.id);
 };
 
+const focusActiveTab = () => {
+  void nextTick(() => {
+    tabListRef.value?.querySelector<HTMLButtonElement>("[role='tab'][aria-selected='true']")?.focus();
+  });
+};
+
+const isTextEntryTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+
+const isDetailKeyboardTarget = (target: EventTarget | null) =>
+  target === document ||
+  target === document.body ||
+  target === document.documentElement ||
+  (target instanceof Node && Boolean(detailsRootRef.value?.contains(target)));
+
+const handleDetailKeydown = (event: KeyboardEvent) => {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (
+    !isDetailKeyboardTarget(event.target) ||
+    store.projectFormOpen ||
+    Boolean(store.pendingDeleteProject) ||
+    event.defaultPrevented ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    isTextEntryTarget(target) ||
+    target?.closest("[role='separator']")
+  ) {
+    return;
+  }
+
+  let direction = 0;
+  if (event.key === "ArrowLeft" || (event.key === "Tab" && event.shiftKey)) {
+    direction = -1;
+  } else if (event.key === "ArrowRight" || event.key === "Tab") {
+    direction = 1;
+  } else {
+    return;
+  }
+
+  const currentIndex = tabs.value.findIndex((tab) => tab.id === activeTab.value);
+  const nextIndex = (currentIndex + direction + tabs.value.length) % tabs.value.length;
+  event.preventDefault();
+  activeTab.value = tabs.value[nextIndex].id;
+  focusActiveTab();
+};
+
 const handleOpenGitFile = (relativePath: string) => {
   fileOpenRequest.value = relativePath;
   activeTab.value = "files";
@@ -134,9 +183,23 @@ const scheduleInitialGitRefresh = () => {
   });
 };
 
-onMounted(scheduleInitialGitRefresh);
+onMounted(() => {
+  scheduleInitialGitRefresh();
+  focusActiveTab();
+  window.addEventListener("keydown", handleDetailKeydown);
+});
 
-watch(() => props.project.id, scheduleInitialGitRefresh);
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleDetailKeydown);
+});
+
+watch(
+  () => props.project.id,
+  () => {
+    scheduleInitialGitRefresh();
+    focusActiveTab();
+  },
+);
 
 watch(
   () => store.projectDetailsTabRequest,
@@ -150,7 +213,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-full flex-1 flex-col overflow-hidden p-3">
+  <div ref="detailsRootRef" class="flex h-full flex-1 flex-col overflow-hidden p-3">
     <div class="mb-3 flex items-center justify-between gap-3">
       <div class="flex items-center gap-4 min-w-0">
         <button
@@ -239,15 +302,20 @@ watch(
       </div>
     </div>
 
-    <nav class="mb-3 flex gap-5 overflow-x-auto border-b border-border-subtle">
+    <nav ref="tabListRef" role="tablist" class="mb-3 flex gap-5 overflow-x-auto border-b border-border-subtle">
       <button
         v-for="tab in tabs"
         :key="tab.id"
+        :id="`project-tab-${tab.id}`"
         type="button"
+        role="tab"
+        :aria-selected="activeTab === tab.id"
+        :aria-controls="`project-tabpanel-${tab.id}`"
+        :tabindex="activeTab === tab.id ? 0 : -1"
         @click="activeTab = tab.id"
         :class="
           cn(
-            'pb-2 text-sm font-bold transition-all relative whitespace-nowrap',
+            'relative whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0',
             activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
           )
         "
@@ -258,6 +326,9 @@ watch(
     </nav>
 
     <div
+      :id="`project-tabpanel-${activeTab}`"
+      role="tabpanel"
+      :aria-labelledby="`project-tab-${activeTab}`"
       :class="
         cn(
           'min-h-0 flex-1 [color-scheme:inherit]',
