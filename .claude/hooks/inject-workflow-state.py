@@ -34,6 +34,8 @@ import json
 import os
 import re
 import sys
+import queue
+import threading
 from pathlib import Path
 
 # Force UTF-8 on stdin/stdout/stderr on Windows. Default codepage there is
@@ -51,12 +53,12 @@ if sys.platform.startswith("win"):
             try:
                 _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
             except Exception:
-                pass
+                pass  # Optional Windows stream setup; keep hook startup non-fatal.
         elif hasattr(_stream, "detach"):
             try:
                 setattr(sys, _stream_name, _io.TextIOWrapper(_stream.detach(), encoding="utf-8", errors="replace"))
             except Exception:
-                pass
+                pass  # Optional Windows stream setup; keep hook startup non-fatal.
 from typing import Optional
 
 
@@ -102,6 +104,7 @@ def _detect_platform(input_data: dict) -> str | None:
         "QODER_PROJECT_DIR": "qoder",
         "KIRO_PROJECT_DIR": "kiro",
         "COPILOT_PROJECT_DIR": "copilot",
+        "TRAE_PROJECT_DIR": "trae",
     }
     for env_name, platform in env_map.items():
         if os.environ.get(env_name):
@@ -123,6 +126,8 @@ def _detect_platform(input_data: dict) -> str | None:
         return "droid"
     if ".kiro" in script_parts:
         return "kiro"
+    if ".trae" in script_parts:
+        return "trae"
     return None
 
 
@@ -302,14 +307,44 @@ def build_breadcrumb(
 # Entry
 # ---------------------------------------------------------------------------
 
+def _load_hook_input() -> dict:
+    """Read hook JSON without trusting host runners to close stdin.
+
+    Kiro IDE `runCommand` and similar hook runners can leave stdin open while
+    sending no payload. A plain `json.load(sys.stdin)` then blocks forever.
+    Normal hook runners write the complete JSON payload and close stdin, so the
+    short daemon read preserves that path while failing closed to `{}` for
+    non-piping hosts.
+    """
+    result_queue: "queue.Queue[str | Exception]" = queue.Queue(maxsize=1)
+
+    def _read() -> None:
+        try:
+            result_queue.put(sys.stdin.read())
+        except Exception as exc:
+            result_queue.put(exc)
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+    try:
+        raw = result_queue.get(timeout=0.2)
+    except queue.Empty:
+        return {}
+
+    if isinstance(raw, Exception):
+        return {}
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def main() -> int:
     if os.environ.get("TRELLIS_HOOKS") == "0" or os.environ.get("TRELLIS_DISABLE_HOOKS") == "1":
         return 0
 
-    try:
-        data = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError):
-        data = {}
+    data = _load_hook_input()
 
     cwd_str = data.get("cwd") or os.getcwd()
     cwd = Path(cwd_str)
