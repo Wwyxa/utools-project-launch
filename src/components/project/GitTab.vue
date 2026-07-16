@@ -223,6 +223,14 @@ const commits = computed(() => {
   });
 });
 const snapshot = computed(() => props.project.git);
+const topBarStatusText = computed(() => {
+  const statusText = snapshot.value?.statusText || t.value.git.noRepo;
+  const headHash = snapshot.value?.headHash;
+  if (!snapshot.value?.isDetachedHead || !headHash) return statusText;
+
+  const detachedHeadPrefix = `detached HEAD @ ${headHash} · `;
+  return statusText.startsWith(detachedHeadPrefix) ? statusText.slice(detachedHeadPrefix.length) : statusText;
+});
 const remotes = computed(() => snapshot.value?.remotes || []);
 const upstream = computed(() => snapshot.value?.upstream || null);
 const hasUpstream = computed(() => Boolean(upstream.value));
@@ -2127,7 +2135,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         >
           detached HEAD
         </span>
-        <span class="text-on-surface-variant whitespace-nowrap">
+        <span v-if="hasUpstream" class="text-on-surface-variant whitespace-nowrap">
           {{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}
         </span>
         <div class="relative min-w-0" @click.stop>
@@ -2212,7 +2220,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             </div>
           </div>
         </div>
-        <span class="text-on-surface-variant truncate">{{ snapshot?.statusText || t.git.noRepo }}</span>
+        <span class="text-on-surface-variant truncate">{{ topBarStatusText }}</span>
         <span
           v-if="gitActionMessage"
           :class="
