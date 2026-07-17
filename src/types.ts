@@ -280,8 +280,15 @@ export interface ProjectGitFileChange {
   unstaged?: boolean;
 }
 
+export type ProjectGitDiffScope = "combined" | "staged" | "unstaged";
+
+export interface ProjectGitFileDiffOptions {
+  scope?: ProjectGitDiffScope;
+}
+
 export interface ProjectGitFileDiffResult {
   path: string;
+  scope?: ProjectGitDiffScope;
   diff: string;
   message?: string;
 }
@@ -666,7 +673,11 @@ export interface ProjectBridge {
   readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>;
   readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>;
   readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>;
-  readGitFileDiff(projectPath: string, relativePath: string): Promise<ProjectGitFileDiffResult>;
+  readGitFileDiff(
+    projectPath: string,
+    relativePath: string,
+    options?: ProjectGitFileDiffOptions,
+  ): Promise<ProjectGitFileDiffResult>;
   readGitCommitFileDiff(
     projectPath: string,
     commitHash: string,

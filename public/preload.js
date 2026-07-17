@@ -1899,9 +1899,10 @@ function stageGitFiles(projectPath, relativePaths, options = {}) {
   try {
     const filterStatus = (status) =>
       Boolean(status && (status.unstaged || (!status.staged && status.unstaged !== false)));
-    const { actionPaths, displayPaths } = options?.all
-      ? allGitActionPaths(repositoryPath, filterStatus)
-      : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
+    const { actionPaths, displayPaths } =
+      options?.all === true
+        ? allGitActionPaths(repositoryPath, filterStatus)
+        : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
     if (actionPaths.length === 0) {
       return { ok: false, count: 0, paths: [], message: "没有可暂存的文件变更。" };
     }
@@ -1927,9 +1928,10 @@ function unstageGitFiles(projectPath, relativePaths, options = {}) {
 
   try {
     const filterStatus = (status) => Boolean(status?.staged);
-    const { actionPaths, displayPaths } = options?.all
-      ? allGitActionPaths(repositoryPath, filterStatus)
-      : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
+    const { actionPaths, displayPaths } =
+      options?.all === true
+        ? allGitActionPaths(repositoryPath, filterStatus)
+        : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
     if (actionPaths.length === 0) {
       return { ok: false, count: 0, paths: [], message: "没有可取消暂存的文件。" };
     }
@@ -1954,8 +1956,11 @@ function unstageGitFiles(projectPath, relativePaths, options = {}) {
 
 function discardGitFiles(projectPath, relativePaths, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
   const requestedPaths =
-    options?.all && repositoryPath
+    options?.all === true
       ? allGitActionPaths(repositoryPath, (status) => Boolean(status)).displayPaths
       : Array.isArray(relativePaths)
         ? Array.from(new Set(relativePaths))
@@ -2775,21 +2780,23 @@ function writeProjectFile(projectPath, relativePath, content) {
   return { path: resolved.targetPath, relativePath: resolved.relativePath, savedAt: new Date().toISOString() };
 }
 
-function readGitFileDiff(projectPath, relativePath) {
+function readGitFileDiff(projectPath, relativePath, options = {}) {
+  const requestedScope = String(options?.scope || "combined");
+  const scope = ["combined", "staged", "unstaged"].includes(requestedScope) ? requestedScope : "combined";
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { path: relativePath || "", diff: "", message: "未检测到 Git 仓库" };
+    return { path: relativePath || "", scope, diff: "", message: "未检测到 Git 仓库" };
   }
 
   const resolved = resolveProjectChild(repositoryPath, relativePath);
   const diffPath = resolved.relativePath;
   if (!diffPath) {
-    return { path: "", diff: "", message: "请选择文件查看 diff。" };
+    return { path: "", scope, diff: "", message: "请选择文件查看 diff。" };
   }
 
   const status = getGitFileStatus(repositoryPath, diffPath);
-  const headDiff = runGitDiff(repositoryPath, ["diff", "--", diffPath]);
-  const cachedDiff = runGitDiff(repositoryPath, ["diff", "--cached", "--", diffPath]);
+  const headDiff = scope === "staged" ? "" : runGitDiff(repositoryPath, ["diff", "--", diffPath]);
+  const cachedDiff = scope === "unstaged" ? "" : runGitDiff(repositoryPath, ["diff", "--cached", "--", diffPath]);
 
   const isFileUntracked =
     status?.status === "UNTRACKED" ||
@@ -2798,7 +2805,7 @@ function readGitFileDiff(projectPath, relativePath) {
       runGitResult(repositoryPath, ["ls-files", "--error-unmatch", "--", diffPath]).status !== 0);
 
   let untrackedDiff = "";
-  if (isFileUntracked) {
+  if (scope !== "staged" && isFileUntracked) {
     const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
     untrackedDiff = runGitDiff(repositoryPath, ["diff", "--no-index", "--", nullDevice, diffPath]) || "";
     if (!untrackedDiff) {
@@ -2816,8 +2823,16 @@ function readGitFileDiff(projectPath, relativePath) {
 
   return {
     path: diffPath,
+    scope,
     diff,
-    message: diff ? "" : "该文件暂无可显示的 diff。",
+    message:
+      diff || scope === "combined"
+        ? diff
+          ? ""
+          : "该文件暂无可显示的 diff。"
+        : scope === "staged"
+          ? "该文件暂无已暂存 diff。"
+          : "该文件暂无未暂存 diff。",
   };
 }
 

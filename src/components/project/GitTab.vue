@@ -32,6 +32,7 @@ import {
   Project,
   type ProjectGitActionResult,
   type ProjectGitCommitSummary,
+  type ProjectGitDiffScope,
   type ProjectGitFileChange,
   type ProjectGitFileDiffResult,
   type ProjectGitRemoteSummary,
@@ -51,6 +52,7 @@ import { renderMarkdown } from "../../lib/markdown";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import ProjectActionDialog from "./ProjectActionDialog.vue";
+import GitDiffViewer from "./GitDiffViewer.vue";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
@@ -58,7 +60,12 @@ type GitFileActionName = "stage" | "unstage" | "discard";
 type GitRemoteActionName = "fetch" | "pull" | "push";
 type RemoteDialogMode = "add" | "edit";
 type ActiveGitFileAction = { action: GitFileActionName; path: string };
+type WorktreeDiffScope = Exclude<ProjectGitDiffScope, "combined">;
+type WorktreeSelection = { path: string; scope: WorktreeDiffScope };
+type RightContext = "review" | "history";
+type CommitReviewSelection = { commitHash: string; commitMessage: string; path: string };
 type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
+type CommitContextMenuState = { commit: ProjectGitCommitSummary; x: number; y: number; height: number };
 type AppDialogKind = "danger" | "warning";
 type AppActionDialog = {
   kind?: AppDialogKind;
@@ -91,13 +98,8 @@ const isAiModeMenuOpen = ref(false);
 const aiDialogIncludeDiffContext = ref(true);
 const aiDialogResult = ref(createAiReasoningStreamState());
 const aiDialogMessage = ref("");
+const aiDialogNotice = ref("");
 const aiDialogState = ref<AiState>("idle");
-const commitAiMode = ref("summary");
-const isCommitAiModeMenuOpen = ref(false);
-const commitAiIncludeDiffContext = ref(true);
-const commitAiResult = ref(createAiReasoningStreamState());
-const commitAiMessage = ref("");
-const commitAiState = ref<AiState>("idle");
 const openDatePickerKind = ref<"since" | "until" | null>(null);
 const datePickerMonth = ref(new Date());
 const isBranchMenuOpen = ref(false);
@@ -114,7 +116,6 @@ const bulkActionProgress = ref({ current: 0, total: 0 });
 const gitToastMessage = ref("");
 const gitToastState = ref<Exclude<GitActionState, "idle">>("loading");
 const gitToastTimer = ref<number | undefined>();
-const selectedGitFilePath = ref("");
 const commitMessage = ref("");
 const commitMessageTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const commitMessageAiResult = ref(createAiReasoningStreamState());
@@ -160,17 +161,35 @@ const scheduleCommitMessageTextareaResize = () => {
 
 const canStageFile = (file: ProjectGitFileChange) => file.unstaged || (!file.staged && file.unstaged !== false);
 const canUnstageFile = (file: ProjectGitFileChange) => Boolean(file.staged);
-const rowPrimaryGitFileAction = (file: ProjectGitFileChange): Exclude<GitFileActionName, "discard"> | null => {
-  if (canStageFile(file)) return "stage";
-  if (canUnstageFile(file)) return "unstage";
-  return null;
-};
-
 const files = computed(() => store.stagedFiles[props.project.id] || props.project.git?.files || []);
 const stageableFiles = computed(() => files.value.filter(canStageFile));
 const unstageableFiles = computed(() => files.value.filter(canUnstageFile));
 const discardableFiles = computed(() => files.value);
 const stagedFiles = computed(() => files.value.filter((file) => file.staged));
+const stagedGroupOpen = ref(true);
+const unstagedGroupOpen = ref(true);
+const rightContext = ref<RightContext>("history");
+const worktreeSelection = ref<WorktreeSelection | null>(null);
+const worktreeDiff = ref<ProjectGitFileDiffResult | null>(null);
+const isLoadingWorktreeDiff = ref(false);
+const commitReviewSelection = ref<CommitReviewSelection | null>(null);
+const reviewScrollTop = ref(0);
+let diffRequestGeneration = 0;
+let commitFilesRequestGeneration = 0;
+const worktreeGroups = computed(() => [
+  ...(stagedFiles.value.length > 0
+    ? [{ scope: "staged" as const, label: "已暂存", open: stagedGroupOpen.value, files: stagedFiles.value }]
+    : []),
+  { scope: "unstaged" as const, label: "更改", open: unstagedGroupOpen.value, files: stageableFiles.value },
+]);
+const visibleWorktreeItems = computed(() =>
+  worktreeGroups.value.flatMap((group) =>
+    group.open ? group.files.map((file) => ({ file, scope: group.scope })) : [],
+  ),
+);
+const worktreeSelectionKey = (selection: WorktreeSelection) => `${selection.scope}:${selection.path}`;
+const isWorktreeSelected = (path: string, scope: WorktreeDiffScope) =>
+  worktreeSelection.value?.path === path && worktreeSelection.value.scope === scope;
 const hasStagedChanges = computed(() => stagedFiles.value.length > 0);
 const hasUncommittedChanges = computed(() => files.value.length > 0);
 const bulkPrimaryGitFileAction = computed<Exclude<GitFileActionName, "discard"> | null>(() => {
@@ -201,6 +220,7 @@ const selectedCommitHash = ref("");
 const selectedCommit = computed(() => commits.value.find((commit) => commit.hash === selectedCommitHash.value));
 const selectedCommitFiles = ref<ProjectGitFileChange[]>([]);
 const isLoadingCommitFiles = ref(false);
+const commitFilesError = ref("");
 const commits = computed(() => {
   const source = props.project.git?.commits || [];
   const keyword = commitKeyword.value.trim().toLowerCase();
@@ -308,17 +328,12 @@ const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.pr
 const isLoadingMore = ref(false);
 const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingDiff = ref(false);
-const isDiffDialogOpen = ref(false);
-const isCommitDetailOpen = ref(false);
 const isAiDialogGenerating = computed(() => aiDialogState.value === "loading");
 const aiModeOptions = computed(() => store.aiPreferences.modes.filter((mode) => mode.kind !== "commit-message"));
 const resolveAiModeId = (modeId: string) =>
   aiModeOptions.value.some((option) => option.id === modeId) ? modeId : aiModeOptions.value[0]?.id || "summary";
 const selectedAiMode = computed(
   () => aiModeOptions.value.find((option) => option.id === aiMode.value) || aiModeOptions.value[0],
-);
-const selectedCommitAiMode = computed(
-  () => aiModeOptions.value.find((option) => option.id === commitAiMode.value) || aiModeOptions.value[0],
 );
 const commitMessageAiMode = computed(
   () =>
@@ -331,7 +346,10 @@ const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
 const commitTooltip = ref<CommitTooltipState | null>(null);
 const pendingCommitTooltip = ref<CommitTooltipState | null>(null);
-let commitTooltipTimer: number | undefined;
+const commitContextMenu = ref<CommitContextMenuState | null>(null);
+const commitContextMenuRef = ref<HTMLElement | null>(null);
+let commitTooltipOpenTimer: number | undefined;
+let commitTooltipCloseTimer: number | undefined;
 const commitTooltipStyle = computed(() => {
   if (!commitTooltip.value) {
     return {};
@@ -340,18 +358,24 @@ const commitTooltipStyle = computed(() => {
   const viewportWidth = globalThis.window?.innerWidth || 1024;
   const viewportHeight = globalThis.window?.innerHeight || 768;
   const tooltipMaxWidth = Math.min(384, Math.max(240, viewportWidth - 32));
-  const tooltipHeight = Math.min(240, Math.max(140, viewportHeight - 64));
+  const tooltipMaxHeight = Math.min(240, Math.max(80, commitTooltip.value.y - 26));
   const left = Math.min(Math.max(16, commitTooltip.value.x), Math.max(16, viewportWidth - tooltipMaxWidth - 16));
-  const showAbove = commitTooltip.value.y - tooltipHeight - 10 >= 16;
-  const top = showAbove
-    ? commitTooltip.value.y - 10
-    : Math.min(commitTooltip.value.y + 18, Math.max(16, viewportHeight - tooltipHeight - 16));
 
   return {
     left: `${left}px`,
-    top: `${top}px`,
+    bottom: `${Math.max(16, viewportHeight - commitTooltip.value.y + 10)}px`,
     maxWidth: `${tooltipMaxWidth}px`,
-    transform: showAbove ? "translateY(-100%)" : "none",
+    maxHeight: `${tooltipMaxHeight}px`,
+  };
+});
+const commitContextMenuStyle = computed(() => {
+  if (!commitContextMenu.value) return {};
+  const width = 200;
+  const viewportWidth = globalThis.window?.innerWidth || 1024;
+  const viewportHeight = globalThis.window?.innerHeight || 768;
+  return {
+    left: `${Math.max(12, Math.min(commitContextMenu.value.x, viewportWidth - width - 12))}px`,
+    top: `${Math.max(12, Math.min(commitContextMenu.value.y, viewportHeight - commitContextMenu.value.height - 12))}px`,
   };
 });
 
@@ -379,27 +403,27 @@ const closeAiDialog = () => {
 
 const closeFloatingControls = () => {
   isAiModeMenuOpen.value = false;
-  isCommitAiModeMenuOpen.value = false;
   isBranchMenuOpen.value = false;
   isRemoteMenuOpen.value = false;
   openDatePickerKind.value = null;
+  commitContextMenu.value = null;
 };
 
 const hasFloatingControlsOpen = () =>
-  isAiModeMenuOpen.value ||
-  isCommitAiModeMenuOpen.value ||
-  isBranchMenuOpen.value ||
-  isRemoteMenuOpen.value ||
-  Boolean(openDatePickerKind.value);
+  isAiModeMenuOpen.value || isBranchMenuOpen.value || isRemoteMenuOpen.value || Boolean(openDatePickerKind.value);
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (event.detail.handled) return;
-  if (isDiffDialogOpen.value) {
-    closeDiffDialog();
+  if (commitTooltip.value || pendingCommitTooltip.value) {
+    hideCommitTooltip();
     event.detail.handle();
     return;
   }
-
+  if (commitContextMenu.value) {
+    commitContextMenu.value = null;
+    event.detail.handle();
+    return;
+  }
   if (isRemoteDialogOpen.value) {
     closeRemoteDialog();
     event.detail.handle();
@@ -418,10 +442,18 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
     return;
   }
 
-  if (isCommitDetailOpen.value) {
-    closeCommitDetails();
+  if (rightContext.value === "review") {
+    rightContext.value = "history";
     event.detail.handle();
   }
+};
+
+const handleRightContextKeydown = async (event: KeyboardEvent) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  rightContext.value = event.key === "ArrowLeft" || event.key === "Home" ? "history" : "review";
+  await nextTick();
+  document.getElementById(`git-${rightContext.value}-tab`)?.focus();
 };
 
 const remoteActionLabel = (action: GitRemoteActionName) => {
@@ -663,6 +695,20 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
     return;
   }
 
+  const sourceSelection = worktreeSelection.value ? { ...worktreeSelection.value } : null;
+  const selectedFile = sourceSelection ? files.value.find((file) => file.path === sourceSelection.path) || null : null;
+  const selectedIndex = sourceSelection
+    ? visibleWorktreeItems.value.findIndex(
+        (item) => item.file.path === sourceSelection.path && item.scope === sourceSelection.scope,
+      )
+    : -1;
+  const nextItem = selectedIndex >= 0 ? visibleWorktreeItems.value[selectedIndex + 1] : undefined;
+  const discardSuccessor =
+    sourceSelection && nextItem?.scope === sourceSelection.scope
+      ? { path: nextItem.file.path, scope: sourceSelection.scope }
+      : null;
+  diffRequestGeneration += 1;
+  isLoadingWorktreeDiff.value = false;
   activeGitAction.value = `bulk:${action}`;
   const totalFiles = targetFiles.length;
   bulkActionProgress.value = { current: 0, total: totalFiles };
@@ -688,6 +734,9 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
     }
 
     setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok && selectedFile) {
+      await reconcileWorktreeSelection(action, selectedFile, sourceSelection, discardSuccessor);
+    }
   } catch (error) {
     setGitActionResult("error", error instanceof Error ? error.message : "Git 操作失败。");
   } finally {
@@ -696,9 +745,87 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
   }
 };
 
-const executeGitFileAction = async (action: GitFileActionName, file: ProjectGitFileChange) => {
+const resolveVisibleSelection = (selection: WorktreeSelection | null) => {
+  if (!selection) return null;
+  return visibleWorktreeItems.value.some((item) => item.file.path === selection.path && item.scope === selection.scope)
+    ? selection
+    : null;
+};
+
+const clearWorktreeReview = () => {
+  diffRequestGeneration += 1;
+  worktreeSelection.value = null;
+  worktreeDiff.value = null;
+  isLoadingWorktreeDiff.value = false;
+};
+
+const loadWorktreeDiff = async (selection: WorktreeSelection) => {
+  const generation = ++diffRequestGeneration;
+  worktreeSelection.value = selection;
+  commitReviewSelection.value = null;
+  rightContext.value = "review";
+  isLoadingWorktreeDiff.value = true;
+  worktreeDiff.value = { path: selection.path, scope: selection.scope, diff: "" };
+  try {
+    const result = await store.readGitFileDiff(props.project.id, selection.path, { scope: selection.scope });
+    if (
+      generation === diffRequestGeneration &&
+      worktreeSelection.value &&
+      worktreeSelectionKey(worktreeSelection.value) === worktreeSelectionKey(selection) &&
+      result?.path === selection.path &&
+      result.scope === selection.scope
+    ) {
+      worktreeDiff.value = result;
+    }
+  } catch (error) {
+    if (generation === diffRequestGeneration) {
+      worktreeDiff.value = {
+        path: selection.path,
+        scope: selection.scope,
+        diff: "",
+        message: error instanceof Error ? error.message : "读取 Git diff 失败。",
+      };
+    }
+  } finally {
+    if (generation === diffRequestGeneration) isLoadingWorktreeDiff.value = false;
+  }
+};
+
+const reconcileWorktreeSelection = async (
+  action: GitFileActionName,
+  file: ProjectGitFileChange,
+  sourceSelection: WorktreeSelection | null,
+  discardSuccessor: WorktreeSelection | null,
+) => {
+  if (!sourceSelection || !isWorktreeSelected(file.path, sourceSelection.scope)) return;
+  if (action === "discard") {
+    const nextSelection = resolveVisibleSelection(discardSuccessor);
+    if (nextSelection) await loadWorktreeDiff(nextSelection);
+    else clearWorktreeReview();
+    return;
+  }
+
+  const targetScope: WorktreeDiffScope = action === "stage" ? "staged" : "unstaged";
+  const targetFiles = targetScope === "staged" ? stagedFiles.value : stageableFiles.value;
+  if (!targetFiles.some((item) => item.path === file.path)) {
+    clearWorktreeReview();
+    return;
+  }
+  if (targetScope === "staged") stagedGroupOpen.value = true;
+  else unstagedGroupOpen.value = true;
+  await loadWorktreeDiff({ path: file.path, scope: targetScope });
+};
+
+const executeGitFileAction = async (
+  action: GitFileActionName,
+  file: ProjectGitFileChange,
+  sourceSelection: WorktreeSelection | null = null,
+  discardSuccessor: WorktreeSelection | null = null,
+) => {
   if (activeGitAction.value || isGitFileBusy(file)) return;
 
+  diffRequestGeneration += 1;
+  isLoadingWorktreeDiff.value = false;
   activeGitFileActions.value = [...activeGitFileActions.value, { action, path: file.path }];
   setGitActionResult("loading", gitFileActionLoadingMessage(action));
   await waitForVisualFeedback();
@@ -714,10 +841,9 @@ const executeGitFileAction = async (action: GitFileActionName, file: ProjectGitF
       return;
     }
 
-    if (action === "stage" || action === "unstage") {
-      setGitActionResult("idle", "");
-    } else {
-      setGitActionResult(result.ok ? "success" : "error", result.message);
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      await reconcileWorktreeSelection(action, file, sourceSelection, discardSuccessor);
     }
   } catch (error) {
     setGitActionResult("error", error instanceof Error ? error.message : "Git 操作失败。");
@@ -728,31 +854,35 @@ const executeGitFileAction = async (action: GitFileActionName, file: ProjectGitF
   }
 };
 
-const requestDiscardGitFile = (file: ProjectGitFileChange) => {
+const requestDiscardGitFile = (file: ProjectGitFileChange, scope: WorktreeDiffScope) => {
   if (activeGitAction.value || isGitFileBusy(file)) return;
+  const sourceSelection = isWorktreeSelected(file.path, scope) ? { path: file.path, scope } : null;
+  const currentIndex = visibleWorktreeItems.value.findIndex(
+    (item) => item.file.path === file.path && item.scope === scope,
+  );
+  const nextItem = currentIndex >= 0 ? visibleWorktreeItems.value[currentIndex + 1] : undefined;
+  const discardSuccessor = nextItem?.scope === scope ? { path: nextItem.file.path, scope } : null;
   confirmationDialog.value = {
     title: "丢弃文件变更",
     message: "此操作会还原该文件在工作区与暂存区中的本地变更。",
     detail: gitFileDisplayPath(file),
     confirmLabel: "丢弃变更",
     cancelLabel: t.value.common.cancel,
-    onConfirm: () => executeGitFileAction("discard", file),
+    onConfirm: () => executeGitFileAction("discard", file, sourceSelection, discardSuccessor),
   };
 };
 
-const runGitFileAction = async (action: GitFileActionName, file: ProjectGitFileChange) => {
-  selectedGitFilePath.value = file.path;
+const runGitFileAction = async (action: GitFileActionName, file: ProjectGitFileChange, scope: WorktreeDiffScope) => {
+  const sourceSelection = isWorktreeSelected(file.path, scope) ? { path: file.path, scope } : null;
   if (action === "discard") {
-    requestDiscardGitFile(file);
+    requestDiscardGitFile(file, scope);
     return;
   }
-  await executeGitFileAction(action, file);
+  await executeGitFileAction(action, file, sourceSelection);
 };
 
-const runPrimaryGitFileAction = async (file: ProjectGitFileChange) => {
-  const action = rowPrimaryGitFileAction(file);
-  if (!action) return;
-  await runGitFileAction(action, file);
+const runScopedPrimaryGitFileAction = async (file: ProjectGitFileChange, scope: WorktreeDiffScope) => {
+  await runGitFileAction(scope === "staged" ? "unstage" : "stage", file, scope);
 };
 
 const requestDiscardAllGitFiles = () => {
@@ -870,59 +1000,25 @@ const handleSwitchBranch = async (branchName: string) => {
 const commitHashMatches = (left?: string, right?: string) =>
   Boolean(left && right && (left === right || left.startsWith(right) || right.startsWith(left)));
 
-const isSelectedCommitDetachedHead = computed(() =>
-  Boolean(
-    snapshot.value?.isDetachedHead &&
-    selectedCommit.value &&
-    commitHashMatches(selectedCommit.value.hash, snapshot.value.headHash),
-  ),
-);
-
-const isSelectedCommitCurrentHead = computed(() =>
-  Boolean(selectedCommit.value && commitHashMatches(selectedCommit.value.hash, snapshot.value?.headHash)),
-);
-
-const selectedCommitLocalBranchNames = computed(() => {
+const commitLocalBranchNames = (commit: ProjectGitCommitSummary) => {
   const localBranches = new Set((snapshot.value?.branches || []).map((branch) => branch.name));
-  return selectedCommitRefs.value
+  return refsForCommit(commit.refs)
     .map((refName) => refName.replace(/^HEAD ->\s*/, "").trim())
     .filter((refName) => localBranches.has(refName));
-});
-const canCheckoutSelectedCommit = computed(
-  () =>
-    Boolean(selectedCommit.value) &&
-    (!isSelectedCommitDetachedHead.value || selectedCommitLocalBranchNames.value.length > 0),
-);
-const selectedCommitCheckoutTitle = computed(() => {
-  if (isSelectedCommitDetachedHead.value && selectedCommitLocalBranchNames.value.length === 0) {
-    return "当前已处于该 detached HEAD 提交";
-  }
-  if (hasUncommittedChanges.value) {
-    return "当前工作区存在未提交变更，点击后打开强制切换确认";
-  }
-  if (selectedCommitLocalBranchNames.value.length > 0) {
-    return `切换到本地分支 ${selectedCommitLocalBranchNames.value[0]}`;
-  }
-  return "切换到此提交（detached HEAD）";
-});
-const selectedCommitCheckoutAriaLabel = computed(() => {
-  if (isSelectedCommitDetachedHead.value && selectedCommitLocalBranchNames.value.length === 0) {
-    return "当前已处于该 detached HEAD 提交";
-  }
-  if (hasUncommittedChanges.value) {
-    return "打开强制切换提交确认";
-  }
-  return selectedCommitLocalBranchNames.value.length > 0 ? "切换到对应本地分支" : "切换到此提交";
-});
-const selectedCommitCheckoutLabel = computed(() => {
-  if (selectedCommit.value && activeGitAction.value === `checkout:${selectedCommit.value.hash}`) {
-    return "切换中";
-  }
-  if (hasUncommittedChanges.value) {
-    return "确认强制切换";
-  }
-  return selectedCommitLocalBranchNames.value.length > 0 ? "切回分支" : "切换";
-});
+};
+const isCommitDetachedHead = (commit: ProjectGitCommitSummary) =>
+  Boolean(snapshot.value?.isDetachedHead && commitHashMatches(commit.hash, snapshot.value.headHash));
+const canCheckoutDetachedCommit = (commit: ProjectGitCommitSummary) => !isCommitDetachedHead(commit);
+const detachedCheckoutTitle = (commit: ProjectGitCommitSummary) => {
+  if (isCommitDetachedHead(commit)) return "当前已处于该分离 HEAD 提交";
+  if (hasUncommittedChanges.value) return "工作区存在未提交变更，切换前需要确认";
+  return "切换到此提交，并进入分离 HEAD 状态";
+};
+const branchCheckoutTitle = (branchName: string) => {
+  if (branchName === snapshot.value?.branch && !snapshot.value?.isDetachedHead) return "当前分支";
+  if (hasUncommittedChanges.value) return `工作区存在未提交变更，切换到 ${branchName} 前需要确认`;
+  return `切换到本地分支 ${branchName}`;
+};
 
 const executeCheckoutCommit = async (commit: ProjectGitCommitSummary, options: { force?: boolean } = {}) => {
   if (!commit || activeGitAction.value || activeGitFileActions.value.length > 0) return;
@@ -958,8 +1054,8 @@ const executeCheckoutCommit = async (commit: ProjectGitCommitSummary, options: {
 const requestForceCheckoutCommit = (commit: ProjectGitCommitSummary) => {
   confirmationDialog.value = {
     kind: "danger",
-    title: "强制切换提交",
-    message: `当前工作区存在未提交变更。强制切换到 ${commit.hash} 会丢弃这些本地变更；若该提交是本地分支 tip，将切回对应分支，否则进入 detached HEAD。`,
+    title: "强制切换到提交",
+    message: `当前工作区存在未提交变更。继续切换到 ${commit.hash} 会丢弃这些本地变更；若没有本地分支指向该提交，HEAD 将进入分离状态。`,
     detail: formatGitFileLines(files.value, ""),
     confirmLabel: "强制切换",
     cancelLabel: t.value.common.cancel,
@@ -967,8 +1063,8 @@ const requestForceCheckoutCommit = (commit: ProjectGitCommitSummary) => {
   };
 };
 
-const handleCheckoutSelectedCommit = async () => {
-  const commit = selectedCommit.value;
+const handleCheckoutCommit = async (commit: ProjectGitCommitSummary) => {
+  commitContextMenu.value = null;
   if (!commit || activeGitAction.value || activeGitFileActions.value.length > 0) return;
   if (hasUncommittedChanges.value) {
     requestForceCheckoutCommit(commit);
@@ -976,6 +1072,15 @@ const handleCheckoutSelectedCommit = async () => {
   }
 
   await executeCheckoutCommit(commit);
+};
+
+const handleCheckoutCommitBranch = async (branchName: string) => {
+  commitContextMenu.value = null;
+  if (branchName === snapshot.value?.branch && !snapshot.value?.isDetachedHead) {
+    setGitActionResult("success", `已经位于分支 ${branchName}。`);
+    return;
+  }
+  await handleSwitchBranch(branchName);
 };
 
 const commitMessagePromptTemplate = computed(
@@ -1077,16 +1182,6 @@ const buildGitAiDiffContext = async (
 const workingTreeDiffContext = () =>
   buildGitAiDiffContext(snapshot.value?.files || [], (file) => store.readGitFileDiff(props.project.id, file.path));
 
-const selectedCommitDiffContext = () => {
-  const commitHash = selectedCommit.value?.hash || "";
-  if (!commitHash) {
-    return Promise.resolve({ content: "", truncated: false });
-  }
-  return buildGitAiDiffContext(selectedCommitFiles.value, (file) =>
-    store.readGitCommitFileDiff(props.project.id, commitHash, file.path),
-  );
-};
-
 const formatDiffContextSection = (title: string, diffContext: { content: string; truncated: boolean } | null) => {
   if (!diffContext) {
     return "代码 diff：未附加；请基于提交元数据和文件列表分析。";
@@ -1167,22 +1262,12 @@ const canRunFileAction = (file: ProjectGitFileChange | null, action: GitFileActi
   if (action === "unstage") return canUnstageFile(file);
   return true;
 };
-const selectGitFileForActions = (file: ProjectGitFileChange) => {
-  selectedGitFilePath.value = file.path;
-};
-
 const selectAiMode = (modeId: string) => {
   aiMode.value = resolveAiModeId(modeId);
   isAiModeMenuOpen.value = false;
 };
 
-const selectCommitAiMode = (modeId: string) => {
-  commitAiMode.value = resolveAiModeId(modeId);
-  isCommitAiModeMenuOpen.value = false;
-};
-
 const aiModeLabel = computed(() => selectedAiMode.value?.name || "总结");
-const commitAiModeLabel = computed(() => selectedCommitAiMode.value?.name || "总结");
 const aiResponseModeHint = computed(() =>
   store.aiPreferences.provider === "utools"
     ? "uTools 内置 AI 流式输出，响应片段实时追加。"
@@ -1270,9 +1355,6 @@ const manuallySelectedCommits = computed(() => {
   const selectedHashes = selectedCommitHashSet.value;
   return (props.project.git?.commits || []).filter((commit) => selectedHashes.has(commit.hash));
 });
-const aiScopedCommits = computed(() =>
-  manuallySelectedCommits.value.length > 0 ? manuallySelectedCommits.value : commits.value,
-);
 const areAllVisibleCommitsSelected = computed(
   () => commits.value.length > 0 && commits.value.every((commit) => selectedCommitHashSet.value.has(commit.hash)),
 );
@@ -1299,67 +1381,95 @@ const clearCommitSelection = () => {
 
 const filterStatusSummary = computed(() => {
   if (selectedCommitCount.value > 0) {
-    return `已手动选择 ${selectedCommitCount.value} 条提交，AI 将只分析这些提交。`;
+    return `将分析所选 ${selectedCommitCount.value} 条历史提交。`;
   }
-  if (activeCommitFilterCount.value === 0) {
-    return "当前未启用筛选条件。";
-  }
-  return `当前已启用 ${activeCommitFilterCount.value} 项筛选，匹配 ${commits.value.length} 条提交。`;
+  return "未选择提交，将分析当前工作区变更";
 });
 
-const commitScopeContext = computed(() => {
-  return {
-    commitLines: formatCommitLines(aiScopedCommits.value, "无提交"),
-    fileLines: formatGitFileLines(snapshot.value?.files || [], "当前没有工作区文件变更。"),
-  };
-});
+type SelectedCommitContext = { commit: ProjectGitCommitSummary; files: ProjectGitFileChange[] };
+
+const buildSelectedHistoryContext = async () => {
+  const contexts: SelectedCommitContext[] = [];
+  for (const commit of manuallySelectedCommits.value) {
+    let commitFiles: ProjectGitFileChange[] = [];
+    try {
+      commitFiles = await store.readGitCommitFiles(props.project.id, commit.hash);
+    } catch {
+      commitFiles = [];
+    }
+    contexts.push({ commit, files: commitFiles });
+  }
+
+  const metadata = formatCommitLines(
+    contexts.map((context) => context.commit),
+    "无提交",
+  );
+  const fileSummaries = contexts
+    .map(
+      ({ commit, files: commitFiles }) =>
+        `Commit ${commit.hash}：\n${formatGitFileLines(commitFiles, "- 该提交暂无可显示的变更文件。")}`,
+    )
+    .join("\n\n");
+
+  let diffContent = "";
+  let truncated = false;
+  if (aiDialogIncludeDiffContext.value) {
+    outer: for (const { commit, files: commitFiles } of contexts) {
+      for (const file of commitFiles) {
+        let result: ProjectGitFileDiffResult | null = null;
+        try {
+          result = await store.readGitCommitFileDiff(props.project.id, commit.hash, file.path);
+        } catch {
+          continue;
+        }
+        const diff = result?.diff?.trim();
+        if (!diff) continue;
+        const section = `${diffContent ? "\n\n" : ""}--- ${commit.hash} · ${gitFileDisplayPath(file)} ---\n${diff}`;
+        const remaining = gitAiDiffContextMaxChars - diffContent.length;
+        if (section.length > remaining) {
+          if (remaining > 0) diffContent += section.slice(0, remaining);
+          truncated = true;
+          break outer;
+        }
+        diffContent += section;
+      }
+    }
+  }
+
+  return { metadata, fileSummaries, diffContent, truncated };
+};
 
 const buildAiPrompt = async () => {
   const template = selectedAiMode.value?.prompt || "请总结这些 Git 信息。";
-  const scopeTitle = selectedCommitCount.value > 0 ? "当前手动选择的提交" : "当前筛选后的提交";
+  if (selectedCommitCount.value > 0) {
+    const historyContext = await buildSelectedHistoryContext();
+    const prompt = replacePromptPlaceholders(template, {
+      ...buildCommonGitPromptPlaceholders(),
+      commits: historyContext.metadata,
+      changedFiles: historyContext.fileSummaries,
+    });
+    const diffSection = aiDialogIncludeDiffContext.value
+      ? historyContext.diffContent
+        ? `所选提交代码 diff：\n${historyContext.diffContent}`
+        : "所选提交代码 diff：当前没有可附加的 diff 内容。"
+      : "所选提交代码 diff：未附加；请基于提交元数据和文件列表分析。";
+    return {
+      prompt: `${prompt.trim()}\n\n要求：\n- 只分析下列所选历史提交，不得引用当前工作区变更。\n- 必须结合每条提交的完整 message、body、refs、作者、时间和文件列表。\n- 输出面向开发者的结构化内容。\n\n仓库上下文：\n${commonGitContextSection()}\n\n所选提交完整信息：\n${historyContext.metadata}\n\n所选提交文件：\n${historyContext.fileSummaries}\n\n${diffSection}`,
+      truncated: historyContext.truncated,
+    };
+  }
+
   const diffContext = aiDialogIncludeDiffContext.value ? await workingTreeDiffContext() : null;
+  const fileLines = formatGitFileLines(snapshot.value?.files || [], "当前没有工作区文件变更。");
   const prompt = replacePromptPlaceholders(template, {
     ...buildCommonGitPromptPlaceholders(),
-    commits: commitScopeContext.value.commitLines,
+    commits: "未选择历史提交。",
   });
-  const contextSections = [
-    "要求：\n- 必须结合提交时间、commit message、body、refs，以及当前代码变更一起判断。\n- 不要只复述 commit message。\n- 输出面向开发者的结构化内容。",
-    `仓库上下文：\n${commonGitContextSection()}`,
-    `${scopeTitle}：\n${commitScopeContext.value.commitLines}`,
-    `当前工作区变更文件：\n${commitScopeContext.value.fileLines}`,
-    formatDiffContextSection("当前工作区代码 diff", diffContext),
-  ].filter(Boolean);
-
-  return `${prompt.trim()}\n\n${contextSections.join("\n\n")}`;
+  return {
+    prompt: `${prompt.trim()}\n\n要求：\n- 只分析当前工作区变更。\n- 输出面向开发者的结构化内容。\n\n仓库上下文：\n${commonGitContextSection()}\n\n当前工作区变更文件：\n${fileLines}\n\n${formatDiffContextSection("当前工作区代码 diff", diffContext)}`,
+    truncated: Boolean(diffContext?.truncated),
+  };
 };
-
-const resetCommitAiState = () => {
-  commitAiResult.value = createAiReasoningStreamState();
-  commitAiMessage.value = "";
-  commitAiState.value = "idle";
-};
-
-const commitAiDisplayResult = computed(() => commitAiResult.value);
-const hasCommitAiDisplayResult = computed(() => hasAiReasoningDisplay(commitAiDisplayResult.value));
-const commitAiCopyContent = computed(() => aiReasoningCopyText(commitAiDisplayResult.value));
-const commitBodyContent = computed(() => selectedCommit.value?.body || selectedCommit.value?.message || "");
-const renderedCommitBody = computed(() => renderMarkdown(commitBodyContent.value));
-
-const commitAiPanelHint = computed(() => {
-  if (commitAiState.value === "loading") {
-    return "";
-  }
-  if (commitAiMessage.value) {
-    return commitAiMessage.value;
-  }
-  if (commitAiState.value === "error") {
-    return "AI 分析失败。";
-  }
-  if (commitAiState.value === "idle") {
-    return "选择模式后点击“生成”。";
-  }
-  return "";
-});
 
 const aiDialogDisplayResult = computed(() => aiDialogResult.value);
 const hasAiDialogDisplayResult = computed(() => hasAiReasoningDisplay(aiDialogDisplayResult.value));
@@ -1384,6 +1494,7 @@ const aiDialogPanelHint = computed(() => {
 const resetAiDialogState = () => {
   aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
+  aiDialogNotice.value = "";
   aiDialogState.value = "idle";
 };
 
@@ -1393,8 +1504,13 @@ const generateAiAnalysis = async () => {
   aiDialogState.value = "loading";
   await waitForVisualFeedback();
 
-  const prompt = await buildAiPrompt();
-  await store.analyzeGitWithAiStream(props.project.id, prompt, {
+  const promptResult = await buildAiPrompt();
+  aiDialogNotice.value = promptResult.truncated
+    ? selectedCommitCount.value > 0
+      ? "Diff 已截断，所有提交信息已保留"
+      : "工作区 Diff 已截断"
+    : "";
+  await store.analyzeGitWithAiStream(props.project.id, promptResult.prompt, {
     onChunk: (chunk) => {
       aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
     },
@@ -1412,83 +1528,35 @@ const generateAiAnalysis = async () => {
   });
 };
 
-const buildCommitAiPrompt = async () => {
-  const commit = selectedCommit.value;
-  if (!commit) return "";
-  const refs = commit.refs ? `\nRefs: ${commit.refs}` : "";
-  const body = commit.body ? `\n\nCommit body:\n${commit.body}` : "";
-  const fileLines = formatGitFileLines(selectedCommitFiles.value, "该提交暂无可显示的变更文件。");
-  const template = selectedCommitAiMode.value?.prompt || "请总结这个 Git 提交。";
-  const diffContext = commitAiIncludeDiffContext.value ? await selectedCommitDiffContext() : null;
-  const prompt = replacePromptPlaceholders(template, {
-    ...buildCommonGitPromptPlaceholders(),
-    commitHash: commit.hash,
-    commitMessage: commit.message,
-    commitBody: commit.body || "",
-    commitAuthor: commit.author,
-    commitDate: commit.date,
-    commitRefs: commit.refs || "",
-    commitFiles: fileLines,
-  });
-  const contextSections = [
-    "要求：\n- 结合 commit message、body、refs、作者、时间和该提交的变更文件判断。\n- 不要只复述标题。\n- 输出面向开发者的结构化内容。",
-    `仓库上下文：\n${commonGitContextSection()}`,
-    `Commit:\nHash: ${commit.hash}\nDate: ${commit.date}\nAuthor: ${commit.author}\nMessage: ${commit.message}${refs}${body}`,
-    `该提交变更文件：\n${fileLines}`,
-    formatDiffContextSection("该提交代码 diff", diffContext),
-  ].filter(Boolean);
-
-  return `${prompt.trim()}\n\n${contextSections.join("\n\n")}`;
-};
-
-const generateCommitAiAnalysis = async () => {
-  if (!selectedCommit.value) return;
-  if (!store.aiPreferences.provider) {
-    commitAiMessage.value = t.value.git.aiUnavailable;
-    commitAiState.value = "warning";
+const toggleCommitFiles = async (hash: string) => {
+  hideCommitTooltip();
+  if (selectedCommitHash.value === hash) {
+    commitFilesRequestGeneration += 1;
+    selectedCommitHash.value = "";
+    selectedCommitFiles.value = [];
+    commitFilesError.value = "";
+    isLoadingCommitFiles.value = false;
     return;
   }
 
-  commitAiResult.value = createAiReasoningStreamState();
-  commitAiMessage.value = "";
-  commitAiState.value = "loading";
-  await waitForVisualFeedback();
-  const prompt = await buildCommitAiPrompt();
-  await store.analyzeGitWithAiStream(props.project.id, prompt, {
-    onChunk: (chunk) => {
-      commitAiResult.value = appendAiStreamChunk(commitAiResult.value, chunk);
-    },
-    onDone: (result) => {
-      const finalResult = aiReasoningStateFromResult(result);
-      if (hasAiReasoningDisplay(finalResult) || !hasCommitAiDisplayResult.value) {
-        commitAiResult.value = finalResult;
-      }
-      commitAiMessage.value = result.ok ? result.message || "" : result.message || "AI 分析失败。";
-      commitAiState.value = result.ok ? (hasCommitAiDisplayResult.value ? "success" : "warning") : "error";
-      if (result.ok && !hasCommitAiDisplayResult.value) {
-        commitAiMessage.value = "AI 已返回成功，但没有生成内容。";
-      }
-    },
-  });
-};
-
-const openCommitDetails = async (hash: string) => {
+  const generation = ++commitFilesRequestGeneration;
   selectedCommitHash.value = hash;
-  resetCommitAiState();
-  commitAiMode.value = resolveAiModeId(commitAiMode.value);
   selectedCommitFiles.value = [];
-  isCommitDetailOpen.value = true;
+  commitFilesError.value = "";
   isLoadingCommitFiles.value = true;
   try {
-    selectedCommitFiles.value = await store.readGitCommitFiles(props.project.id, hash);
+    const result = await store.readGitCommitFiles(props.project.id, hash);
+    if (generation === commitFilesRequestGeneration && selectedCommitHash.value === hash) {
+      selectedCommitFiles.value = result;
+    }
+  } catch (error) {
+    if (generation === commitFilesRequestGeneration) {
+      selectedCommitFiles.value = [];
+      commitFilesError.value = error instanceof Error ? error.message : "读取提交文件失败。";
+    }
   } finally {
-    isLoadingCommitFiles.value = false;
+    if (generation === commitFilesRequestGeneration) isLoadingCommitFiles.value = false;
   }
-};
-
-const closeCommitDetails = () => {
-  isCommitDetailOpen.value = false;
-  isCommitAiModeMenuOpen.value = false;
 };
 
 const copyText = async (value: string) => {
@@ -1533,75 +1601,130 @@ const handleOpenFile = (file: ProjectGitFileChange) => {
   emit("open-file", file.path);
 };
 
-const selectAndOpenGitFileDiff = (file: ProjectGitFileChange) => {
-  selectGitFileForActions(file);
-  void handleViewDiff(file);
+const selectAndOpenGitFileDiff = (file: ProjectGitFileChange, scope: WorktreeDiffScope) => {
+  void loadWorktreeDiff({ path: file.path, scope });
+};
+
+const navigateWorktreeFile = (direction: -1 | 1) => {
+  const items = visibleWorktreeItems.value;
+  if (!items.length) return;
+  const currentIndex = worktreeSelection.value
+    ? items.findIndex(
+        (item) => item.file.path === worktreeSelection.value?.path && item.scope === worktreeSelection.value?.scope,
+      )
+    : -1;
+  const nextIndex = currentIndex < 0 ? (direction > 0 ? 0 : items.length - 1) : currentIndex + direction;
+  const nextItem = items[Math.max(0, Math.min(items.length - 1, nextIndex))];
+  if (nextItem) void loadWorktreeDiff({ path: nextItem.file.path, scope: nextItem.scope });
+};
+
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+};
+
+const handleGitTabKeydown = (event: KeyboardEvent) => {
+  if (!event.altKey || isEditableTarget(event.target)) return;
+  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    event.preventDefault();
+    navigateWorktreeFile(event.key === "ArrowUp" ? -1 : 1);
+  }
 };
 
 const handleViewDiff = async (file: ProjectGitFileChange) => {
+  const commitHash = selectedCommitHash.value;
+  const commit = selectedCommit.value;
+  if (!commitHash || !commit) return;
+  const generation = ++diffRequestGeneration;
+  worktreeSelection.value = null;
+  commitReviewSelection.value = { commitHash, commitMessage: commit.message, path: file.path };
+  rightContext.value = "review";
   isLoadingDiff.value = true;
-  isDiffDialogOpen.value = true;
   selectedDiff.value = { path: file.path, diff: "" };
   try {
-    selectedDiff.value =
-      isCommitDetailOpen.value && selectedCommitHash.value
-        ? await store.readGitCommitFileDiff(props.project.id, selectedCommitHash.value, file.path)
-        : await store.readGitFileDiff(props.project.id, file.path);
+    const result = await store.readGitCommitFileDiff(props.project.id, commitHash, file.path);
+    if (
+      generation === diffRequestGeneration &&
+      commitReviewSelection.value?.commitHash === commitHash &&
+      commitReviewSelection.value.path === file.path &&
+      result?.path === file.path
+    ) {
+      selectedDiff.value = result;
+    }
+  } catch (error) {
+    if (generation === diffRequestGeneration) {
+      selectedDiff.value = {
+        path: file.path,
+        diff: "",
+        message: error instanceof Error ? error.message : "读取提交 diff 失败。",
+      };
+    }
   } finally {
-    isLoadingDiff.value = false;
+    if (generation === diffRequestGeneration) isLoadingDiff.value = false;
   }
 };
 
-const closeDiffDialog = () => {
-  isDiffDialogOpen.value = false;
+const cancelCommitTooltipClose = () => {
+  window.clearTimeout(commitTooltipCloseTimer);
 };
-
-const handleEscapeKey = (event: KeyboardEvent) => {
-  if (event.key === "Escape" && isDiffDialogOpen.value) {
-    closeDiffDialog();
-  }
-};
-
-const stopWatchingDiffDialog = watch(isDiffDialogOpen, (isOpen) => {
-  if (isOpen) {
-    window.addEventListener("keydown", handleEscapeKey);
-  } else {
-    window.removeEventListener("keydown", handleEscapeKey);
-  }
-});
 
 const showCommitTooltip = (event: MouseEvent, commit: ProjectGitCommitSummary) => {
-  window.clearTimeout(commitTooltipTimer);
-  pendingCommitTooltip.value = { commit, x: event.clientX, y: event.clientY };
-  commitTooltipTimer = window.setTimeout(() => {
+  window.clearTimeout(commitTooltipOpenTimer);
+  cancelCommitTooltipClose();
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  pendingCommitTooltip.value = { commit, x: rect.left, y: rect.top };
+  commitTooltipOpenTimer = window.setTimeout(() => {
     commitTooltip.value = pendingCommitTooltip.value;
   }, 450);
 };
 
-const moveCommitTooltip = (event: MouseEvent) => {
-  if (pendingCommitTooltip.value) {
-    pendingCommitTooltip.value = { ...pendingCommitTooltip.value, x: event.clientX, y: event.clientY };
-  }
-  if (!commitTooltip.value) return;
-  commitTooltip.value = { ...commitTooltip.value, x: event.clientX, y: event.clientY };
+const scheduleCommitTooltipClose = () => {
+  window.clearTimeout(commitTooltipOpenTimer);
+  commitTooltipCloseTimer = window.setTimeout(() => {
+    pendingCommitTooltip.value = null;
+    commitTooltip.value = null;
+  }, 180);
 };
 
 const hideCommitTooltip = () => {
-  window.clearTimeout(commitTooltipTimer);
+  window.clearTimeout(commitTooltipOpenTimer);
+  window.clearTimeout(commitTooltipCloseTimer);
   pendingCommitTooltip.value = null;
   commitTooltip.value = null;
+};
+
+const openCommitContextMenu = async (event: MouseEvent, commit: ProjectGitCommitSummary) => {
+  hideCommitTooltip();
+  const row = event.currentTarget as HTMLElement;
+  const rowRect = row.getBoundingClientRect();
+  const openedFromKeyboard = event.clientX === 0 && event.clientY === 0;
+  const branchCount = commitLocalBranchNames(commit).length;
+  commitContextMenu.value = {
+    commit,
+    x: openedFromKeyboard ? rowRect.left + graphLayerLeft : event.clientX,
+    y: openedFromKeyboard ? rowRect.bottom : event.clientY,
+    height: branchCount > 0 ? Math.min(320, 36 + branchCount * 28) : 44,
+  };
+  await nextTick();
+  commitContextMenuRef.value?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+};
+
+const handleWindowPointerDown = (event: PointerEvent) => {
+  const target = event.target;
+  if (target instanceof Element && target.closest("[data-commit-context-menu]")) return;
+  commitContextMenu.value = null;
 };
 
 onBeforeUnmount(() => {
   hideCommitTooltip();
   window.clearTimeout(copiedTimer.value);
   window.clearTimeout(gitToastTimer.value);
-  stopWatchingDiffDialog();
-  window.removeEventListener("keydown", handleEscapeKey);
+  window.removeEventListener("pointerdown", handleWindowPointerDown);
   stopAppEscapeListener();
 });
 
 onMounted(() => {
+  window.addEventListener("pointerdown", handleWindowPointerDown);
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 
@@ -1609,7 +1732,6 @@ watch(
   () => aiModeOptions.value.map((mode) => mode.id).join("|"),
   () => {
     aiMode.value = resolveAiModeId(aiMode.value);
-    commitAiMode.value = resolveAiModeId(commitAiMode.value);
   },
   { immediate: true },
 );
@@ -1617,27 +1739,27 @@ watch(
 watch(
   () => props.project.id,
   () => {
+    diffRequestGeneration += 1;
+    commitFilesRequestGeneration += 1;
     clearCommitSelection();
-    selectedGitFilePath.value = "";
+    rightContext.value = "history";
+    worktreeSelection.value = null;
+    worktreeDiff.value = null;
+    isLoadingWorktreeDiff.value = false;
+    commitReviewSelection.value = null;
+    stagedGroupOpen.value = true;
+    unstagedGroupOpen.value = true;
+    selectedCommitHash.value = "";
+    selectedCommitFiles.value = [];
+    commitFilesError.value = "";
+    selectedDiff.value = null;
+    hideCommitTooltip();
+    commitContextMenu.value = null;
     scheduleCommitMessageTextareaResize();
   },
 );
 
 watch(commitMessage, scheduleCommitMessageTextareaResize, { immediate: true });
-
-watch(
-  () => files.value.map((file) => file.path).join("|"),
-  () => {
-    if (!files.value.length) {
-      selectedGitFilePath.value = "";
-      return;
-    }
-    if (!files.value.some((file) => file.path === selectedGitFilePath.value)) {
-      selectedGitFilePath.value = files.value[0].path;
-    }
-  },
-  { immediate: true },
-);
 
 watch(
   () => (props.project.git?.commits || []).map((commit) => commit.hash).join("|"),
@@ -1647,29 +1769,11 @@ watch(
   },
 );
 
-const diffLines = computed(() =>
-  (selectedDiff.value?.diff || "").split("\n").map((content, index) => {
-    const kind =
-      content.startsWith("+++") || content.startsWith("---") || content.startsWith("diff --git")
-        ? "meta"
-        : content.startsWith("@@")
-          ? "hunk"
-          : content.startsWith("+")
-            ? "add"
-            : content.startsWith("-")
-              ? "delete"
-              : "context";
-    return { id: `${index}-${content}`, number: index + 1, content, kind };
-  }),
-);
-
 const refsForCommit = (refs?: string) =>
   (refs || "")
     .split(",")
     .map((refName) => refName.trim())
     .filter(Boolean);
-
-const selectedCommitRefs = computed(() => refsForCommit(selectedCommit.value?.refs));
 
 const refClass = (refName: string) =>
   cn(
@@ -1693,6 +1797,11 @@ const graphSelectionColumnWidth = 16;
 const rowHeight = 30;
 const rowGap = 1;
 const rowPitch = rowHeight + rowGap;
+const inlineCommitFilesHeight = computed(() => {
+  if (isLoadingCommitFiles.value) return 40;
+  if (commitFilesError.value || selectedCommitFiles.value.length === 0) return 40;
+  return Math.min(144, selectedCommitFiles.value.length * 24 + 10);
+});
 const dotRadius = 3.9;
 const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + graphPaddingX;
 const minGraphColumnWidth = 36;
@@ -1740,6 +1849,7 @@ const graphPathData = (sourceX: number, sourceY: number, targetX: number, target
 const graphLayout = computed(() => {
   const visibleCommits = commits.value;
   const visibleIndex = new Map(visibleCommits.map((commit, index) => [commit.hash, index]));
+  const expandedCommitIndex = visibleIndex.get(selectedCommitHash.value) ?? -1;
   const activeLanes: Array<string | null> = [];
   const laneColors = new Map<number, string>();
   let colorIndex = 0;
@@ -1796,7 +1906,8 @@ const graphLayout = computed(() => {
     }
 
     const color = ensureLaneColor(lane);
-    rows.push({ commit, lane, color, y: index * rowPitch + rowHeight / 2 });
+    const expandedOffset = expandedCommitIndex >= 0 && index > expandedCommitIndex ? inlineCommitFilesHeight.value : 0;
+    rows.push({ commit, lane, color, y: index * rowPitch + rowHeight / 2 + expandedOffset });
     maxLane = Math.max(maxLane, lane);
     activeLanes[lane] = null;
 
@@ -1869,7 +1980,13 @@ const graphLayout = computed(() => {
   }));
   const laneCount = rows.length > 0 ? maxLane + 1 : 1;
   const columnWidth = Math.max(minGraphColumnWidth, laneCount * laneWidth + graphPaddingX * 2);
-  const height = rows.length > 0 ? rows.length * rowHeight + Math.max(0, rows.length - 1) * rowGap : 0;
+  const hasExpandedCommit = rows.some((row) => row.commit.hash === selectedCommitHash.value);
+  const height =
+    rows.length > 0
+      ? rows.length * rowHeight +
+        Math.max(0, rows.length - 1) * rowGap +
+        (hasExpandedCommit ? inlineCommitFilesHeight.value : 0)
+      : 0;
 
   return { rows, paths, nodes, columnWidth, height };
 });
@@ -1890,8 +2007,6 @@ const graphRowColumns = computed(
   () => `${graphSelectionColumnWidth}px ${graphColumnWidth.value}px 3.25rem minmax(14rem, 1fr)`,
 );
 const graphRowMinWidth = computed(() => `max(24rem, calc(${graphColumnWidth.value}px + 18.5rem))`);
-const commitDateLabel = (value?: string) => formatCommitTime(value).text;
-
 const fileLabel = (status: string) => {
   if (status === "ADDED") return t.value.git.added;
   if (status === "DELETED") return t.value.git.deleted;
@@ -1984,6 +2099,12 @@ const formatCommitTime = (value?: string) => ({
 });
 
 const renderCommitMessage = (message: string) => renderMarkdown(message || "");
+const fullCommitMessage = (commit: ProjectGitCommitSummary) => {
+  const message = commit.message.trim();
+  const body = (commit.body || "").trim();
+  if (!body || body === message || body.startsWith(`${message}\n`)) return body || message;
+  return `${message}\n\n${body}`;
+};
 const unorderedListLinePattern = /^[-*+]\s+/;
 const unorderedListItemPattern = /^[-*+]\s+(.+)$/;
 const conventionalCommitPrefixPattern =
@@ -2077,7 +2198,11 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden relative" @click="closeFloatingControls">
+  <div
+    class="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden"
+    @click="closeFloatingControls"
+    @keydown="handleGitTabKeydown"
+  >
     <!-- 全局 Loading 提示 - 右下角浮动 Toast -->
     <Transition name="slide-up">
       <div
@@ -2318,7 +2443,6 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
 
         <div class="ui-panel-header">
           <div class="ui-panel-title">
-            <FileSearch :size="14" class="text-primary" />
             <h3 class="min-w-0 truncate">{{ t.git.files }}</h3>
           </div>
           <div class="flex min-w-0 items-center gap-1.5">
@@ -2384,111 +2508,133 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           @wheel="handlePanelWheel($event, 'files')"
           class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [overscroll-behavior-y:contain]"
         >
-          <div
-            v-for="(file, idx) in files"
-            :key="`${file.path}-${idx}`"
-            :class="
-              cn(
-                'group relative grid min-h-[1.875rem] cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-b border-border-subtle px-2 py-0.5 last:border-b-0 transition-colors hover:bg-surface-container-low focus-within:bg-surface-container-low',
-                selectedGitFilePath === file.path && 'bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]',
-              )
-            "
-            :title="gitFileDisplayPath(file)"
-            @click="selectAndOpenGitFileDiff(file)"
+          <section
+            v-for="group in worktreeGroups"
+            :key="group.scope"
+            class="border-b border-border-subtle last:border-b-0"
           >
-            <div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
-              <span
+            <button
+              type="button"
+              class="flex h-7 w-full items-center gap-1.5 bg-surface-container-low px-2 text-left text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-container"
+              :aria-expanded="group.open"
+              @click="
+                group.scope === 'staged'
+                  ? (stagedGroupOpen = !stagedGroupOpen)
+                  : (unstagedGroupOpen = !unstagedGroupOpen)
+              "
+            >
+              <ChevronDown v-if="group.open" :size="12" />
+              <ChevronRight v-else :size="12" />
+              <span>{{ group.label }}</span>
+              <span class="ml-auto font-mono text-[9px]">{{ group.files.length }}</span>
+            </button>
+            <div v-if="group.open">
+              <div
+                v-for="file in group.files"
+                :key="`${group.scope}:${file.path}`"
                 :class="
                   cn(
-                    'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
-                    file.status === 'ADDED' && 'text-status-running',
-                    file.status === 'DELETED' && 'text-status-error',
-                    file.status === 'RENAMED' && 'text-secondary',
-                    file.status === 'UNTRACKED' && 'text-primary',
-                    file.status === 'MODIFIED' && 'text-on-surface-variant',
+                    'group relative grid min-h-[1.875rem] cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-t border-border-subtle px-2 py-0.5 transition-colors hover:bg-surface-container-low focus-within:bg-surface-container-low',
+                    isWorktreeSelected(file.path, group.scope) &&
+                      'bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]',
                   )
                 "
-                :title="fileLabel(file.status)"
+                :title="gitFileDisplayPath(file)"
+                @click="selectAndOpenGitFileDiff(file, group.scope)"
               >
-                {{ fileStatusCode(file.status) }}
-              </span>
-              <div class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden">
-                <span
+                <div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                  <span
+                    :class="
+                      cn(
+                        'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
+                        file.status === 'ADDED' && 'text-status-running',
+                        file.status === 'DELETED' && 'text-status-error',
+                        file.status === 'RENAMED' && 'text-secondary',
+                        file.status === 'UNTRACKED' && 'text-primary',
+                        file.status === 'MODIFIED' && 'text-on-surface-variant',
+                      )
+                    "
+                    :title="fileLabel(file.status)"
+                  >
+                    {{ fileStatusCode(file.status) }}
+                  </span>
+                  <div class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden">
+                    <span
+                      :class="
+                        cn(
+                          'max-w-full shrink-0 truncate font-mono text-[11px] font-bold leading-4',
+                          file.status === 'DELETED' ? 'text-on-surface-variant line-through' : 'text-on-surface',
+                        )
+                      "
+                    >
+                      {{ gitFileName(file) }}
+                    </span>
+                    <span
+                      v-if="gitFileDirectory(file)"
+                      class="min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65"
+                    >
+                      {{ gitFileDirectory(file) }}
+                    </span>
+                  </div>
+                </div>
+                <div class="flex shrink-0 items-center gap-1 text-[10px] font-bold leading-4">
+                  <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
+                  <span v-if="file.deletions > 0" class="text-status-error">-{{ file.deletions }}</span>
+                </div>
+                <div
                   :class="
                     cn(
-                      'max-w-full shrink-0 truncate font-mono text-[11px] font-bold leading-4',
-                      file.status === 'DELETED' ? 'text-on-surface-variant line-through' : 'text-on-surface',
+                      'absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-px rounded border border-border-subtle bg-surface-container-low px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                      isGitFileBusy(file) && 'opacity-100',
                     )
                   "
                 >
-                  {{ gitFileName(file) }}
-                </span>
-                <span
-                  v-if="gitFileDirectory(file)"
-                  class="min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65"
-                >
-                  {{ gitFileDirectory(file) }}
-                </span>
+                  <button
+                    type="button"
+                    class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-45"
+                    :disabled="!canRunFileAction(file, group.scope === 'staged' ? 'unstage' : 'stage')"
+                    :title="
+                      group.scope === 'staged'
+                        ? `取消暂存：${gitFileDisplayPath(file)}`
+                        : `暂存文件：${gitFileDisplayPath(file)}`
+                    "
+                    :aria-label="group.scope === 'staged' ? '取消暂存文件' : '暂存文件'"
+                    @click.stop="runScopedPrimaryGitFileAction(file, group.scope)"
+                  >
+                    <Minus
+                      v-if="group.scope === 'staged'"
+                      :size="12"
+                      :class="isGitFileActionActive('unstage', file) ? 'animate-pulse' : ''"
+                    />
+                    <Plus v-else :size="12" :class="isGitFileActionActive('stage', file) ? 'animate-pulse' : ''" />
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-status-error disabled:cursor-wait disabled:opacity-45"
+                    :disabled="!canRunFileAction(file, 'discard')"
+                    :title="`丢弃文件变更：${gitFileDisplayPath(file)}`"
+                    aria-label="丢弃文件变更"
+                    @click.stop="runGitFileAction('discard', file, group.scope)"
+                  >
+                    <Undo :size="12" :class="isGitFileActionActive('discard', file) ? 'animate-pulse' : ''" />
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                    :disabled="file.status === 'DELETED'"
+                    :title="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
+                    :aria-label="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
+                    @click.stop="handleOpenFile(file)"
+                  >
+                    <FileSearch :size="12" />
+                  </button>
+                </div>
+              </div>
+              <div v-if="group.files.length === 0" class="px-3 py-2 text-[10px] text-on-surface-variant/70">
+                暂无文件
               </div>
             </div>
-            <div class="flex shrink-0 items-center gap-1 text-[10px] font-bold leading-4">
-              <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
-              <span v-if="file.deletions > 0" class="text-status-error">-{{ file.deletions }}</span>
-              <span v-if="file.staged" class="font-mono text-primary" title="staged" aria-label="staged">S</span>
-              <span v-if="file.unstaged" class="font-mono text-status-warning" title="unstaged" aria-label="unstaged"
-                >W</span
-              >
-            </div>
-            <div
-              :class="
-                cn(
-                  'absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-px rounded border border-border-subtle bg-surface-container-low px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-                  isGitFileBusy(file) && 'opacity-100',
-                )
-              "
-            >
-              <button
-                v-if="rowPrimaryGitFileAction(file)"
-                type="button"
-                class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-45"
-                :disabled="!canRunFileAction(file, rowPrimaryGitFileAction(file) || 'stage')"
-                :title="
-                  rowPrimaryGitFileAction(file) === 'stage'
-                    ? `暂存文件：${gitFileDisplayPath(file)}`
-                    : `取消暂存：${gitFileDisplayPath(file)}`
-                "
-                :aria-label="rowPrimaryGitFileAction(file) === 'stage' ? '暂存文件' : '取消暂存文件'"
-                @click.stop="runPrimaryGitFileAction(file)"
-              >
-                <Plus
-                  v-if="rowPrimaryGitFileAction(file) === 'stage'"
-                  :size="12"
-                  :class="isGitFileActionActive('stage', file) ? 'animate-pulse' : ''"
-                />
-                <Minus v-else :size="12" :class="isGitFileActionActive('unstage', file) ? 'animate-pulse' : ''" />
-              </button>
-              <button
-                type="button"
-                class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-status-error disabled:cursor-wait disabled:opacity-45"
-                :disabled="!canRunFileAction(file, 'discard')"
-                :title="`丢弃文件变更：${gitFileDisplayPath(file)}`"
-                aria-label="丢弃文件变更"
-                @click.stop="runGitFileAction('discard', file)"
-              >
-                <Undo :size="12" :class="isGitFileActionActive('discard', file) ? 'animate-pulse' : ''" />
-              </button>
-              <button
-                type="button"
-                class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
-                :disabled="file.status === 'DELETED'"
-                :title="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
-                :aria-label="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
-                @click.stop="handleOpenFile(file)"
-              >
-                <FileSearch :size="12" />
-              </button>
-            </div>
-          </div>
+          </section>
         </div>
         <div v-else class="flex flex-none items-center gap-1.5 px-2 py-1.5 text-[11px] text-on-surface-variant">
           <CircleCheck :size="14" class="shrink-0 text-status-running" />
@@ -2521,358 +2667,560 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </div>
 
       <div
-        class="bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
+        class="@container bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
       >
-        <div class="border-b border-border-subtle bg-surface-container-low">
-          <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-            <div class="flex min-w-0 flex-wrap items-center gap-2">
-              <div class="ui-panel-title">
-                <GitBranch :size="14" class="text-primary" />
-                <h3 class="min-w-0 truncate">{{ t.git.graph }}</h3>
-              </div>
-              <span
-                v-if="selectedCommitCount > 0"
-                class="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
-              >
-                已选 {{ selectedCommitCount }}
-              </span>
-              <span
-                v-if="hasCommitFilters"
-                class="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
-              >
-                {{ commits.length }}
-              </span>
-            </div>
-            <div class="flex flex-wrap items-center justify-end gap-1">
-              <button
-                type="button"
-                class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45"
-                :disabled="commits.length === 0 || areAllVisibleCommitsSelected"
-                title="选择全部可见提交"
-                aria-label="选择全部可见提交"
-                @click="selectVisibleCommits"
-              >
-                <Check :size="13" />
-              </button>
-              <button
-                v-if="selectedCommitCount > 0"
-                type="button"
-                class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                title="清空提交选择"
-                aria-label="清空提交选择"
-                @click="clearCommitSelection"
-              >
-                <X :size="13" />
-              </button>
-              <button
-                type="button"
-                :class="
-                  cn(
-                    'inline-flex h-7 w-7 items-center justify-center rounded border transition-colors',
-                    showCommitFilters || hasCommitFilters
-                      ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/15'
-                      : 'border-border-subtle bg-transparent text-on-surface hover:bg-surface-variant',
-                  )
-                "
-                :title="showCommitFilters ? t.common.close : '筛选提交'"
-                :aria-label="showCommitFilters ? t.common.close : '筛选提交'"
-                :aria-pressed="showCommitFilters"
-                @click="toggleCommitFilters"
-              >
-                <SlidersHorizontal :size="13" />
-              </button>
-              <button
-                type="button"
-                class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
-                :disabled="!store.aiPreferences.model && store.aiPreferences.provider === 'utools'"
-                title="AI 分析提交"
-                aria-label="AI 分析提交"
-                @click="openAiDialog"
-              >
-                <WandSparkles :size="13" />
-              </button>
-              <span class="mx-0.5 h-4 w-px bg-border-subtle" aria-hidden="true" />
-              <button
-                @click="scrollGitPanel('graph', 'top')"
-                class="rounded p-1 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
-                :disabled="commits.length === 0"
-                :title="t.git.scrollGraphToTop"
-                :aria-label="t.git.scrollGraphToTop"
-              >
-                <ArrowUpToLine :size="12" />
-              </button>
-              <button
-                @click="scrollGitPanel('graph', 'bottom')"
-                class="rounded p-1 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
-                :disabled="commits.length === 0"
-                :title="t.git.scrollGraphToBottom"
-                :aria-label="t.git.scrollGraphToBottom"
-              >
-                <ArrowDownToLine :size="12" />
-              </button>
-            </div>
+        <div
+          class="flex h-10 shrink-0 flex-nowrap items-center justify-between gap-2 border-b border-border-subtle bg-surface-container-low px-3"
+        >
+          <div
+            role="tablist"
+            aria-label="Git 右侧内容"
+            class="inline-flex h-7 shrink-0 overflow-hidden rounded border border-border-subtle bg-surface"
+            @keydown="handleRightContextKeydown"
+          >
+            <button
+              id="git-history-tab"
+              type="button"
+              role="tab"
+              aria-controls="git-commit-history-panel"
+              :aria-selected="rightContext === 'history'"
+              :tabindex="rightContext === 'history' ? 0 : -1"
+              :class="
+                cn(
+                  'px-2.5 text-[10px] font-bold transition-colors',
+                  rightContext === 'history'
+                    ? 'bg-primary text-on-primary'
+                    : 'text-on-surface-variant hover:bg-surface-variant',
+                )
+              "
+              @click="rightContext = 'history'"
+            >
+              提交树
+            </button>
+            <button
+              id="git-review-tab"
+              type="button"
+              role="tab"
+              aria-controls="git-review-panel"
+              :aria-selected="rightContext === 'review'"
+              :tabindex="rightContext === 'review' ? 0 : -1"
+              :class="
+                cn(
+                  'border-l border-border-subtle px-2.5 text-[10px] font-bold transition-colors',
+                  rightContext === 'review'
+                    ? 'bg-primary text-on-primary'
+                    : 'text-on-surface-variant hover:bg-surface-variant',
+                )
+              "
+              @click="rightContext = 'review'"
+            >
+              审阅
+            </button>
           </div>
-          <Transition name="fade">
-            <div v-if="showCommitFilters" class="border-t border-border-subtle px-3 py-1.5">
+          <div v-if="rightContext === 'history'" class="flex min-w-0 flex-nowrap items-center justify-end gap-1">
+            <span
+              v-if="selectedCommitCount > 0"
+              class="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
+              >已选 {{ selectedCommitCount }}</span
+            >
+            <span
+              v-if="hasCommitFilters"
+              class="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"
+              >{{ commits.length }}</span
+            >
+            <button
+              type="button"
+              class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle text-on-surface hover:bg-surface-variant disabled:opacity-45"
+              :disabled="commits.length === 0 || areAllVisibleCommitsSelected"
+              title="选择全部可见提交"
+              aria-label="选择全部可见提交"
+              @click="selectVisibleCommits"
+            >
+              <Check :size="13" />
+            </button>
+            <button
+              v-if="selectedCommitCount > 0"
+              type="button"
+              class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle text-on-surface-variant hover:bg-surface-variant"
+              title="清空提交选择"
+              aria-label="清空提交选择"
+              @click="clearCommitSelection"
+            >
+              <X :size="13" />
+            </button>
+            <button
+              type="button"
+              :class="
+                cn(
+                  'inline-flex h-7 w-7 items-center justify-center rounded border',
+                  showCommitFilters || hasCommitFilters
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border-subtle text-on-surface',
+                )
+              "
+              :title="showCommitFilters ? t.common.close : '筛选提交'"
+              :aria-label="showCommitFilters ? t.common.close : '筛选提交'"
+              :aria-pressed="showCommitFilters"
+              @click="toggleCommitFilters"
+            >
+              <SlidersHorizontal :size="13" />
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-primary text-on-primary disabled:opacity-45"
+              :disabled="!store.aiPreferences.model && store.aiPreferences.provider === 'utools'"
+              title="AI 分析"
+              aria-label="AI 分析"
+              @click="openAiDialog"
+            >
+              <WandSparkles :size="13" />
+            </button>
+            <span class="mx-0.5 h-4 w-px bg-border-subtle" aria-hidden="true" />
+            <button
+              type="button"
+              class="rounded p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
+              :disabled="commits.length === 0"
+              :title="t.git.scrollGraphToTop"
+              :aria-label="t.git.scrollGraphToTop"
+              @click="scrollGitPanel('graph', 'top')"
+            >
+              <ArrowUpToLine :size="12" />
+            </button>
+            <button
+              type="button"
+              class="rounded p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
+              :disabled="commits.length === 0"
+              :title="t.git.scrollGraphToBottom"
+              :aria-label="t.git.scrollGraphToBottom"
+              @click="scrollGitPanel('graph', 'bottom')"
+            >
+              <ArrowDownToLine :size="12" />
+            </button>
+          </div>
+          <div v-else class="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+            <div class="min-w-0 flex-1 text-right">
+              <div class="truncate font-mono text-[10px] font-bold text-on-surface">
+                {{ worktreeSelection?.path || commitReviewSelection?.path || "选择文件开始审阅" }}
+              </div>
               <div
-                class="grid gap-1.5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(8.5rem,0.75fr)_minmax(8.5rem,0.75fr)_2rem]"
+                v-if="worktreeSelection || commitReviewSelection"
+                class="truncate text-[9px] text-on-surface-variant"
               >
-                <input
-                  v-model="commitKeyword"
-                  type="text"
-                  class="ui-field ui-field-compact"
-                  :placeholder="t.git.keyword"
-                />
-                <input
-                  v-model="commitAuthor"
-                  type="text"
-                  class="ui-field ui-field-compact"
-                  :placeholder="t.git.author"
-                />
-                <div class="relative">
-                  <button
-                    type="button"
-                    class="ui-field ui-field-compact flex w-full items-center justify-between gap-2 text-left"
-                    @click.stop="openDatePicker('since')"
-                  >
-                    <span :class="commitSince ? 'text-on-surface' : 'text-on-surface-variant/70'">
-                      {{ commitSince || t.git.since }}
-                    </span>
-                    <CalendarDays :size="13" class="text-on-surface-variant" />
-                  </button>
-                  <div v-if="openDatePickerKind === 'since'" class="date-picker-popover" @click.stop>
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                      <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
-                        <ChevronLeft :size="14" />
-                      </button>
-                      <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
-                      <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
-                        <ChevronRight :size="14" />
-                      </button>
-                    </div>
-                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-                      <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
-                    </div>
-                    <div class="mt-1 grid grid-cols-7 gap-1">
-                      <button
-                        v-for="day in datePickerDays"
-                        :key="`since-${day.value}`"
-                        type="button"
-                        :class="
-                          cn(
-                            'date-picker-day',
-                            !day.isCurrentMonth && 'text-on-surface-variant/35',
-                            day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                            day.isSelected && 'border-primary bg-primary text-on-primary',
-                          )
-                        "
-                        @click="selectDatePickerDay(day.value)"
-                      >
-                        {{ day.label }}
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                      @click="clearDatePickerValue"
-                    >
-                      清除日期
-                    </button>
-                  </div>
-                </div>
-                <div class="relative">
-                  <button
-                    type="button"
-                    class="ui-field ui-field-compact flex w-full items-center justify-between gap-2 text-left"
-                    @click.stop="openDatePicker('until')"
-                  >
-                    <span :class="commitUntil ? 'text-on-surface' : 'text-on-surface-variant/70'">
-                      {{ commitUntil || t.git.until }}
-                    </span>
-                    <CalendarDays :size="13" class="text-on-surface-variant" />
-                  </button>
-                  <div
-                    v-if="openDatePickerKind === 'until'"
-                    class="date-picker-popover date-picker-popover-end"
-                    @click.stop
-                  >
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                      <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
-                        <ChevronLeft :size="14" />
-                      </button>
-                      <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
-                      <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
-                        <ChevronRight :size="14" />
-                      </button>
-                    </div>
-                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-                      <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
-                    </div>
-                    <div class="mt-1 grid grid-cols-7 gap-1">
-                      <button
-                        v-for="day in datePickerDays"
-                        :key="`until-${day.value}`"
-                        type="button"
-                        :class="
-                          cn(
-                            'date-picker-day',
-                            !day.isCurrentMonth && 'text-on-surface-variant/35',
-                            day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                            day.isSelected && 'border-primary bg-primary text-on-primary',
-                          )
-                        "
-                        @click="selectDatePickerDay(day.value)"
-                      >
-                        {{ day.label }}
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                      @click="clearDatePickerValue"
-                    >
-                      清除日期
-                    </button>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  class="inline-flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-45"
-                  :disabled="!hasCommitFilters"
-                  :title="t.git.clearFilters"
-                  :aria-label="t.git.clearFilters"
-                  @click="clearCommitFilters"
-                >
-                  <X :size="13" />
-                </button>
+                {{ worktreeSelection ? worktreeSelection.scope : commitReviewSelection?.commitMessage }}
               </div>
             </div>
-          </Transition>
+            <template v-if="worktreeSelection">
+              <button
+                type="button"
+                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant hover:bg-surface-variant disabled:opacity-35"
+                :disabled="visibleWorktreeItems.length === 0"
+                title="上一个可见文件"
+                aria-label="上一个可见文件"
+                @click="navigateWorktreeFile(-1)"
+              >
+                <ChevronLeft :size="14" />
+              </button>
+              <button
+                type="button"
+                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant hover:bg-surface-variant disabled:opacity-35"
+                :disabled="visibleWorktreeItems.length === 0"
+                title="下一个可见文件"
+                aria-label="下一个可见文件"
+                @click="navigateWorktreeFile(1)"
+              >
+                <ChevronRight :size="14" />
+              </button>
+            </template>
+          </div>
         </div>
         <div
-          ref="graphScrollRef"
-          @wheel="handlePanelWheel($event, 'graph')"
-          class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest p-2 text-on-surface [overscroll-behavior-y:contain]"
+          v-show="rightContext === 'review'"
+          id="git-review-panel"
+          role="tabpanel"
+          aria-labelledby="git-review-tab"
+          class="flex min-h-0 flex-1 flex-col"
         >
-          <div class="min-w-full">
-            <div
-              v-if="graphRows.length > 0"
-              class="relative min-w-full overflow-hidden"
-              :style="{ minWidth: graphRowMinWidth }"
-            >
-              <svg
-                class="pointer-events-none absolute top-0 z-20 block overflow-hidden"
-                :style="graphLayerStyle"
-                :viewBox="graphViewBox"
-                preserveAspectRatio="xMinYMin meet"
-              >
-                <path
-                  v-for="path in graphPaths"
-                  :key="path.id"
-                  :d="path.d"
-                  :stroke="path.color"
-                  :opacity="path.opacity"
-                  fill="none"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <circle
-                  v-for="node in graphNodes"
-                  :key="node.hash"
-                  :cx="node.x"
-                  :cy="node.y"
-                  :r="node.isHead ? dotRadius + 0.9 : dotRadius"
-                  :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
-                  :stroke="node.color"
-                  :stroke-width="node.isHead ? 2.5 : 1.5"
-                />
-              </svg>
-              <div
-                v-for="(row, rowIndex) in graphRows"
-                :key="row.commit.hash"
-                :class="
-                  cn(
-                    'group relative z-10 grid min-w-[24rem] cursor-pointer items-center gap-1 rounded px-1.5 text-xs transition-colors hover:bg-surface-container-high',
-                    isCommitSelected(row.commit.hash) && 'bg-primary/5 ring-1 ring-primary/20 hover:bg-primary/10',
-                    snapshot?.isDetachedHead &&
-                      commitHashMatches(row.commit.hash, snapshot?.headHash) &&
-                      'bg-status-warning/10 ring-1 ring-status-warning/25',
-                  )
-                "
-                :style="{
-                  gridTemplateColumns: graphRowColumns,
-                  minWidth: graphRowMinWidth,
-                  height: `${rowHeight}px`,
-                  marginTop: rowIndex === 0 ? '0' : `${rowGap}px`,
-                }"
-                @click="openCommitDetails(row.commit.hash)"
-              >
-                <button
-                  type="button"
-                  :class="
-                    cn(
-                      'flex h-4 w-4 items-center justify-center rounded-[4px] border text-on-surface-variant/80 transition-colors hover:border-primary hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70 group-hover:border-outline-variant',
-                      isCommitSelected(row.commit.hash)
-                        ? 'border-primary bg-primary text-on-primary shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-primary)_18%,transparent)] hover:bg-primary hover:text-on-primary'
-                        : 'border-border-subtle bg-transparent',
-                    )
-                  "
-                  :title="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
-                  :aria-label="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
-                  @click.stop="toggleCommitSelection(row.commit.hash)"
-                >
-                  <Check v-if="isCommitSelected(row.commit.hash)" :size="10" :stroke-width="3" />
-                </button>
-                <div class="min-w-0 self-stretch" aria-hidden="true"></div>
-
-                <span
-                  class="truncate rounded font-mono text-[10px] font-semibold text-on-surface-variant hover:text-primary"
-                  :title="row.commit.hash"
-                  @click.stop="copyText(row.commit.hash)"
-                  >{{ row.commit.hash }}</span
-                >
-                <div class="min-w-0 overflow-hidden">
-                  <div class="flex min-w-0 items-center gap-1.5 leading-4">
-                    <span
-                      class="min-w-0 truncate text-[11px] font-semibold text-on-surface"
-                      @mouseenter="showCommitTooltip($event, row.commit)"
-                      @mousemove="moveCommitTooltip"
-                      @mouseleave="hideCommitTooltip"
+          <GitDiffViewer
+            v-if="worktreeSelection || commitReviewSelection"
+            v-model:scroll-top="reviewScrollTop"
+            :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
+            :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
+            :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
+          />
+          <div
+            v-else
+            class="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-on-surface-variant"
+          >
+            从左侧变更列表或提交树展开文件中选择文件。
+          </div>
+        </div>
+        <div
+          v-show="rightContext === 'history'"
+          id="git-commit-history-panel"
+          role="tabpanel"
+          aria-labelledby="git-history-tab"
+          class="flex min-h-0 flex-1 flex-col"
+        >
+          <div class="flex min-h-0 flex-1 flex-col">
+            <div class="border-b border-border-subtle bg-surface-container-low">
+              <Transition name="fade">
+                <div v-if="showCommitFilters" class="border-t border-border-subtle px-3 py-1.5">
+                  <div
+                    class="grid gap-1.5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(8.5rem,0.75fr)_minmax(8.5rem,0.75fr)_2rem]"
+                  >
+                    <input
+                      v-model="commitKeyword"
+                      type="text"
+                      class="ui-field ui-field-compact"
+                      :placeholder="t.git.keyword"
+                    />
+                    <input
+                      v-model="commitAuthor"
+                      type="text"
+                      class="ui-field ui-field-compact"
+                      :placeholder="t.git.author"
+                    />
+                    <div class="relative">
+                      <button
+                        type="button"
+                        class="ui-field ui-field-compact flex w-full items-center justify-between gap-2 text-left"
+                        @click.stop="openDatePicker('since')"
+                      >
+                        <span :class="commitSince ? 'text-on-surface' : 'text-on-surface-variant/70'">
+                          {{ commitSince || t.git.since }}
+                        </span>
+                        <CalendarDays :size="13" class="text-on-surface-variant" />
+                      </button>
+                      <div v-if="openDatePickerKind === 'since'" class="date-picker-popover" @click.stop>
+                        <div class="mb-2 flex items-center justify-between gap-2">
+                          <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
+                            <ChevronLeft :size="14" />
+                          </button>
+                          <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
+                          <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
+                            <ChevronRight :size="14" />
+                          </button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                          <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
+                        </div>
+                        <div class="mt-1 grid grid-cols-7 gap-1">
+                          <button
+                            v-for="day in datePickerDays"
+                            :key="`since-${day.value}`"
+                            type="button"
+                            :class="
+                              cn(
+                                'date-picker-day',
+                                !day.isCurrentMonth && 'text-on-surface-variant/35',
+                                day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                                day.isSelected && 'border-primary bg-primary text-on-primary',
+                              )
+                            "
+                            @click="selectDatePickerDay(day.value)"
+                          >
+                            {{ day.label }}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                          @click="clearDatePickerValue"
+                        >
+                          清除日期
+                        </button>
+                      </div>
+                    </div>
+                    <div class="relative">
+                      <button
+                        type="button"
+                        class="ui-field ui-field-compact flex w-full items-center justify-between gap-2 text-left"
+                        @click.stop="openDatePicker('until')"
+                      >
+                        <span :class="commitUntil ? 'text-on-surface' : 'text-on-surface-variant/70'">
+                          {{ commitUntil || t.git.until }}
+                        </span>
+                        <CalendarDays :size="13" class="text-on-surface-variant" />
+                      </button>
+                      <div
+                        v-if="openDatePickerKind === 'until'"
+                        class="date-picker-popover date-picker-popover-end"
+                        @click.stop
+                      >
+                        <div class="mb-2 flex items-center justify-between gap-2">
+                          <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(-1)">
+                            <ChevronLeft :size="14" />
+                          </button>
+                          <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
+                          <button type="button" class="popover-icon-button" @click="shiftDatePickerMonth(1)">
+                            <ChevronRight :size="14" />
+                          </button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                          <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
+                        </div>
+                        <div class="mt-1 grid grid-cols-7 gap-1">
+                          <button
+                            v-for="day in datePickerDays"
+                            :key="`until-${day.value}`"
+                            type="button"
+                            :class="
+                              cn(
+                                'date-picker-day',
+                                !day.isCurrentMonth && 'text-on-surface-variant/35',
+                                day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                                day.isSelected && 'border-primary bg-primary text-on-primary',
+                              )
+                            "
+                            @click="selectDatePickerDay(day.value)"
+                          >
+                            {{ day.label }}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          class="mt-2 text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                          @click="clearDatePickerValue"
+                        >
+                          清除日期
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="inline-flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-45"
+                      :disabled="!hasCommitFilters"
+                      :title="t.git.clearFilters"
+                      :aria-label="t.git.clearFilters"
+                      @click="clearCommitFilters"
                     >
-                      {{ row.commit.message }}
-                    </span>
-                    <span
-                      v-for="refName in refsForCommit(row.commit.refs)"
-                      :key="`${row.commit.hash}-${refName}`"
-                      :class="refClass(refName)"
-                      :title="refName"
-                    >
-                      {{ refName }}
-                    </span>
-                    <span
-                      v-if="snapshot?.isDetachedHead && commitHashMatches(row.commit.hash, snapshot?.headHash)"
-                      class="shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-1.5 py-px text-[9px] font-bold leading-3 text-status-warning"
-                    >
-                      HEAD
-                    </span>
-                  </div>
-                  <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75">
-                    {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
+                      <X :size="13" />
+                    </button>
                   </div>
                 </div>
+              </Transition>
+            </div>
+            <div
+              ref="graphScrollRef"
+              @wheel="handlePanelWheel($event, 'graph')"
+              class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest p-2 text-on-surface [overscroll-behavior-y:contain]"
+            >
+              <div class="min-w-full">
+                <div
+                  v-if="graphRows.length > 0"
+                  class="relative min-w-full overflow-hidden"
+                  :style="{ minWidth: graphRowMinWidth }"
+                >
+                  <svg
+                    class="pointer-events-none absolute top-0 z-20 block overflow-hidden"
+                    :style="graphLayerStyle"
+                    :viewBox="graphViewBox"
+                    preserveAspectRatio="xMinYMin meet"
+                  >
+                    <path
+                      v-for="path in graphPaths"
+                      :key="path.id"
+                      :d="path.d"
+                      :stroke="path.color"
+                      :opacity="path.opacity"
+                      fill="none"
+                      stroke-width="2.2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                    <circle
+                      v-for="node in graphNodes"
+                      :key="node.hash"
+                      :cx="node.x"
+                      :cy="node.y"
+                      :r="node.isHead ? dotRadius + 0.9 : dotRadius"
+                      :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
+                      :stroke="node.color"
+                      :stroke-width="node.isHead ? 2.5 : 1.5"
+                    />
+                  </svg>
+                  <template v-for="(row, rowIndex) in graphRows" :key="row.commit.hash">
+                    <div
+                      :class="
+                        cn(
+                          'group relative z-10 grid min-w-[24rem] cursor-pointer items-center gap-1 rounded px-1.5 text-xs transition-colors hover:bg-surface-container-high',
+                          isCommitSelected(row.commit.hash) &&
+                            'bg-primary/5 ring-1 ring-primary/20 hover:bg-primary/10',
+                          snapshot?.isDetachedHead &&
+                            commitHashMatches(row.commit.hash, snapshot?.headHash) &&
+                            'bg-status-warning/10 ring-1 ring-status-warning/25',
+                        )
+                      "
+                      :style="{
+                        gridTemplateColumns: graphRowColumns,
+                        minWidth: graphRowMinWidth,
+                        height: `${rowHeight}px`,
+                        marginTop: rowIndex === 0 ? '0' : `${rowGap}px`,
+                      }"
+                      @pointerdown="hideCommitTooltip"
+                      @click="toggleCommitFiles(row.commit.hash)"
+                      @contextmenu.prevent="openCommitContextMenu($event, row.commit)"
+                    >
+                      <button
+                        type="button"
+                        :class="
+                          cn(
+                            'flex h-4 w-4 items-center justify-center rounded-[4px] border text-on-surface-variant/80 transition-colors hover:border-primary hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70 group-hover:border-outline-variant',
+                            isCommitSelected(row.commit.hash)
+                              ? 'border-primary bg-primary text-on-primary shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-primary)_18%,transparent)] hover:bg-primary hover:text-on-primary'
+                              : 'border-border-subtle bg-transparent',
+                          )
+                        "
+                        :title="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
+                        :aria-label="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
+                        @click.stop="toggleCommitSelection(row.commit.hash)"
+                      >
+                        <Check v-if="isCommitSelected(row.commit.hash)" :size="10" :stroke-width="3" />
+                      </button>
+                      <div class="min-w-0 self-stretch" aria-hidden="true"></div>
+
+                      <button
+                        type="button"
+                        class="truncate rounded text-left font-mono text-[10px] font-semibold text-on-surface-variant hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70"
+                        :title="row.commit.hash"
+                        :aria-label="`复制提交 hash ${row.commit.hash}`"
+                        @click.stop="copyText(row.commit.hash)"
+                      >
+                        {{ row.commit.hash }}
+                      </button>
+                      <button
+                        type="button"
+                        class="min-w-0 overflow-hidden rounded text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70"
+                        :aria-expanded="selectedCommitHash === row.commit.hash"
+                        :aria-controls="`git-commit-files-${row.commit.hash}`"
+                        @click.stop="toggleCommitFiles(row.commit.hash)"
+                      >
+                        <div class="flex min-w-0 items-center gap-1.5 leading-4">
+                          <span
+                            class="min-w-0 truncate text-[11px] font-semibold text-on-surface"
+                            @mouseenter="showCommitTooltip($event, row.commit)"
+                            @mouseleave="scheduleCommitTooltipClose"
+                          >
+                            {{ row.commit.message }}
+                          </span>
+                          <span
+                            v-for="refName in refsForCommit(row.commit.refs)"
+                            :key="`${row.commit.hash}-${refName}`"
+                            :class="refClass(refName)"
+                            :title="refName"
+                          >
+                            {{ refName }}
+                          </span>
+                          <span
+                            v-if="snapshot?.isDetachedHead && commitHashMatches(row.commit.hash, snapshot?.headHash)"
+                            class="shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-1.5 py-px text-[9px] font-bold leading-3 text-status-warning"
+                          >
+                            HEAD
+                          </span>
+                        </div>
+                        <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75">
+                          {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
+                        </div>
+                      </button>
+                    </div>
+                    <div
+                      v-if="selectedCommitHash === row.commit.hash"
+                      :id="`git-commit-files-${row.commit.hash}`"
+                      class="relative z-10 overflow-hidden border-y border-outline-variant/50 bg-surface-container py-1 pr-2"
+                      :style="{
+                        height: `${inlineCommitFilesHeight}px`,
+                        minWidth: graphRowMinWidth,
+                        paddingLeft: `${graphLayerLeft + graphColumnWidth + 4}px`,
+                      }"
+                      aria-live="polite"
+                    >
+                      <span
+                        aria-hidden="true"
+                        class="absolute bottom-1 top-1 w-px bg-primary/45"
+                        :style="{ left: `${graphLayerLeft + graphColumnWidth}px` }"
+                      ></span>
+                      <div
+                        v-if="isLoadingCommitFiles"
+                        class="flex h-full items-center gap-2 px-1.5 text-[10px] font-medium text-on-surface-variant"
+                        aria-busy="true"
+                      >
+                        <span
+                          class="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                        ></span>
+                        <span>正在加载变更...</span>
+                      </div>
+                      <div v-else-if="commitFilesError" class="px-1.5 py-2 text-[10px] text-status-error">
+                        {{ commitFilesError }}
+                      </div>
+                      <div
+                        v-else-if="selectedCommitFiles.length === 0"
+                        class="px-1.5 py-2 text-[10px] text-on-surface-variant"
+                      >
+                        该提交暂无可显示的变更文件。
+                      </div>
+                      <div v-else class="themed-scrollbar h-full overflow-auto">
+                        <button
+                          v-for="file in selectedCommitFiles"
+                          :key="`${row.commit.hash}:${file.path}`"
+                          type="button"
+                          class="group grid min-h-6 w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-1.5 rounded-sm border border-transparent px-1.5 py-0.5 text-left transition-colors hover:border-outline-variant/50 hover:bg-surface-container-high"
+                          :title="file.path"
+                          @click.stop="handleViewDiff(file)"
+                        >
+                          <span
+                            :class="
+                              cn(
+                                'flex h-4 w-4 items-center justify-center rounded-[3px] font-mono text-[9px] font-black leading-none',
+                                file.status === 'ADDED' && 'bg-status-running/10 text-status-running',
+                                file.status === 'DELETED' && 'bg-status-error/10 text-status-error',
+                                file.status === 'RENAMED' && 'bg-secondary/10 text-secondary',
+                                file.status === 'UNTRACKED' && 'bg-primary/10 text-primary',
+                                file.status === 'MODIFIED' && 'bg-surface-container-highest text-on-surface-variant',
+                              )
+                            "
+                            :title="fileLabel(file.status)"
+                          >
+                            {{ fileStatusCode(file.status) }}
+                          </span>
+                          <span class="flex min-w-0 items-baseline gap-1 overflow-hidden">
+                            <span
+                              :class="
+                                cn(
+                                  'shrink-0 truncate font-mono text-[11px] font-semibold leading-4 text-on-surface group-hover:text-primary',
+                                  file.status === 'DELETED' && 'text-on-surface-variant line-through',
+                                )
+                              "
+                            >
+                              {{ gitFileName(file) }}
+                            </span>
+                            <span
+                              v-if="gitFileDirectory(file)"
+                              class="min-w-0 truncate text-[10px] leading-4 text-on-surface-variant/75"
+                            >
+                              {{ gitFileDirectory(file) }}
+                            </span>
+                          </span>
+                          <span class="whitespace-nowrap font-mono text-[9px] font-semibold">
+                            <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
+                            <span v-if="file.deletions > 0" class="ml-1 text-status-error">-{{ file.deletions }}</span>
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+                <div v-else class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
+                <button
+                  v-if="snapshot?.hasMoreCommits"
+                  type="button"
+                  class="mx-auto my-3 flex h-8 items-center rounded border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+                  :disabled="isLoadingMore"
+                  @click="handleLoadMore"
+                >
+                  {{ isLoadingMore ? t.git.loadingMore : t.git.loadMore }}
+                </button>
               </div>
             </div>
-            <div v-else class="text-sm text-on-surface-variant p-3">{{ t.git.empty }}</div>
-            <button
-              v-if="snapshot?.hasMoreCommits"
-              type="button"
-              class="mx-auto my-3 flex h-8 items-center rounded border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
-              :disabled="isLoadingMore"
-              @click="handleLoadMore"
-            >
-              {{ isLoadingMore ? t.git.loadingMore : t.git.loadMore }}
-            </button>
           </div>
         </div>
       </div>
@@ -2986,29 +3334,26 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </div>
           <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
             <div class="flex shrink-0 flex-wrap items-end gap-2">
-              <div class="block w-48 text-xs font-semibold uppercase text-on-surface-variant">
-                <span>模式</span>
-                <div class="relative mt-1">
+              <div class="relative w-48">
+                <button
+                  type="button"
+                  class="ui-field flex w-full items-center justify-between gap-2 text-left font-semibold normal-case"
+                  @click.stop="isAiModeMenuOpen = !isAiModeMenuOpen"
+                >
+                  <span>{{ aiModeLabel }}</span>
+                  <ChevronDown :size="14" class="text-on-surface-variant" />
+                </button>
+                <div v-if="isAiModeMenuOpen" class="mode-menu-popover" @click.stop>
                   <button
+                    v-for="option in aiModeOptions"
+                    :key="option.id"
                     type="button"
-                    class="ui-field flex w-full items-center justify-between gap-2 text-left font-semibold normal-case"
-                    @click.stop="isAiModeMenuOpen = !isAiModeMenuOpen"
+                    :class="cn('mode-menu-item', aiMode === option.id && 'bg-primary/10 text-primary')"
+                    @click="selectAiMode(option.id)"
                   >
-                    <span>{{ aiModeLabel }}</span>
-                    <ChevronDown :size="14" class="text-on-surface-variant" />
+                    <span>{{ option.name }}</span>
+                    <Check v-if="aiMode === option.id" :size="13" />
                   </button>
-                  <div v-if="isAiModeMenuOpen" class="mode-menu-popover" @click.stop>
-                    <button
-                      v-for="option in aiModeOptions"
-                      :key="option.id"
-                      type="button"
-                      :class="cn('mode-menu-item', aiMode === option.id && 'bg-primary/10 text-primary')"
-                      @click="selectAiMode(option.id)"
-                    >
-                      <span>{{ option.name }}</span>
-                      <Check v-if="aiMode === option.id" :size="13" />
-                    </button>
-                  </div>
                 </div>
               </div>
               <label
@@ -3032,6 +3377,12 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 <Sparkles :size="13" />
                 {{ isAiDialogGenerating ? "生成中" : "生成" }}
               </button>
+            </div>
+            <div
+              v-if="aiDialogNotice"
+              class="shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5 text-[10px] font-bold text-status-warning"
+            >
+              {{ aiDialogNotice }}
             </div>
             <div
               class="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
@@ -3061,304 +3412,6 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </div>
     </Transition>
 
-    <Transition name="scale">
-      <div
-        v-if="isDiffDialogOpen"
-        class="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
-        @click.self="closeDiffDialog"
-      >
-        <div
-          class="flex h-[85vh] w-[90vw] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
-        >
-          <div
-            class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
-          >
-            <div class="min-w-0">
-              <h3 class="text-sm font-bold text-on-surface">{{ t.git.diffTitle }}</h3>
-              <p v-if="selectedDiff" class="truncate font-mono text-[10px] font-bold text-on-surface-variant">
-                {{ selectedDiff.path }}
-              </p>
-            </div>
-            <button
-              type="button"
-              class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-              :title="t.common.close"
-              :aria-label="t.common.close"
-              @click="closeDiffDialog"
-            >
-              <X :size="15" />
-            </button>
-          </div>
-          <div class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest">
-            <div v-if="isLoadingDiff" class="space-y-1.5 py-3" aria-busy="true">
-              <div v-for="row in 10" :key="row" class="grid grid-cols-[3.25rem_minmax(0,1fr)] items-center">
-                <span class="skeleton ml-auto mr-2 h-3 w-8" />
-                <span
-                  :class="[
-                    'skeleton h-3 mr-1',
-                    row % 4 === 0 ? 'w-full' : row % 4 === 1 ? 'w-3/4' : row % 4 === 2 ? 'w-5/6' : 'w-2/3',
-                  ]"
-                />
-              </div>
-            </div>
-            <div v-else-if="selectedDiff?.diff" class="min-w-max py-3 font-mono text-xs leading-5">
-              <div
-                v-for="line in diffLines"
-                :key="line.id"
-                :class="
-                  cn(
-                    'grid grid-cols-[3.25rem_minmax(0,1fr)] whitespace-pre',
-                    line.kind === 'add' && 'bg-green-500/15 text-green-700 dark:bg-green-400/10 dark:text-green-300',
-                    line.kind === 'delete' && 'bg-red-500/15 text-red-700 dark:bg-red-400/10 dark:text-red-300',
-                    line.kind === 'hunk' && 'bg-blue-500/10 text-blue-600 dark:bg-blue-400/8 dark:text-blue-400',
-                    line.kind === 'meta' && 'bg-surface-container-low text-on-surface-variant/70',
-                    line.kind === 'context' && 'text-on-surface',
-                  )
-                "
-              >
-                <span class="select-none border-r border-border-subtle px-2 text-right text-on-surface-variant/60">
-                  {{ line.number }}
-                </span>
-                <span class="px-3">{{ line.content || " " }}</span>
-              </div>
-            </div>
-            <div v-else class="p-5 text-sm text-on-surface-variant">
-              {{ selectedDiff?.message || t.git.diffEmpty }}
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <Transition name="scale">
-      <div
-        v-if="isCommitDetailOpen && selectedCommit"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
-        @click.self="closeCommitDetails"
-      >
-        <div
-          class="flex h-[min(46rem,90vh)] w-[min(58rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
-        >
-          <div
-            class="flex min-h-14 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-2"
-          >
-            <div class="min-w-0 flex-1 py-0.5">
-              <div class="flex min-w-0 items-center">
-                <span
-                  class="block min-w-0 truncate text-sm font-semibold leading-5 text-on-surface"
-                  :title="selectedCommit.message"
-                >
-                  {{ selectedCommit.message }}
-                </span>
-              </div>
-              <div
-                class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-medium leading-4 text-on-surface-variant"
-              >
-                <button
-                  type="button"
-                  class="inline-flex h-5 max-w-28 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-1.5 font-mono font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                  :title="copyLabel(selectedCommit.hash)"
-                  :aria-label="copyLabel(selectedCommit.hash)"
-                  @click="copyText(selectedCommit.hash)"
-                >
-                  <span class="truncate">{{ selectedCommit.hash }}</span>
-                  <ClipboardCopy :size="10" />
-                </button>
-                <span class="max-w-28 truncate" :title="selectedCommit.author">{{ selectedCommit.author }}</span>
-                <span class="text-on-surface-variant/60">·</span>
-                <span class="shrink-0" :title="formatAbsoluteTime(selectedCommit.date)">
-                  {{ commitDateLabel(selectedCommit.date) }}
-                </span>
-                <span
-                  v-if="isSelectedCommitCurrentHead"
-                  :class="
-                    cn(
-                      'shrink-0 rounded-full border px-1.5 py-px text-[9px] font-bold leading-3',
-                      isSelectedCommitDetachedHead
-                        ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
-                        : 'border-primary/30 bg-primary/10 text-primary',
-                    )
-                  "
-                >
-                  {{ isSelectedCommitDetachedHead ? "detached HEAD" : "当前 HEAD" }}
-                </span>
-                <span
-                  v-for="refName in selectedCommitRefs"
-                  :key="refName"
-                  :class="cn(refClass(refName), 'max-w-28 shrink-0')"
-                  :title="refName"
-                >
-                  {{ refName }}
-                </span>
-              </div>
-            </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                class="inline-flex h-7 max-w-32 items-center gap-1.5 rounded border border-primary/25 bg-primary/10 px-2 text-[10px] font-bold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-55"
-                :disabled="isGitActionRunning || !canCheckoutSelectedCommit"
-                :title="selectedCommitCheckoutTitle"
-                :aria-label="selectedCommitCheckoutAriaLabel"
-                @click="handleCheckoutSelectedCommit"
-              >
-                <GitCommitHorizontal :size="12" />
-                <span class="truncate">{{ selectedCommitCheckoutLabel }}</span>
-              </button>
-              <button
-                type="button"
-                class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                :title="t.common.close"
-                :aria-label="t.common.close"
-                @click="closeCommitDetails"
-              >
-                <X :size="15" />
-              </button>
-            </div>
-          </div>
-          <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest p-2.5">
-            <div class="grid min-h-0 flex-1 grid-cols-[minmax(13rem,0.78fr)_minmax(0,1.22fr)] gap-2.5">
-              <section
-                class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface p-3"
-              >
-                <div class="mb-2 flex items-center justify-between gap-2">
-                  <h4 class="text-xs font-bold text-on-surface">{{ t.git.changedFiles }}</h4>
-                  <span class="text-[10px] font-bold text-on-surface-variant">{{ selectedCommitFiles.length }}</span>
-                </div>
-                <div class="themed-scrollbar min-h-24 flex-1 space-y-1 overflow-auto pr-1">
-                  <button
-                    v-for="file in selectedCommitFiles"
-                    :key="`detail-${file.path}`"
-                    type="button"
-                    class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border-subtle bg-surface-container-low px-2 py-1.5 text-left font-mono text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-container hover:text-primary"
-                    :title="file.path"
-                    @click="handleViewDiff(file)"
-                  >
-                    <span class="truncate">{{ file.path }}</span>
-                    <span class="whitespace-nowrap">
-                      <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
-                      <span v-if="file.deletions > 0" class="ml-1 text-status-error">-{{ file.deletions }}</span>
-                    </span>
-                  </button>
-                  <div v-if="isLoadingCommitFiles" class="space-y-1" aria-busy="true">
-                    <div
-                      v-for="row in 5"
-                      :key="row"
-                      class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-border-subtle bg-surface-container-low px-2 py-1.5"
-                    >
-                      <span :class="['skeleton h-3', row % 2 === 0 ? 'w-full' : 'w-3/4']" />
-                      <span class="skeleton h-3 w-8" />
-                    </div>
-                  </div>
-                  <p v-else-if="selectedCommitFiles.length === 0" class="text-xs text-on-surface-variant">
-                    该提交暂无可显示的变更文件。
-                  </p>
-                </div>
-                <div class="mt-2 shrink-0 border-t border-border-subtle pt-2">
-                  <div class="relative">
-                    <button
-                      type="button"
-                      class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
-                      :title="copyLabel(commitBodyContent)"
-                      :aria-label="copyLabel(commitBodyContent)"
-                      @click="copyText(commitBodyContent)"
-                    >
-                      <ClipboardCopy :size="12" />
-                    </button>
-                    <div
-                      class="memo-rendered ai-markdown-result max-h-40 overflow-auto rounded border border-border-subtle bg-surface-container-low p-3 pr-8 text-on-surface lg:max-h-52"
-                      v-html="renderedCommitBody"
-                    ></div>
-                  </div>
-                </div>
-              </section>
-
-              <section class="flex min-h-0 flex-col rounded-lg border border-border-subtle bg-surface p-3">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div class="flex min-w-0 items-center gap-2">
-                    <Sparkles :size="14" class="shrink-0 text-primary" />
-                    <div class="min-w-0">
-                      <h4 class="text-xs font-bold text-on-surface">{{ t.git.aiSummary }}</h4>
-                      <p class="truncate text-[10px] font-medium text-on-surface-variant">
-                        {{ aiResponseModeHint }}
-                      </p>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <div class="relative w-28">
-                      <button
-                        type="button"
-                        class="ui-field flex h-8 w-full items-center justify-between gap-2 px-2 text-left text-xs font-bold"
-                        @click.stop="isCommitAiModeMenuOpen = !isCommitAiModeMenuOpen"
-                      >
-                        <span>{{ commitAiModeLabel }}</span>
-                        <ChevronDown :size="13" class="text-on-surface-variant" />
-                      </button>
-                      <div v-if="isCommitAiModeMenuOpen" class="mode-menu-popover" @click.stop>
-                        <button
-                          v-for="option in aiModeOptions"
-                          :key="`commit-${option.id}`"
-                          type="button"
-                          :class="cn('mode-menu-item', commitAiMode === option.id && 'bg-primary/10 text-primary')"
-                          @click="selectCommitAiMode(option.id)"
-                        >
-                          <span>{{ option.name }}</span>
-                          <Check v-if="commitAiMode === option.id" :size="13" />
-                        </button>
-                      </div>
-                    </div>
-                    <label
-                      class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                      title="包含代码 diff 上下文"
-                    >
-                      <input
-                        v-model="commitAiIncludeDiffContext"
-                        type="checkbox"
-                        class="h-3 w-3 accent-primary"
-                        :disabled="commitAiState === 'loading'"
-                      />
-                      <span>Diff</span>
-                    </label>
-                    <button
-                      type="button"
-                      class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
-                      :disabled="commitAiState === 'loading'"
-                      @click="generateCommitAiAnalysis"
-                    >
-                      <Sparkles :size="13" />
-                      {{ commitAiState === "loading" ? "生成中" : "生成" }}
-                    </button>
-                  </div>
-                </div>
-                <div
-                  class="relative mt-2 min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
-                >
-                  <button
-                    v-if="commitAiCopyContent"
-                    type="button"
-                    class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
-                    :title="copyLabel(commitAiCopyContent)"
-                    :aria-label="copyLabel(commitAiCopyContent)"
-                    @click="copyText(commitAiCopyContent)"
-                  >
-                    <ClipboardCopy :size="12" />
-                  </button>
-                  <div class="ai-result-panel h-full overflow-auto p-3">
-                    <AiReasoningResult v-if="hasCommitAiDisplayResult" :result="commitAiDisplayResult" />
-                    <div
-                      v-else-if="commitAiPanelHint"
-                      :class="commitAiState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
-                    >
-                      {{ commitAiPanelHint }}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
     <ProjectActionDialog
       :open="Boolean(confirmationDialog)"
       :tone="confirmationDialog?.kind || 'danger'"
@@ -3375,13 +3428,29 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
     <Teleport to="body">
       <div
         v-if="commitTooltip"
-        class="commit-tooltip-panel pointer-events-none fixed z-[70] w-max overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
+        class="commit-tooltip-panel fixed z-[70] w-max select-text overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
         :style="commitTooltipStyle"
+        @mouseenter="cancelCommitTooltipClose"
+        @mouseleave="scheduleCommitTooltipClose"
       >
         <div class="border-b border-border-subtle bg-surface-container-low px-3 py-2">
-          <p v-if="commitTooltipTitle(commitTooltip.commit)" class="text-[12px] font-bold leading-5 text-on-surface">
-            {{ commitTooltipTitle(commitTooltip.commit) }}
-          </p>
+          <div class="flex items-start gap-2">
+            <p
+              v-if="commitTooltipTitle(commitTooltip.commit)"
+              class="min-w-0 flex-1 text-[12px] font-bold leading-5 text-on-surface"
+            >
+              {{ commitTooltipTitle(commitTooltip.commit) }}
+            </p>
+            <button
+              type="button"
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface-variant hover:text-primary"
+              :title="copyLabel(fullCommitMessage(commitTooltip.commit))"
+              :aria-label="copyLabel(fullCommitMessage(commitTooltip.commit))"
+              @click="copyText(fullCommitMessage(commitTooltip.commit))"
+            >
+              <ClipboardCopy :size="12" />
+            </button>
+          </div>
           <div
             :class="
               cn(
@@ -3421,6 +3490,64 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             v-html="renderCommitMessage(commitTooltipBody(commitTooltip.commit))"
           ></div>
         </div>
+      </div>
+      <div
+        v-if="commitContextMenu"
+        ref="commitContextMenuRef"
+        data-commit-context-menu
+        role="menu"
+        aria-label="提交操作"
+        class="themed-scrollbar fixed z-[75] max-h-80 w-[200px] overflow-y-auto rounded-md border border-outline-variant/70 bg-surface-container-lowest p-1 shadow-2xl"
+        :style="commitContextMenuStyle"
+        @click.stop
+      >
+        <template v-if="commitLocalBranchNames(commitContextMenu.commit).length > 0">
+          <div
+            class="flex h-7 items-center gap-2 px-2 text-[10px] font-bold text-on-surface-variant"
+            role="presentation"
+          >
+            <GitBranch :size="14" />
+            <span>切换到分支</span>
+          </div>
+          <button
+            v-for="branchName in commitLocalBranchNames(commitContextMenu.commit)"
+            :key="`${commitContextMenu.commit.hash}:${branchName}`"
+            type="button"
+            role="menuitem"
+            class="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] font-semibold text-on-surface transition-colors hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="isGitActionRunning"
+            :title="branchCheckoutTitle(branchName)"
+            @click="handleCheckoutCommitBranch(branchName)"
+          >
+            <GitBranch :size="13" class="shrink-0 text-on-surface-variant" />
+            <span class="min-w-0 flex-1 truncate">{{ branchName }}</span>
+            <span
+              v-if="branchName === snapshot?.branch && !snapshot?.isDetachedHead"
+              class="shrink-0 text-[9px] text-on-surface-variant/70"
+            >
+              当前
+            </span>
+          </button>
+        </template>
+        <button
+          v-else
+          type="button"
+          role="menuitem"
+          class="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-on-surface transition-colors hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
+          :disabled="isGitActionRunning || !canCheckoutDetachedCommit(commitContextMenu.commit)"
+          :title="detachedCheckoutTitle(commitContextMenu.commit)"
+          @click="handleCheckoutCommit(commitContextMenu.commit)"
+        >
+          <GitCommitHorizontal :size="13" class="shrink-0 text-on-surface-variant" />
+          <span class="min-w-0 flex-1 truncate text-[11px] font-semibold">
+            {{ activeGitAction === `checkout:${commitContextMenu.commit.hash}` ? "正在切换" : "切换到此提交" }}
+          </span>
+          <span
+            class="shrink-0 rounded bg-surface-container-high px-1 py-0.5 text-[8px] font-bold text-on-surface-variant"
+          >
+            分离 HEAD
+          </span>
+        </button>
       </div>
     </Teleport>
   </div>

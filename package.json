@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite --port=3421 --host=0.0.0.0",
     "build": "vite build",
+    "test:git-diff": "vitest run src/lib/gitDiff.test.ts",
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "lint": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "validate:ai-reasoning": "node scripts/validate-ai-reasoning.mjs",
+    "validate:git-diff": "node scripts/validate-git-diff.mjs",
     "validate:markdown-images": "node scripts/validate-markdown-images.mjs",
     "validate:project-files": "node scripts/validate-project-files.mjs",
     "validate:project-storage": "node scripts/validate-project-storage-compat.mjs",
@@ -33,6 +35,7 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "vitest": "^4.1.10"
   }
 }

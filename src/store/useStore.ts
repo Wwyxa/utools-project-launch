@@ -43,6 +43,7 @@ import type {
   ProjectEnvironmentEntry,
   ProjectFormValue,
   ProjectGitFileChange,
+  ProjectGitFileDiffOptions,
   ProjectGitFileDiffResult,
   ProjectGitSnapshot,
   ProjectGitStatusSnapshot,
@@ -2006,13 +2007,17 @@ export const useStore = defineStore("app", {
 
       return bridge.readProjectFile(project.path, relativePath);
     },
-    async readGitFileDiff(projectId: string, relativePath: string): Promise<ProjectGitFileDiffResult | null> {
+    async readGitFileDiff(
+      projectId: string,
+      relativePath: string,
+      options?: ProjectGitFileDiffOptions,
+    ): Promise<ProjectGitFileDiffResult | null> {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {
         return null;
       }
 
-      return bridge.readGitFileDiff(project.path, relativePath);
+      return bridge.readGitFileDiff(project.path, relativePath, options);
     },
     async readGitCommitFileDiff(
       projectId: string,
@@ -2092,7 +2097,7 @@ export const useStore = defineStore("app", {
       }
 
       const result = await bridge.stageGitFiles(project.path, relativePaths, options);
-      if (result.ok) {
+      if (result.ok || (result.count || 0) > 0) {
         bumpGitMutationVersion(projectId);
         await this.refreshGitStatusSnapshot(projectId);
       }
@@ -2109,7 +2114,7 @@ export const useStore = defineStore("app", {
       }
 
       const result = await bridge.unstageGitFiles(project.path, relativePaths, options);
-      if (result.ok) {
+      if (result.ok || (result.count || 0) > 0) {
         bumpGitMutationVersion(projectId);
         await this.refreshGitStatusSnapshot(projectId);
       }
@@ -2126,7 +2131,7 @@ export const useStore = defineStore("app", {
       }
 
       const result = await bridge.discardGitFiles(project.path, relativePaths, options);
-      if (result.ok) {
+      if (result.ok || (result.count || 0) > 0) {
         bumpGitMutationVersion(projectId);
         await this.refreshGitSnapshot(projectId, { force: true });
       }

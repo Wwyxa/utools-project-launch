@@ -14,6 +14,7 @@ import type {
   ProjectBridgeGitCommitPage,
   ProjectConfigFile,
   ProjectGitFileChange,
+  ProjectGitFileDiffOptions,
   ProjectGitActionResult,
   ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
@@ -507,9 +508,11 @@ const fallbackBridge: ProjectBridge = {
   async readGitCommits(): Promise<ProjectBridgeGitCommitPage> {
     return emptyGitCommitPage();
   },
-  async readGitFileDiff(projectPath: string, relativePath: string) {
+  async readGitFileDiff(projectPath: string, relativePath: string, options?: ProjectGitFileDiffOptions) {
+    const scope = options?.scope === "staged" || options?.scope === "unstaged" ? options.scope : "combined";
     return {
       path: relativePath,
+      scope,
       diff: "",
       message: projectPath ? "浏览器预览无法读取 Git diff。" : "项目路径为空，无法读取 Git diff。",
     };

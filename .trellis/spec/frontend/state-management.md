@@ -1035,57 +1035,78 @@ Always make the intended page size and offset explicit at the store boundary.
 ### 1. Scope / Trigger
 
 - Trigger: a Git changed-file diff crosses the Git tab, Pinia store, browser fallback bridge, and uTools preload Git command boundary.
+- Trigger: worktree review must distinguish the index (`staged`) from the working tree (`unstaged`) while existing AI callers still need a combined file diff.
 
 ### 2. Signatures
 
-- `ProjectBridge.readGitFileDiff(projectPath: string, relativePath: string): Promise<ProjectGitFileDiffResult>`
-- `ProjectGitFileDiffResult = { path: string; diff: string; message?: string }`
-- `readGitFileDiff(projectId: string, relativePath: string): Promise<ProjectGitFileDiffResult | null>`
+- `ProjectGitDiffScope = "combined" | "staged" | "unstaged"`
+- `ProjectGitFileDiffOptions = { scope?: ProjectGitDiffScope }`
+- `ProjectGitFileDiffResult = { path: string; scope?: ProjectGitDiffScope; diff: string; message?: string }`
+- `ProjectBridge.readGitFileDiff(projectPath: string, relativePath: string, options?: ProjectGitFileDiffOptions): Promise<ProjectGitFileDiffResult>`
+- `readGitFileDiff(projectId: string, relativePath: string, options?: ProjectGitFileDiffOptions): Promise<ProjectGitFileDiffResult | null>`
 
 ### 3. Contracts
 
 - UI components must call the store action, not `window.projectBridge` or Git directly.
 - `relativePath` is project-relative and must be resolved under the Git repository root in preload before running Git.
-- The bridge should combine staged and unstaged diff output for the selected file when both exist.
+- Missing or invalid `options.scope` normalizes to `combined`. This preserves existing batch-AI callers that intentionally collect the complete file diff without passing an option.
+- Visible worktree review must pass `staged` or `unstaged` explicitly. It must not present a `combined` diff as the content of either source-control group.
+- `staged` returns only `git diff --cached -- <path>` output.
+- `unstaged` returns only `git diff -- <path>` output plus the existing untracked-file fallback when the path is not tracked.
+- `combined` preserves the legacy cached + worktree + untracked concatenation.
+- The result echoes the normalized scope so consumers can reject mismatched responses.
 - Untracked files may use `git diff --no-index` against `os.devNull`; this command returns exit code `1` when differences exist, so diff-specific command handling must preserve stdout instead of treating all non-zero exits as empty output.
 - Browser fallback must return an empty diff with a user-facing message.
+- GitTab must key worktree selection by `{ path, scope }`, because one path can have both staged and unstaged changes. Rapid selection changes use a request generation (or equivalent identity check) so an older async response cannot overwrite the currently selected diff.
+- Search and group collapse are presentation-only. They must not narrow stage-all, unstage-all, or discard-all inputs, which remain owned by the complete live Git status contract.
 
 ### 4. Validation & Error Matrix
 
 - Missing Git repository -> return `{ path, diff: "", message: "未检测到 Git 仓库" }`.
 - Empty path -> return an empty diff with a choose-file message.
 - Path traversal outside repository -> reject through the existing child-path resolver.
-- No staged/unstaged/untracked diff -> return an empty diff with a user-facing unavailable message.
+- Missing or unknown scope -> normalize to `combined`, return `scope: "combined"`, and do not pass the unknown value into command selection.
+- `staged` requested with only unstaged changes -> return an empty staged result and a scope-specific user-facing message.
+- `unstaged` requested with only staged changes -> return an empty unstaged result and a scope-specific user-facing message.
+- Untracked regular file requested as `unstaged` -> preserve valid `--no-index` stdout even though Git exits with code `1`.
+- Response completes after the selected path, scope, project, or commit changes -> ignore it and keep the newer selection state.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: Git tab asks `store.readGitFileDiff(project.id, file.path)` and renders the returned diff or message.
+- Good: selecting the staged instance of a mixed-scope file calls `store.readGitFileDiff(project.id, file.path, { scope: "staged" })` and shows only the exact content included by the next commit.
+- Good: batch AI calls `store.readGitFileDiff(project.id, file.path)` without a scope and keeps the complete combined context.
 - Base: deleted files can show a diff even though they cannot be opened in the Files tab.
+- Base: browser preview echoes the normalized scope with an unavailable message and keeps the same async API shape.
 - Bad: using the generic `runGit` helper for `git diff --no-index`, which drops valid diff stdout because the command exits with code `1`.
+- Bad: changing the default scope to `unstaged`, which silently removes cached changes from existing AI context.
+- Bad: selecting rows by path only, which collapses staged and unstaged instances of the same file and makes action migration ambiguous.
 
 ### 6. Tests Required
 
-- `npm run lint` should verify the bridge contract across `src/types.ts`, fallback bridge, store, and components.
-- `npm run build` should verify the Git diff UI compiles.
-- Manual smoke test: modified, staged, deleted, and untracked files each show either diff text or an explicit unavailable message.
+- `npm run validate:git-diff` must assert staged-only, unstaged-only, combined, untracked, empty-path, traversal-rejection, and invalid-scope normalization against a temporary repository.
+- `npm run test:git-diff` must assert unified-diff line-number parsing, multiple hunks, omitted counts, metadata, no-newline markers, binary text, empty input, and malformed headers.
+- `npm run type-check` must verify the options/result contract across `src/types.ts`, fallback bridge, store, and components.
+- `node --check public/preload.js` must pass after changing scope normalization or Git command selection.
+- `npm run build` must verify the Git diff UI compiles.
+- Manual uTools smoke test: staged-only, unstaged-only, same-file mixed scope, deleted, renamed, untracked, and binary files each show the expected scope or an explicit unavailable message.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```ts
-const diff = await window.projectBridge.readGitFileDiff(project.path, file.path);
+const diff = await store.readGitFileDiff(project.id, file.path);
 ```
 
-This bypasses store fallback behavior and makes the component depend on the preload boundary.
+This uses the compatible combined default and cannot prove which source-control group the visible review represents.
 
 #### Correct
 
 ```ts
-const diff = await store.readGitFileDiff(project.id, file.path);
+const diff = await store.readGitFileDiff(project.id, file.path, { scope: selectedFile.scope });
 ```
 
-Keep Git diff reads behind the store action so fallback, unavailable projects, and UI state stay consistent.
+Keep Git diff reads behind the store action and make visible worktree scope explicit; reserve the combined default for callers such as batch AI that deliberately need both sources.
 
 ## Scenario: Git Lightweight Write Actions
 
