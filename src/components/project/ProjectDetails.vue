@@ -174,6 +174,12 @@ const handleFileOpened = (relativePath: string) => {
   }
 };
 
+const handleFileOpenCanceled = (relativePath: string) => {
+  if (normalizedRelativePath(fileOpenRequest.value) === normalizedRelativePath(relativePath)) {
+    fileOpenRequest.value = "";
+  }
+};
+
 const scheduleInitialGitRefresh = () => {
   if (isUnavailable.value || store.gitRefreshing[props.project.id] || store.gitStatusRefreshing[props.project.id]) {
     return;
@@ -454,6 +460,7 @@ watch(
         :project="project"
         :open-relative-path="fileOpenRequest"
         @opened="handleFileOpened"
+        @open-canceled="handleFileOpenCanceled"
       />
       <GitTab v-if="activeTab === 'git'" :project="project" @open-file="handleOpenGitFile" />
       <MemoTab v-if="activeTab === 'memo'" :project="project" :active="activeTab === 'memo'" />

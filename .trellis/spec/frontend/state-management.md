@@ -490,8 +490,6 @@ const success = !result.error && (result.code === 0 || result.automationExitMatc
 
 Persist and validate the stop reason instead of inferring intent from a platform-specific exit code.
 
-## Scenario: Project File Browser Bridge
-
 ## Scenario: External Tool Preferences
 
 ### 1. Scope / Trigger
@@ -869,21 +867,32 @@ Update local state first, then let the bridge stop the process in the background
 
 ### 1. Scope / Trigger
 
-- Trigger: project file browsing and lightweight editing cross the Vue component, Pinia store, browser fallback bridge, and uTools preload filesystem boundary.
+- Trigger: project file browsing, Markdown local assets, project-wide name search, and file mutations cross the Vue component, Pinia store, browser fallback bridge, and uTools preload filesystem boundary.
 
 ### 2. Signatures
 
 - `ProjectBridge.listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileTreeEntry[]>`
 - `ProjectBridge.readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>`
 - `ProjectBridge.writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>`
+- `ProjectBridge.searchProjectFiles(projectPath: string, query: string, options?: { limit?: number }): Promise<ProjectFileSearchResult>`
+- `ProjectBridge.createProjectEntry(projectPath: string, parentRelativePath: string, name: string, kind: "file" | "directory"): Promise<ProjectFileMutationResult>`
+- `ProjectBridge.renameProjectEntry(projectPath: string, relativePath: string, name: string): Promise<ProjectFileMutationResult>`
+- `ProjectBridge.deleteProjectEntry(projectPath: string, relativePath: string): Promise<ProjectFileMutationResult>`
+- `ProjectBridge.showProjectEntryInFolder(projectPath: string, relativePath: string): Promise<void>`
 
 ### 3. Contracts
 
 - UI components must call store actions for file operations; they must not call `window.projectBridge` directly.
 - `listProjectFiles` loads only one directory level per call. Directory expansion in the UI should request the next level on demand instead of recursively scanning a whole project.
-- The preload layer must resolve file paths under the project root and reject path traversal attempts that escape the root.
+- The preload layer must canonicalize the project root with `realpath`, check the lexical target is under that root, then check the existing target or creation parent resolves under the same canonical root. A lexical `path.resolve` / `path.relative` check alone does not stop a project-local symlink from reaching outside the project.
+- Listing and recursive search must skip symbolic links. Direct read, write, rename, or delete of a symbolic link is unsupported even when the link points inside the project; mutation code must never operate on the link target accidentally.
+- Creation may resolve an existing parent path, but the canonical parent must remain inside the canonical project root and be a directory. Create files exclusively and reject collisions instead of overwriting.
 - The file tree must hide heavyweight or generated directories by default, including `node_modules`, `.git`, `.venv`, build output, and cache directories.
+- Project-wide name search is asynchronous, bounded, case-insensitive, and isolated per directory: one unreadable/disappearing directory does not fail the whole scan. The UI uses a request generation so stale responses cannot replace a newer query.
+- Create and rename accept one basename only. Reject separators, control characters, Windows reserved names, trailing dot/space, collisions, and project-root mutation.
+- Expected mutation failures return the typed `ok: false` result and a user-facing message; browser fallback keeps every async signature and returns unsupported results without changing mock state.
 - Text files may be read and written as UTF-8. Lightweight binary previews such as small images may return a preview payload; unknown binary files should return an unsupported result rather than being exposed as editable text.
+- Files Tab Markdown local images reuse `readProjectFile`; frontend path classification is only an early filter, while preload canonical checks and existing image type/size limits remain authoritative.
 - Browser fallback must return safe empty/unsupported results and keep the same async API shape so the UI can render in preview mode.
 
 ### 4. Validation & Error Matrix
@@ -891,6 +900,10 @@ Update local state first, then let the bridge stop the process in the background
 - Empty or missing `projectPath` -> return an empty tree or unsupported read result.
 - Missing path on disk -> return an empty tree or a file read/write failure result; do not crash the UI.
 - Relative path escapes the project root -> reject the operation.
+- Lexical path stays inside the root but an intermediate symlink resolves outside -> reject before reading, writing, creating, revealing, renaming, or deleting.
+- Target itself is a symbolic link -> omit it from list/search and reject direct read/write/mutation.
+- One nested search directory is unreadable or disappears -> skip that branch and return other matches.
+- Empty/invalid/reserved basename, collision, or root mutation -> return `ok: false` without changing disk or optimistic UI state.
 - Directory is ignored -> omit it from tree results.
 - File is too large or binary/unsupported -> return a non-editable preview/error state instead of decoding as text.
 
@@ -898,15 +911,20 @@ Update local state first, then let the bridge stop the process in the background
 
 - Good: opening the file tab loads only root-level entries, then expanding `src` loads just `src` children.
 - Good: double-clicking a text file enters edit mode and saving goes through the store action, bridge, and preload boundary.
+- Good: a project-local link points outside the root; list/search omit it and read/write/delete calls reject it without touching the target.
 - Base: browser preview shows an empty or unavailable file browser without throwing.
 - Bad: recursively scanning the whole project tree on tab mount.
 - Bad: reading an unknown binary file as UTF-8 and enabling save.
+- Bad: validating only `path.relative(projectRoot, path.resolve(projectRoot, input))`, then using `fs.realpathSync` or recursive removal on the unchecked target.
 
 ### 6. Tests Required
 
-- `npm run lint` should verify shared bridge types across `src/types.ts`, `src/lib/projectBridge.ts`, store actions, and components.
+- `npm run validate:project-files` must assert ignored directories, bounded search, invalid names, collisions, create/rename/delete behavior, root/traversal rejection, and both internal/external symbolic-link cases where the platform permits fixtures.
+- `npm run validate:markdown-images` must assert local/external/blocked image classification and isolated render failures.
+- `npm run type-check` should verify shared bridge types across `src/types.ts`, `src/lib/projectBridge.ts`, store actions, and components.
+- `node --check public/preload.js` must pass after filesystem boundary changes.
 - `npm run build` should verify the Vue file-browser components compile.
-- Manual smoke test: open file tab, expand a nested directory, preview a text file, edit/save it, and confirm ignored directories do not appear.
+- Manual smoke test: open file tab, expand/filter, preview and save a text file, create/rename/delete entries, reveal one in the system file manager, and confirm ignored/link entries do not appear.
 
 ### 7. Wrong vs Correct
 
@@ -925,6 +943,30 @@ const entries = await store.listProjectFiles(project.id, "src");
 ```
 
 Let the store own bridge calls and normalize errors before the component renders them.
+
+#### Wrong
+
+```js
+const targetPath = path.resolve(projectRoot, relativePath);
+if (!path.relative(projectRoot, targetPath).startsWith("..")) {
+  fs.rmSync(targetPath, { recursive: true });
+}
+```
+
+This checks only path spelling. An entry below `projectRoot` can still be a symbolic link whose real target is outside the project.
+
+#### Correct
+
+```js
+const rootPath = fs.realpathSync(projectRoot);
+const lexicalTarget = path.resolve(rootPath, relativePath);
+assertPathWithinRoot(rootPath, lexicalTarget);
+if (fs.lstatSync(lexicalTarget).isSymbolicLink()) throw new Error("不支持操作符号链接。");
+const targetPath = fs.realpathSync(lexicalTarget);
+assertPathWithinRoot(rootPath, targetPath);
+```
+
+Validate both lexical and canonical boundaries, and reject direct link mutation before using the resolved target.
 
 ## Scenario: Git History Pagination
 

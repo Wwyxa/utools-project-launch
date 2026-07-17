@@ -1,4 +1,5 @@
 import MarkdownIt from "markdown-it";
+import type Token from "markdown-it/lib/token.mjs";
 import hljs from "highlight.js/lib/core";
 import type { LanguageFn } from "highlight.js";
 import bash from "highlight.js/lib/languages/bash";
@@ -71,7 +72,95 @@ export const markdown = new MarkdownIt({
   },
 });
 
-export const renderMarkdown = (content: string) => markdown.render(content);
+export type MarkdownImageResolution =
+  | { status: "ready"; src: string }
+  | { status: "loading" | "failed" | "blocked"; message?: string };
+
+export interface MarkdownRenderOptions {
+  resolveImage?: (source: string) => MarkdownImageResolution | undefined;
+  imageFallbackText?: string;
+}
+
+interface MarkdownRenderEnvironment {
+  imageOptions?: MarkdownRenderOptions;
+}
+
+interface MarkdownDocumentParts {
+  body: string;
+  frontMatter?: string;
+}
+
+const splitMarkdownDocument = (content: string): MarkdownDocumentParts => {
+  const normalizedContent = content.startsWith("\uFEFF") ? content.slice(1) : content;
+  const lines = normalizedContent.split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return { body: normalizedContent };
+
+  const closingIndex = lines.findIndex((line, index) => index > 0 && (line.trim() === "---" || line.trim() === "..."));
+  if (closingIndex < 2) return { body: normalizedContent };
+
+  const frontMatterLines = lines.slice(1, closingIndex);
+  const hasYamlKey = frontMatterLines.some((line) => /^[A-Za-z_][\w.-]*\s*:/.test(line));
+  if (!hasYamlKey) return { body: normalizedContent };
+
+  return {
+    frontMatter: frontMatterLines.join("\n"),
+    body: lines.slice(closingIndex + 1).join("\n"),
+  };
+};
+
+const defaultImageRenderer =
+  markdown.renderer.rules.image ||
+  ((tokens, index, options, environment, renderer) => renderer.renderToken(tokens, index, options));
+
+markdown.renderer.rules.image = (tokens, index, options, environment: MarkdownRenderEnvironment, renderer) => {
+  const token = tokens[index];
+  const source = token.attrGet("src") || "";
+  const resolution = environment.imageOptions?.resolveImage?.(source);
+  if (!resolution) {
+    return defaultImageRenderer(tokens, index, options, environment, renderer);
+  }
+  if (resolution.status === "ready") {
+    const originalSource = source;
+    token.attrSet("src", resolution.src);
+    const rendered = defaultImageRenderer(tokens, index, options, environment, renderer);
+    token.attrSet("src", originalSource);
+    return rendered;
+  }
+
+  const alt = token.content || token.attrGet("alt") || source;
+  const fallbackText = resolution.message || environment.imageOptions?.imageFallbackText || "Image unavailable";
+  return `<span class="markdown-image-fallback markdown-image-fallback-${resolution.status}" role="img" aria-label="${markdown.utils.escapeHtml(
+    alt,
+  )}">${markdown.utils.escapeHtml(fallbackText)}</span>`;
+};
+
+const collectImageSourcesFromTokens = (tokens: Token[], sources: string[]) => {
+  for (const token of tokens) {
+    if (token.type === "image") {
+      const source = token.attrGet("src");
+      if (source) sources.push(source);
+    }
+    if (token.children) {
+      collectImageSourcesFromTokens(token.children, sources);
+    }
+  }
+};
+
+export const collectMarkdownImageSources = (content: string) => {
+  const sources: string[] = [];
+  collectImageSourcesFromTokens(markdown.parse(splitMarkdownDocument(content).body, {}), sources);
+  return sources;
+};
+
+export const renderMarkdown = (content: string, options?: MarkdownRenderOptions) => {
+  const document = splitMarkdownDocument(content);
+  const environment = options ? ({ imageOptions: options } satisfies MarkdownRenderEnvironment) : {};
+  const renderedBody = markdown.render(document.body, environment);
+  if (document.frontMatter === undefined) return renderedBody;
+
+  const renderedFrontMatter = hljs.highlight(document.frontMatter, { language: "yaml" }).value;
+  return `<pre class="hljs markdown-front-matter"><code>${renderedFrontMatter}</code></pre>${renderedBody}`;
+};
 
 export const highlightCode = (source: string, language: string) => {
   const normalizedLanguage = language === "sh" ? "bash" : language;

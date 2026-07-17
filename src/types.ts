@@ -581,6 +581,24 @@ export interface ProjectFileListResult {
   entries: ProjectFileTreeEntry[];
 }
 
+export type ProjectFileMutationKind = ProjectFileKind;
+
+export interface ProjectFileSearchResult {
+  rootPath: string;
+  query: string;
+  entries: ProjectFileTreeEntry[];
+  truncated: boolean;
+}
+
+export interface ProjectFileMutationResult {
+  ok: boolean;
+  kind: ProjectFileMutationKind;
+  path: string;
+  relativePath: string;
+  previousRelativePath?: string;
+  message?: string;
+}
+
 export interface ProjectFileReadResult {
   path: string;
   relativePath: string;
@@ -692,6 +710,20 @@ export interface ProjectBridge {
   setGitRemoteUrl(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
   removeGitRemote(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileListResult>;
+  searchProjectFiles(
+    projectPath: string,
+    query: string,
+    options?: { limit?: number },
+  ): Promise<ProjectFileSearchResult>;
+  createProjectEntry(
+    projectPath: string,
+    parentRelativePath: string,
+    name: string,
+    kind: ProjectFileMutationKind,
+  ): Promise<ProjectFileMutationResult>;
+  renameProjectEntry(projectPath: string, relativePath: string, name: string): Promise<ProjectFileMutationResult>;
+  deleteProjectEntry(projectPath: string, relativePath: string): Promise<ProjectFileMutationResult>;
+  showProjectEntryInFolder(projectPath: string, relativePath: string): Promise<void>;
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;
   openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult>;

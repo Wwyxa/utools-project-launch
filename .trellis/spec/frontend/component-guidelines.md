@@ -174,6 +174,22 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 
 **Related**: `src/lib/markdown.ts`, `src/index.css`, `src/components/project/FilesTab.vue`.
 
+### Convention: Markdown Front Matter Preview
+
+**What**: A closed YAML front matter block at the very start of Markdown is displayed as highlighted metadata, while the document body continues through the shared markdown-it renderer.
+
+**Why**: Without an explicit boundary, markdown-it interprets the opening and closing `---` lines as thematic or Setext syntax, which breaks agent files and other metadata-bearing project documents.
+
+**Rules**:
+
+- Recognize front matter only at the document start, require a closing `---` or `...`, and require at least one YAML key.
+- Render the metadata with the existing highlight.js YAML grammar; do not add a YAML/front-matter runtime dependency merely for preview.
+- Preserve YAML indentation and line breaks, but wrap long metadata lines to the preview width and suppress horizontal scrolling. Ordinary fenced code blocks keep their existing no-wrap scrolling behavior.
+- Parse Markdown images only from the body so image-like YAML strings do not trigger project file reads.
+- Leave unclosed blocks and ordinary leading thematic breaks to markdown-it's default behavior.
+
+**Related**: `src/lib/markdown.ts`, `scripts/validate-markdown-images.mjs`.
+
 ### Convention: Theme-Aware Code Preview Surfaces
 
 **What**: File previews should use surface tokens for the preview background, gutter, and borders instead of leaving the syntax block on a contrasting hard-coded panel.

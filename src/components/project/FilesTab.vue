@@ -6,22 +6,41 @@ import {
   ChevronUp,
   Edit3,
   FileImage,
+  Filter,
+  FilePlus2,
   Folder,
+  FolderPlus,
+  ListCollapse,
+  LocateFixed,
+  Pencil,
+  Copy,
+  RefreshCw,
   Replace,
   ReplaceAll,
   Save,
   Search,
+  Trash2,
   X,
 } from "lucide-vue-next";
 import type { Project, ProjectFileReadResult, ProjectFileTreeEntry } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import { highlightCode, isMarkdownFile, renderMarkdown } from "../../lib/markdown";
+import {
+  collectMarkdownImageSources,
+  highlightCode,
+  isMarkdownFile,
+  renderMarkdown,
+  type MarkdownImageResolution,
+} from "../../lib/markdown";
+import { classifyProjectMarkdownImageSource } from "../../lib/projectMarkdown";
 import { useResizableSplit } from "../../composables/useResizableSplit";
-import FileTreeNode, { type TreeNode } from "./FileTreeNode.vue";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import FileTreeNode, { type InlineTreeEdit, type TreeNode } from "./FileTreeNode.vue";
+import ProjectActionDialog from "./ProjectActionDialog.vue";
 
 type SearchMatch = { start: number; end: number };
+type MarkdownAssetState = { status: "loading" | "failed" | "ready"; dataUrl?: string };
 
 const props = defineProps<{
   project: Project;
@@ -30,6 +49,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "opened", relativePath: string): void;
+  (e: "open-canceled", relativePath: string): void;
 }>();
 
 const store = useStore();
@@ -48,14 +68,56 @@ const codeScrollRef = ref<HTMLDivElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const findInputRef = ref<HTMLInputElement | null>(null);
 const replaceInputRef = ref<HTMLInputElement | null>(null);
+const treeRef = ref<HTMLElement | null>(null);
+const filterInputRef = ref<HTMLInputElement | null>(null);
+const rootInlineInputRef = ref<HTMLInputElement | null>(null);
+const contextMenuRef = ref<HTMLElement | null>(null);
 const isFindOpen = ref(false);
 const isReplaceOpen = ref(false);
 const findQuery = ref("");
 const replaceValue = ref("");
 const activeMatchIndex = ref(0);
+const focusedRelativePath = ref("");
+const selectedNodeRelativePath = ref("");
+const isFilterOpen = ref(false);
+const filterQuery = ref("");
+const filterResults = ref<ProjectFileTreeEntry[]>([]);
+const isFiltering = ref(false);
+const filterTruncated = ref(false);
+const inlineEdit = ref<InlineTreeEdit | null>(null);
+const contextMenu = ref<{
+  node: TreeNode;
+  x: number;
+  y: number;
+  previousSelectedPath: string;
+  previousFocusedPath: string;
+} | null>(null);
+const actionDialog = ref<"dirty" | "delete" | null>(null);
+const deleteTarget = ref<TreeNode | null>(null);
+const isActionRunning = ref(false);
+const actionDialogError = ref("");
+const markdownAssets = ref<Record<string, MarkdownAssetState>>({});
 let rootLoadPromise: Promise<void> | null = null;
+let markdownAssetGeneration = 0;
+let filterRequestId = 0;
+let filterTimer: number | undefined;
+let pendingContinuation: (() => Promise<void> | void) | null = null;
+let pendingCanceledPath = "";
+let pendingCancelRestore: { selectedPath: string; focusedPath: string } | null = null;
+let stopAppEscapeListener = () => undefined;
 
 const selectedRelativePath = computed(() => selectedFile.value?.relativePath || "");
+const visibleNodes = computed(() => {
+  const entries: TreeNode[] = [];
+  const appendVisible = (nodes: TreeNode[]) => {
+    for (const node of nodes) {
+      entries.push(node);
+      if (node.kind === "directory" && node.expanded) appendVisible(node.children || []);
+    }
+  };
+  appendVisible(rootNodes.value);
+  return entries;
+});
 const isMarkdownPreview = computed(() =>
   Boolean(
     selectedFile.value?.previewKind === "text" && isMarkdownFile(selectedFile.value.name, selectedFile.value.extension),
@@ -68,6 +130,21 @@ const canEdit = computed(() => Boolean(selectedFile.value?.editable));
 const canSave = computed(() => canEdit.value && isDirty.value && !isSaving.value);
 const canSearchCurrentFile = computed(() => selectedFile.value?.previewKind === "text");
 const canReplaceCurrentFile = computed(() => selectedFile.value?.previewKind === "text" && canEdit.value);
+const contextMenuStyle = computed(() => ({
+  left: `${contextMenu.value?.x || 0}px`,
+  top: `${contextMenu.value?.y || 0}px`,
+}));
+const actionDialogTitle = computed(() =>
+  actionDialog.value === "dirty" ? t.value.files.unsavedTitle : t.value.files.deleteTitle,
+);
+const actionDialogMessage = computed(() => {
+  if (actionDialogError.value) return actionDialogError.value;
+  if (actionDialog.value === "dirty") return t.value.files.unsavedMessage;
+  if (deleteTarget.value?.kind === "directory") {
+    return t.value.files.deleteDirectoryMessage.replace("{name}", deleteTarget.value.name);
+  }
+  return t.value.files.deleteFileMessage.replace("{name}", deleteTarget.value?.name || "");
+});
 const {
   bounds: splitBounds,
   firstSize,
@@ -93,7 +170,28 @@ const lineNumbers = computed(() =>
 );
 const editorLineCount = computed(() => Math.max(1, draftContent.value.split("\n").length));
 const editorContentStyle = computed(() => ({ "--file-code-line-count": `${editorLineCount.value}` }));
-const renderedMarkdown = computed(() => renderMarkdown(draftContent.value));
+const resolveMarkdownImage = (source: string): MarkdownImageResolution | undefined => {
+  const classification = classifyProjectMarkdownImageSource(source, selectedRelativePath.value);
+  if (classification.kind === "external") return undefined;
+  if (classification.kind === "blocked") {
+    return { status: "blocked", message: t.value.files.localImageBlocked };
+  }
+
+  const asset = markdownAssets.value[classification.relativePath];
+  if (!asset || asset.status === "loading") {
+    return { status: "loading", message: t.value.files.localImageLoading };
+  }
+  if (asset.status === "ready" && asset.dataUrl) {
+    return { status: "ready", src: asset.dataUrl };
+  }
+  return { status: "failed", message: t.value.files.localImageUnavailable };
+};
+const renderedMarkdown = computed(() =>
+  renderMarkdown(draftContent.value, {
+    resolveImage: resolveMarkdownImage,
+    imageFallbackText: t.value.files.localImageUnavailable,
+  }),
+);
 const previewLanguage = computed(() => {
   const extension = selectedFile.value?.extension.toLowerCase().replace(/^\./, "") || "";
   const name = selectedFile.value?.name.toLowerCase() || "";
@@ -254,6 +352,52 @@ const formatSize = (size: number) => {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 };
 
+const loadMarkdownAssets = async () => {
+  const generation = ++markdownAssetGeneration;
+  if (!isMarkdownPreview.value || isEditing.value || !selectedRelativePath.value) {
+    markdownAssets.value = {};
+    return;
+  }
+
+  const relativePaths = Array.from(
+    new Set(
+      collectMarkdownImageSources(draftContent.value)
+        .map((source) => classifyProjectMarkdownImageSource(source, selectedRelativePath.value))
+        .filter((result) => result.kind === "local")
+        .map((result) => result.relativePath),
+    ),
+  );
+  const previousAssets = markdownAssets.value;
+  markdownAssets.value = Object.fromEntries(
+    relativePaths.map((relativePath) => [
+      relativePath,
+      previousAssets[relativePath]?.status === "ready" ? previousAssets[relativePath] : { status: "loading" },
+    ]),
+  );
+
+  const pendingPaths = relativePaths.filter((relativePath) => markdownAssets.value[relativePath]?.status !== "ready");
+  let pendingIndex = 0;
+  const worker = async () => {
+    while (pendingIndex < pendingPaths.length) {
+      const relativePath = pendingPaths[pendingIndex];
+      pendingIndex += 1;
+      let nextState: MarkdownAssetState = { status: "failed" };
+      try {
+        const result = await store.readProjectFile(props.project.id, relativePath);
+        if (result?.previewKind === "image" && result.dataUrl) {
+          nextState = { status: "ready", dataUrl: result.dataUrl };
+        }
+      } catch {
+        nextState = { status: "failed" };
+      }
+      if (generation !== markdownAssetGeneration) return;
+      markdownAssets.value = { ...markdownAssets.value, [relativePath]: nextState };
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(4, pendingPaths.length) }, () => worker()));
+};
+
 const loadChildren = async (node?: TreeNode) => {
   if (!node && rootLoadPromise) {
     await rootLoadPromise;
@@ -276,6 +420,9 @@ const loadChildren = async (node?: TreeNode) => {
       node.expanded = true;
     } else {
       rootNodes.value = entries;
+      if (!focusedRelativePath.value && entries.length > 0) {
+        focusedRelativePath.value = entries[0].relativePath;
+      }
     }
   };
 
@@ -302,6 +449,173 @@ const normalizedRelativePath = (relativePath: string) => relativePath.replace(/\
 const findNode = (nodes: TreeNode[], relativePath: string) =>
   nodes.find((node) => normalizedRelativePath(node.relativePath) === normalizedRelativePath(relativePath));
 
+const findNodeRecursive = (nodes: TreeNode[], relativePath: string): TreeNode | undefined => {
+  for (const node of nodes) {
+    if (normalizedRelativePath(node.relativePath) === normalizedRelativePath(relativePath)) return node;
+    const child = findNodeRecursive(node.children || [], relativePath);
+    if (child) return child;
+  }
+  return undefined;
+};
+
+const focusTreeNode = (relativePath: string) => {
+  focusedRelativePath.value = relativePath;
+  void nextTick(() => {
+    const button = Array.from(treeRef.value?.querySelectorAll<HTMLElement>("[data-tree-path]") || []).find(
+      (element) => normalizedRelativePath(element.dataset.treePath || "") === normalizedRelativePath(relativePath),
+    );
+    button?.focus();
+  });
+};
+
+const selectTreeNode = (node: TreeNode) => {
+  selectedNodeRelativePath.value = node.relativePath;
+  focusedRelativePath.value = node.relativePath;
+};
+
+const focusOnlyTreeNode = (node: TreeNode) => {
+  focusedRelativePath.value = node.relativePath;
+};
+
+const pathIsSameOrChild = (relativePath: string, parentRelativePath: string) => {
+  const pathValue = normalizedRelativePath(relativePath);
+  const parentValue = normalizedRelativePath(parentRelativePath).replace(/\/$/, "");
+  return pathValue === parentValue || pathValue.startsWith(`${parentValue}/`);
+};
+
+const closeContextMenu = (restoreFocus = false) => {
+  const relativePath = contextMenu.value?.node.relativePath || "";
+  contextMenu.value = null;
+  if (restoreFocus && relativePath) focusTreeNode(relativePath);
+};
+
+const showNodeContextMenu = (
+  node: TreeNode,
+  anchor: { x: number; y: number; aboveY?: number },
+  previousSelectedPath: string,
+  previousFocusedPath: string,
+) => {
+  const viewportMargin = 8;
+  contextMenu.value = {
+    node,
+    x: Math.max(viewportMargin, anchor.x),
+    y: Math.max(viewportMargin, anchor.y),
+    previousSelectedPath,
+    previousFocusedPath,
+  };
+  void nextTick(() => {
+    const menu = contextMenuRef.value;
+    const current = contextMenu.value;
+    if (!menu || !current || current.node !== node) return;
+
+    const rect = menu.getBoundingClientRect();
+    const maxX = Math.max(viewportMargin, window.innerWidth - rect.width - viewportMargin);
+    const maxY = Math.max(viewportMargin, window.innerHeight - rect.height - viewportMargin);
+    const preferredX = anchor.x + rect.width <= window.innerWidth - viewportMargin ? anchor.x : anchor.x - rect.width;
+    const preferredY =
+      anchor.y + rect.height <= window.innerHeight - viewportMargin
+        ? anchor.y
+        : (anchor.aboveY ?? anchor.y) - rect.height;
+    current.x = Math.min(Math.max(viewportMargin, preferredX), maxX);
+    current.y = Math.min(Math.max(viewportMargin, preferredY), maxY);
+    menu.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  });
+};
+
+const openNodeContextMenu = (node: TreeNode, source: MouseEvent | KeyboardEvent) => {
+  source.preventDefault();
+  const previousSelectedPath = selectedNodeRelativePath.value;
+  const previousFocusedPath = focusedRelativePath.value;
+  selectTreeNode(node);
+  const sourceElement = source.currentTarget instanceof HTMLElement ? source.currentTarget : null;
+  const rect = sourceElement?.getBoundingClientRect();
+  showNodeContextMenu(
+    node,
+    {
+      x: source instanceof MouseEvent ? source.clientX : rect?.left || 8,
+      y: source instanceof MouseEvent ? source.clientY : rect?.bottom || 8,
+      aboveY: source instanceof MouseEvent ? source.clientY : rect?.top || 8,
+    },
+    previousSelectedPath,
+    previousFocusedPath,
+  );
+};
+
+const handleContextMenuKeydown = (event: KeyboardEvent) => {
+  const items = Array.from(contextMenuRef.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') || []);
+  if (items.length === 0) return;
+  const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+  let nextIndex: number | undefined;
+  if (event.key === "ArrowDown") nextIndex = (Math.max(0, currentIndex) + 1) % items.length;
+  else if (event.key === "ArrowUp") nextIndex = (currentIndex <= 0 ? items.length : currentIndex) - 1;
+  else if (event.key === "Home") nextIndex = 0;
+  else if (event.key === "End") nextIndex = items.length - 1;
+  else return;
+  event.preventDefault();
+  items[nextIndex].focus();
+};
+
+const cancelInlineEdit = () => {
+  if (!inlineEdit.value?.busy) inlineEdit.value = null;
+};
+
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (event.detail.handled) return;
+  if (actionDialog.value) return;
+  if (contextMenu.value) {
+    closeContextMenu(true);
+    event.detail.handle();
+    return;
+  }
+  if (inlineEdit.value) {
+    cancelInlineEdit();
+    event.detail.handle();
+  }
+};
+
+const cancelActionDialog = () => {
+  if (isActionRunning.value) return;
+  const canceledPath = pendingCanceledPath;
+  actionDialog.value = null;
+  actionDialogError.value = "";
+  deleteTarget.value = null;
+  pendingContinuation = null;
+  pendingCanceledPath = "";
+  if (pendingCancelRestore) {
+    selectedNodeRelativePath.value = pendingCancelRestore.selectedPath;
+    focusTreeNode(pendingCancelRestore.focusedPath);
+  }
+  pendingCancelRestore = null;
+  if (canceledPath) emit("open-canceled", canceledPath);
+};
+
+const runContinuation = async () => {
+  const continuation = pendingContinuation;
+  pendingContinuation = null;
+  pendingCanceledPath = "";
+  pendingCancelRestore = null;
+  actionDialog.value = null;
+  actionDialogError.value = "";
+  if (continuation) await continuation();
+};
+
+const guardDirtyDraft = async (
+  continuation: () => Promise<void> | void,
+  affectsCurrent = true,
+  canceledPath = "",
+  cancelRestore: { selectedPath: string; focusedPath: string } | null = null,
+) => {
+  if (!isDirty.value || !affectsCurrent) {
+    await continuation();
+    return;
+  }
+  pendingContinuation = continuation;
+  pendingCanceledPath = canceledPath;
+  pendingCancelRestore = cancelRestore;
+  actionDialogError.value = "";
+  actionDialog.value = "dirty";
+};
+
 const expandPathToFile = async (relativePath: string) => {
   const parts = pathParts(relativePath);
   if (rootNodes.value.length === 0) {
@@ -327,6 +641,7 @@ const expandPathToFile = async (relativePath: string) => {
 
 const toggleDirectory = async (node: TreeNode) => {
   if (node.kind !== "directory") return;
+  selectTreeNode(node);
   if (node.loaded) {
     node.expanded = !node.expanded;
     return;
@@ -334,11 +649,13 @@ const toggleDirectory = async (node: TreeNode) => {
   await loadChildren(node);
 };
 
-const openFile = async (node: TreeNode, edit = false) => {
+const performOpenFile = async (node: TreeNode, edit = false) => {
   if (node.kind !== "file") {
     await toggleDirectory(node);
     return;
   }
+
+  selectTreeNode(node);
 
   isLoadingFile.value = true;
   statusMessage.value = "";
@@ -356,7 +673,421 @@ const openFile = async (node: TreeNode, edit = false) => {
   }
 };
 
-const openRelativePath = async (relativePath: string) => {
+const openFile = async (node: TreeNode, edit = false) => {
+  if (node.kind !== "file") {
+    await toggleDirectory(node);
+    return;
+  }
+  await guardDirtyDraft(
+    () => performOpenFile(node, edit),
+    Boolean(
+      selectedRelativePath.value &&
+      normalizedRelativePath(node.relativePath) !== normalizedRelativePath(selectedRelativePath.value),
+    ),
+    "",
+    { selectedPath: selectedNodeRelativePath.value, focusedPath: selectedNodeRelativePath.value },
+  );
+};
+
+const collapseAll = () => {
+  const collapse = (nodes: TreeNode[]) => {
+    for (const node of nodes) {
+      node.expanded = false;
+      collapse(node.children || []);
+    }
+  };
+  collapse(rootNodes.value);
+  if (rootNodes.value.length > 0) focusTreeNode(rootNodes.value[0].relativePath);
+};
+
+const expandDirectoryPath = async (relativePath: string) => {
+  const parts = pathParts(relativePath);
+  let currentNodes = rootNodes.value;
+  for (let index = 0; index < parts.length; index += 1) {
+    const directoryPath = parts.slice(0, index + 1).join("/");
+    const directoryNode = findNode(currentNodes, directoryPath);
+    if (!directoryNode || directoryNode.kind !== "directory") return;
+    if (!directoryNode.loaded) await loadChildren(directoryNode);
+    else directoryNode.expanded = true;
+    currentNodes = directoryNode.children || [];
+  }
+};
+
+const refreshTree = async () => {
+  const expandedPaths = visibleNodes.value
+    .filter((node) => node.kind === "directory" && node.expanded)
+    .map((node) => node.relativePath)
+    .sort((left, right) => pathParts(left).length - pathParts(right).length);
+  await loadChildren();
+  for (const relativePath of expandedPaths) await expandDirectoryPath(relativePath);
+  const selectedNode = findNodeRecursive(rootNodes.value, selectedNodeRelativePath.value);
+  if (!selectedNode) {
+    const clearMissingSelection = () => {
+      selectedNodeRelativePath.value = "";
+      focusedRelativePath.value = rootNodes.value[0]?.relativePath || "";
+      clearCurrentFile();
+    };
+    if (selectedFile.value) await guardDirtyDraft(clearMissingSelection);
+    else clearMissingSelection();
+  }
+};
+
+const parentRelativePath = (relativePath: string) => pathParts(relativePath).slice(0, -1).join("/");
+
+const reloadParentDirectory = async (relativePath: string) => {
+  if (!relativePath) {
+    await loadChildren();
+    return;
+  }
+  const parentNode = findNodeRecursive(rootNodes.value, relativePath);
+  if (parentNode?.kind === "directory") await loadChildren(parentNode);
+};
+
+const derivedCreateParent = (explicitNode?: TreeNode) => {
+  const node = explicitNode || findNodeRecursive(rootNodes.value, selectedNodeRelativePath.value);
+  if (!node) return "";
+  return node.kind === "directory" ? node.relativePath : parentRelativePath(node.relativePath);
+};
+
+const beginCreate = async (kind: "file" | "directory", explicitNode?: TreeNode) => {
+  closeContextMenu();
+  isFilterOpen.value = false;
+  filterQuery.value = "";
+  filterResults.value = [];
+  const parentPath = derivedCreateParent(explicitNode);
+  if (parentPath) {
+    await expandDirectoryPath(parentPath);
+    const parentNode = findNodeRecursive(rootNodes.value, parentPath);
+    if (parentNode) parentNode.expanded = true;
+  }
+  inlineEdit.value = { mode: "create", kind, parentRelativePath: parentPath, value: "", error: "", busy: false };
+  if (!parentPath) void nextTick(() => rootInlineInputRef.value?.focus());
+};
+
+const beginRename = (node: TreeNode) => {
+  inlineEdit.value = {
+    mode: "rename",
+    kind: node.kind,
+    parentRelativePath: parentRelativePath(node.relativePath),
+    targetRelativePath: node.relativePath,
+    value: node.name,
+    error: "",
+    busy: false,
+  };
+};
+
+const requestRename = async (node: TreeNode) => {
+  const cancelRestore = contextMenu.value
+    ? { selectedPath: contextMenu.value.previousSelectedPath, focusedPath: contextMenu.value.previousFocusedPath }
+    : null;
+  closeContextMenu();
+  await guardDirtyDraft(
+    () => beginRename(node),
+    Boolean(selectedRelativePath.value && pathIsSameOrChild(selectedRelativePath.value, node.relativePath)),
+    "",
+    cancelRestore,
+  );
+};
+
+const updateInlineValue = (value: string) => {
+  if (!inlineEdit.value) return;
+  inlineEdit.value = { ...inlineEdit.value, value, error: "" };
+};
+
+const replacePathPrefix = (relativePath: string, previousPrefix: string, nextPrefix: string) => {
+  const normalizedPath = normalizedRelativePath(relativePath);
+  const previous = normalizedRelativePath(previousPrefix);
+  if (normalizedPath === previous) return nextPrefix;
+  if (normalizedPath.startsWith(`${previous}/`)) return `${nextPrefix}${normalizedPath.slice(previous.length)}`;
+  return relativePath;
+};
+
+const rewriteTreePrefix = (
+  nodes: TreeNode[],
+  previousPrefix: string,
+  nextPrefix: string,
+  previousPath: string,
+  nextPath: string,
+) => {
+  const absoluteSeparator = previousPath.includes("\\") ? "\\" : "/";
+  for (const node of nodes) {
+    node.relativePath = replacePathPrefix(node.relativePath, previousPrefix, nextPrefix);
+    if (node.path === previousPath) node.path = nextPath;
+    else if (node.path.startsWith(`${previousPath}${absoluteSeparator}`)) {
+      node.path = `${nextPath}${node.path.slice(previousPath.length)}`;
+    }
+    rewriteTreePrefix(node.children || [], previousPrefix, nextPrefix, previousPath, nextPath);
+  }
+};
+
+const executeInlineEdit = async () => {
+  const edit = inlineEdit.value;
+  if (!edit || edit.busy) return;
+  inlineEdit.value = { ...edit, busy: true, error: "" };
+  try {
+    if (edit.mode === "create") {
+      const result = await store.createProjectEntry(props.project.id, edit.parentRelativePath, edit.value, edit.kind);
+      if (!result?.ok) {
+        inlineEdit.value = { ...edit, busy: false, error: result?.message || t.value.files.operationFailed };
+        return;
+      }
+      inlineEdit.value = null;
+      await reloadParentDirectory(edit.parentRelativePath);
+      const createdNode = findNodeRecursive(rootNodes.value, result.relativePath);
+      if (!createdNode) return;
+      selectTreeNode(createdNode);
+      if (createdNode.kind === "file") await performOpenFile(createdNode, true);
+      else {
+        createdNode.expanded = true;
+        focusTreeNode(createdNode.relativePath);
+      }
+      return;
+    }
+
+    const targetPath = edit.targetRelativePath || "";
+    const sourceNode = findNodeRecursive(rootNodes.value, targetPath);
+    const result = await store.renameProjectEntry(props.project.id, targetPath, edit.value);
+    if (!result?.ok || !sourceNode) {
+      inlineEdit.value = { ...edit, busy: false, error: result?.message || t.value.files.operationFailed };
+      return;
+    }
+    rewriteTreePrefix(rootNodes.value, targetPath, result.relativePath, sourceNode.path, result.path);
+    selectedNodeRelativePath.value = replacePathPrefix(selectedNodeRelativePath.value, targetPath, result.relativePath);
+    focusedRelativePath.value = replacePathPrefix(focusedRelativePath.value, targetPath, result.relativePath);
+    const selectedWasAffected = Boolean(
+      selectedFile.value && pathIsSameOrChild(selectedFile.value.relativePath, targetPath),
+    );
+    if (selectedWasAffected && selectedFile.value) {
+      const nextSelectedPath = replacePathPrefix(selectedFile.value.relativePath, targetPath, result.relativePath);
+      const refreshed = await store.readProjectFile(props.project.id, nextSelectedPath);
+      selectedFile.value = refreshed;
+      draftContent.value = refreshed?.content || "";
+      isEditing.value = false;
+      if (refreshed?.relativePath) emit("opened", refreshed.relativePath);
+    }
+    inlineEdit.value = null;
+    focusTreeNode(result.relativePath);
+  } catch (error) {
+    inlineEdit.value = {
+      ...edit,
+      busy: false,
+      error: error instanceof Error ? error.message : t.value.files.operationFailed,
+    };
+  }
+};
+
+const submitInlineEdit = async () => {
+  const edit = inlineEdit.value;
+  if (!edit) return;
+  const affectsCurrent =
+    edit.mode === "create" ||
+    Boolean(
+      selectedRelativePath.value &&
+      edit.targetRelativePath &&
+      pathIsSameOrChild(selectedRelativePath.value, edit.targetRelativePath),
+    );
+  await guardDirtyDraft(executeInlineEdit, affectsCurrent);
+};
+
+const removeTreeNode = (nodes: TreeNode[], relativePath: string): boolean => {
+  const index = nodes.findIndex(
+    (node) => normalizedRelativePath(node.relativePath) === normalizedRelativePath(relativePath),
+  );
+  if (index >= 0) {
+    nodes.splice(index, 1);
+    return true;
+  }
+  return nodes.some((node) => removeTreeNode(node.children || [], relativePath));
+};
+
+const clearCurrentFile = () => {
+  selectedFile.value = null;
+  draftContent.value = "";
+  isEditing.value = false;
+  statusMessage.value = "";
+  resetFindState(false);
+};
+
+const openDeleteDialog = (node: TreeNode) => {
+  deleteTarget.value = node;
+  actionDialogError.value = "";
+  actionDialog.value = "delete";
+};
+
+const requestDelete = async (node: TreeNode) => {
+  const cancelRestore = contextMenu.value
+    ? { selectedPath: contextMenu.value.previousSelectedPath, focusedPath: contextMenu.value.previousFocusedPath }
+    : null;
+  closeContextMenu();
+  await guardDirtyDraft(
+    () => openDeleteDialog(node),
+    Boolean(selectedRelativePath.value && pathIsSameOrChild(selectedRelativePath.value, node.relativePath)),
+    "",
+    cancelRestore,
+  );
+};
+
+const confirmDelete = async () => {
+  const target = deleteTarget.value;
+  if (!target || isActionRunning.value) return;
+  isActionRunning.value = true;
+  try {
+    const result = await store.deleteProjectEntry(props.project.id, target.relativePath);
+    if (!result?.ok) {
+      actionDialogError.value = result?.message || t.value.files.operationFailed;
+      statusMessage.value = actionDialogError.value;
+      return;
+    }
+    removeTreeNode(rootNodes.value, target.relativePath);
+    if (selectedFile.value && pathIsSameOrChild(selectedFile.value.relativePath, target.relativePath))
+      clearCurrentFile();
+    if (pathIsSameOrChild(selectedNodeRelativePath.value, target.relativePath)) {
+      selectedNodeRelativePath.value = parentRelativePath(target.relativePath);
+    }
+    actionDialog.value = null;
+    deleteTarget.value = null;
+    const nextFocus = findNodeRecursive(rootNodes.value, selectedNodeRelativePath.value) || visibleNodes.value[0];
+    if (nextFocus) focusTreeNode(nextFocus.relativePath);
+  } catch (error) {
+    actionDialogError.value = error instanceof Error ? error.message : t.value.files.operationFailed;
+    statusMessage.value = actionDialogError.value;
+  } finally {
+    isActionRunning.value = false;
+  }
+};
+
+const handleDialogPrimary = () => {
+  if (actionDialog.value === "dirty") void saveAndContinue();
+  else if (actionDialog.value === "delete") void confirmDelete();
+};
+
+const copyNodePath = async (node: TreeNode, absolute: boolean) => {
+  closeContextMenu(true);
+  try {
+    await navigator.clipboard.writeText(absolute ? node.path : node.relativePath);
+    statusMessage.value = absolute ? t.value.files.absolutePathCopied : t.value.files.relativePathCopied;
+  } catch {
+    statusMessage.value = t.value.files.copyFailed;
+  }
+};
+
+const revealNode = async (node: TreeNode) => {
+  closeContextMenu(true);
+  try {
+    await store.showProjectEntryInFolder(props.project.id, node.relativePath);
+  } catch (error) {
+    statusMessage.value = error instanceof Error ? error.message : t.value.files.operationFailed;
+  }
+};
+
+const toggleFilter = () => {
+  isFilterOpen.value = !isFilterOpen.value;
+  if (!isFilterOpen.value) {
+    filterQuery.value = "";
+    filterResults.value = [];
+    return;
+  }
+  void nextTick(() => filterInputRef.value?.focus());
+};
+
+const runProjectFilter = async (query: string) => {
+  const requestId = ++filterRequestId;
+  if (!query.trim()) {
+    filterResults.value = [];
+    filterTruncated.value = false;
+    isFiltering.value = false;
+    return;
+  }
+  isFiltering.value = true;
+  try {
+    const result = await store.searchProjectFiles(props.project.id, query, { limit: 200 });
+    if (requestId !== filterRequestId) return;
+    filterResults.value = result?.entries || [];
+    filterTruncated.value = Boolean(result?.truncated);
+  } catch (error) {
+    if (requestId !== filterRequestId) return;
+    filterResults.value = [];
+    filterTruncated.value = false;
+    statusMessage.value = error instanceof Error ? error.message : t.value.files.operationFailed;
+  } finally {
+    if (requestId === filterRequestId) isFiltering.value = false;
+  }
+};
+
+const activateFilterResult = async (entry: ProjectFileTreeEntry) => {
+  filterQuery.value = "";
+  filterResults.value = [];
+  isFilterOpen.value = false;
+  await expandPathToFile(entry.relativePath);
+  const node = findNodeRecursive(rootNodes.value, entry.relativePath) || ({ ...entry } as TreeNode);
+  selectTreeNode(node);
+  if (node.kind === "directory") {
+    await expandDirectoryPath(node.relativePath);
+  } else {
+    await openFile(node);
+  }
+  focusTreeNode(node.relativePath);
+};
+
+const handleTreeKeydown = (event: KeyboardEvent) => {
+  if (event.target instanceof HTMLInputElement) return;
+  const nodes = visibleNodes.value;
+  const index = nodes.findIndex(
+    (node) => normalizedRelativePath(node.relativePath) === normalizedRelativePath(focusedRelativePath.value),
+  );
+  const current = nodes[Math.max(0, index)];
+  if (!current) return;
+
+  let target: TreeNode | undefined;
+  if (event.key === "ArrowDown") target = nodes[Math.min(nodes.length - 1, Math.max(0, index) + 1)];
+  else if (event.key === "ArrowUp") target = nodes[Math.max(0, index - 1)];
+  else if (event.key === "Home") target = nodes[0];
+  else if (event.key === "End") target = nodes.at(-1);
+  else if (event.key === "ArrowRight" && current.kind === "directory") {
+    event.preventDefault();
+    if (!current.expanded) void toggleDirectory(current);
+    else target = nodes[index + 1];
+  } else if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    if (current.kind === "directory" && current.expanded) current.expanded = false;
+    else {
+      const parentPath = pathParts(current.relativePath).slice(0, -1).join("/");
+      target = nodes.find((node) => normalizedRelativePath(node.relativePath) === parentPath);
+    }
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    if (current.kind === "directory") void toggleDirectory(current);
+    else void openFile(current);
+  } else if (event.key === "F2") {
+    event.preventDefault();
+    void requestRename(current);
+  } else if (event.key === "Delete") {
+    event.preventDefault();
+    void requestDelete(current);
+  } else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+    event.preventDefault();
+    const element = Array.from(treeRef.value?.querySelectorAll<HTMLElement>("[data-tree-path]") || []).find(
+      (candidate) =>
+        normalizedRelativePath(candidate.dataset.treePath || "") === normalizedRelativePath(current.relativePath),
+    );
+    const rect = element?.getBoundingClientRect();
+    showNodeContextMenu(
+      current,
+      { x: rect?.left || 8, y: rect?.bottom || 8, aboveY: rect?.top || 8 },
+      selectedNodeRelativePath.value,
+      focusedRelativePath.value,
+    );
+  } else {
+    return;
+  }
+  if (target) {
+    event.preventDefault();
+    focusOnlyTreeNode(target);
+    focusTreeNode(target.relativePath);
+  }
+};
+
+const performOpenRelativePath = async (relativePath: string) => {
   const normalizedPath = normalizedRelativePath(relativePath.trim());
   if (!normalizedPath) return;
   isLoadingFile.value = true;
@@ -364,6 +1095,8 @@ const openRelativePath = async (relativePath: string) => {
   try {
     await expandPathToFile(normalizedPath);
     const result = await store.readProjectFile(props.project.id, normalizedPath);
+    const openedNode = findNodeRecursive(rootNodes.value, normalizedPath);
+    if (openedNode) selectTreeNode(openedNode);
     selectedFile.value = result;
     draftContent.value = result?.content || "";
     isEditing.value = false;
@@ -377,11 +1110,25 @@ const openRelativePath = async (relativePath: string) => {
   }
 };
 
+const openRelativePath = async (relativePath: string) => {
+  const normalizedPath = normalizedRelativePath(relativePath.trim());
+  if (!normalizedPath) return;
+  await guardDirtyDraft(
+    () => performOpenRelativePath(normalizedPath),
+    Boolean(selectedRelativePath.value && normalizedPath !== normalizedRelativePath(selectedRelativePath.value)),
+    normalizedPath,
+  );
+};
+
 const saveFile = async () => {
-  if (!selectedFile.value || !canSave.value) return;
+  if (!selectedFile.value || !canSave.value) return !isDirty.value;
   isSaving.value = true;
   try {
     const result = await store.writeProjectFile(props.project.id, selectedFile.value.relativePath, draftContent.value);
+    if (!result) {
+      statusMessage.value = t.value.files.operationFailed;
+      return false;
+    }
     selectedFile.value = {
       ...selectedFile.value,
       content: draftContent.value,
@@ -390,9 +1137,31 @@ const saveFile = async () => {
     statusMessage.value = result
       ? t.value.files.savedAt.replace("{time}", new Date(result.savedAt).toLocaleTimeString())
       : t.value.files.saved;
+    return true;
+  } catch (error) {
+    statusMessage.value = error instanceof Error ? error.message : t.value.files.operationFailed;
+    return false;
   } finally {
     isSaving.value = false;
   }
+};
+
+const saveAndContinue = async () => {
+  if (isActionRunning.value) return;
+  isActionRunning.value = true;
+  try {
+    if (await saveFile()) await runContinuation();
+    else actionDialogError.value = statusMessage.value || t.value.files.operationFailed;
+  } finally {
+    isActionRunning.value = false;
+  }
+};
+
+const discardAndContinue = async () => {
+  if (isActionRunning.value) return;
+  draftContent.value = selectedFile.value?.content || "";
+  isEditing.value = false;
+  await runContinuation();
 };
 
 const enterEdit = () => {
@@ -603,10 +1372,17 @@ onMounted(() => {
   } else {
     void loadChildren();
   }
+  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+  window.addEventListener("click", closeContextMenu);
   window.addEventListener("keydown", handleKeydown);
 });
 
 onUnmounted(() => {
+  markdownAssetGeneration += 1;
+  filterRequestId += 1;
+  window.clearTimeout(filterTimer);
+  stopAppEscapeListener();
+  window.removeEventListener("click", closeContextMenu);
   window.removeEventListener("keydown", handleKeydown);
 });
 
@@ -632,6 +1408,15 @@ watch(searchMatches, (matches) => {
   }
   void nextTick(scrollActiveMatchIntoView);
 });
+
+watch([isMarkdownPreview, selectedRelativePath, draftContent, isEditing], () => {
+  void loadMarkdownAssets();
+});
+
+watch(filterQuery, (query) => {
+  window.clearTimeout(filterTimer);
+  filterTimer = window.setTimeout(() => void runProjectFilter(query), 240);
+});
 </script>
 
 <template>
@@ -640,14 +1425,85 @@ watch(searchMatches, (matches) => {
     class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
     :style="gridTemplateStyle"
   >
-    <aside ref="treePaneRef" class="min-w-0 bg-surface-container-low">
-      <div class="ui-panel-header">
-        <div class="ui-panel-title">
+    <aside ref="treePaneRef" class="file-tree-pane min-w-0 overflow-hidden bg-surface-container-low">
+      <div class="file-tree-header ui-panel-header">
+        <div class="ui-panel-title min-w-0 flex-1">
           <Folder :size="14" class="text-primary" />
-          <span class="truncate">{{ project.name }}</span>
+          <span class="file-tree-project-name truncate">{{ project.name }}</span>
+        </div>
+        <div class="file-tree-header-actions flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            class="file-tree-toolbar-button"
+            :title="t.files.newFile"
+            :aria-label="t.files.newFile"
+            @click="beginCreate('file')"
+          >
+            <FilePlus2 :size="13" />
+          </button>
+          <button
+            type="button"
+            class="file-tree-toolbar-button"
+            :title="t.files.newDirectory"
+            :aria-label="t.files.newDirectory"
+            @click="beginCreate('directory')"
+          >
+            <FolderPlus :size="13" />
+          </button>
+          <button
+            type="button"
+            class="file-tree-toolbar-button"
+            :title="t.files.refreshTree"
+            :aria-label="t.files.refreshTree"
+            @click="refreshTree"
+          >
+            <RefreshCw :size="13" :class="isLoadingTree && 'animate-spin'" />
+          </button>
+          <button
+            type="button"
+            class="file-tree-toolbar-button"
+            :title="t.files.collapseAll"
+            :aria-label="t.files.collapseAll"
+            @click="collapseAll"
+          >
+            <ListCollapse :size="13" />
+          </button>
+          <button
+            type="button"
+            :class="cn('file-tree-toolbar-button', isFilterOpen && 'bg-primary/10 text-primary')"
+            :title="t.files.filterFiles"
+            :aria-label="t.files.filterFiles"
+            @click="toggleFilter"
+          >
+            <Filter :size="13" />
+          </button>
         </div>
       </div>
-      <div class="themed-scrollbar h-[calc(100%-2.25rem)] overflow-auto p-2 text-xs">
+      <div v-if="isFilterOpen" class="flex h-9 items-center gap-1 border-b border-border-subtle px-2">
+        <Search :size="12" class="shrink-0 text-on-surface-variant" />
+        <input
+          ref="filterInputRef"
+          v-model="filterQuery"
+          type="text"
+          class="min-w-0 flex-1 bg-transparent text-xs text-on-surface outline-none"
+          :placeholder="t.files.filterPlaceholder"
+        />
+        <button type="button" class="file-tree-toolbar-button" :aria-label="t.common.close" @click="toggleFilter">
+          <X :size="12" />
+        </button>
+      </div>
+      <div
+        ref="treeRef"
+        role="tree"
+        :aria-label="t.files.fileTree"
+        :class="
+          cn(
+            'themed-scrollbar overflow-auto p-2 text-xs',
+            isFilterOpen ? 'h-[calc(100%-4.5rem)]' : 'h-[calc(100%-2.25rem)]',
+          )
+        "
+        @keydown="handleTreeKeydown"
+      >
         <div v-if="isLoadingTree" class="space-y-1.5 p-1" aria-busy="true">
           <div
             v-for="row in 8"
@@ -663,14 +1519,57 @@ watch(searchMatches, (matches) => {
             />
           </div>
         </div>
-        <FileTreeNode
-          v-for="node in rootNodes"
-          :key="node.relativePath"
-          :node="node"
-          :selected-relative-path="selectedRelativePath"
-          @toggle="toggleDirectory"
-          @open="openFile"
-        />
+        <div v-if="filterQuery.trim()" class="space-y-0.5">
+          <div v-if="isFiltering" class="space-y-1.5 p-1" aria-busy="true">
+            <div v-for="row in 5" :key="row" class="skeleton h-6 w-full" />
+          </div>
+          <button
+            v-for="entry in filterResults"
+            v-else
+            :key="entry.relativePath"
+            type="button"
+            class="flex h-9 w-full min-w-0 flex-col justify-center rounded px-2 text-left hover:bg-surface-variant"
+            @click="activateFilterResult(entry)"
+          >
+            <span class="truncate font-medium text-on-surface">{{ entry.name }}</span>
+            <span class="truncate font-mono text-[9px] text-on-surface-variant">{{ entry.relativePath }}</span>
+          </button>
+          <div v-if="!isFiltering && filterResults.length === 0" class="p-2 text-on-surface-variant">
+            {{ t.files.noResults }}
+          </div>
+          <div v-if="filterTruncated" class="p-2 text-[10px] text-status-warning">{{ t.files.filterTruncated }}</div>
+        </div>
+        <template v-else>
+          <div v-if="inlineEdit?.mode === 'create' && !inlineEdit.parentRelativePath" class="px-1 py-0.5">
+            <input
+              ref="rootInlineInputRef"
+              :value="inlineEdit.value"
+              type="text"
+              class="h-7 w-full rounded border border-primary bg-surface-container-lowest px-2 text-xs text-on-surface outline-none"
+              :disabled="inlineEdit.busy"
+              :aria-label="inlineEdit.kind === 'directory' ? t.files.newDirectory : t.files.newFile"
+              @input="updateInlineValue(($event.target as HTMLInputElement).value)"
+              @keydown.enter.prevent="submitInlineEdit"
+              @keydown.esc.prevent="cancelInlineEdit"
+            />
+            <p v-if="inlineEdit.error" class="mt-1 break-words text-[10px] text-status-error">{{ inlineEdit.error }}</p>
+          </div>
+          <FileTreeNode
+            v-for="node in rootNodes"
+            :key="node.relativePath"
+            :node="node"
+            :selected-relative-path="selectedNodeRelativePath"
+            :focused-relative-path="focusedRelativePath"
+            :inline-edit="inlineEdit"
+            @toggle="toggleDirectory"
+            @open="openFile"
+            @focus-node="focusOnlyTreeNode"
+            @context-menu="openNodeContextMenu"
+            @inline-input="updateInlineValue"
+            @inline-submit="submitInlineEdit"
+            @inline-cancel="cancelInlineEdit"
+          />
+        </template>
         <div v-if="!isLoadingTree && rootNodes.length === 0" class="p-2 text-on-surface-variant">
           {{ t.files.noFiles }}
         </div>
@@ -957,4 +1856,81 @@ watch(searchMatches, (matches) => {
       </div>
     </section>
   </div>
+
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="contextMenu"
+        ref="contextMenuRef"
+        class="file-tree-context-menu fixed z-[75] overflow-hidden rounded border border-border-subtle bg-surface-container-lowest py-1 text-xs text-on-surface shadow-xl"
+        :style="contextMenuStyle"
+        role="menu"
+        @click.stop
+        @contextmenu.prevent
+        @keydown="handleContextMenuKeydown"
+      >
+        <button
+          v-if="contextMenu.node.kind === 'directory'"
+          type="button"
+          class="file-tree-menu-item"
+          role="menuitem"
+          @click="beginCreate('file', contextMenu.node)"
+        >
+          <FilePlus2 :size="13" />{{ t.files.newFile }}
+        </button>
+        <button
+          v-if="contextMenu.node.kind === 'directory'"
+          type="button"
+          class="file-tree-menu-item"
+          role="menuitem"
+          @click="beginCreate('directory', contextMenu.node)"
+        >
+          <FolderPlus :size="13" />{{ t.files.newDirectory }}
+        </button>
+        <button type="button" class="file-tree-menu-item" role="menuitem" @click="requestRename(contextMenu.node)">
+          <Pencil :size="13" />{{ t.files.rename }}
+        </button>
+        <div class="my-1 border-t border-border-subtle" />
+        <button
+          type="button"
+          class="file-tree-menu-item"
+          role="menuitem"
+          @click="copyNodePath(contextMenu.node, false)"
+        >
+          <Copy :size="13" />{{ t.files.copyRelativePath }}
+        </button>
+        <button type="button" class="file-tree-menu-item" role="menuitem" @click="copyNodePath(contextMenu.node, true)">
+          <Copy :size="13" />{{ t.files.copyAbsolutePath }}
+        </button>
+        <button type="button" class="file-tree-menu-item" role="menuitem" @click="revealNode(contextMenu.node)">
+          <LocateFixed :size="13" />{{ t.files.revealInFolder }}
+        </button>
+        <div class="my-1 border-t border-border-subtle" />
+        <button
+          type="button"
+          class="file-tree-menu-item text-status-error hover:bg-status-error/10"
+          role="menuitem"
+          @click="requestDelete(contextMenu.node)"
+        >
+          <Trash2 :size="13" />{{ t.common.delete }}
+        </button>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <ProjectActionDialog
+    :open="Boolean(actionDialog)"
+    :tone="actionDialog === 'delete' ? 'danger' : 'warning'"
+    :title="actionDialogTitle"
+    :message="actionDialogMessage"
+    :detail="actionDialog === 'delete' ? deleteTarget?.relativePath : selectedRelativePath"
+    :primary-label="actionDialog === 'dirty' ? t.common.save : t.common.delete"
+    :secondary-label="actionDialog === 'dirty' ? t.files.discard : ''"
+    :cancel-label="t.common.cancel"
+    :busy="isActionRunning"
+    :busy-label="t.files.processing"
+    @primary="handleDialogPrimary"
+    @secondary="discardAndContinue"
+    @cancel="cancelActionDialog"
+  />
 </template>

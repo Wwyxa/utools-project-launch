@@ -2443,8 +2443,81 @@ function resolveProjectChild(projectPath, relativePath) {
   return { rootPath, targetPath, relativePath: relative === "" ? "" : relative.replace(/\\/g, "/") };
 }
 
+function isPathWithinRoot(rootPath, targetPath) {
+  const relative = path.relative(rootPath, targetPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function resolveCanonicalProjectRoot(projectPath) {
+  const rootPath = fs.realpathSync(expandPath(projectPath));
+  if (!fs.statSync(rootPath).isDirectory()) {
+    throw new Error("项目路径不是目录。");
+  }
+  return rootPath;
+}
+
+function resolveCanonicalProjectEntry(projectPath, relativePath, allowRoot = false) {
+  const rootPath = resolveCanonicalProjectRoot(projectPath);
+  const lexicalTarget = path.resolve(rootPath, typeof relativePath === "string" ? relativePath : "");
+  if (!isPathWithinRoot(rootPath, lexicalTarget)) {
+    throw new Error("目标路径不在项目目录内。");
+  }
+  if (!allowRoot && lexicalTarget === rootPath) {
+    throw new Error("不能修改项目根目录。");
+  }
+  if (lexicalTarget !== rootPath && fs.lstatSync(lexicalTarget).isSymbolicLink()) {
+    throw new Error("不支持操作符号链接。");
+  }
+  const targetPath = fs.realpathSync(lexicalTarget);
+  if (!isPathWithinRoot(rootPath, targetPath)) {
+    throw new Error("目标路径通过符号链接指向项目目录外。");
+  }
+  return { rootPath, targetPath, relativePath: path.relative(rootPath, lexicalTarget).replace(/\\/g, "/") };
+}
+
+function resolveCanonicalProjectParent(projectPath, parentRelativePath) {
+  const rootPath = resolveCanonicalProjectRoot(projectPath);
+  const lexicalParent = path.resolve(rootPath, typeof parentRelativePath === "string" ? parentRelativePath : "");
+  if (!isPathWithinRoot(rootPath, lexicalParent)) {
+    throw new Error("目标路径不在项目目录内。");
+  }
+  const parentPath = fs.realpathSync(lexicalParent);
+  if (!isPathWithinRoot(rootPath, parentPath) || !fs.statSync(parentPath).isDirectory()) {
+    throw new Error("目标目录无效或位于项目目录外。");
+  }
+  return { rootPath, parentPath, parentRelativePath: path.relative(rootPath, lexicalParent).replace(/\\/g, "/") };
+}
+
+function validateProjectEntryName(name) {
+  const normalizedName = typeof name === "string" ? name : "";
+  if (!normalizedName || normalizedName === "." || normalizedName === "..") {
+    throw new Error("名称不能为空或使用保留目录名。");
+  }
+  if (/[<>:"/\\|?*\u0000-\u001f\u007f]/.test(normalizedName) || /[. ]$/.test(normalizedName)) {
+    throw new Error("名称包含无效字符或以点、空格结尾。");
+  }
+  const basename = normalizedName.split(".")[0].toUpperCase();
+  if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(basename)) {
+    throw new Error("名称是系统保留名称。");
+  }
+  return normalizedName;
+}
+
+function projectFileTreeEntry(rootPath, targetPath, stats) {
+  const name = path.basename(targetPath);
+  return {
+    name,
+    path: targetPath,
+    relativePath: path.relative(rootPath, targetPath).replace(/\\/g, "/"),
+    kind: stats.isDirectory() ? "directory" : "file",
+    size: stats.size,
+    extension: path.extname(name).toLowerCase(),
+    hidden: name.startsWith("."),
+  };
+}
+
 function listProjectFiles(projectPath, relativePath = "") {
-  const resolved = resolveProjectChild(projectPath, relativePath);
+  const resolved = resolveCanonicalProjectEntry(projectPath, relativePath, true);
   const stats = fs.statSync(resolved.targetPath);
   if (!stats.isDirectory()) {
     throw new Error("目标路径不是目录。");
@@ -2452,7 +2525,7 @@ function listProjectFiles(projectPath, relativePath = "") {
 
   const entries = fs
     .readdirSync(resolved.targetPath, { withFileTypes: true })
-    .filter((entry) => !ignoredFileTreeDirs.has(entry.name))
+    .filter((entry) => !entry.isSymbolicLink() && !ignoredFileTreeDirs.has(entry.name))
     .map((entry) => {
       const childPath = path.join(resolved.targetPath, entry.name);
       const childStats = fs.statSync(childPath);
@@ -2475,6 +2548,113 @@ function listProjectFiles(projectPath, relativePath = "") {
     });
 
   return { rootPath: resolved.rootPath, relativePath: resolved.relativePath, entries };
+}
+
+async function searchProjectFiles(projectPath, query, options = {}) {
+  const rootPath = resolveCanonicalProjectRoot(projectPath);
+  const normalizedQuery = typeof query === "string" ? query.trim() : "";
+  const limit = Math.max(1, Math.min(500, Number.isFinite(options.limit) ? Math.floor(options.limit) : 200));
+  if (!normalizedQuery) return { rootPath, query: normalizedQuery, entries: [], truncated: false };
+
+  const needle = normalizedQuery.toLocaleLowerCase();
+  const entries = [];
+  const pendingDirectories = [rootPath];
+  let truncated = false;
+  while (pendingDirectories.length > 0 && !truncated) {
+    const directoryPath = pendingDirectories.shift();
+    let directoryEntries;
+    try {
+      directoryEntries = await fs.promises.readdir(directoryPath, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of directoryEntries) {
+      if (entry.isSymbolicLink() || (entry.isDirectory() && ignoredFileTreeDirs.has(entry.name))) continue;
+      const targetPath = path.join(directoryPath, entry.name);
+      if (entry.isDirectory()) pendingDirectories.push(targetPath);
+      if (!entry.name.toLocaleLowerCase().includes(needle)) continue;
+      try {
+        const stats = await fs.promises.lstat(targetPath);
+        entries.push(projectFileTreeEntry(rootPath, targetPath, stats));
+      } catch {
+        continue;
+      }
+      if (entries.length >= limit) {
+        truncated = true;
+        break;
+      }
+    }
+  }
+  return { rootPath, query: normalizedQuery, entries, truncated };
+}
+
+function createProjectEntry(projectPath, parentRelativePath, name, kind) {
+  const normalizedKind = kind === "directory" ? "directory" : "file";
+  try {
+    const parent = resolveCanonicalProjectParent(projectPath, parentRelativePath);
+    const normalizedName = validateProjectEntryName(name);
+    const targetPath = path.join(parent.parentPath, normalizedName);
+    if (normalizedKind === "directory") {
+      fs.mkdirSync(targetPath, { recursive: false });
+    } else {
+      fs.writeFileSync(targetPath, "", { flag: "wx" });
+    }
+    return {
+      ok: true,
+      kind: normalizedKind,
+      path: targetPath,
+      relativePath: path.relative(parent.rootPath, targetPath).replace(/\\/g, "/"),
+    };
+  } catch (error) {
+    return { ok: false, kind: normalizedKind, path: "", relativePath: "", message: error?.message || String(error) };
+  }
+}
+
+function renameProjectEntry(projectPath, relativePath, name) {
+  let kind = "file";
+  try {
+    const source = resolveCanonicalProjectEntry(projectPath, relativePath);
+    const sourceStats = fs.statSync(source.targetPath);
+    kind = sourceStats.isDirectory() ? "directory" : "file";
+    const normalizedName = validateProjectEntryName(name);
+    const targetPath = path.join(path.dirname(source.targetPath), normalizedName);
+    if (fs.existsSync(targetPath)) throw new Error("同名文件或目录已存在。");
+    fs.renameSync(source.targetPath, targetPath);
+    return {
+      ok: true,
+      kind,
+      path: targetPath,
+      relativePath: path.relative(source.rootPath, targetPath).replace(/\\/g, "/"),
+      previousRelativePath: source.relativePath,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      kind,
+      path: "",
+      relativePath,
+      previousRelativePath: relativePath,
+      message: error?.message || String(error),
+    };
+  }
+}
+
+function deleteProjectEntry(projectPath, relativePath) {
+  let kind = "file";
+  try {
+    const resolved = resolveCanonicalProjectEntry(projectPath, relativePath);
+    const stats = fs.statSync(resolved.targetPath);
+    kind = stats.isDirectory() ? "directory" : "file";
+    fs.rmSync(resolved.targetPath, { recursive: kind === "directory", force: false });
+    return { ok: true, kind, path: resolved.targetPath, relativePath: resolved.relativePath };
+  } catch (error) {
+    return { ok: false, kind, path: "", relativePath, message: error?.message || String(error) };
+  }
+}
+
+function showProjectEntryInFolder(projectPath, relativePath) {
+  const resolved = resolveCanonicalProjectEntry(projectPath, relativePath, true);
+  shell.showItemInFolder(resolved.targetPath);
 }
 
 function getMime(extension) {
@@ -2508,7 +2688,7 @@ function isLikelyTextBuffer(buffer) {
 }
 
 function readProjectFile(projectPath, relativePath) {
-  const resolved = resolveProjectChild(projectPath, relativePath);
+  const resolved = resolveCanonicalProjectEntry(projectPath, relativePath);
   const stats = fs.statSync(resolved.targetPath);
   const name = path.basename(resolved.targetPath);
   const extension = path.extname(name).toLowerCase();
@@ -2586,7 +2766,7 @@ function readProjectFile(projectPath, relativePath) {
 }
 
 function writeProjectFile(projectPath, relativePath, content) {
-  const resolved = resolveProjectChild(projectPath, relativePath);
+  const resolved = resolveCanonicalProjectEntry(projectPath, relativePath);
   const stats = fs.statSync(resolved.targetPath);
   if (!stats.isFile()) {
     throw new Error("只能保存文件。");
@@ -3492,6 +3672,11 @@ window.projectBridge = {
   setGitRemoteUrl,
   removeGitRemote,
   listProjectFiles,
+  searchProjectFiles,
+  createProjectEntry,
+  renameProjectEntry,
+  deleteProjectEntry,
+  showProjectEntryInFolder,
   readProjectFile,
   writeProjectFile,
   openTerminal,

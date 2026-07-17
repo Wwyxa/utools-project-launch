@@ -26,7 +26,10 @@ import type {
   ProjectBridgeRunResult,
   ProjectBridgeStopProcessOptions,
   ProjectFileListResult,
+  ProjectFileMutationKind,
+  ProjectFileMutationResult,
   ProjectFileReadResult,
+  ProjectFileSearchResult,
   ProjectFileWriteResult,
   ProjectPathInspection,
   TerminalPreferences,
@@ -585,6 +588,51 @@ const fallbackBridge: ProjectBridge = {
   async listProjectFiles(projectPath: string, relativePath = ""): Promise<ProjectFileListResult> {
     return { rootPath: projectPath, relativePath, entries: [] };
   },
+  async searchProjectFiles(
+    projectPath: string,
+    query: string,
+    _options?: { limit?: number },
+  ): Promise<ProjectFileSearchResult> {
+    return { rootPath: projectPath, query, entries: [], truncated: false };
+  },
+  async createProjectEntry(
+    projectPath: string,
+    parentRelativePath: string,
+    name: string,
+    kind: ProjectFileMutationKind,
+  ): Promise<ProjectFileMutationResult> {
+    return {
+      ok: false,
+      kind,
+      path: `${projectPath}/${parentRelativePath}/${name}`,
+      relativePath: [parentRelativePath, name].filter(Boolean).join("/"),
+      message: "浏览器预览无法修改本地文件。",
+    };
+  },
+  async renameProjectEntry(
+    projectPath: string,
+    relativePath: string,
+    _name: string,
+  ): Promise<ProjectFileMutationResult> {
+    return {
+      ok: false,
+      kind: "file",
+      path: `${projectPath}/${relativePath}`,
+      relativePath,
+      previousRelativePath: relativePath,
+      message: "浏览器预览无法修改本地文件。",
+    };
+  },
+  async deleteProjectEntry(projectPath: string, relativePath: string): Promise<ProjectFileMutationResult> {
+    return {
+      ok: false,
+      kind: "file",
+      path: `${projectPath}/${relativePath}`,
+      relativePath,
+      message: "浏览器预览无法删除本地文件。",
+    };
+  },
+  async showProjectEntryInFolder(_projectPath: string, _relativePath: string): Promise<void> {},
   async readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult> {
     const name = relativePath.split(/[\\/]/).filter(Boolean).pop() || projectPath;
     return {

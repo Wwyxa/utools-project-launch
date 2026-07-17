@@ -47,7 +47,10 @@ import type {
   ProjectGitSnapshot,
   ProjectGitStatusSnapshot,
   ProjectFileListResult,
+  ProjectFileMutationKind,
+  ProjectFileMutationResult,
   ProjectFileReadResult,
+  ProjectFileSearchResult,
   ProjectFileWriteResult,
   ProjectIconKey,
   ProjectKind,
@@ -1956,6 +1959,44 @@ export const useStore = defineStore("app", {
       }
 
       return bridge.listProjectFiles(project.path, relativePath);
+    },
+    async searchProjectFiles(
+      projectId: string,
+      query: string,
+      options?: { limit?: number },
+    ): Promise<ProjectFileSearchResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) return null;
+      return bridge.searchProjectFiles(project.path, query, options);
+    },
+    async createProjectEntry(
+      projectId: string,
+      parentRelativePath: string,
+      name: string,
+      kind: ProjectFileMutationKind,
+    ): Promise<ProjectFileMutationResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) return null;
+      return bridge.createProjectEntry(project.path, parentRelativePath, name, kind);
+    },
+    async renameProjectEntry(
+      projectId: string,
+      relativePath: string,
+      name: string,
+    ): Promise<ProjectFileMutationResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) return null;
+      return bridge.renameProjectEntry(project.path, relativePath, name);
+    },
+    async deleteProjectEntry(projectId: string, relativePath: string): Promise<ProjectFileMutationResult | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) return null;
+      return bridge.deleteProjectEntry(project.path, relativePath);
+    },
+    async showProjectEntryInFolder(projectId: string, relativePath: string): Promise<void> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) return;
+      await bridge.showProjectEntryInFolder(project.path, relativePath);
     },
     async readProjectFile(projectId: string, relativePath: string): Promise<ProjectFileReadResult | null> {
       const project = this.projects.find((item) => item.id === projectId);

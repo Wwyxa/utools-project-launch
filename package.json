@@ -11,6 +11,8 @@
     "lint": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "validate:ai-reasoning": "node scripts/validate-ai-reasoning.mjs",
+    "validate:markdown-images": "node scripts/validate-markdown-images.mjs",
+    "validate:project-files": "node scripts/validate-project-files.mjs",
     "validate:project-storage": "node scripts/validate-project-storage-compat.mjs",
     "validate:process-results": "node scripts/validate-process-result-batches.mjs"
   },

@@ -3,7 +3,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import {
   ArrowDownToLine,
   ArrowUpToLine,
-  CircleAlert,
   CircleCheck,
   CloudDownload,
   CloudUpload,
@@ -51,6 +50,7 @@ import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useResizableSplit } from "../../composables/useResizableSplit";
+import ProjectActionDialog from "./ProjectActionDialog.vue";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
@@ -393,12 +393,7 @@ const hasFloatingControlsOpen = () =>
   Boolean(openDatePickerKind.value);
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (confirmationDialog.value) {
-    closeConfirmationDialog();
-    event.detail.handle();
-    return;
-  }
-
+  if (event.detail.handled) return;
   if (isDiffDialogOpen.value) {
     closeDiffDialog();
     event.detail.handle();
@@ -3364,78 +3359,20 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </div>
     </Transition>
 
+    <ProjectActionDialog
+      :open="Boolean(confirmationDialog)"
+      :tone="confirmationDialog?.kind || 'danger'"
+      :title="confirmationDialog?.title || ''"
+      :message="confirmationDialog?.message || ''"
+      :detail="confirmationDialog?.detail"
+      :primary-label="confirmationDialog?.confirmLabel || ''"
+      :cancel-label="confirmationDialog?.cancelLabel"
+      :busy="isConfirmationRunning"
+      busy-label="处理中"
+      @cancel="closeConfirmationDialog"
+      @primary="confirmRiskyAction"
+    />
     <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="confirmationDialog"
-          class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
-          @click.self="closeConfirmationDialog"
-        >
-          <div
-            class="w-[min(24rem,92vw)] overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            @click.stop
-          >
-            <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
-              <div class="flex items-start gap-3">
-                <div
-                  :class="
-                    cn(
-                      'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
-                      (confirmationDialog.kind || 'danger') === 'warning'
-                        ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
-                        : 'border-status-error/30 bg-status-error/10 text-status-error',
-                    )
-                  "
-                >
-                  <CircleAlert v-if="(confirmationDialog.kind || 'danger') === 'warning'" :size="16" />
-                  <Undo v-else :size="16" />
-                </div>
-                <div class="min-w-0">
-                  <h3 class="text-sm font-bold text-on-surface">{{ confirmationDialog.title }}</h3>
-                  <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ confirmationDialog.message }}</p>
-                </div>
-              </div>
-            </div>
-            <div class="px-4 py-3">
-              <p
-                v-if="confirmationDialog.detail"
-                class="rounded border border-border-subtle bg-surface-container-low px-2 py-2 font-mono text-[11px] font-bold text-on-surface-variant break-all"
-              >
-                {{ confirmationDialog.detail }}
-              </p>
-              <div class="mt-4 flex justify-end gap-2">
-                <button
-                  v-if="(confirmationDialog.kind || 'danger') === 'danger' || confirmationDialog.cancelLabel"
-                  type="button"
-                  class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
-                  :disabled="isConfirmationRunning"
-                  @click="closeConfirmationDialog"
-                >
-                  {{ confirmationDialog.cancelLabel || t.common.cancel }}
-                </button>
-                <button
-                  type="button"
-                  :class="
-                    cn(
-                      'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors disabled:cursor-wait disabled:opacity-70',
-                      (confirmationDialog.kind || 'danger') === 'warning'
-                        ? 'border-primary/30 bg-primary text-on-primary hover:bg-primary/90'
-                        : 'border-status-error/30 bg-status-error text-on-error hover:bg-status-error/90',
-                    )
-                  "
-                  :disabled="isConfirmationRunning"
-                  @click="confirmRiskyAction"
-                >
-                  <Undo v-if="(confirmationDialog.kind || 'danger') === 'danger'" :size="13" />
-                  {{ isConfirmationRunning ? "处理中" : confirmationDialog.confirmLabel }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
       <div
         v-if="commitTooltip"
         class="commit-tooltip-panel pointer-events-none fixed z-[70] w-max overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
