@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   ArrowDownToLine,
+  ArrowRightLeft,
   ArrowUpToLine,
   CircleCheck,
   CloudDownload,
@@ -3506,7 +3507,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             class="flex h-7 items-center gap-2 px-2 text-[10px] font-bold text-on-surface-variant"
             role="presentation"
           >
-            <GitBranch :size="14" />
+            <ArrowRightLeft :size="14" />
             <span>切换到分支</span>
           </div>
           <button
