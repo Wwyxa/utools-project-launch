@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Files tree keyboard semantics, teleported context menu, Escape handling, semantic tokens, and shared dialog conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Project file operations must follow component -> store -> bridge -> preload and keep panel-only state local."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"New ProjectBridge search and mutation contracts must remain shared and typed across fallback, store, and components."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Markdown local-image failure states and responsive containment must preserve accessibility and compact-layout quality."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The feature spans Vue components, Pinia, bridge types, browser fallback, and preload filesystem behavior."}
+{"file":".trellis/tasks/07-17-extend-file-preview/research/flyfish-viewer-evaluation.md","reason":"Preserve the decision to add no preview dependency or format while enhancing Files Tab operations."}

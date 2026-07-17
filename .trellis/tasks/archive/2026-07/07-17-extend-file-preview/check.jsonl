@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify type-check/build baseline, token usage, accessibility, and compact-layout behavior."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review keyboard tree behavior, floating menu cleanup, shared dialog consistency, and narrow panel layout."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review the complete project file browser bridge contract and store ownership rules."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check that every new bridge shape is declared once and implemented by all consumers."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace Markdown asset reads and file mutations across component, store, bridge, fallback, and preload boundaries."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Ensure the Git confirmation dialog and context-menu patterns are reused rather than copied."}
