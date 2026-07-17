@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Git Tab compact panel, resizable split, keyboard, Escape, history and loading UI conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Git diff/store/bridge/preload flow, lightweight writes, bulk-action completeness and AI compatibility contracts."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Shared ProjectBridge types and browser/preload signature consistency."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Scope-aware diff data crosses component, store, bridge and preload boundaries."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Worktree and historical diff paths must reuse one parser and viewer."}
+{"file":".trellis/tasks/07-17-improve-git-tab/research/local-git-diff-design.md","reason":"Local implementation evidence, recommended scope contract, UI state and risk analysis."}

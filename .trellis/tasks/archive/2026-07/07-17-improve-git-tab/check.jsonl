@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required type-check/build and compact-layout review baseline."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Verify compact Git UI, responsive split geometry, keyboard/accessibility and Escape behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify scoped reads, stale-request handling, complete bulk writes and existing Git/AI refresh contracts."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify shared scope/options types across all bridge consumers and fallbacks."}
+{"file":".trellis/tasks/07-17-improve-git-tab/research/local-git-diff-design.md","reason":"Check implementation against identified regressions and edge cases."}
