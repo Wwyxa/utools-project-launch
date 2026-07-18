@@ -10,6 +10,9 @@ const activeProcessMetadata = new Map();
 const completedProcessResults = new Map();
 const completedAutomationProcessResults = new Map();
 const completedProcessResultLimit = 100;
+const gitCommitAvatarResults = new Map();
+const gitCommitAvatarResultLimit = 160;
+const gitCommitAvatarRequestTimeoutMs = 3500;
 const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
 const automationExitMatchedProcesses = new Set();
@@ -1594,6 +1597,131 @@ async function readGitUpstreamAsync(repositoryPath) {
   return { remote, branch, ref, ahead, behind };
 }
 
+function parseGitHubRepository(remoteUrl) {
+  const value = String(remoteUrl || "").trim();
+  if (!value) {
+    return null;
+  }
+
+  const scpLike = value.match(/^(?:[^@\s/:]+@)?github\.com:([^?#\s]+)$/i);
+  let repositoryPath = scpLike?.[1] || "";
+  if (!repositoryPath) {
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== "https:" && parsed.protocol !== "ssh:") {
+        return null;
+      }
+      if (parsed.hostname.toLowerCase() !== "github.com") {
+        return null;
+      }
+      repositoryPath = parsed.pathname;
+    } catch {
+      return null;
+    }
+  }
+
+  const segments = repositoryPath
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean);
+  if (segments.length !== 2) {
+    return null;
+  }
+
+  const [owner, repositoryWithSuffix] = segments;
+  const repository = repositoryWithSuffix.replace(/\.git$/i, "");
+  if (!owner || !repository || owner === "." || owner === ".." || repository === "." || repository === "..") {
+    return null;
+  }
+
+  return { owner, repository };
+}
+
+function selectGitHubRepository(remotes, upstream) {
+  const candidates = [];
+  const addCandidate = (remote) => {
+    if (remote && !candidates.includes(remote)) {
+      candidates.push(remote);
+    }
+  };
+
+  addCandidate(remotes.find((remote) => remote.name === upstream?.remote));
+  addCandidate(remotes.find((remote) => remote.name === "origin"));
+  remotes.forEach(addCandidate);
+
+  for (const remote of candidates) {
+    const repository = parseGitHubRepository(remote.fetchUrl) || parseGitHubRepository(remote.pushUrl);
+    if (repository) {
+      return repository;
+    }
+  }
+
+  return null;
+}
+
+function cacheGitCommitAvatar(cacheKey, loader) {
+  const cached = gitCommitAvatarResults.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const result = Promise.resolve()
+    .then(loader)
+    .catch(() => null);
+  gitCommitAvatarResults.set(cacheKey, result);
+  while (gitCommitAvatarResults.size > gitCommitAvatarResultLimit) {
+    const oldestKey = gitCommitAvatarResults.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    gitCommitAvatarResults.delete(oldestKey);
+  }
+  return result;
+}
+
+async function fetchGitHubCommitAvatar(owner, repository, commitHash) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), gitCommitAvatarRequestTimeoutMs);
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/commits/${encodeURIComponent(commitHash)}`,
+      { headers: { Accept: "application/vnd.github+json" }, signal: controller.signal },
+    );
+    if (!response.ok) {
+      return null;
+    }
+
+    const avatarUrl = (await response.json())?.author?.avatar_url;
+    const parsedAvatarUrl = new URL(String(avatarUrl || ""));
+    return parsedAvatarUrl.protocol === "https:" ? parsedAvatarUrl.toString() : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readGitCommitAuthorAvatar(projectPath, commitHash) {
+  const hash = String(commitHash || "").trim();
+  if (!/^[0-9a-f]{40,64}$/i.test(hash)) {
+    return null;
+  }
+
+  const repositoryPath = await findGitRootAsync(projectPath);
+  if (!repositoryPath) {
+    return null;
+  }
+
+  const [remotes, upstream] = await Promise.all([readGitRemotesAsync(repositoryPath), readGitUpstreamAsync(repositoryPath)]);
+  const repository = selectGitHubRepository(remotes, upstream);
+  if (!repository) {
+    return null;
+  }
+
+  const cacheKey = `${repository.owner.toLowerCase()}/${repository.repository.toLowerCase()}:${hash.toLowerCase()}`;
+  return cacheGitCommitAvatar(cacheKey, () => fetchGitHubCommitAvatar(repository.owner, repository.repository, hash));
+}
+
 function normalizeGitRemoteName(remoteName) {
   return typeof remoteName === "string" ? remoteName.trim() : "";
 }
@@ -2062,7 +2190,7 @@ function checkoutGitCommit(projectPath, commitHash, options = {}) {
   if (!repositoryPath) {
     return { ok: false, message: "未检测到 Git 仓库。" };
   }
-  if (!/^[0-9a-fA-F]{7,40}$/.test(targetHash)) {
+  if (!/^[0-9a-fA-F]{7,64}$/.test(targetHash)) {
     return { ok: false, message: "请选择一个有效的提交 hash。" };
   }
   if (!force && hasUncommittedGitChanges(repositoryPath)) {
@@ -2839,12 +2967,21 @@ function readGitFileDiff(projectPath, relativePath, options = {}) {
 function readGitCommitFiles(projectPath, commitHash) {
   const repositoryPath = findGitRoot(projectPath);
   const hash = String(commitHash || "").trim();
-  if (!repositoryPath || !hash) {
+  if (!repositoryPath) {
+    throw new Error("未检测到 Git 仓库。");
+  }
+  if (!hash) {
     return [];
   }
 
-  const numstatLines = (runGit(repositoryPath, ["show", "--format=", "--numstat", hash]) || "").split(/\r?\n/);
-  const statusLines = (runGit(repositoryPath, ["show", "--format=", "--name-status", hash]) || "").split(/\r?\n/);
+  const numstatOutput = runGit(repositoryPath, ["show", "--format=", "--numstat", hash]);
+  const statusOutput = runGit(repositoryPath, ["show", "--format=", "--name-status", hash]);
+  if (numstatOutput === null || statusOutput === null) {
+    throw new Error("无法读取提交变更。");
+  }
+
+  const numstatLines = numstatOutput.split(/\r?\n/);
+  const statusLines = statusOutput.split(/\r?\n/);
   const statusByPath = new Map();
 
   statusLines.forEach((line) => {
@@ -3277,7 +3414,7 @@ async function readGitCommits(projectPath, options = {}) {
     "--decorate=short",
     `--max-count=${limit + 1}`,
     `--skip=${skip}`,
-    `--pretty=format:%h${gitCommitFieldSeparator}%p${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
+    `--pretty=format:%H${gitCommitFieldSeparator}%p${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
     "--date=iso-strict",
   ]);
 
@@ -3289,7 +3426,7 @@ async function readGitCommits(projectPath, options = {}) {
         return;
       }
 
-      const hashIndex = normalizedRecord.search(/[0-9a-f]{7,40}\x1f/);
+      const hashIndex = normalizedRecord.search(/[0-9a-f]{40,64}\x1f/);
       if (hashIndex < 0) {
         return;
       }
@@ -3670,6 +3807,7 @@ window.projectBridge = {
   readGitFileDiff,
   readGitCommitFileDiff,
   readGitCommitFiles,
+  readGitCommitAuthorAvatar,
   readGitCommitMessageDiff,
   stageGitFile,
   unstageGitFile,

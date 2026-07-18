@@ -684,6 +684,7 @@ export interface ProjectBridge {
     relativePath: string,
   ): Promise<ProjectGitFileDiffResult>;
   readGitCommitFiles(projectPath: string, commitHash: string): Promise<ProjectGitFileChange[]>;
+  readGitCommitAuthorAvatar(projectPath: string, commitHash: string): Promise<string | null>;
   readGitCommitMessageDiff(projectPath: string): Promise<ProjectGitCommitMessageDiffResult>;
   stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
   unstageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;

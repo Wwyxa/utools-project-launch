@@ -527,6 +527,9 @@ const fallbackBridge: ProjectBridge = {
   async readGitCommitFiles(): Promise<ProjectGitFileChange[]> {
     return [];
   },
+  async readGitCommitAuthorAvatar(): Promise<string | null> {
+    return null;
+  },
   async readGitCommitMessageDiff(): Promise<ProjectGitCommitMessageDiffResult> {
     return {
       ok: false,

@@ -2039,6 +2039,14 @@ export const useStore = defineStore("app", {
 
       return bridge.readGitCommitFiles(project.path, commitHash);
     },
+    async readGitCommitAuthorAvatar(projectId: string, commitHash: string): Promise<string | null> {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project || project.pathExists === false) {
+        return null;
+      }
+
+      return bridge.readGitCommitAuthorAvatar(project.path, commitHash);
+    },
     async readGitCommitMessageDiff(projectId: string): Promise<ProjectGitCommitMessageDiffResult | null> {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {

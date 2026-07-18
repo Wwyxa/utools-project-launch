@@ -18,7 +18,6 @@ import {
   Folder,
   GitBranch,
   GitPullRequestArrow,
-  UserCircle,
   Clock3,
   X,
   Sparkles,
@@ -93,6 +92,21 @@ type CommitFileItem = { kind: "file"; key: string; file: ProjectGitFileChange; d
 type CommitFileDisplayItem = CommitFileDirectoryItem | CommitFileItem;
 type CommitFileTreeNode = { directories: Map<string, CommitFileTreeNode>; files: ProjectGitFileChange[] };
 type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
+type CommitTooltipDetailsState = {
+  files: ProjectGitFileChange[] | null;
+  isLoadingFiles: boolean;
+  filesUnavailable: boolean;
+  avatarUrl: string | null;
+  isLoadingAvatar: boolean;
+  requestGeneration: number;
+  contextGeneration: number;
+};
+type CommitTooltipSummary = {
+  state: "loading" | "ready" | "unavailable";
+  fileCount: number;
+  additions: number;
+  deletions: number;
+};
 type CommitContextMenuState = { commit: ProjectGitCommitSummary; x: number; y: number; height: number };
 type AppDialogKind = "danger" | "warning";
 type AppActionDialog = {
@@ -373,10 +387,13 @@ const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
 const commitTooltip = ref<CommitTooltipState | null>(null);
 const pendingCommitTooltip = ref<CommitTooltipState | null>(null);
+const commitTooltipDetails = ref<Record<string, CommitTooltipDetailsState>>({});
 const commitContextMenu = ref<CommitContextMenuState | null>(null);
 const commitContextMenuRef = ref<HTMLElement | null>(null);
 let commitTooltipOpenTimer: number | undefined;
 let commitTooltipCloseTimer: number | undefined;
+let commitTooltipDetailsRequestGeneration = 0;
+let commitTooltipDetailsContextGeneration = 0;
 const commitTooltipStyle = computed(() => {
   if (!commitTooltip.value) {
     return {};
@@ -384,13 +401,24 @@ const commitTooltipStyle = computed(() => {
 
   const viewportWidth = globalThis.window?.innerWidth || 1024;
   const viewportHeight = globalThis.window?.innerHeight || 768;
-  const tooltipMaxWidth = Math.min(384, Math.max(240, viewportWidth - 32));
-  const tooltipMaxHeight = Math.min(240, Math.max(80, commitTooltip.value.y - 26));
-  const left = Math.min(Math.max(16, commitTooltip.value.x), Math.max(16, viewportWidth - tooltipMaxWidth - 16));
+  const horizontalInset = Math.min(16, Math.floor(viewportWidth / 2));
+  const verticalInset = Math.min(16, Math.floor(viewportHeight / 2));
+  const tooltipGap = 10;
+  const belowTop = Math.max(verticalInset, commitTooltip.value.y + tooltipGap);
+  const aboveBottom = Math.max(verticalInset, viewportHeight - commitTooltip.value.y + tooltipGap);
+  const availableAbove = viewportHeight - aboveBottom - verticalInset;
+  const availableBelow = viewportHeight - belowTop - verticalInset;
+  const showTooltipBelow = availableAbove < 80 && availableBelow > availableAbove;
+  const tooltipMaxWidth = Math.min(384, Math.max(1, viewportWidth - horizontalInset * 2));
+  const tooltipMaxHeight = Math.min(400, Math.max(1, showTooltipBelow ? availableBelow : availableAbove));
+  const left = Math.min(
+    Math.max(horizontalInset, commitTooltip.value.x),
+    Math.max(horizontalInset, viewportWidth - tooltipMaxWidth - horizontalInset),
+  );
 
   return {
     left: `${left}px`,
-    bottom: `${Math.max(16, viewportHeight - commitTooltip.value.y + 10)}px`,
+    ...(showTooltipBelow ? { top: `${belowTop}px` } : { bottom: `${aboveBottom}px` }),
     maxWidth: `${tooltipMaxWidth}px`,
     maxHeight: `${tooltipMaxHeight}px`,
   };
@@ -1571,6 +1599,19 @@ const clearExpandedCommitFiles = () => {
   expandedCommitDirectories.value = {};
 };
 
+const clearCommitTooltipDetails = () => {
+  commitTooltipDetailsContextGeneration += 1;
+  commitTooltipDetails.value = {};
+};
+
+const pruneCommitTooltipDetails = (availableHashes: Set<string>) => {
+  const nextState: Record<string, CommitTooltipDetailsState> = {};
+  for (const [hash, state] of Object.entries(commitTooltipDetails.value)) {
+    if (availableHashes.has(hash)) nextState[hash] = state;
+  }
+  commitTooltipDetails.value = nextState;
+};
+
 const pruneExpandedCommitFiles = (availableHashes: Set<string>) => {
   const nextState: Record<string, ExpandedCommitFilesState> = {};
   for (const [hash, state] of Object.entries(expandedCommitFiles.value)) {
@@ -1607,6 +1648,85 @@ const isCurrentExpandedCommitFilesRequest = (hash: string, requestGeneration: nu
     state?.requestGeneration === requestGeneration &&
     state.contextGeneration === contextGeneration
   );
+};
+
+const isCurrentCommitTooltipDetailsRequest = (hash: string, requestGeneration: number, contextGeneration: number) => {
+  const state = commitTooltipDetails.value[hash];
+  return (
+    contextGeneration === commitTooltipDetailsContextGeneration &&
+    state?.requestGeneration === requestGeneration &&
+    state.contextGeneration === contextGeneration
+  );
+};
+
+const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
+  const hash = commit.hash;
+  if (!hash || commitTooltipDetails.value[hash]) return;
+
+  const requestGeneration = ++commitTooltipDetailsRequestGeneration;
+  const contextGeneration = commitTooltipDetailsContextGeneration;
+  const canReadFiles = Boolean(snapshot.value?.repositoryPath);
+  commitTooltipDetails.value = {
+    ...commitTooltipDetails.value,
+    [hash]: {
+      files: null,
+      isLoadingFiles: canReadFiles,
+      filesUnavailable: !canReadFiles,
+      avatarUrl: null,
+      isLoadingAvatar: true,
+      requestGeneration,
+      contextGeneration,
+    },
+  };
+
+  if (canReadFiles) {
+    void store
+      .readGitCommitFiles(props.project.id, hash)
+      .then((files) => {
+        if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
+        const state = commitTooltipDetails.value[hash];
+        commitTooltipDetails.value = {
+          ...commitTooltipDetails.value,
+          [hash]: { ...state, files, isLoadingFiles: false },
+        };
+      })
+      .catch(() => {
+        if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
+        const state = commitTooltipDetails.value[hash];
+        commitTooltipDetails.value = {
+          ...commitTooltipDetails.value,
+          [hash]: { ...state, files: null, isLoadingFiles: false, filesUnavailable: true },
+        };
+      });
+  }
+
+  void store
+    .readGitCommitAuthorAvatar(props.project.id, hash)
+    .then((avatarUrl) => {
+      if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
+      const state = commitTooltipDetails.value[hash];
+      commitTooltipDetails.value = {
+        ...commitTooltipDetails.value,
+        [hash]: { ...state, avatarUrl, isLoadingAvatar: false },
+      };
+    })
+    .catch(() => {
+      if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
+      const state = commitTooltipDetails.value[hash];
+      commitTooltipDetails.value = {
+        ...commitTooltipDetails.value,
+        [hash]: { ...state, isLoadingAvatar: false },
+      };
+    });
+};
+
+const markCommitAvatarUnavailable = (hash: string) => {
+  const state = commitTooltipDetails.value[hash];
+  if (!state) return;
+  commitTooltipDetails.value = {
+    ...commitTooltipDetails.value,
+    [hash]: { ...state, avatarUrl: null, isLoadingAvatar: false },
+  };
 };
 
 const toggleCommitFiles = async (hash: string) => {
@@ -1779,6 +1899,9 @@ const showCommitTooltip = (event: MouseEvent, commit: ProjectGitCommitSummary) =
   pendingCommitTooltip.value = { commit, x: rect.left, y: rect.top };
   commitTooltipOpenTimer = window.setTimeout(() => {
     commitTooltip.value = pendingCommitTooltip.value;
+    if (commitTooltip.value) {
+      loadCommitTooltipDetails(commitTooltip.value.commit);
+    }
   }, 450);
 };
 
@@ -1822,6 +1945,7 @@ const handleWindowPointerDown = (event: PointerEvent) => {
 onBeforeUnmount(() => {
   hideCommitTooltip();
   clearExpandedCommitFiles();
+  clearCommitTooltipDetails();
   window.clearTimeout(copiedTimer.value);
   window.clearTimeout(gitToastTimer.value);
   window.removeEventListener("pointerdown", handleWindowPointerDown);
@@ -1846,6 +1970,7 @@ watch(
   () => {
     diffRequestGeneration += 1;
     clearExpandedCommitFiles();
+    clearCommitTooltipDetails();
     clearCommitSelection();
     rightContext.value = "history";
     worktreeSelection.value = null;
@@ -1869,6 +1994,15 @@ watch(
     const availableHashes = new Set((props.project.git?.commits || []).map((commit) => commit.hash));
     selectedCommitHashes.value = selectedCommitHashes.value.filter((hash) => availableHashes.has(hash));
     pruneExpandedCommitFiles(availableHashes);
+    pruneCommitTooltipDetails(availableHashes);
+  },
+);
+
+watch(
+  () => props.project.git?.repositoryPath || "",
+  () => {
+    clearCommitTooltipDetails();
+    hideCommitTooltip();
   },
 );
 
@@ -1885,7 +2019,9 @@ const refClass = (refName: string) =>
       ? "border-secondary/25 bg-secondary/10 text-secondary"
       : refName.includes("HEAD")
         ? "border-primary/70 bg-primary/10 text-primary"
-        : /(?:^|\s|\/)main$/.test(refName)
+        : /^(?:origin|upstream|remote|remotes\/[^/]+)\//.test(refName)
+          ? "border-secondary/30 bg-secondary/10 text-secondary"
+          : /(?:^|\s|\/)(?:main|master)$/.test(refName)
           ? "border-status-running/35 bg-status-running/10 text-status-running"
           : "border-border-subtle bg-surface-container-low text-on-surface-variant",
   );
@@ -2291,6 +2427,51 @@ const formatCommitTime = (value?: string) => ({
   text: formatRelativeTime(value),
   title: formatAbsoluteTime(value),
 });
+
+const shortCommitHash = (hash: string) => hash.slice(0, 7);
+
+const commitTooltipDetailsFor = (hash: string) => commitTooltipDetails.value[hash] || null;
+
+const commitTooltipSummary = (commit: ProjectGitCommitSummary): CommitTooltipSummary => {
+  const details = commitTooltipDetailsFor(commit.hash);
+  if (!details || details.isLoadingFiles) {
+    return { state: "loading", fileCount: 0, additions: 0, deletions: 0 };
+  }
+  if (details.filesUnavailable || !details.files) {
+    return { state: "unavailable", fileCount: 0, additions: 0, deletions: 0 };
+  }
+
+  return details.files.reduce(
+    (summary, file) => ({
+      state: "ready",
+      fileCount: summary.fileCount + 1,
+      additions: summary.additions + file.additions,
+      deletions: summary.deletions + file.deletions,
+    }),
+    { state: "ready", fileCount: 0, additions: 0, deletions: 0 } as CommitTooltipSummary,
+  );
+};
+
+const commitAuthorInitials = (author: string) => {
+  const names = author.trim().split(/\s+/).filter(Boolean);
+  const initials = names
+    .slice(0, 2)
+    .map((name) => Array.from(name)[0] || "")
+    .join("")
+    .toUpperCase();
+  return initials || "?";
+};
+
+const commitAuthorAvatarClass = (author: string) => {
+  const colorClasses = [
+    "bg-primary/15 text-primary",
+    "bg-secondary/15 text-secondary",
+    "bg-status-running/15 text-status-running",
+    "bg-status-warning/15 text-status-warning",
+  ];
+  const colorIndex = Array.from(author).reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0, 0);
+  return colorClasses[colorIndex % colorClasses.length];
+};
 
 const renderCommitMessage = (message: string) => renderMarkdown(message || "");
 const fullCommitMessage = (commit: ProjectGitCommitSummary) => {
@@ -3291,7 +3472,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                         :aria-label="`复制提交 hash ${row.commit.hash}`"
                         @click.stop="copyText(row.commit.hash)"
                       >
-                        {{ row.commit.hash }}
+                        {{ shortCommitHash(row.commit.hash) }}
                       </button>
                       <button
                         type="button"
@@ -3665,19 +3846,54 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
     <Teleport to="body">
       <div
         v-if="commitTooltip"
-        class="commit-tooltip-panel fixed z-[70] w-max select-text overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
+        class="commit-tooltip-panel fixed z-[70] flex w-max max-w-full select-text flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
         :style="commitTooltipStyle"
         @mouseenter="cancelCommitTooltipClose"
         @mouseleave="scheduleCommitTooltipClose"
       >
-        <div class="border-b border-border-subtle bg-surface-container-low px-3 py-2">
-          <div class="flex items-start gap-2">
-            <p
-              v-if="commitTooltipTitle(commitTooltip.commit)"
-              class="min-w-0 flex-1 text-[12px] font-bold leading-5 text-on-surface"
-            >
-              {{ commitTooltipTitle(commitTooltip.commit) }}
-            </p>
+        <div class="shrink-0 border-b border-border-subtle bg-surface-container-low px-3 py-1.5">
+          <div class="flex min-w-0 items-center gap-2">
+            <div class="relative flex h-7 w-7 shrink-0 overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container">
+              <img
+                v-if="commitTooltipDetailsFor(commitTooltip.commit.hash)?.avatarUrl"
+                :src="commitTooltipDetailsFor(commitTooltip.commit.hash)?.avatarUrl || undefined"
+                :alt="`${commitTooltip.commit.author} 的头像`"
+                class="h-full w-full object-cover"
+                referrerpolicy="no-referrer"
+                @error="markCommitAvatarUnavailable(commitTooltip.commit.hash)"
+              />
+              <span
+                v-else
+                :class="
+                  cn(
+                    'flex h-full w-full items-center justify-center text-[10px] font-bold',
+                    commitAuthorAvatarClass(commitTooltip.commit.author),
+                    commitTooltipDetailsFor(commitTooltip.commit.hash)?.isLoadingAvatar && 'animate-pulse',
+                  )
+                "
+                aria-hidden="true"
+              >
+                {{ commitAuthorInitials(commitTooltip.commit.author) }}
+              </span>
+            </div>
+            <div class="min-w-0 flex flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <span class="min-w-0 break-words text-[11px] font-bold leading-4 text-on-surface">
+                {{ commitTooltip.commit.author }}
+              </span>
+              <span
+                v-if="formatCommitTime(commitTooltip.commit.date).text"
+                class="inline-flex items-center gap-1 text-[10px] font-semibold leading-4 text-on-surface-variant"
+              >
+                <Clock3 :size="11" class="shrink-0 text-on-surface-variant/70" />
+                {{ formatCommitTime(commitTooltip.commit.date).text }}
+              </span>
+              <span
+                v-if="formatCommitTime(commitTooltip.commit.date).title"
+                class="break-words text-[10px] font-medium leading-4 text-on-surface-variant/80"
+              >
+                ({{ formatCommitTime(commitTooltip.commit.date).title }})
+              </span>
+            </div>
             <button
               type="button"
               class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface-variant hover:text-primary"
@@ -3688,27 +3904,44 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               <ClipboardCopy :size="12" />
             </button>
           </div>
-          <div
-            :class="
-              cn(
-                'flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-on-surface-variant',
-                commitTooltipTitle(commitTooltip.commit) && 'mt-2',
-              )
-            "
+        </div>
+        <div class="min-w-0 px-3 py-2">
+          <p
+            v-if="commitTooltipTitle(commitTooltip.commit)"
+            class="break-words text-[12px] font-bold leading-5 text-on-surface"
           >
-            <span class="inline-flex min-w-0 items-center gap-1.5">
-              <UserCircle :size="12" class="shrink-0 text-on-surface-variant/70" />
-              <span class="truncate">{{ commitTooltip.commit.author }}</span>
-            </span>
-            <span class="inline-flex min-w-0 items-center gap-1.5">
-              <Clock3 :size="12" class="shrink-0 text-on-surface-variant/70" />
-              <span>{{ formatCommitTime(commitTooltip.commit.date).text }}</span>
-              <span v-if="formatCommitTime(commitTooltip.commit.date).title" class="text-on-surface-variant/70">
-                ({{ formatCommitTime(commitTooltip.commit.date).title }})
-              </span>
-            </span>
+            {{ commitTooltipTitle(commitTooltip.commit) }}
+          </p>
+          <div
+            v-if="commitTooltipBody(commitTooltip.commit)"
+            :class="cn('commit-tooltip-body themed-scrollbar max-h-64 overflow-y-auto', commitTooltipTitle(commitTooltip.commit) && 'mt-1')"
+          >
+            <div
+              class="memo-rendered commit-tooltip-rendered block text-on-surface"
+              v-html="renderCommitMessage(commitTooltipBody(commitTooltip.commit))"
+            ></div>
           </div>
-          <div v-if="refsForCommit(commitTooltip.commit.refs).length" class="mt-2 flex flex-wrap gap-1">
+          <div
+            class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-border-subtle/80 pt-2 text-[10px] font-medium leading-4"
+            :aria-busy="commitTooltipSummary(commitTooltip.commit).state === 'loading'"
+            aria-live="polite"
+          >
+            <span v-if="commitTooltipSummary(commitTooltip.commit).state === 'loading'" class="text-on-surface-variant">
+              正在读取变更摘要...
+            </span>
+            <span v-else-if="commitTooltipSummary(commitTooltip.commit).state === 'unavailable'" class="text-on-surface-variant">
+              变更摘要暂不可用
+            </span>
+            <template v-else>
+              <span class="text-on-surface-variant">已更改 {{ commitTooltipSummary(commitTooltip.commit).fileCount }} 个文件,</span>
+              <span class="text-status-running">{{ commitTooltipSummary(commitTooltip.commit).additions }} 行插入(+),</span>
+              <span class="text-status-error">{{ commitTooltipSummary(commitTooltip.commit).deletions }} 行删除(-)</span>
+            </template>
+          </div>
+          <div
+            v-if="refsForCommit(commitTooltip.commit.refs).length"
+            class="mt-2 flex flex-wrap gap-1"
+          >
             <span
               v-for="refName in refsForCommit(commitTooltip.commit.refs)"
               :key="`tooltip-${commitTooltip.commit.hash}-${refName}`"
@@ -3717,15 +3950,6 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               {{ refName }}
             </span>
           </div>
-        </div>
-        <div
-          v-if="commitTooltipBody(commitTooltip.commit)"
-          class="commit-tooltip-body max-h-52 overflow-auto px-3 py-2"
-        >
-          <div
-            class="memo-rendered commit-tooltip-rendered block text-on-surface"
-            v-html="renderCommitMessage(commitTooltipBody(commitTooltip.commit))"
-          ></div>
         </div>
       </div>
       <div

@@ -89,6 +89,7 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 
 - `message` is the one-line subject used in dense Git history rows and as the default tooltip title.
 - `body` is optional and contains the full commit text used by markdown tooltips after de-duplicating repeated subject/list content.
+- The preload boundary must keep `hash` as the full `%H` value for Git operations and cache keys; dense rows render a shortened display value without truncating the copied or bridged hash.
 - The git log parser must preserve newlines in `body`; do not rely on `%s` alone when tooltip markdown needs lists or paragraphs.
 - Use robust field/record separators for git output parsing when reading multiline bodies. Tab-separated parsing is not enough once `%B` is included.
 - Avoid `git log --graph` in the backend/preload data fetch when parsing multiline bodies. ASCII graph prefixes can pollute markdown lines and break list rendering. The frontend already draws its own graph from `parents`.
@@ -140,7 +141,7 @@ This loses the commit body and therefore loses markdown list line breaks.
 #### Correct
 
 ```js
-`--pretty=format:%h${fieldSep}%p${fieldSep}%an${fieldSep}%ad${fieldSep}%D${fieldSep}%s${fieldSep}%B${recordSep}`;
+`--pretty=format:%H${fieldSep}%p${fieldSep}%an${fieldSep}%ad${fieldSep}%D${fieldSep}%s${fieldSep}%B${recordSep}`;
 ```
 
 Keep the subject and full body as separate fields so dense rows and rich tooltips can each use the right content.
@@ -162,6 +163,71 @@ const body = commitTooltipBody(commit);
 ```
 
 Keep tooltip parsing explicit and format-aware so the dense row can show the raw subject while the tooltip shows a readable title plus markdown body.
+
+## Scenario: Git Commit Tooltip Detail Enrichment Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: a delayed Git history tooltip needs local changed-file totals and an optional GitHub author avatar without exposing author email or making the tooltip depend on remote availability.
+- The path crosses `GitTab.vue`, the Pinia store, `ProjectBridge`, and `public/preload.js`.
+
+### 2. Signatures
+
+- `ProjectBridge.readGitCommitAuthorAvatar(projectPath: string, commitHash: string): Promise<string | null>`.
+- Store proxy: `readGitCommitAuthorAvatar(projectId: string, commitHash: string): Promise<string | null>`.
+- Tooltip detail state is keyed by full commit hash and contains local files, file-summary loading/unavailable state, avatar loading state, and nullable avatar URL.
+
+### 3. Contracts
+
+- Start both detail reads only after the existing tooltip hover delay has made the tooltip visible. File totals use `readGitCommitFiles`; avatar loading must never delay metadata, title, markdown body, or summary loading UI.
+- Preload selects a GitHub remote in this order: GitHub upstream, GitHub `origin`, then another GitHub remote. It supports HTTPS, SCP-style SSH, and `ssh://` GitHub URLs.
+- The GitHub commit endpoint receives only remote owner, repository, and the full commit hash. Return only an HTTPS `author.avatar_url` or `null`.
+- Cache in-flight and settled avatar results, including `null`, by normalized repository and full commit hash in a bounded in-memory preload cache.
+- Do not use Gravatar, author email, GitHub tokens, persistent cache storage, provider settings, raw remote URLs, or raw HTTP error messages in renderer state.
+- The renderer always has a deterministic initials badge. It replaces a missing, loading, rejected, or image-error avatar; stale async detail results must be ignored after project/repository context changes.
+
+### 4. Validation & Error Matrix
+
+- Non-GitHub or malformed remote -> return `null` without an HTTP request.
+- Public commit with a GitHub author -> return a sanitized HTTPS avatar URL.
+- Missing GitHub association, private repository, rate limit, HTTP failure, timeout, or invalid avatar URL -> return and cache `null`; tooltip remains usable.
+- Browser fallback -> return `null` without network work.
+- Local file read pending -> show a neutral loading summary; rejected/unavailable data -> show a neutral unavailable summary, never synthetic zero totals.
+- Avatar image load failure -> remove the URL from local tooltip state and show initials.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a GitHub-backed public commit opens after the normal delay, immediately shows initials and metadata, then replaces initials with a cached avatar while local additions/deletions load independently.
+- Base: an offline, private, or non-GitHub repository shows initials and an available local summary without a visible network error.
+- Bad: dispatching avatar or file reads on `mouseenter` before the delay, which creates unnecessary work while scanning dense rows.
+- Bad: sending `authorEmail` to Gravatar or exposing a GitHub URL/error in tooltip copy.
+
+### 6. Tests Required
+
+- `node --check public/preload.js` after changing GitHub remote parsing, cache behavior, or request timeout handling.
+- `npm run lint`, `npm run type-check`, and `npm run build` after changing the bridge, store proxy, or tooltip template.
+- Manual uTools smoke test: hover a GitHub public commit, a non-GitHub/offline commit, and leave before the hover delay; verify delayed loading, initials fallback, summary counts, Escape cleanup, and no stale result after switching projects.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+void store.readGitCommitAuthorAvatar(projectId, commit.hash);
+```
+
+Starting this on every row entry bypasses the tooltip's scan-friendly delay and can create unnecessary requests.
+
+#### Correct
+
+```ts
+commitTooltipOpenTimer = window.setTimeout(() => {
+  commitTooltip.value = pendingCommitTooltip.value;
+  if (commitTooltip.value) loadCommitTooltipDetails(commitTooltip.value.commit);
+}, 450);
+```
+
+Keep detail loading behind the visible-tooltip transition so cacheable enhancements remain advisory.
 
 ## Scenario: Git Bulk File Action Boundary
 
