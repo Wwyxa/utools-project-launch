@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Check the tooltip remains a semantic, accessible teleported floating surface."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check type/build validation and dense-tooltip placement, cleanup, and overflow behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check the project bridge contract agrees across types, fallback bridge, store, and component."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check remote-avatar failures degrade to a typed no-avatar result without UI errors."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review each avatar data boundary and stale asynchronous result behavior."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Review new helpers against existing Git data-loading and caching patterns."}
+{"file":".trellis/tasks/07-18-git-commit-tooltip/research/github-commit-avatar.md","reason":"Check the implementation stays within the documented GitHub-only, no-email, no-persistence scope."}

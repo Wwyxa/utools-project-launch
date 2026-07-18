@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Follow the existing delayed Git tooltip, Teleport, Tailwind, semantic markup, and accessible icon-control conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep component, Pinia store, project bridge, and preload responsibilities separated."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Update the shared ProjectBridge contract without duplicating preload types in components."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply the required type/build checks and dense-tooltip manual validation cases."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Return typed, non-blocking fallback results from the preload boundary rather than leaking HTTP failures into the UI."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Preserve the explicit preload-to-bridge-to-store-to-component avatar data flow."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Search for and reuse nearby Git data-loading patterns before adding helpers."}
+{"file":".trellis/tasks/07-18-git-commit-tooltip/research/github-commit-avatar.md","reason":"Use the verified GitHub and VS Code avatar-provider evidence and agreed privacy boundary."}
