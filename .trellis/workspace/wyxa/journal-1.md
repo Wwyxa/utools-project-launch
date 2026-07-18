@@ -1678,3 +1678,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 49: 优化 Git 树多分支渲染
+
+**Date**: 2026-07-18
+**Task**: 优化 Git 树多分支渲染
+**Branch**: `master`
+
+### Summary
+
+优化 Git 提交树的多分支引用展示，区分当前 HEAD、本地分支、远程分支与标签徽标，修复 remote/HEAD 误判，并补充前端展示规范。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aee3d75` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
