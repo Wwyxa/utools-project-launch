@@ -94,7 +94,7 @@ type CommitFileDirectoryItem = {
 type CommitFileItem = { kind: "file"; key: string; file: ProjectGitFileChange; depth: number };
 type CommitFileDisplayItem = CommitFileDirectoryItem | CommitFileItem;
 type CommitFileTreeNode = { directories: Map<string, CommitFileTreeNode>; files: ProjectGitFileChange[] };
-type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
+type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; top: number; bottom: number };
 type CommitTooltipDetailsState = {
   files: ProjectGitFileChange[] | null;
   isLoadingFiles: boolean;
@@ -407,11 +407,11 @@ const commitTooltipStyle = computed(() => {
   const horizontalInset = Math.min(16, Math.floor(viewportWidth / 2));
   const verticalInset = Math.min(16, Math.floor(viewportHeight / 2));
   const tooltipGap = 10;
-  const belowTop = Math.max(verticalInset, commitTooltip.value.y + tooltipGap);
-  const aboveBottom = Math.max(verticalInset, viewportHeight - commitTooltip.value.y + tooltipGap);
+  const belowTop = Math.max(verticalInset, commitTooltip.value.bottom + tooltipGap);
+  const aboveBottom = Math.max(verticalInset, viewportHeight - commitTooltip.value.top + tooltipGap);
   const availableAbove = viewportHeight - aboveBottom - verticalInset;
   const availableBelow = viewportHeight - belowTop - verticalInset;
-  const showTooltipBelow = availableAbove < 80 && availableBelow > availableAbove;
+  const showTooltipBelow = availableBelow > availableAbove;
   const tooltipMaxWidth = Math.min(384, Math.max(1, viewportWidth - horizontalInset * 2));
   const tooltipMaxHeight = Math.min(400, Math.max(1, showTooltipBelow ? availableBelow : availableAbove));
   const left = Math.min(
@@ -1899,7 +1899,7 @@ const showCommitTooltip = (event: MouseEvent, commit: ProjectGitCommitSummary) =
   window.clearTimeout(commitTooltipOpenTimer);
   cancelCommitTooltipClose();
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  pendingCommitTooltip.value = { commit, x: rect.left, y: rect.top };
+  pendingCommitTooltip.value = { commit, x: rect.left, top: rect.top, bottom: rect.bottom };
   commitTooltipOpenTimer = window.setTimeout(() => {
     commitTooltip.value = pendingCommitTooltip.value;
     if (commitTooltip.value) {
