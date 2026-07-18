@@ -5,12 +5,14 @@ let rememberedCommitFileViewMode: CommitFileViewMode = "list";
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, type Component, watch } from "vue";
 import {
   ArrowDownToLine,
   ArrowRightLeft,
   ArrowUpToLine,
   CircleCheck,
+  CircleDot,
+  Cloud,
   CloudDownload,
   CloudUpload,
   ClipboardCopy,
@@ -22,6 +24,7 @@ import {
   X,
   Sparkles,
   SlidersHorizontal,
+  Tag,
   WandSparkles,
   ChevronDown,
   CalendarDays,
@@ -2012,21 +2015,87 @@ const refsForCommit = (refs?: string) =>
     .map((refName) => refName.trim())
     .filter(Boolean);
 
-const refClass = (refName: string) =>
-  cn(
-    "max-w-40 truncate rounded border px-1.5 py-px text-[9px] font-bold leading-3",
-    refName.startsWith("tag:")
-      ? "border-secondary/25 bg-secondary/10 text-secondary"
-      : refName.includes("HEAD")
-        ? "border-primary/70 bg-primary/10 text-primary"
-        : /^(?:origin|upstream|remote|remotes\/[^/]+)\//.test(refName)
-          ? "border-secondary/30 bg-secondary/10 text-secondary"
-          : /(?:^|\s|\/)(?:main|master)$/.test(refName)
-          ? "border-status-running/35 bg-status-running/10 text-status-running"
-          : "border-border-subtle bg-surface-container-low text-on-surface-variant",
-  );
+type GitRefKind = "head" | "primary" | "local" | "remote" | "tag" | "unknown";
+type GitRefPresentation = {
+  kind: GitRefKind;
+  refName: string;
+  label: string;
+  className: string;
+  icon: Component | null;
+  isHead: boolean;
+};
 
-const isHeadCommit = (refs?: string) => Boolean(refs?.includes("HEAD"));
+const refBadgeBaseClass =
+  "inline-flex max-w-40 shrink-0 items-center gap-1 overflow-hidden rounded border px-1.5 py-px text-[9px] font-bold leading-3";
+const isHeadRef = (refName: string) => refName === "HEAD" || /^HEAD ->\s+\S+$/.test(refName);
+const refDisplayName = (refName: string) => (isHeadRef(refName) ? refName.replace(/^HEAD ->\s*/, "").trim() : refName);
+const isRemoteRef = (refName: string) =>
+  /^(?:origin|upstream|remote|remotes\/[^/]+)\//.test(refName) ||
+  (snapshot.value?.remotes || []).some((remote) => refName.startsWith(`${remote.name}/`));
+const isLocalBranchRef = (refName: string) =>
+  (snapshot.value?.branches || []).some((branch) => branch.name === refName);
+const isPrimaryBranchRef = (refName: string) => refName === "main" || refName === "master";
+
+const refPresentation = (refName: string): GitRefPresentation => {
+  const label = refDisplayName(refName);
+  if (isHeadRef(refName)) {
+    return {
+      kind: "head",
+      refName,
+      label,
+      className: cn(refBadgeBaseClass, "border-primary/70 bg-primary/10 text-primary"),
+      icon: CircleDot,
+      isHead: true,
+    };
+  }
+  if (refName.startsWith("tag:")) {
+    return {
+      kind: "tag",
+      refName,
+      label,
+      className: cn(refBadgeBaseClass, "border-tertiary/30 bg-tertiary/10 text-tertiary"),
+      icon: Tag,
+      isHead: false,
+    };
+  }
+  if (isRemoteRef(refName)) {
+    return {
+      kind: "remote",
+      refName,
+      label,
+      className: cn(refBadgeBaseClass, "border-secondary/35 bg-secondary/10 text-secondary"),
+      icon: Cloud,
+      isHead: false,
+    };
+  }
+  if (isLocalBranchRef(refName)) {
+    const kind = isPrimaryBranchRef(refName) ? "primary" : "local";
+    return {
+      kind,
+      refName,
+      label,
+      className: cn(
+        refBadgeBaseClass,
+        kind === "primary"
+          ? "border-status-running/35 bg-status-running/10 text-status-running"
+          : "border-status-warning/35 bg-status-warning/10 text-status-warning",
+      ),
+      icon: GitBranch,
+      isHead: false,
+    };
+  }
+  return {
+    kind: "unknown",
+    refName,
+    label,
+    className: cn(refBadgeBaseClass, "border-border-subtle bg-surface-container-low text-on-surface-variant"),
+    icon: null,
+    isHead: false,
+  };
+};
+
+const refPresentations = (refs?: string) => refsForCommit(refs).map(refPresentation);
+const isHeadCommit = (refs?: string) => refPresentations(refs).some((ref) => ref.isHead);
 const graphStrokeColors = ["#0ea5e9", "#e91e9d", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16"];
 const laneWidth = 14;
 const graphPaddingX = 5;
@@ -3490,12 +3559,19 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                             {{ row.commit.message }}
                           </span>
                           <span
-                            v-for="refName in refsForCommit(row.commit.refs)"
-                            :key="`${row.commit.hash}-${refName}`"
-                            :class="refClass(refName)"
-                            :title="refName"
+                            v-for="ref in refPresentations(row.commit.refs)"
+                            :key="`${row.commit.hash}-${ref.refName}`"
+                            :class="ref.className"
+                            :title="ref.refName"
                           >
-                            {{ refName }}
+                            <component
+                              v-if="ref.icon"
+                              :is="ref.icon"
+                              :size="10"
+                              :stroke-width="2.25"
+                              aria-hidden="true"
+                            />
+                            <span class="min-w-0 truncate">{{ ref.label }}</span>
                           </span>
                           <span
                             v-if="snapshot?.isDetachedHead && commitHashMatches(row.commit.hash, snapshot?.headHash)"
@@ -3853,7 +3929,9 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       >
         <div class="shrink-0 border-b border-border-subtle bg-surface-container-low px-3 py-1.5">
           <div class="flex min-w-0 items-center gap-2">
-            <div class="relative flex h-7 w-7 shrink-0 overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container">
+            <div
+              class="relative flex h-7 w-7 shrink-0 overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container"
+            >
               <img
                 v-if="commitTooltipDetailsFor(commitTooltip.commit.hash)?.avatarUrl"
                 :src="commitTooltipDetailsFor(commitTooltip.commit.hash)?.avatarUrl || undefined"
@@ -3914,7 +3992,12 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </p>
           <div
             v-if="commitTooltipBody(commitTooltip.commit)"
-            :class="cn('commit-tooltip-body themed-scrollbar min-h-0 max-h-64 flex-1 overflow-y-auto', commitTooltipTitle(commitTooltip.commit) && 'mt-1')"
+            :class="
+              cn(
+                'commit-tooltip-body themed-scrollbar min-h-0 max-h-64 flex-1 overflow-y-auto',
+                commitTooltipTitle(commitTooltip.commit) && 'mt-1',
+              )
+            "
           >
             <div
               class="memo-rendered commit-tooltip-rendered block text-on-surface"
@@ -3929,25 +4012,33 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             <span v-if="commitTooltipSummary(commitTooltip.commit).state === 'loading'" class="text-on-surface-variant">
               正在读取变更摘要...
             </span>
-            <span v-else-if="commitTooltipSummary(commitTooltip.commit).state === 'unavailable'" class="text-on-surface-variant">
+            <span
+              v-else-if="commitTooltipSummary(commitTooltip.commit).state === 'unavailable'"
+              class="text-on-surface-variant"
+            >
               变更摘要暂不可用
             </span>
             <template v-else>
-              <span class="text-on-surface-variant">已更改 {{ commitTooltipSummary(commitTooltip.commit).fileCount }} 个文件,</span>
-              <span class="text-status-running">{{ commitTooltipSummary(commitTooltip.commit).additions }} 行插入(+),</span>
-              <span class="text-status-error">{{ commitTooltipSummary(commitTooltip.commit).deletions }} 行删除(-)</span>
+              <span class="text-on-surface-variant"
+                >已更改 {{ commitTooltipSummary(commitTooltip.commit).fileCount }} 个文件,</span
+              >
+              <span class="text-status-running"
+                >{{ commitTooltipSummary(commitTooltip.commit).additions }} 行插入(+),</span
+              >
+              <span class="text-status-error"
+                >{{ commitTooltipSummary(commitTooltip.commit).deletions }} 行删除(-)</span
+              >
             </template>
           </div>
-          <div
-            v-if="refsForCommit(commitTooltip.commit.refs).length"
-            class="mt-2 flex shrink-0 flex-wrap gap-1"
-          >
+          <div v-if="refPresentations(commitTooltip.commit.refs).length" class="mt-2 flex shrink-0 flex-wrap gap-1">
             <span
-              v-for="refName in refsForCommit(commitTooltip.commit.refs)"
-              :key="`tooltip-${commitTooltip.commit.hash}-${refName}`"
-              :class="refClass(refName)"
+              v-for="ref in refPresentations(commitTooltip.commit.refs)"
+              :key="`tooltip-${commitTooltip.commit.hash}-${ref.refName}`"
+              :class="ref.className"
+              :title="ref.refName"
             >
-              {{ refName }}
+              <component v-if="ref.icon" :is="ref.icon" :size="10" :stroke-width="2.25" aria-hidden="true" />
+              <span class="min-w-0 truncate">{{ ref.label }}</span>
             </span>
           </div>
         </div>

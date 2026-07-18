@@ -382,6 +382,17 @@ return `${firstSize}px ${separatorSize}px minmax(0, 0.71fr)`;
 
 **Dot Alignment Rule**: Commit rows must use the same pixel row-height constant as the SVG coordinate system. Do not rely on a rem-based utility such as `h-8` for Git graph rows while SVG nodes use numeric pixel coordinates, because root font size, zoom, or rendered content can make dots drift above or below their matching commit row. Set the row height from the shared `rowHeight` value and compute node `y` values from that same value plus the row gap.
 
+**Ref Classification Rule**: Parse each `git log --decorate=short` ref through one presentation helper shared by the dense row and its tooltip. A current-HEAD node is only an exact `HEAD` ref or `HEAD -> <non-empty branch>`; never use `refs.includes("HEAD")`, because historical symbolic refs such as `remote/HEAD` or `fork/HEAD` would otherwise receive the current-HEAD node style. Classify tags first, then configured/prefix-matched remotes, then known local branches. Only a known local `main` or `master` gets the primary-local variant; an unrecognized string must stay neutral rather than being guessed as a local branch.
+
+```ts
+const isHeadRef = (refName: string) => refName === "HEAD" || /^HEAD ->\s+\S+$/.test(refName);
+const isRemoteRef = (refName: string) =>
+  /^(?:origin|upstream|remote|remotes\/[^/]+)\//.test(refName) ||
+  snapshot.value?.remotes?.some((remote) => refName.startsWith(`${remote.name}/`));
+```
+
+Use familiar Lucide icons plus semantic tokens to distinguish current HEAD, primary local branches, other local branches, remotes, and tags. A graph fixture containing `HEAD -> master`, a non-main local branch, `remote/HEAD` or a custom `fork/HEAD`, and a tag must yield exactly one enlarged HEAD node and matching row/tooltip badge presentation.
+
 **Expanded Details Rule**: When multiple commit rows can show inline changed-file blocks, store each block's files, loading state, error, and request generation by commit hash. For a collapsible tree, keep only explicitly collapsed directory paths in a second record keyed by commit hash plus normalized `/` path; a missing path means expanded. Build one reactive visible-item list from that state and use it for template rows, the capped inline height, every later graph row's vertical offset, and the SVG canvas height. Accumulate that height in visible commit order after placing each row; do not use a single selected-row offset. Closing a block, replacing the project, unmounting the component, or pruning unavailable commits must remove the matching request and directory state so an old file-list response cannot reopen or overwrite state.
 
 The list/tree choice is a renderer-session user preference rather than per-instance state: initialize each `GitTab` ref from one module-scoped `"list" | "tree"` value and update that value from the view-toggle action. Do not reset it for project replacement, and do not put this purely visual preference in Pinia, project data, preload storage, or `localStorage`; a renderer reload starts from the list default.
