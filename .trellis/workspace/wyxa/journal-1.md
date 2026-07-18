@@ -1612,3 +1612,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: Git 提交变更树交互优化
+
+**Date**: 2026-07-18
+**Task**: Git 提交变更树交互优化
+**Branch**: `master`
+
+### Summary
+
+改进 Git 提交变更树：支持多提交展开、可折叠紧凑目录、会话视图模式记忆，并修正层级缩进与图形对齐。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `905da52` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
