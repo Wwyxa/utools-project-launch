@@ -1,3 +1,9 @@
+<script lang="ts">
+type CommitFileViewMode = "list" | "tree";
+
+let rememberedCommitFileViewMode: CommitFileViewMode = "list";
+</script>
+
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
@@ -9,6 +15,7 @@ import {
   CloudUpload,
   ClipboardCopy,
   FileSearch,
+  Folder,
   GitBranch,
   GitPullRequestArrow,
   UserCircle,
@@ -23,6 +30,8 @@ import {
   ChevronRight,
   Check,
   GitCommitHorizontal,
+  List,
+  ListTree,
   Minus,
   Plus,
   Undo,
@@ -65,6 +74,24 @@ type WorktreeDiffScope = Exclude<ProjectGitDiffScope, "combined">;
 type WorktreeSelection = { path: string; scope: WorktreeDiffScope };
 type RightContext = "review" | "history";
 type CommitReviewSelection = { commitHash: string; commitMessage: string; path: string };
+type ExpandedCommitFilesState = {
+  files: ProjectGitFileChange[];
+  isLoading: boolean;
+  error: string;
+  requestGeneration: number;
+  contextGeneration: number;
+};
+type CommitFileDirectoryItem = {
+  kind: "directory";
+  key: string;
+  name: string;
+  path: string;
+  depth: number;
+  isExpanded: boolean;
+};
+type CommitFileItem = { kind: "file"; key: string; file: ProjectGitFileChange; depth: number };
+type CommitFileDisplayItem = CommitFileDirectoryItem | CommitFileItem;
+type CommitFileTreeNode = { directories: Map<string, CommitFileTreeNode>; files: ProjectGitFileChange[] };
 type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
 type CommitContextMenuState = { commit: ProjectGitCommitSummary; x: number; y: number; height: number };
 type AppDialogKind = "danger" | "warning";
@@ -176,7 +203,11 @@ const isLoadingWorktreeDiff = ref(false);
 const commitReviewSelection = ref<CommitReviewSelection | null>(null);
 const reviewScrollTop = ref(0);
 let diffRequestGeneration = 0;
+const expandedCommitFiles = ref<Record<string, ExpandedCommitFilesState>>({});
+const expandedCommitDirectories = ref<Record<string, Record<string, boolean>>>({});
+const commitFileViewMode = ref<CommitFileViewMode>(rememberedCommitFileViewMode);
 let commitFilesRequestGeneration = 0;
+let commitFilesContextGeneration = 0;
 const worktreeGroups = computed(() => [
   ...(stagedFiles.value.length > 0
     ? [{ scope: "staged" as const, label: "已暂存", open: stagedGroupOpen.value, files: stagedFiles.value }]
@@ -217,11 +248,6 @@ const commitAuthor = ref("");
 const commitSince = ref("");
 const commitUntil = ref("");
 const selectedCommitHashes = ref<string[]>([]);
-const selectedCommitHash = ref("");
-const selectedCommit = computed(() => commits.value.find((commit) => commit.hash === selectedCommitHash.value));
-const selectedCommitFiles = ref<ProjectGitFileChange[]>([]);
-const isLoadingCommitFiles = ref(false);
-const commitFilesError = ref("");
 const commits = computed(() => {
   const source = props.project.git?.commits || [];
   const keyword = commitKeyword.value.trim().toLowerCase();
@@ -959,7 +985,6 @@ const executeSwitchBranch = async (branchName: string, options: { force?: boolea
     setGitActionResult(result.ok ? "success" : "error", result.message);
     if (result.ok) {
       clearCommitSelection();
-      selectedCommitHash.value = "";
     }
   } catch (error) {
     setGitActionResult("error", error instanceof Error ? error.message : "切换分支失败。");
@@ -1529,34 +1554,113 @@ const generateAiAnalysis = async () => {
   });
 };
 
+const isCommitFilesExpanded = (hash: string) => Boolean(expandedCommitFiles.value[hash]);
+
+const commitFileViewModeLabel = computed(() =>
+  commitFileViewMode.value === "tree" ? "切换为平铺文件列表" : "切换为树形文件列表",
+);
+
+const toggleCommitFileViewMode = () => {
+  commitFileViewMode.value = commitFileViewMode.value === "list" ? "tree" : "list";
+  rememberedCommitFileViewMode = commitFileViewMode.value;
+};
+
+const clearExpandedCommitFiles = () => {
+  commitFilesContextGeneration += 1;
+  expandedCommitFiles.value = {};
+  expandedCommitDirectories.value = {};
+};
+
+const pruneExpandedCommitFiles = (availableHashes: Set<string>) => {
+  const nextState: Record<string, ExpandedCommitFilesState> = {};
+  for (const [hash, state] of Object.entries(expandedCommitFiles.value)) {
+    if (availableHashes.has(hash)) nextState[hash] = state;
+  }
+  expandedCommitFiles.value = nextState;
+
+  const nextDirectories: Record<string, Record<string, boolean>> = {};
+  for (const [hash, directories] of Object.entries(expandedCommitDirectories.value)) {
+    if (nextState[hash]) nextDirectories[hash] = directories;
+  }
+  expandedCommitDirectories.value = nextDirectories;
+};
+
+const closeExpandedCommitFiles = (hash: string) => {
+  const nextState = { ...expandedCommitFiles.value };
+  delete nextState[hash];
+  expandedCommitFiles.value = nextState;
+
+  const nextDirectories = { ...expandedCommitDirectories.value };
+  delete nextDirectories[hash];
+  expandedCommitDirectories.value = nextDirectories;
+};
+
+const nextCommitFilesRequestGeneration = () => {
+  commitFilesRequestGeneration += 1;
+  return commitFilesRequestGeneration;
+};
+
+const isCurrentExpandedCommitFilesRequest = (hash: string, requestGeneration: number, contextGeneration: number) => {
+  const state = expandedCommitFiles.value[hash];
+  return (
+    contextGeneration === commitFilesContextGeneration &&
+    state?.requestGeneration === requestGeneration &&
+    state.contextGeneration === contextGeneration
+  );
+};
+
 const toggleCommitFiles = async (hash: string) => {
   hideCommitTooltip();
-  if (selectedCommitHash.value === hash) {
-    commitFilesRequestGeneration += 1;
-    selectedCommitHash.value = "";
-    selectedCommitFiles.value = [];
-    commitFilesError.value = "";
-    isLoadingCommitFiles.value = false;
+  if (isCommitFilesExpanded(hash)) {
+    closeExpandedCommitFiles(hash);
     return;
   }
 
-  const generation = ++commitFilesRequestGeneration;
-  selectedCommitHash.value = hash;
-  selectedCommitFiles.value = [];
-  commitFilesError.value = "";
-  isLoadingCommitFiles.value = true;
+  const requestGeneration = nextCommitFilesRequestGeneration();
+  const contextGeneration = commitFilesContextGeneration;
+  expandedCommitFiles.value = {
+    ...expandedCommitFiles.value,
+    [hash]: {
+      files: [],
+      isLoading: true,
+      error: "",
+      requestGeneration,
+      contextGeneration,
+    },
+  };
   try {
     const result = await store.readGitCommitFiles(props.project.id, hash);
-    if (generation === commitFilesRequestGeneration && selectedCommitHash.value === hash) {
-      selectedCommitFiles.value = result;
+    if (isCurrentExpandedCommitFilesRequest(hash, requestGeneration, contextGeneration)) {
+      expandedCommitFiles.value = {
+        ...expandedCommitFiles.value,
+        [hash]: {
+          ...expandedCommitFiles.value[hash],
+          files: result,
+        },
+      };
     }
   } catch (error) {
-    if (generation === commitFilesRequestGeneration) {
-      selectedCommitFiles.value = [];
-      commitFilesError.value = error instanceof Error ? error.message : "读取提交文件失败。";
+    if (isCurrentExpandedCommitFilesRequest(hash, requestGeneration, contextGeneration)) {
+      const message = error instanceof Error ? error.message : "读取提交文件失败。";
+      expandedCommitFiles.value = {
+        ...expandedCommitFiles.value,
+        [hash]: {
+          ...expandedCommitFiles.value[hash],
+          files: [],
+          error: message,
+        },
+      };
     }
   } finally {
-    if (generation === commitFilesRequestGeneration) isLoadingCommitFiles.value = false;
+    if (isCurrentExpandedCommitFilesRequest(hash, requestGeneration, contextGeneration)) {
+      expandedCommitFiles.value = {
+        ...expandedCommitFiles.value,
+        [hash]: {
+          ...expandedCommitFiles.value[hash],
+          isLoading: false,
+        },
+      };
+    }
   }
 };
 
@@ -1632,10 +1736,9 @@ const handleGitTabKeydown = (event: KeyboardEvent) => {
   }
 };
 
-const handleViewDiff = async (file: ProjectGitFileChange) => {
-  const commitHash = selectedCommitHash.value;
-  const commit = selectedCommit.value;
-  if (!commitHash || !commit) return;
+const handleViewDiff = async (commitHash: string, file: ProjectGitFileChange) => {
+  const commit = (props.project.git?.commits || []).find((item) => item.hash === commitHash);
+  if (!commit) return;
   const generation = ++diffRequestGeneration;
   worktreeSelection.value = null;
   commitReviewSelection.value = { commitHash, commitMessage: commit.message, path: file.path };
@@ -1718,6 +1821,7 @@ const handleWindowPointerDown = (event: PointerEvent) => {
 
 onBeforeUnmount(() => {
   hideCommitTooltip();
+  clearExpandedCommitFiles();
   window.clearTimeout(copiedTimer.value);
   window.clearTimeout(gitToastTimer.value);
   window.removeEventListener("pointerdown", handleWindowPointerDown);
@@ -1741,7 +1845,7 @@ watch(
   () => props.project.id,
   () => {
     diffRequestGeneration += 1;
-    commitFilesRequestGeneration += 1;
+    clearExpandedCommitFiles();
     clearCommitSelection();
     rightContext.value = "history";
     worktreeSelection.value = null;
@@ -1750,9 +1854,6 @@ watch(
     commitReviewSelection.value = null;
     stagedGroupOpen.value = true;
     unstagedGroupOpen.value = true;
-    selectedCommitHash.value = "";
-    selectedCommitFiles.value = [];
-    commitFilesError.value = "";
     selectedDiff.value = null;
     hideCommitTooltip();
     commitContextMenu.value = null;
@@ -1767,6 +1868,7 @@ watch(
   () => {
     const availableHashes = new Set((props.project.git?.commits || []).map((commit) => commit.hash));
     selectedCommitHashes.value = selectedCommitHashes.value.filter((hash) => availableHashes.has(hash));
+    pruneExpandedCommitFiles(availableHashes);
   },
 );
 
@@ -1798,11 +1900,108 @@ const graphSelectionColumnWidth = 16;
 const rowHeight = 30;
 const rowGap = 1;
 const rowPitch = rowHeight + rowGap;
-const inlineCommitFilesHeight = computed(() => {
-  if (isLoadingCommitFiles.value) return 40;
-  if (commitFilesError.value || selectedCommitFiles.value.length === 0) return 40;
-  return Math.min(144, selectedCommitFiles.value.length * 24 + 10);
+const createCommitFileTreeNode = (): CommitFileTreeNode => ({ directories: new Map(), files: [] });
+const compareCommitFileTreeNames = (left: string, right: string) => (left === right ? 0 : left < right ? -1 : 1);
+const commitFileItemKey = (file: ProjectGitFileChange) => `file:${file.originalPath || ""}:${file.path}`;
+const normalizeCommitFilePath = (path: string) => path.replace(/\\/g, "/").split("/").filter(Boolean).join("/");
+
+const isCommitDirectoryExpanded = (hash: string, path: string) =>
+  expandedCommitDirectories.value[hash]?.[normalizeCommitFilePath(path)] !== false;
+
+const toggleCommitDirectory = (hash: string, path: string) => {
+  const normalizedPath = normalizeCommitFilePath(path);
+  const nextDirectories = { ...(expandedCommitDirectories.value[hash] || {}) };
+  if (isCommitDirectoryExpanded(hash, normalizedPath)) {
+    nextDirectories[normalizedPath] = false;
+  } else {
+    delete nextDirectories[normalizedPath];
+  }
+
+  const nextState = { ...expandedCommitDirectories.value };
+  if (Object.keys(nextDirectories).length > 0) nextState[hash] = nextDirectories;
+  else delete nextState[hash];
+  expandedCommitDirectories.value = nextState;
+};
+
+const commitFileTreeItems = (hash: string, files: ProjectGitFileChange[]): CommitFileDisplayItem[] => {
+  const root = createCommitFileTreeNode();
+  for (const file of files) {
+    const segments = normalizeCommitFilePath(file.path).split("/").filter(Boolean);
+    if (segments.length === 0) {
+      root.files.push(file);
+      continue;
+    }
+
+    let node = root;
+    for (const directoryName of segments.slice(0, -1)) {
+      let directory = node.directories.get(directoryName);
+      if (!directory) {
+        directory = createCommitFileTreeNode();
+        node.directories.set(directoryName, directory);
+      }
+      node = directory;
+    }
+    node.files.push(file);
+  }
+
+  const items: CommitFileDisplayItem[] = [];
+  const appendItems = (node: CommitFileTreeNode, parentPath: string, depth: number) => {
+    for (const [name, directory] of [...node.directories.entries()].sort(([left], [right]) =>
+      compareCommitFileTreeNames(left, right),
+    )) {
+      let compactName = name;
+      let compactPath = parentPath ? `${parentPath}/${name}` : name;
+      let compactDirectory = directory;
+      while (compactDirectory.files.length === 0 && compactDirectory.directories.size === 1) {
+        const [childName, childDirectory] = [...compactDirectory.directories.entries()][0]!;
+        compactName += ` \\ ${childName}`;
+        compactPath = `${compactPath}/${childName}`;
+        compactDirectory = childDirectory;
+      }
+
+      const isExpanded = isCommitDirectoryExpanded(hash, compactPath);
+      items.push({
+        kind: "directory",
+        key: `directory:${compactPath}`,
+        name: compactName,
+        path: compactPath,
+        depth,
+        isExpanded,
+      });
+      if (isExpanded) appendItems(compactDirectory, compactPath, depth + 1);
+    }
+    for (const file of [...node.files].sort((left, right) =>
+      compareCommitFileTreeNames(normalizeCommitFilePath(left.path), normalizeCommitFilePath(right.path)),
+    )) {
+      items.push({ kind: "file", key: commitFileItemKey(file), file, depth });
+    }
+  };
+
+  appendItems(root, "", 0);
+  return items;
+};
+
+const createCommitFileDisplayItems = (hash: string, files: ProjectGitFileChange[]): CommitFileDisplayItem[] =>
+  commitFileViewMode.value === "tree"
+    ? commitFileTreeItems(hash, files)
+    : files.map((file): CommitFileItem => ({ kind: "file", key: commitFileItemKey(file), file, depth: 0 }));
+
+const expandedCommitFileDisplayItems = computed<Record<string, CommitFileDisplayItem[]>>(() => {
+  const itemsByHash: Record<string, CommitFileDisplayItem[]> = {};
+  for (const [hash, state] of Object.entries(expandedCommitFiles.value)) {
+    itemsByHash[hash] = createCommitFileDisplayItems(hash, state.files);
+  }
+  return itemsByHash;
 });
+
+const commitFileDisplayItems = (hash: string) => expandedCommitFileDisplayItems.value[hash] || [];
+
+const expandedCommitFilesHeight = (hash: string) => {
+  const state = expandedCommitFiles.value[hash];
+  if (!state) return 0;
+  if (state.isLoading || state.error || state.files.length === 0) return 40;
+  return Math.min(240, commitFileDisplayItems(hash).length * 24 + 10);
+};
 const dotRadius = 3.9;
 const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + graphPaddingX;
 const minGraphColumnWidth = 36;
@@ -1850,7 +2049,6 @@ const graphPathData = (sourceX: number, sourceY: number, targetX: number, target
 const graphLayout = computed(() => {
   const visibleCommits = commits.value;
   const visibleIndex = new Map(visibleCommits.map((commit, index) => [commit.hash, index]));
-  const expandedCommitIndex = visibleIndex.get(selectedCommitHash.value) ?? -1;
   const activeLanes: Array<string | null> = [];
   const laneColors = new Map<number, string>();
   let colorIndex = 0;
@@ -1858,6 +2056,7 @@ const graphLayout = computed(() => {
   const rows: GitGraphRow[] = [];
   const edges: GitGraphEdge[] = [];
   const currentBranch = snapshot.value?.branch || "";
+  let expandedHeight = 0;
 
   const nextColor = () => graphStrokeColors[colorIndex++ % graphStrokeColors.length];
   const ensureLaneColor = (lane: number) => {
@@ -1907,8 +2106,7 @@ const graphLayout = computed(() => {
     }
 
     const color = ensureLaneColor(lane);
-    const expandedOffset = expandedCommitIndex >= 0 && index > expandedCommitIndex ? inlineCommitFilesHeight.value : 0;
-    rows.push({ commit, lane, color, y: index * rowPitch + rowHeight / 2 + expandedOffset });
+    rows.push({ commit, lane, color, y: index * rowPitch + rowHeight / 2 + expandedHeight });
     maxLane = Math.max(maxLane, lane);
     activeLanes[lane] = null;
 
@@ -1947,6 +2145,7 @@ const graphLayout = computed(() => {
     while (activeLanes.length && activeLanes[activeLanes.length - 1] === null) {
       activeLanes.pop();
     }
+    expandedHeight += expandedCommitFilesHeight(commit.hash);
   });
 
   const rowByHash = new Map(rows.map((row) => [row.commit.hash, row]));
@@ -1981,13 +2180,7 @@ const graphLayout = computed(() => {
   }));
   const laneCount = rows.length > 0 ? maxLane + 1 : 1;
   const columnWidth = Math.max(minGraphColumnWidth, laneCount * laneWidth + graphPaddingX * 2);
-  const hasExpandedCommit = rows.some((row) => row.commit.hash === selectedCommitHash.value);
-  const height =
-    rows.length > 0
-      ? rows.length * rowHeight +
-        Math.max(0, rows.length - 1) * rowGap +
-        (hasExpandedCommit ? inlineCommitFilesHeight.value : 0)
-      : 0;
+  const height = rows.length > 0 ? rows.length * rowHeight + Math.max(0, rows.length - 1) * rowGap + expandedHeight : 0;
 
   return { rows, paths, nodes, columnWidth, height };
 });
@@ -2797,6 +2990,17 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             >
               <ArrowDownToLine :size="12" />
             </button>
+            <button
+              type="button"
+              class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant"
+              :title="commitFileViewModeLabel"
+              :aria-label="commitFileViewModeLabel"
+              :aria-pressed="commitFileViewMode === 'tree'"
+              @click="toggleCommitFileViewMode"
+            >
+              <List v-if="commitFileViewMode === 'tree'" :size="13" />
+              <ListTree v-else :size="13" />
+            </button>
           </div>
           <div v-else class="flex min-w-0 flex-1 items-center justify-end gap-1.5">
             <div class="min-w-0 flex-1 text-right">
@@ -3092,7 +3296,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                       <button
                         type="button"
                         class="min-w-0 overflow-hidden rounded text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70"
-                        :aria-expanded="selectedCommitHash === row.commit.hash"
+                        :aria-expanded="isCommitFilesExpanded(row.commit.hash)"
                         :aria-controls="`git-commit-files-${row.commit.hash}`"
                         @click.stop="toggleCommitFiles(row.commit.hash)"
                       >
@@ -3125,11 +3329,11 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                       </button>
                     </div>
                     <div
-                      v-if="selectedCommitHash === row.commit.hash"
+                      v-if="isCommitFilesExpanded(row.commit.hash)"
                       :id="`git-commit-files-${row.commit.hash}`"
                       class="relative z-10 overflow-hidden border-y border-outline-variant/50 bg-surface-container py-1 pr-2"
                       :style="{
-                        height: `${inlineCommitFilesHeight}px`,
+                        height: `${expandedCommitFilesHeight(row.commit.hash)}px`,
                         minWidth: graphRowMinWidth,
                         paddingLeft: `${graphLayerLeft + graphColumnWidth + 4}px`,
                       }"
@@ -3141,7 +3345,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                         :style="{ left: `${graphLayerLeft + graphColumnWidth}px` }"
                       ></span>
                       <div
-                        v-if="isLoadingCommitFiles"
+                        v-if="expandedCommitFiles[row.commit.hash]?.isLoading"
                         class="flex h-full items-center gap-2 px-1.5 text-[10px] font-medium text-on-surface-variant"
                         aria-busy="true"
                       >
@@ -3150,62 +3354,94 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                         ></span>
                         <span>正在加载变更...</span>
                       </div>
-                      <div v-else-if="commitFilesError" class="px-1.5 py-2 text-[10px] text-status-error">
-                        {{ commitFilesError }}
+                      <div
+                        v-else-if="expandedCommitFiles[row.commit.hash]?.error"
+                        class="px-1.5 py-2 text-[10px] text-status-error"
+                      >
+                        {{ expandedCommitFiles[row.commit.hash]?.error }}
                       </div>
                       <div
-                        v-else-if="selectedCommitFiles.length === 0"
+                        v-else-if="!expandedCommitFiles[row.commit.hash]?.files.length"
                         class="px-1.5 py-2 text-[10px] text-on-surface-variant"
                       >
                         该提交暂无可显示的变更文件。
                       </div>
                       <div v-else class="themed-scrollbar h-full overflow-auto">
-                        <button
-                          v-for="file in selectedCommitFiles"
-                          :key="`${row.commit.hash}:${file.path}`"
-                          type="button"
-                          class="group grid min-h-6 w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-1.5 rounded-sm border border-transparent px-1.5 py-0.5 text-left transition-colors hover:border-outline-variant/50 hover:bg-surface-container-high"
-                          :title="file.path"
-                          @click.stop="handleViewDiff(file)"
+                        <template
+                          v-for="item in commitFileDisplayItems(row.commit.hash)"
+                          :key="`${row.commit.hash}:${item.key}`"
                         >
-                          <span
-                            :class="
-                              cn(
-                                'flex h-4 w-4 items-center justify-center rounded-[3px] font-mono text-[9px] font-black leading-none',
-                                file.status === 'ADDED' && 'bg-status-running/10 text-status-running',
-                                file.status === 'DELETED' && 'bg-status-error/10 text-status-error',
-                                file.status === 'RENAMED' && 'bg-secondary/10 text-secondary',
-                                file.status === 'UNTRACKED' && 'bg-primary/10 text-primary',
-                                file.status === 'MODIFIED' && 'bg-surface-container-highest text-on-surface-variant',
-                              )
-                            "
-                            :title="fileLabel(file.status)"
+                          <button
+                            v-if="item.kind === 'directory'"
+                            type="button"
+                            class="flex min-h-6 w-full items-center gap-1 rounded-sm px-1.5 py-0.5 text-left text-[10px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70"
+                            :style="{ paddingLeft: `${6 + item.depth * 14}px` }"
+                            :title="item.path"
+                            :aria-label="`${item.isExpanded ? '收起' : '展开'}目录 ${item.path}`"
+                            :aria-expanded="item.isExpanded"
+                            @click.stop="toggleCommitDirectory(row.commit.hash, item.path)"
                           >
-                            {{ fileStatusCode(file.status) }}
-                          </span>
-                          <span class="flex min-w-0 items-baseline gap-1 overflow-hidden">
+                            <ChevronDown v-if="item.isExpanded" :size="13" class="shrink-0 text-on-surface-variant" />
+                            <ChevronRight v-else :size="13" class="shrink-0 text-on-surface-variant" />
+                            <Folder :size="13" class="shrink-0 text-primary/75" />
+                            <span class="min-w-0 truncate font-mono" :title="item.path">{{ item.name }}</span>
+                          </button>
+                          <button
+                            v-else
+                            type="button"
+                            class="group grid min-h-6 w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-1.5 rounded-sm border border-transparent px-1.5 py-0.5 text-left transition-colors hover:border-outline-variant/50 hover:bg-surface-container-high"
+                            :style="
+                              commitFileViewMode === 'tree'
+                                ? { paddingLeft: `${6 + (item.depth + 1) * 14}px` }
+                                : undefined
+                            "
+                            :title="gitFileDisplayPath(item.file)"
+                            @click.stop="handleViewDiff(row.commit.hash, item.file)"
+                          >
                             <span
                               :class="
                                 cn(
-                                  'shrink-0 truncate font-mono text-[11px] font-semibold leading-4 text-on-surface group-hover:text-primary',
-                                  file.status === 'DELETED' && 'text-on-surface-variant line-through',
+                                  'flex h-4 w-4 items-center justify-center rounded-[3px] font-mono text-[9px] font-black leading-none',
+                                  item.file.status === 'ADDED' && 'bg-status-running/10 text-status-running',
+                                  item.file.status === 'DELETED' && 'bg-status-error/10 text-status-error',
+                                  item.file.status === 'RENAMED' && 'bg-secondary/10 text-secondary',
+                                  item.file.status === 'UNTRACKED' && 'bg-primary/10 text-primary',
+                                  item.file.status === 'MODIFIED' &&
+                                    'bg-surface-container-highest text-on-surface-variant',
                                 )
                               "
+                              :title="fileLabel(item.file.status)"
                             >
-                              {{ gitFileName(file) }}
+                              {{ fileStatusCode(item.file.status) }}
                             </span>
-                            <span
-                              v-if="gitFileDirectory(file)"
-                              class="min-w-0 truncate text-[10px] leading-4 text-on-surface-variant/75"
-                            >
-                              {{ gitFileDirectory(file) }}
+                            <span class="flex min-w-0 items-baseline gap-1 overflow-hidden">
+                              <span
+                                :class="
+                                  cn(
+                                    'shrink-0 truncate font-mono text-[11px] font-semibold leading-4 text-on-surface group-hover:text-primary',
+                                    item.file.status === 'DELETED' && 'text-on-surface-variant line-through',
+                                  )
+                                "
+                              >
+                                {{ gitFileName(item.file) }}
+                              </span>
+                              <span
+                                v-if="commitFileViewMode === 'list' && gitFileDirectory(item.file)"
+                                class="min-w-0 truncate text-[10px] leading-4 text-on-surface-variant/75"
+                              >
+                                {{ gitFileDirectory(item.file) }}
+                              </span>
                             </span>
-                          </span>
-                          <span class="whitespace-nowrap font-mono text-[9px] font-semibold">
-                            <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
-                            <span v-if="file.deletions > 0" class="ml-1 text-status-error">-{{ file.deletions }}</span>
-                          </span>
-                        </button>
+                            <span class="whitespace-nowrap font-mono text-[9px] font-semibold">
+                              <span v-if="item.file.additions > 0" class="text-status-running"
+                                >+{{ item.file.additions }}</span
+                              >
+                              <span v-if="item.file.deletions > 0" class="ml-1 text-status-error"
+                                >-{{ item.file.deletions }}</span
+                              >
+                            </span>
+                          </button>
+                        </template>
                       </div>
                     </div>
                   </template>

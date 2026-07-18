@@ -382,6 +382,51 @@ return `${firstSize}px ${separatorSize}px minmax(0, 0.71fr)`;
 
 **Dot Alignment Rule**: Commit rows must use the same pixel row-height constant as the SVG coordinate system. Do not rely on a rem-based utility such as `h-8` for Git graph rows while SVG nodes use numeric pixel coordinates, because root font size, zoom, or rendered content can make dots drift above or below their matching commit row. Set the row height from the shared `rowHeight` value and compute node `y` values from that same value plus the row gap.
 
+**Expanded Details Rule**: When multiple commit rows can show inline changed-file blocks, store each block's files, loading state, error, and request generation by commit hash. For a collapsible tree, keep only explicitly collapsed directory paths in a second record keyed by commit hash plus normalized `/` path; a missing path means expanded. Build one reactive visible-item list from that state and use it for template rows, the capped inline height, every later graph row's vertical offset, and the SVG canvas height. Accumulate that height in visible commit order after placing each row; do not use a single selected-row offset. Closing a block, replacing the project, unmounting the component, or pruning unavailable commits must remove the matching request and directory state so an old file-list response cannot reopen or overwrite state.
+
+The list/tree choice is a renderer-session user preference rather than per-instance state: initialize each `GitTab` ref from one module-scoped `"list" | "tree"` value and update that value from the view-toggle action. Do not reset it for project replacement, and do not put this purely visual preference in Pinia, project data, preload storage, or `localStorage`; a renderer reload starts from the list default.
+
+```ts
+let expandedHeight = 0;
+for (const [index, commit] of visibleCommits.entries()) {
+  rows.push({ commit, y: index * rowPitch + rowHeight / 2 + expandedHeight });
+  expandedHeight += expandedCommitFilesHeight(commit.hash);
+}
+```
+
+```ts
+let rememberedCommitFileViewMode: "list" | "tree" = "list";
+const commitFileViewMode = ref(rememberedCommitFileViewMode);
+
+const toggleCommitFileViewMode = () => {
+  commitFileViewMode.value = commitFileViewMode.value === "list" ? "tree" : "list";
+  rememberedCommitFileViewMode = commitFileViewMode.value;
+};
+```
+
+This keeps graph nodes, paths, row DOM, and expandable content in one vertical coordinate model even while file lists load asynchronously or switch between list and tree display modes.
+
+```ts
+const isDirectoryExpanded = (commitHash: string, path: string) => collapsedDirectories[commitHash]?.[path] !== false;
+const visibleItems = commitFileDisplayItems(commitHash);
+const height = Math.min(240, visibleItems.length * 24 + 10);
+```
+
+Do not recursively render all directory descendants and calculate height from that unfiltered list; a collapsed parent must remove every descendant from the same list that drives layout.
+
+Use VS Code-style compact folders for virtual directory chains: when a directory has no direct files and exactly one child directory, emit one directory row with the names joined by `\`. The compact row's key, tooltip, and collapse state must use the final normalized `/` path rather than its display label, and its children must be emitted from the final directory node at one deeper visible depth.
+
+Directory rows reserve a chevron and folder-icon column, while file rows begin with a status-icon column. Therefore, a tree-mode file row needs one additional indent unit beyond `item.depth`; otherwise a child file's status icon can appear level with its parent's folder icon even though the tree data depth is correct. Keep this as a visual-only offset so it does not affect visible-item counts or graph height.
+
+```ts
+while (directory.files.length === 0 && directory.directories.size === 1) {
+  const [childName, childDirectory] = [...directory.directories.entries()][0]!;
+  compactName += ` \\ ${childName}`;
+  compactPath = `${compactPath}/${childName}`;
+  directory = childDirectory;
+}
+```
+
 **Example**:
 
 ```vue
