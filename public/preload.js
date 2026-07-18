@@ -1712,7 +1712,10 @@ async function readGitCommitAuthorAvatar(projectPath, commitHash) {
     return null;
   }
 
-  const [remotes, upstream] = await Promise.all([readGitRemotesAsync(repositoryPath), readGitUpstreamAsync(repositoryPath)]);
+  const [remotes, upstream] = await Promise.all([
+    readGitRemotesAsync(repositoryPath),
+    readGitUpstreamAsync(repositoryPath),
+  ]);
   const repository = selectGitHubRepository(remotes, upstream);
   if (!repository) {
     return null;
@@ -3414,7 +3417,7 @@ async function readGitCommits(projectPath, options = {}) {
     "--decorate=short",
     `--max-count=${limit + 1}`,
     `--skip=${skip}`,
-    `--pretty=format:%H${gitCommitFieldSeparator}%p${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
+    `--pretty=format:%H${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
     "--date=iso-strict",
   ]);
 

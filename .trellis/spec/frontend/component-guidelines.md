@@ -489,6 +489,7 @@ while (directory.files.length === 0 && directory.directories.size === 1) {
 - Let tooltip width fit content with a max-width cap. Do not add a fixed/minimum width that leaves empty space for short commit messages.
 - Positioning should stay simple: default above the cursor/row, fall below only when there is not enough top space. Avoid complex left/right flipping that can make the tooltip appear far from the hovered commit.
 - When placing above, prefer CSS transform based on the tooltip's real height, such as `transform: translateY(-100%)`, instead of subtracting an estimated height from `top`.
+- In a height-constrained tooltip, make the shell and content area flex columns with `min-h-0`; keep the header, title, change summary, and refs non-shrinking, and let only the markdown body use the remaining height with `overflow-y-auto`. With a long body at compact max-height, assert that the body scrolls and the summary remains fully inside the panel bounds.
 - Clear pending timers and visible tooltip state on mouse leave and component unmount.
 - Normalize common commit formats before rendering the tooltip body:
   - Subject-only commit: show the subject as the tooltip title and omit the body area.

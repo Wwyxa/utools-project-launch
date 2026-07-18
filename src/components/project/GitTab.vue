@@ -3905,16 +3905,16 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             </button>
           </div>
         </div>
-        <div class="min-w-0 px-3 py-2">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-3 py-2">
           <p
             v-if="commitTooltipTitle(commitTooltip.commit)"
-            class="break-words text-[12px] font-bold leading-5 text-on-surface"
+            class="shrink-0 break-words text-[12px] font-bold leading-5 text-on-surface"
           >
             {{ commitTooltipTitle(commitTooltip.commit) }}
           </p>
           <div
             v-if="commitTooltipBody(commitTooltip.commit)"
-            :class="cn('commit-tooltip-body themed-scrollbar max-h-64 overflow-y-auto', commitTooltipTitle(commitTooltip.commit) && 'mt-1')"
+            :class="cn('commit-tooltip-body themed-scrollbar min-h-0 max-h-64 flex-1 overflow-y-auto', commitTooltipTitle(commitTooltip.commit) && 'mt-1')"
           >
             <div
               class="memo-rendered commit-tooltip-rendered block text-on-surface"
@@ -3922,7 +3922,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             ></div>
           </div>
           <div
-            class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-border-subtle/80 pt-2 text-[10px] font-medium leading-4"
+            class="mt-2 flex shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-border-subtle/80 pt-2 text-[10px] font-medium leading-4"
             :aria-busy="commitTooltipSummary(commitTooltip.commit).state === 'loading'"
             aria-live="polite"
           >
@@ -3940,7 +3940,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           </div>
           <div
             v-if="refsForCommit(commitTooltip.commit.refs).length"
-            class="mt-2 flex flex-wrap gap-1"
+            class="mt-2 flex shrink-0 flex-wrap gap-1"
           >
             <span
               v-for="refName in refsForCommit(commitTooltip.commit.refs)"
