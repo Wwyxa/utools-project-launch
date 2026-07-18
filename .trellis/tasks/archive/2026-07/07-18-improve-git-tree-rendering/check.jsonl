@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review dense Git badge layout, Lucide usage, and interaction preservation."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Review semantic tokens, accessibility, build checks, and compact-window behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review component-local typing and unchanged Git bridge contract."}
+{"file":".trellis/tasks/archive/2026-06/06-07-git-tree-rendering/research/vscode-git-graph-rendering.md","reason":"Review continuous graph and lane-layout regression risks against prior project research."}

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"GitTab.vue component structure, semantic Tailwind styling, and Lucide icon conventions."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend validation, semantic token, accessibility, and dense-panel constraints."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Component-local visual union and existing Git commit metadata boundary rules."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Require one shared ref-presentation helper instead of duplicate row and tooltip classification."}
+{"file":".trellis/tasks/archive/2026-06/06-07-git-tree-rendering/research/vscode-git-graph-rendering.md","reason":"Existing project-local reference for continuous SVG graph rendering and lane behavior."}
