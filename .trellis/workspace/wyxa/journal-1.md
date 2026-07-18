@@ -1645,3 +1645,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 48: 完善 Git 提交悬浮详情
+
+**Date**: 2026-07-18
+**Task**: 完善 Git 提交悬浮详情
+**Branch**: `master`
+
+### Summary
+
+实现 GitHub 作者头像回退、重构提交 tooltip 排版与单行变更摘要，并优化 refs 和长 Markdown 正文展示。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e074497` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
