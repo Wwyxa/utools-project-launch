@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review dense Git history layout, accessible controls, and interaction safety in the touched component."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify local expansion state cannot leak stale async results and existing Git store boundaries remain intact."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply the repository's frontend type-check, build, and visual-regression expectations."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check that local unions and records are explicit and no shared Git model is duplicated or weakened."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Review that the path-tree transformation reuses local patterns and does not create needless abstraction."}

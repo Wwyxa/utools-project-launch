@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Preserve the GitTab component's compact, accessible icon controls, shared SVG graph layout, and dense-panel interaction conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep expansion and view mode as GitTab-local UI state while preserving store-mediated Git file and diff reads."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply required Vue UI validation, semantic styling, and icon-only accessibility checks."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Use typed local UI records and the existing shared ProjectGitFileChange model without widening bridge contracts."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check existing tree and Git patterns before adding the one-off display transformation."}
