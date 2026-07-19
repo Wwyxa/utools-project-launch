@@ -30,10 +30,16 @@ const props = defineProps<{
 const store = useStore();
 const t = useI18n();
 type TabId = "info" | "scripts" | "automation" | "files" | "git" | "memo";
+type GitTabExpose = {
+  refreshActiveRepository: () => Promise<void>;
+  isRefreshRunning: () => boolean;
+};
 const activeTab = ref<TabId>("scripts");
 const fileOpenRequest = ref("");
 const detailsRootRef = ref<HTMLElement | null>(null);
 const tabListRef = ref<HTMLElement | null>(null);
+const gitTabRef = ref<GitTabExpose | null>(null);
+const isManualRefreshRunning = ref(false);
 
 const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
   { id: "info", label: t.value.projectDetails.overview },
@@ -75,7 +81,11 @@ const statusToneClass = computed(() => {
   return "border-border-subtle bg-surface-container-low text-on-surface-variant";
 });
 const isRefreshingProject = computed(
-  () => Boolean(store.gitRefreshing[props.project.id]) || Boolean(store.gitStatusRefreshing[props.project.id]),
+  () =>
+    isManualRefreshRunning.value ||
+    Boolean(store.gitRefreshing[props.project.id]) ||
+    Boolean(store.gitStatusRefreshing[props.project.id]) ||
+    (activeTab.value === "git" && Boolean(gitTabRef.value?.isRefreshRunning())),
 );
 const refreshButtonLabel = computed(() => {
   if (isRefreshingProject.value) {
@@ -102,13 +112,22 @@ const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
 const handleRefresh = async () => {
   const projectId = props.project.id;
-  if (isUnavailable.value || store.gitRefreshing[projectId] || store.gitStatusRefreshing[projectId]) {
+  if (isUnavailable.value || isRefreshingProject.value) {
     return;
   }
 
-  await nextTick();
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  await store.refreshGitSnapshot(projectId);
+  isManualRefreshRunning.value = true;
+  try {
+    await nextTick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (activeTab.value === "git" && gitTabRef.value) {
+      await gitTabRef.value.refreshActiveRepository();
+    } else {
+      await store.refreshGitSnapshot(projectId);
+    }
+  } finally {
+    isManualRefreshRunning.value = false;
+  }
 };
 const handleDelete = () => {
   store.requestDeleteProject(props.project.id);
@@ -462,7 +481,7 @@ watch(
         @opened="handleFileOpened"
         @open-canceled="handleFileOpenCanceled"
       />
-      <GitTab v-if="activeTab === 'git'" :project="project" @open-file="handleOpenGitFile" />
+      <GitTab v-if="activeTab === 'git'" ref="gitTabRef" :project="project" @open-file="handleOpenGitFile" />
       <MemoTab v-if="activeTab === 'memo'" :project="project" :active="activeTab === 'memo'" />
     </div>
   </div>

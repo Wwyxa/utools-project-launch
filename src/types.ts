@@ -387,6 +387,130 @@ export interface ProjectGitCommitPage {
   lastRefreshedAt: string;
 }
 
+export type ProjectGitObjectFormat = "sha1" | "sha256";
+export type ProjectGitObjectId = string;
+
+export type ProjectGitWorkspaceOperation =
+  | "repository"
+  | "worktree-list"
+  | "worktree-status"
+  | "submodule-config"
+  | "submodule-index"
+  | "submodule-registration"
+  | "submodule-status";
+
+export interface ProjectGitWorkspaceFailure {
+  code:
+    | "git-unavailable"
+    | "not-a-repository"
+    | "unsupported-output"
+    | "invalid-output"
+    | "path-unavailable"
+    | "permission-denied"
+    | "timeout"
+    | "command-failed";
+  operation: ProjectGitWorkspaceOperation;
+  message: string;
+  exitCode?: number;
+}
+
+export interface ProjectGitWorkspaceSection<T> {
+  state: "ready" | "partial" | "unavailable";
+  entries: T[];
+  failure: ProjectGitWorkspaceFailure | null;
+}
+
+export interface ProjectGitHeadState {
+  kind: "branch" | "detached" | "unborn" | "bare" | "unknown";
+  ref: string | null;
+  name: string | null;
+  oid: ProjectGitObjectId | null;
+}
+
+export interface ProjectGitChangeCounts {
+  stagedEntries: number;
+  unstagedEntries: number;
+  untrackedEntries: number;
+  conflictedEntries: number;
+}
+
+export interface ProjectGitUpstreamState {
+  ref: string;
+  ahead: number;
+  behind: number;
+}
+
+export interface ProjectGitWorktreeStatus extends ProjectGitChangeCounts {
+  upstream: ProjectGitUpstreamState | null;
+}
+
+export interface ProjectGitWorktreeSummary {
+  kind: "main" | "linked" | "bare";
+  path: string;
+  pathAvailable: boolean;
+  objectFormat: ProjectGitObjectFormat;
+  head: ProjectGitHeadState;
+  locked: boolean;
+  lockReason: string | null;
+  prunable: boolean;
+  prunableReason: string | null;
+  status: ProjectGitWorktreeStatus | null;
+  failure: ProjectGitWorkspaceFailure | null;
+}
+
+export interface ProjectGitSubmoduleIndexStage {
+  stage: 1 | 2 | 3;
+  mode: string;
+  oid: ProjectGitObjectId;
+}
+
+export type ProjectGitSubmoduleIndexState =
+  | { kind: "recorded"; recordedOid: ProjectGitObjectId; conflictStages: [] }
+  | { kind: "conflicted"; recordedOid: null; conflictStages: ProjectGitSubmoduleIndexStage[] }
+  | { kind: "missing" | "not-gitlink"; recordedOid: null; conflictStages: [] };
+
+export interface ProjectGitSubmoduleConfigValue {
+  declared: string | null;
+  local: string | null;
+  effective: string | null;
+}
+
+export interface ProjectGitSubmoduleSummary {
+  name: string | null;
+  path: string;
+  pathAvailable: boolean;
+  configuration: "configured" | "index-only" | "invalid";
+  url: ProjectGitSubmoduleConfigValue;
+  branch: ProjectGitSubmoduleConfigValue;
+  index: ProjectGitSubmoduleIndexState;
+  registration: "initialized" | "uninitialized" | "unknown";
+  checkout: "available" | "missing" | "not-repository" | "unreadable";
+  objectFormat: ProjectGitObjectFormat | null;
+  head: ProjectGitHeadState;
+  commitMismatch: boolean | null;
+  status: ProjectGitChangeCounts | null;
+  failure: ProjectGitWorkspaceFailure | null;
+}
+
+export interface ProjectGitWorkspaceSnapshot {
+  repositoryPath: string;
+  objectFormat: ProjectGitObjectFormat | null;
+  worktrees: ProjectGitWorkspaceSection<ProjectGitWorktreeSummary>;
+  submodules: ProjectGitWorkspaceSection<ProjectGitSubmoduleSummary>;
+  lastRefreshedAt: string;
+}
+
+export type ProjectGitRepositoryTarget =
+  | { kind: "main" }
+  | { kind: "worktree"; path: string }
+  | { kind: "submodule"; path: string };
+
+export interface ProjectGitRepositoryContext {
+  target: ProjectGitRepositoryTarget;
+  repositoryPath: string;
+  contextKey: string;
+}
+
 export interface ProjectScriptFormValue {
   id: string;
   name: string;
@@ -569,6 +693,8 @@ export interface ProjectBridgeGitStatusSnapshot extends ProjectGitStatusSnapshot
 
 export interface ProjectBridgeGitCommitPage extends ProjectGitCommitPage {}
 
+export interface ProjectBridgeGitWorkspaceSnapshot extends ProjectGitWorkspaceSnapshot {}
+
 export type ProjectFileKind = "file" | "directory";
 
 export interface ProjectFileTreeEntry {
@@ -671,6 +797,7 @@ export interface ProjectBridge {
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;
   listProjectSubdirectories(projectPath: string): Promise<string[]>;
   readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>;
+  readGitWorkspaceSnapshot(projectPath: string): Promise<ProjectBridgeGitWorkspaceSnapshot>;
   readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>;
   readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>;
   readGitFileDiff(

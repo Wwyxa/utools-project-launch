@@ -12,6 +12,7 @@ import type {
   EnvironmentToolKey,
   ProjectBridge,
   ProjectBridgeGitCommitPage,
+  ProjectBridgeGitWorkspaceSnapshot,
   ProjectConfigFile,
   ProjectGitFileChange,
   ProjectGitFileDiffOptions,
@@ -358,6 +359,22 @@ const emptyGitCommitPage = (): ProjectBridgeGitCommitPage => {
   };
 };
 
+const unavailableGitWorkspaceSnapshot = (): ProjectBridgeGitWorkspaceSnapshot => {
+  const failure = {
+    code: "unsupported-output" as const,
+    operation: "repository" as const,
+    message: "浏览器预览无法读取本地 Git 工作区关系。",
+  };
+
+  return {
+    repositoryPath: "",
+    objectFormat: null,
+    worktrees: { state: "unavailable", entries: [], failure },
+    submodules: { state: "unavailable", entries: [], failure },
+    lastRefreshedAt: new Date().toISOString(),
+  };
+};
+
 const unavailableGitAction = (message = "浏览器预览无法执行 Git 写操作。"): ProjectGitActionResult => ({
   ok: false,
   message,
@@ -501,6 +518,9 @@ const fallbackBridge: ProjectBridge = {
   },
   async readGitSnapshot(): Promise<ProjectBridgeGitSnapshot> {
     return emptyGitSnapshot();
+  },
+  async readGitWorkspaceSnapshot(): Promise<ProjectBridgeGitWorkspaceSnapshot> {
+    return unavailableGitWorkspaceSnapshot();
   },
   async readGitStatusSnapshot(): Promise<ProjectBridgeGitStatusSnapshot> {
     return emptyGitStatusSnapshot();

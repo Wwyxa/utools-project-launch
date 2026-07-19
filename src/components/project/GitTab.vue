@@ -1,7 +1,14 @@
 <script lang="ts">
+import type { ProjectGitRepositoryTarget } from "../../types";
+
 type CommitFileViewMode = "list" | "tree";
 
 let rememberedCommitFileViewMode: CommitFileViewMode = "list";
+const rememberedGitRepositoryTargets = new Map<string, ProjectGitRepositoryTarget>();
+const rememberedRepositorySectionOpen = new Map<string, boolean>();
+const repositorySectionChoiceMade = new Set<string>();
+const repositorySectionAutoOpened = new Set<string>();
+const commitDraftsByContext = new Map<string, string>();
 </script>
 
 <script setup lang="ts">
@@ -36,6 +43,10 @@ import {
   ListTree,
   Minus,
   Plus,
+  MoreHorizontal,
+  FolderOpen,
+  SquareTerminal,
+  ExternalLink,
   Undo,
 } from "lucide-vue-next";
 import {
@@ -48,6 +59,7 @@ import {
   type ProjectGitFileChange,
   type ProjectGitFileDiffResult,
   type ProjectGitRemoteSummary,
+  type ProjectGitRepositoryTarget,
 } from "../../types";
 import AiReasoningResult from "./AiReasoningResult.vue";
 import {
@@ -63,6 +75,7 @@ import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useResizableSplit } from "../../composables/useResizableSplit";
+import { gitRepositoryTargetsEqual } from "../../lib/gitRepositoryTarget";
 import ProjectActionDialog from "./ProjectActionDialog.vue";
 import GitDiffViewer from "./GitDiffViewer.vue";
 
@@ -73,7 +86,7 @@ type GitRemoteActionName = "fetch" | "pull" | "push";
 type RemoteDialogMode = "add" | "edit";
 type ActiveGitFileAction = { action: GitFileActionName; path: string };
 type WorktreeDiffScope = Exclude<ProjectGitDiffScope, "combined">;
-type WorktreeSelection = { path: string; scope: WorktreeDiffScope };
+type FileReviewSelection = { path: string; scope: WorktreeDiffScope };
 type RightContext = "review" | "history";
 type CommitReviewSelection = { commitHash: string; commitMessage: string; path: string };
 type ExpandedCommitFilesState = {
@@ -121,6 +134,23 @@ type AppActionDialog = {
   cancelLabel?: string;
   onConfirm: () => Promise<void> | void;
 };
+type GitRepositoryRow = {
+  key: string;
+  target: ProjectGitRepositoryTarget;
+  repositoryPath: string;
+  depth: 0 | 1;
+  name: string;
+  kindLabel: string;
+  branchLabel: string;
+  changeCount: number | null;
+  selectable: boolean;
+  selected: boolean;
+  health: "healthy" | "warning" | "unavailable";
+  statusText: string;
+  detailLines: string[];
+};
+type GitRepositoryMenuState = { row: GitRepositoryRow; x: number; y: number };
+type FloatingMenuPosition = { left: number; top: number };
 
 const props = defineProps<{
   project: Project;
@@ -134,6 +164,12 @@ const store = useStore();
 const t = useI18n();
 const splitContainerRef = ref<HTMLElement | null>(null);
 const filesPaneRef = ref<HTMLElement | null>(null);
+const activeRepositoryTarget = ref<ProjectGitRepositoryTarget>(
+  rememberedGitRepositoryTargets.get(props.project.id) || { kind: "main" },
+);
+const repositorySectionOpen = ref(rememberedRepositorySectionOpen.get(props.project.id) || false);
+const repositoryContextGeneration = ref(0);
+const repositoryMenu = ref<GitRepositoryMenuState | null>(null);
 const filesScrollRef = ref<HTMLDivElement | null>(null);
 const graphScrollRef = ref<HTMLDivElement | null>(null);
 const showCommitFilters = ref(false);
@@ -149,6 +185,8 @@ const openDatePickerKind = ref<"since" | "until" | null>(null);
 const datePickerMonth = ref(new Date());
 const isBranchMenuOpen = ref(false);
 const isRemoteMenuOpen = ref(false);
+const branchMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
+const remoteMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const isRemoteDialogOpen = ref(false);
 const remoteDialogMode = ref<RemoteDialogMode>("add");
 const remoteFormName = ref("");
@@ -204,9 +242,14 @@ const scheduleCommitMessageTextareaResize = () => {
   void nextTick(resizeCommitMessageTextarea);
 };
 
+const gitWorkspaceSnapshot = computed(() => store.gitWorkspaces[props.project.id]);
+const activeRepositoryContext = computed(() =>
+  store.resolveGitRepositoryContext(props.project.id, activeRepositoryTarget.value),
+);
+const snapshot = computed(() => store.gitSnapshotForRepository(props.project.id, activeRepositoryTarget.value));
 const canStageFile = (file: ProjectGitFileChange) => file.unstaged || (!file.staged && file.unstaged !== false);
 const canUnstageFile = (file: ProjectGitFileChange) => Boolean(file.staged);
-const files = computed(() => store.stagedFiles[props.project.id] || props.project.git?.files || []);
+const files = computed(() => snapshot.value?.files || []);
 const stageableFiles = computed(() => files.value.filter(canStageFile));
 const unstageableFiles = computed(() => files.value.filter(canUnstageFile));
 const discardableFiles = computed(() => files.value);
@@ -214,7 +257,7 @@ const stagedFiles = computed(() => files.value.filter((file) => file.staged));
 const stagedGroupOpen = ref(true);
 const unstagedGroupOpen = ref(true);
 const rightContext = ref<RightContext>("history");
-const worktreeSelection = ref<WorktreeSelection | null>(null);
+const worktreeSelection = ref<FileReviewSelection | null>(null);
 const worktreeDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingWorktreeDiff = ref(false);
 const commitReviewSelection = ref<CommitReviewSelection | null>(null);
@@ -236,7 +279,7 @@ const visibleWorktreeItems = computed(() =>
     group.open ? group.files.map((file) => ({ file, scope: group.scope })) : [],
   ),
 );
-const worktreeSelectionKey = (selection: WorktreeSelection) => `${selection.scope}:${selection.path}`;
+const worktreeSelectionKey = (selection: FileReviewSelection) => `${selection.scope}:${selection.path}`;
 const isWorktreeSelected = (path: string, scope: WorktreeDiffScope) =>
   worktreeSelection.value?.path === path && worktreeSelection.value.scope === scope;
 const hasStagedChanges = computed(() => stagedFiles.value.length > 0);
@@ -266,7 +309,7 @@ const commitSince = ref("");
 const commitUntil = ref("");
 const selectedCommitHashes = ref<string[]>([]);
 const commits = computed(() => {
-  const source = props.project.git?.commits || [];
+  const source = snapshot.value?.commits || [];
   const keyword = commitKeyword.value.trim().toLowerCase();
   const author = commitAuthor.value.trim().toLowerCase();
   const since = commitSince.value ? new Date(commitSince.value).getTime() : 0;
@@ -286,7 +329,6 @@ const commits = computed(() => {
     return true;
   });
 });
-const snapshot = computed(() => props.project.git);
 const topBarStatusText = computed(() => {
   const statusText = snapshot.value?.statusText || t.value.git.noRepo;
   const headHash = snapshot.value?.headHash;
@@ -309,9 +351,211 @@ const remoteStatusText = computed(() => {
   return "未配置 remote";
 });
 const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWriteRunning.value);
-const isGitSnapshotRefreshing = computed(() => Boolean(store.gitRefreshing[props.project.id]));
-const isGitStatusRefreshing = computed(() => Boolean(store.gitStatusRefreshing[props.project.id]));
+const isGitSnapshotRefreshing = computed(() => {
+  const context = activeRepositoryContext.value;
+  if (!context || context.target.kind === "main") return Boolean(store.gitRefreshing[props.project.id]);
+  return Boolean(store.gitRepositoryRefreshing[context.contextKey]);
+});
+const isGitStatusRefreshing = computed(() => {
+  const context = activeRepositoryContext.value;
+  if (!context || context.target.kind === "main") return Boolean(store.gitStatusRefreshing[props.project.id]);
+  return Boolean(store.gitRepositoryStatusRefreshing[context.contextKey]);
+});
 const isGitRefreshing = computed(() => isGitSnapshotRefreshing.value || isGitStatusRefreshing.value);
+const isGitWorkspaceRefreshing = computed(() => Boolean(store.gitWorkspaceRefreshing[props.project.id]));
+const gitWorkspaceRelatedCount = computed(() => {
+  const linkedWorktrees =
+    gitWorkspaceSnapshot.value?.worktrees.entries.filter((entry) => entry.kind === "linked").length || 0;
+  return linkedWorktrees + (gitWorkspaceSnapshot.value?.submodules.entries.length || 0);
+});
+
+const repositoryDisplayName = (repositoryPath: string, fallback: string) => {
+  const normalized = repositoryPath.replace(/[\\/]+$/, "");
+  return normalized.split(/[\\/]/).pop() || fallback;
+};
+
+const repositoryChangeCount = (
+  status: {
+    stagedEntries: number;
+    unstagedEntries: number;
+    untrackedEntries: number;
+    conflictedEntries: number;
+  } | null,
+) =>
+  status ? status.stagedEntries + status.unstagedEntries + status.untrackedEntries + status.conflictedEntries : null;
+
+const repositoryChangeDetail = (
+  status: {
+    stagedEntries: number;
+    unstagedEntries: number;
+    untrackedEntries: number;
+    conflictedEntries: number;
+  } | null,
+) =>
+  status
+    ? `变更：staged ${status.stagedEntries} · unstaged ${status.unstagedEntries} · untracked entries ${status.untrackedEntries} · conflicts ${status.conflictedEntries}`
+    : "变更：不可用";
+
+const repositoryUpstreamDetail = (upstream: { ref: string; ahead: number; behind: number } | null | undefined) =>
+  upstream ? `Upstream：${upstream.ref} · ahead ${upstream.ahead} · behind ${upstream.behind}` : "Upstream：未配置或不可用";
+
+const repositoryRows = computed<GitRepositoryRow[]>(() => {
+  const workspace = gitWorkspaceSnapshot.value;
+  const worktrees = workspace?.worktrees.entries || [];
+  const mainWorktree = worktrees.find((entry) => entry.kind === "main" || entry.kind === "bare");
+  const mainPath = mainWorktree?.path || workspace?.repositoryPath || props.project.path;
+  const mainSelectable = mainWorktree
+    ? mainWorktree.kind !== "bare" &&
+      mainWorktree.pathAvailable &&
+      !mainWorktree.prunable &&
+      mainWorktree.failure === null
+    : !workspace || Boolean(workspace.repositoryPath);
+  const mainStatusText =
+    mainWorktree?.failure?.message || (mainWorktree?.kind === "bare" ? "裸仓库不可作为工作区" : "主仓库");
+  const mainRow: GitRepositoryRow = {
+    key: `${props.project.id}:main`,
+    target: { kind: "main" },
+    repositoryPath: mainPath,
+    depth: 0,
+    name: repositoryDisplayName(mainPath, props.project.name),
+    kindLabel: "主仓库",
+    branchLabel:
+      mainWorktree?.head.name ||
+      (mainWorktree?.head.kind === "detached"
+        ? `HEAD @ ${mainWorktree.head.oid?.slice(0, 7) || "unknown"}`
+        : currentGitRefLabel.value),
+    changeCount: repositoryChangeCount(mainWorktree?.status || null),
+    selectable: mainSelectable,
+    selected: activeRepositoryTarget.value.kind === "main",
+    health: mainSelectable ? (mainWorktree?.locked ? "warning" : "healthy") : "unavailable",
+    statusText: mainWorktree?.locked ? mainWorktree.lockReason || "已锁定，可正常使用" : mainStatusText,
+    detailLines: [
+      `HEAD：${mainWorktree?.head.oid || snapshot.value?.headHash || "不可用"}`,
+      repositoryChangeDetail(mainWorktree?.status || null),
+      repositoryUpstreamDetail(mainWorktree?.status?.upstream),
+    ],
+  };
+
+  const submoduleRows = (workspace?.submodules.entries || []).map<GitRepositoryRow>((entry, index) => {
+    const selectable = entry.pathAvailable && entry.checkout === "available" && entry.failure === null;
+    const target = { kind: "submodule", path: entry.path } as const;
+    return {
+      key: `${props.project.id}:submodule:${entry.path}:${index}`,
+      target,
+      repositoryPath: entry.path,
+      depth: 1,
+      name: entry.name || repositoryDisplayName(entry.path, "submodule"),
+      kindLabel: "子模块",
+      branchLabel:
+        entry.head.name ||
+        (entry.head.kind === "detached" ? `HEAD @ ${entry.head.oid?.slice(0, 7) || "unknown"}` : entry.head.kind),
+      changeCount: repositoryChangeCount(entry.status),
+      selectable,
+      selected: gitRepositoryTargetsEqual(activeRepositoryTarget.value, target),
+      health: selectable ? (entry.commitMismatch ? "warning" : "healthy") : "unavailable",
+      statusText:
+        entry.failure?.message ||
+        (entry.commitMismatch ? "检出提交与父仓库记录不一致" : selectable ? "可用" : `检出状态：${entry.checkout}`),
+      detailLines: [
+        `初始化：${entry.registration}`,
+        `URL：${entry.url.declared || entry.url.local || entry.url.effective || "未配置"}`,
+        `配置分支：${entry.branch.declared || entry.branch.local || entry.branch.effective || "未配置"}`,
+        `父仓库记录：${entry.index.recordedOid || entry.index.kind}`,
+        `检出提交：${entry.head.oid || "不可用"}`,
+        repositoryChangeDetail(entry.status),
+      ],
+    };
+  });
+
+  const linkedRows = worktrees
+    .filter((entry) => entry.kind === "linked")
+    .map<GitRepositoryRow>((entry, index) => {
+      const selectable = entry.pathAvailable && !entry.prunable && entry.failure === null;
+      const target = { kind: "worktree", path: entry.path } as const;
+      return {
+        key: `${props.project.id}:worktree:${entry.path}:${index}`,
+        target,
+        repositoryPath: entry.path,
+        depth: 0,
+        name: repositoryDisplayName(entry.path, "worktree"),
+        kindLabel: "工作树",
+        branchLabel:
+          entry.head.name ||
+          (entry.head.kind === "detached" ? `HEAD @ ${entry.head.oid?.slice(0, 7) || "unknown"}` : entry.head.kind),
+        changeCount: repositoryChangeCount(entry.status),
+        selectable,
+        selected: gitRepositoryTargetsEqual(activeRepositoryTarget.value, target),
+        health: selectable ? (entry.locked ? "warning" : "healthy") : "unavailable",
+        statusText:
+          entry.failure?.message ||
+          (entry.prunable
+            ? entry.prunableReason || "可清理，路径不可用"
+            : entry.locked
+              ? entry.lockReason || "已锁定，可正常使用"
+              : "可用"),
+        detailLines: [
+          `HEAD：${entry.head.oid || "不可用"}`,
+          repositoryChangeDetail(entry.status),
+          repositoryUpstreamDetail(entry.status?.upstream),
+        ],
+      };
+    });
+
+  return [mainRow, ...submoduleRows, ...linkedRows];
+});
+
+const selectedRepositoryRow = computed(
+  () => repositoryRows.value.find((row) => row.selected) || repositoryRows.value[0],
+);
+
+const repositoryMenuStyle = computed(() => {
+  if (!repositoryMenu.value) return {};
+  const width = 208;
+  const viewportWidth = globalThis.window?.innerWidth || 1024;
+  const viewportHeight = globalThis.window?.innerHeight || 768;
+  return {
+    left: `${Math.max(8, Math.min(repositoryMenu.value.x, viewportWidth - width - 8))}px`,
+    top: `${Math.max(8, Math.min(repositoryMenu.value.y, viewportHeight - 320))}px`,
+    maxHeight: "calc(100vh - 1rem)",
+  };
+});
+
+const positionFloatingMenu = (trigger: HTMLElement, width: number, estimatedHeight: number): FloatingMenuPosition => {
+  const rect = trigger.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const left = Math.max(8, Math.min(rect.left, viewportWidth - width - 8));
+  const belowTop = rect.bottom + 6;
+  const top = belowTop + estimatedHeight <= viewportHeight - 8 ? belowTop : Math.max(8, rect.top - estimatedHeight - 6);
+  return { left, top };
+};
+
+const floatingMenuStyle = (position: FloatingMenuPosition, maxHeight = "calc(100vh - 1rem)") => ({
+  left: `${position.left}px`,
+  top: `${position.top}px`,
+  maxHeight,
+});
+
+const toggleRepositorySection = () => {
+  repositorySectionOpen.value = !repositorySectionOpen.value;
+  rememberedRepositorySectionOpen.set(props.project.id, repositorySectionOpen.value);
+  repositorySectionChoiceMade.add(props.project.id);
+};
+
+const refreshActiveRepository = async () => {
+  const results = await Promise.allSettled([
+    store.refreshGitSnapshot(props.project.id, { force: true }, activeRepositoryTarget.value),
+    store.refreshGitWorkspace(props.project.id, { force: true }),
+  ]);
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failure) {
+    setGitActionResult("error", failure.reason instanceof Error ? failure.reason.message : "刷新 Git 仓库失败。");
+  }
+};
+
+const isRefreshRunning = () => isGitRefreshing.value || isGitWorkspaceRefreshing.value;
+
+defineExpose({ refreshActiveRepository, isRefreshRunning });
 
 // 全局统一 Loading 状态栏
 const globalLoadingMessage = computed(() => {
@@ -368,8 +612,13 @@ const globalLoadingBorderClass = computed(() => {
   return "border-primary/30";
 });
 
-const repositoryPath = computed(() => snapshot.value?.repositoryPath || props.project.path);
-const isLoadingMore = ref(false);
+const repositoryPath = computed(
+  () => snapshot.value?.repositoryPath || activeRepositoryContext.value?.repositoryPath || props.project.path,
+);
+const isLoadingMore = computed(() => {
+  const context = activeRepositoryContext.value;
+  return Boolean(context && store.gitRepositoryLoadingMore[context.contextKey]);
+});
 const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingDiff = ref(false);
 const isAiDialogGenerating = computed(() => aiDialogState.value === "loading");
@@ -463,12 +712,17 @@ const closeFloatingControls = () => {
   isAiModeMenuOpen.value = false;
   isBranchMenuOpen.value = false;
   isRemoteMenuOpen.value = false;
+  repositoryMenu.value = null;
   openDatePickerKind.value = null;
   commitContextMenu.value = null;
 };
 
 const hasFloatingControlsOpen = () =>
-  isAiModeMenuOpen.value || isBranchMenuOpen.value || isRemoteMenuOpen.value || Boolean(openDatePickerKind.value);
+  isAiModeMenuOpen.value ||
+  isBranchMenuOpen.value ||
+  isRemoteMenuOpen.value ||
+  Boolean(repositoryMenu.value) ||
+  Boolean(openDatePickerKind.value);
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (event.detail.handled) return;
@@ -506,6 +760,98 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   }
 };
 
+const clearRepositoryBoundState = () => {
+  repositoryContextGeneration.value += 1;
+  diffRequestGeneration += 1;
+  commitFilesContextGeneration += 1;
+  commitTooltipDetailsContextGeneration += 1;
+  closeFloatingControls();
+  isRemoteDialogOpen.value = false;
+  isAiDialogOpen.value = false;
+  confirmationDialog.value = null;
+  worktreeSelection.value = null;
+  worktreeDiff.value = null;
+  isLoadingWorktreeDiff.value = false;
+  commitReviewSelection.value = null;
+  selectedDiff.value = null;
+  isLoadingDiff.value = false;
+  rightContext.value = "history";
+  selectedCommitHashes.value = [];
+  expandedCommitFiles.value = {};
+  expandedCommitDirectories.value = {};
+  commitTooltipDetails.value = {};
+  hideCommitTooltip();
+  commitContextMenu.value = null;
+  aiDialogResult.value = createAiReasoningStreamState();
+  aiDialogMessage.value = "";
+  aiDialogNotice.value = "";
+  aiDialogState.value = "idle";
+  commitMessageAiResult.value = createAiReasoningStreamState();
+  commitMessageAiState.value = "idle";
+  setGitActionResult("idle", "");
+};
+
+const selectGitRepository = (row: GitRepositoryRow) => {
+  if (!row.selectable || isAnyGitWriteRunning.value) return;
+  const nextContext = store.resolveGitRepositoryContext(props.project.id, row.target);
+  if (!nextContext) {
+    setGitActionResult("warning", "仓库状态已变化，请刷新后重试。");
+    return;
+  }
+  if (gitRepositoryTargetsEqual(activeRepositoryTarget.value, nextContext.target)) {
+    repositoryMenu.value = null;
+    return;
+  }
+
+  const currentContext = activeRepositoryContext.value;
+  if (currentContext) commitDraftsByContext.set(currentContext.contextKey, commitMessage.value);
+  clearRepositoryBoundState();
+  activeRepositoryTarget.value = nextContext.target;
+  rememberedGitRepositoryTargets.set(props.project.id, nextContext.target);
+  commitMessage.value = commitDraftsByContext.get(nextContext.contextKey) || "";
+  scheduleCommitMessageTextareaResize();
+  if (!store.gitSnapshotForRepository(props.project.id, nextContext.target)) {
+    void store.refreshGitSnapshot(props.project.id, { force: true }, nextContext.target);
+  }
+};
+
+const openRepositoryMenu = (event: MouseEvent, row: GitRepositoryRow) => {
+  event.stopPropagation();
+  closeFloatingControls();
+  repositoryMenu.value = { row, x: event.clientX, y: event.clientY };
+};
+
+const toggleBranchMenu = (event: MouseEvent) => {
+  const shouldOpen = !isBranchMenuOpen.value;
+  closeFloatingControls();
+  if (!shouldOpen) return;
+  branchMenuPosition.value = positionFloatingMenu(event.currentTarget as HTMLElement, 176, 256);
+  isBranchMenuOpen.value = true;
+};
+
+const toggleRemoteMenu = (event: MouseEvent) => {
+  const shouldOpen = !isRemoteMenuOpen.value;
+  closeFloatingControls();
+  if (!shouldOpen) return;
+  remoteMenuPosition.value = positionFloatingMenu(event.currentTarget as HTMLElement, 288, 320);
+  isRemoteMenuOpen.value = shouldOpen;
+};
+
+const runRepositoryExternalAction = (action: "editor" | "terminal" | "folder") => {
+  const row = repositoryMenu.value?.row;
+  repositoryMenu.value = null;
+  if (!row?.selectable) return;
+  if (action === "editor") void store.openGitRepositoryInEditor(props.project.id, row.target);
+  else if (action === "terminal") void store.openGitRepositoryInTerminal(props.project.id, row.target);
+  else void store.showGitRepositoryInFolder(props.project.id, row.target);
+};
+
+const copyRepositoryPath = () => {
+  const repositoryPath = repositoryMenu.value?.row.repositoryPath || "";
+  repositoryMenu.value = null;
+  void copyText(repositoryPath);
+};
+
 const handleRightContextKeydown = async (event: KeyboardEvent) => {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
@@ -533,6 +879,7 @@ const remoteActionTitle = (action: GitRemoteActionName) => {
 
 const executeGitRemoteAction = async (action: GitRemoteActionName) => {
   if (isAnyGitWriteRunning.value) return;
+  isRemoteMenuOpen.value = false;
   if (!hasUpstream.value) {
     setGitActionResult("warning", "当前分支未设置 upstream，无法执行远程操作。");
     return;
@@ -544,10 +891,10 @@ const executeGitRemoteAction = async (action: GitRemoteActionName) => {
   try {
     const result =
       action === "fetch"
-        ? await store.fetchGitRemote(props.project.id)
+        ? await store.fetchGitRemote(props.project.id, activeRepositoryTarget.value)
         : action === "pull"
-          ? await store.pullGitRemote(props.project.id)
-          : await store.pushGitRemote(props.project.id);
+          ? await store.pullGitRemote(props.project.id, activeRepositoryTarget.value)
+          : await store.pushGitRemote(props.project.id, activeRepositoryTarget.value);
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法执行远程 Git 操作。");
       return;
@@ -614,8 +961,8 @@ const submitRemoteDialog = async () => {
   try {
     const result =
       remoteDialogMode.value === "add"
-        ? await store.addGitRemote(props.project.id, name, url)
-        : await store.setGitRemoteUrl(props.project.id, name, url);
+        ? await store.addGitRemote(props.project.id, name, url, activeRepositoryTarget.value)
+        : await store.setGitRemoteUrl(props.project.id, name, url, activeRepositoryTarget.value);
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法更新 remote。");
       return;
@@ -637,7 +984,7 @@ const executeRemoveRemote = async (remoteName: string) => {
   setGitActionResult("loading", `正在删除 remote：${remoteName}...`);
   await waitForVisualFeedback();
   try {
-    const result = await store.removeGitRemote(props.project.id, remoteName);
+    const result = await store.removeGitRemote(props.project.id, remoteName, activeRepositoryTarget.value);
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法删除 remote。");
       return;
@@ -779,10 +1126,10 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
     const paths = targetFiles.map((file) => file.path);
     const result =
       action === "stage"
-        ? await store.stageGitFiles(props.project.id, paths, { all: true })
+        ? await store.stageGitFiles(props.project.id, paths, { all: true }, activeRepositoryTarget.value)
         : action === "unstage"
-          ? await store.unstageGitFiles(props.project.id, paths, { all: true })
-          : await store.discardGitFiles(props.project.id, paths, { all: true });
+          ? await store.unstageGitFiles(props.project.id, paths, { all: true }, activeRepositoryTarget.value)
+          : await store.discardGitFiles(props.project.id, paths, { all: true }, activeRepositoryTarget.value);
 
     bulkActionProgress.value.current = result?.count || totalFiles;
 
@@ -803,7 +1150,7 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
   }
 };
 
-const resolveVisibleSelection = (selection: WorktreeSelection | null) => {
+const resolveVisibleSelection = (selection: FileReviewSelection | null) => {
   if (!selection) return null;
   return visibleWorktreeItems.value.some((item) => item.file.path === selection.path && item.scope === selection.scope)
     ? selection
@@ -817,7 +1164,7 @@ const clearWorktreeReview = () => {
   isLoadingWorktreeDiff.value = false;
 };
 
-const loadWorktreeDiff = async (selection: WorktreeSelection) => {
+const loadWorktreeDiff = async (selection: FileReviewSelection) => {
   const generation = ++diffRequestGeneration;
   worktreeSelection.value = selection;
   commitReviewSelection.value = null;
@@ -825,7 +1172,12 @@ const loadWorktreeDiff = async (selection: WorktreeSelection) => {
   isLoadingWorktreeDiff.value = true;
   worktreeDiff.value = { path: selection.path, scope: selection.scope, diff: "" };
   try {
-    const result = await store.readGitFileDiff(props.project.id, selection.path, { scope: selection.scope });
+    const result = await store.readGitFileDiff(
+      props.project.id,
+      selection.path,
+      { scope: selection.scope },
+      activeRepositoryTarget.value,
+    );
     if (
       generation === diffRequestGeneration &&
       worktreeSelection.value &&
@@ -852,8 +1204,8 @@ const loadWorktreeDiff = async (selection: WorktreeSelection) => {
 const reconcileWorktreeSelection = async (
   action: GitFileActionName,
   file: ProjectGitFileChange,
-  sourceSelection: WorktreeSelection | null,
-  discardSuccessor: WorktreeSelection | null,
+  sourceSelection: FileReviewSelection | null,
+  discardSuccessor: FileReviewSelection | null,
 ) => {
   if (!sourceSelection || !isWorktreeSelected(file.path, sourceSelection.scope)) return;
   if (action === "discard") {
@@ -877,8 +1229,8 @@ const reconcileWorktreeSelection = async (
 const executeGitFileAction = async (
   action: GitFileActionName,
   file: ProjectGitFileChange,
-  sourceSelection: WorktreeSelection | null = null,
-  discardSuccessor: WorktreeSelection | null = null,
+  sourceSelection: FileReviewSelection | null = null,
+  discardSuccessor: FileReviewSelection | null = null,
 ) => {
   if (activeGitAction.value || isGitFileBusy(file)) return;
 
@@ -890,10 +1242,10 @@ const executeGitFileAction = async (
   try {
     const result =
       action === "stage"
-        ? await store.stageGitFile(props.project.id, file.path)
+        ? await store.stageGitFile(props.project.id, file.path, activeRepositoryTarget.value)
         : action === "unstage"
-          ? await store.unstageGitFile(props.project.id, file.path)
-          : await store.discardGitFile(props.project.id, file.path);
+          ? await store.unstageGitFile(props.project.id, file.path, activeRepositoryTarget.value)
+          : await store.discardGitFile(props.project.id, file.path, activeRepositoryTarget.value);
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法执行 Git 操作。");
       return;
@@ -971,7 +1323,7 @@ const handleCommitStaged = async () => {
   setGitActionResult("loading", "正在提交 staged 变更...");
   await waitForVisualFeedback();
   try {
-    const result = await store.commitGitStaged(props.project.id, message);
+    const result = await store.commitGitStaged(props.project.id, message, activeRepositoryTarget.value);
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法提交。");
       return;
@@ -1003,7 +1355,7 @@ const executeSwitchBranch = async (branchName: string, options: { force?: boolea
   setGitActionResult("loading", options.force ? `正在强制切换到 ${branchName}...` : `正在切换到 ${branchName}...`);
   await waitForVisualFeedback();
   try {
-    const result = await store.switchGitBranch(props.project.id, branchName, options);
+    const result = await store.switchGitBranch(props.project.id, branchName, options, activeRepositoryTarget.value);
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法切换分支。");
       return;
@@ -1087,7 +1439,7 @@ const executeCheckoutCommit = async (commit: ProjectGitCommitSummary, options: {
   );
   await waitForVisualFeedback();
   try {
-    const result = await store.checkoutGitCommit(props.project.id, commit.hash, options);
+    const result = await store.checkoutGitCommit(props.project.id, commit.hash, options, activeRepositoryTarget.value);
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法切换提交。");
       return;
@@ -1236,8 +1588,10 @@ const buildGitAiDiffContext = async (
   return { content, truncated };
 };
 
-const workingTreeDiffContext = () =>
-  buildGitAiDiffContext(snapshot.value?.files || [], (file) => store.readGitFileDiff(props.project.id, file.path));
+const workingTreeDiffContext = (target: ProjectGitRepositoryTarget) =>
+  buildGitAiDiffContext(snapshot.value?.files || [], (file) =>
+    store.readGitFileDiff(props.project.id, file.path, undefined, target),
+  );
 
 const formatDiffContextSection = (title: string, diffContext: { content: string; truncated: boolean } | null) => {
   if (!diffContext) {
@@ -1250,8 +1604,8 @@ const formatDiffContextSection = (title: string, diffContext: { content: string;
   return `${title}：\n${diffContext.content}${truncatedNote}`;
 };
 
-const buildCommitMessagePrompt = async () => {
-  const diffResult = await store.readGitCommitMessageDiff(props.project.id);
+const buildCommitMessagePrompt = async (target: ProjectGitRepositoryTarget) => {
+  const diffResult = await store.readGitCommitMessageDiff(props.project.id, target);
   if (!diffResult) {
     return { ok: false, prompt: "", message: "当前项目不可用，无法读取 Git diff。" };
   }
@@ -1275,40 +1629,77 @@ const generateCommitMessage = async () => {
     return;
   }
 
-  commitMessageAiResult.value = createAiReasoningStreamState();
+  const originContext = activeRepositoryContext.value;
+  if (!originContext) {
+    setGitActionResult("warning", "当前仓库不可用，无法生成 commit message。");
+    return;
+  }
+  const originTarget = originContext.target;
+  const originContextKey = originContext.contextKey;
+  const originGeneration = repositoryContextGeneration.value;
+  let originResult = createAiReasoningStreamState();
+  commitMessageAiResult.value = originResult;
   commitMessageAiState.value = "loading";
   await waitForVisualFeedback();
-  const promptResult = await buildCommitMessagePrompt();
+  const promptResult = await buildCommitMessagePrompt(originTarget);
   if (!promptResult.ok) {
-    setGitActionResult("warning", promptResult.message);
-    commitMessageAiState.value = "warning";
+    if (
+      repositoryContextGeneration.value === originGeneration &&
+      activeRepositoryContext.value?.contextKey === originContextKey
+    ) {
+      setGitActionResult("warning", promptResult.message);
+      commitMessageAiState.value = "warning";
+    }
     return;
   }
 
   await store.analyzeGitWithAiStream(props.project.id, promptResult.prompt, {
     onChunk: (chunk) => {
-      commitMessageAiResult.value = appendAiStreamChunk(commitMessageAiResult.value, chunk);
+      originResult = appendAiStreamChunk(originResult, chunk);
+      if (
+        repositoryContextGeneration.value === originGeneration &&
+        activeRepositoryContext.value?.contextKey === originContextKey
+      ) {
+        commitMessageAiResult.value = originResult;
+      }
     },
     onDone: (result) => {
       const finalResult = aiReasoningStateFromResult(result);
-      if (hasAiReasoningDisplay(finalResult) || !hasAiReasoningDisplay(commitMessageAiResult.value)) {
-        commitMessageAiResult.value = finalResult;
+      if (hasAiReasoningDisplay(finalResult) || !hasAiReasoningDisplay(originResult)) {
+        originResult = finalResult;
       }
-      const generated = aiReasoningCopyText(commitMessageAiResult.value).trim();
+      const generated = aiReasoningCopyText(originResult).trim();
+      const isOriginVisible =
+        repositoryContextGeneration.value === originGeneration &&
+        activeRepositoryContext.value?.contextKey === originContextKey;
       if (result.ok && generated) {
-        commitMessage.value = generated;
-        scheduleCommitMessageTextareaResize();
-        commitMessageAiState.value = "success";
+        commitDraftsByContext.set(originContextKey, generated);
+        if (isOriginVisible) {
+          commitMessageAiResult.value = originResult;
+          commitMessage.value = generated;
+          scheduleCommitMessageTextareaResize();
+          commitMessageAiState.value = "success";
+        }
         return;
       }
-      setGitActionResult("warning", result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 生成失败。");
-      commitMessageAiState.value = result.ok ? "warning" : "error";
+      if (isOriginVisible) {
+        setGitActionResult(
+          "warning",
+          result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 生成失败。",
+        );
+        commitMessageAiState.value = result.ok ? "warning" : "error";
+      }
     },
   });
 };
 
 const isGitActionRunning = computed(() => Boolean(activeGitAction.value));
-const isAnyGitWriteRunning = computed(() => Boolean(activeGitAction.value) || activeGitFileActions.value.length > 0);
+const isAnyGitWriteRunning = computed(
+  () =>
+    Boolean(activeGitAction.value) ||
+    activeGitFileActions.value.length > 0 ||
+    (store.gitWritesInProgress[props.project.id] || 0) > 0,
+);
 const isGitFileActionActive = (action: GitFileActionName, file: ProjectGitFileChange) =>
   activeGitFileActions.value.some((item) => item.action === action && item.path === file.path);
 const isGitFileBusy = (file: ProjectGitFileChange) =>
@@ -1410,7 +1801,7 @@ const selectedCommitHashSet = computed(() => new Set(selectedCommitHashes.value)
 const selectedCommitCount = computed(() => selectedCommitHashes.value.length);
 const manuallySelectedCommits = computed(() => {
   const selectedHashes = selectedCommitHashSet.value;
-  return (props.project.git?.commits || []).filter((commit) => selectedHashes.has(commit.hash));
+  return (snapshot.value?.commits || []).filter((commit) => selectedHashes.has(commit.hash));
 });
 const areAllVisibleCommitsSelected = computed(
   () => commits.value.length > 0 && commits.value.every((commit) => selectedCommitHashSet.value.has(commit.hash)),
@@ -1445,12 +1836,12 @@ const filterStatusSummary = computed(() => {
 
 type SelectedCommitContext = { commit: ProjectGitCommitSummary; files: ProjectGitFileChange[] };
 
-const buildSelectedHistoryContext = async () => {
+const buildSelectedHistoryContext = async (target: ProjectGitRepositoryTarget) => {
   const contexts: SelectedCommitContext[] = [];
   for (const commit of manuallySelectedCommits.value) {
     let commitFiles: ProjectGitFileChange[] = [];
     try {
-      commitFiles = await store.readGitCommitFiles(props.project.id, commit.hash);
+      commitFiles = await store.readGitCommitFiles(props.project.id, commit.hash, target);
     } catch {
       commitFiles = [];
     }
@@ -1475,7 +1866,7 @@ const buildSelectedHistoryContext = async () => {
       for (const file of commitFiles) {
         let result: ProjectGitFileDiffResult | null = null;
         try {
-          result = await store.readGitCommitFileDiff(props.project.id, commit.hash, file.path);
+          result = await store.readGitCommitFileDiff(props.project.id, commit.hash, file.path, target);
         } catch {
           continue;
         }
@@ -1496,10 +1887,10 @@ const buildSelectedHistoryContext = async () => {
   return { metadata, fileSummaries, diffContent, truncated };
 };
 
-const buildAiPrompt = async () => {
+const buildAiPrompt = async (target: ProjectGitRepositoryTarget) => {
   const template = selectedAiMode.value?.prompt || "请总结这些 Git 信息。";
   if (selectedCommitCount.value > 0) {
-    const historyContext = await buildSelectedHistoryContext();
+    const historyContext = await buildSelectedHistoryContext(target);
     const prompt = replacePromptPlaceholders(template, {
       ...buildCommonGitPromptPlaceholders(),
       commits: historyContext.metadata,
@@ -1516,7 +1907,7 @@ const buildAiPrompt = async () => {
     };
   }
 
-  const diffContext = aiDialogIncludeDiffContext.value ? await workingTreeDiffContext() : null;
+  const diffContext = aiDialogIncludeDiffContext.value ? await workingTreeDiffContext(target) : null;
   const fileLines = formatGitFileLines(snapshot.value?.files || [], "当前没有工作区文件变更。");
   const prompt = replacePromptPlaceholders(template, {
     ...buildCommonGitPromptPlaceholders(),
@@ -1556,12 +1947,21 @@ const resetAiDialogState = () => {
 };
 
 const generateAiAnalysis = async () => {
+  const originContext = activeRepositoryContext.value;
+  if (!originContext) return;
+  const originGeneration = repositoryContextGeneration.value;
   aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
   aiDialogState.value = "loading";
   await waitForVisualFeedback();
 
-  const promptResult = await buildAiPrompt();
+  const promptResult = await buildAiPrompt(originContext.target);
+  if (
+    repositoryContextGeneration.value !== originGeneration ||
+    activeRepositoryContext.value?.contextKey !== originContext.contextKey
+  ) {
+    return;
+  }
   aiDialogNotice.value = promptResult.truncated
     ? selectedCommitCount.value > 0
       ? "Diff 已截断，所有提交信息已保留"
@@ -1569,9 +1969,19 @@ const generateAiAnalysis = async () => {
     : "";
   await store.analyzeGitWithAiStream(props.project.id, promptResult.prompt, {
     onChunk: (chunk) => {
+      if (
+        repositoryContextGeneration.value !== originGeneration ||
+        activeRepositoryContext.value?.contextKey !== originContext.contextKey
+      )
+        return;
       aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
     },
     onDone: (result) => {
+      if (
+        repositoryContextGeneration.value !== originGeneration ||
+        activeRepositoryContext.value?.contextKey !== originContext.contextKey
+      )
+        return;
       const finalResult = aiReasoningStateFromResult(result);
       if (hasAiReasoningDisplay(finalResult) || !hasAiDialogDisplayResult.value) {
         aiDialogResult.value = finalResult;
@@ -1668,6 +2078,7 @@ const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
 
   const requestGeneration = ++commitTooltipDetailsRequestGeneration;
   const contextGeneration = commitTooltipDetailsContextGeneration;
+  const target = activeRepositoryTarget.value;
   const canReadFiles = Boolean(snapshot.value?.repositoryPath);
   commitTooltipDetails.value = {
     ...commitTooltipDetails.value,
@@ -1684,7 +2095,7 @@ const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
 
   if (canReadFiles) {
     void store
-      .readGitCommitFiles(props.project.id, hash)
+      .readGitCommitFiles(props.project.id, hash, target)
       .then((files) => {
         if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
         const state = commitTooltipDetails.value[hash];
@@ -1704,7 +2115,7 @@ const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
   }
 
   void store
-    .readGitCommitAuthorAvatar(props.project.id, hash)
+    .readGitCommitAuthorAvatar(props.project.id, hash, target)
     .then((avatarUrl) => {
       if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
       const state = commitTooltipDetails.value[hash];
@@ -1752,7 +2163,7 @@ const toggleCommitFiles = async (hash: string) => {
     },
   };
   try {
-    const result = await store.readGitCommitFiles(props.project.id, hash);
+    const result = await store.readGitCommitFiles(props.project.id, hash, activeRepositoryTarget.value);
     if (isCurrentExpandedCommitFilesRequest(hash, requestGeneration, contextGeneration)) {
       expandedCommitFiles.value = {
         ...expandedCommitFiles.value,
@@ -1807,12 +2218,7 @@ const copyLabel = computed(
 
 const handleLoadMore = async () => {
   if (isLoadingMore.value || !snapshot.value?.hasMoreCommits) return;
-  isLoadingMore.value = true;
-  try {
-    await store.loadMoreGitCommits(props.project.id);
-  } finally {
-    isLoadingMore.value = false;
-  }
+  await store.loadMoreGitCommits(props.project.id, activeRepositoryTarget.value);
 };
 
 const scrollGitPanel = async (target: "files" | "graph", boundary: "top" | "bottom") => {
@@ -1826,6 +2232,10 @@ const handlePanelWheel = (event: WheelEvent, target: "files" | "graph") => {
 
 const handleOpenFile = (file: ProjectGitFileChange) => {
   if (file.status === "DELETED") return;
+  if (activeRepositoryTarget.value.kind !== "main") {
+    void store.openGitRepositoryInEditor(props.project.id, activeRepositoryTarget.value);
+    return;
+  }
   emit("open-file", file.path);
 };
 
@@ -1860,7 +2270,7 @@ const handleGitTabKeydown = (event: KeyboardEvent) => {
 };
 
 const handleViewDiff = async (commitHash: string, file: ProjectGitFileChange) => {
-  const commit = (props.project.git?.commits || []).find((item) => item.hash === commitHash);
+  const commit = (snapshot.value?.commits || []).find((item) => item.hash === commitHash);
   if (!commit) return;
   const generation = ++diffRequestGeneration;
   worktreeSelection.value = null;
@@ -1869,7 +2279,12 @@ const handleViewDiff = async (commitHash: string, file: ProjectGitFileChange) =>
   isLoadingDiff.value = true;
   selectedDiff.value = { path: file.path, diff: "" };
   try {
-    const result = await store.readGitCommitFileDiff(props.project.id, commitHash, file.path);
+    const result = await store.readGitCommitFileDiff(
+      props.project.id,
+      commitHash,
+      file.path,
+      activeRepositoryTarget.value,
+    );
     if (
       generation === diffRequestGeneration &&
       commitReviewSelection.value?.commitHash === commitHash &&
@@ -1941,23 +2356,80 @@ const openCommitContextMenu = async (event: MouseEvent, commit: ProjectGitCommit
 
 const handleWindowPointerDown = (event: PointerEvent) => {
   const target = event.target;
+  if (!(target instanceof Element && target.closest("[data-git-top-menu], [data-git-top-menu-trigger]"))) {
+    isBranchMenuOpen.value = false;
+    isRemoteMenuOpen.value = false;
+  }
+  if (target instanceof Element && target.closest("[data-repository-menu]")) return;
+  repositoryMenu.value = null;
   if (target instanceof Element && target.closest("[data-commit-context-menu]")) return;
   commitContextMenu.value = null;
 };
 
+const handleFloatingViewportChange = (event: Event) => {
+  if (
+    event.type === "scroll" &&
+    event.target instanceof Element &&
+    event.target.closest("[data-git-top-menu], [data-repository-menu]")
+  ) {
+    return;
+  }
+  isBranchMenuOpen.value = false;
+  isRemoteMenuOpen.value = false;
+  repositoryMenu.value = null;
+};
+
+const restoreProjectRepositoryState = (projectId: string) => {
+  let target = rememberedGitRepositoryTargets.get(projectId) || ({ kind: "main" } as const);
+  const workspace = store.gitWorkspaces[projectId];
+  if (workspace && !store.resolveGitRepositoryContext(projectId, target)) {
+    target = { kind: "main" };
+    rememberedGitRepositoryTargets.set(projectId, target);
+  }
+  activeRepositoryTarget.value = target;
+  repositorySectionOpen.value = rememberedRepositorySectionOpen.get(projectId) || false;
+  const hasRelatedRepositories = Boolean(
+    workspace &&
+    (workspace.worktrees.entries.some((entry) => entry.kind === "linked") || workspace.submodules.entries.length > 0),
+  );
+  if (
+    hasRelatedRepositories &&
+    !repositorySectionChoiceMade.has(projectId) &&
+    !repositorySectionAutoOpened.has(projectId)
+  ) {
+    repositorySectionOpen.value = true;
+    rememberedRepositorySectionOpen.set(projectId, true);
+    repositorySectionAutoOpened.add(projectId);
+  }
+  const context = store.resolveGitRepositoryContext(projectId, target);
+  commitMessage.value = context ? commitDraftsByContext.get(context.contextKey) || "" : "";
+  if (!workspace) void store.refreshGitWorkspace(projectId);
+  if (context && !store.gitSnapshotForRepository(projectId, target)) {
+    void store.refreshGitSnapshot(projectId, { force: true }, target);
+  }
+  scheduleCommitMessageTextareaResize();
+};
+
 onBeforeUnmount(() => {
+  const context = activeRepositoryContext.value;
+  if (context) commitDraftsByContext.set(context.contextKey, commitMessage.value);
   hideCommitTooltip();
   clearExpandedCommitFiles();
   clearCommitTooltipDetails();
   window.clearTimeout(copiedTimer.value);
   window.clearTimeout(gitToastTimer.value);
   window.removeEventListener("pointerdown", handleWindowPointerDown);
+  window.removeEventListener("resize", handleFloatingViewportChange);
+  window.removeEventListener("scroll", handleFloatingViewportChange, true);
   stopAppEscapeListener();
 });
 
 onMounted(() => {
   window.addEventListener("pointerdown", handleWindowPointerDown);
+  window.addEventListener("resize", handleFloatingViewportChange);
+  window.addEventListener("scroll", handleFloatingViewportChange, true);
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+  restoreProjectRepositoryState(props.project.id);
 });
 
 watch(
@@ -1970,31 +2442,66 @@ watch(
 
 watch(
   () => props.project.id,
-  () => {
-    diffRequestGeneration += 1;
-    clearExpandedCommitFiles();
-    clearCommitTooltipDetails();
-    clearCommitSelection();
-    rightContext.value = "history";
-    worktreeSelection.value = null;
-    worktreeDiff.value = null;
-    isLoadingWorktreeDiff.value = false;
-    commitReviewSelection.value = null;
+  (projectId, previousProjectId) => {
+    const previousContext = store.resolveGitRepositoryContext(previousProjectId, activeRepositoryTarget.value);
+    if (previousContext) commitDraftsByContext.set(previousContext.contextKey, commitMessage.value);
+    clearRepositoryBoundState();
     stagedGroupOpen.value = true;
     unstagedGroupOpen.value = true;
-    selectedDiff.value = null;
-    hideCommitTooltip();
-    commitContextMenu.value = null;
-    scheduleCommitMessageTextareaResize();
+    restoreProjectRepositoryState(projectId);
   },
 );
 
-watch(commitMessage, scheduleCommitMessageTextareaResize, { immediate: true });
+watch(
+  commitMessage,
+  (value) => {
+    scheduleCommitMessageTextareaResize();
+    const context = activeRepositoryContext.value;
+    if (context) commitDraftsByContext.set(context.contextKey, value);
+  },
+  { immediate: true },
+);
 
 watch(
-  () => (props.project.git?.commits || []).map((commit) => commit.hash).join("|"),
+  () => gitWorkspaceSnapshot.value?.lastRefreshedAt || "",
   () => {
-    const availableHashes = new Set((props.project.git?.commits || []).map((commit) => commit.hash));
+    const workspace = gitWorkspaceSnapshot.value;
+    if (!workspace) return;
+    const hasRelatedRepositories = gitWorkspaceRelatedCount.value > 0;
+    if (
+      hasRelatedRepositories &&
+      !repositorySectionChoiceMade.has(props.project.id) &&
+      !repositorySectionAutoOpened.has(props.project.id)
+    ) {
+      repositorySectionOpen.value = true;
+      rememberedRepositorySectionOpen.set(props.project.id, true);
+      repositorySectionAutoOpened.add(props.project.id);
+    }
+
+    const context = store.resolveGitRepositoryContext(props.project.id, activeRepositoryTarget.value);
+    if (!context && activeRepositoryTarget.value.kind !== "main") {
+      clearRepositoryBoundState();
+      activeRepositoryTarget.value = { kind: "main" };
+      rememberedGitRepositoryTargets.set(props.project.id, { kind: "main" });
+      const mainContext = store.resolveGitRepositoryContext(props.project.id, { kind: "main" });
+      commitMessage.value = mainContext ? commitDraftsByContext.get(mainContext.contextKey) || "" : "";
+      setGitActionResult("warning", "之前选择的仓库已不可用，已返回主仓库。");
+      if (mainContext && !store.gitSnapshotForRepository(props.project.id, { kind: "main" })) {
+        void store.refreshGitSnapshot(props.project.id, { force: true }, { kind: "main" });
+      }
+      return;
+    }
+
+    if (context && !store.gitSnapshotForRepository(props.project.id, context.target)) {
+      void store.refreshGitSnapshot(props.project.id, { force: true }, context.target);
+    }
+  },
+);
+
+watch(
+  () => (snapshot.value?.commits || []).map((commit) => commit.hash).join("|"),
+  () => {
+    const availableHashes = new Set((snapshot.value?.commits || []).map((commit) => commit.hash));
     selectedCommitHashes.value = selectedCommitHashes.value.filter((hash) => availableHashes.has(hash));
     pruneExpandedCommitFiles(availableHashes);
     pruneCommitTooltipDetails(availableHashes);
@@ -2002,7 +2509,7 @@ watch(
 );
 
 watch(
-  () => props.project.git?.repositoryPath || "",
+  () => activeRepositoryContext.value?.contextKey || "",
   () => {
     clearCommitTooltipDetails();
     hideCommitTooltip();
@@ -2665,183 +3172,360 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </div>
     </Transition>
 
-    <div class="border border-border-subtle rounded-lg bg-surface px-3 py-2 flex items-center justify-between gap-3">
-      <div class="flex items-center gap-3 min-w-0 text-xs">
-        <GitBranch :size="16" class="text-primary shrink-0" />
-        <div class="relative min-w-0" @click.stop>
+    <section class="overflow-hidden rounded-lg border border-border-subtle bg-surface">
+      <div class="flex min-h-11 items-center justify-between gap-2 px-2 py-1.5">
+        <div class="flex min-w-0 flex-1 items-center gap-2 text-xs">
+          <button
+            v-if="gitWorkspaceRelatedCount > 0"
+            type="button"
+            class="flex h-7 min-w-0 max-w-48 shrink items-center gap-1 rounded px-1 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+            :title="repositorySectionOpen ? '收起仓库列表' : '展开仓库列表'"
+            :aria-label="repositorySectionOpen ? '收起仓库列表' : '展开仓库列表'"
+            :aria-expanded="repositorySectionOpen"
+            @click="toggleRepositorySection"
+          >
+            <ChevronDown v-if="repositorySectionOpen" :size="12" class="shrink-0" />
+            <ChevronRight v-else :size="12" class="shrink-0" />
+            <span
+              class="min-w-0 truncate text-[11px] font-bold text-on-surface"
+              :title="selectedRepositoryRow?.repositoryPath"
+            >
+              {{ selectedRepositoryRow?.name || project.name }}
+            </span>
+          </button>
+          <div class="min-w-0" @click.stop>
+            <button
+              type="button"
+              data-git-top-menu-trigger
+              class="flex max-w-48 items-center gap-1 rounded px-1.5 py-1 font-mono font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
+              :title="t.git.branch"
+              :aria-label="t.git.branch"
+              @click="toggleBranchMenu"
+            >
+              <span class="min-w-0 truncate">{{ currentGitRefLabel }}</span>
+              <ChevronDown :size="12" class="shrink-0 text-on-surface-variant" />
+            </button>
+            <Teleport to="body">
+              <Transition name="fade">
+                <div
+                  v-if="isBranchMenuOpen"
+                  data-git-top-menu
+                  class="themed-scrollbar fixed z-[80] max-h-64 w-44 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-2xl"
+                  :style="floatingMenuStyle(branchMenuPosition, 'min(16rem, calc(100vh - 1rem))')"
+                  role="menu"
+                  @click.stop
+                >
+                  <button
+                    v-for="branch in branchOptions"
+                    :key="branch.name"
+                    type="button"
+                    role="menuitem"
+                    :class="cn('mode-menu-item', branch.current && 'bg-primary/10 text-primary')"
+                    :title="branch.name"
+                    @click="handleSwitchBranch(branch.name)"
+                  >
+                    <span class="min-w-0 truncate font-mono">{{ branch.name }}</span>
+                    <Check v-if="branch.current" :size="13" />
+                  </button>
+                </div>
+              </Transition>
+            </Teleport>
+          </div>
+          <span
+            v-if="snapshot?.isDetachedHead"
+            class="shrink-0 rounded-full border border-status-warning/30 bg-status-warning/10 px-2 py-0.5 text-[10px] font-bold text-status-warning"
+          >
+            detached HEAD
+          </span>
+          <span v-if="hasUpstream" class="text-on-surface-variant whitespace-nowrap">
+            {{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}
+          </span>
+          <div class="min-w-0" @click.stop>
+            <button
+              type="button"
+              data-git-top-menu-trigger
+              :class="
+                cn(
+                  'flex max-w-56 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors hover:bg-surface-variant',
+                  upstream
+                    ? 'border-primary/25 bg-primary/10 text-primary'
+                    : remotes.length > 0
+                      ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
+                      : 'border-border-subtle bg-surface-container-low text-on-surface-variant',
+                )
+              "
+              :title="remoteStatusText"
+              aria-label="Git remote 状态"
+              @click="toggleRemoteMenu"
+            >
+              <span class="min-w-0 truncate">{{ remoteStatusText }}</span>
+              <ChevronDown :size="11" class="shrink-0" />
+            </button>
+            <Teleport to="body">
+              <Transition name="fade">
+                <div
+                  v-if="isRemoteMenuOpen"
+                  data-git-top-menu
+                  class="themed-scrollbar fixed z-[80] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border-subtle bg-surface-container-lowest text-xs shadow-2xl"
+                  :style="floatingMenuStyle(remoteMenuPosition)"
+                  role="menu"
+                  @click.stop
+                >
+                  <div class="border-b border-border-subtle px-2 py-1.5">
+                    <div class="truncate text-[10px] font-bold uppercase text-on-surface-variant">Remote</div>
+                  </div>
+                  <div v-if="remotes.length > 0" class="themed-scrollbar max-h-52 overflow-y-auto py-1">
+                    <div
+                      v-for="remote in remotes"
+                      :key="remote.name"
+                      class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2 py-1.5 hover:bg-surface-variant"
+                    >
+                      <div class="min-w-0">
+                        <div class="flex min-w-0 items-center gap-1.5">
+                          <span class="truncate font-mono text-[11px] font-bold text-on-surface">{{
+                            remote.name
+                          }}</span>
+                          <span
+                            v-if="upstream?.remote === remote.name"
+                            class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1.5 py-px text-[9px] font-bold text-primary"
+                          >
+                            upstream
+                          </span>
+                        </div>
+                        <p class="truncate font-mono text-[10px] text-on-surface-variant" :title="remote.fetchUrl">
+                          {{ remote.fetchUrl || remote.pushUrl }}
+                        </p>
+                      </div>
+                      <div class="flex shrink-0 items-center gap-px">
+                        <button
+                          type="button"
+                          class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                          :disabled="isAnyGitWriteRunning"
+                          :title="`编辑 ${remote.name} URL`"
+                          :aria-label="`编辑 ${remote.name} URL`"
+                          @click="openEditRemoteDialog(remote)"
+                        >
+                          <SlidersHorizontal :size="12" />
+                        </button>
+                        <button
+                          type="button"
+                          class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-status-error disabled:cursor-not-allowed disabled:opacity-40"
+                          :disabled="isAnyGitWriteRunning"
+                          :title="`删除 ${remote.name}`"
+                          :aria-label="`删除 ${remote.name}`"
+                          @click="requestRemoveRemote(remote)"
+                        >
+                          <X :size="12" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="px-2 py-2 text-[11px] text-on-surface-variant">暂无 remote</div>
+                  <div class="border-t border-border-subtle p-1">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="mode-menu-item"
+                      :disabled="isAnyGitWriteRunning"
+                      @click="openAddRemoteDialog"
+                    >
+                      <span>添加 Git remote</span>
+                      <Plus :size="13" />
+                    </button>
+                  </div>
+                </div>
+              </Transition>
+            </Teleport>
+          </div>
+          <span class="text-on-surface-variant truncate">{{ topBarStatusText }}</span>
+          <span
+            v-if="gitActionMessage"
+            :class="
+              cn(
+                'hidden max-w-72 truncate rounded-full border px-2 py-0.5 text-[10px] font-bold lg:inline',
+                gitActionState === 'success' && 'border-status-running/30 bg-status-running/10 text-status-running',
+                gitActionState === 'warning' && 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+                gitActionState === 'error' && 'border-status-error/30 bg-status-error/10 text-status-error',
+                (gitActionState === 'idle' || gitActionState === 'loading') &&
+                  'border-border-subtle bg-surface-container-low text-on-surface-variant',
+              )
+            "
+            :title="gitActionMessage"
+          >
+            {{ gitActionMessage }}
+          </span>
+          <span
+            v-if="isGitSnapshotRefreshing || isGitStatusRefreshing"
+            class="hidden shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary lg:inline"
+          >
+            {{ isGitSnapshotRefreshing ? "正在刷新" : "正在更新状态" }}
+          </span>
+        </div>
+        <div class="flex shrink-0 gap-1">
           <button
             type="button"
-            class="flex max-w-48 items-center gap-1 rounded px-1.5 py-1 font-mono font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
-            :title="t.git.branch"
-            :aria-label="t.git.branch"
-            @click="isBranchMenuOpen = !isBranchMenuOpen"
+            class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="!canRunRemoteOperation"
+            :title="remoteActionTitle('fetch')"
+            :aria-label="remoteActionTitle('fetch')"
+            @click="executeGitRemoteAction('fetch')"
           >
-            <span class="min-w-0 truncate">{{ currentGitRefLabel }}</span>
-            <ChevronDown :size="12" class="shrink-0 text-on-surface-variant" />
+            <CloudDownload :size="14" :class="activeGitAction === 'remote:fetch' ? 'animate-pulse' : ''" />
           </button>
-          <div v-if="isBranchMenuOpen" class="mode-menu-popover min-w-44" @click.stop>
+          <button
+            type="button"
+            class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="!canRunRemoteOperation"
+            :title="remoteActionTitle('pull')"
+            :aria-label="remoteActionTitle('pull')"
+            @click="executeGitRemoteAction('pull')"
+          >
+            <GitPullRequestArrow :size="14" :class="activeGitAction === 'remote:pull' ? 'animate-pulse' : ''" />
+          </button>
+          <button
+            type="button"
+            class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="!canRunRemoteOperation"
+            :title="remoteActionTitle('push')"
+            :aria-label="remoteActionTitle('push')"
+            @click="executeGitRemoteAction('push')"
+          >
+            <CloudUpload :size="14" :class="activeGitAction === 'remote:push' ? 'animate-pulse' : ''" />
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-if="repositorySectionOpen && gitWorkspaceRelatedCount > 0"
+        class="themed-scrollbar max-h-40 overflow-y-auto border-t border-border-subtle bg-surface-container-lowest py-1"
+      >
+        <div
+          v-for="row in repositoryRows"
+          :key="row.key"
+          role="button"
+          :tabindex="row.selectable && !isAnyGitWriteRunning ? 0 : -1"
+          :aria-disabled="!row.selectable || isAnyGitWriteRunning"
+          :aria-label="`${row.name}，${row.branchLabel}，${row.statusText}`"
+          :class="
+            cn(
+              'group grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-l-2 pr-1.5 transition-colors',
+              row.depth === 1 ? 'pl-7' : 'pl-2',
+              row.selected ? 'border-primary bg-primary/10' : 'border-transparent',
+              row.selectable && !isAnyGitWriteRunning
+                ? 'cursor-pointer hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none'
+                : 'cursor-not-allowed opacity-65',
+            )
+          "
+          @click="selectGitRepository(row)"
+          @keydown.enter.prevent="selectGitRepository(row)"
+          @keydown.space.prevent="selectGitRepository(row)"
+        >
+          <div class="flex min-w-0 items-center gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 items-center gap-1.5">
+                <span class="truncate text-[11px] font-semibold text-on-surface" :title="row.repositoryPath">{{
+                  row.name
+                }}</span>
+                <span class="shrink-0 text-[8px] font-semibold uppercase text-on-surface-variant">{{
+                  row.kindLabel
+                }}</span>
+              </div>
+              <div class="flex min-w-0 items-center gap-1.5 text-[9px] text-on-surface-variant">
+                <span class="truncate font-mono">{{ row.branchLabel }}</span>
+                <span v-if="row.changeCount !== null" class="shrink-0">{{ row.changeCount }} changes</span>
+                <span
+                  class="shrink-0 truncate"
+                  :class="
+                    row.health === 'unavailable'
+                      ? 'text-status-error'
+                      : row.health === 'warning'
+                        ? 'text-status-warning'
+                        : 'text-status-running'
+                  "
+                  :title="row.statusText"
+                >
+                  {{ row.statusText }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-px" @click.stop>
             <button
-              v-for="branch in branchOptions"
-              :key="branch.name"
               type="button"
-              :class="cn('mode-menu-item', branch.current && 'bg-primary/10 text-primary')"
-              :title="branch.name"
-              @click="handleSwitchBranch(branch.name)"
+              class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
+              title="更多仓库操作"
+              :aria-label="`${row.name} 更多操作`"
+              @click="openRepositoryMenu($event, row)"
             >
-              <span class="min-w-0 truncate font-mono">{{ branch.name }}</span>
-              <Check v-if="branch.current" :size="13" />
+              <MoreHorizontal :size="13" />
             </button>
           </div>
         </div>
-        <span
-          v-if="snapshot?.isDetachedHead"
-          class="shrink-0 rounded-full border border-status-warning/30 bg-status-warning/10 px-2 py-0.5 text-[10px] font-bold text-status-warning"
+      </div>
+    </section>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="repositoryMenu"
+          data-repository-menu
+          class="themed-scrollbar fixed z-[80] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border-subtle bg-surface p-1 text-xs shadow-2xl"
+          :style="repositoryMenuStyle"
+          role="menu"
+          @click.stop
         >
-          detached HEAD
-        </span>
-        <span v-if="hasUpstream" class="text-on-surface-variant whitespace-nowrap">
-          {{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}
-        </span>
-        <div class="relative min-w-0" @click.stop>
-          <button
-            type="button"
-            :class="
-              cn(
-                'flex max-w-56 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors hover:bg-surface-variant',
-                upstream
-                  ? 'border-primary/25 bg-primary/10 text-primary'
-                  : remotes.length > 0
-                    ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
-                    : 'border-border-subtle bg-surface-container-low text-on-surface-variant',
-              )
-            "
-            :title="remoteStatusText"
-            aria-label="Git remote 状态"
-            @click="isRemoteMenuOpen = !isRemoteMenuOpen"
-          >
-            <span class="min-w-0 truncate">{{ remoteStatusText }}</span>
-            <ChevronDown :size="11" class="shrink-0" />
-          </button>
-          <div v-if="isRemoteMenuOpen" class="mode-menu-popover min-w-72" @click.stop>
-            <div class="border-b border-border-subtle px-2 py-1.5">
-              <div class="truncate text-[10px] font-bold uppercase text-on-surface-variant">Remote</div>
+          <div class="border-b border-border-subtle px-2 py-1.5">
+            <div class="truncate text-[11px] font-bold text-on-surface">{{ repositoryMenu.row.name }}</div>
+            <div
+              class="truncate font-mono text-[9px] text-on-surface-variant"
+              :title="repositoryMenu.row.repositoryPath"
+            >
+              {{ repositoryMenu.row.repositoryPath }}
             </div>
-            <div v-if="remotes.length > 0" class="max-h-52 overflow-y-auto py-1">
+            <div class="mt-1 text-[9px] text-on-surface-variant">{{ repositoryMenu.row.statusText }}</div>
+            <div class="mt-1.5 space-y-1 border-t border-border-subtle pt-1.5">
               <div
-                v-for="remote in remotes"
-                :key="remote.name"
-                class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2 py-1.5 hover:bg-surface-variant"
+                v-for="detail in repositoryMenu.row.detailLines"
+                :key="detail"
+                class="break-all font-mono text-[9px] leading-3 text-on-surface-variant"
               >
-                <div class="min-w-0">
-                  <div class="flex min-w-0 items-center gap-1.5">
-                    <span class="truncate font-mono text-[11px] font-bold text-on-surface">{{ remote.name }}</span>
-                    <span
-                      v-if="upstream?.remote === remote.name"
-                      class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1.5 py-px text-[9px] font-bold text-primary"
-                    >
-                      upstream
-                    </span>
-                  </div>
-                  <p class="truncate font-mono text-[10px] text-on-surface-variant" :title="remote.fetchUrl">
-                    {{ remote.fetchUrl || remote.pushUrl }}
-                  </p>
-                </div>
-                <div class="flex shrink-0 items-center gap-px">
-                  <button
-                    type="button"
-                    class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                    :disabled="isAnyGitWriteRunning"
-                    :title="`编辑 ${remote.name} URL`"
-                    :aria-label="`编辑 ${remote.name} URL`"
-                    @click="openEditRemoteDialog(remote)"
-                  >
-                    <SlidersHorizontal :size="12" />
-                  </button>
-                  <button
-                    type="button"
-                    class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-status-error disabled:cursor-not-allowed disabled:opacity-40"
-                    :disabled="isAnyGitWriteRunning"
-                    :title="`删除 ${remote.name}`"
-                    :aria-label="`删除 ${remote.name}`"
-                    @click="requestRemoveRemote(remote)"
-                  >
-                    <X :size="12" />
-                  </button>
-                </div>
+                {{ detail }}
               </div>
             </div>
-            <div v-else class="px-2 py-2 text-[11px] text-on-surface-variant">暂无 remote</div>
-            <div class="border-t border-border-subtle p-1">
-              <button
-                type="button"
-                class="mode-menu-item"
-                :disabled="isAnyGitWriteRunning"
-                @click="openAddRemoteDialog"
-              >
-                <span>添加 Git remote</span>
-                <Plus :size="13" />
-              </button>
-            </div>
           </div>
+          <button
+            v-if="repositoryMenu.row.selectable"
+            type="button"
+            role="menuitem"
+            class="mode-menu-item"
+            @click="runRepositoryExternalAction('editor')"
+          >
+            <span>在编辑器中打开</span><ExternalLink :size="13" />
+          </button>
+          <button
+            v-if="repositoryMenu.row.selectable"
+            type="button"
+            role="menuitem"
+            class="mode-menu-item"
+            @click="runRepositoryExternalAction('terminal')"
+          >
+            <span>在终端中打开</span><SquareTerminal :size="13" />
+          </button>
+          <button
+            v-if="repositoryMenu.row.selectable"
+            type="button"
+            role="menuitem"
+            class="mode-menu-item"
+            @click="runRepositoryExternalAction('folder')"
+          >
+            <span>在文件夹中显示</span><FolderOpen :size="13" />
+          </button>
+          <button type="button" role="menuitem" class="mode-menu-item" @click="copyRepositoryPath">
+            <span>复制路径</span><ClipboardCopy :size="13" />
+          </button>
         </div>
-        <span class="text-on-surface-variant truncate">{{ topBarStatusText }}</span>
-        <span
-          v-if="gitActionMessage"
-          :class="
-            cn(
-              'hidden max-w-72 truncate rounded-full border px-2 py-0.5 text-[10px] font-bold lg:inline',
-              gitActionState === 'success' && 'border-status-running/30 bg-status-running/10 text-status-running',
-              gitActionState === 'warning' && 'border-status-warning/30 bg-status-warning/10 text-status-warning',
-              gitActionState === 'error' && 'border-status-error/30 bg-status-error/10 text-status-error',
-              (gitActionState === 'idle' || gitActionState === 'loading') &&
-                'border-border-subtle bg-surface-container-low text-on-surface-variant',
-            )
-          "
-          :title="gitActionMessage"
-        >
-          {{ gitActionMessage }}
-        </span>
-        <span
-          v-if="isGitSnapshotRefreshing || isGitStatusRefreshing"
-          class="hidden shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary lg:inline"
-        >
-          {{ isGitSnapshotRefreshing ? "正在刷新" : "正在更新状态" }}
-        </span>
-        <span class="text-on-surface-variant truncate hidden lg:inline">{{ repositoryPath }}</span>
-      </div>
-      <div class="flex gap-1.5 shrink-0">
-        <button
-          type="button"
-          class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="!canRunRemoteOperation"
-          :title="remoteActionTitle('fetch')"
-          :aria-label="remoteActionTitle('fetch')"
-          @click="executeGitRemoteAction('fetch')"
-        >
-          <CloudDownload :size="14" :class="activeGitAction === 'remote:fetch' ? 'animate-pulse' : ''" />
-        </button>
-        <button
-          type="button"
-          class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="!canRunRemoteOperation"
-          :title="remoteActionTitle('pull')"
-          :aria-label="remoteActionTitle('pull')"
-          @click="executeGitRemoteAction('pull')"
-        >
-          <GitPullRequestArrow :size="14" :class="activeGitAction === 'remote:pull' ? 'animate-pulse' : ''" />
-        </button>
-        <button
-          type="button"
-          class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="!canRunRemoteOperation"
-          :title="remoteActionTitle('push')"
-          :aria-label="remoteActionTitle('push')"
-          @click="executeGitRemoteAction('push')"
-        >
-          <CloudUpload :size="14" :class="activeGitAction === 'remote:push' ? 'animate-pulse' : ''" />
-        </button>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
 
     <div ref="splitContainerRef" class="relative grid min-h-0 flex-1 overflow-hidden" :style="gridTemplateStyle">
       <div

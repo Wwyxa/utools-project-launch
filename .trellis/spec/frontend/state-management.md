@@ -1584,3 +1584,85 @@ script.status = event.code === 0 ? "STOPPED" : "ERROR";
 ```ts
 script.status = event.stoppedByUser || event.code === 0 ? "STOPPED" : "ERROR";
 ```
+
+## Scenario: Git Repository Inventory And Selected Context Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: linked-worktree or direct-submodule inventory crosses `GitTab.vue`, Pinia, the typed browser fallback, and the uTools preload Git reader, then a selected healthy repository drives ordinary Git reads and writes.
+- This requires code-spec depth because machine-format parsing, process limits, transient repository identity, write authorization, and stale-result handling must agree across every layer.
+
+### 2. Signatures
+
+- `ProjectGitRepositoryTarget = { kind: "main" } | { kind: "worktree"; path: string } | { kind: "submodule"; path: string }`.
+- `resolveGitRepositoryContext(projectId, target): ProjectGitRepositoryContext | null`.
+- `ProjectBridge.readGitWorkspaceSnapshot(projectPath: string): Promise<ProjectBridgeGitWorkspaceSnapshot>`.
+- `refreshGitWorkspace(projectId: string, options?: { force?: boolean }): Promise<void> | undefined`.
+- Git store reads/writes keep a main-target default for compatibility but accept an explicit repository target; `GitTab.vue` always passes its active target.
+- Transient state includes `gitWorkspaces[projectId]`, workspace refresh flags, and full related snapshots/refresh flags keyed by authorized repository context.
+
+### 3. Contracts
+
+- Inventory reads use stable machine formats with argv-only Git processes: worktree porcelain `-z`, status porcelain v2 `-z`, null-delimited config, and `ls-files --stage -z`. Do not add worktree/submodule lifecycle commands or recursive submodule traversal.
+- Split worktree fields at the first ASCII space, tolerate unknown attributes/headers, consume the second pathname after porcelain-v2 type `2`, and preserve full SHA-1/SHA-256 object IDs.
+- Stream status and index NUL records instead of retaining every pathname. Keep at most four entry workers active, execute one Git child at a time inside each worker, and apply one 30-second deadline to each entry.
+- A timeout is a failure even when process close reports code `0`; bound captured stderr and preserve healthy sibling entries and the other section.
+- Correlate direct submodules from `.gitmodules`, local config, parent index gitlinks, and `--show-superproject-working-tree`. A submodule target is selectable only when the current snapshot marks its direct checkout `available`.
+- Components never pass a bare repository path to Git store actions. Pinia resolves `{ kind: "main" }` from the current project and re-authorizes worktree/submodule paths against the latest workspace snapshot before every bridge read or write.
+- Related full snapshots, refresh generations, pagination, and status mutation versions are keyed by repository context, not only project id. Linked-worktree ref-changing actions also bump one project-wide shared-ref epoch.
+- `Project.git` remains the main snapshot for dashboard compatibility. Related snapshots, selected targets, expand/collapse state, absolute related paths, and per-context commit drafts remain renderer-session/transient data and never enter project persistence/export.
+- Ordinary Git content actions may target the selected healthy worktree/submodule. Successful writes refresh that context plus the root workspace inventory. Worktree/submodule create/remove/prune/lock/init/update/sync/deinit remain forbidden.
+- Repository switching saves/restores the per-context commit draft, clears or context-keys review/detail state, and rejects late async results through project id + context key + generation. Switching is disabled while a Git write is active.
+
+### 4. Validation & Error Matrix
+
+- Git missing or input not a repository -> both inventory sections `unavailable`; browser fallback must not report a successful empty repository.
+- One worktree/submodule status timeout -> affected entry has `status: null` plus `timeout`; healthy siblings remain present.
+- Malformed `.gitmodules` with healthy index gitlinks -> submodules `partial`; preserve correlatable entries.
+- Missing `branch.oid` -> do not infer unborn; only explicit `(initial)` yields `head.kind === "unborn"`.
+- Abbreviated, non-hex, all-zero, or format-mismatched OID -> reject at the preload boundary.
+- Arbitrary, stale, bare, prunable, missing, uninitialized, unreadable, or unrelated target -> return `null`/failure before any bridge Git call.
+- Forced context request B resolves before A -> B remains stored after A resolves.
+- Project path or selected context changes during a request -> ignore the old response.
+- Same full commit hash exists in two contexts -> detail/diff/selection state remains isolated by context key.
+- AI commit-message result returns after switching -> update only the originating context draft or ignore; never overwrite the visible new-context draft.
+- Ref mutation in one linked worktree -> stale history from another checkout cannot overwrite data after the shared-ref epoch changes.
+
+### 5. Good/Base/Bad Cases
+
+- Good: one linked worktree times out while another worktree and an initialized direct submodule remain visible and selectable.
+- Good: selecting a direct submodule makes changes/history/stage/commit all resolve the same authorized checkout; the parent launcher project identity stays unchanged.
+- Good: a direct checkout differs from the parent gitlink; both full OIDs cross the bridge and `commitMismatch` is `true`.
+- Base: no linked worktrees/submodules yields ready empty groups and main-only Git behavior; a bare repository remains visible but unselectable.
+- Bad: `Promise.all` starts four metadata commands inside each of four workers, creating up to sixteen Git children.
+- Bad: GitTab displays a submodule snapshot while a stage/commit action still resolves `project.path`.
+- Bad: navigation or Git writes trust any existing directory from a component instead of the latest correlated snapshot.
+
+### 6. Tests Required
+
+- Run `npm run validate:git-workspace` for synthetic parser cases, real Git worktrees/submodules, bare/partial/conflict states, worker/timeout isolation, browser fallback, target authorization, context-keyed generations, exact write paths, and stale-target rejection.
+- Assert representative stage/commit/checkout/remote actions against a related target call the bridge with that exact repository path and do not mutate the main checkout.
+- Assert main/worktree/submodule full snapshots and equal commit hashes remain isolated, and ref-changing actions invalidate stale histories through the shared-ref epoch.
+- Run `node --check public/preload.js`, `npm run lint`, `npm run type-check`, and `npm run build` after changing this boundary.
+- Keep `npm run validate:git-commits`, `npm run validate:git-diff`, and `npm run test:git-diff` green to catch adjacent Git regressions.
+- Manual uTools smoke remains required for the inline repository section, narrow layout, per-context drafts, switching lock, More menu, and configured external launches; automated checks must not claim host smoke was executed.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await bridge.commitGitStaged(project.path, message);
+```
+
+The visible repository may be a linked worktree or submodule, so resolving only `project.path` can commit the wrong checkout.
+
+#### Correct
+
+```ts
+const context = resolveGitRepositoryContext(projectId, target);
+if (!context) return null;
+await bridge.commitGitStaged(context.repositoryPath, message);
+```
+
+Resolve and re-authorize the typed target at the store boundary immediately before every Git operation.

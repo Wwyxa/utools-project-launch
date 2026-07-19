@@ -7,6 +7,7 @@ import {
   validateAutomationSchedule,
 } from "../lib/automationScheduler";
 import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
+import { resolveProjectGitRepositoryContext } from "../lib/gitRepositoryTarget";
 import { deriveProjectStatus, mergeScriptRuntimeState } from "../lib/projectRuntimeState";
 import { DEFAULT_AI_PROMPT_MODES, ProjectStatus } from "../types";
 import type {
@@ -45,8 +46,11 @@ import type {
   ProjectGitFileChange,
   ProjectGitFileDiffOptions,
   ProjectGitFileDiffResult,
+  ProjectGitRepositoryContext,
+  ProjectGitRepositoryTarget,
   ProjectGitSnapshot,
   ProjectGitStatusSnapshot,
+  ProjectGitWorkspaceSnapshot,
   ProjectFileListResult,
   ProjectFileMutationKind,
   ProjectFileMutationResult,
@@ -99,7 +103,11 @@ let automationSchedulerTimer: number | null = null;
 let runtimeReconciliationPromise: Promise<void> | null = null;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
 const gitStatusRefreshPromises = new Map<string, Promise<void>>();
+const gitLoadMorePromises = new Map<string, Promise<void>>();
+const gitWorkspaceRefreshPromises = new Map<string, Promise<void>>();
 const gitSnapshotRefreshTokens = new Map<string, symbol>();
+const gitLoadMoreTokens = new Map<string, symbol>();
+const gitWorkspaceRefreshTokens = new Map<string, symbol>();
 const gitMutationVersions = new Map<string, number>();
 const gitRefMutationVersions = new Map<string, number>();
 const ansiControlPattern =
@@ -181,12 +189,12 @@ function cancelProjectConfigMessageClear() {
   }
 }
 
-function gitMutationVersion(projectId: string) {
-  return gitMutationVersions.get(projectId) || 0;
+function gitMutationVersion(contextKey: string) {
+  return gitMutationVersions.get(contextKey) || 0;
 }
 
-function bumpGitMutationVersion(projectId: string) {
-  gitMutationVersions.set(projectId, gitMutationVersion(projectId) + 1);
+function bumpGitMutationVersion(contextKey: string) {
+  gitMutationVersions.set(contextKey, gitMutationVersion(contextKey) + 1);
 }
 
 function gitRefMutationVersion(projectId: string) {
@@ -195,6 +203,30 @@ function gitRefMutationVersion(projectId: string) {
 
 function bumpGitRefMutationVersion(projectId: string) {
   gitRefMutationVersions.set(projectId, gitRefMutationVersion(projectId) + 1);
+}
+
+function clearGitRepositoryCoordination(projectId: string) {
+  const contextPrefix = `${projectId}::`;
+  [
+    gitSnapshotRefreshPromises,
+    gitStatusRefreshPromises,
+    gitLoadMorePromises,
+    gitSnapshotRefreshTokens,
+    gitLoadMoreTokens,
+    gitMutationVersions,
+  ].forEach((state) => {
+    [...state.keys()].forEach((key) => {
+      if (key.startsWith(contextPrefix)) state.delete(key);
+    });
+  });
+  gitRefMutationVersions.delete(projectId);
+}
+
+function clearGitRepositoryRecord(record: Record<string, unknown>, projectId: string) {
+  const contextPrefix = `${projectId}::`;
+  Object.keys(record).forEach((key) => {
+    if (key.startsWith(contextPrefix)) delete record[key];
+  });
 }
 
 function resolveProjectSortOrder(project: Project, fallbackIndex = 0): number {
@@ -610,19 +642,6 @@ function mergeGitCommitPage(currentSnapshot: ProjectGitSnapshot, commitPage: Pro
     repositoryPath: commitPage.repositoryPath || currentSnapshot.repositoryPath,
     lastRefreshedAt: commitPage.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
   };
-}
-
-async function runGitRemoteMutation(
-  projectId: string,
-  project: Project,
-  action: (projectPath: string) => Promise<ProjectGitActionResult>,
-  refreshGitSnapshot: (projectId: string, options: { force?: boolean }) => Promise<void> | undefined,
-) {
-  const result = await action(project.path);
-  bumpGitMutationVersion(projectId);
-  bumpGitRefMutationVersion(projectId);
-  await refreshGitSnapshot(projectId, { force: true });
-  return result;
 }
 
 function replaceGitCommitPage(
@@ -1041,6 +1060,13 @@ export const useStore = defineStore("app", {
     } as Record<string, ProjectGitFileChange[]>,
     gitRefreshing: {} as Record<string, boolean>,
     gitStatusRefreshing: {} as Record<string, boolean>,
+    gitRepositorySnapshots: {} as Record<string, ProjectGitSnapshot | undefined>,
+    gitRepositoryRefreshing: {} as Record<string, boolean>,
+    gitRepositoryStatusRefreshing: {} as Record<string, boolean>,
+    gitRepositoryLoadingMore: {} as Record<string, boolean>,
+    gitWritesInProgress: {} as Record<string, number>,
+    gitWorkspaces: {} as Record<string, ProjectGitWorkspaceSnapshot | undefined>,
+    gitWorkspaceRefreshing: {} as Record<string, boolean>,
     todos: {
       "project-node-1": [
         { id: "t1", text: "Review launch commands", completed: true },
@@ -1630,6 +1656,19 @@ export const useStore = defineStore("app", {
       });
       project.status = deriveProjectStatus(project);
 
+      if (existingProject && existingProject.path !== project.path) {
+        clearGitRepositoryCoordination(projectId);
+        clearGitRepositoryRecord(this.gitRepositorySnapshots, projectId);
+        clearGitRepositoryRecord(this.gitRepositoryRefreshing, projectId);
+        clearGitRepositoryRecord(this.gitRepositoryStatusRefreshing, projectId);
+        clearGitRepositoryRecord(this.gitRepositoryLoadingMore, projectId);
+        delete this.gitWritesInProgress[projectId];
+        delete this.gitWorkspaces[projectId];
+        delete this.gitWorkspaceRefreshing[projectId];
+        gitWorkspaceRefreshPromises.delete(projectId);
+        gitWorkspaceRefreshTokens.delete(projectId);
+      }
+
       const existingIndex = this.projects.findIndex((item) => item.id === projectId);
       if (existingIndex >= 0) {
         this.projects.splice(existingIndex, 1, project);
@@ -1661,6 +1700,16 @@ export const useStore = defineStore("app", {
       delete this.todos[projectId];
       delete this.memoContent[projectId];
       delete this.automationActiveProjectRuns[projectId];
+      delete this.gitWorkspaces[projectId];
+      delete this.gitWorkspaceRefreshing[projectId];
+      clearGitRepositoryCoordination(projectId);
+      clearGitRepositoryRecord(this.gitRepositorySnapshots, projectId);
+      clearGitRepositoryRecord(this.gitRepositoryRefreshing, projectId);
+      clearGitRepositoryRecord(this.gitRepositoryStatusRefreshing, projectId);
+      clearGitRepositoryRecord(this.gitRepositoryLoadingMore, projectId);
+      delete this.gitWritesInProgress[projectId];
+      gitWorkspaceRefreshPromises.delete(projectId);
+      gitWorkspaceRefreshTokens.delete(projectId);
 
       if (this.selectedProjectId === projectId) {
         this.selectedProjectId = null;
@@ -1867,91 +1916,237 @@ export const useStore = defineStore("app", {
       await this.persistProjects();
       return true;
     },
-    async refreshGitSnapshot(projectId: string, options: { force?: boolean } = {}) {
+    resolveGitRepositoryContext(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): ProjectGitRepositoryContext | null {
       const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return;
-      }
+      if (!project || project.pathExists === false) return null;
+      return resolveProjectGitRepositoryContext(project.id, project.path, this.gitWorkspaces[projectId], target);
+    },
+    gitSnapshotForRepository(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): ProjectGitSnapshot | null {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
+      const project = this.projects.find((item) => item.id === projectId);
+      return context.target.kind === "main"
+        ? project?.git || null
+        : this.gitRepositorySnapshots[context.contextKey] || null;
+    },
+    async refreshGitSnapshot(
+      projectId: string,
+      options: { force?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ) {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return;
 
-      const existingRefresh = gitSnapshotRefreshPromises.get(projectId);
+      const existingRefresh = gitSnapshotRefreshPromises.get(context.contextKey);
       if (existingRefresh && !options.force) {
         return existingRefresh;
       }
 
-      this.gitRefreshing[projectId] = true;
-      this.gitStatusRefreshing[projectId] = true;
-      const refreshToken = Symbol(projectId);
-      gitSnapshotRefreshTokens.set(projectId, refreshToken);
+      this.gitRepositoryRefreshing[context.contextKey] = true;
+      this.gitRepositoryStatusRefreshing[context.contextKey] = true;
+      if (context.target.kind === "main") {
+        this.gitRefreshing[projectId] = true;
+        this.gitStatusRefreshing[projectId] = true;
+      }
+      const refreshToken = Symbol(context.contextKey);
+      gitSnapshotRefreshTokens.set(context.contextKey, refreshToken);
       const refreshPromise = (async () => {
-        const startedAtVersion = gitMutationVersion(projectId);
+        const startedAtVersion = gitMutationVersion(context.contextKey);
         const startedAtRefVersion = gitRefMutationVersion(projectId);
         try {
-          const snapshot = await bridge.readGitSnapshot(project.path, { limit: 80, skip: 0 });
-          if (startedAtVersion !== gitMutationVersion(projectId)) {
-            const normalizedSnapshot =
-              startedAtRefVersion === gitRefMutationVersion(projectId) ? normalizeGitSnapshot(snapshot) : null;
-            if (project.git && normalizedSnapshot) {
-              project.git = replaceGitCommitPage(project.git, normalizedSnapshot);
-              project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
+          const snapshot = await bridge.readGitSnapshot(context.repositoryPath, { limit: 80, skip: 0 });
+          const latestContext = this.resolveGitRepositoryContext(projectId, context.target);
+          if (
+            gitSnapshotRefreshTokens.get(context.contextKey) !== refreshToken ||
+            latestContext?.contextKey !== context.contextKey ||
+            startedAtRefVersion !== gitRefMutationVersion(projectId)
+          ) {
+            return;
+          }
+
+          const project = this.projects.find((item) => item.id === projectId);
+          if (!project) return;
+          const currentSnapshot =
+            context.target.kind === "main" ? project.git : this.gitRepositorySnapshots[context.contextKey] || null;
+          const assignSnapshot = (nextSnapshot: ProjectGitSnapshot | null) => {
+            if (context.target.kind === "main") project.git = nextSnapshot;
+            else this.gitRepositorySnapshots[context.contextKey] = nextSnapshot || undefined;
+          };
+
+          if (startedAtVersion !== gitMutationVersion(context.contextKey)) {
+            const normalizedSnapshot = normalizeGitSnapshot(snapshot);
+            if (currentSnapshot) {
+              assignSnapshot(replaceGitCommitPage(currentSnapshot, normalizedSnapshot));
+              if (context.target.kind === "main" && project.git) {
+                project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
+              }
             }
             return;
           }
-          project.git = normalizeGitSnapshot(snapshot);
-          if (project.git) {
+
+          const normalizedSnapshot = normalizeGitSnapshot(snapshot);
+          assignSnapshot(normalizedSnapshot);
+          if (context.target.kind === "main" && project.git) {
             project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
             this.stagedFiles[projectId] = project.git.files;
+            await this.persistProjects();
           }
-          await this.persistProjects();
         } finally {
-          if (gitSnapshotRefreshTokens.get(projectId) === refreshToken) {
-            gitSnapshotRefreshPromises.delete(projectId);
-            gitSnapshotRefreshTokens.delete(projectId);
-            this.gitRefreshing[projectId] = false;
-            this.gitStatusRefreshing[projectId] = Boolean(gitStatusRefreshPromises.get(projectId));
+          if (gitSnapshotRefreshTokens.get(context.contextKey) === refreshToken) {
+            gitSnapshotRefreshPromises.delete(context.contextKey);
+            gitSnapshotRefreshTokens.delete(context.contextKey);
+            this.gitRepositoryRefreshing[context.contextKey] = false;
+            this.gitRepositoryStatusRefreshing[context.contextKey] = Boolean(
+              gitStatusRefreshPromises.get(context.contextKey),
+            );
+            if (context.target.kind === "main") {
+              this.gitRefreshing[projectId] = false;
+              this.gitStatusRefreshing[projectId] = Boolean(gitStatusRefreshPromises.get(context.contextKey));
+            }
           }
         }
       })();
-      gitSnapshotRefreshPromises.set(projectId, refreshPromise);
+      gitSnapshotRefreshPromises.set(context.contextKey, refreshPromise);
       return refreshPromise;
     },
-    async refreshGitStatusSnapshot(projectId: string) {
+    async refreshGitWorkspace(projectId: string, options: { force?: boolean } = {}) {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {
         return;
       }
 
-      const existingRefresh = gitStatusRefreshPromises.get(projectId);
+      const existingRefresh = gitWorkspaceRefreshPromises.get(projectId);
+      if (existingRefresh && !options.force) {
+        return existingRefresh;
+      }
+
+      const projectPath = project.path;
+      const refreshToken = Symbol(projectId);
+      gitWorkspaceRefreshTokens.set(projectId, refreshToken);
+      this.gitWorkspaceRefreshing[projectId] = true;
+      const refreshPromise = (async () => {
+        try {
+          const snapshot = await bridge.readGitWorkspaceSnapshot(projectPath);
+          const currentProject = this.projects.find((item) => item.id === projectId);
+          if (gitWorkspaceRefreshTokens.get(projectId) === refreshToken && currentProject?.path === projectPath) {
+            this.gitWorkspaces[projectId] = snapshot;
+          }
+        } catch (error) {
+          if (gitWorkspaceRefreshTokens.get(projectId) === refreshToken) {
+            this.addLog(
+              projectId,
+              createLogEntry(
+                `Failed to refresh Git workspace: ${error instanceof Error ? error.message : String(error)}`,
+                "WARN",
+              ),
+            );
+          }
+        } finally {
+          if (gitWorkspaceRefreshTokens.get(projectId) === refreshToken) {
+            gitWorkspaceRefreshPromises.delete(projectId);
+            gitWorkspaceRefreshTokens.delete(projectId);
+            this.gitWorkspaceRefreshing[projectId] = false;
+          }
+        }
+      })();
+      gitWorkspaceRefreshPromises.set(projectId, refreshPromise);
+      return refreshPromise;
+    },
+    async refreshGitStatusSnapshot(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }) {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return;
+
+      const existingRefresh = gitStatusRefreshPromises.get(context.contextKey);
       if (existingRefresh) {
         return existingRefresh;
       }
 
-      this.gitStatusRefreshing[projectId] = true;
+      this.gitRepositoryStatusRefreshing[context.contextKey] = true;
+      if (context.target.kind === "main") this.gitStatusRefreshing[projectId] = true;
       const refreshPromise = (async () => {
         try {
           let needsAnotherRead = true;
           while (needsAnotherRead) {
-            const startedAtVersion = gitMutationVersion(projectId);
-            const statusSnapshot = await bridge.readGitStatusSnapshot(project.path);
-            project.git = mergeGitStatusSnapshot(project.git, statusSnapshot);
-            this.stagedFiles[projectId] = project.git.files;
-            needsAnotherRead = startedAtVersion !== gitMutationVersion(projectId);
+            const startedAtVersion = gitMutationVersion(context.contextKey);
+            const startedAtRefVersion = gitRefMutationVersion(projectId);
+            const statusSnapshot = await bridge.readGitStatusSnapshot(context.repositoryPath);
+            const latestContext = this.resolveGitRepositoryContext(projectId, context.target);
+            if (latestContext?.contextKey !== context.contextKey) return;
+            if (startedAtRefVersion !== gitRefMutationVersion(projectId)) {
+              continue;
+            }
+            const project = this.projects.find((item) => item.id === projectId);
+            if (!project) return;
+            const currentSnapshot =
+              context.target.kind === "main" ? project.git : this.gitRepositorySnapshots[context.contextKey] || null;
+            const nextSnapshot = mergeGitStatusSnapshot(currentSnapshot, statusSnapshot);
+            if (context.target.kind === "main") {
+              project.git = nextSnapshot;
+              this.stagedFiles[projectId] = nextSnapshot.files;
+            } else {
+              this.gitRepositorySnapshots[context.contextKey] = nextSnapshot;
+            }
+            needsAnotherRead = startedAtVersion !== gitMutationVersion(context.contextKey);
           }
         } finally {
-          gitStatusRefreshPromises.delete(projectId);
-          this.gitStatusRefreshing[projectId] = Boolean(gitSnapshotRefreshPromises.get(projectId));
+          gitStatusRefreshPromises.delete(context.contextKey);
+          this.gitRepositoryStatusRefreshing[context.contextKey] = Boolean(
+            gitSnapshotRefreshPromises.get(context.contextKey),
+          );
+          if (context.target.kind === "main") {
+            this.gitStatusRefreshing[projectId] = Boolean(gitSnapshotRefreshPromises.get(context.contextKey));
+          }
         }
       })();
-      gitStatusRefreshPromises.set(projectId, refreshPromise);
+      gitStatusRefreshPromises.set(context.contextKey, refreshPromise);
       return refreshPromise;
     },
-    async loadMoreGitCommits(projectId: string) {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false || !project.git) {
-        return;
-      }
+    async loadMoreGitCommits(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }) {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      const currentSnapshot = this.gitSnapshotForRepository(projectId, target);
+      if (!context || !currentSnapshot) return;
+      const existingLoad = gitLoadMorePromises.get(context.contextKey);
+      if (existingLoad) return existingLoad;
 
-      const commitPage = await bridge.readGitCommits(project.path, { limit: 80, skip: project.git.commits.length });
-      project.git = mergeGitCommitPage(project.git, commitPage);
+      const skip = currentSnapshot.commits.length;
+      const startedAtRefVersion = gitRefMutationVersion(projectId);
+      const loadToken = Symbol(context.contextKey);
+      gitLoadMoreTokens.set(context.contextKey, loadToken);
+      this.gitRepositoryLoadingMore[context.contextKey] = true;
+      const loadPromise = (async () => {
+        try {
+          const commitPage = await bridge.readGitCommits(context.repositoryPath, { limit: 80, skip });
+          const latestContext = this.resolveGitRepositoryContext(projectId, context.target);
+          const latestSnapshot = this.gitSnapshotForRepository(projectId, context.target);
+          if (
+            gitLoadMoreTokens.get(context.contextKey) !== loadToken ||
+            latestContext?.contextKey !== context.contextKey ||
+            startedAtRefVersion !== gitRefMutationVersion(projectId) ||
+            !latestSnapshot ||
+            latestSnapshot.commits.length !== skip
+          ) {
+            return;
+          }
+          const nextSnapshot = mergeGitCommitPage(latestSnapshot, commitPage);
+          const project = this.projects.find((item) => item.id === projectId);
+          if (context.target.kind === "main" && project) project.git = nextSnapshot;
+          else this.gitRepositorySnapshots[context.contextKey] = nextSnapshot;
+        } finally {
+          if (gitLoadMoreTokens.get(context.contextKey) === loadToken) {
+            gitLoadMoreTokens.delete(context.contextKey);
+            gitLoadMorePromises.delete(context.contextKey);
+            this.gitRepositoryLoadingMore[context.contextKey] = false;
+          }
+        }
+      })();
+      gitLoadMorePromises.set(context.contextKey, loadPromise);
+      return loadPromise;
     },
     async listProjectFiles(projectId: string, relativePath = ""): Promise<ProjectFileListResult | null> {
       const project = this.projects.find((item) => item.id === projectId);
@@ -2011,268 +2206,287 @@ export const useStore = defineStore("app", {
       projectId: string,
       relativePath: string,
       options?: ProjectGitFileDiffOptions,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitFileDiffResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return bridge.readGitFileDiff(project.path, relativePath, options);
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
+      const result = await bridge.readGitFileDiff(context.repositoryPath, relativePath, options);
+      return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
+        ? result
+        : null;
     },
     async readGitCommitFileDiff(
       projectId: string,
       commitHash: string,
       relativePath: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitFileDiffResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return bridge.readGitCommitFileDiff(project.path, commitHash, relativePath);
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
+      const result = await bridge.readGitCommitFileDiff(context.repositoryPath, commitHash, relativePath);
+      return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
+        ? result
+        : null;
     },
-    async readGitCommitFiles(projectId: string, commitHash: string): Promise<ProjectGitFileChange[]> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return [];
-      }
-
-      return bridge.readGitCommitFiles(project.path, commitHash);
+    async readGitCommitFiles(
+      projectId: string,
+      commitHash: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitFileChange[]> {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return [];
+      const result = await bridge.readGitCommitFiles(context.repositoryPath, commitHash);
+      return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
+        ? result
+        : [];
     },
-    async readGitCommitAuthorAvatar(projectId: string, commitHash: string): Promise<string | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return bridge.readGitCommitAuthorAvatar(project.path, commitHash);
+    async readGitCommitAuthorAvatar(
+      projectId: string,
+      commitHash: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<string | null> {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
+      const result = await bridge.readGitCommitAuthorAvatar(context.repositoryPath, commitHash);
+      return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
+        ? result
+        : null;
     },
-    async readGitCommitMessageDiff(projectId: string): Promise<ProjectGitCommitMessageDiffResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return bridge.readGitCommitMessageDiff(project.path);
+    async readGitCommitMessageDiff(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitCommitMessageDiffResult | null> {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
+      const result = await bridge.readGitCommitMessageDiff(context.repositoryPath);
+      return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
+        ? result
+        : null;
     },
-    async stageGitFile(projectId: string, relativePath: string): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
+    async runAuthorizedGitWrite(
+      projectId: string,
+      target: ProjectGitRepositoryTarget,
+      action: (context: ProjectGitRepositoryContext) => Promise<ProjectGitActionResult>,
+      options: { refresh: "status" | "full"; refs?: boolean; refreshOnFailure?: boolean },
+    ): Promise<ProjectGitActionResult | null> {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
 
-      const result = await bridge.stageGitFile(project.path, relativePath);
-      if (result.ok || (result.count || 0) > 0) {
-        bumpGitMutationVersion(projectId);
-        await this.refreshGitStatusSnapshot(projectId);
+      this.gitWritesInProgress[projectId] = (this.gitWritesInProgress[projectId] || 0) + 1;
+      try {
+        const result = await action(context);
+        const changed = result.ok || (result.count || 0) > 0 || options.refreshOnFailure === true;
+        if (!changed) return result;
+
+        bumpGitMutationVersion(context.contextKey);
+        if (options.refs) {
+          bumpGitRefMutationVersion(projectId);
+          const contextPrefix = `${projectId}::`;
+          Object.keys(this.gitRepositorySnapshots).forEach((key) => {
+            if (key.startsWith(contextPrefix) && key !== context.contextKey) {
+              delete this.gitRepositorySnapshots[key];
+            }
+          });
+        }
+
+        const refreshes: Array<Promise<void> | undefined> = [
+          options.refresh === "status"
+            ? this.refreshGitStatusSnapshot(projectId, context.target)
+            : this.refreshGitSnapshot(projectId, { force: true }, context.target),
+          this.refreshGitWorkspace(projectId, { force: true }),
+        ];
+        if (options.refs && context.target.kind !== "main") {
+          refreshes.push(this.refreshGitSnapshot(projectId, { force: true }, { kind: "main" }));
+        }
+        await Promise.all(refreshes);
+        return result;
+      } finally {
+        this.gitWritesInProgress[projectId] = Math.max(0, (this.gitWritesInProgress[projectId] || 1) - 1);
       }
-      return result;
     },
-    async unstageGitFile(projectId: string, relativePath: string): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      const result = await bridge.unstageGitFile(project.path, relativePath);
-      if (result.ok || (result.count || 0) > 0) {
-        bumpGitMutationVersion(projectId);
-        await this.refreshGitStatusSnapshot(projectId);
-      }
-      return result;
+    async stageGitFile(
+      projectId: string,
+      relativePath: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.stageGitFile(context.repositoryPath, relativePath),
+        { refresh: "status" },
+      );
     },
-    async discardGitFile(projectId: string, relativePath: string): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      const result = await bridge.discardGitFile(project.path, relativePath);
-      if (result.ok || (result.count || 0) > 0) {
-        bumpGitMutationVersion(projectId);
-        await this.refreshGitSnapshot(projectId, { force: true });
-      }
-      return result;
+    async unstageGitFile(
+      projectId: string,
+      relativePath: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.unstageGitFile(context.repositoryPath, relativePath),
+        { refresh: "status" },
+      );
+    },
+    async discardGitFile(
+      projectId: string,
+      relativePath: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.discardGitFile(context.repositoryPath, relativePath),
+        { refresh: "full" },
+      );
     },
     async stageGitFiles(
       projectId: string,
       relativePaths: string[],
       options: { all?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      const result = await bridge.stageGitFiles(project.path, relativePaths, options);
-      if (result.ok || (result.count || 0) > 0) {
-        bumpGitMutationVersion(projectId);
-        await this.refreshGitStatusSnapshot(projectId);
-      }
-      return result;
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.stageGitFiles(context.repositoryPath, relativePaths, options),
+        { refresh: "status" },
+      );
     },
     async unstageGitFiles(
       projectId: string,
       relativePaths: string[],
       options: { all?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      const result = await bridge.unstageGitFiles(project.path, relativePaths, options);
-      if (result.ok || (result.count || 0) > 0) {
-        bumpGitMutationVersion(projectId);
-        await this.refreshGitStatusSnapshot(projectId);
-      }
-      return result;
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.unstageGitFiles(context.repositoryPath, relativePaths, options),
+        { refresh: "status" },
+      );
     },
     async discardGitFiles(
       projectId: string,
       relativePaths: string[],
       options: { all?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      const result = await bridge.discardGitFiles(project.path, relativePaths, options);
-      if (result.ok || (result.count || 0) > 0) {
-        bumpGitMutationVersion(projectId);
-        await this.refreshGitSnapshot(projectId, { force: true });
-      }
-      return result;
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.discardGitFiles(context.repositoryPath, relativePaths, options),
+        { refresh: "full" },
+      );
     },
-    async commitGitStaged(projectId: string, message: string): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      const result = await bridge.commitGitStaged(project.path, message);
-      if (result.ok) {
-        bumpGitMutationVersion(projectId);
-        bumpGitRefMutationVersion(projectId);
-        await this.refreshGitSnapshot(projectId, { force: true });
-      }
-      return result;
+    async commitGitStaged(
+      projectId: string,
+      message: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.commitGitStaged(context.repositoryPath, message),
+        { refresh: "full", refs: true },
+      );
     },
     async switchGitBranch(
       projectId: string,
       branchName: string,
       options: { force?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      const result = await bridge.switchGitBranch(project.path, branchName, options);
-      if (result.ok) {
-        bumpGitMutationVersion(projectId);
-        bumpGitRefMutationVersion(projectId);
-        await this.refreshGitSnapshot(projectId, { force: true });
-      }
-      return result;
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.switchGitBranch(context.repositoryPath, branchName, options),
+        { refresh: "full", refs: true },
+      );
     },
     async checkoutGitCommit(
       projectId: string,
       commitHash: string,
       options: { force?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      const result = await bridge.checkoutGitCommit(project.path, commitHash, {
-        ...options,
-        preferredBranch: project.git?.branch,
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) =>
+          bridge.checkoutGitCommit(context.repositoryPath, commitHash, {
+            ...options,
+            preferredBranch: this.gitSnapshotForRepository(projectId, context.target)?.branch,
+          }),
+        { refresh: "full", refs: true },
+      );
+    },
+    async fetchGitRemote(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.fetchGitRemote(context.repositoryPath), {
+        refresh: "full",
+        refs: true,
+        refreshOnFailure: true,
       });
-      if (result.ok) {
-        bumpGitMutationVersion(projectId);
-        bumpGitRefMutationVersion(projectId);
-        await this.refreshGitSnapshot(projectId, { force: true });
-      }
-      return result;
     },
-    async fetchGitRemote(projectId: string): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return runGitRemoteMutation(projectId, project, bridge.fetchGitRemote, (id, options) =>
-        this.refreshGitSnapshot(id, options),
-      );
+    async pullGitRemote(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.pullGitRemote(context.repositoryPath), {
+        refresh: "full",
+        refs: true,
+        refreshOnFailure: true,
+      });
     },
-    async pullGitRemote(projectId: string): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return runGitRemoteMutation(projectId, project, bridge.pullGitRemote, (id, options) =>
-        this.refreshGitSnapshot(id, options),
-      );
-    },
-    async pushGitRemote(projectId: string): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return runGitRemoteMutation(projectId, project, bridge.pushGitRemote, (id, options) =>
-        this.refreshGitSnapshot(id, options),
-      );
+    async pushGitRemote(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.pushGitRemote(context.repositoryPath), {
+        refresh: "full",
+        refs: true,
+        refreshOnFailure: true,
+      });
     },
     async addGitRemote(
       projectId: string,
       remoteName: string,
       remoteUrl: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return runGitRemoteMutation(
+      return this.runAuthorizedGitWrite(
         projectId,
-        project,
-        (projectPath) => bridge.addGitRemote(projectPath, remoteName, remoteUrl),
-        (id, options) => this.refreshGitSnapshot(id, options),
+        target,
+        (context) => bridge.addGitRemote(context.repositoryPath, remoteName, remoteUrl),
+        { refresh: "full", refs: true, refreshOnFailure: true },
       );
     },
     async setGitRemoteUrl(
       projectId: string,
       remoteName: string,
       remoteUrl: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return runGitRemoteMutation(
+      return this.runAuthorizedGitWrite(
         projectId,
-        project,
-        (projectPath) => bridge.setGitRemoteUrl(projectPath, remoteName, remoteUrl),
-        (id, options) => this.refreshGitSnapshot(id, options),
+        target,
+        (context) => bridge.setGitRemoteUrl(context.repositoryPath, remoteName, remoteUrl),
+        { refresh: "full", refs: true, refreshOnFailure: true },
       );
     },
-    async removeGitRemote(projectId: string, remoteName: string): Promise<ProjectGitActionResult | null> {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || project.pathExists === false) {
-        return null;
-      }
-
-      return runGitRemoteMutation(
+    async removeGitRemote(
+      projectId: string,
+      remoteName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
         projectId,
-        project,
-        (projectPath) => bridge.removeGitRemote(projectPath, remoteName),
-        (id, options) => this.refreshGitSnapshot(id, options),
+        target,
+        (context) => bridge.removeGitRemote(context.repositoryPath, remoteName),
+        { refresh: "full", refs: true, refreshOnFailure: true },
       );
     },
     async writeProjectFile(
@@ -3312,6 +3526,92 @@ export const useStore = defineStore("app", {
       }
 
       await bridge.showItemInFolder(project.path);
+    },
+    async showGitRepositoryInFolder(projectId: string, target: ProjectGitRepositoryTarget) {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (
+        !context ||
+        !(await bridge.pathExists(context.repositoryPath)) ||
+        this.resolveGitRepositoryContext(projectId, context.target)?.contextKey !== context.contextKey
+      ) {
+        this.addLog(projectId, createLogEntry("Git repository path is unavailable.", "WARN"));
+        return;
+      }
+      await bridge.showItemInFolder(context.repositoryPath);
+    },
+    async openGitRepositoryInTerminal(projectId: string, target: ProjectGitRepositoryTarget) {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (
+        !context ||
+        !(await bridge.pathExists(context.repositoryPath)) ||
+        this.resolveGitRepositoryContext(projectId, context.target)?.contextKey !== context.contextKey
+      ) {
+        this.addLog(projectId, createLogEntry("Git repository path is unavailable.", "WARN"));
+        return;
+      }
+      const terminalPreferences = { ...this.terminalPreferences };
+      if (terminalPreferences.kind === "builtin") {
+        this.addLog(
+          projectId,
+          createLogEntry("No external terminal is configured for related Git repositories.", "INFO"),
+        );
+        return;
+      }
+      try {
+        const result = await bridge.openTerminal({
+          projectPath: context.repositoryPath,
+          terminal: terminalPreferences,
+        });
+        this.addLog(
+          projectId,
+          createLogEntry(
+            result.launched
+              ? `Open Git terminal (${result.kind}): ${result.command}`
+              : `Failed to open Git terminal (${result.kind}): ${result.message || "unknown error"}`,
+            result.launched ? "INFO" : "ERROR",
+          ),
+        );
+      } catch (error) {
+        this.addLog(
+          projectId,
+          createLogEntry(
+            `Failed to open Git terminal (${terminalPreferences.kind}): ${error instanceof Error ? error.message : String(error)}`,
+            "ERROR",
+          ),
+        );
+      }
+    },
+    async openGitRepositoryInEditor(projectId: string, target: ProjectGitRepositoryTarget) {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (
+        !context ||
+        !(await bridge.pathExists(context.repositoryPath)) ||
+        this.resolveGitRepositoryContext(projectId, context.target)?.contextKey !== context.contextKey
+      ) {
+        this.addLog(projectId, createLogEntry("Git repository path is unavailable.", "WARN"));
+        return;
+      }
+      const editorPreferences = { ...this.editorPreferences } satisfies EditorPreferences;
+      try {
+        const result = await bridge.openEditor({ projectPath: context.repositoryPath, editor: editorPreferences });
+        this.addLog(
+          projectId,
+          createLogEntry(
+            result.launched
+              ? `Open Git editor (${result.kind}): ${result.command}`
+              : `Failed to open Git editor (${result.kind}): ${result.message || "unknown error"}`,
+            result.launched ? "INFO" : "ERROR",
+          ),
+        );
+      } catch (error) {
+        this.addLog(
+          projectId,
+          createLogEntry(
+            `Failed to open Git editor (${editorPreferences.kind}): ${error instanceof Error ? error.message : String(error)}`,
+            "ERROR",
+          ),
+        );
+      }
     },
     async openProjectInTerminal(projectId: string) {
       const project = this.projects.find((item) => item.id === projectId);

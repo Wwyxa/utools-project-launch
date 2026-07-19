@@ -13,6 +13,9 @@ const completedProcessResultLimit = 100;
 const gitCommitAvatarResults = new Map();
 const gitCommitAvatarResultLimit = 160;
 const gitCommitAvatarRequestTimeoutMs = 3500;
+const gitWorkspaceWorkerLimit = 4;
+const gitWorkspaceEntryTimeoutMs = 30000;
+const gitWorkspaceStderrLimit = 16 * 1024;
 const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
 const automationExitMatchedProcesses = new Set();
@@ -1392,6 +1395,743 @@ function runGitRemoteCommandResult(startPath, args) {
       },
     );
   });
+}
+
+function runGitWorkspaceCommand(startPath, args, options = {}) {
+  const resolvedPath = expandPath(startPath);
+  const timeoutMs = Math.max(1, Number(options.timeoutMs) || gitWorkspaceEntryTimeoutMs);
+  const executable = options.executable || "git";
+  const stdoutRecordHandler = typeof options.stdoutRecordHandler === "function" ? options.stdoutRecordHandler : null;
+  const commandArgs = options.executable
+    ? Array.isArray(options.commandArgs)
+      ? options.commandArgs
+      : []
+    : ["-C", resolvedPath, ...args];
+
+  return new Promise((resolve) => {
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    const stdoutDecoder = stdoutRecordHandler ? new TextDecoder() : null;
+    let stdoutRecordRemainder = "";
+    let stderrLength = 0;
+    let timedOut = false;
+    let settled = false;
+    let spawnError = null;
+    const child = spawn(executable, commandArgs, {
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
+
+    const emitStdoutRecords = (text, flush = false) => {
+      stdoutRecordRemainder += text;
+      let separator = stdoutRecordRemainder.indexOf("\0");
+      while (separator >= 0) {
+        stdoutRecordHandler(stdoutRecordRemainder.slice(0, separator));
+        stdoutRecordRemainder = stdoutRecordRemainder.slice(separator + 1);
+        separator = stdoutRecordRemainder.indexOf("\0");
+      }
+      if (flush && stdoutRecordRemainder) {
+        stdoutRecordHandler(stdoutRecordRemainder);
+        stdoutRecordRemainder = "";
+      }
+    };
+    child.stdout?.on("data", (chunk) => {
+      const buffer = Buffer.from(chunk);
+      if (stdoutRecordHandler && stdoutDecoder) {
+        emitStdoutRecords(stdoutDecoder.decode(buffer, { stream: true }));
+      } else {
+        stdoutChunks.push(buffer);
+      }
+    });
+    child.stderr?.on("data", (chunk) => {
+      if (stderrLength >= gitWorkspaceStderrLimit) return;
+      const buffer = Buffer.from(chunk);
+      const remaining = gitWorkspaceStderrLimit - stderrLength;
+      stderrChunks.push(buffer.subarray(0, remaining));
+      stderrLength += Math.min(buffer.length, remaining);
+    });
+    child.on("error", (error) => {
+      spawnError = error;
+    });
+    child.on("close", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (stdoutRecordHandler && stdoutDecoder) {
+        emitStdoutRecords(stdoutDecoder.decode(), true);
+      }
+      resolve({
+        status: timedOut || spawnError ? 1 : typeof code === "number" ? code : 0,
+        signal: signal || null,
+        stdout: new TextDecoder().decode(Buffer.concat(stdoutChunks)),
+        stderr: new TextDecoder().decode(Buffer.concat(stderrChunks)).trim(),
+        timedOut,
+        spawnError,
+      });
+    });
+  });
+}
+
+function gitWorkspaceFailure(operation, result, fallbackMessage, fallbackCode = "command-failed") {
+  if (result?.timedOut) {
+    return { code: "timeout", operation, message: "Git 读取超时。" };
+  }
+  if (result?.spawnError?.code === "ENOENT") {
+    return { code: "git-unavailable", operation, message: "未找到 Git 可执行文件。" };
+  }
+  if (result?.spawnError?.code === "EACCES" || result?.spawnError?.code === "EPERM") {
+    return { code: "permission-denied", operation, message: "没有权限读取该 Git 路径。" };
+  }
+  const failure = {
+    code: fallbackCode,
+    operation,
+    message: String(result?.stderr || fallbackMessage || "Git 读取失败。").slice(0, gitWorkspaceStderrLimit),
+  };
+  if (typeof result?.status === "number") failure.exitCode = result.status;
+  return failure;
+}
+
+function isGitWorkspaceObjectId(value, objectFormat) {
+  const length = objectFormat === "sha256" ? 64 : objectFormat === "sha1" ? 40 : 0;
+  const normalized = String(value || "").toLowerCase();
+  return length > 0 && !/^0+$/.test(normalized) && new RegExp(`^[0-9a-f]{${length}}$`).test(normalized);
+}
+
+function normalizeGitWorkspaceObjectId(value, objectFormat) {
+  const normalized = String(value || "").toLowerCase();
+  return isGitWorkspaceObjectId(normalized, objectFormat) ? normalized : null;
+}
+
+function parseGitWorktreePorcelain(output, objectFormat) {
+  const entries = [];
+  let current = null;
+
+  const finish = () => {
+    if (!current?.path) return;
+    const oid = normalizeGitWorkspaceObjectId(current.headValue, objectFormat);
+    const branchRef = current.branch || null;
+    const branchName = branchRef?.startsWith("refs/heads/") ? branchRef.slice("refs/heads/".length) : branchRef;
+    const kind = current.bare ? "bare" : entries.length > 0 ? "linked" : "main";
+    const headKind = current.bare
+      ? "bare"
+      : current.detached
+        ? "detached"
+        : !oid && branchRef
+          ? "unborn"
+          : branchRef
+            ? "branch"
+            : oid
+              ? "detached"
+              : "unknown";
+    entries.push({
+      kind,
+      path: current.path,
+      head: { kind: headKind, ref: branchRef, name: branchName || null, oid },
+      locked: current.locked,
+      lockReason: current.lockReason,
+      prunable: current.prunable,
+      prunableReason: current.prunableReason,
+    });
+    current = null;
+  };
+
+  for (const field of String(output || "").split("\0")) {
+    if (!field) {
+      finish();
+      continue;
+    }
+    const separator = field.indexOf(" ");
+    const key = separator < 0 ? field : field.slice(0, separator);
+    const value = separator < 0 ? "" : field.slice(separator + 1);
+    if (key === "worktree") {
+      finish();
+      current = {
+        path: value,
+        headValue: "",
+        branch: null,
+        bare: false,
+        detached: false,
+        locked: false,
+        lockReason: null,
+        prunable: false,
+        prunableReason: null,
+      };
+      continue;
+    }
+    if (!current) continue;
+    if (key === "HEAD") current.headValue = value;
+    else if (key === "branch") current.branch = value;
+    else if (key === "bare") current.bare = true;
+    else if (key === "detached") current.detached = true;
+    else if (key === "locked") {
+      current.locked = true;
+      current.lockReason = value || null;
+    } else if (key === "prunable") {
+      current.prunable = true;
+      current.prunableReason = value || null;
+    }
+  }
+  finish();
+  return entries;
+}
+
+function createGitWorkspaceStatusParser(objectFormat) {
+  const counts = { stagedEntries: 0, unstagedEntries: 0, untrackedEntries: 0, conflictedEntries: 0 };
+  let branchOid = null;
+  let branchOidInitial = false;
+  let branchHead = null;
+  let upstreamRef = null;
+  let divergence = null;
+  let consumeTypeTwoPath = false;
+
+  const consume = (record) => {
+    if (consumeTypeTwoPath) {
+      consumeTypeTwoPath = false;
+      return;
+    }
+    if (!record) return;
+    if (record.startsWith("# branch.oid ")) {
+      const value = record.slice("# branch.oid ".length);
+      branchOidInitial = value === "(initial)";
+      branchOid = branchOidInitial ? null : normalizeGitWorkspaceObjectId(value, objectFormat);
+      return;
+    }
+    if (record.startsWith("# branch.head ")) {
+      branchHead = record.slice("# branch.head ".length);
+      return;
+    }
+    if (record.startsWith("# branch.upstream ")) {
+      upstreamRef = record.slice("# branch.upstream ".length) || null;
+      return;
+    }
+    if (record.startsWith("# branch.ab ")) {
+      const match = record.match(/^# branch\.ab \+(\d+) -(\d+)$/);
+      if (match) divergence = { ahead: Number(match[1]), behind: Number(match[2]) };
+      return;
+    }
+    const kind = record[0];
+    if (kind === "1" || kind === "2") {
+      const statusCode = record.split(" ", 3)[1] || "..";
+      if (statusCode[0] && statusCode[0] !== ".") counts.stagedEntries += 1;
+      if (statusCode[1] && statusCode[1] !== ".") counts.unstagedEntries += 1;
+      if (kind === "2") consumeTypeTwoPath = true;
+    } else if (kind === "u") {
+      counts.conflictedEntries += 1;
+    } else if (kind === "?") {
+      counts.untrackedEntries += 1;
+    }
+  };
+
+  const result = () => {
+    const detached = branchHead === "(detached)";
+    const head = {
+      kind: branchOidInitial
+        ? "unborn"
+        : detached
+          ? "detached"
+          : branchHead
+            ? "branch"
+            : branchOid
+              ? "detached"
+              : "unknown",
+      ref: branchHead && !detached ? `refs/heads/${branchHead}` : null,
+      name: branchHead && !detached ? branchHead : null,
+      oid: branchOid,
+    };
+    return {
+      head,
+      status: {
+        ...counts,
+        upstream: upstreamRef && divergence ? { ref: upstreamRef, ...divergence } : null,
+      },
+    };
+  };
+  return { consume, result };
+}
+
+function parseGitWorkspaceStatus(output, objectFormat) {
+  const parser = createGitWorkspaceStatusParser(objectFormat);
+  String(output || "")
+    .split("\0")
+    .forEach(parser.consume);
+  return parser.result();
+}
+
+function parseGitWorkspaceConfig(output) {
+  const records = new Map();
+  let invalid = false;
+  for (const record of String(output || "").split("\0")) {
+    if (!record) continue;
+    const separator = record.indexOf("\n");
+    if (separator < 0) {
+      invalid = true;
+      continue;
+    }
+    const key = record.slice(0, separator);
+    const value = record.slice(separator + 1);
+    if (!key.startsWith("submodule.")) continue;
+    const suffix = [".path", ".url", ".branch"].find((candidate) => key.endsWith(candidate));
+    if (!suffix) continue;
+    const name = key.slice("submodule.".length, -suffix.length);
+    if (!name) {
+      invalid = true;
+      continue;
+    }
+    const item = records.get(name) || { name, path: null, url: null, branch: null };
+    item[suffix.slice(1)] = value;
+    records.set(name, item);
+  }
+  return { records, invalid };
+}
+
+function createGitWorkspaceIndexParser(objectFormat = null, includedPaths = null) {
+  const entries = [];
+  let invalid = false;
+  const consume = (record) => {
+    if (!record) return;
+    const match = record.match(/^(\d{6}) ([0-9a-fA-F]+) ([0-3])\t([\s\S]+)$/);
+    if (!match) {
+      invalid = true;
+      return;
+    }
+    const oid = match[2].toLowerCase();
+    if (objectFormat && !isGitWorkspaceObjectId(oid, objectFormat)) {
+      invalid = true;
+      return;
+    }
+    if (includedPaths && match[1] !== "160000" && !includedPaths.has(match[4])) return;
+    entries.push({ mode: match[1], oid, stage: Number(match[3]), path: match[4] });
+  };
+  return { consume, result: () => ({ entries, invalid }) };
+}
+
+function parseGitWorkspaceIndex(output, objectFormat = null) {
+  const parser = createGitWorkspaceIndexParser(objectFormat);
+  String(output || "")
+    .split("\0")
+    .forEach(parser.consume);
+  return parser.result();
+}
+
+async function runGitWorkspaceWorkerPool(tasks) {
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(gitWorkspaceWorkerLimit, tasks.length) }, async () => {
+    while (nextIndex < tasks.length) {
+      const taskIndex = nextIndex;
+      nextIndex += 1;
+      await tasks[taskIndex]();
+    }
+  });
+  await Promise.all(workers);
+}
+
+function gitWorkspaceDirectoryAvailable(targetPath) {
+  try {
+    return fs.statSync(targetPath).isDirectory();
+  } catch (error) {
+    return false;
+  }
+}
+
+function gitWorkspacePathsEqual(left, right) {
+  const normalize = (value) => {
+    const resolved = path.resolve(value || "");
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  };
+  return normalize(left) === normalize(right);
+}
+
+function resolveGitWorkspaceChildPath(repositoryPath, relativePath) {
+  if (!relativePath || path.isAbsolute(relativePath)) return null;
+  const targetPath = path.resolve(repositoryPath, relativePath);
+  const relation = path.relative(repositoryPath, targetPath);
+  return relation && relation !== ".." && !relation.startsWith(`..${path.sep}`) && !path.isAbsolute(relation)
+    ? targetPath
+    : null;
+}
+
+async function probeGitWorkspaceRepository(projectPath) {
+  const bareResult = await runGitWorkspaceCommand(projectPath, ["rev-parse", "--is-bare-repository"]);
+  if (bareResult.status !== 0) {
+    const code = bareResult.spawnError?.code === "ENOENT" ? "git-unavailable" : "not-a-repository";
+    return { failure: gitWorkspaceFailure("repository", bareResult, "未检测到 Git 仓库。", code) };
+  }
+  const bareText = bareResult.stdout.trim();
+  if (bareText !== "true" && bareText !== "false") {
+    return {
+      failure: { code: "invalid-output", operation: "repository", message: "Git 返回了无法识别的仓库类型。" },
+    };
+  }
+
+  const [gitDirResult, formatResult] = await Promise.all([
+    runGitWorkspaceCommand(projectPath, ["rev-parse", "--absolute-git-dir"]),
+    runGitWorkspaceCommand(projectPath, ["rev-parse", "--show-object-format=storage"]),
+  ]);
+  if (gitDirResult.status !== 0 || !gitDirResult.stdout.trim()) {
+    return {
+      failure: gitWorkspaceFailure("repository", gitDirResult, "无法解析 Git 目录。", "unsupported-output"),
+    };
+  }
+  const objectFormat = formatResult.stdout.trim();
+  if (formatResult.status !== 0 || (objectFormat !== "sha1" && objectFormat !== "sha256")) {
+    return {
+      failure: gitWorkspaceFailure("repository", formatResult, "当前 Git 不支持对象格式探测。", "unsupported-output"),
+    };
+  }
+
+  const bare = bareText === "true";
+  if (bare) {
+    return { repositoryPath: path.resolve(gitDirResult.stdout.trim()), objectFormat, bare, failure: null };
+  }
+  const rootResult = await runGitWorkspaceCommand(projectPath, ["rev-parse", "--show-toplevel"]);
+  if (rootResult.status !== 0 || !rootResult.stdout.trim()) {
+    return { failure: gitWorkspaceFailure("repository", rootResult, "无法解析仓库根目录。", "invalid-output") };
+  }
+  return { repositoryPath: path.resolve(rootResult.stdout.trim()), objectFormat, bare, failure: null };
+}
+
+async function enumerateGitWorkspaceWorktrees(repository) {
+  const result = await runGitWorkspaceCommand(repository.repositoryPath, [
+    "worktree",
+    "list",
+    "--porcelain",
+    "-z",
+    "--expire=now",
+  ]);
+  if (result.status !== 0) {
+    return {
+      entries: [],
+      failure: gitWorkspaceFailure("worktree-list", result, "无法读取 linked worktrees。", "unsupported-output"),
+      jobs: [],
+      unavailable: true,
+    };
+  }
+  const parsed = parseGitWorktreePorcelain(result.stdout, repository.objectFormat);
+  if (!parsed.length) {
+    return {
+      entries: [],
+      failure: { code: "invalid-output", operation: "worktree-list", message: "Git 未返回 worktree 记录。" },
+      jobs: [],
+      unavailable: true,
+    };
+  }
+
+  const entries = parsed.map((entry) => {
+    const pathAvailable = gitWorkspaceDirectoryAvailable(entry.path);
+    return {
+      ...entry,
+      pathAvailable,
+      objectFormat: repository.objectFormat,
+      status: null,
+      failure:
+        !pathAvailable && entry.kind !== "bare"
+          ? { code: "path-unavailable", operation: "worktree-status", message: "Worktree 路径当前不可访问。" }
+          : null,
+    };
+  });
+  const jobs = entries
+    .filter((entry) => entry.kind !== "bare" && entry.pathAvailable)
+    .map((entry) => async () => {
+      const entryDeadline = Date.now() + gitWorkspaceEntryTimeoutMs;
+      const statusParser = createGitWorkspaceStatusParser(repository.objectFormat);
+      const statusResult = await runGitWorkspaceCommand(
+        entry.path,
+        [
+          "--no-optional-locks",
+          "status",
+          "--porcelain=v2",
+          "--branch",
+          "--ahead-behind",
+          "--untracked-files=normal",
+          "-z",
+        ],
+        {
+          timeoutMs: Math.max(1, entryDeadline - Date.now()),
+          stdoutRecordHandler: statusParser.consume,
+        },
+      );
+      if (statusResult.status !== 0) {
+        entry.failure = gitWorkspaceFailure("worktree-status", statusResult, "无法读取 worktree 状态。");
+        return;
+      }
+      const parsedStatus = statusParser.result();
+      entry.status = parsedStatus.status;
+      entry.head = parsedStatus.head.kind === "unknown" ? entry.head : parsedStatus.head;
+    });
+  return { entries, failure: null, jobs, unavailable: false };
+}
+
+async function enumerateGitWorkspaceSubmodules(repository) {
+  if (repository.bare) {
+    return {
+      entries: [],
+      failure: { code: "path-unavailable", operation: "submodule-config", message: "裸仓库没有可读取的工作树。" },
+      jobs: [],
+      unavailable: true,
+    };
+  }
+
+  const gitmodulesPath = path.join(repository.repositoryPath, ".gitmodules");
+  const declaredPromise = fs.existsSync(gitmodulesPath)
+    ? runGitWorkspaceCommand(repository.repositoryPath, [
+        "config",
+        "--null",
+        "--file",
+        ".gitmodules",
+        "--get-regexp",
+        "^submodule\\..*\\.(path|url|branch)$",
+      ])
+    : Promise.resolve({ status: 1, stdout: "", stderr: "", timedOut: false, spawnError: null });
+  const [declaredResult, localResult] = await Promise.all([
+    declaredPromise,
+    runGitWorkspaceCommand(repository.repositoryPath, [
+      "config",
+      "--local",
+      "--null",
+      "--get-regexp",
+      "^submodule\\..*\\.(url|branch)$",
+    ]),
+  ]);
+
+  const declaredFailed = fs.existsSync(gitmodulesPath) && declaredResult.status !== 0 && declaredResult.status !== 1;
+  const localFailed = localResult.status !== 0 && localResult.status !== 1;
+  const declared = parseGitWorkspaceConfig(declaredResult.stdout);
+  const local = parseGitWorkspaceConfig(localResult.stdout);
+  const configuredIndexPaths = new Set(
+    [...declared.records.values()].map((record) => record.path).filter((configuredPath) => configuredPath),
+  );
+  const indexParser = createGitWorkspaceIndexParser(repository.objectFormat, configuredIndexPaths);
+  const indexResult = await runGitWorkspaceCommand(
+    repository.repositoryPath,
+    ["ls-files", "--stage", "--full-name", "-z"],
+    { stdoutRecordHandler: indexParser.consume },
+  );
+  const indexFailed = indexResult.status !== 0;
+  const index = indexParser.result();
+  const declaredIncomplete = [...declared.records.values()].some((record) => !record.path || !record.url);
+  const sourceFailure = declaredFailed
+    ? gitWorkspaceFailure("submodule-config", declaredResult, "无法读取 .gitmodules。")
+    : localFailed
+      ? gitWorkspaceFailure("submodule-registration", localResult, "无法读取本地 submodule 配置。")
+      : indexFailed
+        ? gitWorkspaceFailure("submodule-index", indexResult, "无法读取 submodule gitlink。")
+        : declared.invalid || declaredIncomplete || local.invalid || index.invalid
+          ? { code: "invalid-output", operation: "submodule-config", message: "部分 submodule 元数据无法解析。" }
+          : null;
+
+  if (indexFailed && declared.records.size === 0) {
+    return { entries: [], failure: sourceFailure, jobs: [], unavailable: true };
+  }
+
+  const indexByPath = new Map();
+  for (const item of index.entries) {
+    const list = indexByPath.get(item.path) || [];
+    list.push(item);
+    indexByPath.set(item.path, list);
+  }
+  const descriptors = [];
+  const configuredPaths = new Set();
+  for (const config of declared.records.values()) {
+    if (!config.path) continue;
+    descriptors.push({ name: config.name, path: config.path, declared: config });
+    configuredPaths.add(config.path);
+  }
+  for (const [indexPath, stages] of indexByPath) {
+    if (!configuredPaths.has(indexPath) && stages.some((stage) => stage.mode === "160000")) {
+      descriptors.push({ name: null, path: indexPath, declared: null });
+    }
+  }
+
+  const entries = descriptors.map((descriptor) => {
+    const stages = indexByPath.get(descriptor.path) || [];
+    const conflictStages = stages
+      .filter((stage) => stage.stage >= 1 && stage.stage <= 3)
+      .map((stage) => ({ stage: stage.stage, mode: stage.mode, oid: stage.oid }));
+    const recorded = stages.find((stage) => stage.stage === 0 && stage.mode === "160000");
+    const hasStageZero = stages.some((stage) => stage.stage === 0);
+    const indexState = conflictStages.length
+      ? { kind: "conflicted", recordedOid: null, conflictStages }
+      : recorded
+        ? {
+            kind: "recorded",
+            recordedOid: normalizeGitWorkspaceObjectId(recorded.oid, repository.objectFormat),
+            conflictStages: [],
+          }
+        : { kind: hasStageZero ? "not-gitlink" : "missing", recordedOid: null, conflictStages: [] };
+    const localConfig = descriptor.name ? local.records.get(descriptor.name) || null : null;
+    const targetPath = resolveGitWorkspaceChildPath(repository.repositoryPath, descriptor.path);
+    const pathAvailable = Boolean(targetPath && gitWorkspaceDirectoryAvailable(targetPath));
+    const configuration = !targetPath ? "invalid" : descriptor.declared ? "configured" : "index-only";
+    const configValue = (key) => {
+      const declaredValue = descriptor.declared?.[key] || null;
+      const localValue = localConfig?.[key] || null;
+      return { declared: declaredValue, local: localValue, effective: localValue || declaredValue };
+    };
+    return {
+      name: descriptor.name,
+      path: targetPath || path.resolve(repository.repositoryPath, descriptor.path),
+      pathAvailable,
+      configuration,
+      url: configValue("url"),
+      branch: configValue("branch"),
+      index: indexState,
+      registration: descriptor.name ? (localConfig?.url ? "initialized" : "uninitialized") : "unknown",
+      checkout: !targetPath || !pathAvailable ? "missing" : "unreadable",
+      objectFormat: null,
+      head: { kind: "unknown", ref: null, name: null, oid: null },
+      commitMismatch: null,
+      status: null,
+      failure: !targetPath
+        ? { code: "path-unavailable", operation: "submodule-status", message: "Submodule 路径越出当前仓库。" }
+        : !pathAvailable
+          ? { code: "path-unavailable", operation: "submodule-status", message: "Submodule checkout 当前不可访问。" }
+          : null,
+    };
+  });
+
+  const jobs = entries
+    .filter((entry) => entry.pathAvailable && entry.configuration !== "invalid")
+    .map((entry) => async () => {
+      const entryDeadline = Date.now() + gitWorkspaceEntryTimeoutMs;
+      const entryCommand = (args, options = {}) =>
+        runGitWorkspaceCommand(entry.path, args, {
+          ...options,
+          timeoutMs: Math.max(1, entryDeadline - Date.now()),
+        });
+      const formatResult = await entryCommand(["rev-parse", "--show-object-format=storage"]);
+      const objectFormat = formatResult.stdout.trim();
+      if (formatResult.status !== 0) {
+        entry.checkout = entry.registration === "uninitialized" ? "missing" : "not-repository";
+        entry.failure = gitWorkspaceFailure(
+          "submodule-status",
+          formatResult,
+          "路径不是当前仓库的 direct submodule checkout.",
+        );
+        return;
+      }
+      if (objectFormat !== "sha1" && objectFormat !== "sha256") {
+        entry.checkout = "not-repository";
+        entry.failure = {
+          code: "invalid-output",
+          operation: "submodule-status",
+          message: "Submodule 对象格式无法识别。",
+        };
+        return;
+      }
+      const superprojectResult = await entryCommand(["rev-parse", "--show-superproject-working-tree"]);
+      if (superprojectResult.status !== 0) {
+        entry.checkout = entry.registration === "uninitialized" ? "missing" : "not-repository";
+        entry.failure = gitWorkspaceFailure(
+          "submodule-status",
+          superprojectResult,
+          "路径不是当前仓库的 direct submodule checkout.",
+        );
+        return;
+      }
+      if (!gitWorkspacePathsEqual(superprojectResult.stdout.trim(), repository.repositoryPath)) {
+        entry.checkout = entry.registration === "uninitialized" ? "missing" : "not-repository";
+        entry.failure = {
+          code: "command-failed",
+          operation: "submodule-status",
+          message: "路径不是当前仓库的 direct submodule checkout.",
+        };
+        return;
+      }
+      const headResult = await entryCommand(["rev-parse", "HEAD"]);
+      const branchResult = await entryCommand(["symbolic-ref", "--short", "-q", "HEAD"]);
+      entry.objectFormat = objectFormat;
+      const oid = normalizeGitWorkspaceObjectId(headResult.stdout.trim(), objectFormat);
+      const branchName = branchResult.status === 0 ? branchResult.stdout.trim() : "";
+      if (headResult.status !== 0 && !branchName) {
+        entry.checkout = "unreadable";
+        entry.failure = gitWorkspaceFailure("submodule-status", headResult, "无法读取 submodule HEAD。");
+        return;
+      }
+      if (headResult.status === 0 && !oid) {
+        entry.checkout = "unreadable";
+        entry.failure = {
+          code: "invalid-output",
+          operation: "submodule-status",
+          message: "Submodule HEAD 不是完整对象 ID。",
+        };
+        return;
+      }
+      entry.head = {
+        kind: branchName ? "branch" : oid ? "detached" : "unborn",
+        ref: branchName ? `refs/heads/${branchName}` : null,
+        name: branchName || null,
+        oid,
+      };
+      entry.checkout = "available";
+      entry.commitMismatch =
+        entry.index.kind === "recorded" && entry.index.recordedOid && oid ? entry.index.recordedOid !== oid : null;
+      const statusParser = createGitWorkspaceStatusParser(objectFormat);
+      const statusResult = await entryCommand(
+        [
+          "--no-optional-locks",
+          "status",
+          "--porcelain=v2",
+          "--branch",
+          "--ahead-behind",
+          "--untracked-files=normal",
+          "--ignore-submodules=dirty",
+          "-z",
+        ],
+        { stdoutRecordHandler: statusParser.consume },
+      );
+      if (statusResult.status !== 0) {
+        entry.failure = gitWorkspaceFailure("submodule-status", statusResult, "无法读取 submodule 状态。");
+        return;
+      }
+      entry.status = statusParser.result().status;
+      delete entry.status.upstream;
+      entry.failure = null;
+    });
+  return { entries, failure: sourceFailure, jobs, unavailable: false };
+}
+
+async function readGitWorkspaceSnapshot(projectPath) {
+  const lastRefreshedAt = new Date().toISOString();
+  const repository = await probeGitWorkspaceRepository(projectPath);
+  if (repository.failure) {
+    const section = { state: "unavailable", entries: [], failure: repository.failure };
+    return {
+      repositoryPath: "",
+      objectFormat: null,
+      worktrees: section,
+      submodules: { ...section },
+      lastRefreshedAt,
+    };
+  }
+
+  const [worktreeResult, submoduleResult] = await Promise.all([
+    enumerateGitWorkspaceWorktrees(repository),
+    enumerateGitWorkspaceSubmodules(repository),
+  ]);
+  await runGitWorkspaceWorkerPool([...worktreeResult.jobs, ...submoduleResult.jobs]);
+  const toSection = (result) => ({
+    state: result.unavailable
+      ? "unavailable"
+      : result.failure || result.entries.some((entry) => entry.failure)
+        ? "partial"
+        : "ready",
+    entries: result.entries,
+    failure: result.failure,
+  });
+  return {
+    repositoryPath: repository.repositoryPath,
+    objectFormat: repository.objectFormat,
+    worktrees: toSection(worktreeResult),
+    submodules: toSection(submoduleResult),
+    lastRefreshedAt,
+  };
 }
 
 function firstGitError(result, fallback) {
@@ -3805,6 +4545,7 @@ window.projectBridge = {
   readPackageScripts,
   listProjectSubdirectories,
   readGitSnapshot,
+  readGitWorkspaceSnapshot,
   readGitStatusSnapshot,
   readGitCommits,
   readGitFileDiff,
