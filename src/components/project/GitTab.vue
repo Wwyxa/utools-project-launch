@@ -397,7 +397,9 @@ const repositoryChangeDetail = (
     : "变更：不可用";
 
 const repositoryUpstreamDetail = (upstream: { ref: string; ahead: number; behind: number } | null | undefined) =>
-  upstream ? `Upstream：${upstream.ref} · ahead ${upstream.ahead} · behind ${upstream.behind}` : "Upstream：未配置或不可用";
+  upstream
+    ? `Upstream：${upstream.ref} · ahead ${upstream.ahead} · behind ${upstream.behind}`
+    : "Upstream：未配置或不可用";
 
 const repositoryRows = computed<GitRepositoryRow[]>(() => {
   const workspace = gitWorkspaceSnapshot.value;
@@ -510,7 +512,7 @@ const selectedRepositoryRow = computed(
 
 const repositoryMenuStyle = computed(() => {
   if (!repositoryMenu.value) return {};
-  const width = 208;
+  const width = 288;
   const viewportWidth = globalThis.window?.innerWidth || 1024;
   const viewportHeight = globalThis.window?.innerHeight || 768;
   return {
