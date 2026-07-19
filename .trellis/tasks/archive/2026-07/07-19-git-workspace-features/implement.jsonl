@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Vue 3 frontend package overview and routing to project-specific implementation conventions."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Inline compact Git top-bar sections, semantic selectable rows, lightweight teleported More menus, accessibility, status tokens, and narrow-layout conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Selected repository target authorization, context-keyed Git refresh/write races, transient renderer state, persistence exclusions, and bridge boundary contracts."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Shared repository target/context and Git snapshot contracts must remain centralized, closed, and fully typed."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The selected repository path crosses GitTab, Pinia authorization, typed bridge/fallback, preload canonicalization, and Git output contracts."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Repository target equality, context keys, authorization, and refresh logic need one source of truth during the broad Git action migration."}
+{"file":".trellis/tasks/07-19-git-workspace-features/design.md","reason":"Authoritative revised VS Code-style top repository section, active-context state machine, target-aware read/write routing, draft isolation, and rollback design."}
+{"file":".trellis/tasks/07-19-git-workspace-features/research/git-workspace-contracts.md","reason":"Official Git machine-format, parser, compatibility, concurrency, failure-isolation, and real-fixture evidence; old overlay scope is explicitly superseded."}
