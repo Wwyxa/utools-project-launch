@@ -1711,3 +1711,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 50: 完善 Git 多仓库上下文切换
+
+**Date**: 2026-07-19
+**Task**: 完善 Git 多仓库上下文切换
+**Branch**: `master`
+
+### Summary
+
+支持 worktree 与 submodule 仓库发现和上下文切换，统一选中仓库的 Git 读写授权，并完善条件选择器、浮层、刷新交互及真实 Git 验证。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5d77c41` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
