@@ -35,6 +35,7 @@ There is no dedicated test runner configured yet, so the quality baseline is typ
 - Keep feature folders aligned with the current domain split
 - Use `lucide-vue-next` icons already available in the repo
 - Keep text, spacing, and color aligned with the design tokens in `src/index.css`
+- For host-critical selected, focused, error, compact metadata, and action-control states, use explicit semantic token values per theme. Do not rely on `color-mix()` or Tailwind color opacity modifiers as the only dark-theme declaration because the uTools host may render them substantially dimmer than the development browser.
 - Keep main themed scroll containers on `.themed-scrollbar` so `scrollbar-gutter: stable` reserves scrollbar space and prevents dashboard width jitter when vertical overflow appears
 
 ---

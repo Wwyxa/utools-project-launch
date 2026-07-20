@@ -74,6 +74,9 @@
   --scrollbar-thumb: #a9b6ad;
   --scrollbar-thumb-hover: #7f8d85;
   --dashboard-toolbar-bg: rgba(251, 249, 248, 0.96);
+  --dashboard-filter-active-border: #2eaf7d;
+  --dashboard-filter-active-bg: #ddf6ea;
+  --dashboard-filter-active-count-bg: rgba(0, 108, 73, 0.12);
   --toolbar-control-bg: #ffffff;
   --toolbar-control-bg-hover: #f0eded;
   --toolbar-primary-bg: #006c49;
@@ -100,20 +103,20 @@
 
 @layer base {
   .dark {
-    --color-surface: #181a1b;
-    --color-surface-dim: #101112;
-    --color-surface-bright: #242728;
-    --color-surface-container-lowest: #0d0e0f;
-    --color-surface-container-low: #151718;
-    --color-surface-container: #1b1e1f;
-    --color-surface-container-high: #222526;
-    --color-surface-container-highest: #2a2d2e;
-    --color-on-surface: #e4e2e1;
-    --color-on-surface-variant: #bccac0;
+    --color-surface: #20262e;
+    --color-surface-dim: #131820;
+    --color-surface-bright: #343d48;
+    --color-surface-container-lowest: #171c23;
+    --color-surface-container-low: #1b2129;
+    --color-surface-container: #242b34;
+    --color-surface-container-high: #2a323c;
+    --color-surface-container-highest: #323b47;
+    --color-on-surface: #d8dee6;
+    --color-on-surface-variant: #9da8b5;
     --color-inverse-surface: #e4e2e1;
     --color-inverse-on-surface: #303030;
-    --color-outline: #707a73;
-    --color-outline-variant: #303735;
+    --color-outline: #7d8996;
+    --color-outline-variant: #3a4552;
     --color-surface-tint: #63dca6;
 
     --color-primary: #63dca6;
@@ -132,22 +135,25 @@
     --color-tertiary-container: #81262b;
     --color-on-tertiary-container: #ffdad8;
 
-    --color-background: #131516;
-    --color-on-background: #e4e2e1;
-    --color-surface-variant: #252b29;
+    --color-background: #171c23;
+    --color-on-background: #d8dee6;
+    --color-surface-variant: #2a323c;
 
     --color-status-warning: #f4b860;
     --color-status-info: #b7c4ff;
 
-    --color-bg-soft-gray: #1d2021;
-    --color-border-subtle: #2b3030;
+    --color-bg-soft-gray: #1c232b;
+    --color-border-subtle: #303944;
 
-    --scrollbar-track: #101112;
-    --scrollbar-thumb: #3b4641;
-    --scrollbar-thumb-hover: #56635d;
-    --dashboard-toolbar-bg: rgba(19, 21, 22, 0.96);
-    --toolbar-control-bg: #0d0e0f;
-    --toolbar-control-bg-hover: #222526;
+    --scrollbar-track: #171c23;
+    --scrollbar-thumb: #465260;
+    --scrollbar-thumb-hover: #5c6978;
+    --dashboard-toolbar-bg: rgba(27, 33, 41, 0.96);
+    --dashboard-filter-active-border: #3b7d62;
+    --dashboard-filter-active-bg: #18352b;
+    --dashboard-filter-active-count-bg: #21483a;
+    --toolbar-control-bg: #1b2129;
+    --toolbar-control-bg-hover: #2a323c;
     --toolbar-primary-bg: #005236;
     --toolbar-primary-fg: #81f9c1;
     --toolbar-primary-bg-hover: #006c49;
@@ -334,8 +340,8 @@
 }
 
 .dashboard-filter-chip.is-active {
-  border-color: var(--color-primary-container);
-  background: #ddf6ea;
+  border-color: var(--dashboard-filter-active-border);
+  background: var(--dashboard-filter-active-bg);
   color: var(--color-primary);
   box-shadow: inset 0 0 0 1px rgba(0, 108, 73, 0.12);
 }
@@ -346,37 +352,37 @@
 }
 
 .dashboard-filter-chip-count.is-active {
-  background: rgba(0, 108, 73, 0.12);
+  background: var(--dashboard-filter-active-count-bg);
   color: var(--color-primary);
 }
 
 .dark .dashboard-filter-chip {
-  border-color: #2b3030;
-  background: #151718;
-  color: #bccac0;
+  border-color: var(--color-border-subtle);
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface-variant);
 }
 
 .dark .dashboard-filter-chip:hover {
-  border-color: #3b4641;
-  background: #1b1e1f;
-  color: #e4e2e1;
+  border-color: var(--color-outline-variant);
+  background: var(--color-surface-container);
+  color: var(--color-on-surface);
 }
 
 .dark .dashboard-filter-chip.is-active {
-  border-color: #2f7d5d;
-  background: #10251d;
-  color: #63dca6;
+  border-color: var(--dashboard-filter-active-border);
+  background: var(--dashboard-filter-active-bg);
+  color: var(--color-primary);
   box-shadow: inset 0 0 0 1px rgba(99, 220, 166, 0.12);
 }
 
 .dark .dashboard-filter-chip-count {
-  background: #222526;
-  color: #bccac0;
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
 }
 
 .dark .dashboard-filter-chip-count.is-active {
-  background: #17382b;
-  color: #81f9c1;
+  background: var(--dashboard-filter-active-count-bg);
+  color: var(--color-primary);
 }
 
 .ui-field {

@@ -414,7 +414,11 @@ const handleDelete = (event: MouseEvent) => {
         >
           {{ project.name }}
         </h3>
-        <GripVertical v-if="isSorting" :size="14" class="shrink-0 text-on-surface-variant/55" />
+        <GripVertical
+          v-if="isSorting"
+          :size="14"
+          class="shrink-0 text-on-surface-variant/55 dark:text-on-surface-variant"
+        />
         <button
           v-else-if="tinyRunTarget"
           type="button"
@@ -427,7 +431,7 @@ const handleDelete = (event: MouseEvent) => {
                 ? 'text-status-running hover:bg-status-running/10'
                 : tinyRunTarget.status === 'STOPPING'
                   ? 'text-status-warning cursor-wait'
-                  : 'text-on-surface-variant/60 hover:text-status-running hover:bg-on-surface/5',
+                  : 'text-on-surface-variant/60 dark:text-on-surface-variant hover:text-status-running hover:bg-on-surface/5 dark:hover:bg-surface-container-high',
             )
           "
           :title="tinyRunTarget.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript"
@@ -444,7 +448,7 @@ const handleDelete = (event: MouseEvent) => {
       <div
         :class="
           cn(
-            'absolute top-[calc(100%+0.25rem)] right-0 z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
+            'absolute top-[calc(100%+0.25rem)] right-0 z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 dark:border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
             'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
           )
         "
@@ -454,7 +458,7 @@ const handleDelete = (event: MouseEvent) => {
           v-if="quickLink && !isSorting"
           type="button"
           @click="handleOpenQuickLink"
-          class="p-0.5 text-on-surface-variant/60 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          class="p-0.5 text-on-surface-variant/60 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
           :title="t.projectActions.openQuickLink"
           :aria-label="t.projectActions.openQuickLink"
         >
@@ -463,7 +467,7 @@ const handleDelete = (event: MouseEvent) => {
         <button
           v-if="!isSorting"
           @click.stop="handleOpenTerminal"
-          class="p-0.5 text-on-surface-variant/70 hover:text-status-running rounded hover:bg-on-surface/5 transition-colors"
+          class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-status-running rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
           :disabled="isUnavailable"
           :title="t.projectActions.openInTerminal"
           :aria-label="t.projectActions.openInTerminal"
@@ -473,7 +477,7 @@ const handleDelete = (event: MouseEvent) => {
         <button
           v-if="!isSorting"
           @click.stop="handleOpenEditor"
-          class="p-0.5 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
           :disabled="isUnavailable"
           :title="t.projectActions.openInEditor"
           :aria-label="t.projectActions.openInEditor"
@@ -483,7 +487,7 @@ const handleDelete = (event: MouseEvent) => {
         <button
           v-if="!isSorting"
           @click.stop="handleOpenFolder"
-          class="p-0.5 text-on-surface-variant/70 hover:text-on-surface rounded hover:bg-on-surface/5 transition-colors"
+          class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-on-surface rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
           :disabled="isUnavailable"
           :title="t.common.openFolder"
           :aria-label="t.common.openFolder"
@@ -493,7 +497,7 @@ const handleDelete = (event: MouseEvent) => {
         <button
           v-if="!isSorting"
           @click.stop="handleEdit"
-          class="p-0.5 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+          class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
           :title="t.common.edit"
           :aria-label="t.common.edit"
         >
@@ -502,7 +506,7 @@ const handleDelete = (event: MouseEvent) => {
         <button
           v-if="!isSorting"
           @click.stop="handleDelete"
-          class="p-0.5 text-on-surface-variant/70 hover:text-status-error rounded hover:bg-on-surface/5 transition-colors"
+          class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-status-error rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
           :title="t.projectActions.deleteProject"
           :aria-label="t.projectActions.deleteProject"
         >
@@ -568,7 +572,11 @@ const handleDelete = (event: MouseEvent) => {
             <Link2 :size="13" />
           </button>
 
-          <GripVertical v-if="isSorting" :size="16" class="shrink-0 text-on-surface-variant/55" />
+          <GripVertical
+            v-if="isSorting"
+            :size="16"
+            class="shrink-0 text-on-surface-variant/55 dark:text-on-surface-variant"
+          />
 
           <div
             v-else-if="isError"
@@ -586,10 +594,16 @@ const handleDelete = (event: MouseEvent) => {
         </div>
       </div>
 
-      <p v-if="project.description" class="text-xs text-on-surface-variant/80 mt-1 line-clamp-1">
+      <p
+        v-if="project.description"
+        class="text-xs text-on-surface-variant/80 dark:text-on-surface-variant mt-1 line-clamp-1"
+      >
         {{ project.description }}
       </p>
-      <p class="font-mono text-[11px] text-on-surface-variant/60 mt-0.5 max-w-full truncate" :title="project.path">
+      <p
+        class="font-mono text-[11px] text-on-surface-variant/60 dark:text-on-surface-variant mt-0.5 max-w-full truncate"
+        :title="project.path"
+      >
         {{ displayPath }}
       </p>
       <p v-if="isUnavailable" class="text-[11px] text-status-warning mt-1 line-clamp-1">
@@ -753,7 +767,7 @@ const handleDelete = (event: MouseEvent) => {
           <template v-else>
             <button
               @click.stop="handleOpenTerminal"
-              class="p-1 text-on-surface-variant/70 hover:text-status-running rounded hover:bg-on-surface/5 transition-colors"
+              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-status-running rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
               :disabled="isUnavailable"
               :title="t.projectActions.openInTerminal"
               :aria-label="t.projectActions.openInTerminal"
@@ -762,7 +776,7 @@ const handleDelete = (event: MouseEvent) => {
             </button>
             <button
               @click.stop="handleOpenEditor"
-              class="p-1 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
               :disabled="isUnavailable"
               :title="t.projectActions.openInEditor"
               :aria-label="t.projectActions.openInEditor"
@@ -771,7 +785,7 @@ const handleDelete = (event: MouseEvent) => {
             </button>
             <button
               @click.stop="handleOpenFolder"
-              class="p-1 text-on-surface-variant/70 hover:text-on-surface rounded hover:bg-on-surface/5 transition-colors"
+              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-on-surface rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
               :disabled="isUnavailable"
               :title="t.common.openFolder"
               :aria-label="t.common.openFolder"
@@ -780,7 +794,7 @@ const handleDelete = (event: MouseEvent) => {
             </button>
             <button
               @click.stop="handleEdit"
-              class="p-1 text-on-surface-variant/70 hover:text-primary rounded hover:bg-on-surface/5 transition-colors"
+              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
               :title="t.common.edit"
               :aria-label="t.common.edit"
             >
@@ -788,7 +802,7 @@ const handleDelete = (event: MouseEvent) => {
             </button>
             <button
               @click.stop="handleDelete"
-              class="p-1 text-on-surface-variant/70 hover:text-status-error rounded hover:bg-on-surface/5 transition-colors"
+              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-status-error rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
               :title="t.projectActions.deleteProject"
               :aria-label="t.projectActions.deleteProject"
             >
