@@ -553,67 +553,133 @@ Let store actions persist preferences and keep bridge state synchronized.
 
 ### 1. Scope / Trigger
 
-- Trigger: the Environment tab asks the uTools preload bridge to detect local command-line tools such as Node.js, npm, pnpm, Git, and Docker.
+- Trigger: global environment preferences persist enabled built-in tools plus user-defined command-line tools, and the Environment tab publishes each detection result without waiting for the complete refresh batch.
+- This requires code-spec depth because preferences, request validation, process execution, refresh concurrency, and stale-result handling cross Vue, Pinia, the browser fallback, and the uTools preload bridge.
 
 ### 2. Signatures
 
-- Preload helper: `runToolCommand(command, args): Promise<{ ok: boolean; stdout?: string; stderr?: string; message?: string }>`.
-- Detection path: `inspectEnvironmentTools()` -> `runToolCommand(tool.command, tool.versionArgs)` plus platform path lookup through `where` on Windows or `command -v` elsewhere.
-- Shell quoting helper: `quoteShellToken(token)` wraps macOS/Linux command tokens before passing them through the user's shell.
+- `EnvironmentPreferences = { enabledToolKeys: EnvironmentToolKey[]; customTools: CustomEnvironmentTool[]; builtinOverrides: BuiltinEnvironmentToolOverride[] }`.
+- `CustomEnvironmentTool = { id: string; name: string; command: string; versionArgs: string[]; enabled: boolean }`.
+- `BuiltinEnvironmentToolOverride = { key: EnvironmentToolKey; command: string; versionArgs: string[] }`.
+- `EnvironmentToolRequest = { kind: "builtin"; key: EnvironmentToolKey } | { kind: "builtin-override"; key: EnvironmentToolKey; command: string; versionArgs: string[] } | { kind: "custom"; id: string; name: string; command: string; versionArgs: string[] }`.
+- `ProjectBridge.loadBuiltinEnvironmentTools(): EnvironmentToolDefinition[]` synchronously returns the current platform's fixed key/name/default command/default args definitions.
+- `ProjectBridge.detectEnvironmentTool(request: EnvironmentToolRequest): Promise<EnvironmentToolResult>`.
+- Store action: `refreshEnvironmentTools(targetKeys?: string[]): Promise<void>`.
+- Preload helper: `runToolCommand(command, args, direct = false)`; `direct === true` uses native executable/argv spawning except for the validated Windows `.cmd` / `.bat` shim path described below.
+- Preload helper: `resolveWindowsDirectCommand(command): Promise<string>` resolves extensionless Windows commands through `where.exe`, preferring `.com` / `.exe` over `.bat` / `.cmd`.
 
 ### 3. Contracts
 
-- Windows detection should execute through `spawn(command, args, { shell: true, windowsHide: true })` so terminal-visible `.cmd` shims such as `npm` and `pnpm` resolve correctly.
-- macOS/Linux detection should execute through the user's `process.env.SHELL` when available; non-`sh` shells should use `-ilc` so nvm and similar version managers can initialize PATH before running the command.
-- Keep the tool list and detection sequence stable: version check first, path lookup second.
-- Preserve the existing 5 second timeout, stdout/stderr decoding, and non-throwing result shape for missing tools.
-- Only hard-coded tool commands and arguments may enter the shell-backed path; quote every token before composing the macOS/Linux command line.
+- Components manage preferences and refreshes only through store actions. Settings and Environment read built-in display/command definitions from the store; preload is the real runtime's single source of platform-specific built-in defaults.
+- Browser fallback and preload normalization must preserve an explicit empty `enabledToolKeys` list, default only a missing/invalid list, add `customTools: []` and `builtinOverrides: []` for legacy values, and drop malformed/unsafe custom entries or overrides.
+- Custom ids are stable, non-empty, and cannot collide with built-in keys. Names and executable commands are non-empty. Commands and each argument token reject shell operators, substitutions, control characters, and empty tokens at both renderer and preload boundaries.
+- Built-in tools keep shell-backed execution for terminal PATH compatibility: Windows uses `shell: true`; macOS/Linux uses the user's shell with `-lc` / `-ilc` and quotes each hard-coded token.
+- Custom tools and built-in overrides never enter the general shell-backed trusted built-in path. Native commands use direct executable/argv spawning. On Windows, extensionless commands are resolved with `where.exe`; `.com` / `.exe` stay direct, while `.bat` / `.cmd` use explicit `cmd.exe /d /c <resolved-path> <args...>` only after rejecting `" & | < > ^ % ! ( )` from the resolved shim path and arguments. Path lookup uses `where` on Windows or `which` elsewhere and also runs directly.
+- Vue event bindings must call `store.refreshEnvironmentTools()` explicitly. A bare `@click="store.refreshEnvironmentTools"` forwards `MouseEvent` as the optional `targetKeys` argument and fails before refresh state can be published.
+- Every command keeps the 5-second timeout and shared output decoding. Detection checks version first, then path; the version is the first stdout line or, when stdout is empty, the first stderr line.
+- Pinia runs at most four single-tool bridge promises concurrently. Each result is upserted immediately when it settles; one rejection becomes that tool's typed error result and does not stop sibling workers.
+- Per-key request generations protect overlapping refreshes and configuration changes. A queued item must revalidate its generation and request snapshot before starting; a settled item must repeat both checks before writing. Editing, disabling, deleting, saving/restoring a built-in override, or re-enabling a tool invalidates its generation, clears its result, and prevents stale queued commands from executing.
+- Manual refresh keeps previous values visible while `environmentRefreshingKeys[key]` is true. Initial detection shows a skeleton only for keys that have no previous result. Global `environmentRefreshing` remains true until every overlapping refresh batch has settled.
 
 ### 4. Validation & Error Matrix
 
-- Tool missing from PATH -> return `ok: false` with the existing error/message behavior.
-- Tool installed through nvm on macOS -> login/interactive shell loads the version manager before `node --version` or package manager checks run.
-- npm/pnpm shim available in Windows terminal -> `shell: true` lets the shell resolve the command.
-- Command hangs -> kill after 5 seconds and return a timeout failure result.
-- Command writes non-UTF-8 or localized output -> decode through the shared process output decoder.
+- Legacy `{ enabledToolKeys }` -> preserve valid keys and normalize `customTools` plus `builtinOverrides` to `[]`.
+- Explicit `enabledToolKeys: []` -> preserve the empty list so a custom-only configuration survives reload.
+- Empty/unsafe custom name, command, id, or argument -> reject at save/normalization; an invalid bridge request returns a typed `error` result without spawning.
+- Unknown or unsafe built-in override -> drop it during persistence normalization; reject it again at renderer request construction and preload execution without spawning.
+- Built-in npm/pnpm shim available only through the user's terminal shell -> shell-backed built-in detection resolves it.
+- Custom command missing from PATH -> return `missing` for that key; sibling tools continue and publish independently.
+- Windows `code` resolves to `code.cmd` -> launch the resolved shim through restricted `cmd.exe`, return the first version line, and report `code.cmd` as the executable path.
+- Windows shim argument contains `%PATH%`, `!value!`, `^`, parentheses, quotes, or command operators -> return a typed failure before starting `cmd.exe`.
+- Refresh button click -> invoke the Store action with no argument; never treat the framework event object as a key collection.
+- Command hangs -> kill after 5 seconds and return a timeout failure result for that key.
+- Custom item edited, disabled, or deleted, or built-in override saved/restored while running -> ignore the late result and keep the item invalidated.
+- Custom item invalidated while waiting behind four active workers -> skip it before bridge invocation; do not execute the old command merely to discard its result later.
+- Older refresh settles after a newer refresh for the same key -> keep the newer result and keep global refreshing true until both batches settle.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: macOS user with Node installed through nvm sees node, npm, and pnpm detected in Environment.
-- Good: Windows user who can run `npm` and `pnpm` in the terminal sees both tools detected.
-- Base: globally installed tools still work with ordinary PATH lookup.
-- Bad: using direct `spawn(command, args)` for environment detection, which misses shell-initialized PATH entries.
-- Bad: using `/bin/sh -lc` for all macOS users and expecting nvm to load when the user's actual setup lives in zsh or bash startup files.
+- Good: npm resolves through the user's shell while a custom Java request uses direct `spawn("java", ["-version"])`; Java finishes first and its card updates while npm remains checking.
+- Good: custom VS Code resolves `code` to `code.cmd`, runs `code -v` through the restricted shim path, and publishes the version plus resolved path.
+- Good: five tools refresh, only four bridge calls start, and disabling the queued fifth custom tool prevents its old executable from starting.
+- Base: browser preview persists custom configuration and returns one unsupported typed result per requested tool without local process access.
+- Bad: returning one `Promise.all` result array to Pinia, which forces the UI to wait for the slowest tool before showing any result.
+- Bad: checking request generations only after `detectEnvironmentTool` resolves; queued stale custom commands still execute even though their results are discarded.
+- Bad: passing custom executable text through `shell: true`, which turns a restricted executable/args model back into an arbitrary shell surface.
+- Bad: binding the refresh action as a bare click handler, which forwards `MouseEvent` into `targetKeys` and makes `new Set(targetKeys)` throw.
 
 ### 6. Tests Required
 
-- Run `npm run lint` and `npm run build` after changing preload environment detection.
-- Manual smoke test in uTools on Windows: confirm terminal-visible npm and pnpm are detected.
-- Manual smoke test in uTools on macOS with nvm: confirm node, npm, and pnpm are detected.
-- Manual smoke test for a missing command: confirm the Environment tab reports unavailable without blocking the rest of detection.
+- `npx vitest run src/lib/environmentTools.test.ts` must assert quoted argument round-trips, shell-operator rejection, legacy/explicit-empty preference normalization, a four-request concurrency ceiling, out-of-order immediate publication, failure isolation, edit/disable/delete late-result rejection, queued invalidation before bridge invocation, and newer-refresh precedence.
+- Run `npm run lint`, `npm run type-check`, `node --check public/preload.js`, and `npm run build` after changing this boundary.
+- Browser smoke: add/edit/toggle/delete a custom tool, reload to verify persistence, and confirm preview results settle per card without horizontal overflow.
+- Browser smoke: click refresh and assert at least one card's `checkedAt` changes; this catches accidental event forwarding into `targetKeys`.
+- Windows preload VM probe: detect `{ kind: "custom", command: "code", versionArgs: ["-v"] }`, assert `available`, the terminal-visible version, and a `.cmd` executable path; repeat with `%PATH%` and assert rejection before execution.
+- Manual uTools smoke on Windows: detect shell-visible npm/pnpm plus a custom Java-style tool, verify the real executable path, one missing command, one near-timeout command, and quick-before-slow publication.
+- Manual uTools smoke on macOS/Linux: verify shell-initialized built-ins and direct custom tool detection both resolve through their intended execution paths.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
-```js
-spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+```ts
+const results = await bridge.detectEnvironmentTools(enabledKeys);
+this.environmentResults = results;
 ```
 
-This bypasses shell initialization and can miss tools that are available in the user's terminal.
+This waits for the slowest tool and cannot publish per-key progress.
+
+#### Correct
+
+```ts
+await Promise.all(
+  Array.from({ length: Math.min(4, requests.length) }, async () => {
+    while (nextIndex < requests.length) {
+      const { key, request } = requests[nextIndex++]!;
+      if (!requestIsCurrent(key, request)) continue;
+      const result = await bridge.detectEnvironmentTool(request);
+      if (requestIsCurrent(key, request)) upsertEnvironmentResult(result);
+    }
+  }),
+);
+```
+
+Use bounded single-item promises and validate both before execution and before publication.
+
+#### Wrong
+
+```js
+spawn(custom.command, custom.versionArgs, { shell: true });
+```
+
+This reintroduces shell parsing for user-defined input.
 
 #### Correct
 
 ```js
-process.platform === "win32"
-  ? spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: true })
-  : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
+spawn(custom.command, custom.versionArgs, {
+  stdio: ["ignore", "pipe", "pipe"],
+  windowsHide: true,
+});
 ```
 
-Use shell execution deliberately for environment detection, while keeping command tokens quoted and the result contract unchanged.
+Keep custom executable and argument tokens separate. General shell-backed execution remains limited to trusted built-ins; only validated Windows `.cmd` / `.bat` shims use the restricted interpreter path.
+
+#### Wrong
+
+```vue
+<button @click="store.refreshEnvironmentTools">刷新</button>
+```
+
+Vue forwards the click event as the action's first argument, but that argument is reserved for an optional key array.
+
+#### Correct
+
+```vue
+<button @click="store.refreshEnvironmentTools()">刷新</button>
+```
+
+Keep framework event payloads out of domain-action parameters.
 
 ## Scenario: Streaming AI Bridge Actions
 

@@ -23,6 +23,11 @@ import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { getProjectBridge } from "../../lib/projectBridge";
+import {
+  formatEnvironmentArguments,
+  parseEnvironmentArguments,
+  type CustomEnvironmentToolErrors,
+} from "../../lib/environmentTools";
 import type { AiProviderKind, DefaultEditorKind, DefaultTerminalKind, EnvironmentToolKey } from "../../types";
 
 const store = useStore();
@@ -33,19 +38,51 @@ const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell"
 const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
 const isAiModelMenuOpen = ref(false);
 const selectedAiModeId = ref("");
-const environmentOptions: Array<{ key: EnvironmentToolKey; label: string }> = [
-  { key: "node", label: "Node.js" },
-  { key: "npm", label: "npm" },
-  { key: "pnpm", label: "pnpm" },
-  { key: "yarn", label: "Yarn" },
-  { key: "python", label: "Python" },
-  { key: "pip", label: "pip" },
-  { key: "go", label: "Go" },
-  { key: "git", label: "Git" },
-  { key: "docker", label: "Docker" },
-];
+const environmentDialogOpen = ref(false);
+const editingBuiltinEnvironmentKey = ref<EnvironmentToolKey | null>(null);
+const editingCustomEnvironmentId = ref<string | null>(null);
+const pendingDeleteCustomEnvironmentId = ref<string | null>(null);
+const customEnvironmentDraft = ref({ name: "", command: "", versionArgs: "--version" });
+const customEnvironmentErrors = ref<CustomEnvironmentToolErrors>({});
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 let stopAppEscapeListener = () => {};
+
+type EnvironmentSettingsCard = {
+  kind: "builtin" | "custom";
+  key: string;
+  name: string;
+  command: string;
+  versionArgs: string[];
+  enabled: boolean;
+  modified: boolean;
+};
+
+const environmentCards = computed<EnvironmentSettingsCard[]>(() => [
+  ...store.builtinEnvironmentTools.map((definition) => {
+    const override = store.environmentPreferences.builtinOverrides.find((item) => item.key === definition.key);
+    return {
+      kind: "builtin" as const,
+      key: definition.key,
+      name: definition.name,
+      command: override?.command || definition.command,
+      versionArgs: override?.versionArgs || definition.versionArgs,
+      enabled: store.environmentPreferences.enabledToolKeys.includes(definition.key),
+      modified: Boolean(override),
+    };
+  }),
+  ...store.environmentPreferences.customTools.map((tool) => ({
+    kind: "custom" as const,
+    key: tool.id,
+    name: tool.name,
+    command: tool.command,
+    versionArgs: tool.versionArgs,
+    enabled: tool.enabled,
+    modified: false,
+  })),
+]);
+const editingBuiltinHasOverride = computed(() =>
+  store.environmentPreferences.builtinOverrides.some((item) => item.key === editingBuiltinEnvironmentKey.value),
+);
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
 const editorUsesCustomCommand = computed(() => store.editorPreferences.kind === "custom");
@@ -106,6 +143,16 @@ const selectAiModel = (model: string) => {
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (pendingDeleteCustomEnvironmentId.value) {
+    pendingDeleteCustomEnvironmentId.value = null;
+    event.detail.handle();
+    return;
+  }
+  if (environmentDialogOpen.value) {
+    environmentDialogOpen.value = false;
+    event.detail.handle();
+    return;
+  }
   if (!isAiModelMenuOpen.value) return;
   isAiModelMenuOpen.value = false;
   event.detail.handle();
@@ -133,6 +180,69 @@ const handleDeleteAiMode = () => {
 const handleResetAiModes = () => {
   store.resetAiPromptModes();
   selectedAiModeId.value = store.aiPreferences.modes[0]?.id || "";
+};
+
+const openEnvironmentDialog = (tool?: EnvironmentSettingsCard) => {
+  editingBuiltinEnvironmentKey.value = tool?.kind === "builtin" ? (tool.key as EnvironmentToolKey) : null;
+  editingCustomEnvironmentId.value = tool?.kind === "custom" ? tool.key : null;
+  customEnvironmentDraft.value = {
+    name: tool?.name || "",
+    command: tool?.command || "",
+    versionArgs: tool ? formatEnvironmentArguments(tool.versionArgs) : "--version",
+  };
+  customEnvironmentErrors.value = {};
+  environmentDialogOpen.value = true;
+};
+
+const saveEnvironment = () => {
+  const versionArgs = parseEnvironmentArguments(customEnvironmentDraft.value.versionArgs);
+  if (!versionArgs) {
+    customEnvironmentErrors.value = { versionArgs: "unsafe" };
+    return;
+  }
+  const input = { ...customEnvironmentDraft.value, versionArgs };
+  const result = editingBuiltinEnvironmentKey.value
+    ? store.saveBuiltinEnvironmentToolOverride(editingBuiltinEnvironmentKey.value, input)
+    : editingCustomEnvironmentId.value
+      ? store.updateCustomEnvironmentTool(editingCustomEnvironmentId.value, input)
+      : store.addCustomEnvironmentTool(input);
+  if (!result.ok) {
+    customEnvironmentErrors.value = result.errors;
+    return;
+  }
+  environmentDialogOpen.value = false;
+};
+
+const restoreBuiltinEnvironment = () => {
+  if (!editingBuiltinEnvironmentKey.value) return;
+  store.restoreBuiltinEnvironmentTool(editingBuiltinEnvironmentKey.value);
+  environmentDialogOpen.value = false;
+};
+
+const requestDeleteCustomEnvironment = () => {
+  if (!editingCustomEnvironmentId.value) return;
+  pendingDeleteCustomEnvironmentId.value = editingCustomEnvironmentId.value;
+  environmentDialogOpen.value = false;
+};
+
+const confirmDeleteCustomEnvironment = () => {
+  if (!pendingDeleteCustomEnvironmentId.value) return;
+  store.deleteCustomEnvironmentTool(pendingDeleteCustomEnvironmentId.value);
+  pendingDeleteCustomEnvironmentId.value = null;
+};
+
+const setEnvironmentCardEnabled = (card: EnvironmentSettingsCard, enabled: boolean) => {
+  if (card.kind === "builtin") store.setEnvironmentToolEnabled(card.key as EnvironmentToolKey, enabled);
+  else store.setCustomEnvironmentToolEnabled(card.key, enabled);
+};
+
+const environmentCommandSummary = (card: EnvironmentSettingsCard) =>
+  [card.command, formatEnvironmentArguments(card.versionArgs)].filter(Boolean).join(" ");
+
+const customEnvironmentErrorText = (field: keyof CustomEnvironmentToolErrors) => {
+  const code = customEnvironmentErrors.value[field];
+  if (!code) return "";
+  return code === "required" ? t.value.settings.environmentRequired : t.value.settings.environmentUnsafe;
 };
 
 const aiTestIconClass = computed(() => {
@@ -177,7 +287,7 @@ watch(
 </script>
 
 <template>
-  <div class="themed-scrollbar h-full max-w-5xl overflow-y-auto p-2" @click="isAiModelMenuOpen = false">
+  <div class="themed-scrollbar h-full w-full overflow-y-auto p-2" @click="isAiModelMenuOpen = false">
     <header class="mb-3 flex items-center gap-3">
       <button
         type="button"
@@ -245,33 +355,67 @@ watch(
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
-        <div class="mb-2.5 flex items-center justify-between gap-3">
+        <div class="mb-2.5 flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-2">
             <MonitorCog :size="15" class="text-primary" />
             <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.environment }}</h3>
           </div>
-          <button
-            type="button"
-            @click="store.setActiveTab('environment')"
-            class="rounded-lg border border-border-subtle bg-transparent px-3 py-1.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-          >
-            {{ t.environment.title }}
-          </button>
+          <div class="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              @click="openEnvironmentDialog()"
+            >
+              <Plus :size="12" />
+              {{ t.settings.addEnvironment }}
+            </button>
+            <button
+              type="button"
+              @click="store.setActiveTab('environment')"
+              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-transparent px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+            >
+              <MonitorCog :size="12" />
+              {{ t.environment.title }}
+            </button>
+          </div>
         </div>
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-2">
-          <label
-            v-for="option in environmentOptions"
-            :key="option.key"
-            class="flex cursor-pointer items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-variant"
+        <div class="flex flex-wrap gap-2">
+          <article
+            v-for="card in environmentCards"
+            :key="card.key"
+            class="relative grid min-w-0 flex-grow basis-[calc((100%_-_0.5rem)/2)] grid-cols-[auto_minmax(0,1fr)] items-start gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-2 text-on-surface transition-colors hover:bg-surface-variant sm:basis-[calc((100%_-_2rem)/5)]"
           >
+            <button
+              type="button"
+              class="absolute inset-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              :aria-label="`${t.common.edit}: ${card.name}`"
+              @click="openEnvironmentDialog(card)"
+            />
             <input
               type="checkbox"
-              class="h-4 w-4 accent-primary"
-              :checked="store.environmentPreferences.enabledToolKeys.includes(option.key)"
-              @change="store.setEnvironmentToolEnabled(option.key, ($event.target as HTMLInputElement).checked)"
+              class="relative z-10 mt-0.5 h-4 w-4 accent-primary"
+              :checked="card.enabled"
+              :aria-label="card.name"
+              @change="setEnvironmentCardEnabled(card, ($event.target as HTMLInputElement).checked)"
             />
-            <span class="truncate font-medium">{{ option.label }}</span>
-          </label>
+            <div class="pointer-events-none relative min-w-0">
+              <div class="flex min-w-0 items-center gap-1.5">
+                <span class="truncate text-xs font-bold" :title="card.name">{{ card.name }}</span>
+                <span
+                  v-if="card.kind === 'custom' || card.modified"
+                  class="shrink-0 rounded border border-border-subtle bg-surface px-1 py-px text-[8px] font-bold leading-3 text-on-surface-variant"
+                >
+                  {{ card.kind === "custom" ? t.settings.customEnvironmentBadge : t.settings.modifiedEnvironmentBadge }}
+                </span>
+              </div>
+              <p
+                class="mt-0.5 truncate font-mono text-[9px] text-on-surface-variant"
+                :title="environmentCommandSummary(card)"
+              >
+                {{ environmentCommandSummary(card) }}
+              </p>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -675,5 +819,159 @@ watch(
         </div>
       </section>
     </div>
+
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="environmentDialogOpen"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="
+            editingBuiltinEnvironmentKey || editingCustomEnvironmentId
+              ? t.settings.editEnvironment
+              : t.settings.addEnvironment
+          "
+          @click.self="environmentDialogOpen = false"
+        >
+          <form
+            class="w-full max-w-md rounded-lg border border-border-subtle bg-surface p-3 shadow-xl"
+            @submit.prevent="saveEnvironment"
+          >
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <h3 class="text-sm font-bold text-on-surface">
+                {{
+                  editingBuiltinEnvironmentKey || editingCustomEnvironmentId
+                    ? t.settings.editEnvironment
+                    : t.settings.addEnvironment
+                }}
+              </h3>
+              <span class="font-mono text-[10px] text-on-surface-variant">
+                {{ editingBuiltinEnvironmentKey || t.settings.environmentGlobalHint }}
+              </span>
+            </div>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+                {{ t.settings.environmentName }}
+                <span
+                  v-if="editingBuiltinEnvironmentKey"
+                  class="mt-1 flex h-9 w-full items-center rounded border border-border-subtle bg-surface-container-low px-3 text-sm font-normal text-on-surface-variant"
+                >
+                  {{ customEnvironmentDraft.name }}
+                </span>
+                <input
+                  v-else
+                  v-model="customEnvironmentDraft.name"
+                  autofocus
+                  class="ui-field mt-1 w-full text-sm font-normal text-on-surface"
+                  :class="customEnvironmentErrors.name && 'border-status-error'"
+                  autocomplete="off"
+                />
+                <span v-if="customEnvironmentErrors.name" class="mt-0.5 block text-[10px] text-status-error">
+                  {{ customEnvironmentErrorText("name") }}
+                </span>
+              </label>
+              <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+                {{ t.settings.environmentCommand }}
+                <input
+                  v-model="customEnvironmentDraft.command"
+                  :autofocus="Boolean(editingBuiltinEnvironmentKey)"
+                  class="ui-field mt-1 w-full font-mono text-sm font-normal text-on-surface"
+                  :class="customEnvironmentErrors.command && 'border-status-error'"
+                  autocomplete="off"
+                  :placeholder="t.settings.environmentCommandPlaceholder"
+                />
+                <span v-if="customEnvironmentErrors.command" class="mt-0.5 block text-[10px] text-status-error">
+                  {{ customEnvironmentErrorText("command") }}
+                </span>
+              </label>
+            </div>
+            <label class="mt-2 block text-xs font-semibold text-on-surface-variant">
+              {{ t.settings.environmentVersionArgs }}
+              <input
+                v-model="customEnvironmentDraft.versionArgs"
+                class="ui-field mt-1 w-full font-mono text-sm font-normal text-on-surface"
+                :class="customEnvironmentErrors.versionArgs && 'border-status-error'"
+                autocomplete="off"
+                :placeholder="t.settings.environmentVersionArgsPlaceholder"
+              />
+              <span v-if="customEnvironmentErrors.versionArgs" class="mt-0.5 block text-[10px] text-status-error">
+                {{ customEnvironmentErrorText("versionArgs") }}
+              </span>
+            </label>
+            <div class="mt-3 flex items-center justify-between gap-2">
+              <div>
+                <button
+                  v-if="editingBuiltinEnvironmentKey && editingBuiltinHasOverride"
+                  type="button"
+                  class="inline-flex h-8 items-center gap-1 rounded border border-border-subtle px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+                  @click="restoreBuiltinEnvironment"
+                >
+                  <RotateCcw :size="12" />
+                  {{ t.settings.restoreEnvironmentDefault }}
+                </button>
+                <button
+                  v-else-if="editingCustomEnvironmentId"
+                  type="button"
+                  class="inline-flex h-8 items-center gap-1 rounded border border-status-error/30 px-2.5 text-xs font-bold text-status-error transition-colors hover:bg-status-error/10"
+                  @click="requestDeleteCustomEnvironment"
+                >
+                  <Trash2 :size="12" />
+                  {{ t.common.delete }}
+                </button>
+              </div>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="h-8 rounded border border-border-subtle px-3 text-xs font-bold text-on-surface"
+                  @click="environmentDialogOpen = false"
+                >
+                  {{ t.common.cancel }}
+                </button>
+                <button type="submit" class="h-8 rounded bg-primary px-3 text-xs font-bold text-on-primary">
+                  {{ t.common.save }}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="pendingDeleteCustomEnvironmentId"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3"
+          role="alertdialog"
+          aria-modal="true"
+          :aria-label="t.settings.deleteCustomEnvironment"
+          @click.self="pendingDeleteCustomEnvironmentId = null"
+        >
+          <div class="w-full max-w-sm rounded-lg border border-border-subtle bg-surface p-3 shadow-xl">
+            <h3 class="text-sm font-bold text-on-surface">{{ t.settings.deleteCustomEnvironment }}</h3>
+            <p class="mt-1 text-xs leading-5 text-on-surface-variant">
+              {{ t.settings.deleteCustomEnvironmentConfirm }}
+            </p>
+            <div class="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                class="h-8 rounded border border-border-subtle px-3 text-xs font-bold text-on-surface"
+                @click="pendingDeleteCustomEnvironmentId = null"
+              >
+                {{ t.common.cancel }}
+              </button>
+              <button
+                type="button"
+                class="h-8 rounded bg-status-error px-3 text-xs font-bold text-white"
+                @click="confirmDeleteCustomEnvironment"
+              >
+                {{ t.common.delete }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>

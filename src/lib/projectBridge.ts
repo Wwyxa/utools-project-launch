@@ -1,4 +1,9 @@
 import { AI_COMMIT_MESSAGE_MODE_ID, DEFAULT_AI_PROMPT_MODES } from "../types";
+import {
+  BUILTIN_ENVIRONMENT_TOOLS,
+  normalizeBuiltinEnvironmentToolOverride,
+  normalizeCustomEnvironmentTool,
+} from "./environmentTools";
 import type {
   DefaultTerminalKind,
   DefaultEditorKind,
@@ -9,6 +14,8 @@ import type {
   AiProviderKind,
   EditorPreferences,
   EnvironmentPreferences,
+  EnvironmentToolDefinition,
+  EnvironmentToolRequest,
   EnvironmentToolKey,
   ProjectBridge,
   ProjectBridgeGitCommitPage,
@@ -92,6 +99,8 @@ const defaultEditorPreferences = (): EditorPreferences => ({
 
 const defaultEnvironmentPreferences = (): EnvironmentPreferences => ({
   enabledToolKeys: ["node", "npm", "pnpm", "python", "go", "git"],
+  customTools: [],
+  builtinOverrides: [],
 });
 
 const cloneDefaultAiModes = (): AiPromptMode[] => DEFAULT_AI_PROMPT_MODES.map((mode) => ({ ...mode }));
@@ -198,8 +207,22 @@ const normalizeEnvironmentPreferences = (value: unknown): EnvironmentPreferences
         environmentToolKeys.has(key as EnvironmentToolKey),
       )
     : defaults.enabledToolKeys;
+  const customTools = Array.isArray(candidate.customTools)
+    ? candidate.customTools
+        .map(normalizeCustomEnvironmentTool)
+        .filter((tool) => tool !== null)
+        .filter((tool, index, tools) => tools.findIndex((item) => item.id === tool.id) === index)
+    : [];
+  const builtinOverrides = Array.isArray(candidate.builtinOverrides)
+    ? candidate.builtinOverrides
+        .map(normalizeBuiltinEnvironmentToolOverride)
+        .filter((override) => override !== null)
+        .filter((override, index, overrides) => overrides.findIndex((item) => item.key === override.key) === index)
+    : [];
   return {
-    enabledToolKeys: enabledToolKeys.length > 0 ? Array.from(new Set(enabledToolKeys)) : defaults.enabledToolKeys,
+    enabledToolKeys: Array.from(new Set(enabledToolKeys)),
+    customTools,
+    builtinOverrides,
   };
 };
 
@@ -441,16 +464,26 @@ const fallbackBridge: ProjectBridge = {
   saveEnvironmentPreferences(preferences) {
     writeStoredEnvironmentPreferences(preferences);
   },
-  async detectEnvironmentTools(toolKeys: EnvironmentToolKey[]) {
-    return toolKeys.map((key) => ({
+  loadBuiltinEnvironmentTools() {
+    return BUILTIN_ENVIRONMENT_TOOLS.map(
+      (tool): EnvironmentToolDefinition => ({ ...tool, versionArgs: [...tool.versionArgs] }),
+    );
+  },
+  async detectEnvironmentTool(request: EnvironmentToolRequest) {
+    const key = request.kind === "custom" ? request.id : request.key;
+    const name =
+      request.kind === "custom"
+        ? request.name
+        : BUILTIN_ENVIRONMENT_TOOLS.find((tool) => tool.key === request.key)?.name || request.key;
+    return {
       key,
-      name: key === "node" ? "Node.js" : key,
+      name,
       status: "error" as const,
       version: "",
       executablePath: "",
       checkedAt: new Date().toISOString(),
       error: "浏览器预览无法检测本机开发环境。",
-    }));
+    };
   },
   loadAiPreferences() {
     return readStoredAiPreferences();

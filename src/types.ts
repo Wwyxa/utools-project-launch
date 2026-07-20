@@ -50,14 +50,32 @@ export interface EditorPreferences {
 export interface EnvironmentToolDefinition {
   key: EnvironmentToolKey;
   name: string;
+  command: string;
+  versionArgs: string[];
+}
+
+export interface BuiltinEnvironmentToolOverride {
+  key: EnvironmentToolKey;
+  command: string;
+  versionArgs: string[];
+}
+
+export interface CustomEnvironmentTool {
+  id: string;
+  name: string;
+  command: string;
+  versionArgs: string[];
+  enabled: boolean;
 }
 
 export interface EnvironmentPreferences {
   enabledToolKeys: EnvironmentToolKey[];
+  customTools: CustomEnvironmentTool[];
+  builtinOverrides: BuiltinEnvironmentToolOverride[];
 }
 
 export interface EnvironmentToolResult {
-  key: EnvironmentToolKey;
+  key: string;
   name: string;
   status: EnvironmentToolStatus;
   version: string;
@@ -65,6 +83,22 @@ export interface EnvironmentToolResult {
   checkedAt: string;
   error?: string;
 }
+
+export type EnvironmentToolRequest =
+  | { kind: "builtin"; key: EnvironmentToolKey }
+  | {
+      kind: "builtin-override";
+      key: EnvironmentToolKey;
+      command: string;
+      versionArgs: string[];
+    }
+  | {
+      kind: "custom";
+      id: string;
+      name: string;
+      command: string;
+      versionArgs: string[];
+    };
 
 export interface AiPreferences {
   provider: AiProviderKind;
@@ -775,7 +809,8 @@ export interface ProjectBridge {
   saveEditorPreferences(preferences: EditorPreferences): void;
   loadEnvironmentPreferences(): EnvironmentPreferences;
   saveEnvironmentPreferences(preferences: EnvironmentPreferences): void;
-  detectEnvironmentTools(toolKeys: EnvironmentToolKey[]): Promise<EnvironmentToolResult[]>;
+  loadBuiltinEnvironmentTools(): EnvironmentToolDefinition[];
+  detectEnvironmentTool(request: EnvironmentToolRequest): Promise<EnvironmentToolResult>;
   loadAiPreferences(): AiPreferences;
   saveAiPreferences(preferences: AiPreferences): void;
   listAiModels(preferences?: AiPreferences): Promise<AiModelInfo[]>;

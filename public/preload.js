@@ -330,7 +330,63 @@ function getCurrentDeviceId() {
 }
 
 function getDefaultEnvironmentPreferences() {
-  return { enabledToolKeys: ["node", "npm", "pnpm", "python", "go", "git"] };
+  return {
+    enabledToolKeys: ["node", "npm", "pnpm", "python", "go", "git"],
+    customTools: [],
+    builtinOverrides: [],
+  };
+}
+
+function getBuiltinEnvironmentTools() {
+  return Object.entries(environmentTools).map(([key, tool]) => ({
+    key,
+    name: tool.name,
+    command: tool.command,
+    versionArgs: [...tool.versionArgs],
+  }));
+}
+
+function normalizeCustomEnvironmentTool(value) {
+  if (!value || typeof value !== "object") return null;
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  const name = typeof value.name === "string" ? value.name.trim() : "";
+  const command = typeof value.command === "string" ? value.command.trim() : "";
+  const versionArgs = Array.isArray(value.versionArgs)
+    ? value.versionArgs.map((argument) => (typeof argument === "string" ? argument.trim() : null))
+    : null;
+  const unsafe = /[|&;<>`\r\n\u0000-\u001f\u007f]|\$\(|\$\{/;
+  if (
+    !id ||
+    Object.prototype.hasOwnProperty.call(environmentTools, id) ||
+    !name ||
+    !command ||
+    !versionArgs ||
+    unsafe.test(command) ||
+    versionArgs.some((argument) => !argument || unsafe.test(argument))
+  ) {
+    return null;
+  }
+  return { id, name, command, versionArgs, enabled: value.enabled !== false };
+}
+
+function normalizeBuiltinEnvironmentToolOverride(value) {
+  if (!value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(environmentTools, value.key)) {
+    return null;
+  }
+  const command = typeof value.command === "string" ? value.command.trim() : "";
+  const versionArgs = Array.isArray(value.versionArgs)
+    ? value.versionArgs.map((argument) => (typeof argument === "string" ? argument.trim() : null))
+    : null;
+  const unsafe = /[|&;<>`\r\n\u0000-\u001f\u007f]|\$\(|\$\{/;
+  if (
+    !command ||
+    !versionArgs ||
+    unsafe.test(command) ||
+    versionArgs.some((argument) => !argument || unsafe.test(argument))
+  ) {
+    return null;
+  }
+  return { key: value.key, command, versionArgs };
 }
 
 function normalizeEnvironmentPreferences(value) {
@@ -341,8 +397,22 @@ function normalizeEnvironmentPreferences(value) {
   const enabledToolKeys = Array.isArray(value.enabledToolKeys)
     ? value.enabledToolKeys.filter((key) => Object.prototype.hasOwnProperty.call(environmentTools, key))
     : defaults.enabledToolKeys;
+  const customTools = Array.isArray(value.customTools)
+    ? value.customTools
+        .map(normalizeCustomEnvironmentTool)
+        .filter(Boolean)
+        .filter((tool, index, tools) => tools.findIndex((item) => item.id === tool.id) === index)
+    : [];
+  const builtinOverrides = Array.isArray(value.builtinOverrides)
+    ? value.builtinOverrides
+        .map(normalizeBuiltinEnvironmentToolOverride)
+        .filter(Boolean)
+        .filter((override, index, overrides) => overrides.findIndex((item) => item.key === override.key) === index)
+    : [];
   return {
-    enabledToolKeys: enabledToolKeys.length > 0 ? Array.from(new Set(enabledToolKeys)) : defaults.enabledToolKeys,
+    enabledToolKeys: Array.from(new Set(enabledToolKeys)),
+    customTools,
+    builtinOverrides,
   };
 }
 
@@ -521,7 +591,47 @@ function saveAiPreferences(preferences) {
   }
 }
 
-function runToolCommand(command, args) {
+const windowsNativeCommandPattern = /\.(?:com|exe)$/i;
+const windowsCommandShimPattern = /\.(?:bat|cmd)$/i;
+const windowsCommandShimUnsafePattern = /["&|<>^%!()\r\n]/;
+
+function resolveWindowsDirectCommand(command) {
+  if (process.platform !== "win32" || path.extname(command)) return Promise.resolve(command);
+  return new Promise((resolve) => {
+    execFile("where.exe", [command], { encoding: "buffer", windowsHide: true, timeout: 5000 }, (error, stdout) => {
+      if (error) {
+        resolve(command);
+        return;
+      }
+      const output = Buffer.isBuffer(stdout) ? createProcessOutputDecoder()(stdout) : String(stdout || "");
+      const candidates = output
+        .split(/\r?\n/)
+        .map((candidate) => candidate.trim())
+        .filter(Boolean);
+      resolve(
+        candidates.find((candidate) => windowsNativeCommandPattern.test(candidate)) ||
+          candidates.find((candidate) => windowsCommandShimPattern.test(candidate)) ||
+          command,
+      );
+    });
+  });
+}
+
+function firstExecutablePath(output) {
+  const candidates = String(output || "")
+    .split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .filter(Boolean);
+  if (process.platform !== "win32") return candidates[0] || "";
+  return (
+    candidates.find((candidate) => windowsNativeCommandPattern.test(candidate)) ||
+    candidates.find((candidate) => windowsCommandShimPattern.test(candidate)) ||
+    candidates[0] ||
+    ""
+  );
+}
+
+function runToolCommand(command, args, direct = false) {
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
@@ -542,86 +652,109 @@ function runToolCommand(command, args) {
       resolve(result);
     };
 
-    try {
-      const commandLine = [command, ...args].map(quoteShellToken).join(" ");
-      const shellPath = process.env.SHELL || "/bin/sh";
-      const shellName = path.basename(shellPath);
-      const child =
-        process.platform === "win32"
-          ? spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: true })
-          : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], {
-              stdio: ["ignore", "pipe", "pipe"],
-              windowsHide: true,
-            });
-      timeout = setTimeout(() => {
-        timedOut = true;
-        child.kill();
-      }, 5000);
+    const start = async () => {
+      try {
+        const resolvedCommand = direct ? await resolveWindowsDirectCommand(command) : command;
+        const commandLine = [command, ...args].map(quoteShellToken).join(" ");
+        const shellPath = process.env.SHELL || "/bin/sh";
+        const shellName = path.basename(shellPath);
+        const spawnOptions = { stdio: ["ignore", "pipe", "pipe"], windowsHide: true };
+        const usesWindowsShim =
+          direct && process.platform === "win32" && windowsCommandShimPattern.test(resolvedCommand);
+        if (
+          usesWindowsShim &&
+          [resolvedCommand, ...args].some((token) => windowsCommandShimUnsafePattern.test(token))
+        ) {
+          finish({ error: new Error("Windows command shim contains unsupported shell characters."), stdout, stderr });
+          return;
+        }
+        const child = usesWindowsShim
+          ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/c", resolvedCommand, ...args], spawnOptions)
+          : direct
+            ? spawn(resolvedCommand, args, spawnOptions)
+            : process.platform === "win32"
+              ? spawn(command, args, { ...spawnOptions, shell: true })
+              : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], spawnOptions);
+        timeout = setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, 5000);
 
-      child.stdout?.on("data", (chunk) => {
-        stdout += decodeStdout(chunk);
-      });
-      child.stderr?.on("data", (chunk) => {
-        stderr += decodeStderr(chunk);
-      });
-      child.on("error", (error) => {
-        finish({ error, stdout, stderr });
-      });
-      child.on("close", (status) => {
-        finish({
-          status,
-          stdout,
-          stderr,
-          error: timedOut ? new Error(`Command timed out after 5000ms: ${command}`) : undefined,
+        child.stdout?.on("data", (chunk) => {
+          stdout += decodeStdout(chunk);
         });
-      });
-    } catch (error) {
-      finish({ error, stdout, stderr });
-    }
+        child.stderr?.on("data", (chunk) => {
+          stderr += decodeStderr(chunk);
+        });
+        child.on("error", (error) => {
+          finish({ error, stdout, stderr });
+        });
+        child.on("close", (status) => {
+          finish({
+            status,
+            stdout,
+            stderr,
+            error: timedOut ? new Error(`Command timed out after 5000ms: ${command}`) : undefined,
+          });
+        });
+      } catch (error) {
+        finish({ error, stdout, stderr });
+      }
+    };
+    void start();
   });
 }
 
-async function detectEnvironmentTools(toolKeys) {
-  const requestedKeys =
-    Array.isArray(toolKeys) && toolKeys.length > 0 ? toolKeys : readEnvironmentPreferences().enabledToolKeys;
-  return Promise.all(
-    requestedKeys
-      .filter((key) => Object.prototype.hasOwnProperty.call(environmentTools, key))
-      .map(async (key) => {
-        const tool = environmentTools[key];
-        const checkedAt = new Date().toISOString();
-        const versionResult = await runToolCommand(tool.command, tool.versionArgs);
-        if (versionResult.error || versionResult.status !== 0) {
-          return {
-            key,
-            name: tool.name,
-            status: "missing",
-            version: "",
-            executablePath: "",
-            checkedAt,
-            error: versionResult.error?.message || String(versionResult.stderr || "Command not found").trim(),
-          };
-        }
-        const [pathCommand, ...pathArgs] = tool.pathArgs;
-        const pathResult = await runToolCommand(pathCommand, pathArgs);
-        return {
-          key,
-          name: tool.name,
-          status: "available",
-          version:
-            String(versionResult.stdout || versionResult.stderr || "")
-              .trim()
-              .split(/\r?\n/)[0] || "OK",
-          executablePath:
-            pathResult.status === 0
-              ? String(pathResult.stdout || "")
-                  .trim()
-                  .split(/\r?\n/)[0] || ""
-              : "",
-          checkedAt,
-        };
-      }),
-  );
+async function detectEnvironmentTool(request) {
+  const custom = request?.kind === "custom" ? normalizeCustomEnvironmentTool({ ...request, enabled: true }) : null;
+  const override = request?.kind === "builtin-override" ? normalizeBuiltinEnvironmentToolOverride(request) : null;
+  const builtin =
+    request?.kind === "builtin" && Object.prototype.hasOwnProperty.call(environmentTools, request.key)
+      ? environmentTools[request.key]
+      : null;
+  const builtinDefinition = builtin || (override ? environmentTools[override.key] : null);
+  const key = builtinDefinition ? request.key : custom?.id || String(request?.id || request?.key || "invalid");
+  const name = builtinDefinition?.name || custom?.name || String(request?.name || key);
+  const checkedAt = new Date().toISOString();
+  if (!builtinDefinition && !custom) {
+    return {
+      key,
+      name,
+      status: "error",
+      version: "",
+      executablePath: "",
+      checkedAt,
+      error: "Invalid environment tool configuration.",
+    };
+  }
+  const command = override?.command || builtin?.command || custom.command;
+  const versionArgs = override?.versionArgs || builtin?.versionArgs || custom.versionArgs;
+  const direct = Boolean(override || custom);
+  const versionResult = await runToolCommand(command, versionArgs, direct);
+  if (versionResult.error || versionResult.status !== 0) {
+    return {
+      key,
+      name,
+      status: "missing",
+      version: "",
+      executablePath: "",
+      checkedAt,
+      error: versionResult.error?.message || String(versionResult.stderr || "Command not found").trim(),
+    };
+  }
+  const [pathCommand, ...pathArgs] = builtin?.pathArgs || [process.platform === "win32" ? "where" : "which", command];
+  const pathResult = await runToolCommand(pathCommand, pathArgs, direct);
+  return {
+    key,
+    name,
+    status: "available",
+    version:
+      String(versionResult.stdout || versionResult.stderr || "")
+        .trim()
+        .split(/\r?\n/)[0] || "OK",
+    executablePath: pathResult.status === 0 ? firstExecutablePath(pathResult.stdout) : "",
+    checkedAt,
+  };
 }
 
 function normalizeAiModelCollection(models, providerHint) {
@@ -4533,7 +4666,8 @@ window.projectBridge = {
   saveEditorPreferences: saveEditorPreferences,
   loadEnvironmentPreferences: readEnvironmentPreferences,
   saveEnvironmentPreferences: saveEnvironmentPreferences,
-  detectEnvironmentTools,
+  loadBuiltinEnvironmentTools: getBuiltinEnvironmentTools,
+  detectEnvironmentTool,
   loadAiPreferences: readAiPreferences,
   saveAiPreferences: saveAiPreferences,
   listAiModels,

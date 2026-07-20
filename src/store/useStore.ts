@@ -7,6 +7,11 @@ import {
   validateAutomationSchedule,
 } from "../lib/automationScheduler";
 import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
+import {
+  environmentToolRequest,
+  validateCustomEnvironmentToolInput,
+  type CustomEnvironmentToolInput,
+} from "../lib/environmentTools";
 import { resolveProjectGitRepositoryContext } from "../lib/gitRepositoryTarget";
 import { deriveProjectStatus, mergeScriptRuntimeState } from "../lib/projectRuntimeState";
 import { DEFAULT_AI_PROMPT_MODES, ProjectStatus } from "../types";
@@ -16,9 +21,12 @@ import type {
   AiStreamChunkPayload,
   AiModelInfo,
   AiPromptMode,
+  BuiltinEnvironmentToolOverride,
   DefaultTerminalKind,
   DefaultEditorKind,
+  CustomEnvironmentTool,
   EnvironmentPreferences,
+  EnvironmentToolDefinition,
   EnvironmentToolKey,
   EnvironmentToolResult,
   Locale,
@@ -81,6 +89,8 @@ const createScriptId = (projectId: string, index: number) => `${projectId}-scrip
 const createAiPromptModeId = () => `custom-${Date.now()}`;
 const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
+const createCustomEnvironmentToolId = () =>
+  `custom-environment-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
 const createProjectId = () => `project-${Date.now()}`;
 const createAutomationTaskId = () => `automation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const createAutomationRunId = () => `automation-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -995,9 +1005,13 @@ export const useStore = defineStore("app", {
     terminalPreferences: bridge.loadTerminalPreferences(),
     editorPreferences: bridge.loadEditorPreferences(),
     environmentPreferences: bridge.loadEnvironmentPreferences(),
+    builtinEnvironmentTools: bridge.loadBuiltinEnvironmentTools() as EnvironmentToolDefinition[],
     environmentResults: [] as EnvironmentToolResult[],
     environmentChecked: false,
     environmentRefreshing: false,
+    environmentRefreshingKeys: {} as Record<string, boolean>,
+    environmentRequestGenerations: {} as Record<string, number>,
+    environmentActiveRefreshes: 0,
     aiPreferences: bridge.loadAiPreferences(),
     aiModels: [] as AiModelInfo[],
     aiModelRefreshing: false,
@@ -1199,40 +1213,192 @@ export const useStore = defineStore("app", {
     },
     setEnvironmentToolEnabled(key: EnvironmentToolKey, enabled: boolean) {
       const keys = new Set<EnvironmentToolKey>(this.environmentPreferences.enabledToolKeys);
+      if (keys.has(key) === enabled) return;
       if (enabled) {
         keys.add(key);
       } else {
         keys.delete(key);
       }
-      const nextPreferences: EnvironmentPreferences = { enabledToolKeys: Array.from(keys) };
+      const nextPreferences: EnvironmentPreferences = {
+        ...this.environmentPreferences,
+        enabledToolKeys: Array.from(keys),
+      };
       this.environmentPreferences = nextPreferences;
       bridge.saveEnvironmentPreferences(nextPreferences);
-      if (!enabled) {
-        this.environmentResults = this.environmentResults.filter((result) => result.key !== key);
-      }
+      this.invalidateEnvironmentTool(key);
     },
-    async refreshEnvironmentTools() {
-      if (this.environmentRefreshing) {
+    invalidateEnvironmentTool(key: string) {
+      this.environmentRequestGenerations[key] = (this.environmentRequestGenerations[key] || 0) + 1;
+      this.environmentRefreshingKeys[key] = false;
+      this.environmentResults = this.environmentResults.filter((result) => result.key !== key);
+    },
+    addCustomEnvironmentTool(input: CustomEnvironmentToolInput) {
+      const validation = validateCustomEnvironmentToolInput(input);
+      if (!validation.value) return { ok: false as const, errors: validation.errors };
+      const tool: CustomEnvironmentTool = {
+        id: createCustomEnvironmentToolId(),
+        ...validation.value,
+        enabled: true,
+      };
+      this.environmentPreferences = {
+        ...this.environmentPreferences,
+        customTools: [...this.environmentPreferences.customTools, tool],
+      };
+      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      return { ok: true as const, tool };
+    },
+    updateCustomEnvironmentTool(id: string, input: CustomEnvironmentToolInput) {
+      const existing = this.environmentPreferences.customTools.find((tool) => tool.id === id);
+      const validation = validateCustomEnvironmentToolInput(input);
+      if (!existing || !validation.value) return { ok: false as const, errors: validation.errors };
+      const tool = { ...existing, ...validation.value };
+      this.environmentPreferences = {
+        ...this.environmentPreferences,
+        customTools: this.environmentPreferences.customTools.map((item) => (item.id === id ? tool : item)),
+      };
+      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.invalidateEnvironmentTool(id);
+      return { ok: true as const, tool };
+    },
+    setCustomEnvironmentToolEnabled(id: string, enabled: boolean) {
+      const existing = this.environmentPreferences.customTools.find((tool) => tool.id === id);
+      if (!existing || existing.enabled === enabled) return;
+      this.environmentPreferences = {
+        ...this.environmentPreferences,
+        customTools: this.environmentPreferences.customTools.map((tool) =>
+          tool.id === id ? { ...tool, enabled } : tool,
+        ),
+      };
+      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.invalidateEnvironmentTool(id);
+    },
+    deleteCustomEnvironmentTool(id: string) {
+      if (!this.environmentPreferences.customTools.some((tool) => tool.id === id)) return;
+      this.environmentPreferences = {
+        ...this.environmentPreferences,
+        customTools: this.environmentPreferences.customTools.filter((tool) => tool.id !== id),
+      };
+      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.invalidateEnvironmentTool(id);
+    },
+    saveBuiltinEnvironmentToolOverride(
+      key: EnvironmentToolKey,
+      input: Pick<CustomEnvironmentToolInput, "command" | "versionArgs">,
+    ) {
+      const definition = this.builtinEnvironmentTools.find((tool) => tool.key === key);
+      const validation = validateCustomEnvironmentToolInput({ name: definition?.name || "", ...input });
+      if (!definition || !validation.value) return { ok: false as const, errors: validation.errors };
+      const matchesDefault =
+        validation.value.command === definition.command &&
+        JSON.stringify(validation.value.versionArgs) === JSON.stringify(definition.versionArgs);
+      const override: BuiltinEnvironmentToolOverride | null = matchesDefault
+        ? null
+        : { key, command: validation.value.command, versionArgs: validation.value.versionArgs };
+      this.environmentPreferences = {
+        ...this.environmentPreferences,
+        builtinOverrides: [
+          ...this.environmentPreferences.builtinOverrides.filter((item) => item.key !== key),
+          ...(override ? [override] : []),
+        ],
+      };
+      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.invalidateEnvironmentTool(key);
+      return { ok: true as const, override };
+    },
+    restoreBuiltinEnvironmentTool(key: EnvironmentToolKey) {
+      if (!this.environmentPreferences.builtinOverrides.some((item) => item.key === key)) return;
+      this.environmentPreferences = {
+        ...this.environmentPreferences,
+        builtinOverrides: this.environmentPreferences.builtinOverrides.filter((item) => item.key !== key),
+      };
+      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.invalidateEnvironmentTool(key);
+    },
+    async refreshEnvironmentTools(targetKeys?: string[]) {
+      const enabledKeys = [
+        ...this.environmentPreferences.enabledToolKeys,
+        ...this.environmentPreferences.customTools.filter((tool) => tool.enabled).map((tool) => tool.id),
+      ];
+      const requestedKeys = Array.from(new Set(targetKeys || enabledKeys)).filter((key) => enabledKeys.includes(key));
+      const requests = requestedKeys
+        .map((key) => ({
+          key,
+          request: environmentToolRequest(
+            key,
+            this.environmentPreferences.customTools,
+            this.environmentPreferences.builtinOverrides,
+            this.builtinEnvironmentTools,
+          ),
+        }))
+        .filter((item): item is { key: string; request: NonNullable<typeof item.request> } => item.request !== null);
+      if (requests.length === 0) {
+        this.environmentChecked = true;
         return;
       }
+      this.environmentActiveRefreshes += 1;
       this.environmentRefreshing = true;
-      const requestedKeys = [...this.environmentPreferences.enabledToolKeys];
+      const generations = new Map<string, number>();
+      requests.forEach(({ key }) => {
+        const generation = (this.environmentRequestGenerations[key] || 0) + 1;
+        this.environmentRequestGenerations[key] = generation;
+        this.environmentRefreshingKeys[key] = true;
+        generations.set(key, generation);
+      });
+      let nextIndex = 0;
+      const worker = async () => {
+        while (nextIndex < requests.length) {
+          const { key, request } = requests[nextIndex++]!;
+          const generation = generations.get(key)!;
+          const currentRequest = environmentToolRequest(
+            key,
+            this.environmentPreferences.customTools,
+            this.environmentPreferences.builtinOverrides,
+            this.builtinEnvironmentTools,
+          );
+          if (
+            this.environmentRequestGenerations[key] !== generation ||
+            !currentRequest ||
+            JSON.stringify(currentRequest) !== JSON.stringify(request)
+          ) {
+            continue;
+          }
+          let result: EnvironmentToolResult;
+          try {
+            result = await bridge.detectEnvironmentTool(request);
+          } catch (error) {
+            result = {
+              key,
+              name:
+                request.kind === "custom"
+                  ? request.name
+                  : this.builtinEnvironmentTools.find((tool) => tool.key === request.key)?.name || request.key,
+              status: "error",
+              version: "",
+              executablePath: "",
+              checkedAt: new Date().toISOString(),
+              error: error instanceof Error ? error.message : "环境检测失败。",
+            };
+          }
+          if (this.environmentRequestGenerations[key] !== generation) continue;
+          const latestRequest = environmentToolRequest(
+            key,
+            this.environmentPreferences.customTools,
+            this.environmentPreferences.builtinOverrides,
+            this.builtinEnvironmentTools,
+          );
+          if (!latestRequest || JSON.stringify(latestRequest) !== JSON.stringify(request)) continue;
+          const resultIndex = this.environmentResults.findIndex((item) => item.key === key);
+          if (resultIndex === -1) this.environmentResults.push(result);
+          else this.environmentResults.splice(resultIndex, 1, result);
+          this.environmentRefreshingKeys[key] = false;
+        }
+      };
       try {
-        this.environmentResults = await bridge.detectEnvironmentTools(requestedKeys);
-      } catch (error) {
-        const checkedAt = new Date().toISOString();
-        this.environmentResults = requestedKeys.map((key) => ({
-          key,
-          name: key,
-          status: "error",
-          version: "",
-          executablePath: "",
-          checkedAt,
-          error: error instanceof Error ? error.message : "环境检测失败。",
-        }));
+        await Promise.all(Array.from({ length: Math.min(4, requests.length) }, worker));
       } finally {
         this.environmentChecked = true;
-        this.environmentRefreshing = false;
+        this.environmentActiveRefreshes = Math.max(0, this.environmentActiveRefreshes - 1);
+        this.environmentRefreshing = this.environmentActiveRefreshes > 0;
       }
     },
     setAiPreferences(patch: Partial<AiPreferences>) {
