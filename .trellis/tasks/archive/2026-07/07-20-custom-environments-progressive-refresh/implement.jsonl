@@ -1,0 +1,4 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Environment definitions, persistence, bridge requests, store state, and Vue rendering must remain contract-compatible across every boundary."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Pinia owns bridge results, cross-view configuration, per-item refresh state, and stale-result protection."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Shared environment models and the preload bridge contract must be represented once in src/types.ts and validated at entry boundaries."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Settings and environment UI must follow existing Vue, accessibility, skeleton, semantic status, and dialog conventions."}

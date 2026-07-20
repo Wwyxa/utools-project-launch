@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify type-check, production build, semantic styling, browser fallback, responsive layout, and absence of duplicated global state."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check that custom persisted values and every bridge request are narrowed without any or duplicated domain models."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit data round-trips and error behavior from settings storage through preload detection to incremental card updates."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Ensure command failures become typed per-item UI state and never leak raw exceptions into Vue components."}
