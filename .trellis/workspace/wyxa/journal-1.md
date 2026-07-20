@@ -1777,3 +1777,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 52: 优化暗色主题与宿主可读性
+
+**Date**: 2026-07-21
+**Task**: 优化暗色主题与宿主可读性
+**Branch**: `master`
+
+### Summary
+
+参考 GitHub 暗色层级调整全局主题，修复分组高亮及 uTools 宿主中卡片路径、标准与 tiny 操作按钮偏暗问题，并补充宿主配色兼容规范。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7f6acf0` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
