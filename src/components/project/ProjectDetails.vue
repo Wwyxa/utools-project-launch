@@ -18,7 +18,7 @@ import { formatRelativeTime } from "../../lib/time";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import ScriptsTab from "./ScriptsTab.vue";
-import GitTab from "./GitTab.vue";
+import GitTab, { clearGitAiAnalysisSessionsForProject } from "./GitTab.vue";
 import MemoTab from "./MemoTab.vue";
 import FilesTab from "./FilesTab.vue";
 import AutomationTab from "./AutomationTab.vue";
@@ -215,12 +215,16 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (store.selectedProjectId !== props.project.id) {
+    clearGitAiAnalysisSessionsForProject(props.project.id);
+  }
   window.removeEventListener("keydown", handleDetailKeydown);
 });
 
 watch(
   () => props.project.id,
-  () => {
+  (projectId, previousProjectId) => {
+    clearGitAiAnalysisSessionsForProject(previousProjectId);
     scheduleInitialGitRefresh();
     focusActiveTab();
   },

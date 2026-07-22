@@ -24,6 +24,40 @@ Current categories:
 
 ---
 
+### Convention: Repository-Scoped Renderer Sessions
+
+**What**: Feature-local state that must survive a modal close or a temporary detail-tab unmount may live in a module-scoped `Map`, keyed by the existing repository `contextKey`.
+
+**Why**: The state is useful only for the current renderer session, so it should not be promoted to Pinia or persistence. Component unmount alone is not a project-lifecycle boundary: a Git tab can be absent while its project is replaced.
+
+**Rules**:
+
+- Use the existing context key format and retain only successful, displayable feature state in the map. Keep streaming drafts, loading, and errors component-local.
+- Clear the current repository session for an explicit user reset. Clear every map entry with the previous project's `${projectId}::` prefix when the project or repository context changes, including a parent detail component's unmount path.
+- Increment a component-local request generation on repository/project changes and before unmount. Every async chunk and terminal callback must compare that generation and the active `contextKey` before updating visible state or the map.
+- Do not use `localStorage`, project data, Pinia, preload storage, or bridge contracts for these renderer-only sessions.
+
+**Example**:
+
+```ts
+const rememberedSessions = new Map<string, Session>();
+
+export const clearSessionsForProject = (projectId: string) => {
+  const prefix = `${projectId}::`;
+  for (const key of rememberedSessions.keys()) {
+    if (key.startsWith(prefix)) rememberedSessions.delete(key);
+  }
+};
+
+if (requestGeneration !== originGeneration || activeContext.value?.contextKey !== originContextKey) return;
+```
+
+**Validation**: Close and reopen the modal, switch away from and back to the detail tab, then switch repository and project. Successful state should survive the first two transitions only; stale async responses must not create or update a session after the latter two.
+
+**Related**: `src/components/project/GitTab.vue`, `src/components/project/ProjectDetails.vue`.
+
+---
+
 ## When to Use Global State
 
 Promote state to the store when multiple views need the same data or one view must update another view immediately.

@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { ProjectGitRepositoryTarget } from "../../types";
+import type { GitAiAnalysisSession } from "../../lib/gitAiAnalysisSession";
 
 type CommitFileViewMode = "list" | "tree";
 
@@ -9,6 +10,14 @@ const rememberedRepositorySectionOpen = new Map<string, boolean>();
 const repositorySectionChoiceMade = new Set<string>();
 const repositorySectionAutoOpened = new Set<string>();
 const commitDraftsByContext = new Map<string, string>();
+const rememberedGitAiAnalysisSessions = new Map<string, GitAiAnalysisSession>();
+
+export const clearGitAiAnalysisSessionsForProject = (projectId: string) => {
+  const contextPrefix = `${projectId}::`;
+  for (const contextKey of rememberedGitAiAnalysisSessions.keys()) {
+    if (contextKey.startsWith(contextPrefix)) rememberedGitAiAnalysisSessions.delete(contextKey);
+  }
+};
 </script>
 
 <script setup lang="ts">
@@ -44,9 +53,11 @@ import {
   Minus,
   Plus,
   MoreHorizontal,
+  MessageSquareText,
   FolderOpen,
   SquareTerminal,
   ExternalLink,
+  Send,
   Undo,
 } from "lucide-vue-next";
 import {
@@ -69,6 +80,15 @@ import {
   createAiReasoningStreamState,
   hasAiReasoningDisplay,
 } from "../../lib/aiReasoning";
+import {
+  appendGitAiAnalysisVersion,
+  composeGitAiRefinementPrompt,
+  createGitAiAnalysisSession,
+  resolveGitAiAnalysisVersion,
+  restoreGitAiAnalysisVersion,
+  type GitAiAnalysisSession,
+  type GitAiAnalysisSessionInput,
+} from "../../lib/gitAiAnalysisSession";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -178,6 +198,10 @@ const aiMode = ref("summary");
 const isAiModeMenuOpen = ref(false);
 const aiDialogIncludeDiffContext = ref(true);
 const aiDialogResult = ref(createAiReasoningStreamState());
+const aiDialogSession = ref<GitAiAnalysisSession | null>(null);
+const aiDialogSessionContextKey = ref("");
+const aiDialogFollowUp = ref("");
+const isAiDialogComposerExpanded = ref(true);
 const aiDialogMessage = ref("");
 const aiDialogNotice = ref("");
 const aiDialogState = ref<AiState>("idle");
@@ -263,6 +287,7 @@ const isLoadingWorktreeDiff = ref(false);
 const commitReviewSelection = ref<CommitReviewSelection | null>(null);
 const reviewScrollTop = ref(0);
 let diffRequestGeneration = 0;
+let aiDialogRequestGeneration = 0;
 const expandedCommitFiles = ref<Record<string, ExpandedCommitFilesState>>({});
 const expandedCommitDirectories = ref<Record<string, Record<string, boolean>>>({});
 const commitFileViewMode = ref<CommitFileViewMode>(rememberedCommitFileViewMode);
@@ -701,7 +726,7 @@ const toggleCommitFilters = () => {
 };
 
 const openAiDialog = () => {
-  resetAiDialogState();
+  if (!isAiDialogGenerating.value) loadAiDialogSession();
   isAiDialogOpen.value = true;
 };
 
@@ -762,8 +787,9 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   }
 };
 
-const clearRepositoryBoundState = () => {
+const clearRepositoryBoundState = (projectId = props.project.id) => {
   repositoryContextGeneration.value += 1;
+  aiDialogRequestGeneration += 1;
   diffRequestGeneration += 1;
   commitFilesContextGeneration += 1;
   commitTooltipDetailsContextGeneration += 1;
@@ -784,10 +810,8 @@ const clearRepositoryBoundState = () => {
   commitTooltipDetails.value = {};
   hideCommitTooltip();
   commitContextMenu.value = null;
-  aiDialogResult.value = createAiReasoningStreamState();
-  aiDialogMessage.value = "";
-  aiDialogNotice.value = "";
-  aiDialogState.value = "idle";
+  clearGitAiAnalysisSessionsForProject(projectId);
+  clearAiDialogSession();
   commitMessageAiResult.value = createAiReasoningStreamState();
   commitMessageAiState.value = "idle";
   setGitActionResult("idle", "");
@@ -811,6 +835,7 @@ const selectGitRepository = (row: GitRepositoryRow) => {
   activeRepositoryTarget.value = nextContext.target;
   rememberedGitRepositoryTargets.set(props.project.id, nextContext.target);
   commitMessage.value = commitDraftsByContext.get(nextContext.contextKey) || "";
+  loadAiDialogSession(nextContext);
   scheduleCommitMessageTextareaResize();
   if (!store.gitSnapshotForRepository(props.project.id, nextContext.target)) {
     void store.refreshGitSnapshot(props.project.id, { force: true }, nextContext.target);
@@ -1713,6 +1738,7 @@ const canRunFileAction = (file: ProjectGitFileChange | null, action: GitFileActi
   return true;
 };
 const selectAiMode = (modeId: string) => {
+  if (isAiDialogSetupLocked.value || isAiDialogGenerating.value) return;
   aiMode.value = resolveAiModeId(modeId);
   isAiModeMenuOpen.value = false;
 };
@@ -1921,9 +1947,52 @@ const buildAiPrompt = async (target: ProjectGitRepositoryTarget) => {
   };
 };
 
-const aiDialogDisplayResult = computed(() => aiDialogResult.value);
+const aiDialogActiveVersion = computed(() => {
+  const session = aiDialogSession.value;
+  return session ? resolveGitAiAnalysisVersion(session) : null;
+});
+const aiDialogActiveVersionIndex = computed(() => {
+  const session = aiDialogSession.value;
+  const version = aiDialogActiveVersion.value;
+  return session && version ? session.versions.findIndex((candidate) => candidate.id === version.id) : -1;
+});
+const aiDialogHasVersions = computed(() => Boolean(aiDialogSession.value?.versions.length));
+const isAiDialogSetupLocked = computed(() => aiDialogHasVersions.value);
+const aiDialogCanGoToPreviousVersion = computed(
+  () => !isAiDialogGenerating.value && aiDialogActiveVersionIndex.value > 0,
+);
+const aiDialogCanGoToNextVersion = computed(() => {
+  const session = aiDialogSession.value;
+  return Boolean(
+    !isAiDialogGenerating.value && session && aiDialogActiveVersionIndex.value < session.versions.length - 1,
+  );
+});
+const aiDialogCanRestoreVersion = computed(() => {
+  const session = aiDialogSession.value;
+  return Boolean(
+    !isAiDialogGenerating.value &&
+    session &&
+    aiDialogActiveVersionIndex.value >= 0 &&
+    aiDialogActiveVersionIndex.value < session.versions.length - 1,
+  );
+});
+const aiDialogCanSubmitFollowUp = computed(() =>
+  Boolean(
+    !isAiDialogGenerating.value &&
+    aiDialogActiveVersion.value &&
+    aiDialogFollowUp.value.trim() &&
+    aiDialogSession.value,
+  ),
+);
+const aiDialogScopeSummary = computed(() => aiDialogSession.value?.scopeSummary || filterStatusSummary.value);
+const aiDialogDisplayResult = computed(() => {
+  if (isAiDialogGenerating.value && hasAiReasoningDisplay(aiDialogResult.value)) return aiDialogResult.value;
+  return aiDialogActiveVersion.value?.result || aiDialogResult.value;
+});
 const hasAiDialogDisplayResult = computed(() => hasAiReasoningDisplay(aiDialogDisplayResult.value));
-const aiDialogCopyContent = computed(() => aiReasoningCopyText(aiDialogDisplayResult.value));
+const aiDialogCopyContent = computed(() =>
+  aiReasoningCopyText(aiDialogActiveVersion.value?.result || createAiReasoningStreamState()),
+);
 
 const aiDialogPanelHint = computed(() => {
   if (aiDialogState.value === "loading") {
@@ -1943,15 +2012,84 @@ const aiDialogPanelHint = computed(() => {
 
 const resetAiDialogState = () => {
   aiDialogResult.value = createAiReasoningStreamState();
+  aiDialogFollowUp.value = "";
+  isAiDialogComposerExpanded.value = true;
   aiDialogMessage.value = "";
   aiDialogNotice.value = "";
   aiDialogState.value = "idle";
 };
 
+const rememberAiDialogSession = (session: GitAiAnalysisSession, contextKey: string) => {
+  if (!contextKey) return;
+  rememberedGitAiAnalysisSessions.set(contextKey, session);
+  aiDialogSessionContextKey.value = contextKey;
+  aiDialogSession.value = session;
+};
+
+const clearAiDialogSession = (contextKey = aiDialogSessionContextKey.value) => {
+  if (contextKey) rememberedGitAiAnalysisSessions.delete(contextKey);
+  aiDialogSession.value = null;
+  aiDialogSessionContextKey.value = "";
+  resetAiDialogState();
+};
+
+const loadAiDialogSession = (context = activeRepositoryContext.value) => {
+  const contextKey = context?.contextKey || "";
+  const session = contextKey ? rememberedGitAiAnalysisSessions.get(contextKey) || null : null;
+  aiDialogSessionContextKey.value = contextKey;
+  aiDialogSession.value = session;
+  aiDialogResult.value = createAiReasoningStreamState();
+  aiDialogFollowUp.value = "";
+  aiDialogMessage.value = "";
+  aiDialogNotice.value = session?.notice || "";
+  aiDialogState.value = session?.versions.length ? "success" : "idle";
+  if (session) {
+    aiMode.value = resolveAiModeId(session.modeId);
+    aiDialogIncludeDiffContext.value = session.includeDiffContext;
+  }
+};
+
+const hasAiDialogFinalContent = (result: ReturnType<typeof createAiReasoningStreamState>) =>
+  Boolean(aiReasoningCopyText(result).trim());
+
+const finalAiDialogResult = (result: ReturnType<typeof createAiReasoningStreamState>) =>
+  hasAiDialogFinalContent(result) ? result : aiDialogResult.value;
+
+const selectAiDialogVersion = (offset: -1 | 1) => {
+  const session = aiDialogSession.value;
+  const nextIndex = aiDialogActiveVersionIndex.value + offset;
+  const nextVersion = session?.versions[nextIndex];
+  if (!session || !nextVersion || isAiDialogGenerating.value) return;
+  rememberAiDialogSession({ ...session, activeVersionId: nextVersion.id }, aiDialogSessionContextKey.value);
+  aiDialogMessage.value = "";
+  aiDialogState.value = "success";
+};
+
+const restoreAiDialogVersion = () => {
+  const session = aiDialogSession.value;
+  const version = aiDialogActiveVersion.value;
+  if (!session || !version || isAiDialogGenerating.value) return;
+  const restoredSession = restoreGitAiAnalysisVersion(session, version.id);
+  if (restoredSession === session) return;
+  rememberAiDialogSession(restoredSession, aiDialogSessionContextKey.value);
+  aiDialogResult.value = createAiReasoningStreamState();
+  aiDialogMessage.value = "";
+  aiDialogState.value = "success";
+};
+
+const startNewAiAnalysis = () => {
+  if (isAiDialogGenerating.value) return;
+  isAiModeMenuOpen.value = false;
+  clearAiDialogSession();
+};
+
 const generateAiAnalysis = async () => {
+  if (isAiDialogSetupLocked.value) return;
   const originContext = activeRepositoryContext.value;
   if (!originContext) return;
   const originGeneration = repositoryContextGeneration.value;
+  const originAiDialogRequestGeneration = aiDialogRequestGeneration;
+  isAiModeMenuOpen.value = false;
   aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
   aiDialogState.value = "loading";
@@ -1960,7 +2098,8 @@ const generateAiAnalysis = async () => {
   const promptResult = await buildAiPrompt(originContext.target);
   if (
     repositoryContextGeneration.value !== originGeneration ||
-    activeRepositoryContext.value?.contextKey !== originContext.contextKey
+    activeRepositoryContext.value?.contextKey !== originContext.contextKey ||
+    aiDialogRequestGeneration !== originAiDialogRequestGeneration
   ) {
     return;
   }
@@ -1969,11 +2108,19 @@ const generateAiAnalysis = async () => {
       ? "Diff 已截断，所有提交信息已保留"
       : "工作区 Diff 已截断"
     : "";
+  const sessionInput: GitAiAnalysisSessionInput = {
+    basePrompt: promptResult.prompt,
+    scopeSummary: filterStatusSummary.value,
+    notice: aiDialogNotice.value,
+    modeId: aiMode.value,
+    includeDiffContext: aiDialogIncludeDiffContext.value,
+  };
   await store.analyzeGitWithAiStream(props.project.id, promptResult.prompt, {
     onChunk: (chunk) => {
       if (
         repositoryContextGeneration.value !== originGeneration ||
-        activeRepositoryContext.value?.contextKey !== originContext.contextKey
+        activeRepositoryContext.value?.contextKey !== originContext.contextKey ||
+        aiDialogRequestGeneration !== originAiDialogRequestGeneration
       )
         return;
       aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
@@ -1981,18 +2128,85 @@ const generateAiAnalysis = async () => {
     onDone: (result) => {
       if (
         repositoryContextGeneration.value !== originGeneration ||
-        activeRepositoryContext.value?.contextKey !== originContext.contextKey
+        activeRepositoryContext.value?.contextKey !== originContext.contextKey ||
+        aiDialogRequestGeneration !== originAiDialogRequestGeneration
       )
         return;
       const finalResult = aiReasoningStateFromResult(result);
-      if (hasAiReasoningDisplay(finalResult) || !hasAiDialogDisplayResult.value) {
-        aiDialogResult.value = finalResult;
+      const completedResult = finalAiDialogResult(finalResult);
+      if (result.ok && hasAiDialogFinalContent(completedResult)) {
+        rememberAiDialogSession(
+          appendGitAiAnalysisVersion(createGitAiAnalysisSession(sessionInput), completedResult),
+          originContext.contextKey,
+        );
+        aiDialogResult.value = completedResult;
+        aiDialogMessage.value = result.message || "";
+        aiDialogState.value = "success";
+        return;
       }
-      aiDialogMessage.value = result.ok ? result.message || "" : result.message || "AI 分析失败。";
-      aiDialogState.value = result.ok ? (hasAiDialogDisplayResult.value ? "success" : "warning") : "error";
-      if (result.ok && !hasAiDialogDisplayResult.value) {
-        aiDialogMessage.value = "AI 已返回成功，但没有生成内容。";
+      aiDialogResult.value = createAiReasoningStreamState();
+      aiDialogMessage.value = result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 分析失败。";
+      aiDialogState.value = result.ok ? "warning" : "error";
+    },
+  });
+};
+
+const refineAiAnalysis = async () => {
+  const session = aiDialogSession.value;
+  const sourceVersion = aiDialogActiveVersion.value;
+  const instruction = aiDialogFollowUp.value.trim();
+  const prompt = session && sourceVersion ? composeGitAiRefinementPrompt(session, sourceVersion.id, instruction) : null;
+  if (!session || !sourceVersion || !prompt || isAiDialogGenerating.value) return;
+
+  const originContext = activeRepositoryContext.value;
+  if (!originContext) return;
+  const originGeneration = repositoryContextGeneration.value;
+  const originAiDialogRequestGeneration = aiDialogRequestGeneration;
+  aiDialogResult.value = createAiReasoningStreamState();
+  aiDialogMessage.value = "";
+  aiDialogState.value = "loading";
+  await waitForVisualFeedback();
+
+  if (
+    repositoryContextGeneration.value !== originGeneration ||
+    activeRepositoryContext.value?.contextKey !== originContext.contextKey ||
+    aiDialogRequestGeneration !== originAiDialogRequestGeneration
+  ) {
+    return;
+  }
+
+  await store.analyzeGitWithAiStream(props.project.id, prompt, {
+    onChunk: (chunk) => {
+      if (
+        repositoryContextGeneration.value !== originGeneration ||
+        activeRepositoryContext.value?.contextKey !== originContext.contextKey ||
+        aiDialogRequestGeneration !== originAiDialogRequestGeneration
+      )
+        return;
+      aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
+    },
+    onDone: (result) => {
+      if (
+        repositoryContextGeneration.value !== originGeneration ||
+        activeRepositoryContext.value?.contextKey !== originContext.contextKey ||
+        aiDialogRequestGeneration !== originAiDialogRequestGeneration
+      )
+        return;
+      const completedResult = finalAiDialogResult(aiReasoningStateFromResult(result));
+      if (result.ok && hasAiDialogFinalContent(completedResult)) {
+        rememberAiDialogSession(
+          appendGitAiAnalysisVersion(session, completedResult, sourceVersion.id, instruction),
+          originContext.contextKey,
+        );
+        aiDialogResult.value = completedResult;
+        aiDialogFollowUp.value = "";
+        aiDialogMessage.value = result.message || "";
+        aiDialogState.value = "success";
+        return;
       }
+      aiDialogResult.value = createAiReasoningStreamState();
+      aiDialogMessage.value = result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 分析失败。";
+      aiDialogState.value = result.ok ? "warning" : "error";
     },
   });
 };
@@ -2413,8 +2627,12 @@ const restoreProjectRepositoryState = (projectId: string) => {
 };
 
 onBeforeUnmount(() => {
+  aiDialogRequestGeneration += 1;
   const context = activeRepositoryContext.value;
   if (context) commitDraftsByContext.set(context.contextKey, commitMessage.value);
+  if (store.selectedProjectId !== props.project.id) {
+    clearGitAiAnalysisSessionsForProject(props.project.id);
+  }
   hideCommitTooltip();
   clearExpandedCommitFiles();
   clearCommitTooltipDetails();
@@ -2447,7 +2665,7 @@ watch(
   (projectId, previousProjectId) => {
     const previousContext = store.resolveGitRepositoryContext(previousProjectId, activeRepositoryTarget.value);
     if (previousContext) commitDraftsByContext.set(previousContext.contextKey, commitMessage.value);
-    clearRepositoryBoundState();
+    clearRepositoryBoundState(previousProjectId);
     stagedGroupOpen.value = true;
     unstagedGroupOpen.value = true;
     restoreProjectRepositoryState(projectId);
@@ -4498,7 +4716,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           >
             <div class="min-w-0">
               <h3 class="text-sm font-bold text-on-surface">AI 生成</h3>
-              <p class="truncate text-[10px] font-medium text-on-surface-variant">{{ filterStatusSummary }}</p>
+              <p class="truncate text-[10px] font-medium text-on-surface-variant">{{ aiDialogScopeSummary }}</p>
             </div>
             <div class="flex items-center gap-2">
               <button
@@ -4517,13 +4735,14 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               <div class="relative w-48">
                 <button
                   type="button"
-                  class="ui-field flex w-full items-center justify-between gap-2 text-left font-semibold normal-case"
+                  class="ui-field flex w-full items-center justify-between gap-2 text-left font-semibold normal-case disabled:cursor-not-allowed disabled:opacity-65"
+                  :disabled="isAiDialogSetupLocked || isAiDialogGenerating"
                   @click.stop="isAiModeMenuOpen = !isAiModeMenuOpen"
                 >
                   <span>{{ aiModeLabel }}</span>
                   <ChevronDown :size="14" class="text-on-surface-variant" />
                 </button>
-                <div v-if="isAiModeMenuOpen" class="mode-menu-popover" @click.stop>
+                <div v-if="isAiModeMenuOpen && !isAiDialogSetupLocked" class="mode-menu-popover" @click.stop>
                   <button
                     v-for="option in aiModeOptions"
                     :key="option.id"
@@ -4544,11 +4763,12 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                   v-model="aiDialogIncludeDiffContext"
                   type="checkbox"
                   class="h-3 w-3 accent-primary"
-                  :disabled="isAiDialogGenerating"
+                  :disabled="isAiDialogGenerating || isAiDialogSetupLocked"
                 />
                 <span>Diff</span>
               </label>
               <button
+                v-if="!isAiDialogSetupLocked"
                 type="button"
                 class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
                 :disabled="isAiDialogGenerating"
@@ -4557,34 +4777,179 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 <Sparkles :size="13" />
                 {{ isAiDialogGenerating ? "生成中" : "生成" }}
               </button>
-            </div>
-            <div
-              v-if="aiDialogNotice"
-              class="shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5 text-[10px] font-bold text-status-warning"
-            >
-              {{ aiDialogNotice }}
-            </div>
-            <div
-              class="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
-            >
               <button
-                v-if="aiDialogCopyContent"
+                v-else
                 type="button"
-                class="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded border border-outline-variant/80 bg-surface-container-high text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container-highest hover:text-primary dark:bg-surface-container-highest dark:text-on-surface dark:hover:bg-surface-variant"
-                :title="copyLabel(aiDialogCopyContent)"
-                :aria-label="copyLabel(aiDialogCopyContent)"
-                @click="copyText(aiDialogCopyContent)"
+                class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-wait disabled:opacity-70"
+                :disabled="isAiDialogGenerating"
+                @click="startNewAiAnalysis"
               >
-                <ClipboardCopy :size="12" />
+                <Plus :size="13" />
+                新分析
               </button>
-              <div class="ai-result-panel h-full overflow-auto p-3">
-                <AiReasoningResult v-if="hasAiDialogDisplayResult" :result="aiDialogDisplayResult" />
-                <div
-                  v-else-if="aiDialogPanelHint"
-                  :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+              <span
+                v-if="aiDialogNotice"
+                class="inline-flex h-9 max-w-full items-center truncate rounded-lg border border-status-warning/30 bg-status-warning/10 px-2.5 text-[10px] font-bold text-status-warning"
+                :title="aiDialogNotice"
+              >
+                {{ aiDialogNotice }}
+              </span>
+            </div>
+            <div
+              v-if="aiDialogMessage && aiDialogState !== 'success' && hasAiDialogDisplayResult"
+              :class="[
+                'flex shrink-0 items-center justify-between gap-2 rounded border px-2.5 py-1.5 text-[10px] font-bold',
+                aiDialogState === 'error'
+                  ? 'border-status-error/30 bg-status-error/10 text-status-error'
+                  : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+              ]"
+            >
+              <span class="min-w-0 break-words">{{ aiDialogMessage }}</span>
+              <button
+                v-if="aiDialogCanSubmitFollowUp"
+                type="button"
+                class="shrink-0 text-[10px] font-bold underline underline-offset-2"
+                @click="refineAiAnalysis"
+              >
+                重试
+              </button>
+            </div>
+            <div class="relative min-h-0 flex-1">
+              <div
+                v-if="aiDialogHasVersions"
+                class="absolute -top-8 right-2 z-20 flex h-6 items-center overflow-hidden rounded-md border border-border-subtle bg-surface shadow-sm"
+              >
+                <span
+                  class="flex h-full items-center border-r border-border-subtle px-2 text-[10px] font-bold text-on-surface-variant"
                 >
-                  {{ aiDialogPanelHint }}
+                  版本 {{ aiDialogActiveVersionIndex + 1 }}/{{ aiDialogSession?.versions.length }}
+                </span>
+                <button
+                  type="button"
+                  class="flex h-6 w-6 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
+                  title="上一版"
+                  aria-label="上一版"
+                  :disabled="!aiDialogCanGoToPreviousVersion"
+                  @click="selectAiDialogVersion(-1)"
+                >
+                  <ChevronLeft :size="14" />
+                </button>
+                <button
+                  type="button"
+                  class="flex h-6 w-6 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
+                  title="下一版"
+                  aria-label="下一版"
+                  :disabled="!aiDialogCanGoToNextVersion"
+                  @click="selectAiDialogVersion(1)"
+                >
+                  <ChevronRight :size="14" />
+                </button>
+                <button
+                  type="button"
+                  class="flex h-6 w-6 items-center justify-center border-r border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-40"
+                  title="将此版本作为最新版本"
+                  aria-label="将此版本作为最新版本"
+                  :disabled="!aiDialogCanRestoreVersion"
+                  @click="restoreAiDialogVersion"
+                >
+                  <Undo :size="13" />
+                </button>
+                <button
+                  v-if="aiDialogCopyContent"
+                  type="button"
+                  class="flex h-6 w-6 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  :title="copyLabel(aiDialogCopyContent)"
+                  :aria-label="copyLabel(aiDialogCopyContent)"
+                  :disabled="isAiDialogGenerating"
+                  @click="copyText(aiDialogCopyContent)"
+                >
+                  <ClipboardCopy :size="12" />
+                </button>
+              </div>
+              <div
+                class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
+              >
+                <div
+                  :class="['ai-result-panel min-h-0 flex-1 overflow-auto p-3', aiDialogHasVersions && 'pb-16']"
+                  :aria-busy="isAiDialogGenerating"
+                >
+                  <AiReasoningResult v-if="hasAiDialogDisplayResult" :result="aiDialogDisplayResult" />
+                  <div
+                    v-else-if="aiDialogPanelHint"
+                    :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
+                  >
+                    {{ aiDialogPanelHint }}
+                  </div>
                 </div>
+              </div>
+              <div
+                v-if="aiDialogHasVersions"
+                :class="[
+                  'absolute bottom-2 right-2 z-20 flex h-12 items-center overflow-hidden rounded-lg p-1.5 transition-[width,border-color,background-color,box-shadow] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+                  isAiDialogComposerExpanded
+                    ? 'w-[calc(100%-1rem)] border border-border-subtle bg-surface shadow-lg focus-within:border-primary'
+                    : 'w-12 border border-transparent bg-transparent shadow-none',
+                ]"
+              >
+                <div
+                  :class="[
+                    'flex min-w-0 items-center gap-1.5 overflow-hidden transition-[opacity,translate] duration-200 ease-out motion-reduce:transition-none',
+                    isAiDialogComposerExpanded
+                      ? 'mr-1.5 flex-1 translate-x-0 opacity-100 delay-75'
+                      : 'w-0 translate-x-2 opacity-0',
+                  ]"
+                  :aria-hidden="!isAiDialogComposerExpanded"
+                  :inert="!isAiDialogComposerExpanded"
+                >
+                  <textarea
+                    id="git-ai-follow-up"
+                    v-model="aiDialogFollowUp"
+                    rows="1"
+                    class="ui-field h-9 min-h-9 min-w-0 flex-1 resize-none py-1 text-xs leading-5"
+                    placeholder="例如：只保留高风险问题，并补充测试建议"
+                    :disabled="isAiDialogGenerating"
+                    aria-label="输入修改要求或追问"
+                    @keydown.enter.exact.prevent="refineAiAnalysis"
+                  />
+                  <button
+                    type="button"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="发送修改要求"
+                    aria-label="发送修改要求"
+                    :disabled="!aiDialogCanSubmitFollowUp"
+                    @click="refineAiAnalysis"
+                  >
+                    <Send :size="14" />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-surface-container-high text-on-surface-variant shadow-md transition-[background-color,color,box-shadow,transform] duration-200 hover:scale-105 hover:bg-surface-variant hover:text-on-surface hover:shadow-lg active:scale-95 motion-reduce:transform-none motion-reduce:transition-none"
+                  :title="isAiDialogComposerExpanded ? '收起修改输入框' : '向左展开修改输入框'"
+                  :aria-label="isAiDialogComposerExpanded ? '收起修改输入框' : '向左展开修改输入框'"
+                  @click="isAiDialogComposerExpanded = !isAiDialogComposerExpanded"
+                >
+                  <span class="relative h-4 w-4">
+                    <MessageSquareText
+                      :size="16"
+                      :class="[
+                        'absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
+                        isAiDialogComposerExpanded
+                          ? 'rotate-12 scale-75 opacity-0'
+                          : 'rotate-0 scale-100 opacity-100 delay-100',
+                      ]"
+                    />
+                    <X
+                      :size="16"
+                      :class="[
+                        'absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
+                        isAiDialogComposerExpanded
+                          ? 'rotate-0 scale-100 opacity-100 delay-100'
+                          : '-rotate-12 scale-75 opacity-0',
+                      ]"
+                    />
+                  </span>
+                </button>
               </div>
             </div>
           </div>
