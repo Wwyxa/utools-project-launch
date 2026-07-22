@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package overview and routing for this Vue 3 interaction task."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Git dialog composition, renderer-memory patterns, accessibility, modal, and AI reasoning result conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Local UI state ownership and the existing streaming AI bridge contract that refinement must preserve."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required frontend checks, compact-dialog layout guidance, semantic tokens, and accessibility quality bar."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Placement and typing rules for component-local session models and shared boundary types."}

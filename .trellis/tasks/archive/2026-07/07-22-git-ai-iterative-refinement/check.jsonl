@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package overview for task-scope and convention checks."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Defines required type/build validation and compact UI regression checks."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review keyboard, accessibility, modal, renderer-memory, and shared AI result behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify local session ownership, exactly-once streaming completion, and unchanged provider boundaries."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify no duplicated shared domain types, any casts, or inappropriate boundary changes."}
