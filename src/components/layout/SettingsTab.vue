@@ -963,7 +963,7 @@ watch(
               </button>
               <button
                 type="button"
-                class="h-8 rounded bg-status-error px-3 text-xs font-bold text-white"
+                class="h-8 rounded bg-error px-3 text-xs font-bold text-on-error"
                 @click="confirmDeleteCustomEnvironment"
               >
                 {{ t.common.delete }}

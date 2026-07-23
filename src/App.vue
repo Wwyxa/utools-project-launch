@@ -127,6 +127,7 @@ onMounted(() => {
   updateTheme();
   void store.loadProjects();
   window.utools?.onPluginEnter?.((action) => {
+    updateTheme();
     void handlePluginEnter(action);
   });
   if (!pluginOutHookRegistered) {
@@ -208,7 +209,7 @@ onUnmounted(() => {
               </button>
               <button
                 @click="store.confirmDeleteProject"
-                class="rounded-lg bg-status-error px-4 py-2 text-sm font-bold text-white hover:bg-status-error/90"
+                class="rounded-lg bg-error px-4 py-2 text-sm font-bold text-on-error hover:bg-error/90"
               >
                 {{ storeMessages.common.delete }}
               </button>

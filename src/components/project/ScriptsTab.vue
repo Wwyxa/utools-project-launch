@@ -125,7 +125,7 @@ const handleStop = async (scriptId: string) => {
                 type="button"
                 @click="handleStop(script.id)"
                 :disabled="isUnavailable"
-                class="bg-status-error text-white text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90 disabled:opacity-50"
+                class="bg-error text-on-error text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90 disabled:opacity-50"
               >
                 <Square :size="12" fill="currentColor" /> {{ t.scripts.stopScript }}
               </button>
@@ -133,7 +133,7 @@ const handleStop = async (scriptId: string) => {
                 v-else-if="script.status === 'STOPPING'"
                 type="button"
                 disabled
-                class="bg-status-warning text-white text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 opacity-80 cursor-wait"
+                class="border border-status-warning/30 bg-status-warning/10 text-status-warning text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 cursor-wait"
               >
                 <Square :size="12" fill="currentColor" /> {{ t.common.stopping }}
               </button>

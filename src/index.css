@@ -103,20 +103,20 @@
 
 @layer base {
   .dark {
-    --color-surface: #20262e;
-    --color-surface-dim: #131820;
-    --color-surface-bright: #343d48;
-    --color-surface-container-lowest: #171c23;
-    --color-surface-container-low: #1b2129;
-    --color-surface-container: #242b34;
-    --color-surface-container-high: #2a323c;
-    --color-surface-container-highest: #323b47;
-    --color-on-surface: #d8dee6;
-    --color-on-surface-variant: #9da8b5;
+    --color-surface: #3c3f44;
+    --color-surface-dim: #2b2d30;
+    --color-surface-bright: #52575f;
+    --color-surface-container-lowest: #35373b;
+    --color-surface-container-low: #383b40;
+    --color-surface-container: #41444a;
+    --color-surface-container-high: #474b52;
+    --color-surface-container-highest: #4d525a;
+    --color-on-surface: #e0e4e8;
+    --color-on-surface-variant: #adb4be;
     --color-inverse-surface: #e4e2e1;
     --color-inverse-on-surface: #303030;
-    --color-outline: #7d8996;
-    --color-outline-variant: #3a4552;
+    --color-outline: #7c838d;
+    --color-outline-variant: #555a62;
     --color-surface-tint: #63dca6;
 
     --color-primary: #63dca6;
@@ -135,28 +135,29 @@
     --color-tertiary-container: #81262b;
     --color-on-tertiary-container: #ffdad8;
 
-    --color-background: #171c23;
-    --color-on-background: #d8dee6;
-    --color-surface-variant: #2a323c;
+    --color-on-error: #ded8d8;
+    --color-background: #303133;
+    --color-on-background: #e0e4e8;
+    --color-surface-variant: #474b52;
 
     --color-status-warning: #f4b860;
     --color-status-info: #b7c4ff;
 
-    --color-bg-soft-gray: #1c232b;
-    --color-border-subtle: #303944;
+    --color-bg-soft-gray: #35373b;
+    --color-border-subtle: #484c53;
 
-    --scrollbar-track: #171c23;
-    --scrollbar-thumb: #465260;
-    --scrollbar-thumb-hover: #5c6978;
-    --dashboard-toolbar-bg: rgba(27, 33, 41, 0.96);
-    --dashboard-filter-active-border: #3b7d62;
-    --dashboard-filter-active-bg: #18352b;
-    --dashboard-filter-active-count-bg: #21483a;
-    --toolbar-control-bg: #1b2129;
-    --toolbar-control-bg-hover: #2a323c;
-    --toolbar-primary-bg: #005236;
-    --toolbar-primary-fg: #81f9c1;
-    --toolbar-primary-bg-hover: #006c49;
+    --scrollbar-track: #303133;
+    --scrollbar-thumb: #575b62;
+    --scrollbar-thumb-hover: #6b7078;
+    --dashboard-toolbar-bg: rgba(51, 51, 51, 0.96);
+    --dashboard-filter-active-border: #4f8f70;
+    --dashboard-filter-active-bg: #345444;
+    --dashboard-filter-active-count-bg: #375a48;
+    --toolbar-control-bg: #383b40;
+    --toolbar-control-bg-hover: #474b52;
+    --toolbar-primary-bg: #32664d;
+    --toolbar-primary-fg: #d8dedb;
+    --toolbar-primary-bg-hover: #2f6249;
     --code-preview-bg: #0d1117;
     --code-preview-gutter-bg: #161b22;
     --code-preview-border: #30363d;

@@ -442,7 +442,7 @@ const handleScriptDrop = (targetScriptId: string) => {
             <button
               type="button"
               @click="handleSubmit"
-              class="px-4 py-2 rounded-lg bg-primary-container text-on-primary text-sm font-bold hover:bg-primary flex items-center gap-2"
+              class="px-4 py-2 rounded-lg bg-primary-container text-on-primary-container text-sm font-bold hover:bg-primary hover:text-on-primary flex items-center gap-2"
             >
               <Save :size="16" /> {{ t.modal.saveProject }}
             </button>
