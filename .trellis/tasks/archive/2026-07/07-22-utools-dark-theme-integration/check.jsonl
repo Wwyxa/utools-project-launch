@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Review semantic token reuse, theme ownership, control states, overlays, compact layout, and accessibility."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run required lint/build and inspect dark/light host-critical states, raw colors, and visual regressions."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify the uTools API to App lifecycle to root class to CSS token to major-view data flow."}
+{"file":".trellis/tasks/07-22-utools-dark-theme-integration/research/utools-dark-theme-integration.md","reason":"Check implementation against official API evidence, the identified lifecycle gap, minimal boundary, and visual matrix."}

@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package conventions and routing for the Vue theme change."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Semantic theme-token ownership, App.vue theme flow, compact uTools UI, overlays, controls, and accessibility conventions."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Theme quality gates, host-critical state contrast, raw-color restrictions, lint/build, and visual regression expectations."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep host entry lifecycle ownership in App.vue and avoid duplicating resolved visual state in Pinia."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse the existing updateTheme function and semantic token tree instead of adding a second theme abstraction."}
+{"file":".trellis/tasks/07-22-utools-dark-theme-integration/research/utools-dark-theme-integration.md","reason":"Official uTools API evidence, current lifecycle gap, palette boundary, and validation matrix."}
