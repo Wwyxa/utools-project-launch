@@ -1876,3 +1876,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 55: 优化项目分组与工作目录选择
+
+**Date**: 2026-07-23
+**Task**: 优化项目分组与工作目录选择
+**Branch**: `master`
+
+### Summary
+
+项目编辑弹窗支持选择已有分组；工作目录下拉改为统一样式，展示真实两层目录并过滤依赖和缓存目录，同时完善自适应宽度与回归验证。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5596e30` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
