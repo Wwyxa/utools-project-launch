@@ -4890,18 +4890,18 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               <div
                 v-if="aiDialogHasVersions"
                 :class="[
-                  'absolute bottom-2 right-2 z-20 flex h-12 items-center overflow-hidden rounded-lg p-1.5 transition-[width,border-color,background-color,box-shadow] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+                  'absolute bottom-2 right-2 z-20 flex h-9 items-center justify-end transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
                   isAiDialogComposerExpanded
-                    ? 'w-[calc(100%-1rem)] border border-border-subtle bg-surface shadow-lg focus-within:border-primary'
-                    : 'w-12 border border-transparent bg-transparent shadow-none',
+                    ? 'w-[calc(100%-1rem)]'
+                    : 'w-9',
                 ]"
               >
                 <div
                   :class="[
-                    'flex min-w-0 items-center gap-1.5 overflow-hidden transition-[opacity,translate] duration-200 ease-out motion-reduce:transition-none',
+                    'flex min-w-0 items-center gap-1.5 overflow-hidden transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
                     isAiDialogComposerExpanded
                       ? 'mr-1.5 flex-1 translate-x-0 opacity-100 delay-75'
-                      : 'w-0 translate-x-2 opacity-0',
+                      : 'pointer-events-none w-0 translate-x-3 opacity-0',
                   ]"
                   :aria-hidden="!isAiDialogComposerExpanded"
                   :inert="!isAiDialogComposerExpanded"
@@ -4910,7 +4910,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                     id="git-ai-follow-up"
                     v-model="aiDialogFollowUp"
                     rows="1"
-                    class="ui-field h-9 min-h-9 min-w-0 flex-1 resize-none py-1 text-xs leading-5"
+                    class="ui-field h-9 min-h-9 min-w-0 flex-1 resize-none overflow-y-hidden !border-outline-variant/80 !bg-surface-container-lowest py-1 text-xs leading-5 shadow-md"
                     placeholder="例如：只保留高风险问题，并补充测试建议"
                     :disabled="isAiDialogGenerating"
                     aria-label="输入修改要求或追问"
@@ -4918,7 +4918,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                   />
                   <button
                     type="button"
-                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/70 bg-primary text-on-primary shadow-md transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-primary/90 hover:shadow-lg active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none"
                     title="发送修改要求"
                     aria-label="发送修改要求"
                     :disabled="!aiDialogCanSubmitFollowUp"
