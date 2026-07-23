@@ -4742,7 +4742,12 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                   <span>{{ aiModeLabel }}</span>
                   <ChevronDown :size="14" class="text-on-surface-variant" />
                 </button>
-                <div v-if="isAiModeMenuOpen && !isAiDialogSetupLocked" class="mode-menu-popover" @click.stop>
+                <div
+                  v-if="isAiModeMenuOpen && !isAiDialogSetupLocked"
+                  v-overlay-scrollbar
+                  class="mode-menu-popover"
+                  @click.stop
+                >
                   <button
                     v-for="option in aiModeOptions"
                     :key="option.id"

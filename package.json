@@ -26,6 +26,7 @@
     "highlight.js": "^11.11.1",
     "lucide-vue-next": "^0.479.0",
     "markdown-it": "^14.1.1",
+    "overlayscrollbars": "^2.16.0",
     "pinia": "^2.3.1",
     "tailwind-merge": "^3.6.0",
     "vue": "^3.5.13",

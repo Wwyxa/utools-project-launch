@@ -230,7 +230,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                   >
                     <ChevronDown :size="14" />
                   </button>
-                  <div v-if="groupMenuOpen" class="mode-menu-popover max-h-48 overflow-auto">
+                  <div v-if="groupMenuOpen" v-overlay-scrollbar class="mode-menu-popover max-h-48 overflow-auto">
                     <button
                       v-for="group in existingGroups"
                       :key="group"
@@ -423,6 +423,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                     </button>
                     <div
                       v-if="cwdMenuScriptId === script.id"
+                      v-overlay-scrollbar
                       class="mode-menu-popover max-h-48 overflow-auto"
                       style="width: max-content; min-width: max(100%, 10rem); max-width: min(24rem, 70vw)"
                     >

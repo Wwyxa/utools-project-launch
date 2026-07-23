@@ -63,7 +63,7 @@ watch(
 </script>
 
 <template>
-  <div class="themed-scrollbar h-full overflow-y-auto p-2">
+  <div v-overlay-scrollbar class="themed-scrollbar h-full overflow-y-auto p-2">
     <header class="mb-3 flex flex-wrap items-center justify-between gap-2">
       <div class="flex min-w-0 items-center gap-3">
         <button

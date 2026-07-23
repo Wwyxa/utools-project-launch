@@ -792,7 +792,7 @@ const statusClass = (status: string) =>
                           <span>{{ missedPolicyLabel }}</span>
                           <ChevronDown :size="14" class="text-on-surface-variant" />
                         </button>
-                        <div v-if="isMissedPolicyMenuOpen" class="mode-menu-popover" @click.stop>
+                        <div v-if="isMissedPolicyMenuOpen" v-overlay-scrollbar class="mode-menu-popover" @click.stop>
                           <button
                             v-for="option in missedPolicyOptions"
                             :key="option.id"

@@ -287,7 +287,11 @@ watch(
 </script>
 
 <template>
-  <div class="themed-scrollbar h-full w-full overflow-y-auto p-2" @click="isAiModelMenuOpen = false">
+  <div
+    v-overlay-scrollbar
+    class="themed-scrollbar h-full w-full overflow-y-auto p-2"
+    @click="isAiModelMenuOpen = false"
+  >
     <header class="mb-3 flex items-center gap-3">
       <button
         type="button"
@@ -497,6 +501,7 @@ watch(
                   </button>
                   <div
                     v-if="isAiModelMenuOpen"
+                    v-overlay-scrollbar
                     class="mode-menu-popover popover-above max-h-56 overflow-auto"
                     @click.stop
                   >

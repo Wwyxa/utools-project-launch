@@ -163,7 +163,12 @@ onUnmounted(() => {
         <Transition name="fade" mode="out-in">
           <div v-if="activeTab === 'projects'" key="projects" class="h-full overflow-hidden">
             <Transition name="fade" mode="out-in">
-              <div v-if="!store.selectedProjectId" key="dashboard" class="themed-scrollbar h-full overflow-y-auto">
+              <div
+                v-if="!store.selectedProjectId"
+                v-overlay-scrollbar
+                key="dashboard"
+                class="themed-scrollbar h-full overflow-y-auto"
+              >
                 <Dashboard />
               </div>
               <div v-else key="details" class="h-full overflow-hidden">

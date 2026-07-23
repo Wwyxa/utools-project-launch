@@ -57,7 +57,7 @@
   --color-on-tertiary-fixed: #410008;
   --color-on-tertiary-fixed-variant: #81262b;
 
-  --color-background: #fbf9f8;
+  --color-background: #f4f4f4;
   --color-on-background: #1b1c1c;
   --color-surface-variant: #e4e2e1;
 
@@ -70,10 +70,10 @@
   --color-bg-soft-gray: #f6f6f7;
   --color-border-subtle: #e2e2e3;
 
-  --scrollbar-track: #f5f3f2;
-  --scrollbar-thumb: #a9b6ad;
-  --scrollbar-thumb-hover: #7f8d85;
-  --dashboard-toolbar-bg: rgba(251, 249, 248, 0.96);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(109, 122, 114, 0.34);
+  --scrollbar-thumb-hover: rgba(109, 122, 114, 0.58);
+  --dashboard-toolbar-bg: rgba(244, 244, 244, 0.96);
   --dashboard-filter-active-border: #2eaf7d;
   --dashboard-filter-active-bg: #ddf6ea;
   --dashboard-filter-active-count-bg: rgba(0, 108, 73, 0.12);
@@ -146,9 +146,9 @@
     --color-bg-soft-gray: #35373b;
     --color-border-subtle: #484c53;
 
-    --scrollbar-track: #303133;
-    --scrollbar-thumb: #575b62;
-    --scrollbar-thumb-hover: #6b7078;
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: rgba(173, 180, 190, 0.34);
+    --scrollbar-thumb-hover: rgba(173, 180, 190, 0.58);
     --dashboard-toolbar-bg: rgba(51, 51, 51, 0.96);
     --dashboard-filter-active-border: #4f8f70;
     --dashboard-filter-active-bg: #345444;
@@ -221,14 +221,21 @@
   scrollbar-width: none;
 }
 
-.themed-scrollbar {
-  scrollbar-gutter: stable;
+.themed-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.themed-scrollbar::-webkit-scrollbar,
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
+}
+
+.themed-scrollbar::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .themed-scrollbar::-webkit-scrollbar-track,
@@ -262,13 +269,26 @@
 .themed-scrollbar::-webkit-scrollbar-thumb,
 *::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border: 3px solid var(--scrollbar-track);
+  border: 1px solid transparent;
   border-radius: 999px;
+  background-clip: content-box;
 }
 
 .themed-scrollbar::-webkit-scrollbar-thumb:hover,
 *::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+}
+
+.os-theme-utools {
+  --os-size: 8px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 999px;
+  --os-handle-interactive-area-offset: 2px;
+  --os-handle-border-radius: 999px;
+  --os-handle-bg: var(--scrollbar-thumb);
+  --os-handle-bg-hover: var(--scrollbar-thumb-hover);
+  --os-handle-bg-active: var(--scrollbar-thumb-hover);
 }
 
 .dashboard-toolbar {
