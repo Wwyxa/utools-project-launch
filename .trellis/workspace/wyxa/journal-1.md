@@ -1843,3 +1843,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 54: 优化 uTools 暗色主题融合
+
+**Date**: 2026-07-23
+**Task**: 优化 uTools 暗色主题融合
+**Branch**: `master`
+
+### Summary
+
+参考 uTools 与快命令暗色视觉，统一宿主背景、冷灰表面、文本和控件层级，补充插件重入主题同步并改善状态按钮对比度。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c47e69f` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
