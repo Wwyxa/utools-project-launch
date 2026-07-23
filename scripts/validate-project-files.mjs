@@ -16,6 +16,9 @@ const revealedPaths = [];
 
 fs.mkdirSync(path.join(projectRoot, "src", "nested"), { recursive: true });
 fs.mkdirSync(path.join(projectRoot, "node_modules", "hidden"), { recursive: true });
+fs.mkdirSync(path.join(projectRoot, "src", "node_modules"), { recursive: true });
+fs.mkdirSync(path.join(projectRoot, "__pycache__"), { recursive: true });
+fs.mkdirSync(path.join(projectRoot, "src", "__pycache__"), { recursive: true });
 fs.mkdirSync(path.join(projectRoot, "dist"), { recursive: true });
 fs.mkdirSync(outsideRoot, { recursive: true });
 fs.writeFileSync(path.join(projectRoot, "src", "nested", "target-one.txt"), "one");
@@ -60,6 +63,8 @@ vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
 const bridge = sandbox.window.projectBridge;
 
 try {
+  assert.deepEqual(Array.from(bridge.listProjectSubdirectories(projectRoot)), [".", "src", "src/nested"]);
+
   const rootList = bridge.listProjectFiles(projectRoot);
   assert.equal(
     rootList.entries.some((entry) => entry.name === "node_modules"),

@@ -148,6 +148,7 @@ const environmentTools = {
 };
 const ignoredFileTreeDirs = new Set([
   "node_modules",
+  "__pycache__",
   ".git",
   ".venv",
   "venv",
@@ -3904,25 +3905,32 @@ function readGitCommitFileDiff(projectPath, commitHash, relativePath) {
 
 function listProjectSubdirectories(projectPath) {
   const resolvedPath = expandPath(projectPath);
-  const preferred = new Set(commonProjectDirs);
 
   try {
     if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isDirectory()) {
       return ["."];
     }
 
-    const childDirectories = fs
-      .readdirSync(resolvedPath, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-      .map((entry) => entry.name);
-    return Array.from(new Set([".", ...commonProjectDirs.slice(1), ...childDirectories])).sort((left, right) => {
-      const leftPreferred = preferred.has(left);
-      const rightPreferred = preferred.has(right);
-      if (leftPreferred !== rightPreferred) {
-        return leftPreferred ? -1 : 1;
-      }
-      return left.localeCompare(right);
-    });
+    const visibleDirectories = (directoryPath) =>
+      fs
+        .readdirSync(directoryPath, { withFileTypes: true })
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            !entry.isSymbolicLink() &&
+            !entry.name.startsWith(".") &&
+            !ignoredFileTreeDirs.has(entry.name),
+        )
+        .sort((left, right) => left.name.localeCompare(right.name));
+
+    return visibleDirectories(resolvedPath).reduce(
+      (suggestions, entry) => [
+        ...suggestions,
+        entry.name,
+        ...visibleDirectories(path.join(resolvedPath, entry.name)).map((child) => `${entry.name}/${child.name}`),
+      ],
+      ["."],
+    );
   } catch (error) {
     return ["."];
   }

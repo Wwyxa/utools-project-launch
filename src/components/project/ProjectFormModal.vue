@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { X, Plus, Trash2, Save, WandSparkles, FolderOpen, GripVertical } from "lucide-vue-next";
+import { computed, ref, watch } from "vue";
+import { Check, ChevronDown, X, Plus, Trash2, Save, WandSparkles, FolderOpen, GripVertical } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
@@ -12,7 +12,44 @@ const t = useI18n();
 
 const form = computed(() => store.projectFormDraft);
 const title = computed(() => (store.projectFormMode === "edit" ? t.value.modal.editTitle : t.value.modal.createTitle));
+const existingGroups = computed(() => [
+  ...new Set(store.projects.map((project) => project.group.trim()).filter(Boolean)),
+]);
 const draggedScriptId = ref<string | null>(null);
+const groupMenuOpen = ref(false);
+const cwdMenuScriptId = ref<string | null>(null);
+
+const closeMenus = () => {
+  groupMenuOpen.value = false;
+  cwdMenuScriptId.value = null;
+};
+
+const selectGroup = (group: string) => {
+  store.updateProjectForm({ group });
+  groupMenuOpen.value = false;
+};
+
+const selectScriptCwd = (scriptId: string, cwd: string) => {
+  store.updateScriptEntry(scriptId, { cwd });
+  cwdMenuScriptId.value = null;
+};
+
+const toggleGroupMenu = () => {
+  cwdMenuScriptId.value = null;
+  groupMenuOpen.value = !groupMenuOpen.value;
+};
+
+const toggleCwdMenu = (scriptId: string) => {
+  groupMenuOpen.value = false;
+  cwdMenuScriptId.value = cwdMenuScriptId.value === scriptId ? null : scriptId;
+};
+
+watch(
+  () => store.projectFormOpen,
+  (open) => {
+    if (!open) closeMenus();
+  },
+);
 
 const projectIcons: Array<{ key: ProjectIconKey; label: string; kind: ProjectKind; type: string }> = [
   { key: "node", label: "Node.js", kind: "node", type: "Node.js" },
@@ -101,7 +138,10 @@ const handleScriptDrop = (targetScriptId: string) => {
             </button>
           </header>
 
-          <div class="themed-scrollbar bg-surface p-5 overflow-y-auto space-y-6 [color-scheme:inherit]">
+          <div
+            class="themed-scrollbar bg-surface p-5 overflow-y-auto space-y-6 [color-scheme:inherit]"
+            @click="closeMenus"
+          >
             <section class="grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-4">
               <label class="space-y-1.5 md:col-span-4">
                 <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.name }}</span>
@@ -168,16 +208,42 @@ const handleScriptDrop = (targetScriptId: string) => {
                   </button>
                 </div>
               </div>
-              <label class="space-y-1.5 md:col-span-4">
+              <div class="space-y-1.5 md:col-span-4">
                 <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.group }}</span>
-                <input
-                  :value="form.group"
-                  type="text"
-                  :placeholder="t.modal.groupPlaceholder"
-                  @input="(event) => store.updateProjectForm({ group: (event.target as HTMLInputElement).value })"
-                  class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
-                />
-              </label>
+                <div class="relative" @click.stop>
+                  <input
+                    :value="form.group"
+                    type="text"
+                    :placeholder="t.modal.groupPlaceholder"
+                    @focus="cwdMenuScriptId = null"
+                    @input="(event) => store.updateProjectForm({ group: (event.target as HTMLInputElement).value })"
+                    class="ui-field w-full pr-9"
+                  />
+                  <button
+                    v-if="existingGroups.length > 0"
+                    type="button"
+                    class="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-on-surface-variant hover:text-on-surface"
+                    title="选择已有分组"
+                    aria-label="选择已有分组"
+                    :aria-expanded="groupMenuOpen"
+                    @click="toggleGroupMenu"
+                  >
+                    <ChevronDown :size="14" />
+                  </button>
+                  <div v-if="groupMenuOpen" class="mode-menu-popover max-h-48 overflow-auto">
+                    <button
+                      v-for="group in existingGroups"
+                      :key="group"
+                      type="button"
+                      :class="cn('mode-menu-item', form.group.trim() === group && 'bg-primary/10 text-primary')"
+                      @click="selectGroup(group)"
+                    >
+                      <span class="truncate">{{ group }}</span>
+                      <Check v-if="form.group.trim() === group" :size="13" class="shrink-0" />
+                    </button>
+                  </div>
+                </div>
+              </div>
               <label class="space-y-1.5 md:col-span-7">
                 <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.quickLink }}</span>
                 <div class="flex gap-2">
@@ -335,22 +401,54 @@ const handleScriptDrop = (targetScriptId: string) => {
                     :placeholder="t.modal.scriptCommand"
                     class="md:col-span-4 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
                   />
-                  <input
-                    :value="script.cwd"
-                    @input="
-                      (event) => store.updateScriptEntry(script.id, { cwd: (event.target as HTMLInputElement).value })
-                    "
-                    :placeholder="t.modal.scriptCwd"
-                    list="project-cwd-suggestions"
-                    class="md:col-span-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
-                  />
-                  <datalist id="project-cwd-suggestions">
-                    <option
-                      v-for="suggestion in store.projectFormCwdSuggestions"
-                      :key="suggestion"
-                      :value="suggestion"
+                  <div class="relative md:col-span-2" @click.stop>
+                    <input
+                      :value="script.cwd"
+                      @focus="groupMenuOpen = false"
+                      @input="
+                        (event) => store.updateScriptEntry(script.id, { cwd: (event.target as HTMLInputElement).value })
+                      "
+                      :placeholder="t.modal.scriptCwd"
+                      class="h-full w-full rounded-lg border border-border-subtle bg-surface py-1.5 pl-2.5 pr-8 text-sm focus:border-primary focus:outline-none"
                     />
-                  </datalist>
+                    <button
+                      type="button"
+                      class="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-on-surface-variant hover:text-on-surface"
+                      title="选择项目工作目录"
+                      aria-label="选择项目工作目录"
+                      :aria-expanded="cwdMenuScriptId === script.id"
+                      @click="toggleCwdMenu(script.id)"
+                    >
+                      <ChevronDown :size="14" />
+                    </button>
+                    <div
+                      v-if="cwdMenuScriptId === script.id"
+                      class="mode-menu-popover max-h-48 overflow-auto"
+                      style="width: max-content; min-width: max(100%, 10rem); max-width: min(24rem, 70vw)"
+                    >
+                      <button
+                        v-for="suggestion in store.projectFormCwdSuggestions"
+                        :key="suggestion"
+                        type="button"
+                        :class="cn('mode-menu-item', script.cwd === suggestion && 'bg-primary/10 text-primary')"
+                        @click="selectScriptCwd(script.id, suggestion)"
+                      >
+                        <span
+                          :class="
+                            cn(
+                              'truncate font-mono',
+                              suggestion.includes('/') &&
+                                'ml-3 border-l border-border-subtle pl-3 text-on-surface-variant',
+                            )
+                          "
+                          :title="suggestion"
+                        >
+                          {{ suggestion }}
+                        </span>
+                        <Check v-if="script.cwd === suggestion" :size="13" class="shrink-0" />
+                      </button>
+                    </div>
+                  </div>
                   <input
                     :value="script.note"
                     @input="

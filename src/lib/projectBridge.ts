@@ -547,7 +547,7 @@ const fallbackBridge: ProjectBridge = {
     return { scripts: [], packagePath: null };
   },
   async listProjectSubdirectories(): Promise<string[]> {
-    return [".", "frontend", "backend", "client", "server", "api", "src"];
+    return ["."];
   },
   async readGitSnapshot(): Promise<ProjectBridgeGitSnapshot> {
     return emptyGitSnapshot();
