@@ -79,7 +79,7 @@ const handleStop = async (scriptId: string) => {
           </div>
           <span class="ui-panel-meta">{{ scripts.length }}</span>
         </div>
-        <div class="themed-scrollbar min-h-0 flex-1 overflow-auto">
+        <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-auto">
           <div
             v-for="script in scripts"
             :key="script.id"
