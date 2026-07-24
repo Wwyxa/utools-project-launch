@@ -1034,6 +1034,7 @@ export const useStore = defineStore("app", {
     projectFormMode: "create" as "create" | "edit",
     projectFormDraft: createBlankProjectForm() as ProjectFormValue,
     pendingDeleteProjectId: null as string | null,
+    projectDetailsTabOrder: bridge.loadProjectDetailsTabOrder(),
     projects: supportsRealProjectBridge() ? [] : demoProjects,
     selectedProjectId: null as string | null,
     automationActiveProjectRuns: {} as Record<string, string>,
@@ -1114,6 +1115,7 @@ export const useStore = defineStore("app", {
       this.editorPreferences = bridge.loadEditorPreferences();
       this.environmentPreferences = bridge.loadEnvironmentPreferences();
       this.aiPreferences = bridge.loadAiPreferences();
+      this.projectDetailsTabOrder = bridge.loadProjectDetailsTabOrder();
       try {
         const storedProjects = await bridge.loadProjects();
         if (this.supportsBridge || storedProjects.length > 0) {
@@ -1180,6 +1182,10 @@ export const useStore = defineStore("app", {
     },
     setTheme(theme: "light" | "dark" | "auto") {
       this.theme = theme;
+    },
+    setProjectDetailsTabOrder(order: string[]) {
+      this.projectDetailsTabOrder = [...order];
+      bridge.saveProjectDetailsTabOrder(this.projectDetailsTabOrder);
     },
     setProjectConfigMessage(message: string) {
       cancelProjectConfigMessageClear();

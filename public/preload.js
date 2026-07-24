@@ -26,6 +26,7 @@ const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
+const projectDetailsTabOrderStorageKey = "utools-project-launch.project-details-tab-order.v1";
 const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const deviceIdFileName = "device-id.v1";
 const projectDocPrefix = "utools-project-launch/project/";
@@ -539,6 +540,38 @@ function saveEditorPreferences(preferences) {
     window.localStorage?.setItem(localEditorPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+}
+
+function normalizeProjectDetailsTabOrder(value) {
+  return Array.isArray(value) ? value.filter((id) => typeof id === "string") : [];
+}
+
+function readProjectDetailsTabOrder() {
+  try {
+    if (window.utools?.dbStorage) {
+      const storedOrder = normalizeProjectDetailsTabOrder(
+        window.utools.dbStorage.getItem(projectDetailsTabOrderStorageKey),
+      );
+      if (storedOrder.length > 0) return storedOrder;
+    }
+    const raw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
+    return raw ? normalizeProjectDetailsTabOrder(JSON.parse(raw)) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveProjectDetailsTabOrder(order) {
+  const normalized = normalizeProjectDetailsTabOrder(order);
+  try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(projectDetailsTabOrderStorageKey, normalized);
+      return;
+    }
+    window.localStorage?.setItem(projectDetailsTabOrderStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep tab reordering usable when host storage is temporarily unavailable.
   }
 }
 
@@ -4664,6 +4697,8 @@ window.projectBridge = {
   loadDeviceId: getCurrentDeviceId,
   loadProjects: readProjects,
   saveProjects: writeStoredProjects,
+  loadProjectDetailsTabOrder: readProjectDetailsTabOrder,
+  saveProjectDetailsTabOrder,
   inspectProjectPath,
   pickProjectPath,
   pickQuickLinkPath,

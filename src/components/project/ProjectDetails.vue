@@ -23,32 +23,56 @@ import MemoTab from "./MemoTab.vue";
 import FilesTab from "./FilesTab.vue";
 import AutomationTab from "./AutomationTab.vue";
 
+const tabIds = ["info", "scripts", "automation", "files", "git", "memo"] as const;
+type TabId = (typeof tabIds)[number];
+const tabLongPressDelayMs = 350;
+const tabPressMoveTolerance = 8;
+
+const normalizeTabOrder = (value: unknown): TabId[] => {
+  const storedIds = Array.isArray(value)
+    ? value.filter((id): id is TabId => typeof id === "string" && tabIds.includes(id as TabId))
+    : [];
+  return [...new Set(storedIds), ...tabIds.filter((id) => !storedIds.includes(id))];
+};
+
 const props = defineProps<{
   project: Project;
 }>();
 
 const store = useStore();
 const t = useI18n();
-type TabId = "info" | "scripts" | "automation" | "files" | "git" | "memo";
 type GitTabExpose = {
   refreshActiveRepository: () => Promise<void>;
   isRefreshRunning: () => boolean;
 };
 const activeTab = ref<TabId>("scripts");
+const tabOrder = ref<TabId[]>(normalizeTabOrder(store.projectDetailsTabOrder));
+const draggedTab = ref<TabId | null>(null);
 const fileOpenRequest = ref("");
 const detailsRootRef = ref<HTMLElement | null>(null);
 const tabListRef = ref<HTMLElement | null>(null);
 const gitTabRef = ref<GitTabExpose | null>(null);
 const isManualRefreshRunning = ref(false);
+let tabLongPressTimer: number | null = null;
+let activeTabPointerId: number | null = null;
+let pressedTab: TabId | null = null;
+let tabPressStartX = 0;
+let tabPressStartY = 0;
+let tabOrderChanged = false;
+let suppressNextTabClick = false;
+let suppressTabClickTimer: number | null = null;
+let previousBodyUserSelect = "";
+let previousBodyCursor = "";
 
-const tabs = computed<Array<{ id: TabId; label: string }>>(() => [
-  { id: "info", label: t.value.projectDetails.overview },
-  { id: "scripts", label: t.value.projectDetails.scripts },
-  { id: "automation", label: t.value.projectDetails.automation },
-  { id: "files", label: t.value.projectDetails.files },
-  { id: "git", label: t.value.projectDetails.git },
-  { id: "memo", label: t.value.projectDetails.memo },
-]);
+const tabLabels = computed<Record<TabId, string>>(() => ({
+  info: t.value.projectDetails.overview,
+  scripts: t.value.projectDetails.scripts,
+  automation: t.value.projectDetails.automation,
+  files: t.value.projectDetails.files,
+  git: t.value.projectDetails.git,
+  memo: t.value.projectDetails.memo,
+}));
+const tabs = computed(() => tabOrder.value.map((id) => ({ id, label: tabLabels.value[id] })));
 
 const statusLabel = computed(() => {
   if (props.project.status === ProjectStatus.RUNNING) {
@@ -133,6 +157,108 @@ const handleDelete = () => {
   store.requestDeleteProject(props.project.id);
 };
 
+const clearTabLongPressTimer = () => {
+  if (tabLongPressTimer !== null) {
+    window.clearTimeout(tabLongPressTimer);
+    tabLongPressTimer = null;
+  }
+};
+
+const restoreTabDragDocumentState = () => {
+  document.body.style.userSelect = previousBodyUserSelect;
+  document.body.style.cursor = previousBodyCursor;
+};
+
+const removeTabPointerListeners = () => {
+  window.removeEventListener("pointermove", handleTabPointerMove);
+  window.removeEventListener("pointerup", stopTabPointerInteraction);
+  window.removeEventListener("pointercancel", stopTabPointerInteraction);
+  window.removeEventListener("blur", stopTabPointerInteraction);
+};
+
+const stopTabPointerInteraction = (event?: Event) => {
+  if (event instanceof PointerEvent && activeTabPointerId !== event.pointerId) {
+    return;
+  }
+
+  const didDrag = draggedTab.value !== null;
+  clearTabLongPressTimer();
+  removeTabPointerListeners();
+  activeTabPointerId = null;
+  pressedTab = null;
+  draggedTab.value = null;
+
+  if (didDrag) {
+    restoreTabDragDocumentState();
+    if (tabOrderChanged) store.setProjectDetailsTabOrder(tabOrder.value);
+    suppressNextTabClick = true;
+    if (suppressTabClickTimer !== null) window.clearTimeout(suppressTabClickTimer);
+    suppressTabClickTimer = window.setTimeout(() => {
+      suppressNextTabClick = false;
+      suppressTabClickTimer = null;
+    });
+  }
+  tabOrderChanged = false;
+};
+
+function handleTabPointerMove(event: PointerEvent) {
+  if (activeTabPointerId !== event.pointerId) return;
+
+  if (!draggedTab.value) {
+    if (Math.hypot(event.clientX - tabPressStartX, event.clientY - tabPressStartY) > tabPressMoveTolerance) {
+      clearTabLongPressTimer();
+    }
+    return;
+  }
+
+  event.preventDefault();
+  const currentIndex = tabOrder.value.indexOf(draggedTab.value);
+  const tabButtons = Array.from(tabListRef.value?.querySelectorAll<HTMLElement>("[data-project-tab]") || []);
+  const nextIndex = tabButtons.findIndex((button) => {
+    const bounds = button.getBoundingClientRect();
+    return event.clientX < bounds.left + bounds.width / 2;
+  });
+  const insertionIndex =
+    nextIndex < 0 ? tabOrder.value.length - 1 : nextIndex > currentIndex ? nextIndex - 1 : nextIndex;
+  if (insertionIndex === currentIndex) return;
+
+  const nextOrder = [...tabOrder.value];
+  nextOrder.splice(currentIndex, 1);
+  nextOrder.splice(insertionIndex, 0, draggedTab.value);
+  tabOrder.value = nextOrder;
+  tabOrderChanged = true;
+}
+
+const handleTabPointerDown = (event: PointerEvent, tabId: TabId) => {
+  if (!event.isPrimary || event.button !== 0 || activeTabPointerId !== null) return;
+
+  activeTabPointerId = event.pointerId;
+  pressedTab = tabId;
+  tabPressStartX = event.clientX;
+  tabPressStartY = event.clientY;
+  tabOrderChanged = false;
+  window.addEventListener("pointermove", handleTabPointerMove);
+  window.addEventListener("pointerup", stopTabPointerInteraction);
+  window.addEventListener("pointercancel", stopTabPointerInteraction);
+  window.addEventListener("blur", stopTabPointerInteraction);
+  tabLongPressTimer = window.setTimeout(() => {
+    if (activeTabPointerId !== event.pointerId || pressedTab !== tabId) return;
+    draggedTab.value = tabId;
+    previousBodyUserSelect = document.body.style.userSelect;
+    previousBodyCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+  }, tabLongPressDelayMs);
+};
+
+const handleTabClick = (tabId: TabId) => {
+  if (suppressNextTabClick) {
+    suppressNextTabClick = false;
+    return;
+  }
+  activeTab.value = tabId;
+};
+
 const focusActiveTab = () => {
   void nextTick(() => {
     tabListRef.value?.querySelector<HTMLButtonElement>("[role='tab'][aria-selected='true']")?.focus();
@@ -215,6 +341,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  stopTabPointerInteraction();
+  if (suppressTabClickTimer !== null) window.clearTimeout(suppressTabClickTimer);
   if (store.selectedProjectId !== props.project.id) {
     clearGitAiAnalysisSessionsForProject(props.project.id);
   }
@@ -340,12 +468,16 @@ watch(
         role="tab"
         :aria-selected="activeTab === tab.id"
         :aria-controls="`project-tabpanel-${tab.id}`"
+        :aria-grabbed="draggedTab === tab.id"
         :tabindex="activeTab === tab.id ? 0 : -1"
-        @click="activeTab = tab.id"
+        data-project-tab
+        @pointerdown="handleTabPointerDown($event, tab.id)"
+        @click="handleTabClick(tab.id)"
         :class="
           cn(
-            'relative whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0',
+            'relative touch-none select-none whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-grab active:cursor-grabbing',
             activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
+            draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
           )
         "
       >

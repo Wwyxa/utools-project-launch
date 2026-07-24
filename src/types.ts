@@ -803,6 +803,8 @@ export interface ProjectBridge {
   loadDeviceId(): string;
   loadProjects(): Promise<Project[]>;
   saveProjects(projects: Project[]): Promise<void>;
+  loadProjectDetailsTabOrder(): string[];
+  saveProjectDetailsTabOrder(order: string[]): void;
   loadTerminalPreferences(): TerminalPreferences;
   saveTerminalPreferences(preferences: TerminalPreferences): void;
   loadEditorPreferences(): EditorPreferences;

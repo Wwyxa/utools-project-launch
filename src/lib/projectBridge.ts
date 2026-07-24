@@ -51,6 +51,7 @@ const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
+const projectDetailsTabOrderStorageKey = "utools-project-launch.project-details-tab-order.v1";
 const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
 
@@ -287,6 +288,24 @@ const writeStoredEditorPreferences = (preferences: EditorPreferences) => {
   }
 };
 
+const readStoredProjectDetailsTabOrder = (): string[] => {
+  try {
+    const raw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
+    const value = raw ? JSON.parse(raw) : [];
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeStoredProjectDetailsTabOrder = (order: string[]) => {
+  try {
+    window.localStorage?.setItem(projectDetailsTabOrderStorageKey, JSON.stringify(order));
+  } catch {
+    // Keep tab reordering usable when browser storage is unavailable.
+  }
+};
+
 const readStoredEnvironmentPreferences = (): EnvironmentPreferences => {
   try {
     if (window.utools?.dbStorage) {
@@ -445,6 +464,12 @@ const fallbackBridge: ProjectBridge = {
     } catch (error) {
       // Browser preview can continue with in-memory Pinia state if storage is unavailable.
     }
+  },
+  loadProjectDetailsTabOrder() {
+    return readStoredProjectDetailsTabOrder();
+  },
+  saveProjectDetailsTabOrder(order) {
+    writeStoredProjectDetailsTabOrder(order);
   },
   loadTerminalPreferences() {
     return readStoredTerminalPreferences();
