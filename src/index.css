@@ -700,6 +700,56 @@
   color: var(--color-on-surface-variant);
 }
 
+.memo-rendered table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 0.65rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-spacing: 0;
+  border-radius: 6px;
+  background: var(--color-surface-container-lowest);
+  scrollbar-color: color-mix(in srgb, var(--scrollbar-thumb) 62%, transparent) transparent;
+}
+
+.memo-rendered th,
+.memo-rendered td {
+  min-width: 5rem;
+  border-right: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.memo-rendered th {
+  background: var(--color-surface-container);
+  color: var(--color-on-surface);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.memo-rendered td {
+  color: var(--color-on-surface-variant);
+}
+
+.memo-rendered tbody tr:nth-child(even) td {
+  background: var(--color-surface-container-low);
+}
+
+.memo-rendered tbody tr:hover td {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-container-lowest));
+}
+
+.memo-rendered tr > :last-child {
+  border-right: 0;
+}
+
+.memo-rendered tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .memo-rendered strong {
   color: var(--color-on-surface);
   font-weight: 800;
