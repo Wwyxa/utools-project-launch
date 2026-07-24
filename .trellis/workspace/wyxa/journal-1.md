@@ -1942,3 +1942,36 @@ Improved the project detail Files tab with highlighted read/edit code surfaces, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 57: 统一 UI 偏好与拖拽提示状态
+
+**Date**: 2026-07-24
+**Task**: 统一 UI 偏好与拖拽提示状态
+**Branch**: `master`
+
+### Summary
+
+集中持久化项目详情标签顺序和版本化功能提示状态，兼容迁移旧排序数据，并补充 browser、preload 与 Store 回归测试。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3a8c0bf` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
