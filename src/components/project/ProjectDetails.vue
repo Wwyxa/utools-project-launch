@@ -1,3 +1,7 @@
+<script lang="ts">
+let showTabOrderHintInSession = true;
+</script>
+
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
@@ -6,6 +10,7 @@ import {
   Folder,
   FolderOpen,
   GitCommitHorizontal,
+  GripHorizontal,
   Pencil,
   ArrowLeft,
   RefreshCw,
@@ -48,6 +53,7 @@ type GitTabExpose = {
 const activeTab = ref<TabId>("scripts");
 const tabOrder = ref<TabId[]>(normalizeTabOrder(store.projectDetailsTabOrder));
 const draggedTab = ref<TabId | null>(null);
+const showTabOrderHint = ref(showTabOrderHintInSession);
 const fileOpenRequest = ref("");
 const detailsRootRef = ref<HTMLElement | null>(null);
 const tabListRef = ref<HTMLElement | null>(null);
@@ -190,7 +196,11 @@ const stopTabPointerInteraction = (event?: Event) => {
 
   if (didDrag) {
     restoreTabDragDocumentState();
-    if (tabOrderChanged) store.setProjectDetailsTabOrder(tabOrder.value);
+    if (tabOrderChanged) {
+      store.setProjectDetailsTabOrder(tabOrder.value);
+      showTabOrderHint.value = false;
+      showTabOrderHintInSession = false;
+    }
     suppressNextTabClick = true;
     if (suppressTabClickTimer !== null) window.clearTimeout(suppressTabClickTimer);
     suppressTabClickTimer = window.setTimeout(() => {
@@ -459,32 +469,43 @@ watch(
       </div>
     </div>
 
-    <nav ref="tabListRef" role="tablist" class="mb-3 flex gap-5 overflow-x-auto border-b border-border-subtle">
-      <button
-        v-for="tab in tabs"
-        :key="tab.id"
-        :id="`project-tab-${tab.id}`"
-        type="button"
-        role="tab"
-        :aria-selected="activeTab === tab.id"
-        :aria-controls="`project-tabpanel-${tab.id}`"
-        :aria-grabbed="draggedTab === tab.id"
-        :tabindex="activeTab === tab.id ? 0 : -1"
-        data-project-tab
-        @pointerdown="handleTabPointerDown($event, tab.id)"
-        @click="handleTabClick(tab.id)"
-        :class="
-          cn(
-            'relative touch-none select-none whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-grab active:cursor-grabbing',
-            activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
-            draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
-          )
-        "
+    <div class="mb-3 flex min-w-0 items-end border-b border-border-subtle">
+      <nav ref="tabListRef" role="tablist" class="flex min-w-0 flex-1 gap-5 overflow-x-auto">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          :id="`project-tab-${tab.id}`"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === tab.id"
+          :aria-controls="`project-tabpanel-${tab.id}`"
+          :aria-grabbed="draggedTab === tab.id"
+          :tabindex="activeTab === tab.id ? 0 : -1"
+          data-project-tab
+          @pointerdown="handleTabPointerDown($event, tab.id)"
+          @click="handleTabClick(tab.id)"
+          :class="
+            cn(
+              'relative touch-none select-none whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-grab active:cursor-grabbing',
+              activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
+              draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
+            )
+          "
+        >
+          {{ tab.label }}
+          <div v-if="activeTab === tab.id" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+        </button>
+      </nav>
+      <span
+        v-if="showTabOrderHint"
+        role="note"
+        :aria-label="t.projectDetails.reorderTabsHint"
+        class="pointer-events-none ml-2 inline-flex shrink-0 items-center gap-1 pb-2 text-[11px] font-medium text-on-surface-variant opacity-50 sm:ml-3"
       >
-        {{ tab.label }}
-        <div v-if="activeTab === tab.id" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-      </button>
-    </nav>
+        <GripHorizontal :size="12" :stroke-width="1.5" />
+        <span class="hidden whitespace-nowrap sm:inline">{{ t.projectDetails.reorderTabsHint }}</span>
+      </span>
+    </div>
 
     <div
       :id="`project-tabpanel-${activeTab}`"
