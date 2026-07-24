@@ -59,7 +59,6 @@ let tabOrderChanged = false;
 let suppressNextTabClick = false;
 let suppressTabClickTimer: number | null = null;
 let previousBodyUserSelect = "";
-let previousBodyCursor = "";
 
 const tabLabels = computed<Record<TabId, string>>(() => ({
   info: t.value.projectDetails.overview,
@@ -163,7 +162,6 @@ const clearTabLongPressTimer = () => {
 
 const restoreTabDragDocumentState = () => {
   document.body.style.userSelect = previousBodyUserSelect;
-  document.body.style.cursor = previousBodyCursor;
 };
 
 const removeTabPointerListeners = () => {
@@ -245,9 +243,7 @@ const handleTabPointerDown = (event: PointerEvent, tabId: TabId) => {
     draggedTab.value = tabId;
     store.acknowledgeProjectDetailsTabReorderHint(PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION);
     previousBodyUserSelect = document.body.style.userSelect;
-    previousBodyCursor = document.body.style.cursor;
     document.body.style.userSelect = "none";
-    document.body.style.cursor = "grabbing";
   }, tabLongPressDelayMs);
 };
 
@@ -476,7 +472,7 @@ watch(
           @click="handleTabClick(tab.id)"
           :class="
             cn(
-              'relative touch-none select-none whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-grab active:cursor-grabbing',
+              'relative touch-none select-none whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-default',
               activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
               draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
             )
