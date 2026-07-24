@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Check the change against the complete frontend guideline index."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply required lint/build checks and verify compact project-detail layout behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify one-time loading, Pinia ownership, and absence of direct component storage access."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Verify browser fallback, Store, bridge interface, and preload persistence contracts remain aligned."}

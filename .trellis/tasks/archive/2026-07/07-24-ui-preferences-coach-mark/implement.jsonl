@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend package conventions and pre-development routing for the Vue/Pinia change."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Preserve project detail tab semantics, keyboard behavior, Tailwind styling, and accessibility."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep persistent global UI preferences in Pinia and route storage through ProjectBridge rather than component-local state."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Define and validate the cross-preload UiPreferences contract without broad casts or duplicated frontend types."}
