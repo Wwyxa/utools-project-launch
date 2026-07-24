@@ -6,7 +6,7 @@ import {
   getNextAutomationPlanEntry,
   validateAutomationSchedule,
 } from "../lib/automationScheduler";
-import { getProjectBridge, supportsRealProjectBridge } from "../lib/projectBridge";
+import { getProjectBridge, normalizeUiPreferences, supportsRealProjectBridge } from "../lib/projectBridge";
 import {
   environmentToolRequest,
   validateCustomEnvironmentToolInput,
@@ -67,6 +67,7 @@ import type {
   ProjectFileWriteResult,
   ProjectIconKey,
   ProjectKind,
+  ProjectDetailsTabId,
   ProjectVisibility,
   ProjectScript,
   ProjectScriptFormValue,
@@ -1034,7 +1035,7 @@ export const useStore = defineStore("app", {
     projectFormMode: "create" as "create" | "edit",
     projectFormDraft: createBlankProjectForm() as ProjectFormValue,
     pendingDeleteProjectId: null as string | null,
-    projectDetailsTabOrder: bridge.loadProjectDetailsTabOrder(),
+    uiPreferences: bridge.loadUiPreferences(),
     projects: supportsRealProjectBridge() ? [] : demoProjects,
     selectedProjectId: null as string | null,
     automationActiveProjectRuns: {} as Record<string, string>,
@@ -1115,7 +1116,6 @@ export const useStore = defineStore("app", {
       this.editorPreferences = bridge.loadEditorPreferences();
       this.environmentPreferences = bridge.loadEnvironmentPreferences();
       this.aiPreferences = bridge.loadAiPreferences();
-      this.projectDetailsTabOrder = bridge.loadProjectDetailsTabOrder();
       try {
         const storedProjects = await bridge.loadProjects();
         if (this.supportsBridge || storedProjects.length > 0) {
@@ -1183,9 +1183,33 @@ export const useStore = defineStore("app", {
     setTheme(theme: "light" | "dark" | "auto") {
       this.theme = theme;
     },
-    setProjectDetailsTabOrder(order: string[]) {
-      this.projectDetailsTabOrder = [...order];
-      bridge.saveProjectDetailsTabOrder(this.projectDetailsTabOrder);
+    setProjectDetailsTabOrder(order: ProjectDetailsTabId[]) {
+      const nextPreferences = normalizeUiPreferences({
+        ...this.uiPreferences,
+        projectDetails: { tabOrder: order },
+      });
+      const unchanged = nextPreferences.projectDetails.tabOrder.every(
+        (id, index) => id === this.uiPreferences.projectDetails.tabOrder[index],
+      );
+      if (unchanged) {
+        return;
+      }
+      this.uiPreferences = nextPreferences;
+      bridge.saveUiPreferences(this.uiPreferences);
+    },
+    acknowledgeProjectDetailsTabReorderHint(version: number) {
+      if (
+        !Number.isInteger(version) ||
+        version < 0 ||
+        this.uiPreferences.coachMarks.projectDetailsTabReorder >= version
+      ) {
+        return;
+      }
+      this.uiPreferences = normalizeUiPreferences({
+        ...this.uiPreferences,
+        coachMarks: { ...this.uiPreferences.coachMarks, projectDetailsTabReorder: version },
+      });
+      bridge.saveUiPreferences(this.uiPreferences);
     },
     setProjectConfigMessage(message: string) {
       cancelProjectConfigMessageClear();

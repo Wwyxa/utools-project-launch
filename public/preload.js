@@ -26,6 +26,7 @@ const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
+const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
 const projectDetailsTabOrderStorageKey = "utools-project-launch.project-details-tab-order.v1";
 const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const deviceIdFileName = "device-id.v1";
@@ -543,35 +544,87 @@ function saveEditorPreferences(preferences) {
   }
 }
 
-function normalizeProjectDetailsTabOrder(value) {
-  return Array.isArray(value) ? value.filter((id) => typeof id === "string") : [];
+const projectDetailsTabIds = ["info", "scripts", "automation", "files", "git", "memo"];
+const projectDetailsTabIdSet = new Set(projectDetailsTabIds);
+
+function getDefaultUiPreferences() {
+  return {
+    schemaVersion: 1,
+    projectDetails: { tabOrder: [...projectDetailsTabIds] },
+    coachMarks: { projectDetailsTabReorder: 0 },
+  };
 }
 
-function readProjectDetailsTabOrder() {
+function normalizeProjectDetailsTabOrder(value) {
+  const knownIds = Array.isArray(value) ? value.filter((id) => projectDetailsTabIdSet.has(id)) : [];
+  return [...new Set(knownIds), ...projectDetailsTabIds.filter((id) => !knownIds.includes(id))];
+}
+
+function normalizeUiPreferences(value) {
+  if (!value || typeof value !== "object" || value.schemaVersion !== 1) return getDefaultUiPreferences();
+  const coachMarkVersion = value.coachMarks?.projectDetailsTabReorder;
+  return {
+    schemaVersion: 1,
+    projectDetails: { tabOrder: normalizeProjectDetailsTabOrder(value.projectDetails?.tabOrder) },
+    coachMarks: {
+      projectDetailsTabReorder: Number.isInteger(coachMarkVersion) && coachMarkVersion >= 0 ? coachMarkVersion : 0,
+    },
+  };
+}
+
+function saveUiPreferences(preferences) {
+  const normalized = normalizeUiPreferences(preferences);
   try {
     if (window.utools?.dbStorage) {
-      const storedOrder = normalizeProjectDetailsTabOrder(
-        window.utools.dbStorage.getItem(projectDetailsTabOrderStorageKey),
-      );
-      if (storedOrder.length > 0) return storedOrder;
+      window.utools.dbStorage.setItem(uiPreferencesStorageKey, normalized);
+      window.utools.dbStorage.setItem(projectDetailsTabOrderStorageKey, normalized.projectDetails.tabOrder);
+      return;
     }
-    const raw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
-    return raw ? normalizeProjectDetailsTabOrder(JSON.parse(raw)) : [];
+    window.localStorage?.setItem(uiPreferencesStorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(projectDetailsTabOrderStorageKey, JSON.stringify(normalized.projectDetails.tabOrder));
   } catch (error) {
-    return [];
+    // Keep UI preference updates non-blocking when host storage is temporarily unavailable.
   }
 }
 
-function saveProjectDetailsTabOrder(order) {
-  const normalized = normalizeProjectDetailsTabOrder(order);
+function readUiPreferences() {
   try {
     if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(projectDetailsTabOrderStorageKey, normalized);
-      return;
+      const storedPreferences = window.utools.dbStorage.getItem(uiPreferencesStorageKey);
+      if (storedPreferences !== null && storedPreferences !== undefined) {
+        return normalizeUiPreferences(storedPreferences);
+      }
+      const legacyValue = window.utools.dbStorage.getItem(projectDetailsTabOrderStorageKey);
+      const tabOrder = normalizeProjectDetailsTabOrder(legacyValue);
+      const preferences = {
+        schemaVersion: 1,
+        projectDetails: { tabOrder },
+        coachMarks: {
+          projectDetailsTabReorder:
+            Array.isArray(legacyValue) && tabOrder.some((id, index) => id !== projectDetailsTabIds[index]) ? 1 : 0,
+        },
+      };
+      saveUiPreferences(preferences);
+      return preferences;
     }
-    window.localStorage?.setItem(projectDetailsTabOrderStorageKey, JSON.stringify(normalized));
+
+    const raw = window.localStorage?.getItem(uiPreferencesStorageKey);
+    if (raw !== null && raw !== undefined) return normalizeUiPreferences(JSON.parse(raw));
+    const legacyRaw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
+    const legacyValue = legacyRaw ? JSON.parse(legacyRaw) : null;
+    const tabOrder = normalizeProjectDetailsTabOrder(legacyValue);
+    const preferences = {
+      schemaVersion: 1,
+      projectDetails: { tabOrder },
+      coachMarks: {
+        projectDetailsTabReorder:
+          Array.isArray(legacyValue) && tabOrder.some((id, index) => id !== projectDetailsTabIds[index]) ? 1 : 0,
+      },
+    };
+    saveUiPreferences(preferences);
+    return preferences;
   } catch (error) {
-    // Keep tab reordering usable when host storage is temporarily unavailable.
+    return getDefaultUiPreferences();
   }
 }
 
@@ -4697,8 +4750,8 @@ window.projectBridge = {
   loadDeviceId: getCurrentDeviceId,
   loadProjects: readProjects,
   saveProjects: writeStoredProjects,
-  loadProjectDetailsTabOrder: readProjectDetailsTabOrder,
-  saveProjectDetailsTabOrder,
+  loadUiPreferences: readUiPreferences,
+  saveUiPreferences,
   inspectProjectPath,
   pickProjectPath,
   pickQuickLinkPath,

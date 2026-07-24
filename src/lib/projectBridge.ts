@@ -1,4 +1,4 @@
-import { AI_COMMIT_MESSAGE_MODE_ID, DEFAULT_AI_PROMPT_MODES } from "../types";
+import { AI_COMMIT_MESSAGE_MODE_ID, DEFAULT_AI_PROMPT_MODES, PROJECT_DETAILS_TAB_IDS } from "../types";
 import {
   BUILTIN_ENVIRONMENT_TOOLS,
   normalizeBuiltinEnvironmentToolOverride,
@@ -41,7 +41,9 @@ import type {
   ProjectFileSearchResult,
   ProjectFileWriteResult,
   ProjectPathInspection,
+  ProjectDetailsTabId,
   TerminalPreferences,
+  UiPreferences,
 } from "../types";
 
 const fallbackStorageKey = "utools-project-launch.projects.v1";
@@ -51,6 +53,7 @@ const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
+const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
 const projectDetailsTabOrderStorageKey = "utools-project-launch.project-details-tab-order.v1";
 const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
@@ -87,6 +90,8 @@ const environmentToolKeys = new Set<EnvironmentToolKey>([
   "git",
   "docker",
 ]);
+const projectDetailsTabIds: ProjectDetailsTabId[] = [...PROJECT_DETAILS_TAB_IDS];
+const projectDetailsTabIdSet = new Set<ProjectDetailsTabId>(projectDetailsTabIds);
 
 const isTerminalKind = (kind: unknown): kind is DefaultTerminalKind =>
   typeof kind === "string" && terminalKinds.has(kind as DefaultTerminalKind);
@@ -288,21 +293,66 @@ const writeStoredEditorPreferences = (preferences: EditorPreferences) => {
   }
 };
 
-const readStoredProjectDetailsTabOrder = (): string[] => {
+const defaultUiPreferences = (): UiPreferences => ({
+  schemaVersion: 1,
+  projectDetails: { tabOrder: [...projectDetailsTabIds] },
+  coachMarks: { projectDetailsTabReorder: 0 },
+});
+
+const normalizeProjectDetailsTabOrder = (value: unknown): ProjectDetailsTabId[] => {
+  const knownIds = Array.isArray(value)
+    ? value.filter((id): id is ProjectDetailsTabId => projectDetailsTabIdSet.has(id as ProjectDetailsTabId))
+    : [];
+  return [...new Set(knownIds), ...projectDetailsTabIds.filter((id) => !knownIds.includes(id))];
+};
+
+export const normalizeUiPreferences = (value: unknown): UiPreferences => {
+  const defaults = defaultUiPreferences();
+  if (!value || typeof value !== "object" || (value as Partial<UiPreferences>).schemaVersion !== 1) return defaults;
+  const candidate = value as Partial<UiPreferences>;
+  const coachMarkVersion = candidate.coachMarks?.projectDetailsTabReorder;
+  return {
+    schemaVersion: 1,
+    projectDetails: { tabOrder: normalizeProjectDetailsTabOrder(candidate.projectDetails?.tabOrder) },
+    coachMarks: {
+      projectDetailsTabReorder:
+        typeof coachMarkVersion === "number" && Number.isInteger(coachMarkVersion) && coachMarkVersion >= 0
+          ? coachMarkVersion
+          : 0,
+    },
+  };
+};
+
+const writeStoredUiPreferences = (preferences: UiPreferences) => {
+  const normalized = normalizeUiPreferences(preferences);
   try {
-    const raw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
-    const value = raw ? JSON.parse(raw) : [];
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+    window.localStorage?.setItem(uiPreferencesStorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(projectDetailsTabOrderStorageKey, JSON.stringify(normalized.projectDetails.tabOrder));
   } catch {
-    return [];
+    // Keep UI preference updates non-blocking when browser storage is unavailable.
   }
 };
 
-const writeStoredProjectDetailsTabOrder = (order: string[]) => {
+const readStoredUiPreferences = (): UiPreferences => {
   try {
-    window.localStorage?.setItem(projectDetailsTabOrderStorageKey, JSON.stringify(order));
+    const raw = window.localStorage?.getItem(uiPreferencesStorageKey);
+    if (raw !== null && raw !== undefined) return normalizeUiPreferences(JSON.parse(raw));
+
+    const legacyRaw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
+    const legacyValue = legacyRaw ? JSON.parse(legacyRaw) : null;
+    const tabOrder = normalizeProjectDetailsTabOrder(legacyValue);
+    const preferences: UiPreferences = {
+      schemaVersion: 1,
+      projectDetails: { tabOrder },
+      coachMarks: {
+        projectDetailsTabReorder:
+          Array.isArray(legacyValue) && tabOrder.some((id, index) => id !== projectDetailsTabIds[index]) ? 1 : 0,
+      },
+    };
+    writeStoredUiPreferences(preferences);
+    return preferences;
   } catch {
-    // Keep tab reordering usable when browser storage is unavailable.
+    return defaultUiPreferences();
   }
 };
 
@@ -465,11 +515,11 @@ const fallbackBridge: ProjectBridge = {
       // Browser preview can continue with in-memory Pinia state if storage is unavailable.
     }
   },
-  loadProjectDetailsTabOrder() {
-    return readStoredProjectDetailsTabOrder();
+  loadUiPreferences() {
+    return readStoredUiPreferences();
   },
-  saveProjectDetailsTabOrder(order) {
-    writeStoredProjectDetailsTabOrder(order);
+  saveUiPreferences(preferences) {
+    writeStoredUiPreferences(preferences);
   },
   loadTerminalPreferences() {
     return readStoredTerminalPreferences();

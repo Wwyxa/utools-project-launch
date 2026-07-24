@@ -1,7 +1,3 @@
-<script lang="ts">
-let showTabOrderHintInSession = true;
-</script>
-
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
@@ -17,7 +13,8 @@ import {
   TerminalSquare,
   Trash2,
 } from "lucide-vue-next";
-import { Project, ProjectStatus } from "../../types";
+import { PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION, Project, ProjectStatus } from "../../types";
+import type { ProjectDetailsTabId } from "../../types";
 import { cn } from "../../lib/utils";
 import { formatRelativeTime } from "../../lib/time";
 import { useStore } from "../../store/useStore";
@@ -28,17 +25,9 @@ import MemoTab from "./MemoTab.vue";
 import FilesTab from "./FilesTab.vue";
 import AutomationTab from "./AutomationTab.vue";
 
-const tabIds = ["info", "scripts", "automation", "files", "git", "memo"] as const;
-type TabId = (typeof tabIds)[number];
+type TabId = ProjectDetailsTabId;
 const tabLongPressDelayMs = 350;
 const tabPressMoveTolerance = 8;
-
-const normalizeTabOrder = (value: unknown): TabId[] => {
-  const storedIds = Array.isArray(value)
-    ? value.filter((id): id is TabId => typeof id === "string" && tabIds.includes(id as TabId))
-    : [];
-  return [...new Set(storedIds), ...tabIds.filter((id) => !storedIds.includes(id))];
-};
 
 const props = defineProps<{
   project: Project;
@@ -51,14 +40,16 @@ type GitTabExpose = {
   isRefreshRunning: () => boolean;
 };
 const activeTab = ref<TabId>("scripts");
-const tabOrder = ref<TabId[]>(normalizeTabOrder(store.projectDetailsTabOrder));
+const tabOrder = ref<TabId[]>([...store.uiPreferences.projectDetails.tabOrder]);
 const draggedTab = ref<TabId | null>(null);
-const showTabOrderHint = ref(showTabOrderHintInSession);
 const fileOpenRequest = ref("");
 const detailsRootRef = ref<HTMLElement | null>(null);
 const tabListRef = ref<HTMLElement | null>(null);
 const gitTabRef = ref<GitTabExpose | null>(null);
 const isManualRefreshRunning = ref(false);
+const showTabOrderHint = computed(
+  () => store.uiPreferences.coachMarks.projectDetailsTabReorder < PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION,
+);
 let tabLongPressTimer: number | null = null;
 let activeTabPointerId: number | null = null;
 let pressedTab: TabId | null = null;
@@ -198,8 +189,6 @@ const stopTabPointerInteraction = (event?: Event) => {
     restoreTabDragDocumentState();
     if (tabOrderChanged) {
       store.setProjectDetailsTabOrder(tabOrder.value);
-      showTabOrderHint.value = false;
-      showTabOrderHintInSession = false;
     }
     suppressNextTabClick = true;
     if (suppressTabClickTimer !== null) window.clearTimeout(suppressTabClickTimer);
@@ -254,6 +243,7 @@ const handleTabPointerDown = (event: PointerEvent, tabId: TabId) => {
   tabLongPressTimer = window.setTimeout(() => {
     if (activeTabPointerId !== event.pointerId || pressedTab !== tabId) return;
     draggedTab.value = tabId;
+    store.acknowledgeProjectDetailsTabReorderHint(PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION);
     previousBodyUserSelect = document.body.style.userSelect;
     previousBodyCursor = document.body.style.cursor;
     document.body.style.userSelect = "none";

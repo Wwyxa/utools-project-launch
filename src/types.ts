@@ -36,6 +36,19 @@ export type EnvironmentToolKey = "node" | "npm" | "pnpm" | "yarn" | "python" | "
 export type EnvironmentToolStatus = "available" | "missing" | "error";
 export type AiProviderKind = "utools" | "openai-compatible" | "anthropic-compatible";
 export type AiPromptModeKind = "git-analysis" | "commit-message";
+export const PROJECT_DETAILS_TAB_IDS = ["info", "scripts", "automation", "files", "git", "memo"] as const;
+export const PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION = 1;
+export type ProjectDetailsTabId = (typeof PROJECT_DETAILS_TAB_IDS)[number];
+
+export interface UiPreferences {
+  schemaVersion: 1;
+  projectDetails: {
+    tabOrder: ProjectDetailsTabId[];
+  };
+  coachMarks: {
+    projectDetailsTabReorder: number;
+  };
+}
 
 export interface TerminalPreferences {
   kind: DefaultTerminalKind;
@@ -803,8 +816,8 @@ export interface ProjectBridge {
   loadDeviceId(): string;
   loadProjects(): Promise<Project[]>;
   saveProjects(projects: Project[]): Promise<void>;
-  loadProjectDetailsTabOrder(): string[];
-  saveProjectDetailsTabOrder(order: string[]): void;
+  loadUiPreferences(): UiPreferences;
+  saveUiPreferences(preferences: UiPreferences): void;
   loadTerminalPreferences(): TerminalPreferences;
   saveTerminalPreferences(preferences: TerminalPreferences): void;
   loadEditorPreferences(): EditorPreferences;

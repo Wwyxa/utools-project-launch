@@ -75,6 +75,93 @@ Do not move purely visual state into the store if a component can manage it loca
 
 ---
 
+## Scenario: Persistent UI Preferences and Coach Marks
+
+### 1. Scope / Trigger
+
+- Trigger: an application-wide UI preference or feature-discovery hint must survive component replacement and plugin restart without becoming project metadata.
+- Trigger: a legacy standalone preference key must migrate into the unified UI preference document.
+- This requires code-spec depth because the contract crosses Vue components, Pinia, the browser ProjectBridge fallback, uTools preload, `localStorage`, and `dbStorage`.
+
+### 2. Signatures
+
+- `ProjectDetailsTabId = "info" | "scripts" | "automation" | "files" | "git" | "memo"`.
+- `UiPreferences = { schemaVersion: 1; projectDetails: { tabOrder: ProjectDetailsTabId[] }; coachMarks: { projectDetailsTabReorder: number } }`.
+- Bridge methods: `loadUiPreferences(): UiPreferences` and `saveUiPreferences(preferences: UiPreferences): void`.
+- Store actions: `setProjectDetailsTabOrder(order: ProjectDetailsTabId[])` and `acknowledgeProjectDetailsTabReorderHint(version: number)`.
+- Current storage key: `utools-project-launch.ui-preferences.v1`.
+- Legacy migration key: `utools-project-launch.project-details-tab-order.v1`.
+
+### 3. Contracts
+
+- Load UI preferences once when the Pinia store is created. `loadProjects()` and detail-component mounts must not read persistent UI preferences again.
+- Components read UI preferences from Pinia and call intent-specific Store actions. They must not access `localStorage`, `dbStorage`, or `window.projectBridge` directly.
+- Normalize every stored value at the bridge boundary: filter unknown tab ids, remove duplicates, append missing ids in default order, and accept only non-negative integer Coach Mark versions.
+- A Coach Mark version records acknowledgement of a specific interaction version. For Tab reordering, reaching the long-press threshold acknowledges the hint even when pointer release leaves the order unchanged.
+- Short presses and pointer movement that cancels the long-press timer do not acknowledge the hint.
+- Store actions update Pinia before persistence. Storage failure must not undo the current renderer's usable state.
+- Saving an unchanged order or an already-acknowledged Coach Mark version is a no-op and must not issue another storage write.
+- Browser preview stores the normalized document as JSON in `localStorage`; uTools preload stores the same logical document in `dbStorage`.
+- When the new key is absent, migrate the legacy array. A normalized non-default legacy order acknowledges Coach Mark version `1`; the default order keeps version `0`.
+- Keep the legacy order key synchronized for one compatibility period so rollback to the previous application version preserves the latest order.
+
+### 4. Validation & Error Matrix
+
+- No new or legacy value -> return and persist complete defaults with Coach Mark version `0`.
+- New value exists -> prefer it over the legacy key and normalize all fields.
+- New value has an unsupported schema or damaged JSON -> return complete defaults; do not trust or merge the legacy key into an explicitly present invalid new document.
+- Legacy default order -> migrate order and keep Coach Mark version `0`.
+- Legacy non-default order -> migrate order and set Coach Mark version `1`.
+- Unknown, duplicate, or missing Tab ids -> filter, de-duplicate, and append missing defaults.
+- Negative, fractional, non-numeric, or missing Coach Mark version -> normalize to `0`.
+- Persistence throws -> retain normalized Pinia state and keep the UI interaction usable.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a user reaches the 350ms drag threshold without moving a Tab; the hint hides, one UI preference write records version `1`, no order write occurs, and the hint stays hidden after plugin restart.
+- Good: an older installation has a custom legacy order; startup migrates it once and does not show a discovery hint for an interaction the user has already used.
+- Base: a new installation receives the default order and sees the subtle hint until the first valid long press.
+- Bad: infer acknowledgement only from `tabOrder !== defaultOrder`; returning to the default order or attempting a drag without a reorder loses the user's acknowledgement.
+- Bad: read `dbStorage` whenever `ProjectDetails` mounts; repeated component replacement couples rendering to host I/O and creates multiple persistence sources.
+- Bad: keep a module-scoped `hasSeenHint` flag; it survives detail replacement but resets when the plugin reloads.
+
+### 6. Tests Required
+
+- `npx vitest run src/lib/projectBridge.uiPreferences.test.ts` must cover browser and real-preload defaults, new-key priority, legacy default/non-default migration, malformed values, normalization, round-trip writes, legacy-key synchronization, and Store write de-duplication.
+- `npm run validate:process-results` after changing `ProjectBridge`, because hand-written bridge fixtures must implement the new UI preference methods before Store initialization.
+- `npm run lint` and `npm run build` after changing types, Store actions, or project-detail hint rendering.
+- `node --check public/preload.js` after changing preload UI preference normalization or storage.
+- Browser regression: short press and threshold-cancel keep the hint; valid long press hides it without requiring a reorder; returning to another project and refreshing preserve acknowledgement.
+- uTools regression: completely close and reopen the plugin, then assert the acknowledged hint stays hidden and a custom Tab order survives.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const showHint = ref(true);
+
+if (tabOrderChanged) {
+  showHint.value = false;
+  localStorage.setItem("tab-hint-seen", "true");
+}
+```
+
+This couples acknowledgement to an order change, adds a component-owned storage key, and bypasses uTools persistence.
+
+#### Correct
+
+```ts
+const showHint = computed(() => store.uiPreferences.coachMarks.projectDetailsTabReorder < CURRENT_HINT_VERSION);
+
+// Called when the long-press threshold activates drag mode.
+store.acknowledgeProjectDetailsTabReorderHint(CURRENT_HINT_VERSION);
+```
+
+Keep the component declarative, let Pinia own current state, and let ProjectBridge normalize, migrate, and persist the unified document.
+
+---
+
 ## Server State
 
 There is no server state cache today. All data is in-memory and seeded in the store.
