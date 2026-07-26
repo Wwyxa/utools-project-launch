@@ -19,6 +19,7 @@ import {
   MonitorCog,
   PackageOpen,
   Download,
+  Check,
   CheckSquare,
 } from "lucide-vue-next";
 import type { TodoItem } from "../../types";
@@ -35,6 +36,12 @@ const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
 const automationOverviewOpen = ref(false);
 const todoOverviewOpen = ref(false);
+const todoComposerOpen = ref(false);
+const newTodoText = ref("");
+const newTodoProjectId = ref("");
+const todoProjectPickerOpen = ref(false);
+const newTodoInput = ref<HTMLInputElement | null>(null);
+const todoProjectPicker = ref<HTMLElement | null>(null);
 const automationOverviewFeedback = ref("");
 const draggingProjectId = ref<string | null>(null);
 const selectedProjectGroupKey = ref("all");
@@ -79,7 +86,32 @@ const handleDocumentPointerDown = (event: PointerEvent) => {
   }
 };
 
+const handleTodoProjectPickerPointerDown = (event: PointerEvent) => {
+  if (!todoProjectPicker.value?.contains(event.target as Node)) {
+    todoProjectPickerOpen.value = false;
+    document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  }
+};
+
+const closeTodoComposer = () => {
+  todoComposerOpen.value = false;
+  todoProjectPickerOpen.value = false;
+  document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+};
+
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (todoProjectPickerOpen.value) {
+    todoProjectPickerOpen.value = false;
+    event.detail.handle();
+    return;
+  }
+
+  if (todoComposerOpen.value) {
+    closeTodoComposer();
+    event.detail.handle();
+    return;
+  }
+
   if (automationOverviewOpen.value || todoOverviewOpen.value) {
     automationOverviewOpen.value = false;
     todoOverviewOpen.value = false;
@@ -99,6 +131,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
+  document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
   stopAppEscapeListener();
 });
 
@@ -288,6 +321,27 @@ const todoProjectGroups = computed<ProjectTodoGroup[]>(() =>
     .filter((group) => group.todos.length > 0),
 );
 const openTodoCount = computed(() => todoProjectGroups.value.reduce((total, group) => total + group.todos.length, 0));
+const selectedTodoProject = computed(() =>
+  store.visibleProjects.find((project) => project.id === newTodoProjectId.value),
+);
+
+watch(
+  () => store.visibleProjects.map((project) => project.id),
+  (projectIds) => {
+    if (!projectIds.includes(newTodoProjectId.value)) {
+      newTodoProjectId.value = projectIds[0] || "";
+    }
+  },
+  { immediate: true },
+);
+
+watch(todoOverviewOpen, (open) => {
+  if (!open) {
+    todoComposerOpen.value = false;
+    todoProjectPickerOpen.value = false;
+    document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  }
+});
 
 const automationStatusLabel = (status?: string) => {
   if (status === "completed") return t.value.automation.completed;
@@ -336,6 +390,38 @@ const openProjectMemo = (projectId: string) => {
 
 const completeTodo = (projectId: string, todoId: string) => {
   store.toggleTodo(projectId, todoId);
+};
+
+const toggleTodoComposer = async () => {
+  todoComposerOpen.value = !todoComposerOpen.value;
+  if (todoComposerOpen.value) {
+    await nextTick();
+    newTodoInput.value?.focus();
+  }
+};
+
+const toggleTodoProjectPicker = () => {
+  todoProjectPickerOpen.value = !todoProjectPickerOpen.value;
+  if (todoProjectPickerOpen.value) {
+    document.addEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  } else {
+    document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  }
+};
+
+const selectTodoProject = (projectId: string) => {
+  newTodoProjectId.value = projectId;
+  todoProjectPickerOpen.value = false;
+  document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  newTodoInput.value?.focus();
+};
+
+const addTodo = () => {
+  const text = newTodoText.value.trim();
+  if (!text || !newTodoProjectId.value) return;
+  store.addTodo(newTodoProjectId.value, text);
+  newTodoText.value = "";
+  todoComposerOpen.value = false;
 };
 
 const openProjectAutomation = (projectId: string) => {
@@ -582,8 +668,8 @@ const handleProjectDragEnd = () => {
           <section
             class="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
           >
-            <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-              <div class="min-w-0">
+            <div class="flex h-[62px] shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4">
+              <div v-if="!todoComposerOpen" class="min-w-0">
                 <h2 class="text-sm font-bold text-on-surface">{{ t.dashboard.todoOverview }}</h2>
                 <p class="mt-0.5 text-xs text-on-surface-variant">
                   {{
@@ -593,15 +679,81 @@ const handleProjectDragEnd = () => {
                   }}
                 </p>
               </div>
-              <button
-                type="button"
-                class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
-                :title="t.common.close"
-                :aria-label="t.common.close"
-                @click="todoOverviewOpen = false"
-              >
-                <X :size="16" />
-              </button>
+              <form v-else id="dashboard-todo-form" class="flex min-w-0 flex-1 gap-2" @submit.prevent="addTodo">
+                <div ref="todoProjectPicker" class="relative w-36 shrink-0">
+                  <button
+                    type="button"
+                    class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface-container-low px-2.5 text-xs font-semibold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="store.visibleProjects.length === 0"
+                    :aria-expanded="todoProjectPickerOpen"
+                    :title="selectedTodoProject?.name"
+                    @click="toggleTodoProjectPicker"
+                  >
+                    <span class="truncate">{{ selectedTodoProject?.name || t.dashboard.emptyTitle }}</span>
+                    <ChevronDown :size="14" class="shrink-0" />
+                  </button>
+                  <div
+                    v-if="todoProjectPickerOpen"
+                    class="themed-scrollbar absolute left-0 top-[calc(100%+0.25rem)] z-20 max-h-52 w-56 overflow-y-auto rounded-md border border-border-subtle bg-surface p-1 shadow-xl"
+                  >
+                    <button
+                      v-for="project in store.visibleProjects"
+                      :key="project.id"
+                      type="button"
+                      :class="
+                        cn(
+                          'block w-full truncate rounded px-2.5 py-2 text-left text-xs transition-colors hover:bg-surface-variant',
+                          project.id === newTodoProjectId ? 'bg-primary/10 font-bold text-primary' : 'text-on-surface',
+                        )
+                      "
+                      :title="project.name"
+                      @click="selectTodoProject(project.id)"
+                    >
+                      {{ project.name }}
+                    </button>
+                  </div>
+                </div>
+                <input
+                  ref="newTodoInput"
+                  v-model="newTodoText"
+                  class="h-9 min-w-0 flex-1 rounded-md border border-transparent bg-surface-container-lowest px-3 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant hover:bg-surface-container-low focus:border-primary/70"
+                  :placeholder="t.memo.inputPrompt"
+                  :aria-label="t.memo.inputPrompt"
+                />
+              </form>
+              <div class="flex items-center gap-1.5">
+                <button
+                  v-if="!todoComposerOpen"
+                  type="button"
+                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                  :title="t.memo.addTask"
+                  :aria-label="t.memo.addTask"
+                  :aria-expanded="todoComposerOpen"
+                  @click="toggleTodoComposer"
+                >
+                  <Plus :size="16" />
+                </button>
+                <button
+                  v-else
+                  type="submit"
+                  form="dashboard-todo-form"
+                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                  :disabled="!newTodoText.trim() || !newTodoProjectId"
+                  :title="t.memo.addTask"
+                  :aria-label="t.memo.addTask"
+                >
+                  <Check :size="16" />
+                </button>
+                <button
+                  type="button"
+                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                  :title="todoComposerOpen ? t.common.cancel : t.common.close"
+                  :aria-label="todoComposerOpen ? t.common.cancel : t.common.close"
+                  @click="todoComposerOpen ? closeTodoComposer() : (todoOverviewOpen = false)"
+                >
+                  <X :size="16" />
+                </button>
+              </div>
             </div>
             <div class="themed-scrollbar min-h-0 overflow-auto p-3">
               <div
