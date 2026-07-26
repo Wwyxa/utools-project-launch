@@ -40,8 +40,12 @@ const todoComposerOpen = ref(false);
 const newTodoText = ref("");
 const newTodoProjectId = ref("");
 const todoProjectPickerOpen = ref(false);
+const todoProjectQuery = ref("");
 const newTodoInput = ref<HTMLInputElement | null>(null);
 const todoProjectPicker = ref<HTMLElement | null>(null);
+const todoProjectMenu = ref<HTMLElement | null>(null);
+const todoProjectSearchInput = ref<HTMLInputElement | null>(null);
+const todoProjectMenuStyle = ref<Record<string, string>>({});
 const automationOverviewFeedback = ref("");
 const draggingProjectId = ref<string | null>(null);
 const selectedProjectGroupKey = ref("all");
@@ -86,22 +90,41 @@ const handleDocumentPointerDown = (event: PointerEvent) => {
   }
 };
 
+const closeTodoProjectPicker = () => {
+  todoProjectPickerOpen.value = false;
+  todoProjectQuery.value = "";
+  document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  window.removeEventListener("resize", positionTodoProjectMenu);
+};
+
 const handleTodoProjectPickerPointerDown = (event: PointerEvent) => {
-  if (!todoProjectPicker.value?.contains(event.target as Node)) {
-    todoProjectPickerOpen.value = false;
-    document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  const target = event.target as Node;
+  if (!todoProjectPicker.value?.contains(target) && !todoProjectMenu.value?.contains(target)) {
+    closeTodoProjectPicker();
   }
+};
+
+const positionTodoProjectMenu = () => {
+  const trigger = todoProjectPicker.value?.getBoundingClientRect();
+  if (!trigger) return;
+  const width = Math.min(224, window.innerWidth - 16);
+  const left = Math.min(Math.max(trigger.left, 8), window.innerWidth - width - 8);
+  todoProjectMenuStyle.value = {
+    left: `${left}px`,
+    top: `${trigger.bottom + 4}px`,
+    width: `${width}px`,
+    maxHeight: `${Math.max(48, Math.min(288, window.innerHeight - trigger.bottom - 12))}px`,
+  };
 };
 
 const closeTodoComposer = () => {
   todoComposerOpen.value = false;
-  todoProjectPickerOpen.value = false;
-  document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  closeTodoProjectPicker();
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (todoProjectPickerOpen.value) {
-    todoProjectPickerOpen.value = false;
+    closeTodoProjectPicker();
     event.detail.handle();
     return;
   }
@@ -132,6 +155,7 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
   document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  window.removeEventListener("resize", positionTodoProjectMenu);
   stopAppEscapeListener();
 });
 
@@ -324,6 +348,12 @@ const openTodoCount = computed(() => todoProjectGroups.value.reduce((total, grou
 const selectedTodoProject = computed(() =>
   store.visibleProjects.find((project) => project.id === newTodoProjectId.value),
 );
+const filteredTodoProjects = computed(() => {
+  const query = todoProjectQuery.value.trim().toLowerCase();
+  return query
+    ? store.visibleProjects.filter((project) => projectMatchesSearch(project, query))
+    : store.visibleProjects;
+});
 
 watch(
   () => store.visibleProjects.map((project) => project.id),
@@ -338,8 +368,7 @@ watch(
 watch(todoOverviewOpen, (open) => {
   if (!open) {
     todoComposerOpen.value = false;
-    todoProjectPickerOpen.value = false;
-    document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+    closeTodoProjectPicker();
   }
 });
 
@@ -400,20 +429,28 @@ const toggleTodoComposer = async () => {
   }
 };
 
-const toggleTodoProjectPicker = () => {
-  todoProjectPickerOpen.value = !todoProjectPickerOpen.value;
+const toggleTodoProjectPicker = async () => {
   if (todoProjectPickerOpen.value) {
-    document.addEventListener("pointerdown", handleTodoProjectPickerPointerDown);
-  } else {
-    document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+    closeTodoProjectPicker();
+    return;
   }
+  todoProjectPickerOpen.value = true;
+  positionTodoProjectMenu();
+  document.addEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  window.addEventListener("resize", positionTodoProjectMenu);
+  await nextTick();
+  todoProjectSearchInput.value?.focus();
 };
 
 const selectTodoProject = (projectId: string) => {
   newTodoProjectId.value = projectId;
-  todoProjectPickerOpen.value = false;
-  document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
+  closeTodoProjectPicker();
   newTodoInput.value?.focus();
+};
+
+const selectFirstFilteredTodoProject = () => {
+  const project = filteredTodoProjects.value[0];
+  if (project) selectTodoProject(project.id);
 };
 
 const addTodo = () => {
@@ -692,26 +729,60 @@ const handleProjectDragEnd = () => {
                     <span class="truncate">{{ selectedTodoProject?.name || t.dashboard.emptyTitle }}</span>
                     <ChevronDown :size="14" class="shrink-0" />
                   </button>
-                  <div
-                    v-if="todoProjectPickerOpen"
-                    class="themed-scrollbar absolute left-0 top-[calc(100%+0.25rem)] z-20 max-h-52 w-56 overflow-y-auto rounded-md border border-border-subtle bg-surface p-1 shadow-xl"
-                  >
-                    <button
-                      v-for="project in store.visibleProjects"
-                      :key="project.id"
-                      type="button"
-                      :class="
-                        cn(
-                          'block w-full truncate rounded px-2.5 py-2 text-left text-xs transition-colors hover:bg-surface-variant',
-                          project.id === newTodoProjectId ? 'bg-primary/10 font-bold text-primary' : 'text-on-surface',
-                        )
-                      "
-                      :title="project.name"
-                      @click="selectTodoProject(project.id)"
+                  <Teleport to="body">
+                    <div
+                      v-if="todoProjectPickerOpen"
+                      ref="todoProjectMenu"
+                      :style="todoProjectMenuStyle"
+                      class="fixed z-[60] flex flex-col overflow-hidden rounded-md border border-border-subtle bg-surface shadow-xl"
                     >
-                      {{ project.name }}
-                    </button>
-                  </div>
+                      <div class="shrink-0 border-b border-border-subtle p-1">
+                        <div class="relative">
+                          <Search
+                            :size="13"
+                            class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant"
+                          />
+                          <input
+                            ref="todoProjectSearchInput"
+                            v-model="todoProjectQuery"
+                            type="search"
+                            autocomplete="off"
+                            class="h-7 w-full rounded border border-transparent bg-surface-container-lowest pl-7 pr-2 text-xs text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary/70"
+                            :placeholder="t.common.search"
+                            :aria-label="t.common.search"
+                            @keydown.enter.prevent="selectFirstFilteredTodoProject"
+                          />
+                        </div>
+                      </div>
+                      <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
+                        <div class="w-full">
+                          <button
+                            v-for="project in filteredTodoProjects"
+                            :key="project.id"
+                            type="button"
+                            :class="
+                              cn(
+                                'block w-full truncate rounded px-2.5 py-2 text-left text-xs transition-colors hover:bg-surface-variant',
+                                project.id === newTodoProjectId
+                                  ? 'bg-primary/10 font-bold text-primary'
+                                  : 'text-on-surface',
+                              )
+                            "
+                            :title="project.name"
+                            @click="selectTodoProject(project.id)"
+                          >
+                            {{ project.name }}
+                          </button>
+                          <p
+                            v-if="filteredTodoProjects.length === 0"
+                            class="w-full px-2.5 py-4 text-center text-xs text-on-surface-variant"
+                          >
+                            {{ t.dashboard.noProjectsFound }}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </Teleport>
                 </div>
                 <input
                   ref="newTodoInput"
