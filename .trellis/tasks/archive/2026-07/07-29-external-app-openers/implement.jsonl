@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines the device-local external tool preference boundary, Pinia ownership, bridge persistence, migration behavior, and required validation."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Defines compact Vue component patterns, teleported floating menus, Escape handling, accessibility, and overflow-safe positioning."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Requires shared bridge/domain contracts in src/types.ts and runtime normalization at persisted and preload boundaries."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Guides the preference and launch data flow across Vue, Pinia, browser fallback, preload storage, and process spawning."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Ensures the existing editor launch, settings dialog, menu, and Escape patterns are extended rather than duplicated."}

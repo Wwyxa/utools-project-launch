@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Provides the required type-check/build baseline and UI review checks for floating controls, tokens, fallback behavior, and locale cleanup."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Checks Store ownership, device-local persistence, legacy migration, cloned launch payloads, and non-throwing failure logs."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Checks keyboard accessibility, Escape/outside cleanup, card event isolation, Teleport use, and compact-window menu behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Checks shared external-application and ProjectBridge contracts plus boundary validation without any or duplicated models."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Checks complete round trips and contract agreement between renderer, fallback bridge, preload persistence, and launch execution."}
