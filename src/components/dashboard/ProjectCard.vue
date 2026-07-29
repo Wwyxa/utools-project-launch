@@ -7,7 +7,6 @@ import {
   FolderOpen,
   Pencil,
   TerminalSquare,
-  Code2,
   Trash2,
   ChevronDown,
   GripVertical,
@@ -20,6 +19,7 @@ import { useI18n } from "../../lib/i18n";
 import { formatAbsoluteTime, formatRelativeTime } from "../../lib/time";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import ProjectIcon from "../project/ProjectIcon.vue";
+import ExternalApplicationLaunchButton from "../project/ExternalApplicationLaunchButton.vue";
 
 const props = defineProps<{
   project: Project;
@@ -293,13 +293,7 @@ const handleOpenTerminal = async (event: MouseEvent) => {
   await store.openProjectInTerminal(props.project.id);
 };
 
-const handleOpenEditor = async (event: MouseEvent) => {
-  event.stopPropagation();
-  if (isUnavailable.value) {
-    return;
-  }
-  await store.openProjectInEditor(props.project.id);
-};
+const handleOpenEditor = (applicationId: string) => store.openProjectInEditor(props.project.id, applicationId);
 
 const handleOpenQuickLink = async (event: MouseEvent) => {
   event.stopPropagation();
@@ -474,16 +468,15 @@ const handleDelete = (event: MouseEvent) => {
         >
           <TerminalSquare :size="13" />
         </button>
-        <button
+        <ExternalApplicationLaunchButton
           v-if="!isSorting"
-          @click.stop="handleOpenEditor"
-          class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+          :applications="store.externalApplicationPreferences.applications"
+          :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
           :disabled="isUnavailable"
-          :title="t.projectActions.openInEditor"
-          :aria-label="t.projectActions.openInEditor"
-        >
-          <Code2 :size="13" />
-        </button>
+          button-class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors disabled:opacity-50"
+          :icon-size="13"
+          @launch="handleOpenEditor"
+        />
         <button
           v-if="!isSorting"
           @click.stop="handleOpenFolder"
@@ -774,15 +767,14 @@ const handleDelete = (event: MouseEvent) => {
             >
               <TerminalSquare :size="15" />
             </button>
-            <button
-              @click.stop="handleOpenEditor"
-              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+            <ExternalApplicationLaunchButton
+              :applications="store.externalApplicationPreferences.applications"
+              :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
               :disabled="isUnavailable"
-              :title="t.projectActions.openInEditor"
-              :aria-label="t.projectActions.openInEditor"
-            >
-              <Code2 :size="15" />
-            </button>
+              button-class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors disabled:opacity-50"
+              :icon-size="15"
+              @launch="handleOpenEditor"
+            />
             <button
               @click.stop="handleOpenFolder"
               class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-on-surface rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"

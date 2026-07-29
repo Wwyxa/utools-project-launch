@@ -3,14 +3,19 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ArrowLeft,
   Brain,
+  Code2,
   Download,
+  FolderCog,
   Github,
+  Info,
   Monitor,
   MonitorCog,
   Moon,
   RefreshCw,
   Plus,
   RotateCcw,
+  Settings2,
+  SquareTerminal,
   Sun,
   Trash2,
   Upload,
@@ -28,14 +33,13 @@ import {
   parseEnvironmentArguments,
   type CustomEnvironmentToolErrors,
 } from "../../lib/environmentTools";
-import type { AiProviderKind, DefaultEditorKind, DefaultTerminalKind, EnvironmentToolKey } from "../../types";
+import type { AiProviderKind, DefaultTerminalKind, EnvironmentToolKey, ExternalApplication } from "../../types";
 
 const store = useStore();
 const t = useI18n();
 const githubRepositoryUrl = "https://github.com/Wwyxa/utools-project-launch";
 
 const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
-const editorOptions: DefaultEditorKind[] = ["vscode", "cursor", "custom"];
 const isAiModelMenuOpen = ref(false);
 const selectedAiModeId = ref("");
 const environmentDialogOpen = ref(false);
@@ -44,6 +48,11 @@ const editingCustomEnvironmentId = ref<string | null>(null);
 const pendingDeleteCustomEnvironmentId = ref<string | null>(null);
 const customEnvironmentDraft = ref({ name: "", command: "", versionArgs: "--version" });
 const customEnvironmentErrors = ref<CustomEnvironmentToolErrors>({});
+const externalApplicationDialogOpen = ref(false);
+const editingExternalApplicationId = ref<string | null>(null);
+const externalApplicationDraft = ref({ name: "", command: "" });
+const externalApplicationErrors = ref({ name: "", command: "" });
+const externalApplicationFeedback = ref("");
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 let stopAppEscapeListener = () => {};
 
@@ -85,7 +94,10 @@ const editingBuiltinHasOverride = computed(() =>
 );
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
-const editorUsesCustomCommand = computed(() => store.editorPreferences.kind === "custom");
+const externalApplications = computed(() => store.externalApplicationPreferences.applications);
+const editingExternalApplication = computed(() =>
+  externalApplications.value.find((application) => application.id === editingExternalApplicationId.value),
+);
 const aiUsesThirdParty = computed(() => store.aiPreferences.provider !== "utools");
 const aiModelOptions = computed(() => {
   const collected = new Map<string, string>();
@@ -143,6 +155,11 @@ const selectAiModel = (model: string) => {
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (externalApplicationDialogOpen.value) {
+    externalApplicationDialogOpen.value = false;
+    event.detail.handle();
+    return;
+  }
   if (pendingDeleteCustomEnvironmentId.value) {
     pendingDeleteCustomEnvironmentId.value = null;
     event.detail.handle();
@@ -245,6 +262,66 @@ const customEnvironmentErrorText = (field: keyof CustomEnvironmentToolErrors) =>
   return code === "required" ? t.value.settings.environmentRequired : t.value.settings.environmentUnsafe;
 };
 
+const openExternalApplicationDialog = (application?: ExternalApplication) => {
+  editingExternalApplicationId.value = application?.id || null;
+  externalApplicationDraft.value = { name: application?.name || "", command: application?.command || "" };
+  externalApplicationErrors.value = { name: "", command: "" };
+  externalApplicationFeedback.value = "";
+  externalApplicationDialogOpen.value = true;
+};
+
+const saveExternalApplication = () => {
+  const name = externalApplicationDraft.value.name.trim();
+  const command = externalApplicationDraft.value.command.trim();
+  const duplicateName = externalApplications.value.some(
+    (application) =>
+      application.id !== editingExternalApplicationId.value &&
+      application.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
+  );
+  externalApplicationErrors.value = {
+    name: !name
+      ? t.value.settings.externalApplicationRequired
+      : duplicateName
+        ? t.value.settings.externalApplicationDuplicate
+        : "",
+    command: command ? "" : t.value.settings.externalApplicationRequired,
+  };
+  if (externalApplicationErrors.value.name || externalApplicationErrors.value.command) return;
+  const saved = editingExternalApplicationId.value
+    ? store.updateExternalApplication(editingExternalApplicationId.value, name, command)
+    : store.addExternalApplication(name, command);
+  if (!saved) {
+    externalApplicationFeedback.value = t.value.settings.externalApplicationInvalid;
+    return;
+  }
+  externalApplicationDialogOpen.value = false;
+};
+
+const setExternalApplicationEnabled = (application: ExternalApplication, enabled: boolean) => {
+  if (!store.setExternalApplicationEnabled(application.id, enabled) && application.enabled !== enabled) {
+    externalApplicationFeedback.value = t.value.settings.selectAnotherDefaultApplication;
+    return;
+  }
+  externalApplicationFeedback.value = "";
+};
+
+const setDefaultExternalApplication = (application: ExternalApplication) => {
+  if (!store.setDefaultExternalApplication(application.id) && !application.enabled) {
+    externalApplicationFeedback.value = t.value.settings.enableApplicationBeforeDefault;
+    return;
+  }
+  externalApplicationFeedback.value = "";
+};
+
+const deleteExternalApplication = () => {
+  if (!editingExternalApplicationId.value) return;
+  if (!store.deleteExternalApplication(editingExternalApplicationId.value)) {
+    externalApplicationFeedback.value = t.value.settings.selectAnotherDefaultApplication;
+    return;
+  }
+  externalApplicationDialogOpen.value = false;
+};
+
 const aiTestIconClass = computed(() => {
   if (store.aiModelTesting) return "text-primary animate-spin";
   if (store.aiModelTestOk === true) return "text-status-running";
@@ -308,6 +385,7 @@ watch(
     <div class="grid gap-2.5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center gap-2">
+          <Settings2 :size="15" class="shrink-0 text-primary" />
           <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.general }}</h3>
         </div>
         <div class="space-y-2.5">
@@ -671,6 +749,7 @@ watch(
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center gap-2">
+          <SquareTerminal :size="15" class="shrink-0 text-primary" />
           <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultTerminal }}</h3>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
@@ -721,56 +800,91 @@ watch(
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
-        <div class="mb-2.5 flex items-center gap-2">
-          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultEditor }}</h3>
-        </div>
-        <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-          <div
-            class="inline-flex h-fit max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
+        <div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <Code2 :size="15" class="shrink-0 text-primary" />
+            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.externalApplications }}</h3>
+            <span class="text-[10px] leading-4 text-on-surface-variant">
+              {{ t.settings.externalApplicationsUsageHint }}
+            </span>
+            <span v-if="externalApplicationFeedback" class="truncate text-[10px] text-status-warning">
+              {{ externalApplicationFeedback }}
+            </span>
+          </div>
+          <button
+            type="button"
+            class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+            @click="openExternalApplicationDialog()"
           >
-            <button
-              v-for="option in editorOptions"
-              :key="option"
-              type="button"
-              @click="store.setDefaultEditor(option)"
-              :class="segmentButtonClass(store.editorPreferences.kind === option)"
-            >
-              {{ t.settings.editors[option] }}
-            </button>
-          </div>
-          <div class="space-y-1.5">
-            <Transition
-              enter-active-class="transition-all duration-200 ease-out"
-              enter-from-class="max-h-0 opacity-0 -translate-y-1"
-              enter-to-class="max-h-28 opacity-100 translate-y-0"
-              leave-active-class="transition-all duration-150 ease-in"
-              leave-from-class="max-h-28 opacity-100 translate-y-0"
-              leave-to-class="max-h-0 opacity-0 -translate-y-1"
-            >
-              <div
-                v-if="editorUsesCustomCommand"
-                class="overflow-hidden rounded-lg border border-border-subtle bg-surface px-3 py-2.5"
-              >
-                <label class="mb-2 block text-xs font-semibold uppercase text-on-surface-variant">
-                  {{ t.settings.customEditorCommand }}
-                </label>
-                <input
-                  :value="store.editorPreferences.customCommand"
-                  @input="store.setDefaultEditorCustomCommand(($event.target as HTMLInputElement).value)"
-                  type="text"
-                  :placeholder="t.settings.customEditorCommandPlaceholder"
-                  class="w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <p class="mt-2 text-xs leading-5 text-on-surface-variant">{{ t.settings.defaultEditorHint }}</p>
+            <Plus :size="12" />
+            {{ t.settings.addExternalApplication }}
+          </button>
+        </div>
+        <div class="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <article
+            v-for="application in externalApplications"
+            :key="application.id"
+            role="button"
+            tabindex="0"
+            class="grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-2 transition-colors hover:bg-surface-variant"
+            @click="openExternalApplicationDialog(application)"
+            @keydown.enter.self.prevent="openExternalApplicationDialog(application)"
+            @keydown.space.self.prevent="openExternalApplicationDialog(application)"
+          >
+            <div class="min-w-0">
+              <div class="flex min-w-0 items-center gap-1">
+                <span class="truncate text-xs font-bold" :title="application.name">{{ application.name }}</span>
+                <span
+                  class="shrink-0 rounded border border-border-subtle bg-surface px-1 text-[8px] font-bold leading-3 text-on-surface-variant"
+                >
+                  {{
+                    application.kind === "custom"
+                      ? t.settings.customApplicationBadge
+                      : t.settings.presetApplicationBadge
+                  }}
+                </span>
+                <span
+                  v-if="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                  class="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 text-[8px] font-bold leading-3 text-primary"
+                >
+                  {{ t.settings.defaultApplicationBadge }}
+                </span>
               </div>
-            </Transition>
-          </div>
+              <p class="mt-0.5 truncate font-mono text-[9px] text-on-surface-variant" :title="application.command">
+                {{ application.command }}
+              </p>
+            </div>
+            <div class="flex shrink-0 items-center gap-1.5" @click.stop>
+              <label :title="t.settings.setDefaultApplication" class="flex cursor-pointer items-center">
+                <input
+                  type="radio"
+                  name="default-external-application"
+                  class="h-3.5 w-3.5 accent-primary"
+                  :checked="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                  :disabled="!application.enabled"
+                  :aria-label="`${t.settings.setDefaultApplication}: ${application.name}`"
+                  @change="setDefaultExternalApplication(application)"
+                />
+              </label>
+              <label :title="t.settings.applicationEnabled" class="flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  class="h-3.5 w-3.5 accent-primary"
+                  :checked="application.enabled"
+                  :disabled="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                  :aria-label="`${t.settings.applicationEnabled}: ${application.name}`"
+                  @change="setExternalApplicationEnabled(application, ($event.target as HTMLInputElement).checked)"
+                />
+              </label>
+            </div>
+          </article>
         </div>
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
+            <FolderCog :size="15" class="shrink-0 text-primary" />
             <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectConfig }}</h3>
           </div>
           <p
@@ -802,6 +916,7 @@ watch(
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center gap-2">
+          <Info :size="15" class="shrink-0 text-primary" />
           <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.about }}</h3>
         </div>
         <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-container-low px-3 py-2">
@@ -824,6 +939,91 @@ watch(
         </div>
       </section>
     </div>
+
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="externalApplicationDialogOpen"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="
+            editingExternalApplicationId ? t.settings.editExternalApplication : t.settings.addExternalApplication
+          "
+          @click.self="externalApplicationDialogOpen = false"
+        >
+          <form
+            class="w-full max-w-md rounded-lg border border-border-subtle bg-surface p-3 shadow-xl"
+            @submit.prevent="saveExternalApplication"
+          >
+            <h3 class="text-sm font-bold text-on-surface">
+              {{
+                editingExternalApplicationId ? t.settings.editExternalApplication : t.settings.addExternalApplication
+              }}
+            </h3>
+            <div class="mt-3 grid gap-3">
+              <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+                {{ t.settings.externalApplicationName }}
+                <input
+                  v-model="externalApplicationDraft.name"
+                  autofocus
+                  autocomplete="off"
+                  class="ui-field mt-1 w-full text-sm font-normal text-on-surface"
+                  :class="externalApplicationErrors.name && 'border-status-error'"
+                />
+                <span v-if="externalApplicationErrors.name" class="mt-0.5 block text-[10px] text-status-error">
+                  {{ externalApplicationErrors.name }}
+                </span>
+              </label>
+              <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+                {{ t.settings.externalApplicationCommand }}
+                <textarea
+                  v-model="externalApplicationDraft.command"
+                  autocomplete="off"
+                  rows="3"
+                  class="ui-field themed-scrollbar mt-1 min-h-20 w-full resize-y font-mono text-sm font-normal leading-5 text-on-surface"
+                  :class="externalApplicationErrors.command && 'border-status-error'"
+                  :placeholder="t.settings.externalApplicationCommandPlaceholder"
+                />
+                <span v-if="externalApplicationErrors.command" class="mt-0.5 block text-[10px] text-status-error">
+                  {{ externalApplicationErrors.command }}
+                </span>
+              </label>
+            </div>
+            <p class="mt-2 text-[10px] leading-4 text-on-surface-variant">
+              {{ t.settings.externalApplicationCommandHint }}
+            </p>
+            <p v-if="externalApplicationFeedback" class="mt-2 text-[10px] leading-4 text-status-warning">
+              {{ externalApplicationFeedback }}
+            </p>
+            <div class="mt-3 flex items-center justify-between gap-2">
+              <button
+                v-if="editingExternalApplication?.kind === 'custom'"
+                type="button"
+                class="inline-flex h-8 items-center gap-1 rounded border border-status-error/30 px-2.5 text-xs font-bold text-status-error hover:bg-status-error/10"
+                @click="deleteExternalApplication"
+              >
+                <Trash2 :size="12" />
+                {{ t.common.delete }}
+              </button>
+              <span v-else />
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="h-8 rounded border border-border-subtle px-3 text-xs font-bold text-on-surface"
+                  @click="externalApplicationDialogOpen = false"
+                >
+                  {{ t.common.cancel }}
+                </button>
+                <button type="submit" class="h-8 rounded bg-primary px-3 text-xs font-bold text-on-primary">
+                  {{ t.common.save }}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <Transition name="scale">

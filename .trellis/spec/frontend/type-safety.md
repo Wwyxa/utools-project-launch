@@ -385,60 +385,64 @@ execFile(
 
 Use async execution with disabled interactive prompts and a timeout so remote Git failures return to the UI safely.
 
-## Scenario: Editor Launch Bridge Boundary
+## Scenario: External Application Launch Bridge Boundary
 
 ### 1. Scope / Trigger
 
-- Trigger: opening a project in an external editor crosses Vue components, Pinia state, browser fallback, and uTools preload process spawning.
+- Trigger: opening a project or resolved Git worktree/subrepository with a selected external application crosses Vue components, Pinia, browser fallback, and uTools preload process spawning.
 
 ### 2. Signatures
 
-- `EditorPreferences = { kind: "vscode" | "cursor" | "custom"; customCommand: string }`
-- `ProjectBridge.loadEditorPreferences(): EditorPreferences`
-- `ProjectBridge.saveEditorPreferences(preferences: EditorPreferences): void`
-- `ProjectBridge.openEditor(payload: { projectPath: string; editor: EditorPreferences }): Promise<{ launched: boolean; command: string; cwd: string; kind: EditorKind; message?: string }>`
+- `ProjectBridgeExternalApplicationLaunchPayload = { projectPath: string; application: ExternalApplication }`.
+- `ProjectBridgeExternalApplicationLaunchResult = { launched: boolean; command: string; cwd: string; applicationId: string; kind: ExternalApplicationKind; message?: string }`.
+- `ProjectBridge.openExternalApplication(payload): Promise<ProjectBridgeExternalApplicationLaunchResult>`.
 
 ### 3. Contracts
 
-- Editor preference contracts belong in `src/types.ts`; components must not define local copies.
-- `vscode` and `cursor` are built-in editor kinds. `custom` requires a command template.
-- Custom command templates may use `{path}` or `{projectPath}` placeholders, both resolved to the project path by the bridge.
-- Browser fallback must keep the same method names and return safe failure results.
+- Shared application, preference, payload, and result contracts belong in `src/types.ts`; components must not define local copies.
+- Store actions resolve an enabled default or explicit one-time application and pass a cloned application snapshot to the bridge.
+- `projectPath` is the full directory path of the current launch target. For Git worktrees and subrepositories it is the resolved repository path, not necessarily the main project root.
+- Every application command template replaces both `{path}` and `{projectPath}` with the same resolved target directory.
+- All applications use the existing tokenizer and detached executable/argv spawn without `shell: true`. On Windows, a VS Code/Cursor template whose executable token is exactly `code`/`cursor` maps that token to the existing `code.cmd`/`cursor.cmd` compatibility path; an explicitly configured executable or full path is preserved.
+- Browser fallback keeps the same method and typed result shape while returning `launched: false`.
 
 ### 4. Validation & Error Matrix
 
-- Unknown editor kind -> normalize to the default editor before saving or launching.
-- Missing project path -> return `launched: false` with a message.
-- Empty custom command -> return `launched: false` with a message.
+- Missing id/name, disabled application, unknown kind, or mismatched built-in id/kind -> return `launched: false` before spawning.
+- Missing target path or target is not a directory -> return `launched: false` with the resolved cwd and message.
+- Empty or untokenizable application command -> return `launched: false` without shell fallback.
 - Spawn failure -> return `launched: false` with the bridge error message.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: a detail-page button calls a store action, which passes stored editor preferences to the bridge.
-- Base: VS Code is the default editor preference and works without user configuration.
-- Bad: hard-coding `code` in a component or bypassing `ProjectBridge.openEditor`.
+- Good: a linked worktree menu resolves its repository directory, clones the selected custom application, and replaces both path aliases with that directory.
+- Good: an edited VS Code template `code --reuse-window "{path}"` launches `code.cmd` with the extra argument on Windows and survives a preference round trip.
+- Base: VS Code is the default and uses the existing built-in launch branch without user configuration.
+- Bad: a component calls preload directly or describes `{path}` as always being the main project root.
+- Bad: passing a custom command through a shell or adding product-specific custom adapters.
 
 ### 6. Tests Required
 
-- `npm run lint` should verify type consistency across `src/types.ts`, `src/lib/projectBridge.ts`, store actions, and components.
-- `npm run build` should verify the settings and project detail UI compile with the shared bridge contract.
-- Manual smoke test: open a valid project with VS Code, Cursor, and an invalid custom command.
+- Run `npx vitest run src/lib/projectBridge.externalApplications.test.ts` for selected/default application payloads, editable built-in round trips and spawn arguments, and migration.
+- Run `npx vitest run src/lib/projectBridge.workspace.test.ts` for resolved repository paths.
+- Run `npm run lint`, `node --check public/preload.js`, and `npm run build` after changing launch types or implementations.
+- Manual uTools smoke: VS Code, Cursor, a quoted executable path with arguments, both placeholders, and an invalid command.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```ts
-await window.projectBridge.openEditor({ projectPath: project.path, editor: { kind: "vscode", customCommand: "" } });
+await window.projectBridge.openExternalApplication({ projectPath: project.path, application });
 ```
 
 #### Correct
 
 ```ts
-await store.openProjectInEditor(project.id);
+await store.openProjectInEditor(project.id, application.id);
 ```
 
-Keep editor launch behavior behind store actions so fallback and error logging stay consistent.
+Keep launch resolution and error logging behind Store actions; components emit only the selected application id.
 
 ---
 

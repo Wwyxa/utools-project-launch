@@ -384,7 +384,14 @@ globalThis.window = {
     }),
     saveUiPreferences: () => undefined,
     loadTerminalPreferences: () => ({ kind: "builtin", customCommand: "" }),
-    loadEditorPreferences: () => ({ kind: "vscode", customCommand: "" }),
+    loadExternalApplicationPreferences: () => ({
+      schemaVersion: 1,
+      defaultApplicationId: "vscode",
+      applications: [
+        { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true },
+        { id: "cursor", name: "Cursor", kind: "cursor", command: "cursor {path}", enabled: true },
+      ],
+    }),
     loadEnvironmentPreferences: () => ({}),
     loadBuiltinEnvironmentTools: () => [],
     loadAiPreferences: () => ({}),

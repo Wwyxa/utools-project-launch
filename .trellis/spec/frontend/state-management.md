@@ -611,64 +611,74 @@ const success = !result.error && (result.code === 0 || result.automationExitMatc
 
 Persist and validate the stop reason instead of inferring intent from a platform-specific exit code.
 
-## Scenario: External Tool Preferences
+## Scenario: External Application Preferences
 
 ### 1. Scope / Trigger
 
-- Trigger: user-configured external tools such as terminals and editors are shared by settings UI, project detail actions, store persistence, and preload bridge launch behavior.
+- Trigger: one device-local external application collection is shared by settings, project cards, project details, and Git repository launch actions.
+- This requires code-spec depth because defaults, legacy migration, mutation guards, and one-time launch selection cross local storage, the bridge, Pinia, and Vue menus.
 
 ### 2. Signatures
 
-- `terminalPreferences` and `editorPreferences` live in the Pinia store.
-- Terminal/editor preference storage keys are device-local (`utools-project-launch.local-settings.v1` and `utools-project-launch.local-editor-settings.v1`). Legacy shared keys may be read as a migration fallback, but writes must go only to device-local storage.
-- Store actions own updates: `setDefaultTerminal(...)`, `setDefaultEditor(...)`, and custom command setters.
-- Project actions own launches: `openProjectInTerminal(projectId)` and `openProjectInEditor(projectId)`.
+- `ExternalApplication = { id: string; name: string; kind: "vscode" | "cursor" | "custom"; command: string; enabled: boolean }`.
+- `ExternalApplicationPreferences = { schemaVersion: 1; defaultApplicationId: string; applications: ExternalApplication[] }`.
+- Device-local storage key: `utools-project-launch.local-external-applications.v1`.
+- Store mutations: `addExternalApplication(...)`, `updateExternalApplication(...)`, `setExternalApplicationEnabled(...)`, `deleteExternalApplication(...)`, and `setDefaultExternalApplication(...)`.
+- Launch actions: `openProjectInEditor(projectId, applicationId?)` and `openGitRepositoryInEditor(projectId, target, applicationId?)`.
 
 ### 3. Contracts
 
-- Settings components update preferences only through store actions.
-- Project detail components launch external tools only through project-id store actions.
-- Store actions must clone current preferences before passing them to the bridge to avoid accidental mutation during async work.
-- Default terminal and editor preferences are machine-specific. Do not write them to uTools shared `dbStorage`, because command names and install paths vary across synced devices.
-- Failed launches should append a project log entry instead of throwing into the component.
+- Load the collection once when Pinia is created. Components never access local storage or preload persistence directly.
+- VS Code and Cursor have fixed ids and kinds but editable, persisted names and command templates. They cannot be deleted; missing, empty, duplicate, or kind-mismatched stored metadata falls back to the built-in definition.
+- Application names are unique and non-empty, and every command template is non-empty. Custom ids are also unique and non-empty. Exactly one default id resolves to an enabled application.
+- Disabling or deleting the current default is rejected. Boundary normalization selects the first enabled application, or enables VS Code when none remain.
+- When the new key is absent, migrate the legacy local editor key first, then the legacy shared editor key. A valid custom command becomes one enabled custom default; malformed legacy data becomes complete defaults.
+- Future saves write only the new device-local key. Legacy keys remain unchanged, and external applications never enter project import/export data.
+- No launch id means the current default. An explicit enabled id is one-time selection and must not mutate preferences.
+- Settings and launch components call Store actions. Failed launches append project logs instead of throwing into components.
 
 ### 4. Validation & Error Matrix
 
-- Project id missing -> no-op.
-- Project path unavailable -> no-op and leave controls disabled in the component.
-- Missing device-local terminal/editor preference -> read the legacy shared key once as fallback, then persist future edits only under the local key.
-- Bridge returns `launched: false` -> append an `ERROR` log with the bridge message.
-- Bridge throws -> catch in the store and append an `ERROR` log.
+- New key has unsupported schema or damaged JSON -> persist and return complete defaults; do not merge legacy data into an explicitly present invalid document.
+- Stored built-in has matching id/kind plus a unique non-empty name and command -> preserve the edited metadata; otherwise restore the affected fields from the built-in definition while preserving a valid enabled flag.
+- Duplicate ids/names or empty custom fields -> discard the invalid custom entry.
+- Default id is missing or disabled -> choose the first enabled item; no enabled item -> enable and select VS Code.
+- Disable/delete default or set disabled item as default -> return `false` without persistence.
+- Explicit launch id is unknown or disabled -> append an error log and do not call the launch bridge.
+- Project/repository path is unavailable -> no-op or warn through the existing project log path.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: settings selects Cursor, the store persists the preference, and the detail-page editor button uses it.
-- Good: device A selects Windows Terminal while device B selects PowerShell, and each device keeps its own preference after shared project data syncs.
-- Base: browser preview keeps the action safe and records unsupported behavior through fallback results.
-- Bad: settings writes localStorage directly or a component spawns an editor command.
-- Bad: terminal/editor preferences are saved through uTools `dbStorage`, causing one device's external tool choice to overwrite another device's local setup.
+- Good: settings makes a custom application default, left click uses it everywhere, and right-clicking VS Code launches VS Code once without changing the default.
+- Good: settings changes VS Code to `code --reuse-window "{path}"`; the edited name/command survive persistence and the next launch receives the extra argument.
+- Good: a device with legacy Cursor preference migrates to the complete collection with Cursor enabled and selected.
+- Base: browser preview persists the collection but returns a typed unsupported launch result.
+- Bad: a menu writes `defaultApplicationId` when the user chooses a one-time application.
+- Bad: storing the collection in project documents or shared `dbStorage`, which leaks machine-specific commands across devices.
 
 ### 6. Tests Required
 
-- `npm run lint` should verify store action and bridge types.
-- Manual smoke test should cover changing editor settings, reloading, and launching from a project detail page.
-- Manual smoke test should cover changing terminal/editor settings on one device without changing another synced device's settings.
+- `npx vitest run src/lib/projectBridge.externalApplications.test.ts` must cover browser/preload defaults, local/shared migration, malformed data, editable built-in round trips and launch arguments, duplicate filtering, default repair, Store default protection, and explicit/default launch selection.
+- `npx vitest run src/lib/projectBridge.workspace.test.ts` must assert the resolved Git repository path and selected application payload.
+- Run `npm run validate:process-results`, `npm run lint`, `node --check public/preload.js`, and `npm run build` after changing the collection or bridge contract.
+- Browser smoke: add/edit/delete/toggle/default controls, both locales, narrow card layout, right-click and keyboard menus, Escape, and viewport clamping.
+- uTools smoke: VS Code, Cursor, quoted custom executable, invalid command, restart persistence, and each legacy editor migration.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```ts
-store.editorPreferences.kind = "cursor";
+store.externalApplicationPreferences.defaultApplicationId = applicationId;
 ```
 
 #### Correct
 
 ```ts
-store.setDefaultEditor("cursor");
+await store.openProjectInEditor(project.id, applicationId);
 ```
 
-Let store actions persist preferences and keep bridge state synchronized.
+One-time launch selection must flow through the Store without changing the persisted default.
 
 ## Scenario: Environment Tool Detection Bridge
 

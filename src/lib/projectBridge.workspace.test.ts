@@ -180,14 +180,15 @@ describe("browser Git workspace fallback", () => {
       localStorage: { getItem: () => null, setItem: () => undefined },
       projectBridge: undefined,
     });
-    const openEditor = vi.fn<ProjectBridge["openEditor"]>(async (payload) => ({
+    const openExternalApplication = vi.fn<ProjectBridge["openExternalApplication"]>(async (payload) => ({
       launched: true,
       command: "editor",
       cwd: payload.projectPath,
-      kind: payload.editor.kind,
+      applicationId: payload.application.id,
+      kind: payload.application.kind,
     }));
     const pathExists = vi.fn<ProjectBridge["pathExists"]>(async () => true);
-    const testBridge: ProjectBridge = { ...getProjectBridge(), openEditor, pathExists };
+    const testBridge: ProjectBridge = { ...getProjectBridge(), openExternalApplication, pathExists };
     window.projectBridge = testBridge;
 
     const { useStore } = await import("../store/useStore");
@@ -247,14 +248,15 @@ describe("browser Git workspace fallback", () => {
       kind: "submodule",
       path: "C:\\empty-submodule-directory",
     });
-    expect(openEditor).not.toHaveBeenCalled();
+    expect(openExternalApplication).not.toHaveBeenCalled();
 
     await store.openGitRepositoryInEditor("project-workspace", {
       kind: "worktree",
       path: "C:\\healthy-worktree",
     });
-    expect(openEditor).toHaveBeenCalledOnce();
-    expect(openEditor.mock.calls[0]?.[0].projectPath).toBe("C:\\healthy-worktree");
+    expect(openExternalApplication).toHaveBeenCalledOnce();
+    expect(openExternalApplication.mock.calls[0]?.[0].projectPath).toBe("C:\\healthy-worktree");
+    expect(openExternalApplication.mock.calls[0]?.[0].application.id).toBe("vscode");
   });
 
   it("resolves closed repository targets from the latest workspace snapshot", async () => {

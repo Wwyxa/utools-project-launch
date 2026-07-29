@@ -98,6 +98,7 @@ import { useResizableSplit } from "../../composables/useResizableSplit";
 import { gitRepositoryTargetsEqual } from "../../lib/gitRepositoryTarget";
 import ProjectActionDialog from "./ProjectActionDialog.vue";
 import GitDiffViewer from "./GitDiffViewer.vue";
+import ExternalApplicationLaunchButton from "./ExternalApplicationLaunchButton.vue";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
@@ -534,6 +535,9 @@ const repositoryRows = computed<GitRepositoryRow[]>(() => {
 const selectedRepositoryRow = computed(
   () => repositoryRows.value.find((row) => row.selected) || repositoryRows.value[0],
 );
+const enabledExternalApplications = computed(() =>
+  store.externalApplicationPreferences.applications.filter((application) => application.enabled),
+);
 
 const repositoryMenuStyle = computed(() => {
   if (!repositoryMenu.value) return {};
@@ -864,13 +868,18 @@ const toggleRemoteMenu = (event: MouseEvent) => {
   isRemoteMenuOpen.value = shouldOpen;
 };
 
-const runRepositoryExternalAction = (action: "editor" | "terminal" | "folder") => {
+const runRepositoryExternalAction = (action: "terminal" | "folder") => {
   const row = repositoryMenu.value?.row;
   repositoryMenu.value = null;
   if (!row?.selectable) return;
-  if (action === "editor") void store.openGitRepositoryInEditor(props.project.id, row.target);
-  else if (action === "terminal") void store.openGitRepositoryInTerminal(props.project.id, row.target);
+  if (action === "terminal") void store.openGitRepositoryInTerminal(props.project.id, row.target);
   else void store.showGitRepositoryInFolder(props.project.id, row.target);
+};
+
+const openRepositoryWithApplication = (applicationId: string, row = repositoryMenu.value?.row) => {
+  repositoryMenu.value = null;
+  if (!row?.selectable) return;
+  void store.openGitRepositoryInEditor(props.project.id, row.target, applicationId);
 };
 
 const copyRepositoryPath = () => {
@@ -3670,6 +3679,14 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-px" @click.stop>
+            <ExternalApplicationLaunchButton
+              v-if="row.selected && row.selectable"
+              :applications="store.externalApplicationPreferences.applications"
+              :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
+              button-class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
+              :icon-size="13"
+              @launch="openRepositoryWithApplication($event, row)"
+            />
             <button
               type="button"
               class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface hover:text-primary"
@@ -3714,13 +3731,20 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             </div>
           </div>
           <button
-            v-if="repositoryMenu.row.selectable"
+            v-for="application in repositoryMenu.row.selectable ? enabledExternalApplications : []"
+            :key="application.id"
             type="button"
             role="menuitem"
             class="mode-menu-item"
-            @click="runRepositoryExternalAction('editor')"
+            @click="openRepositoryWithApplication(application.id)"
           >
-            <span>在编辑器中打开</span><ExternalLink :size="13" />
+            <span class="truncate">{{ application.name }}</span>
+            <Check
+              v-if="application.id === store.externalApplicationPreferences.defaultApplicationId"
+              :size="13"
+              class="shrink-0 text-primary"
+            />
+            <ExternalLink v-else :size="13" class="shrink-0" />
           </button>
           <button
             v-if="repositoryMenu.row.selectable"
@@ -4891,9 +4915,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 v-if="aiDialogHasVersions"
                 :class="[
                   'absolute bottom-2 right-2 z-20 flex h-9 items-center justify-end transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-                  isAiDialogComposerExpanded
-                    ? 'w-[calc(100%-1rem)]'
-                    : 'w-9',
+                  isAiDialogComposerExpanded ? 'w-[calc(100%-1rem)]' : 'w-9',
                 ]"
               >
                 <div

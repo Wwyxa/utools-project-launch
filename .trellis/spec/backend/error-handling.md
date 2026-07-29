@@ -60,20 +60,20 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 
 ### Scenario: External terminal launch failures
 
-### Scenario: External editor launch and process cleanup failures
+### Scenario: External application launch and process cleanup failures
 
 #### 1. Scope / Trigger
 
-- Trigger: the preload bridge launches external editor processes and owns cleanup for app-started script processes.
+- Trigger: the preload bridge launches selected external applications and owns cleanup for app-started script processes.
 
 #### 2. Signatures
 
-- `ProjectBridge.openEditor(payload: { projectPath: string; editor: EditorPreferences }) -> Promise<{ launched: boolean; command: string; cwd: string; kind: EditorKind; message?: string }>`
+- `ProjectBridge.openExternalApplication(payload: ProjectBridgeExternalApplicationLaunchPayload) -> Promise<ProjectBridgeExternalApplicationLaunchResult>`
 - `ProjectBridge.stopAllProcesses() -> Promise<void>`
 
 #### 3. Contracts
 
-- Editor launches follow the same typed success/failure shape as terminal launches.
+- External application launches return the selected application id/kind with the same typed success/failure shape as terminal launches.
 - `launched: false` means the store should log an error message; the component should not throw.
 - `stopAllProcesses` is best-effort cleanup for processes started by this plugin session. It must not promise to handle hard OS or host crashes that do not run JavaScript lifecycle hooks.
 - Cleanup should be attached only to true runtime shutdown signals or explicit user stop actions. uTools page leave hooks such as ordinary plugin-out/detach can fire during normal panel close/open cycles and must not stop long-running project scripts by default unless the host marks the event as a full kill, such as `onPluginOut(true)`.
@@ -81,14 +81,14 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 
 #### 4. Validation & Error Matrix
 
-- Missing project path -> return `launched: false` with a path message.
-- Empty custom editor command -> return `launched: false` with an input message.
-- Unknown editor kind -> return `launched: false` or normalize before launch; do not spawn an arbitrary command.
+- Missing or non-directory target path -> return `launched: false` with a path message.
+- Missing/disabled applications, unknown kinds, reserved id mismatches, and empty custom commands -> return `launched: false` before spawning.
+- Custom commands use detached executable/argument spawning without `shell: true`.
 - Process already exited during cleanup -> ignore and continue stopping the remaining processes.
 
 #### 5. Good/Base/Bad Cases
 
-- Good: editor spawn failures become project log entries and do not break the detail page.
+- Good: external application spawn failures become project log entries and do not break the project or Git view.
 - Good: explicit stop actions and true runtime shutdown signals attempt to stop every tracked child process before teardown.
 - Base: no active child processes makes `stopAllProcesses` a no-op.
 - Bad: binding cleanup to ordinary page leave hooks and killing project scripts when the user only closes the plugin panel.
@@ -97,7 +97,7 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 
 - Type-check the bridge contract in `src/types.ts`, fallback bridge, and store actions.
 - Manual smoke test: start a script, close the plugin view, and confirm the tracked process keeps running until an explicit stop or true host shutdown.
-- Manual smoke test: invalid custom editor command returns a visible project log error.
+- Manual smoke test: invalid custom application command returns a visible project log error.
 
 #### 7. Lifecycle Boundary Note
 

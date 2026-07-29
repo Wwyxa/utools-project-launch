@@ -24,6 +24,7 @@ const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const localTerminalPreferencesStorageKey = "utools-project-launch.local-settings.v1";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
+const externalApplicationPreferencesStorageKey = "utools-project-launch.local-external-applications.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
@@ -262,6 +263,90 @@ function normalizeEditorPreferences(value) {
   return {
     kind: editorKinds.has(value.kind) ? value.kind : defaults.kind,
     customCommand: typeof value.customCommand === "string" ? value.customCommand : "",
+  };
+}
+
+const builtinExternalApplications = [
+  { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true },
+  { id: "cursor", name: "Cursor", kind: "cursor", command: "cursor {path}", enabled: true },
+];
+
+function getDefaultExternalApplicationPreferences() {
+  return {
+    schemaVersion: 1,
+    defaultApplicationId: "vscode",
+    applications: builtinExternalApplications.map((application) => ({ ...application })),
+  };
+}
+
+function normalizeExternalApplicationPreferences(value) {
+  const defaults = getDefaultExternalApplicationPreferences();
+  if (!value || typeof value !== "object" || value.schemaVersion !== 1) return defaults;
+
+  const storedApplications = Array.isArray(value.applications) ? value.applications : [];
+  const builtinNames = new Set(builtinExternalApplications.map((application) => application.name.toLocaleLowerCase()));
+  const usedNames = new Set();
+  const applications = builtinExternalApplications.map((builtin) => {
+    const stored = storedApplications.find(
+      (application) => application && typeof application === "object" && application.id === builtin.id,
+    );
+    const storedName = stored?.kind === builtin.kind && typeof stored.name === "string" ? stored.name.trim() : "";
+    const normalizedStoredName = storedName.toLocaleLowerCase();
+    const defaultName = builtin.name.toLocaleLowerCase();
+    const name =
+      storedName &&
+      (normalizedStoredName === defaultName ||
+        (!builtinNames.has(normalizedStoredName) && !usedNames.has(normalizedStoredName)))
+        ? storedName
+        : builtin.name;
+    const command =
+      stored?.kind === builtin.kind && typeof stored.command === "string" && stored.command.trim()
+        ? stored.command.trim()
+        : builtin.command;
+    usedNames.add(name.toLocaleLowerCase());
+    return { ...builtin, name, command, enabled: stored?.enabled !== false };
+  });
+  const usedIds = new Set(applications.map((application) => application.id));
+
+  for (const stored of storedApplications) {
+    if (!stored || typeof stored !== "object") continue;
+    const id = typeof stored.id === "string" ? stored.id.trim() : "";
+    const name = typeof stored.name === "string" ? stored.name.trim() : "";
+    const command = typeof stored.command === "string" ? stored.command.trim() : "";
+    const normalizedName = name.toLocaleLowerCase();
+    if (stored.kind !== "custom" || !id || !name || !command || usedIds.has(id) || usedNames.has(normalizedName)) {
+      continue;
+    }
+    usedIds.add(id);
+    usedNames.add(normalizedName);
+    applications.push({ id, name, kind: "custom", command, enabled: stored.enabled !== false });
+  }
+
+  let defaultApplicationId = typeof value.defaultApplicationId === "string" ? value.defaultApplicationId.trim() : "";
+  if (!applications.some((application) => application.id === defaultApplicationId && application.enabled)) {
+    defaultApplicationId = applications.find((application) => application.enabled)?.id || "vscode";
+  }
+  if (!applications.some((application) => application.enabled)) {
+    applications[0].enabled = true;
+    defaultApplicationId = applications[0].id;
+  }
+  return { schemaVersion: 1, defaultApplicationId, applications };
+}
+
+function migrateEditorPreferences(value) {
+  const editor = normalizeEditorPreferences(value);
+  if (editor.kind === "vscode" || editor.kind === "cursor") {
+    return { ...getDefaultExternalApplicationPreferences(), defaultApplicationId: editor.kind };
+  }
+  const command = editor.customCommand.trim();
+  if (!command) return getDefaultExternalApplicationPreferences();
+  return {
+    schemaVersion: 1,
+    defaultApplicationId: "legacy-custom-editor",
+    applications: [
+      ...builtinExternalApplications.map((application) => ({ ...application })),
+      { id: "legacy-custom-editor", name: "Custom Editor", kind: "custom", command, enabled: true },
+    ],
   };
 }
 
@@ -524,23 +609,35 @@ function saveTerminalPreferences(preferences) {
   }
 }
 
-function readEditorPreferences() {
+function saveExternalApplicationPreferences(preferences) {
+  const normalized = normalizeExternalApplicationPreferences(preferences);
   try {
-    const raw =
-      window.localStorage?.getItem(localEditorPreferencesStorageKey) ||
-      window.localStorage?.getItem(editorPreferencesStorageKey);
-    return raw ? normalizeEditorPreferences(JSON.parse(raw)) : getDefaultEditorPreferences();
+    window.localStorage?.setItem(externalApplicationPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
-    return getDefaultEditorPreferences();
+    // Keep settings updates non-blocking if local storage is unavailable.
   }
 }
 
-function saveEditorPreferences(preferences) {
-  const normalized = normalizeEditorPreferences(preferences);
+function readExternalApplicationPreferences() {
   try {
-    window.localStorage?.setItem(localEditorPreferencesStorageKey, JSON.stringify(normalized));
+    const current = window.localStorage?.getItem(externalApplicationPreferencesStorageKey);
+    const localLegacy = window.localStorage?.getItem(localEditorPreferencesStorageKey);
+    const preferences =
+      typeof current === "string"
+        ? normalizeExternalApplicationPreferences(JSON.parse(current))
+        : migrateEditorPreferences(
+            JSON.parse(
+              typeof localLegacy === "string"
+                ? localLegacy
+                : window.localStorage?.getItem(editorPreferencesStorageKey) || "null",
+            ),
+          );
+    saveExternalApplicationPreferences(preferences);
+    return preferences;
   } catch (error) {
-    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+    const preferences = getDefaultExternalApplicationPreferences();
+    saveExternalApplicationPreferences(preferences);
+    return preferences;
   }
 }
 
@@ -1433,24 +1530,36 @@ async function openTerminal(payload) {
   }));
 }
 
-function isSupportedEditorKind(kind) {
+function isSupportedExternalApplicationKind(kind) {
   return editorKinds.has(kind);
 }
 
-async function openEditor(payload) {
+async function openExternalApplication(payload) {
   const resolvedPath = expandPath(typeof payload?.projectPath === "string" ? payload.projectPath : "");
-  const rawEditorKind = payload?.editor?.kind || "vscode";
-  const editorKind = isSupportedEditorKind(rawEditorKind) ? rawEditorKind : "vscode";
-  const customCommand = typeof payload?.editor?.customCommand === "string" ? payload.editor.customCommand.trim() : "";
+  const application = payload?.application;
+  const applicationId = typeof application?.id === "string" ? application.id.trim() : "";
+  const applicationName = typeof application?.name === "string" ? application.name.trim() : "";
+  const rawApplicationKind = application?.kind;
+  const applicationKind = isSupportedExternalApplicationKind(rawApplicationKind) ? rawApplicationKind : "vscode";
+  const applicationCommand = typeof application?.command === "string" ? application.command.trim() : "";
   const directoryStatus = getDirectoryStatus(resolvedPath);
 
-  if (!isSupportedEditorKind(rawEditorKind)) {
+  if (
+    !applicationId ||
+    !applicationName ||
+    application?.enabled !== true ||
+    !isSupportedExternalApplicationKind(rawApplicationKind) ||
+    (applicationKind === "custom"
+      ? builtinExternalApplications.some((builtin) => builtin.id === applicationId)
+      : applicationId !== applicationKind)
+  ) {
     return {
       launched: false,
       command: "",
       cwd: resolvedPath,
-      kind: editorKind,
-      message: "未知编辑器偏好，无法打开编辑器。",
+      applicationId,
+      kind: applicationKind,
+      message: "外部应用配置无效或已停用。",
     };
   }
   if (!directoryStatus.exists) {
@@ -1458,8 +1567,9 @@ async function openEditor(payload) {
       launched: false,
       command: "",
       cwd: resolvedPath,
-      kind: editorKind,
-      message: "项目路径不存在，无法打开编辑器。",
+      applicationId,
+      kind: applicationKind,
+      message: "目标路径不存在，无法打开外部应用。",
     };
   }
   if (!directoryStatus.isDirectory) {
@@ -1467,42 +1577,45 @@ async function openEditor(payload) {
       launched: false,
       command: "",
       cwd: resolvedPath,
-      kind: editorKind,
-      message: "项目路径不是文件夹，无法打开编辑器。",
+      applicationId,
+      kind: applicationKind,
+      message: "目标路径不是文件夹，无法打开外部应用。",
     };
   }
 
-  if (editorKind === "vscode") {
-    const executable = process.platform === "win32" ? "code.cmd" : "code";
-    return launchDetachedProcess(executable, [resolvedPath], resolvedPath).then((result) => ({
-      ...result,
-      kind: editorKind,
-    }));
+  if (!applicationCommand) {
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      applicationId,
+      kind: applicationKind,
+      message: "外部应用命令为空。",
+    };
   }
-  if (editorKind === "cursor") {
-    const executable = process.platform === "win32" ? "cursor.cmd" : "cursor";
-    return launchDetachedProcess(executable, [resolvedPath], resolvedPath).then((result) => ({
-      ...result,
-      kind: editorKind,
-    }));
-  }
-  if (!customCommand) {
-    return { launched: false, command: "", cwd: resolvedPath, kind: editorKind, message: "自定义编辑器命令为空。" };
-  }
-  const commandTokens = splitCommandLine(customCommand).map((token) =>
+  const commandTokens = splitCommandLine(applicationCommand).map((token) =>
     token.replace(/\{path\}|\{projectPath\}/g, () => resolvedPath),
   );
-  const [executable, ...args] = commandTokens;
+  let [executable, ...args] = commandTokens;
   if (!executable) {
     return {
       launched: false,
-      command: customCommand,
+      command: applicationCommand,
       cwd: resolvedPath,
-      kind: editorKind,
-      message: "自定义编辑器命令无效。",
+      applicationId,
+      kind: applicationKind,
+      message: "外部应用命令无效。",
     };
   }
-  return launchDetachedProcess(executable, args, resolvedPath).then((result) => ({ ...result, kind: editorKind }));
+  const builtinShim = applicationKind === "vscode" ? "code" : applicationKind === "cursor" ? "cursor" : "";
+  if (process.platform === "win32" && builtinShim && executable.toLocaleLowerCase() === builtinShim) {
+    executable = `${builtinShim}.cmd`;
+  }
+  return launchDetachedProcess(executable, args, resolvedPath).then((result) => ({
+    ...result,
+    applicationId,
+    kind: applicationKind,
+  }));
 }
 
 function emit(detail) {
@@ -4758,8 +4871,8 @@ window.projectBridge = {
   pathExists,
   loadTerminalPreferences: readTerminalPreferences,
   saveTerminalPreferences: saveTerminalPreferences,
-  loadEditorPreferences: readEditorPreferences,
-  saveEditorPreferences: saveEditorPreferences,
+  loadExternalApplicationPreferences: readExternalApplicationPreferences,
+  saveExternalApplicationPreferences,
   loadEnvironmentPreferences: readEnvironmentPreferences,
   saveEnvironmentPreferences: saveEnvironmentPreferences,
   loadBuiltinEnvironmentTools: getBuiltinEnvironmentTools,
@@ -4807,7 +4920,7 @@ window.projectBridge = {
   readProjectFile,
   writeProjectFile,
   openTerminal,
-  openEditor,
+  openExternalApplication,
   runCommand,
   stopProcess,
   getProcessStatus,

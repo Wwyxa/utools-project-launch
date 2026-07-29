@@ -63,6 +63,26 @@ If a test runner is added later, prefer focused component or store tests around 
 - No accidental use of `any` or duplicated domain models
 - Floating UI is not clipped by parent overflow and does not jump far away from the trigger while hovering dense lists
 
+### Common Mistake: Applying Overlay Scrollbars To Fixed Popup Shells
+
+**Symptom**: A teleported popup uses a `fixed` utility but its computed position becomes `relative`, so page scrolling moves the popup away from its viewport-clamped coordinates.
+
+**Cause**: The overlay scrollbar directive establishes positioning on its host element and overrides the popup shell's fixed positioning.
+
+**Fix**: Keep the teleported shell responsible for fixed positioning and viewport clamping. Apply `v-overlay-scrollbar` to a nested height-constrained scrolling element instead.
+
+```vue
+<!-- Wrong: the scrollbar directive can override the fixed shell. -->
+<div v-overlay-scrollbar class="fixed overflow-y-auto">...</div>
+
+<!-- Correct: the outer shell remains fixed and the inner element scrolls. -->
+<div class="fixed">
+	<div v-overlay-scrollbar class="max-h-[calc(100vh-1rem)] overflow-y-auto">...</div>
+</div>
+```
+
+**Prevention**: For each teleported popup, assert both `getComputedStyle(popup).position === "fixed"` and its settled bounding box against the viewport after the overlay scrollbar initializes.
+
 ### Common Mistake: Relying on Native Popups Inside Dense Panels
 
 **Symptom**: A `select` or `input[type=date]` looks styled, but its browser popup still appears in the default system style or opens beneath the trigger where it gets clipped by the surrounding panel.

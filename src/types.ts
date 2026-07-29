@@ -30,7 +30,7 @@ export type ProjectIconKey =
   | "custom";
 
 export type DefaultTerminalKind = "builtin" | "windows-terminal" | "powershell" | "cmd" | "custom";
-export type DefaultEditorKind = "vscode" | "cursor" | "custom";
+export type ExternalApplicationKind = "vscode" | "cursor" | "custom";
 export type ProjectVisibility = "public" | "private";
 export type EnvironmentToolKey = "node" | "npm" | "pnpm" | "yarn" | "python" | "pip" | "go" | "git" | "docker";
 export type EnvironmentToolStatus = "available" | "missing" | "error";
@@ -55,9 +55,18 @@ export interface TerminalPreferences {
   customCommand: string;
 }
 
-export interface EditorPreferences {
-  kind: DefaultEditorKind;
-  customCommand: string;
+export interface ExternalApplication {
+  id: string;
+  name: string;
+  kind: ExternalApplicationKind;
+  command: string;
+  enabled: boolean;
+}
+
+export interface ExternalApplicationPreferences {
+  schemaVersion: 1;
+  defaultApplicationId: string;
+  applications: ExternalApplication[];
 }
 
 export interface EnvironmentToolDefinition {
@@ -713,16 +722,17 @@ export interface ProjectBridgeTerminalLaunchResult {
   message?: string;
 }
 
-export interface ProjectBridgeEditorLaunchPayload {
+export interface ProjectBridgeExternalApplicationLaunchPayload {
   projectPath: string;
-  editor: EditorPreferences;
+  application: ExternalApplication;
 }
 
-export interface ProjectBridgeEditorLaunchResult {
+export interface ProjectBridgeExternalApplicationLaunchResult {
   launched: boolean;
   command: string;
   cwd: string;
-  kind: DefaultEditorKind;
+  applicationId: string;
+  kind: ExternalApplicationKind;
   message?: string;
 }
 
@@ -820,8 +830,8 @@ export interface ProjectBridge {
   saveUiPreferences(preferences: UiPreferences): void;
   loadTerminalPreferences(): TerminalPreferences;
   saveTerminalPreferences(preferences: TerminalPreferences): void;
-  loadEditorPreferences(): EditorPreferences;
-  saveEditorPreferences(preferences: EditorPreferences): void;
+  loadExternalApplicationPreferences(): ExternalApplicationPreferences;
+  saveExternalApplicationPreferences(preferences: ExternalApplicationPreferences): void;
   loadEnvironmentPreferences(): EnvironmentPreferences;
   saveEnvironmentPreferences(preferences: EnvironmentPreferences): void;
   loadBuiltinEnvironmentTools(): EnvironmentToolDefinition[];
@@ -916,7 +926,9 @@ export interface ProjectBridge {
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;
   openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult>;
-  openEditor(payload: ProjectBridgeEditorLaunchPayload): Promise<ProjectBridgeEditorLaunchResult>;
+  openExternalApplication(
+    payload: ProjectBridgeExternalApplicationLaunchPayload,
+  ): Promise<ProjectBridgeExternalApplicationLaunchResult>;
   runCommand(payload: ProjectBridgeRunCommandPayload): Promise<ProjectBridgeRunResult>;
   stopProcess(pid: number, options?: ProjectBridgeStopProcessOptions): Promise<void>;
   getProcessStatus(pid: number): Promise<ProjectBridgeProcessStatusResult>;

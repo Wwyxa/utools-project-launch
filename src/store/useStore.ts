@@ -6,7 +6,12 @@ import {
   getNextAutomationPlanEntry,
   validateAutomationSchedule,
 } from "../lib/automationScheduler";
-import { getProjectBridge, normalizeUiPreferences, supportsRealProjectBridge } from "../lib/projectBridge";
+import {
+  getProjectBridge,
+  normalizeExternalApplicationPreferences,
+  normalizeUiPreferences,
+  supportsRealProjectBridge,
+} from "../lib/projectBridge";
 import {
   environmentToolRequest,
   validateCustomEnvironmentToolInput,
@@ -23,8 +28,9 @@ import type {
   AiPromptMode,
   BuiltinEnvironmentToolOverride,
   DefaultTerminalKind,
-  DefaultEditorKind,
   CustomEnvironmentTool,
+  ExternalApplication,
+  ExternalApplicationPreferences,
   EnvironmentPreferences,
   EnvironmentToolDefinition,
   EnvironmentToolKey,
@@ -72,7 +78,6 @@ import type {
   ProjectScript,
   ProjectScriptFormValue,
   TerminalPreferences,
-  EditorPreferences,
   TodoItem,
 } from "../types";
 
@@ -92,6 +97,8 @@ const createTodoId = () => `todo-${Date.now()}`;
 const createEnvId = () => `env-${Date.now()}`;
 const createCustomEnvironmentToolId = () =>
   `custom-environment-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
+const createExternalApplicationId = () =>
+  `custom-application-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
 const createProjectId = () => `project-${Date.now()}`;
 const createAutomationTaskId = () => `automation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const createAutomationRunId = () => `automation-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1004,7 +1011,7 @@ export const useStore = defineStore("app", {
     activeTab: "projects" as "projects" | "settings" | "environment",
     theme: "auto" as "light" | "dark" | "auto",
     terminalPreferences: bridge.loadTerminalPreferences(),
-    editorPreferences: bridge.loadEditorPreferences(),
+    externalApplicationPreferences: bridge.loadExternalApplicationPreferences(),
     environmentPreferences: bridge.loadEnvironmentPreferences(),
     builtinEnvironmentTools: bridge.loadBuiltinEnvironmentTools() as EnvironmentToolDefinition[],
     environmentResults: [] as EnvironmentToolResult[],
@@ -1113,7 +1120,6 @@ export const useStore = defineStore("app", {
   actions: {
     async loadProjects() {
       this.terminalPreferences = bridge.loadTerminalPreferences();
-      this.editorPreferences = bridge.loadEditorPreferences();
       this.environmentPreferences = bridge.loadEnvironmentPreferences();
       this.aiPreferences = bridge.loadAiPreferences();
       try {
@@ -1233,13 +1239,101 @@ export const useStore = defineStore("app", {
       this.terminalPreferences.customCommand = command;
       bridge.saveTerminalPreferences(this.terminalPreferences);
     },
-    setDefaultEditor(kind: DefaultEditorKind) {
-      this.editorPreferences.kind = kind;
-      bridge.saveEditorPreferences(this.editorPreferences);
+    persistExternalApplicationPreferences(preferences: ExternalApplicationPreferences) {
+      this.externalApplicationPreferences = normalizeExternalApplicationPreferences(preferences);
+      bridge.saveExternalApplicationPreferences({
+        ...this.externalApplicationPreferences,
+        applications: this.externalApplicationPreferences.applications.map((application) => ({ ...application })),
+      });
     },
-    setDefaultEditorCustomCommand(command: string) {
-      this.editorPreferences.customCommand = command;
-      bridge.saveEditorPreferences(this.editorPreferences);
+    addExternalApplication(name: string, command: string) {
+      const normalizedName = name.trim();
+      const normalizedCommand = command.trim();
+      if (
+        !normalizedName ||
+        !normalizedCommand ||
+        this.externalApplicationPreferences.applications.some(
+          (application) => application.name.toLocaleLowerCase() === normalizedName.toLocaleLowerCase(),
+        )
+      ) {
+        return false;
+      }
+      this.persistExternalApplicationPreferences({
+        ...this.externalApplicationPreferences,
+        applications: [
+          ...this.externalApplicationPreferences.applications,
+          {
+            id: createExternalApplicationId(),
+            name: normalizedName,
+            kind: "custom",
+            command: normalizedCommand,
+            enabled: true,
+          },
+        ],
+      });
+      return true;
+    },
+    updateExternalApplication(id: string, name: string, command: string) {
+      const application = this.externalApplicationPreferences.applications.find((item) => item.id === id);
+      const normalizedName = name.trim();
+      const normalizedCommand = command.trim();
+      if (
+        !application ||
+        !normalizedName ||
+        !normalizedCommand ||
+        this.externalApplicationPreferences.applications.some(
+          (item) => item.id !== id && item.name.toLocaleLowerCase() === normalizedName.toLocaleLowerCase(),
+        )
+      ) {
+        return false;
+      }
+      this.persistExternalApplicationPreferences({
+        ...this.externalApplicationPreferences,
+        applications: this.externalApplicationPreferences.applications.map((item) =>
+          item.id === id ? { ...item, name: normalizedName, command: normalizedCommand } : item,
+        ),
+      });
+      return true;
+    },
+    setExternalApplicationEnabled(id: string, enabled: boolean) {
+      const application = this.externalApplicationPreferences.applications.find((item) => item.id === id);
+      if (
+        !application ||
+        application.enabled === enabled ||
+        (!enabled && id === this.externalApplicationPreferences.defaultApplicationId)
+      ) {
+        return false;
+      }
+      this.persistExternalApplicationPreferences({
+        ...this.externalApplicationPreferences,
+        applications: this.externalApplicationPreferences.applications.map((item) =>
+          item.id === id ? { ...item, enabled } : item,
+        ),
+      });
+      return true;
+    },
+    deleteExternalApplication(id: string) {
+      const application = this.externalApplicationPreferences.applications.find((item) => item.id === id);
+      if (application?.kind !== "custom" || id === this.externalApplicationPreferences.defaultApplicationId) {
+        return false;
+      }
+      this.persistExternalApplicationPreferences({
+        ...this.externalApplicationPreferences,
+        applications: this.externalApplicationPreferences.applications.filter((item) => item.id !== id),
+      });
+      return true;
+    },
+    setDefaultExternalApplication(id: string) {
+      if (
+        id === this.externalApplicationPreferences.defaultApplicationId ||
+        !this.externalApplicationPreferences.applications.some(
+          (application) => application.id === id && application.enabled,
+        )
+      ) {
+        return false;
+      }
+      this.persistExternalApplicationPreferences({ ...this.externalApplicationPreferences, defaultApplicationId: id });
+      return true;
     },
     setEnvironmentToolEnabled(key: EnvironmentToolKey, enabled: boolean) {
       const keys = new Set<EnvironmentToolKey>(this.environmentPreferences.enabledToolKeys);
@@ -3777,7 +3871,7 @@ export const useStore = defineStore("app", {
         );
       }
     },
-    async openGitRepositoryInEditor(projectId: string, target: ProjectGitRepositoryTarget) {
+    async openGitRepositoryInEditor(projectId: string, target: ProjectGitRepositoryTarget, applicationId?: string) {
       const context = this.resolveGitRepositoryContext(projectId, target);
       if (
         !context ||
@@ -3787,15 +3881,23 @@ export const useStore = defineStore("app", {
         this.addLog(projectId, createLogEntry("Git repository path is unavailable.", "WARN"));
         return;
       }
-      const editorPreferences = { ...this.editorPreferences } satisfies EditorPreferences;
+      const selectedApplicationId = applicationId || this.externalApplicationPreferences.defaultApplicationId;
+      const selectedApplication = this.externalApplicationPreferences.applications.find(
+        (application) => application.id === selectedApplicationId && application.enabled,
+      );
+      if (!selectedApplication) {
+        this.addLog(projectId, createLogEntry("External application is unavailable.", "ERROR"));
+        return;
+      }
+      const application = { ...selectedApplication } satisfies ExternalApplication;
       try {
-        const result = await bridge.openEditor({ projectPath: context.repositoryPath, editor: editorPreferences });
+        const result = await bridge.openExternalApplication({ projectPath: context.repositoryPath, application });
         this.addLog(
           projectId,
           createLogEntry(
             result.launched
-              ? `Open Git editor (${result.kind}): ${result.command}`
-              : `Failed to open Git editor (${result.kind}): ${result.message || "unknown error"}`,
+              ? `Open Git repository with ${application.name}: ${result.command}`
+              : `Failed to open Git repository with ${application.name}: ${result.message || "unknown error"}`,
             result.launched ? "INFO" : "ERROR",
           ),
         );
@@ -3803,7 +3905,7 @@ export const useStore = defineStore("app", {
         this.addLog(
           projectId,
           createLogEntry(
-            `Failed to open Git editor (${editorPreferences.kind}): ${error instanceof Error ? error.message : String(error)}`,
+            `Failed to open Git repository with ${application.name}: ${error instanceof Error ? error.message : String(error)}`,
             "ERROR",
           ),
         );
@@ -3853,29 +3955,37 @@ export const useStore = defineStore("app", {
         );
       }
     },
-    async openProjectInEditor(projectId: string) {
+    async openProjectInEditor(projectId: string, applicationId?: string) {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project || project.pathExists === false) {
         return;
       }
-      const editorPreferences = { ...this.editorPreferences } satisfies EditorPreferences;
+      const selectedApplicationId = applicationId || this.externalApplicationPreferences.defaultApplicationId;
+      const selectedApplication = this.externalApplicationPreferences.applications.find(
+        (application) => application.id === selectedApplicationId && application.enabled,
+      );
+      if (!selectedApplication) {
+        this.addLog(projectId, createLogEntry("External application is unavailable.", "ERROR"));
+        return;
+      }
+      const application = { ...selectedApplication } satisfies ExternalApplication;
       try {
-        const result = await bridge.openEditor({ projectPath: project.path, editor: editorPreferences });
+        const result = await bridge.openExternalApplication({ projectPath: project.path, application });
         project.lastUpdated = new Date().toLocaleString();
         if (result.launched) {
-          this.addLog(projectId, createLogEntry(`Open editor (${result.kind}): ${result.command}`, "INFO"));
+          this.addLog(projectId, createLogEntry(`Open with ${application.name}: ${result.command}`, "INFO"));
           return;
         }
         this.addLog(
           projectId,
-          createLogEntry(`Failed to open editor (${result.kind}): ${result.message || "unknown error"}`, "ERROR"),
+          createLogEntry(`Failed to open with ${application.name}: ${result.message || "unknown error"}`, "ERROR"),
         );
       } catch (error) {
         project.lastUpdated = new Date().toLocaleString();
         this.addLog(
           projectId,
           createLogEntry(
-            `Failed to open editor (${editorPreferences.kind}): ${error instanceof Error ? error.message : String(error)}`,
+            `Failed to open with ${application.name}: ${error instanceof Error ? error.message : String(error)}`,
             "ERROR",
           ),
         );

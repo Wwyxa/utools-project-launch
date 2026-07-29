@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   CheckSquare,
-  Code2,
   Folder,
   FolderOpen,
   GitCommitHorizontal,
@@ -24,6 +23,7 @@ import GitTab, { clearGitAiAnalysisSessionsForProject } from "./GitTab.vue";
 import MemoTab from "./MemoTab.vue";
 import FilesTab from "./FilesTab.vue";
 import AutomationTab from "./AutomationTab.vue";
+import ExternalApplicationLaunchButton from "./ExternalApplicationLaunchButton.vue";
 
 type TabId = ProjectDetailsTabId;
 const tabLongPressDelayMs = 350;
@@ -127,7 +127,7 @@ const refreshButtonClass = computed(() =>
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
-const handleOpenEditor = () => store.openProjectInEditor(props.project.id);
+const handleOpenEditor = (applicationId: string) => store.openProjectInEditor(props.project.id, applicationId);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
 const handleRefresh = async () => {
@@ -414,16 +414,15 @@ watch(
         >
           <TerminalSquare :size="18" class="group-hover:text-primary" />
         </button>
-        <button
-          type="button"
-          @click="handleOpenEditor"
+        <ExternalApplicationLaunchButton
+          :applications="store.externalApplicationPreferences.applications"
+          :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
           :disabled="isUnavailable"
-          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
-          :title="t.projectActions.openInEditor"
-          :aria-label="t.projectActions.openInEditor"
-        >
-          <Code2 :size="18" class="group-hover:text-primary" />
-        </button>
+          button-class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm disabled:opacity-50"
+          icon-class="group-hover:text-primary"
+          :icon-size="18"
+          @launch="handleOpenEditor"
+        />
         <button
           type="button"
           @click="handleOpenFolder"
