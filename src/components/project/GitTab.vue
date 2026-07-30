@@ -3417,7 +3417,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         cn(
           'overflow-hidden rounded-lg border bg-surface transition-all duration-300 ease-out',
           isTopInfoCollapsed
-            ? '-mb-3 max-h-0 -translate-y-2 border-transparent opacity-0 pointer-events-none'
+            ? '-mb-3 max-h-0 -translate-y-2 border-0 opacity-0 pointer-events-none'
             : 'mb-0 max-h-56 translate-y-0 border-border-subtle opacity-100',
         )
       "
