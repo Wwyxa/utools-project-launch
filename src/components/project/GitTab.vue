@@ -7,6 +7,7 @@ type CommitFileViewMode = "list" | "tree";
 let rememberedCommitFileViewMode: CommitFileViewMode = "list";
 const rememberedGitRepositoryTargets = new Map<string, ProjectGitRepositoryTarget>();
 const rememberedRepositorySectionOpen = new Map<string, boolean>();
+const rememberedTopInfoCollapsed = new Map<string, boolean>();
 const repositorySectionChoiceMade = new Set<string>();
 const repositorySectionAutoOpened = new Set<string>();
 const commitDraftsByContext = new Map<string, string>();
@@ -189,6 +190,7 @@ const activeRepositoryTarget = ref<ProjectGitRepositoryTarget>(
   rememberedGitRepositoryTargets.get(props.project.id) || { kind: "main" },
 );
 const repositorySectionOpen = ref(rememberedRepositorySectionOpen.get(props.project.id) || false);
+const isTopInfoCollapsed = ref(rememberedTopInfoCollapsed.get(props.project.id) || false);
 const repositoryContextGeneration = ref(0);
 const repositoryMenu = ref<GitRepositoryMenuState | null>(null);
 const filesScrollRef = ref<HTMLDivElement | null>(null);
@@ -573,6 +575,11 @@ const toggleRepositorySection = () => {
   repositorySectionChoiceMade.add(props.project.id);
 };
 
+const toggleTopInfo = () => {
+  isTopInfoCollapsed.value = !isTopInfoCollapsed.value;
+  rememberedTopInfoCollapsed.set(props.project.id, isTopInfoCollapsed.value);
+};
+
 const refreshActiveRepository = async () => {
   const results = await Promise.allSettled([
     store.refreshGitSnapshot(props.project.id, { force: true }, activeRepositoryTarget.value),
@@ -586,7 +593,7 @@ const refreshActiveRepository = async () => {
 
 const isRefreshRunning = () => isGitRefreshing.value || isGitWorkspaceRefreshing.value;
 
-defineExpose({ refreshActiveRepository, isRefreshRunning });
+defineExpose({ refreshActiveRepository, isRefreshRunning, isTopInfoCollapsed, toggleTopInfo });
 
 // 全局统一 Loading 状态栏
 const globalLoadingMessage = computed(() => {
@@ -2613,6 +2620,7 @@ const restoreProjectRepositoryState = (projectId: string) => {
   }
   activeRepositoryTarget.value = target;
   repositorySectionOpen.value = rememberedRepositorySectionOpen.get(projectId) || false;
+  isTopInfoCollapsed.value = rememberedTopInfoCollapsed.get(projectId) || false;
   const hasRelatedRepositories = Boolean(
     workspace &&
     (workspace.worktrees.entries.some((entry) => entry.kind === "linked") || workspace.submodules.entries.length > 0),
@@ -3401,7 +3409,19 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       </div>
     </Transition>
 
-    <section class="overflow-hidden rounded-lg border border-border-subtle bg-surface">
+    <section
+      id="git-top-info-panel"
+      :aria-hidden="isTopInfoCollapsed"
+      :inert="isTopInfoCollapsed"
+      :class="
+        cn(
+          'overflow-hidden rounded-lg border bg-surface transition-all duration-300 ease-out',
+          isTopInfoCollapsed
+            ? '-mb-3 max-h-0 -translate-y-2 border-transparent opacity-0 pointer-events-none'
+            : 'mb-0 max-h-56 translate-y-0 border-border-subtle opacity-100',
+        )
+      "
+    >
       <div class="flex min-h-11 items-center justify-between gap-2 px-2 py-1.5">
         <div class="flex min-w-0 flex-1 items-center gap-2 text-xs">
           <button

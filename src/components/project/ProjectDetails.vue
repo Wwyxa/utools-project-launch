@@ -8,6 +8,7 @@ import {
   GripHorizontal,
   Pencil,
   ArrowLeft,
+  ChevronDown,
   RefreshCw,
   TerminalSquare,
   Trash2,
@@ -28,6 +29,7 @@ import ExternalApplicationLaunchButton from "./ExternalApplicationLaunchButton.v
 type TabId = ProjectDetailsTabId;
 const tabLongPressDelayMs = 350;
 const tabPressMoveTolerance = 8;
+const gitToggleIdleDelayMs = 3_000;
 
 const props = defineProps<{
   project: Project;
@@ -38,6 +40,8 @@ const t = useI18n();
 type GitTabExpose = {
   refreshActiveRepository: () => Promise<void>;
   isRefreshRunning: () => boolean;
+  isTopInfoCollapsed: boolean;
+  toggleTopInfo: () => void;
 };
 const activeTab = ref<TabId>("scripts");
 const tabOrder = ref<TabId[]>([...store.uiPreferences.projectDetails.tabOrder]);
@@ -46,6 +50,8 @@ const fileOpenRequest = ref("");
 const detailsRootRef = ref<HTMLElement | null>(null);
 const tabListRef = ref<HTMLElement | null>(null);
 const gitTabRef = ref<GitTabExpose | null>(null);
+const isGitTopInfoCollapsed = computed(() => gitTabRef.value?.isTopInfoCollapsed ?? false);
+const isGitToggleIdle = ref(false);
 const isManualRefreshRunning = ref(false);
 const showTabOrderHint = computed(
   () => store.uiPreferences.coachMarks.projectDetailsTabReorder < PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION,
@@ -59,6 +65,7 @@ let tabOrderChanged = false;
 let suppressNextTabClick = false;
 let suppressTabClickTimer: number | null = null;
 let previousBodyUserSelect = "";
+let gitToggleIdleTimer: number | null = null;
 
 const tabLabels = computed<Record<TabId, string>>(() => ({
   info: t.value.projectDetails.overview,
@@ -151,6 +158,31 @@ const handleRefresh = async () => {
 };
 const handleDelete = () => {
   store.requestDeleteProject(props.project.id);
+};
+const clearGitToggleIdleTimer = () => {
+  if (gitToggleIdleTimer !== null) {
+    window.clearTimeout(gitToggleIdleTimer);
+    gitToggleIdleTimer = null;
+  }
+};
+const scheduleGitToggleIdle = () => {
+  clearGitToggleIdleTimer();
+  if (activeTab.value !== "git") {
+    isGitToggleIdle.value = false;
+    return;
+  }
+  gitToggleIdleTimer = window.setTimeout(() => {
+    isGitToggleIdle.value = true;
+  }, gitToggleIdleDelayMs);
+};
+const activateGitToggle = () => {
+  if (activeTab.value !== "git") return;
+  isGitToggleIdle.value = false;
+  clearGitToggleIdleTimer();
+};
+const toggleGitTopInfo = () => {
+  activateGitToggle();
+  gitTabRef.value?.toggleTopInfo();
 };
 
 const clearTabLongPressTimer = () => {
@@ -338,6 +370,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopTabPointerInteraction();
+  clearGitToggleIdleTimer();
   if (suppressTabClickTimer !== null) window.clearTimeout(suppressTabClickTimer);
   if (store.selectedProjectId !== props.project.id) {
     clearGitAiAnalysisSessionsForProject(props.project.id);
@@ -352,6 +385,15 @@ watch(
     scheduleInitialGitRefresh();
     focusActiveTab();
   },
+);
+
+watch(
+  activeTab,
+  () => {
+    clearGitToggleIdleTimer();
+    isGitToggleIdle.value = activeTab.value === "git";
+  },
+  { immediate: true },
 );
 
 watch(
@@ -454,33 +496,59 @@ watch(
       </div>
     </div>
 
-    <div class="mb-3 flex min-w-0 items-end border-b border-border-subtle">
-      <nav ref="tabListRef" role="tablist" class="flex min-w-0 flex-1 gap-5 overflow-x-auto">
+    <div :class="cn('flex min-w-0 items-end border-b border-border-subtle', activeTab === 'git' ? 'mb-4' : 'mb-3')">
+      <div class="relative min-w-0 flex-1">
+        <nav ref="tabListRef" role="tablist" class="flex min-w-0 gap-5 overflow-x-auto">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :id="`project-tab-${tab.id}`"
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === tab.id"
+            :aria-controls="`project-tabpanel-${tab.id}`"
+            :aria-grabbed="draggedTab === tab.id"
+            :tabindex="activeTab === tab.id ? 0 : -1"
+            data-project-tab
+            @pointerdown="handleTabPointerDown($event, tab.id)"
+            @click="handleTabClick(tab.id)"
+            :class="
+              cn(
+                'relative touch-none select-none whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-default',
+                activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
+                draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
+              )
+            "
+          >
+            {{ tab.label }}
+            <div v-if="activeTab === tab.id" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+          </button>
+        </nav>
         <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          :id="`project-tab-${tab.id}`"
+          v-if="activeTab === 'git' && gitTabRef"
           type="button"
-          role="tab"
-          :aria-selected="activeTab === tab.id"
-          :aria-controls="`project-tabpanel-${tab.id}`"
-          :aria-grabbed="draggedTab === tab.id"
-          :tabindex="activeTab === tab.id ? 0 : -1"
-          data-project-tab
-          @pointerdown="handleTabPointerDown($event, tab.id)"
-          @click="handleTabClick(tab.id)"
           :class="
             cn(
-              'relative touch-none select-none whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-default',
-              activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
-              draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
+              'absolute left-1/2 top-full z-20 flex h-4 w-9 -translate-x-1/2 -translate-y-px items-center justify-center rounded-b-lg border border-t-0 border-border-subtle bg-surface-container-lowest text-primary outline-none transition-all duration-300 ease-out hover:border-primary hover:bg-primary hover:text-on-primary hover:opacity-100 hover:blur-0 hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary',
+              isGitToggleIdle ? 'opacity-40 blur-[0.4px] shadow-none' : 'opacity-100 blur-0 shadow-md',
             )
           "
+          :title="isGitTopInfoCollapsed ? '展开顶部 Git 信息栏' : '收起顶部 Git 信息栏'"
+          :aria-label="isGitTopInfoCollapsed ? '展开顶部 Git 信息栏' : '收起顶部 Git 信息栏'"
+          :aria-expanded="!isGitTopInfoCollapsed"
+          aria-controls="git-top-info-panel"
+          @pointerenter="activateGitToggle"
+          @pointerleave="scheduleGitToggleIdle"
+          @focus="activateGitToggle"
+          @blur="scheduleGitToggleIdle"
+          @click="toggleGitTopInfo"
         >
-          {{ tab.label }}
-          <div v-if="activeTab === tab.id" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+          <ChevronDown
+            :size="13"
+            :class="cn('transition-transform duration-300 ease-out', !isGitTopInfoCollapsed && 'rotate-180')"
+          />
         </button>
-      </nav>
+      </div>
       <span
         v-if="showTabOrderHint"
         role="note"
