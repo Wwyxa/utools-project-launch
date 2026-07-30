@@ -38,3 +38,24 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 59: 完善 Git 提交引用菜单
+
+**Date**: 2026-07-30
+**Task**: 完善 Git 提交引用菜单
+**Branch**: `master`
+
+### Summary
+
+完善 Git 提交记录右键菜单：支持结构化本地/远程分支与标签操作、分离 HEAD、安全删除和危险确认，优化多级菜单尺寸、滚动、键盘导航与复制反馈，并兼容空仓库。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `555a6f0` | (see git log) |
+
+### Status
+
+[OK] **Completed**
