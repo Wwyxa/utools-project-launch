@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Check compact menu hierarchy, dialog consistency, accessibility, Escape handling, and focus restoration."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check exact repository routing, ref invalidation, write locking, and post-action refreshes."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check bridge symmetry, structured ref compatibility, blocker unions, and absence of unsafe casts."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check viewport clamping, fixed popup behavior, lint/type/build quality, and layout regressions."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check validation and error ownership at every Git data/action boundary."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check that existing dialogs, clipboard feedback, and store helpers were reused without speculative abstractions."}
+{"file":".trellis/tasks/07-30-git-commit-context-menu/research/git-context-menu-existing-capabilities.md","reason":"Check implementation against researched Git semantics, known parser risks, and required test scenarios."}

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Implement compact Git history menus, teleported dialogs, semantic tokens, accessibility, and focus behavior consistently."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Route all Git writes through Pinia and preserve repository-scoped ref mutation and refresh contracts."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Keep structured commit refs and ProjectBridge actions in shared contracts across renderer and preload."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Validate fixed floating surfaces, viewport geometry, TypeScript, and production build behavior."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace structured refs and Git action errors across preload, bridge, store, and Vue boundaries."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse existing menu, clipboard, dialog, and authorized Git write patterns without new frameworks."}
+{"file":".trellis/tasks/07-30-git-commit-context-menu/research/git-context-menu-existing-capabilities.md","reason":"Use the repository-backed capability map, Git semantics, command boundaries, and test anchors collected during planning."}
