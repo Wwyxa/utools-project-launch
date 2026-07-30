@@ -1,17 +1,17 @@
 <script lang="ts">
-import type { ProjectGitRepositoryTarget } from "../../types";
-import type { GitAiAnalysisSession } from "../../lib/gitAiAnalysisSession";
+import type { ProjectGitRepositoryTarget as RememberedProjectGitRepositoryTarget } from "../../types";
+import type { GitAiAnalysisSession as RememberedGitAiAnalysisSession } from "../../lib/gitAiAnalysisSession";
 
 type CommitFileViewMode = "list" | "tree";
 
 let rememberedCommitFileViewMode: CommitFileViewMode = "list";
-const rememberedGitRepositoryTargets = new Map<string, ProjectGitRepositoryTarget>();
+const rememberedGitRepositoryTargets = new Map<string, RememberedProjectGitRepositoryTarget>();
 const rememberedRepositorySectionOpen = new Map<string, boolean>();
 const rememberedTopInfoCollapsed = new Map<string, boolean>();
 const repositorySectionChoiceMade = new Set<string>();
 const repositorySectionAutoOpened = new Set<string>();
 const commitDraftsByContext = new Map<string, string>();
-const rememberedGitAiAnalysisSessions = new Map<string, GitAiAnalysisSession>();
+const rememberedGitAiAnalysisSessions = new Map<string, RememberedGitAiAnalysisSession>();
 
 export const clearGitAiAnalysisSessionsForProject = (projectId: string) => {
   const contextPrefix = `${projectId}::`;
@@ -5402,7 +5402,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 ? '重命名分支'
                 : '新建分支'
           "
-          @click.self="closeRefDialog"
+          @click.self="closeRefDialog()"
         >
           <form
             class="w-[min(26rem,94vw)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
@@ -5432,7 +5432,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 :disabled="isAnyGitWriteRunning"
                 :title="t.common.close"
                 :aria-label="t.common.close"
-                @click="closeRefDialog"
+                @click="closeRefDialog()"
               >
                 <X :size="15" />
               </button>
@@ -5496,7 +5496,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                   type="button"
                   class="inline-flex h-8 items-center rounded border border-border-subtle px-3 text-xs font-bold text-on-surface-variant hover:bg-surface-variant"
                   :disabled="isAnyGitWriteRunning"
-                  @click="closeRefDialog"
+                  @click="closeRefDialog()"
                 >
                   {{ t.common.cancel }}
                 </button>

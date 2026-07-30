@@ -101,10 +101,10 @@ export function formatEnvironmentArguments(argumentsList: string[]): string {
 export function normalizeCustomEnvironmentTool(value: unknown): CustomEnvironmentTool | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<CustomEnvironmentTool>;
+  const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
   if (
-    typeof candidate.id !== "string" ||
-    !candidate.id.trim() ||
-    BUILTIN_ENVIRONMENT_TOOLS.some((tool) => tool.key === candidate.id.trim()) ||
+    !id ||
+    BUILTIN_ENVIRONMENT_TOOLS.some((tool) => tool.key === id) ||
     !Array.isArray(candidate.versionArgs) ||
     candidate.versionArgs.some((argument) => typeof argument !== "string")
   ) {
@@ -117,7 +117,7 @@ export function normalizeCustomEnvironmentTool(value: unknown): CustomEnvironmen
   });
   if (!validation.value || Object.keys(validation.errors).length > 0) return null;
   return {
-    id: candidate.id.trim(),
+    id,
     ...validation.value,
     enabled: candidate.enabled !== false,
   };

@@ -49,7 +49,7 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   event.detail.handle();
 };
 
-let stopAppEscapeListener = () => undefined;
+let stopAppEscapeListener: () => void = () => {};
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });

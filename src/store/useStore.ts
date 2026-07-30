@@ -326,7 +326,16 @@ function normalizeAutomationSchedule(value: unknown): ProjectAutomationSchedule 
     return defaultAutomationSchedule();
   }
 
-  const candidate = value as Partial<ProjectAutomationSchedule>;
+  const candidate = value as Partial<{
+    type: ProjectAutomationSchedule["type"];
+    startTime: string;
+    windowStart: string;
+    windowEnd: string;
+    dailyCount: number;
+    intervalMinutes: number;
+    minIntervalMinutes: number;
+    maxIntervalMinutes: number;
+  }>;
   if (candidate.type === "random") {
     const schedule: ProjectAutomationSchedule = {
       type: "random",
@@ -1788,8 +1797,8 @@ export const useStore = defineStore("app", {
         this.projectFormInspecting = false;
       }
     },
-    async refreshProjectFormCwdSuggestions(projectPath = this.projectFormDraft.path) {
-      const normalizedPath = projectPath.trim();
+    async refreshProjectFormCwdSuggestions(projectPath?: string) {
+      const normalizedPath = (projectPath ?? this.projectFormDraft.path).trim();
       if (!normalizedPath) {
         this.projectFormCwdSuggestions = ["."];
         return;
@@ -2285,7 +2294,7 @@ export const useStore = defineStore("app", {
 
           if (startedAtVersion !== gitMutationVersion(context.contextKey)) {
             const normalizedSnapshot = normalizeGitSnapshot(snapshot);
-            if (currentSnapshot) {
+            if (currentSnapshot && normalizedSnapshot) {
               assignSnapshot(replaceGitCommitPage(currentSnapshot, normalizedSnapshot));
               if (context.target.kind === "main" && project.git) {
                 project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
@@ -3554,21 +3563,19 @@ export const useStore = defineStore("app", {
       }
 
       const endedAt = new Date().toISOString();
-      task.history = [
-        {
-          id: createAutomationRunId(),
-          taskId: task.id,
-          taskName: task.name,
-          projectId: project.id,
-          projectName: project.name,
-          plannedAt: missedEntry.plannedAt,
-          endedAt,
-          status: "skipped",
-          reason: "已忽略错过任务。",
-          scriptResults: [],
-        },
-        ...task.history,
-      ].slice(0, AUTOMATION_HISTORY_LIMIT);
+      const skippedHistoryEntry: ProjectAutomationHistoryEntry = {
+        id: createAutomationRunId(),
+        taskId: task.id,
+        taskName: task.name,
+        projectId: project.id,
+        projectName: project.name,
+        plannedAt: missedEntry.plannedAt,
+        endedAt,
+        status: "skipped",
+        reason: "已忽略错过任务。",
+        scriptResults: [],
+      };
+      task.history = [skippedHistoryEntry, ...task.history].slice(0, AUTOMATION_HISTORY_LIMIT);
       task.updatedAt = endedAt;
       void this.persistProjects();
       return true;

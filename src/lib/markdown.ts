@@ -59,11 +59,11 @@ languages.forEach(([name, language]) => {
   }
 });
 
-export const markdown = new MarkdownIt({
+export const markdown: MarkdownIt = new MarkdownIt({
   breaks: true,
   linkify: true,
   html: false,
-  highlight: (source, language) => {
+  highlight: (source, language): string => {
     const normalizedLanguage = language === "sh" ? "bash" : language;
     if (normalizedLanguage && hljs.getLanguage(normalizedLanguage)) {
       return `<pre class="hljs"><code>${hljs.highlight(source, { language: normalizedLanguage }).value}</code></pre>`;

@@ -104,7 +104,7 @@ let filterTimer: number | undefined;
 let pendingContinuation: (() => Promise<void> | void) | null = null;
 let pendingCanceledPath = "";
 let pendingCancelRestore: { selectedPath: string; focusedPath: string } | null = null;
-let stopAppEscapeListener = () => undefined;
+let stopAppEscapeListener: () => void = () => {};
 
 const selectedRelativePath = computed(() => selectedFile.value?.relativePath || "");
 const visibleNodes = computed(() => {
@@ -488,6 +488,7 @@ const closeContextMenu = (restoreFocus = false) => {
   contextMenu.value = null;
   if (restoreFocus && relativePath) focusTreeNode(relativePath);
 };
+const handleWindowClick = () => closeContextMenu();
 
 const showNodeContextMenu = (
   node: TreeNode,
@@ -1373,7 +1374,7 @@ onMounted(() => {
     void loadChildren();
   }
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
-  window.addEventListener("click", closeContextMenu);
+  window.addEventListener("click", handleWindowClick);
   window.addEventListener("keydown", handleKeydown);
 });
 
@@ -1382,7 +1383,7 @@ onUnmounted(() => {
   filterRequestId += 1;
   window.clearTimeout(filterTimer);
   stopAppEscapeListener();
-  window.removeEventListener("click", closeContextMenu);
+  window.removeEventListener("click", handleWindowClick);
   window.removeEventListener("keydown", handleKeydown);
 });
 

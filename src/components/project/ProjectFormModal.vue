@@ -13,7 +13,7 @@ const t = useI18n();
 const form = computed(() => store.projectFormDraft);
 const title = computed(() => (store.projectFormMode === "edit" ? t.value.modal.editTitle : t.value.modal.createTitle));
 const existingGroups = computed(() => [
-  ...new Set(store.projects.map((project) => project.group.trim()).filter(Boolean)),
+  ...new Set(store.projects.map((project) => (project.group ?? "").trim()).filter(Boolean)),
 ]);
 const draggedScriptId = ref<string | null>(null);
 const groupMenuOpen = ref(false);
