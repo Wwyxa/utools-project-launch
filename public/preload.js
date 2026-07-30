@@ -612,14 +612,27 @@ function saveTerminalPreferences(preferences) {
 function saveExternalApplicationPreferences(preferences) {
   const normalized = normalizeExternalApplicationPreferences(preferences);
   try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(externalApplicationPreferencesStorageKey, normalized);
+      return;
+    }
     window.localStorage?.setItem(externalApplicationPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
-    // Keep settings updates non-blocking if local storage is unavailable.
+    // Keep settings updates non-blocking if host storage is unavailable.
   }
 }
 
 function readExternalApplicationPreferences() {
   try {
+    if (window.utools?.dbStorage) {
+      const storedPreferences = window.utools.dbStorage.getItem(externalApplicationPreferencesStorageKey);
+      if (storedPreferences !== null && storedPreferences !== undefined) {
+        const preferences = normalizeExternalApplicationPreferences(storedPreferences);
+        saveExternalApplicationPreferences(preferences);
+        return preferences;
+      }
+    }
+
     const current = window.localStorage?.getItem(externalApplicationPreferencesStorageKey);
     const localLegacy = window.localStorage?.getItem(localEditorPreferencesStorageKey);
     const preferences =

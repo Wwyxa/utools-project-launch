@@ -46,6 +46,12 @@ For each arrow, ask:
 - When a framework event handler references a domain action with an optional first argument, verify whether the framework injects its event object. Use an explicit zero-argument call when the event is not domain input.
 - On Windows, verify whether a terminal-visible CLI resolves to `.exe` / `.com` or to a `.cmd` / `.bat` shim. Native direct spawn does not execute batch shims; any constrained shim fallback must document and test its command-interpreter metacharacter boundary.
 
+### Host Persistence Lifecycle Checks
+
+- Name the required survival boundary explicitly: component remount, plugin close/reopen, host-process restart, or device restart. Passing a shorter boundary does not prove a longer one.
+- Verify which process owns each storage API. In uTools, renderer `localStorage` is not evidence of host-process persistence; device-local preferences that must survive a complete uTools restart belong in `window.utools.dbStorage` unless a feature-specific spec requires another host-owned store.
+- When migrating storage, test the real read priority and recreate the preload/store with fresh renderer storage while retaining only the intended host storage. Reusing one in-memory storage object tests a round trip, not a restart.
+
 ### Step 3: Define Contracts
 
 For each boundary:
@@ -92,6 +98,7 @@ After implementation:
 - [ ] Tested with edge cases (null, empty, invalid)
 - [ ] Verified error handling at each boundary
 - [ ] Checked data survives round-trip
+- [ ] Recreated every process that the persistence requirement says may restart
 
 ---
 

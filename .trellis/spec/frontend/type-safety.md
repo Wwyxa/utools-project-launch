@@ -390,17 +390,25 @@ Use async execution with disabled interactive prompts and a timeout so remote Gi
 ### 1. Scope / Trigger
 
 - Trigger: opening a project or resolved Git worktree/subrepository with a selected external application crosses Vue components, Pinia, browser fallback, and uTools preload process spawning.
+- Trigger: external application configuration must survive both plugin close/reopen and a complete uTools process restart without becoming project metadata.
 
 ### 2. Signatures
 
 - `ProjectBridgeExternalApplicationLaunchPayload = { projectPath: string; application: ExternalApplication }`.
 - `ProjectBridgeExternalApplicationLaunchResult = { launched: boolean; command: string; cwd: string; applicationId: string; kind: ExternalApplicationKind; message?: string }`.
 - `ProjectBridge.openExternalApplication(payload): Promise<ProjectBridgeExternalApplicationLaunchResult>`.
+- `ProjectBridge.loadExternalApplicationPreferences(): ExternalApplicationPreferences`.
+- `ProjectBridge.saveExternalApplicationPreferences(preferences: ExternalApplicationPreferences): void`.
+- Current storage key: `utools-project-launch.local-external-applications.v1`.
 
 ### 3. Contracts
 
 - Shared application, preference, payload, and result contracts belong in `src/types.ts`; components must not define local copies.
 - Store actions resolve an enabled default or explicit one-time application and pass a cloned application snapshot to the bridge.
+- The uTools preload stores the normalized preference document in `window.utools.dbStorage`. Renderer `localStorage` does not reliably survive a complete uTools process restart and is only the browser fallback and a migration source for versions that previously stored this key there.
+- uTools load priority is the current `dbStorage` key, the current renderer-local key, the legacy device-local editor key, then the legacy shared editor key. Loading from any renderer-local key persists the normalized result into `dbStorage` before returning it.
+- An explicitly present current `dbStorage` value wins even when malformed; normalize it to complete defaults instead of falling through to stale renderer-local or legacy settings.
+- Browser preview continues to read and write the same logical document as JSON in `localStorage` because `dbStorage` is unavailable there.
 - `projectPath` is the full directory path of the current launch target. For Git worktrees and subrepositories it is the resolved repository path, not necessarily the main project root.
 - Every application command template replaces both `{path}` and `{projectPath}` with the same resolved target directory.
 - All applications use the existing tokenizer and detached executable/argv spawn without `shell: true`. On Windows, a VS Code/Cursor template whose executable token is exactly `code`/`cursor` maps that token to the existing `code.cmd`/`cursor.cmd` compatibility path; an explicitly configured executable or full path is preserved.
@@ -412,21 +420,29 @@ Use async execution with disabled interactive prompts and a timeout so remote Gi
 - Missing target path or target is not a directory -> return `launched: false` with the resolved cwd and message.
 - Empty or untokenizable application command -> return `launched: false` without shell fallback.
 - Spawn failure -> return `launched: false` with the bridge error message.
+- Current key exists only in renderer `localStorage` after upgrading -> normalize it, write the result to uTools `dbStorage`, and keep the selected default/custom applications.
+- uTools restarts with empty renderer `localStorage` and retained `dbStorage` -> return the complete saved collection.
+- Current `dbStorage` value is malformed -> return complete defaults without resurrecting legacy values.
+- Host storage read/write throws -> keep normalized in-memory Store state usable and do not throw into components.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a linked worktree menu resolves its repository directory, clones the selected custom application, and replaces both path aliases with that directory.
 - Good: an edited VS Code template `code --reuse-window "{path}"` launches `code.cmd` with the extra argument on Windows and survives a preference round trip.
+- Good: a custom application saved by an older localStorage-only build migrates into `dbStorage`, then remains configured after localStorage is cleared and the preload is recreated.
 - Base: VS Code is the default and uses the existing built-in launch branch without user configuration.
+- Base: browser preview persists the same normalized collection in `localStorage` without a uTools API.
 - Bad: a component calls preload directly or describes `{path}` as always being the main project root.
 - Bad: passing a custom command through a shell or adding product-specific custom adapters.
+- Bad: writing uTools external application preferences only to `window.localStorage`; closing the plugin can appear to work while a complete uTools restart loses the configuration.
 
 ### 6. Tests Required
 
 - Run `npx vitest run src/lib/projectBridge.externalApplications.test.ts` for selected/default application payloads, editable built-in round trips and spawn arguments, and migration.
+- The real-preload test must save or migrate a custom collection into a shared `dbStorage` map, recreate the preload with empty renderer `localStorage`, and assert that the same collection loads afterward.
 - Run `npx vitest run src/lib/projectBridge.workspace.test.ts` for resolved repository paths.
 - Run `npm run lint`, `node --check public/preload.js`, and `npm run build` after changing launch types or implementations.
-- Manual uTools smoke: VS Code, Cursor, a quoted executable path with arguments, both placeholders, and an invalid command.
+- Manual uTools smoke: VS Code, Cursor, a quoted executable path with arguments, both placeholders, an invalid command, plugin close/reopen, and a complete uTools process restart.
 
 ### 7. Wrong vs Correct
 
@@ -443,6 +459,24 @@ await store.openProjectInEditor(project.id, application.id);
 ```
 
 Keep launch resolution and error logging behind Store actions; components emit only the selected application id.
+
+#### Wrong
+
+```js
+window.localStorage.setItem(externalApplicationPreferencesStorageKey, JSON.stringify(preferences));
+```
+
+#### Correct
+
+```js
+if (window.utools?.dbStorage) {
+  window.utools.dbStorage.setItem(externalApplicationPreferencesStorageKey, preferences);
+} else {
+  window.localStorage.setItem(externalApplicationPreferencesStorageKey, JSON.stringify(preferences));
+}
+```
+
+Use host-owned storage for uTools process persistence and reserve renderer storage for browser fallback and one-time migration.
 
 ---
 

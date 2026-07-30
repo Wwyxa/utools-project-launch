@@ -32,15 +32,27 @@ const createStorage = () => {
   };
 };
 
+const createDbStorage = () => {
+  const values = new Map<string, unknown>();
+  return {
+    values,
+    api: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: unknown) => values.set(key, value),
+    },
+  };
+};
+
 const loadPreloadBridge = (
   storage: ReturnType<typeof createStorage>["api"],
   moduleOverrides: Record<string, unknown> = {},
+  dbStorage: ReturnType<typeof createDbStorage>["api"] = createDbStorage().api,
 ) => {
   const nodeRequire = createRequire(import.meta.url);
   const sandboxWindow: { projectBridge?: ProjectBridge; localStorage: typeof storage; utools: { dbStorage: object } } =
     {
       localStorage: storage,
-      utools: { dbStorage: { getItem: () => null, setItem: () => undefined } },
+      utools: { dbStorage },
     };
   const sandbox = {
     require: (id: string) => (id === "electron" ? { shell: {} } : (moduleOverrides[id] ?? nodeRequire(id))),
@@ -218,6 +230,28 @@ describe("browser external application preferences", () => {
 });
 
 describe("uTools preload external application preferences", () => {
+  it("persists across a uTools restart and migrates the renderer-local preference", () => {
+    const rendererStorage = createStorage();
+    const dbStorage = createDbStorage();
+    const preferences: ExternalApplicationPreferences = {
+      schemaVersion: 1,
+      defaultApplicationId: "tool",
+      applications: [
+        ...defaults.applications,
+        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true },
+      ],
+    };
+    rendererStorage.values.set(preferencesKey, JSON.stringify(preferences));
+
+    expect(loadPreloadBridge(rendererStorage.api, {}, dbStorage.api).loadExternalApplicationPreferences()).toEqual(
+      preferences,
+    );
+    expect(dbStorage.values.get(preferencesKey)).toEqual(preferences);
+
+    const restartedBridge = loadPreloadBridge(createStorage().api, {}, dbStorage.api);
+    expect(restartedBridge.loadExternalApplicationPreferences()).toEqual(preferences);
+  });
+
   it("matches browser migration and normalization", () => {
     const storage = createStorage();
     storage.values.set(localLegacyKey, JSON.stringify({ kind: "cursor", customCommand: "" }));
