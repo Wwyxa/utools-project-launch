@@ -806,9 +806,27 @@ const fallbackBridge: ProjectBridge = {
   async checkoutGitCommit(
     _projectPath: string,
     _commitHash: string,
-    _options: { force?: boolean; preferredBranch?: string } = {},
+    _options: { force?: boolean; preferredBranch?: string; detach?: boolean } = {},
   ): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法切换到 Git 提交。");
+  },
+  async createGitBranch(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法创建 Git 分支。");
+  },
+  async createGitTag(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法创建 Git 标签。");
+  },
+  async deleteGitTag(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法删除 Git 标签。");
+  },
+  async renameGitBranch(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法重命名 Git 分支。");
+  },
+  async deleteGitBranch(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法删除 Git 分支。");
+  },
+  async checkoutGitRemoteBranch(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法检出远程 Git 分支。");
   },
   async fetchGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法执行 Git fetch。");

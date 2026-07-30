@@ -87,11 +87,11 @@ watch(
           @click.stop
         >
           <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
-            <div class="flex items-start gap-3">
+            <div class="flex items-center gap-3">
               <div
                 :class="
                   cn(
-                    'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
                     tone === 'warning'
                       ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
                       : 'border-status-error/30 bg-status-error/10 text-status-error',
@@ -101,16 +101,14 @@ watch(
                 <CircleAlert v-if="tone === 'warning'" :size="16" />
                 <Undo v-else :size="16" />
               </div>
-              <div class="min-w-0">
-                <h3 id="project-action-dialog-title" class="text-sm font-bold text-on-surface">{{ title }}</h3>
-                <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ message }}</p>
-              </div>
+              <h3 id="project-action-dialog-title" class="min-w-0 text-sm font-bold text-on-surface">{{ title }}</h3>
             </div>
           </div>
           <div class="px-4 py-3">
+            <p class="text-xs leading-5 text-on-surface-variant">{{ message }}</p>
             <p
               v-if="detail"
-              class="break-all rounded border border-border-subtle bg-surface-container-low px-2 py-2 font-mono text-[11px] font-bold text-on-surface-variant"
+              class="mt-3 break-all rounded border border-border-subtle bg-surface-container-low px-2 py-2 font-mono text-[11px] font-bold text-on-surface-variant"
             >
               {{ detail }}
             </p>

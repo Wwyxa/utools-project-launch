@@ -2711,7 +2711,7 @@ export const useStore = defineStore("app", {
     async checkoutGitCommit(
       projectId: string,
       commitHash: string,
-      options: { force?: boolean } = {},
+      options: { force?: boolean; detach?: boolean } = {},
       target: ProjectGitRepositoryTarget = { kind: "main" },
     ): Promise<ProjectGitActionResult | null> {
       return this.runAuthorizedGitWrite(
@@ -2722,6 +2722,85 @@ export const useStore = defineStore("app", {
             ...options,
             preferredBranch: this.gitSnapshotForRepository(projectId, context.target)?.branch,
           }),
+        { refresh: "full", refs: true },
+      );
+    },
+    async createGitBranch(
+      projectId: string,
+      branchName: string,
+      commitHash: string,
+      options: { checkout?: boolean; force?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.createGitBranch(context.repositoryPath, branchName, commitHash, options),
+        { refresh: "full", refs: true },
+      );
+    },
+    async createGitTag(
+      projectId: string,
+      tagName: string,
+      commitHash: string,
+      options: { annotated?: boolean; message?: string } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.createGitTag(context.repositoryPath, tagName, commitHash, options),
+        { refresh: "full", refs: true },
+      );
+    },
+    async deleteGitTag(
+      projectId: string,
+      tagName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.deleteGitTag(context.repositoryPath, tagName),
+        { refresh: "full", refs: true },
+      );
+    },
+    async renameGitBranch(
+      projectId: string,
+      branchName: string,
+      nextBranchName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.renameGitBranch(context.repositoryPath, branchName, nextBranchName),
+        { refresh: "full", refs: true },
+      );
+    },
+    async deleteGitBranch(
+      projectId: string,
+      branchName: string,
+      options: { force?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.deleteGitBranch(context.repositoryPath, branchName, options),
+        { refresh: "full", refs: true },
+      );
+    },
+    async checkoutGitRemoteBranch(
+      projectId: string,
+      remoteRef: string,
+      options: { force?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.checkoutGitRemoteBranch(context.repositoryPath, remoteRef, options),
         { refresh: "full", refs: true },
       );
     },

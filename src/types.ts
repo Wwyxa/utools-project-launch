@@ -368,9 +368,12 @@ export interface ProjectGitUpstreamSummary {
   behind: number;
 }
 
+export type ProjectGitActionBlockReason = "dirty-worktree" | "unmerged-branch";
+
 export interface ProjectGitActionResult {
   ok: boolean;
   message: string;
+  blockReason?: ProjectGitActionBlockReason;
   path?: string;
   paths?: string[];
   count?: number;
@@ -392,6 +395,14 @@ export interface ProjectGitCommitMessageDiffResult {
   message?: string;
 }
 
+export type ProjectGitCommitRefKind = "head" | "local" | "remote" | "tag";
+
+export interface ProjectGitCommitRef {
+  kind: ProjectGitCommitRefKind;
+  name: string;
+  head?: boolean;
+}
+
 export interface ProjectGitCommitSummary {
   hash: string;
   message: string;
@@ -401,6 +412,7 @@ export interface ProjectGitCommitSummary {
   graph?: string;
   parents?: string[];
   refs?: string;
+  refNames?: ProjectGitCommitRef[];
   files?: ProjectGitFileChange[];
 }
 
@@ -900,7 +912,31 @@ export interface ProjectBridge {
   checkoutGitCommit(
     projectPath: string,
     commitHash: string,
-    options?: { force?: boolean; preferredBranch?: string },
+    options?: { force?: boolean; preferredBranch?: string; detach?: boolean },
+  ): Promise<ProjectGitActionResult>;
+  createGitBranch(
+    projectPath: string,
+    branchName: string,
+    commitHash: string,
+    options?: { checkout?: boolean; force?: boolean },
+  ): Promise<ProjectGitActionResult>;
+  createGitTag(
+    projectPath: string,
+    tagName: string,
+    commitHash: string,
+    options?: { annotated?: boolean; message?: string },
+  ): Promise<ProjectGitActionResult>;
+  deleteGitTag(projectPath: string, tagName: string): Promise<ProjectGitActionResult>;
+  renameGitBranch(projectPath: string, branchName: string, nextBranchName: string): Promise<ProjectGitActionResult>;
+  deleteGitBranch(
+    projectPath: string,
+    branchName: string,
+    options?: { force?: boolean },
+  ): Promise<ProjectGitActionResult>;
+  checkoutGitRemoteBranch(
+    projectPath: string,
+    remoteRef: string,
+    options?: { force?: boolean },
   ): Promise<ProjectGitActionResult>;
   fetchGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   pullGitRemote(projectPath: string): Promise<ProjectGitActionResult>;

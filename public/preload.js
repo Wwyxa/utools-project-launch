@@ -3245,10 +3245,6 @@ function switchGitBranch(projectPath, branchName, options = {}) {
   if (!targetBranch) {
     return { ok: false, message: "请选择要切换的本地分支。" };
   }
-  if (!force && hasUncommittedGitChanges(repositoryPath)) {
-    return { ok: false, message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换分支。" };
-  }
-
   const branches = readGitBranches(repositoryPath);
   const branch = branches.find((item) => item.name === targetBranch);
   if (!branch) {
@@ -3256,6 +3252,13 @@ function switchGitBranch(projectPath, branchName, options = {}) {
   }
   if (branch.current) {
     return { ok: true, branch: targetBranch, message: "已经位于该分支。" };
+  }
+  if (!force && hasUncommittedGitChanges(repositoryPath)) {
+    return {
+      ok: false,
+      blockReason: "dirty-worktree",
+      message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换分支。",
+    };
   }
 
   const result = runGitResult(
@@ -3276,26 +3279,27 @@ function checkoutGitCommit(projectPath, commitHash, options = {}) {
   const targetHash = typeof commitHash === "string" ? commitHash.trim() : "";
   const force = Boolean(options && options.force);
   const preferredBranch = typeof options?.preferredBranch === "string" ? options.preferredBranch.trim() : "";
+  const detach = Boolean(options && options.detach);
   if (!repositoryPath) {
     return { ok: false, message: "未检测到 Git 仓库。" };
   }
   if (!/^[0-9a-fA-F]{7,64}$/.test(targetHash)) {
     return { ok: false, message: "请选择一个有效的提交 hash。" };
   }
+  const existsResult = runGitResult(repositoryPath, ["cat-file", "-e", `${targetHash}^{commit}`]);
+  if (existsResult.status !== 0) {
+    return { ok: false, commitHash: targetHash, message: "该提交不存在或不是有效 commit。" };
+  }
   if (!force && hasUncommittedGitChanges(repositoryPath)) {
     return {
       ok: false,
+      blockReason: "dirty-worktree",
       commitHash: targetHash,
       message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换提交。",
     };
   }
 
-  const existsResult = runGitResult(repositoryPath, ["cat-file", "-e", `${targetHash}^{commit}`]);
-  if (existsResult.status !== 0) {
-    return { ok: false, commitHash: targetHash, message: "该提交不存在或不是有效 commit。" };
-  }
-
-  const branchTip = chooseGitBranchTip(repositoryPath, targetHash, preferredBranch);
+  const branchTip = detach ? null : chooseGitBranchTip(repositoryPath, targetHash, preferredBranch);
   if (branchTip) {
     const branchResult = runGitResult(
       repositoryPath,
@@ -3337,6 +3341,166 @@ function checkoutGitCommit(projectPath, commitHash, options = {}) {
     isDetachedHead: true,
     message: headHash ? `已切换到提交 ${headHash}，当前为 detached HEAD。` : "已切换到该提交，当前为 detached HEAD。",
   };
+}
+
+function normalizeGitRefName(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function validateGitRefName(repositoryPath, namespace, name, emptyMessage) {
+  if (!name) return emptyMessage;
+  const result = runGitResult(repositoryPath, ["check-ref-format", `${namespace}/${name}`]);
+  return result.status === 0 ? "" : "引用名称不符合 Git 规则。";
+}
+
+function gitRefExists(repositoryPath, fullName) {
+  return runGitResult(repositoryPath, ["show-ref", "--verify", "--quiet", fullName]).status === 0;
+}
+
+function validateGitCommit(repositoryPath, commitHash) {
+  const targetHash = normalizeGitRefName(commitHash);
+  return targetHash && runGitResult(repositoryPath, ["cat-file", "-e", `${targetHash}^{commit}`]).status === 0
+    ? targetHash
+    : "";
+}
+
+function createGitBranch(projectPath, branchName, commitHash, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  const name = normalizeGitRefName(branchName);
+  const checkout = Boolean(options && options.checkout);
+  const force = Boolean(options && options.force);
+  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  const nameError = validateGitRefName(repositoryPath, "refs/heads", name, "请填写分支名称。");
+  if (nameError) return { ok: false, message: nameError };
+  const targetHash = validateGitCommit(repositoryPath, commitHash);
+  if (!targetHash) return { ok: false, message: "目标提交不存在或不是有效 commit。" };
+  if (gitRefExists(repositoryPath, `refs/heads/${name}`))
+    return { ok: false, branch: name, message: "本地分支已存在。" };
+  if (checkout && !force && hasUncommittedGitChanges(repositoryPath)) {
+    return {
+      ok: false,
+      branch: name,
+      blockReason: "dirty-worktree",
+      message: "当前工作区存在未提交变更，无法创建并切换分支。",
+    };
+  }
+
+  const args = checkout
+    ? force
+      ? ["switch", "--discard-changes", "-c", name, targetHash]
+      : ["switch", "-c", name, targetHash]
+    : ["branch", "--", name, targetHash];
+  const result = runGitResult(repositoryPath, args);
+  return result.status === 0
+    ? {
+        ok: true,
+        branch: name,
+        commitHash: targetHash,
+        message: checkout ? `已创建并切换到分支 ${name}。` : `已创建分支 ${name}。`,
+      }
+    : { ok: false, branch: name, commitHash: targetHash, message: firstGitError(result, "创建分支失败。") };
+}
+
+function createGitTag(projectPath, tagName, commitHash, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  const name = normalizeGitRefName(tagName);
+  const annotated = Boolean(options && options.annotated);
+  const message = typeof options?.message === "string" ? options.message.trim() : "";
+  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  const nameError = validateGitRefName(repositoryPath, "refs/tags", name, "请填写标签名称。");
+  if (nameError) return { ok: false, message: nameError };
+  if (annotated && !message) return { ok: false, message: "请填写附注标签说明。" };
+  const targetHash = validateGitCommit(repositoryPath, commitHash);
+  if (!targetHash) return { ok: false, message: "目标提交不存在或不是有效 commit。" };
+  if (gitRefExists(repositoryPath, `refs/tags/${name}`)) return { ok: false, message: "标签已存在。" };
+
+  const result = runGitResult(
+    repositoryPath,
+    annotated ? ["tag", "-a", "-m", message, "--", name, targetHash] : ["tag", "--", name, targetHash],
+  );
+  return result.status === 0
+    ? { ok: true, commitHash: targetHash, message: `已创建${annotated ? "附注" : "轻量"}标签 ${name}。` }
+    : { ok: false, commitHash: targetHash, message: firstGitError(result, "创建标签失败。") };
+}
+
+function deleteGitTag(projectPath, tagName) {
+  const repositoryPath = findGitRoot(projectPath);
+  const name = normalizeGitRefName(tagName);
+  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  if (!name || !gitRefExists(repositoryPath, `refs/tags/${name}`)) return { ok: false, message: "标签不存在。" };
+
+  const result = runGitResult(repositoryPath, ["tag", "-d", "--", name]);
+  return result.status === 0
+    ? { ok: true, message: `已删除标签 ${name}。` }
+    : { ok: false, message: firstGitError(result, "删除标签失败。") };
+}
+
+function renameGitBranch(projectPath, branchName, nextBranchName) {
+  const repositoryPath = findGitRoot(projectPath);
+  const name = normalizeGitRefName(branchName);
+  const nextName = normalizeGitRefName(nextBranchName);
+  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  if (!gitRefExists(repositoryPath, `refs/heads/${name}`))
+    return { ok: false, branch: name, message: "本地分支不存在。" };
+  const nameError = validateGitRefName(repositoryPath, "refs/heads", nextName, "请填写新的分支名称。");
+  if (nameError) return { ok: false, branch: name, message: nameError };
+  if (gitRefExists(repositoryPath, `refs/heads/${nextName}`))
+    return { ok: false, branch: nextName, message: "同名本地分支已存在。" };
+
+  const result = runGitResult(repositoryPath, ["branch", "-m", "--", name, nextName]);
+  return result.status === 0
+    ? { ok: true, branch: nextName, message: `已将分支 ${name} 重命名为 ${nextName}。` }
+    : { ok: false, branch: name, message: firstGitError(result, "重命名分支失败。") };
+}
+
+function deleteGitBranch(projectPath, branchName, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  const name = normalizeGitRefName(branchName);
+  const force = Boolean(options && options.force);
+  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  const branch = readGitBranches(repositoryPath).find((item) => item.name === name);
+  if (!branch) return { ok: false, branch: name, message: "本地分支不存在。" };
+  if (branch.current) return { ok: false, branch: name, message: "不能删除当前检出的分支。" };
+
+  if (!force) {
+    const upstreamResult = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", `${name}@{upstream}`]);
+    const comparisonRef = upstreamResult.status === 0 ? `${name}@{upstream}` : "HEAD";
+    if (
+      runGitResult(repositoryPath, ["merge-base", "--is-ancestor", `refs/heads/${name}`, comparisonRef]).status !== 0
+    ) {
+      return { ok: false, branch: name, blockReason: "unmerged-branch", message: `分支 ${name} 包含尚未合并的提交。` };
+    }
+  }
+
+  const result = runGitResult(repositoryPath, ["branch", force ? "-D" : "-d", "--", name]);
+  return result.status === 0
+    ? { ok: true, branch: name, message: force ? `已强制删除分支 ${name}。` : `已删除分支 ${name}。` }
+    : { ok: false, branch: name, message: firstGitError(result, "删除分支失败。") };
+}
+
+function checkoutGitRemoteBranch(projectPath, remoteRef, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  const name = normalizeGitRefName(remoteRef).replace(/^refs\/remotes\//, "");
+  const force = Boolean(options && options.force);
+  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  if (!name || !gitRefExists(repositoryPath, `refs/remotes/${name}`))
+    return { ok: false, message: "远程跟踪分支不存在。" };
+  if (!force && hasUncommittedGitChanges(repositoryPath)) {
+    return {
+      ok: false,
+      branch: name,
+      blockReason: "dirty-worktree",
+      message: "当前工作区存在未提交变更，无法检出远程分支。",
+    };
+  }
+
+  const result = runGitResult(
+    repositoryPath,
+    force ? ["switch", "--discard-changes", "--track", "--", name] : ["switch", "--track", "--", name],
+  );
+  return result.status === 0
+    ? { ok: true, branch: name.split("/").slice(1).join("/"), message: `已检出远程分支 ${name}。` }
+    : { ok: false, branch: name, message: firstGitError(result, "检出远程分支失败。") };
 }
 
 function readPackageScripts(projectPath) {
@@ -4488,6 +4652,55 @@ async function removeGitRemote(projectPath, remoteName) {
     : { ok: false, remote: name, message: firstGitError(result, "删除 remote 失败。") };
 }
 
+async function readGitCommitRefs(repositoryPath) {
+  const fieldSeparator = "\x1f";
+  const [refOutput, symbolicHead, headHash] = await Promise.all([
+    runGitAsync(repositoryPath, [
+      "for-each-ref",
+      `--format=%(objectname)${fieldSeparator}%(*objectname)${fieldSeparator}%(refname)`,
+      "refs/heads",
+      "refs/remotes",
+      "refs/tags",
+    ]),
+    runGitAsync(repositoryPath, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
+    runGitAsync(repositoryPath, ["rev-parse", "HEAD"]),
+  ]);
+  const refsByCommit = new Map();
+  const currentBranch = String(symbolicHead || "").trim();
+
+  const addRef = (commitHash, ref) => {
+    if (!commitHash) return;
+    const refs = refsByCommit.get(commitHash) || [];
+    refs.push(ref);
+    refsByCommit.set(commitHash, refs);
+  };
+
+  String(refOutput || "")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const [objectHash, peeledHash, fullName] = line.split(fieldSeparator);
+      if (!fullName) return;
+      if (fullName.startsWith("refs/heads/")) {
+        const name = fullName.slice("refs/heads/".length);
+        addRef(objectHash, { kind: "local", name, head: name === currentBranch || undefined });
+      } else if (fullName.startsWith("refs/remotes/")) {
+        addRef(objectHash, { kind: "remote", name: fullName.slice("refs/remotes/".length) });
+      } else if (fullName.startsWith("refs/tags/")) {
+        addRef(peeledHash || objectHash, { kind: "tag", name: fullName.slice("refs/tags/".length) });
+      }
+    });
+
+  const currentHash = String(headHash || "").trim();
+  if (currentHash) {
+    addRef(currentHash, {
+      kind: "head",
+      name: currentBranch ? `HEAD -> ${currentBranch}` : "HEAD",
+      head: true,
+    });
+  }
+  return refsByCommit;
+}
+
 async function readGitCommits(projectPath, options = {}) {
   const repositoryPath = await findGitRootAsync(projectPath);
   const now = new Date().toISOString();
@@ -4503,15 +4716,18 @@ async function readGitCommits(projectPath, options = {}) {
     };
   }
 
-  const commitOutput = await runGitAsync(repositoryPath, [
-    "log",
-    "--all",
-    "--topo-order",
-    "--decorate=short",
-    `--max-count=${limit + 1}`,
-    `--skip=${skip}`,
-    `--pretty=format:%H${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
-    "--date=iso-strict",
+  const [commitOutput, refsByCommit] = await Promise.all([
+    runGitAsync(repositoryPath, [
+      "log",
+      "--all",
+      "--topo-order",
+      "--decorate=short",
+      `--max-count=${limit + 1}`,
+      `--skip=${skip}`,
+      `--pretty=format:%H${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
+      "--date=iso-strict",
+    ]),
+    readGitCommitRefs(repositoryPath),
   ]);
 
   const commits = [];
@@ -4544,6 +4760,7 @@ async function readGitCommits(projectPath, options = {}) {
         author,
         date,
         refs,
+        refNames: refsByCommit.get(hash) || [],
         message: message || body.split(/\r?\n/)[0] || "",
         body: body || message || "",
       });
@@ -4918,6 +5135,12 @@ window.projectBridge = {
   commitGitStaged,
   switchGitBranch,
   checkoutGitCommit,
+  createGitBranch,
+  createGitTag,
+  deleteGitTag,
+  renameGitBranch,
+  deleteGitBranch,
+  checkoutGitRemoteBranch,
   fetchGitRemote,
   pullGitRemote,
   pushGitRemote,

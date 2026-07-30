@@ -592,6 +592,11 @@ describe("browser Git workspace fallback", () => {
     const stageGitFile = vi.fn<ProjectBridge["stageGitFile"]>(async () => success);
     const commitGitStaged = vi.fn<ProjectBridge["commitGitStaged"]>(async () => success);
     const checkoutGitCommit = vi.fn<ProjectBridge["checkoutGitCommit"]>(async () => success);
+    const createGitBranch = vi.fn<ProjectBridge["createGitBranch"]>(async () => success);
+    const createGitTag = vi.fn<ProjectBridge["createGitTag"]>(async () => success);
+    const renameGitBranch = vi.fn<ProjectBridge["renameGitBranch"]>(async () => success);
+    const deleteGitBranch = vi.fn<ProjectBridge["deleteGitBranch"]>(async () => success);
+    const checkoutGitRemoteBranch = vi.fn<ProjectBridge["checkoutGitRemoteBranch"]>(async () => success);
     const addGitRemote = vi.fn<ProjectBridge["addGitRemote"]>(async () => success);
     const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>(async (repositoryPath) =>
       gitSnapshot(repositoryPath, repositoryPath),
@@ -605,6 +610,11 @@ describe("browser Git workspace fallback", () => {
       stageGitFile,
       commitGitStaged,
       checkoutGitCommit,
+      createGitBranch,
+      createGitTag,
+      renameGitBranch,
+      deleteGitBranch,
+      checkoutGitRemoteBranch,
       addGitRemote,
       readGitStatusSnapshot,
       readGitSnapshot,
@@ -627,6 +637,17 @@ describe("browser Git workspace fallback", () => {
     await store.addGitRemote(project.id, "fork", "../fork.git", worktreeTarget);
     await store.checkoutGitCommit(project.id, "e".repeat(40), {}, worktreeTarget);
     await store.addGitRemote(project.id, "mirror", "../mirror.git", submoduleTarget);
+    await store.createGitBranch(project.id, "feature", "a".repeat(40), { checkout: true }, worktreeTarget);
+    await store.createGitTag(
+      project.id,
+      "v1",
+      "b".repeat(40),
+      { annotated: true, message: "release" },
+      submoduleTarget,
+    );
+    await store.renameGitBranch(project.id, "feature", "renamed", worktreeTarget);
+    await store.deleteGitBranch(project.id, "renamed", { force: true }, submoduleTarget);
+    await store.checkoutGitRemoteBranch(project.id, "origin/feature", { force: true }, worktreeTarget);
 
     expect(stageGitFile).toHaveBeenCalledWith(worktreePath, "worktree.txt");
     expect(commitGitStaged).toHaveBeenCalledWith(submodulePath, "submodule commit");
@@ -635,7 +656,15 @@ describe("browser Git workspace fallback", () => {
     expect(checkoutGitCommit.mock.calls[1]?.[0]).toBe(worktreePath);
     expect(addGitRemote).toHaveBeenCalledWith(worktreePath, "fork", "../fork.git");
     expect(addGitRemote).toHaveBeenCalledWith(submodulePath, "mirror", "../mirror.git");
-    expect(readGitWorkspaceSnapshot).toHaveBeenCalledTimes(6);
+    expect(createGitBranch).toHaveBeenCalledWith(worktreePath, "feature", "a".repeat(40), { checkout: true });
+    expect(createGitTag).toHaveBeenCalledWith(submodulePath, "v1", "b".repeat(40), {
+      annotated: true,
+      message: "release",
+    });
+    expect(renameGitBranch).toHaveBeenCalledWith(worktreePath, "feature", "renamed");
+    expect(deleteGitBranch).toHaveBeenCalledWith(submodulePath, "renamed", { force: true });
+    expect(checkoutGitRemoteBranch).toHaveBeenCalledWith(worktreePath, "origin/feature", { force: true });
+    expect(readGitWorkspaceSnapshot).toHaveBeenCalledTimes(11);
     expect(store.gitWritesInProgress[project.id]).toBe(0);
   });
 
@@ -648,6 +677,11 @@ describe("browser Git workspace fallback", () => {
     const stageGitFile = vi.fn<ProjectBridge["stageGitFile"]>();
     const commitGitStaged = vi.fn<ProjectBridge["commitGitStaged"]>();
     const checkoutGitCommit = vi.fn<ProjectBridge["checkoutGitCommit"]>();
+    const createGitBranch = vi.fn<ProjectBridge["createGitBranch"]>();
+    const createGitTag = vi.fn<ProjectBridge["createGitTag"]>();
+    const renameGitBranch = vi.fn<ProjectBridge["renameGitBranch"]>();
+    const deleteGitBranch = vi.fn<ProjectBridge["deleteGitBranch"]>();
+    const checkoutGitRemoteBranch = vi.fn<ProjectBridge["checkoutGitRemoteBranch"]>();
     const addGitRemote = vi.fn<ProjectBridge["addGitRemote"]>();
     const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>();
     window.projectBridge = {
@@ -655,6 +689,11 @@ describe("browser Git workspace fallback", () => {
       stageGitFile,
       commitGitStaged,
       checkoutGitCommit,
+      createGitBranch,
+      createGitTag,
+      renameGitBranch,
+      deleteGitBranch,
+      checkoutGitRemoteBranch,
       addGitRemote,
       readGitWorkspaceSnapshot,
     };
@@ -706,6 +745,15 @@ describe("browser Git workspace fallback", () => {
     ).resolves.toBeNull();
     await expect(store.commitGitStaged("project-stale-write", "message", staleTarget)).resolves.toBeNull();
     await expect(store.checkoutGitCommit("project-stale-write", "e".repeat(40), {}, staleTarget)).resolves.toBeNull();
+    await expect(
+      store.createGitBranch("project-stale-write", "feature", "e".repeat(40), {}, staleTarget),
+    ).resolves.toBeNull();
+    await expect(store.createGitTag("project-stale-write", "v1", "e".repeat(40), {}, staleTarget)).resolves.toBeNull();
+    await expect(store.renameGitBranch("project-stale-write", "old", "next", staleTarget)).resolves.toBeNull();
+    await expect(store.deleteGitBranch("project-stale-write", "old", {}, staleTarget)).resolves.toBeNull();
+    await expect(
+      store.checkoutGitRemoteBranch("project-stale-write", "origin/feature", {}, staleTarget),
+    ).resolves.toBeNull();
     await expect(store.addGitRemote("project-stale-write", "fork", "../fork.git", staleTarget)).resolves.toBeNull();
 
     store.gitWorkspaces["project-stale-write"] = {
@@ -727,6 +775,11 @@ describe("browser Git workspace fallback", () => {
     expect(stageGitFile).not.toHaveBeenCalled();
     expect(commitGitStaged).not.toHaveBeenCalled();
     expect(checkoutGitCommit).not.toHaveBeenCalled();
+    expect(createGitBranch).not.toHaveBeenCalled();
+    expect(createGitTag).not.toHaveBeenCalled();
+    expect(renameGitBranch).not.toHaveBeenCalled();
+    expect(deleteGitBranch).not.toHaveBeenCalled();
+    expect(checkoutGitRemoteBranch).not.toHaveBeenCalled();
     expect(addGitRemote).not.toHaveBeenCalled();
     expect(readGitWorkspaceSnapshot).not.toHaveBeenCalled();
   });

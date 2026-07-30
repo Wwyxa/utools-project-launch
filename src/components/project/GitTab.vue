@@ -25,7 +25,6 @@ export const clearGitAiAnalysisSessionsForProject = (projectId: string) => {
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, type Component, watch } from "vue";
 import {
   ArrowDownToLine,
-  ArrowRightLeft,
   ArrowUpToLine,
   CircleCheck,
   CircleDot,
@@ -55,10 +54,12 @@ import {
   Plus,
   MoreHorizontal,
   MessageSquareText,
+  Pencil,
   FolderOpen,
   SquareTerminal,
   ExternalLink,
   Send,
+  Trash2,
   Undo,
 } from "lucide-vue-next";
 import {
@@ -66,6 +67,7 @@ import {
   DEFAULT_AI_COMMIT_MESSAGE_PROMPT,
   Project,
   type ProjectGitActionResult,
+  type ProjectGitCommitRef,
   type ProjectGitCommitSummary,
   type ProjectGitDiffScope,
   type ProjectGitFileChange,
@@ -145,7 +147,12 @@ type CommitTooltipSummary = {
   additions: number;
   deletions: number;
 };
-type CommitContextMenuState = { commit: ProjectGitCommitSummary; x: number; y: number; height: number };
+type CommitContextMenuState = { commit: ProjectGitCommitSummary; x: number; y: number };
+type CommitBranchRef = { kind: "local" | "remote"; name: string; current: boolean };
+type CommitSubmenuContent = { kind: "branch"; branch: CommitBranchRef } | { kind: "tags"; tags: string[] };
+type CommitSubmenuState = CommitSubmenuContent & { left: number; top: number; parent: HTMLElement };
+type RefDialogMode = "create-branch" | "rename-branch" | "create-tag";
+type RefDialogState = { mode: RefDialogMode; commit: ProjectGitCommitSummary; sourceBranch?: string };
 type AppDialogKind = "danger" | "warning";
 type AppActionDialog = {
   kind?: AppDialogKind;
@@ -680,6 +687,17 @@ const pendingCommitTooltip = ref<CommitTooltipState | null>(null);
 const commitTooltipDetails = ref<Record<string, CommitTooltipDetailsState>>({});
 const commitContextMenu = ref<CommitContextMenuState | null>(null);
 const commitContextMenuRef = ref<HTMLElement | null>(null);
+const commitSubmenu = ref<CommitSubmenuState | null>(null);
+const commitSubmenuRef = ref<HTMLElement | null>(null);
+const commitMenuOpener = ref<HTMLElement | null>(null);
+const refDialog = ref<RefDialogState | null>(null);
+const refDialogName = ref("");
+const refDialogMessage = ref("");
+const refDialogCheckout = ref(false);
+const refDialogAnnotated = ref(false);
+const refDialogError = ref("");
+const refDialogInputRef = ref<HTMLInputElement | null>(null);
+const refDialogOpener = ref<HTMLElement | null>(null);
 let commitTooltipOpenTimer: number | undefined;
 let commitTooltipCloseTimer: number | undefined;
 let commitTooltipDetailsRequestGeneration = 0;
@@ -715,14 +733,14 @@ const commitTooltipStyle = computed(() => {
 });
 const commitContextMenuStyle = computed(() => {
   if (!commitContextMenu.value) return {};
-  const width = 200;
-  const viewportWidth = globalThis.window?.innerWidth || 1024;
-  const viewportHeight = globalThis.window?.innerHeight || 768;
   return {
-    left: `${Math.max(12, Math.min(commitContextMenu.value.x, viewportWidth - width - 12))}px`,
-    top: `${Math.max(12, Math.min(commitContextMenu.value.y, viewportHeight - commitContextMenu.value.height - 12))}px`,
+    left: `${commitContextMenu.value.x}px`,
+    top: `${commitContextMenu.value.y}px`,
   };
 });
+const commitSubmenuStyle = computed(() =>
+  commitSubmenu.value ? { left: `${commitSubmenu.value.left}px`, top: `${commitSubmenu.value.top}px` } : {},
+);
 
 const clearCommitFilters = () => {
   commitKeyword.value = "";
@@ -753,6 +771,7 @@ const closeFloatingControls = () => {
   repositoryMenu.value = null;
   openDatePickerKind.value = null;
   commitContextMenu.value = null;
+  commitSubmenu.value = null;
 };
 
 const hasFloatingControlsOpen = () =>
@@ -770,7 +789,20 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
     return;
   }
   if (commitContextMenu.value) {
-    commitContextMenu.value = null;
+    if (commitSubmenu.value) {
+      const parent = commitSubmenu.value.parent;
+      commitSubmenu.value = null;
+      nextTick(() => parent.focus());
+    } else {
+      const opener = commitMenuOpener.value;
+      commitContextMenu.value = null;
+      nextTick(() => opener?.focus());
+    }
+    event.detail.handle();
+    return;
+  }
+  if (refDialog.value) {
+    closeRefDialog();
     event.detail.handle();
     return;
   }
@@ -806,6 +838,7 @@ const clearRepositoryBoundState = (projectId = props.project.id) => {
   commitTooltipDetailsContextGeneration += 1;
   closeFloatingControls();
   isRemoteDialogOpen.value = false;
+  refDialog.value = null;
   isAiDialogOpen.value = false;
   confirmationDialog.value = null;
   worktreeSelection.value = null;
@@ -1071,7 +1104,7 @@ const setGitActionResult = (state: GitActionState, message: string) => {
 };
 
 const isDirtyGitWriteBlock = (result: ProjectGitActionResult, options: { force?: boolean }) =>
-  !options.force && !result.ok && result.message.includes("未提交变更");
+  !options.force && !result.ok && result.blockReason === "dirty-worktree";
 
 const waitForVisualFeedback = async () => {
   await nextTick();
@@ -1090,7 +1123,7 @@ const confirmRiskyAction = async () => {
   isConfirmationRunning.value = true;
   try {
     await dialog.onConfirm();
-    confirmationDialog.value = null;
+    if (confirmationDialog.value === dialog) confirmationDialog.value = null;
   } finally {
     isConfirmationRunning.value = false;
   }
@@ -1452,12 +1485,31 @@ const handleSwitchBranch = async (branchName: string) => {
 const commitHashMatches = (left?: string, right?: string) =>
   Boolean(left && right && (left === right || left.startsWith(right) || right.startsWith(left)));
 
-const commitLocalBranchNames = (commit: ProjectGitCommitSummary) => {
+const commitBranchRefs = (commit: ProjectGitCommitSummary): CommitBranchRef[] => {
+  if (commit.refNames) {
+    return commit.refNames
+      .filter(
+        (ref): ref is ProjectGitCommitRef & { kind: "local" | "remote" } =>
+          ref.kind === "local" || ref.kind === "remote",
+      )
+      .map((ref) => ({ kind: ref.kind, name: ref.name, current: ref.kind === "local" && Boolean(ref.head) }));
+  }
   const localBranches = new Set((snapshot.value?.branches || []).map((branch) => branch.name));
   return refsForCommit(commit.refs)
-    .map((refName) => refName.replace(/^HEAD ->\s*/, "").trim())
-    .filter((refName) => localBranches.has(refName));
+    .map((name) => name.replace(/^HEAD ->\s*/, "").trim())
+    .filter((name) => localBranches.has(name) || isRemoteRef(name))
+    .map((name) => ({
+      kind: localBranches.has(name) ? "local" : "remote",
+      name,
+      current: localBranches.has(name) && name === snapshot.value?.branch && !snapshot.value?.isDetachedHead,
+    }));
 };
+const commitTagRefs = (commit: ProjectGitCommitSummary) =>
+  commit.refNames
+    ? commit.refNames.filter((ref) => ref.kind === "tag").map((ref) => ref.name)
+    : refsForCommit(commit.refs)
+        .filter((name) => name.startsWith("tag:"))
+        .map((name) => name.replace(/^tag:\s*/, "").trim());
 const isCommitDetachedHead = (commit: ProjectGitCommitSummary) =>
   Boolean(snapshot.value?.isDetachedHead && commitHashMatches(commit.hash, snapshot.value.headHash));
 const canCheckoutDetachedCommit = (commit: ProjectGitCommitSummary) => !isCommitDetachedHead(commit);
@@ -1472,7 +1524,10 @@ const branchCheckoutTitle = (branchName: string) => {
   return `切换到本地分支 ${branchName}`;
 };
 
-const executeCheckoutCommit = async (commit: ProjectGitCommitSummary, options: { force?: boolean } = {}) => {
+const executeCheckoutCommit = async (
+  commit: ProjectGitCommitSummary,
+  options: { force?: boolean; detach?: boolean } = { detach: true },
+) => {
   if (!commit || activeGitAction.value || activeGitFileActions.value.length > 0) return;
 
   activeGitAction.value = `checkout:${commit.hash}`;
@@ -1511,28 +1566,241 @@ const requestForceCheckoutCommit = (commit: ProjectGitCommitSummary) => {
     detail: formatGitFileLines(files.value, ""),
     confirmLabel: "强制切换",
     cancelLabel: t.value.common.cancel,
-    onConfirm: () => executeCheckoutCommit(commit, { force: true }),
+    onConfirm: () => executeCheckoutCommit(commit, { force: true, detach: true }),
   };
 };
 
 const handleCheckoutCommit = async (commit: ProjectGitCommitSummary) => {
-  commitContextMenu.value = null;
   if (!commit || activeGitAction.value || activeGitFileActions.value.length > 0) return;
   if (hasUncommittedChanges.value) {
+    const opener = commitMenuOpener.value;
+    closeCommitContextMenu(false);
+    opener?.focus();
     requestForceCheckoutCommit(commit);
     return;
   }
 
-  await executeCheckoutCommit(commit);
+  closeCommitContextMenu();
+  await executeCheckoutCommit(commit, { detach: true });
 };
 
 const handleCheckoutCommitBranch = async (branchName: string) => {
-  commitContextMenu.value = null;
+  closeCommitContextMenu();
   if (branchName === snapshot.value?.branch && !snapshot.value?.isDetachedHead) {
     setGitActionResult("success", `已经位于分支 ${branchName}。`);
     return;
   }
   await handleSwitchBranch(branchName);
+};
+
+const executeCheckoutRemoteBranch = async (branchName: string, options: { force?: boolean } = {}) => {
+  if (isAnyGitWriteRunning.value) return;
+  activeGitAction.value = `remote-checkout:${branchName}`;
+  setGitActionResult("loading", options.force ? `正在强制检出 ${branchName}...` : `正在检出 ${branchName}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.checkoutGitRemoteBranch(
+      props.project.id,
+      branchName,
+      options,
+      activeRepositoryTarget.value,
+    );
+    if (!result) return setGitActionResult("warning", "当前项目不可用，无法检出远程分支。");
+    if (isDirtyGitWriteBlock(result, options)) {
+      setGitActionResult("idle", "");
+      confirmationDialog.value = {
+        kind: "danger",
+        title: "强制检出远程分支",
+        message: `当前工作区存在未提交变更。继续检出 ${branchName} 会丢弃这些本地变更。`,
+        detail: formatGitFileLines(files.value, ""),
+        confirmLabel: "强制检出",
+        cancelLabel: t.value.common.cancel,
+        onConfirm: () => executeCheckoutRemoteBranch(branchName, { force: true }),
+      };
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "检出远程分支失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const executeDeleteBranch = async (branchName: string, force = false) => {
+  activeGitAction.value = `delete-branch:${branchName}`;
+  setGitActionResult("loading", force ? `正在强制删除 ${branchName}...` : `正在安全删除 ${branchName}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.deleteGitBranch(props.project.id, branchName, { force }, activeRepositoryTarget.value);
+    if (!result) return setGitActionResult("warning", "当前项目不可用，无法删除分支。");
+    if (!force && result.blockReason === "unmerged-branch") {
+      setGitActionResult("idle", "");
+      confirmationDialog.value = {
+        kind: "danger",
+        title: "强制删除未合并分支",
+        message: `分支 ${branchName} 包含尚未合并的独有提交。强制删除可能导致这些提交丢失。`,
+        confirmLabel: "强制删除",
+        cancelLabel: t.value.common.cancel,
+        onConfirm: () => executeDeleteBranch(branchName, true),
+      };
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "删除分支失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestDeleteBranch = (branch: CommitBranchRef) => {
+  const opener = commitMenuOpener.value;
+  closeCommitContextMenu(false);
+  opener?.focus();
+  confirmationDialog.value = {
+    kind: "danger",
+    title: "删除本地分支",
+    message: `先使用 Git 安全删除分支 ${branch.name}。未合并分支不会被删除。`,
+    confirmLabel: "安全删除",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeDeleteBranch(branch.name),
+  };
+};
+
+const executeDeleteTag = async (tagName: string) => {
+  activeGitAction.value = `delete-tag:${tagName}`;
+  setGitActionResult("loading", `正在删除标签 ${tagName}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.deleteGitTag(props.project.id, tagName, activeRepositoryTarget.value);
+    if (!result) return setGitActionResult("warning", "当前项目不可用，无法删除标签。");
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "删除标签失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestDeleteTag = (tagName: string) => {
+  const opener = commitMenuOpener.value;
+  closeCommitContextMenu(false);
+  opener?.focus();
+  confirmationDialog.value = {
+    kind: "danger",
+    title: "删除标签",
+    message: `将删除标签 ${tagName}。此操作不会删除提交，但可能影响依赖该标签的发布或引用。`,
+    confirmLabel: "删除标签",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeDeleteTag(tagName),
+  };
+};
+
+const openRefDialog = async (mode: RefDialogMode, commit: ProjectGitCommitSummary, sourceBranch?: string) => {
+  refDialogOpener.value = commitMenuOpener.value;
+  refDialog.value = { mode, commit, sourceBranch };
+  refDialogName.value = sourceBranch || "";
+  refDialogMessage.value = "";
+  refDialogCheckout.value = false;
+  refDialogAnnotated.value = false;
+  refDialogError.value = "";
+  closeCommitContextMenu(false);
+  await nextTick();
+  refDialogInputRef.value?.focus();
+  if (mode === "rename-branch") refDialogInputRef.value?.select();
+};
+
+const closeRefDialog = (restoreFocus = true, force = false) => {
+  if (!force && isAnyGitWriteRunning.value) return;
+  const opener = refDialogOpener.value;
+  refDialog.value = null;
+  refDialogError.value = "";
+  if (restoreFocus) nextTick(() => opener?.focus());
+};
+
+const executeCreateBranch = async (
+  dialog: RefDialogState,
+  name: string,
+  options: { checkout?: boolean; force?: boolean },
+) => {
+  const result = await store.createGitBranch(
+    props.project.id,
+    name,
+    dialog.commit.hash,
+    options,
+    activeRepositoryTarget.value,
+  );
+  if (!result) return setGitActionResult("warning", "当前项目不可用，无法创建分支。");
+  if (isDirtyGitWriteBlock(result, options)) {
+    closeRefDialog(false, true);
+    setGitActionResult("idle", "");
+    confirmationDialog.value = {
+      kind: "danger",
+      title: "创建并强制切换分支",
+      message: `当前工作区存在未提交变更。继续创建并切换到 ${name} 会丢弃这些本地变更。`,
+      detail: formatGitFileLines(files.value, ""),
+      confirmLabel: "创建并强制切换",
+      cancelLabel: t.value.common.cancel,
+      onConfirm: () => executeCreateBranch(dialog, name, { checkout: true, force: true }),
+    };
+    return;
+  }
+  setGitActionResult(result.ok ? "success" : "error", result.message);
+  if (result.ok) closeRefDialog(true, true);
+  else refDialogError.value = result.message;
+};
+
+const submitRefDialog = async () => {
+  const dialog = refDialog.value;
+  if (!dialog || isAnyGitWriteRunning.value) return;
+  const name = refDialogName.value.trim();
+  if (!name) {
+    refDialogError.value = dialog.mode === "create-tag" ? "请输入标签名称。" : "请输入分支名称。";
+    return;
+  }
+  if (dialog.mode === "create-tag" && refDialogAnnotated.value && !refDialogMessage.value.trim()) {
+    refDialogError.value = "请输入附注标签说明。";
+    return;
+  }
+
+  refDialogError.value = "";
+  activeGitAction.value = `${dialog.mode}:${name}`;
+  setGitActionResult("loading", "正在执行 Git 引用操作...");
+  await waitForVisualFeedback();
+  try {
+    if (dialog.mode === "create-branch") {
+      await executeCreateBranch(dialog, name, { checkout: refDialogCheckout.value });
+    } else if (dialog.mode === "create-tag") {
+      const result = await store.createGitTag(
+        props.project.id,
+        name,
+        dialog.commit.hash,
+        { annotated: refDialogAnnotated.value, message: refDialogMessage.value.trim() },
+        activeRepositoryTarget.value,
+      );
+      if (!result) return setGitActionResult("warning", "当前项目不可用，无法创建标签。");
+      setGitActionResult(result.ok ? "success" : "error", result.message);
+      if (result.ok) closeRefDialog(true, true);
+      else refDialogError.value = result.message;
+    } else {
+      const result = await store.renameGitBranch(
+        props.project.id,
+        dialog.sourceBranch || "",
+        name,
+        activeRepositoryTarget.value,
+      );
+      if (!result) return setGitActionResult("warning", "当前项目不可用，无法重命名分支。");
+      setGitActionResult(result.ok ? "success" : "error", result.message);
+      if (result.ok) closeRefDialog(true, true);
+      else refDialogError.value = result.message;
+    }
+  } catch (error) {
+    refDialogError.value = error instanceof Error ? error.message : "Git 引用操作失败。";
+    setGitActionResult("error", refDialogError.value);
+  } finally {
+    activeGitAction.value = "";
+  }
 };
 
 const commitMessagePromptTemplate = computed(
@@ -2431,7 +2699,7 @@ const toggleCommitFiles = async (hash: string) => {
 };
 
 const copyText = async (value: string) => {
-  if (!value) return;
+  if (!value) return false;
   try {
     await navigator.clipboard.writeText(value);
     copiedText.value = value;
@@ -2439,9 +2707,16 @@ const copyText = async (value: string) => {
     copiedTimer.value = window.setTimeout(() => {
       if (copiedText.value === value) copiedText.value = "";
     }, 1200);
+    return true;
   } catch (error) {
     copiedText.value = "";
+    return false;
   }
+};
+
+const copyBranchRef = async (name: string) => {
+  const copied = await copyText(name);
+  setGitActionResult(copied ? "success" : "error", copied ? `已复制分支名：${name}` : "复制分支名失败。");
 };
 
 const copyLabel = computed(
@@ -2570,20 +2845,104 @@ const hideCommitTooltip = () => {
   commitTooltip.value = null;
 };
 
+const closeCommitContextMenu = (restoreFocus = true) => {
+  const opener = commitMenuOpener.value;
+  commitSubmenu.value = null;
+  commitContextMenu.value = null;
+  if (restoreFocus) nextTick(() => opener?.focus());
+};
+
+const clampFloatingMenu = (element: HTMLElement, left: number, top: number) => {
+  const margin = 8;
+  const rect = element.getBoundingClientRect();
+  return {
+    left: Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin)),
+    top: Math.max(margin, Math.min(top, window.innerHeight - rect.height - margin)),
+  };
+};
+
+const commitMenuItems = (element: HTMLElement | null) =>
+  element
+    ? Array.from(element.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
+        (item) =>
+          item.getAttribute("aria-disabled") !== "true" && !(item instanceof HTMLButtonElement && item.disabled),
+      )
+    : [];
+
+const focusCommitMenuItem = (element: HTMLElement | null, current: HTMLElement, offset: number) => {
+  const items = commitMenuItems(element);
+  const index = items.indexOf(current);
+  items[(Math.max(0, index) + offset + items.length) % items.length]?.focus();
+};
+
+const openCommitSubmenu = async (content: CommitSubmenuContent, parent: HTMLElement, focusFirst = false) => {
+  const parentRect = parent.getBoundingClientRect();
+  commitSubmenu.value = { ...content, left: parentRect.right + 4, top: parentRect.top, parent };
+  await nextTick();
+  const submenu = commitSubmenuRef.value;
+  if (!submenu || !commitSubmenu.value) return;
+  const rect = submenu.getBoundingClientRect();
+  const preferredLeft =
+    parentRect.right + 4 + rect.width <= window.innerWidth - 8
+      ? parentRect.right + 4
+      : parentRect.left - rect.width - 4;
+  const position = clampFloatingMenu(submenu, preferredLeft, parentRect.top);
+  commitSubmenu.value = { ...commitSubmenu.value, ...position };
+  if (focusFirst) await nextTick(() => commitMenuItems(submenu)[0]?.focus());
+};
+
+const handleCommitMenuKeydown = (event: KeyboardEvent, level: "main" | "submenu") => {
+  const current = event.currentTarget as HTMLElement;
+  const container = level === "main" ? commitContextMenuRef.value : commitSubmenuRef.value;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if (level === "main") commitSubmenu.value = null;
+    focusCommitMenuItem(container, current, event.key === "ArrowDown" ? 1 : -1);
+  } else if (event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    if (level === "main") commitSubmenu.value = null;
+    const items = commitMenuItems(container);
+    items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+  } else if (level === "main" && event.key === "ArrowRight") {
+    const commit = commitContextMenu.value?.commit;
+    const branchIndex = current.dataset.branchIndex;
+    const branch = commit && branchIndex !== undefined ? commitBranchRefs(commit)[Number(branchIndex)] : undefined;
+    const tags = commit && current.hasAttribute("data-tag-list") ? commitTagRefs(commit) : [];
+    if (branch || tags.length) {
+      event.preventDefault();
+      void openCommitSubmenu(branch ? { kind: "branch", branch } : { kind: "tags", tags }, current, true);
+    }
+  } else if (level === "submenu" && event.key === "ArrowLeft") {
+    event.preventDefault();
+    const parent = commitSubmenu.value?.parent;
+    commitSubmenu.value = null;
+    nextTick(() => parent?.focus());
+  }
+};
+
 const openCommitContextMenu = async (event: MouseEvent, commit: ProjectGitCommitSummary) => {
   hideCommitTooltip();
+  closeCommitContextMenu(false);
   const row = event.currentTarget as HTMLElement;
   const rowRect = row.getBoundingClientRect();
   const openedFromKeyboard = event.clientX === 0 && event.clientY === 0;
-  const branchCount = commitLocalBranchNames(commit).length;
+  const eventTarget = event.target instanceof Element ? event.target.closest<HTMLElement>("button, [tabindex]") : null;
+  commitMenuOpener.value =
+    document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : eventTarget || row;
   commitContextMenu.value = {
     commit,
     x: openedFromKeyboard ? rowRect.left + graphLayerLeft : event.clientX,
     y: openedFromKeyboard ? rowRect.bottom : event.clientY,
-    height: branchCount > 0 ? Math.min(320, 36 + branchCount * 28) : 44,
   };
   await nextTick();
-  commitContextMenuRef.value?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+  const menu = commitContextMenuRef.value;
+  if (!menu || !commitContextMenu.value) return;
+  const position = clampFloatingMenu(menu, commitContextMenu.value.x, commitContextMenu.value.y);
+  commitContextMenu.value = { ...commitContextMenu.value, x: position.left, y: position.top };
+  await nextTick();
+  commitMenuItems(menu)[0]?.focus();
 };
 
 const handleWindowPointerDown = (event: PointerEvent) => {
@@ -2595,10 +2954,18 @@ const handleWindowPointerDown = (event: PointerEvent) => {
   if (target instanceof Element && target.closest("[data-repository-menu]")) return;
   repositoryMenu.value = null;
   if (target instanceof Element && target.closest("[data-commit-context-menu]")) return;
-  commitContextMenu.value = null;
+  closeCommitContextMenu(false);
 };
 
 const handleFloatingViewportChange = (event: Event) => {
+  if (
+    event.type === "scroll" &&
+    event.target instanceof Element &&
+    event.target.closest("[data-commit-context-menu]")
+  ) {
+    commitSubmenu.value = null;
+    return;
+  }
   if (
     event.type === "scroll" &&
     event.target instanceof Element &&
@@ -2609,6 +2976,7 @@ const handleFloatingViewportChange = (event: Event) => {
   isBranchMenuOpen.value = false;
   isRemoteMenuOpen.value = false;
   repositoryMenu.value = null;
+  closeCommitContextMenu(false);
 };
 
 const restoreProjectRepositoryState = (projectId: string) => {
@@ -2780,9 +3148,9 @@ const isLocalBranchRef = (refName: string) =>
   (snapshot.value?.branches || []).some((branch) => branch.name === refName);
 const isPrimaryBranchRef = (refName: string) => refName === "main" || refName === "master";
 
-const refPresentation = (refName: string): GitRefPresentation => {
-  const label = refDisplayName(refName);
-  if (isHeadRef(refName)) {
+const refPresentation = (refName: string, structuredKind?: ProjectGitCommitRef["kind"]): GitRefPresentation => {
+  const label = structuredKind === "head" ? refName.replace(/^HEAD ->\s*/, "").trim() : refDisplayName(refName);
+  if (structuredKind === "head" || (!structuredKind && isHeadRef(refName))) {
     return {
       kind: "head",
       refName,
@@ -2792,17 +3160,17 @@ const refPresentation = (refName: string): GitRefPresentation => {
       isHead: true,
     };
   }
-  if (refName.startsWith("tag:")) {
+  if (structuredKind === "tag" || (!structuredKind && refName.startsWith("tag:"))) {
     return {
       kind: "tag",
       refName,
-      label,
+      label: structuredKind === "tag" ? refName : label,
       className: cn(refBadgeBaseClass, "border-tertiary/30 bg-tertiary/10 text-tertiary"),
       icon: Tag,
       isHead: false,
     };
   }
-  if (isRemoteRef(refName)) {
+  if (structuredKind === "remote" || (!structuredKind && isRemoteRef(refName))) {
     return {
       kind: "remote",
       refName,
@@ -2812,7 +3180,7 @@ const refPresentation = (refName: string): GitRefPresentation => {
       isHead: false,
     };
   }
-  if (isLocalBranchRef(refName)) {
+  if (structuredKind === "local" || (!structuredKind && isLocalBranchRef(refName))) {
     const kind = isPrimaryBranchRef(refName) ? "primary" : "local";
     return {
       kind,
@@ -2838,8 +3206,11 @@ const refPresentation = (refName: string): GitRefPresentation => {
   };
 };
 
-const refPresentations = (refs?: string) => refsForCommit(refs).map(refPresentation);
-const isHeadCommit = (refs?: string) => refPresentations(refs).some((ref) => ref.isHead);
+const refPresentations = (commit: ProjectGitCommitSummary) =>
+  commit.refNames
+    ? commit.refNames.map((ref) => refPresentation(ref.name, ref.kind))
+    : refsForCommit(commit.refs).map((ref) => refPresentation(ref));
+const isHeadCommit = (commit: ProjectGitCommitSummary) => refPresentations(commit).some((ref) => ref.isHead);
 const graphStrokeColors = ["#0ea5e9", "#e91e9d", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16"];
 const laneWidth = 14;
 const graphPaddingX = 5;
@@ -2967,8 +3338,8 @@ type GitGraphEdge = {
   color: string;
 };
 
-const refsIncludeBranch = (refs: string | undefined, branch: string) =>
-  refsForCommit(refs).some((refName) => {
+const refsIncludeBranch = (commit: ProjectGitCommitSummary, branch: string) =>
+  (commit.refNames?.map((ref) => ref.name) || refsForCommit(commit.refs)).some((refName) => {
     const cleanRef = refName.replace(/^HEAD ->\s*/, "").trim();
     return cleanRef === branch || cleanRef === `origin/${branch}`;
   });
@@ -3039,7 +3410,7 @@ const graphLayout = computed(() => {
   };
 
   if (currentBranch) {
-    const headCommit = visibleCommits.find((commit) => refsIncludeBranch(commit.refs, currentBranch));
+    const headCommit = visibleCommits.find((commit) => refsIncludeBranch(commit, currentBranch));
     if (headCommit) {
       activeLanes[0] = headCommit.hash;
       setLaneColor(0, nextColor());
@@ -3125,7 +3496,7 @@ const graphLayout = computed(() => {
     x: laneCenter(row.lane),
     y: row.y,
     color: row.color,
-    isHead: isHeadCommit(row.commit.refs),
+    isHead: isHeadCommit(row.commit),
   }));
   const laneCount = rows.length > 0 ? maxLane + 1 : 1;
   const columnWidth = Math.max(minGraphColumnWidth, laneCount * laneWidth + graphPaddingX * 2);
@@ -4507,8 +4878,8 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                             {{ row.commit.message }}
                           </span>
                           <span
-                            v-for="ref in refPresentations(row.commit.refs)"
-                            :key="`${row.commit.hash}-${ref.refName}`"
+                            v-for="ref in refPresentations(row.commit)"
+                            :key="`${row.commit.hash}-${ref.kind}-${ref.refName}`"
                             :class="ref.className"
                             :title="ref.refName"
                           >
@@ -5018,6 +5389,132 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
       @primary="confirmRiskyAction"
     />
     <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="refDialog"
+          class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="
+            refDialog.mode === 'create-tag'
+              ? '新建标签'
+              : refDialog.mode === 'rename-branch'
+                ? '重命名分支'
+                : '新建分支'
+          "
+          @click.self="closeRefDialog"
+        >
+          <form
+            class="w-[min(26rem,94vw)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+            @submit.prevent="submitRefDialog"
+            @click.stop
+          >
+            <header
+              class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
+            >
+              <div class="min-w-0">
+                <h3 class="text-sm font-bold text-on-surface">
+                  {{
+                    refDialog.mode === "create-tag"
+                      ? "新建标签"
+                      : refDialog.mode === "rename-branch"
+                        ? "重命名分支"
+                        : "新建分支"
+                  }}
+                </h3>
+                <p class="truncate font-mono text-[10px] text-on-surface-variant">
+                  {{ shortCommitHash(refDialog.commit.hash) }} · {{ refDialog.commit.message }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="flex h-7 w-7 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface-variant"
+                :disabled="isAnyGitWriteRunning"
+                :title="t.common.close"
+                :aria-label="t.common.close"
+                @click="closeRefDialog"
+              >
+                <X :size="15" />
+              </button>
+            </header>
+            <div class="space-y-3 p-4">
+              <label class="block text-xs font-bold text-on-surface">
+                <span>{{ refDialog.mode === "create-tag" ? "标签名称" : "分支名称" }}</span>
+                <input
+                  ref="refDialogInputRef"
+                  v-model="refDialogName"
+                  class="ui-field mt-1 w-full font-mono"
+                  type="text"
+                  :disabled="isAnyGitWriteRunning"
+                  :aria-invalid="Boolean(refDialogError)"
+                  autocomplete="off"
+                />
+              </label>
+              <label
+                v-if="refDialog.mode === 'create-tag' && refDialogAnnotated"
+                class="block text-xs font-bold text-on-surface"
+              >
+                <span>标签说明</span>
+                <textarea
+                  v-model="refDialogMessage"
+                  class="ui-field mt-1 min-h-20 w-full resize-y"
+                  :disabled="isAnyGitWriteRunning"
+                  required
+                />
+              </label>
+              <p v-if="refDialogError" class="text-[11px] font-medium text-status-error" role="alert">
+                {{ refDialogError }}
+              </p>
+            </div>
+            <div class="flex items-center gap-3 border-t border-border-subtle px-4 py-3">
+              <label
+                v-if="refDialog.mode === 'create-branch'"
+                class="flex items-center gap-2 text-xs font-medium text-on-surface"
+              >
+                <input
+                  v-model="refDialogCheckout"
+                  type="checkbox"
+                  class="h-3 w-3 accent-primary"
+                  :disabled="isAnyGitWriteRunning"
+                />
+                <span>创建后切换</span>
+              </label>
+              <label
+                v-else-if="refDialog.mode === 'create-tag'"
+                class="flex items-center gap-2 text-xs font-medium text-on-surface"
+              >
+                <input
+                  v-model="refDialogAnnotated"
+                  type="checkbox"
+                  class="h-3 w-3 accent-primary"
+                  :disabled="isAnyGitWriteRunning"
+                />
+                <span>附注标签</span>
+              </label>
+              <div class="ml-auto flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  class="inline-flex h-8 items-center rounded border border-border-subtle px-3 text-xs font-bold text-on-surface-variant hover:bg-surface-variant"
+                  :disabled="isAnyGitWriteRunning"
+                  @click="closeRefDialog"
+                >
+                  {{ t.common.cancel }}
+                </button>
+                <button
+                  type="submit"
+                  class="inline-flex h-8 items-center gap-1.5 rounded bg-primary px-3 text-xs font-bold text-on-primary disabled:cursor-wait disabled:opacity-70"
+                  :disabled="isAnyGitWriteRunning"
+                >
+                  <Check :size="13" />
+                  {{ isAnyGitWriteRunning ? "处理中" : "确认" }}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </Transition>
+    </Teleport>
+    <Teleport to="body">
       <div
         v-if="commitTooltip"
         class="commit-tooltip-panel fixed z-[70] flex w-max max-w-full select-text flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
@@ -5128,10 +5625,10 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               >
             </template>
           </div>
-          <div v-if="refPresentations(commitTooltip.commit.refs).length" class="mt-2 flex shrink-0 flex-wrap gap-1">
+          <div v-if="refPresentations(commitTooltip.commit).length" class="mt-2 flex shrink-0 flex-wrap gap-1">
             <span
-              v-for="ref in refPresentations(commitTooltip.commit.refs)"
-              :key="`tooltip-${commitTooltip.commit.hash}-${ref.refName}`"
+              v-for="ref in refPresentations(commitTooltip.commit)"
+              :key="`tooltip-${commitTooltip.commit.hash}-${ref.kind}-${ref.refName}`"
               :class="ref.className"
               :title="ref.refName"
             >
@@ -5147,57 +5644,200 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
         data-commit-context-menu
         role="menu"
         aria-label="提交操作"
-        class="themed-scrollbar fixed z-[75] max-h-80 w-[200px] overflow-y-auto rounded-md border border-outline-variant/70 bg-surface-container-lowest p-1 shadow-2xl"
+        class="fixed z-[75] w-fit min-w-[7.85rem] max-w-[13rem] rounded-md border border-outline-variant/70 bg-surface-container-lowest shadow-2xl"
         :style="commitContextMenuStyle"
         @click.stop
       >
-        <template v-if="commitLocalBranchNames(commitContextMenu.commit).length > 0">
-          <div
-            class="flex h-7 items-center gap-2 px-2 text-[10px] font-bold text-on-surface-variant"
-            role="presentation"
-          >
-            <ArrowRightLeft :size="14" />
-            <span>切换到分支</span>
-          </div>
+        <div v-overlay-scrollbar class="themed-scrollbar max-h-60 overflow-y-auto p-0.5">
           <button
-            v-for="branchName in commitLocalBranchNames(commitContextMenu.commit)"
-            :key="`${commitContextMenu.commit.hash}:${branchName}`"
             type="button"
             role="menuitem"
-            class="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] font-semibold text-on-surface transition-colors hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
-            :disabled="isGitActionRunning"
-            :title="branchCheckoutTitle(branchName)"
-            @click="handleCheckoutCommitBranch(branchName)"
+            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+            :disabled="isAnyGitWriteRunning"
+            @click="openRefDialog('create-branch', commitContextMenu.commit)"
+            @keydown="handleCommitMenuKeydown($event, 'main')"
           >
-            <GitBranch :size="13" class="shrink-0 text-on-surface-variant" />
-            <span class="min-w-0 flex-1 truncate">{{ branchName }}</span>
-            <span
-              v-if="branchName === snapshot?.branch && !snapshot?.isDetachedHead"
-              class="shrink-0 text-[9px] text-on-surface-variant/70"
+            <GitBranch :size="12" class="text-status-warning" />
+            <span>新建分支</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+            :disabled="isAnyGitWriteRunning"
+            @click="openRefDialog('create-tag', commitContextMenu.commit)"
+            @keydown="handleCommitMenuKeydown($event, 'main')"
+          >
+            <Tag :size="12" class="text-tertiary" />
+            <span>新建标签</span>
+          </button>
+          <div
+            v-if="commitTagRefs(commitContextMenu.commit).length"
+            role="menuitem"
+            tabindex="0"
+            data-tag-list
+            aria-haspopup="menu"
+            :aria-expanded="commitSubmenu?.kind === 'tags'"
+            class="flex h-7 w-full cursor-default items-center gap-1.5 rounded px-1.5 text-[10px] font-medium text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+            @click="
+              openCommitSubmenu(
+                { kind: 'tags', tags: commitTagRefs(commitContextMenu.commit) },
+                $event.currentTarget as HTMLElement,
+              )
+            "
+            @mouseenter="
+              openCommitSubmenu(
+                { kind: 'tags', tags: commitTagRefs(commitContextMenu.commit) },
+                $event.currentTarget as HTMLElement,
+              )
+            "
+            @keydown="handleCommitMenuKeydown($event, 'main')"
+          >
+            <Trash2 :size="12" class="text-status-error" />
+            <span>删除标签</span>
+            <ChevronRight :size="11" class="ml-auto shrink-0 text-on-surface-variant" />
+          </div>
+          <div class="mx-1 my-0.5 border-t border-border-subtle" role="separator" />
+          <template v-if="commitBranchRefs(commitContextMenu.commit).length">
+            <div
+              v-for="(branch, branchIndex) in commitBranchRefs(commitContextMenu.commit)"
+              :key="`${commitContextMenu.commit.hash}:${branch.kind}:${branch.name}`"
+              role="menuitem"
+              tabindex="0"
+              :data-branch-index="branchIndex"
+              aria-haspopup="menu"
+              :aria-expanded="
+                commitSubmenu?.kind === 'branch' &&
+                commitSubmenu.branch.kind === branch.kind &&
+                commitSubmenu.branch.name === branch.name
+              "
+              class="flex h-7 w-full cursor-default items-center gap-1 rounded px-1 text-[10px] font-medium text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+              @click="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
+              @mouseenter="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
+              @keydown="handleCommitMenuKeydown($event, 'main')"
             >
-              当前
+              <component
+                :is="branch.kind === 'remote' ? Cloud : GitBranch"
+                :size="12"
+                class="shrink-0 text-on-surface-variant"
+              />
+              <button
+                type="button"
+                tabindex="-1"
+                class="min-w-0 max-w-[8.5rem] truncate rounded border border-border-subtle bg-surface-container-low px-1 py-0.5 font-mono text-[9px] font-bold hover:border-primary/60"
+                :title="copiedText === branch.name ? '已复制' : `点击复制完整分支名：${branch.name}`"
+                @click.stop="copyBranchRef(branch.name)"
+              >
+                {{ branch.name }}
+              </button>
+              <span v-if="branch.current" class="ml-auto shrink-0 text-[8px] text-on-surface-variant">当前</span>
+              <ChevronRight
+                :size="11"
+                :class="cn('shrink-0 text-on-surface-variant', branch.current ? '' : 'ml-auto')"
+              />
+            </div>
+          </template>
+          <button
+            v-else
+            type="button"
+            role="menuitem"
+            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-on-surface transition-colors hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="isAnyGitWriteRunning || !canCheckoutDetachedCommit(commitContextMenu.commit)"
+            :title="detachedCheckoutTitle(commitContextMenu.commit)"
+            @click="handleCheckoutCommit(commitContextMenu.commit)"
+            @keydown="handleCommitMenuKeydown($event, 'main')"
+          >
+            <GitCommitHorizontal :size="12" class="shrink-0 text-on-surface-variant" />
+            <span class="min-w-0 flex-1 truncate">
+              {{ activeGitAction === `checkout:${commitContextMenu.commit.hash}` ? "正在切换" : "切换（分离 HEAD）" }}
             </span>
           </button>
-        </template>
-        <button
-          v-else
-          type="button"
-          role="menuitem"
-          class="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-on-surface transition-colors hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
-          :disabled="isGitActionRunning || !canCheckoutDetachedCommit(commitContextMenu.commit)"
-          :title="detachedCheckoutTitle(commitContextMenu.commit)"
-          @click="handleCheckoutCommit(commitContextMenu.commit)"
-        >
-          <GitCommitHorizontal :size="13" class="shrink-0 text-on-surface-variant" />
-          <span class="min-w-0 flex-1 truncate text-[11px] font-semibold">
-            {{ activeGitAction === `checkout:${commitContextMenu.commit.hash}` ? "正在切换" : "切换到此提交" }}
-          </span>
-          <span
-            class="shrink-0 rounded bg-surface-container-high px-1 py-0.5 text-[8px] font-bold text-on-surface-variant"
-          >
-            分离 HEAD
-          </span>
-        </button>
+        </div>
+      </div>
+      <div
+        v-if="commitSubmenu && commitContextMenu"
+        ref="commitSubmenuRef"
+        data-commit-context-menu
+        role="menu"
+        :aria-label="commitSubmenu.kind === 'branch' ? `${commitSubmenu.branch.name} 操作` : '删除标签'"
+        class="fixed z-[76] w-fit min-w-[7.85rem] max-w-[13rem] rounded-md border border-outline-variant/70 bg-surface-container-lowest shadow-2xl"
+        :style="commitSubmenuStyle"
+        @click.stop
+      >
+        <div v-overlay-scrollbar class="themed-scrollbar max-h-60 overflow-y-auto p-0.5">
+          <template v-if="commitSubmenu.kind === 'branch'">
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:opacity-45"
+              :disabled="isAnyGitWriteRunning || commitSubmenu.branch.current"
+              @click="
+                commitSubmenu.branch.kind === 'local'
+                  ? handleCheckoutCommitBranch(commitSubmenu.branch.name)
+                  : (closeCommitContextMenu(), executeCheckoutRemoteBranch(commitSubmenu.branch.name))
+              "
+              @keydown="handleCommitMenuKeydown($event, 'submenu')"
+            >
+              <GitBranch :size="12" />
+              <span class="truncate">{{
+                commitSubmenu.branch.kind === "local" ? "切换到分支" : "检出为 tracking 分支"
+              }}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:opacity-45"
+              :disabled="isAnyGitWriteRunning || !canCheckoutDetachedCommit(commitContextMenu.commit)"
+              @click="handleCheckoutCommit(commitContextMenu.commit)"
+              @keydown="handleCommitMenuKeydown($event, 'submenu')"
+            >
+              <GitCommitHorizontal :size="12" />
+              <span>分离 HEAD 查看</span>
+            </button>
+            <template v-if="commitSubmenu.branch.kind === 'local'">
+              <div class="mx-1 my-0.5 border-t border-border-subtle" role="separator" />
+              <button
+                type="button"
+                role="menuitem"
+                class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+                :disabled="isAnyGitWriteRunning"
+                @click="openRefDialog('rename-branch', commitContextMenu.commit, commitSubmenu.branch.name)"
+                @keydown="handleCommitMenuKeydown($event, 'submenu')"
+              >
+                <Pencil :size="12" />
+                <span>重命名分支</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-status-error hover:bg-status-error/10 focus-visible:bg-status-error/10 focus-visible:outline-none disabled:opacity-40"
+                :disabled="isAnyGitWriteRunning || commitSubmenu.branch.current"
+                :title="commitSubmenu.branch.current ? '不能删除当前检出的分支' : '先执行安全删除'"
+                @click="requestDeleteBranch(commitSubmenu.branch)"
+                @keydown="handleCommitMenuKeydown($event, 'submenu')"
+              >
+                <Trash2 :size="12" />
+                <span>删除分支</span>
+              </button>
+            </template>
+          </template>
+          <template v-else>
+            <button
+              v-for="tagName in commitSubmenu.tags"
+              :key="tagName"
+              type="button"
+              role="menuitem"
+              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-status-error hover:bg-status-error/10 focus-visible:bg-status-error/10 focus-visible:outline-none disabled:opacity-40"
+              :disabled="isAnyGitWriteRunning"
+              :title="`删除标签 ${tagName}`"
+              @click="requestDeleteTag(tagName)"
+              @keydown="handleCommitMenuKeydown($event, 'submenu')"
+            >
+              <Tag :size="12" class="shrink-0" />
+              <span class="min-w-0 max-w-[9rem] truncate font-mono">{{ tagName }}</span>
+            </button>
+          </template>
+        </div>
       </div>
     </Teleport>
   </div>

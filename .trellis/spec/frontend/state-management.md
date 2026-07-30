@@ -1315,7 +1315,7 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 
 - `ProjectGitFileChange = { path: string; originalPath?: string; additions: number; deletions: number; status: ...; staged?: boolean; unstaged?: boolean }`
 - `ProjectGitBranchSummary = { name: string; current: boolean }`
-- `ProjectGitActionResult = { ok: boolean; message: string; path?: string; paths?: string[]; count?: number; branch?: string; commitHash?: string; isDetachedHead?: boolean }`
+- `ProjectGitActionResult = { ok: boolean; message: string; blockReason?: "dirty-worktree" | "unmerged-branch"; path?: string; paths?: string[]; count?: number; branch?: string; commitHash?: string; isDetachedHead?: boolean }`
 - `ProjectGitCommitMessageDiffResult = { ok: boolean; scope: "staged" | "working-tree"; diff: string; truncated?: boolean; message?: string }`
 - `ProjectGitStatusSnapshot = { branch: string; headHash?: string; isDetachedHead?: boolean; ahead: number; behind: number; files: ProjectGitFileChange[]; branches?: ProjectGitBranchSummary[]; repositoryPath: string; lastRefreshedAt: string; statusText: string }`
 - `ProjectGitCommitPage = { commits: ProjectGitCommitSummary[]; hasMoreCommits?: boolean; repositoryPath: string; lastRefreshedAt: string }`
@@ -1330,7 +1330,12 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - `ProjectBridge.discardGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>`
 - `ProjectBridge.commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>`
 - `ProjectBridge.switchGitBranch(projectPath: string, branchName: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>`
-- `ProjectBridge.checkoutGitCommit(projectPath: string, commitHash: string, options?: { force?: boolean; preferredBranch?: string }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.checkoutGitCommit(projectPath: string, commitHash: string, options?: { force?: boolean; preferredBranch?: string; detach?: boolean }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.createGitBranch(projectPath: string, branchName: string, commitHash: string, options?: { checkout?: boolean; force?: boolean }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.createGitTag(projectPath: string, tagName: string, commitHash: string, options?: { annotated?: boolean; message?: string }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.renameGitBranch(projectPath: string, branchName: string, nextBranchName: string): Promise<ProjectGitActionResult>`
+- `ProjectBridge.deleteGitBranch(projectPath: string, branchName: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.checkoutGitRemoteBranch(projectPath: string, remoteRef: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>`
 - `ProjectBridge.readGitCommitMessageDiff(projectPath: string): Promise<ProjectGitCommitMessageDiffResult>`
 
 ### 3. Contracts
@@ -1339,6 +1344,7 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - Store actions resolve the project id to the project path, call the bridge, and choose the lightest post-write refresh that preserves correctness.
 - Stage/unstage single-file and batch actions should bump the Git mutation version and refresh `readGitStatusSnapshot(project.path)` after successful writes. They must not reread commit history on the success path.
 - Commit, branch switch, checkout, and discard actions can change HEAD, refs, or file contents beyond index-only state; refresh `readGitSnapshot(project.path, { limit: 80, skip: 0 })` after successful results.
+- Create/rename/delete branch, create tag, tracking checkout, branch switch, and commit checkout are ref mutations. Route them through `runAuthorizedGitWrite` with `{ refresh: "full", refs: true }` so every related repository snapshot and stale ref request is invalidated.
 - Full refresh and lightweight status refresh may overlap. The store must track mutation/ref versions so a stale full refresh does not overwrite newer status/files, and so full refresh commit pages are only merged when no ref-changing mutation happened after the full refresh started.
 - Browser fallback must implement the same methods and return user-facing unavailable messages instead of throwing.
 - Preload Git write commands must use argument arrays with `spawnSync` or `execFileSync`, e.g. `git -C <repo> add -- <path>`. Do not build shell command strings for Git writes.
@@ -1351,6 +1357,9 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
   - prefer `options.preferredBranch`, then the symbolic current branch, then `main`, `master`, `develop`, then the first matching local branch;
   - if no local branch tip matches, use `git switch --detach <hash>`.
     The UI must show an app-rendered danger confirmation before calling `checkoutGitCommit(..., { force: true })`; forced checkout may use `--discard-changes` and discard local uncommitted changes.
+  - `checkoutGitCommit(..., { detach: true })` bypasses branch-tip preference and always enters detached HEAD. Branch-aware and explicit-detached actions must not share an ambiguous UI label.
+  - Create-and-switch and remote tracking checkout must return `blockReason: "dirty-worktree"` before creating or switching refs when confirmation is required. Do not infer this state from localized messages.
+  - Local branch deletion first uses safe semantics. An unmerged branch returns `blockReason: "unmerged-branch"`; only a second app-rendered danger confirmation may call `deleteGitBranch(..., { force: true })`. Current branch deletion remains rejected at both UI and preload boundaries.
 - `readGitSnapshot` must expose `headHash` and `isDetachedHead` so the Git tab can render `HEAD @ <hash>`, detached HEAD badges, and current-commit markers after checkout.
 - `readGitCommitMessageDiff` prefers `git diff --cached`; when no staged diff exists, it falls back to the working-tree diff and bounded untracked-file summaries for AI commit message generation.
 - The Git tab left sidebar follows a VS Code Source Control-style compact panel convention: commit textarea first, adjacent icon-only commit/AI actions, one dense changed-files toolbar row with W/S counts and bulk actions, compact file rows, subtle dividers, and no stacked card sections or explanatory helper paragraphs inside the sidebar. Do not render action/status messages directly under the commit textarea; use refreshed state, button loading/disabled states, app dialogs, or the top Git status area instead. The changed-files toolbar label should stay short (currently `变更`) and should not spend space on total changed-file count or scroll-to-top/bottom controls.
@@ -1366,6 +1375,7 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - Commit with no staged diff -> bridge returns `{ ok: false, message: "没有 staged 变更可提交。" }`.
 - Discard untracked directory or non-file path -> bridge returns a failure message asking the user to handle it in the file system.
 - Branch switch with uncommitted changes and no force option -> bridge returns `{ ok: false, message: "当前工作区存在未提交变更..." }` and does not run `git switch`.
+- Dirty ref-changing checkout without force -> bridge also returns `blockReason: "dirty-worktree"`; no branch/tag mutation occurs before confirmation.
 - Branch switch with uncommitted changes after app confirmation -> UI calls `switchGitBranch(..., { force: true })`; preload runs `git switch --discard-changes -- <branch>`, returns `{ ok: true, branch }` on success, and the store refreshes the snapshot.
 - Unknown local branch -> bridge returns `{ ok: false, message: "只能切换到已有本地分支。" }`.
 - Commit checkout with uncommitted changes and no force option -> bridge returns `{ ok: false, commitHash, message: "当前工作区存在未提交变更..." }` and does not run `git switch --detach`.
@@ -1374,6 +1384,7 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - Commit checkout target equals a local branch tip -> bridge returns `{ ok: true, branch, commitHash, isDetachedHead: false }`, and the refreshed snapshot should show the branch name rather than detached HEAD.
 - Commit checkout target is not any local branch tip -> bridge returns `{ ok: true, commitHash, isDetachedHead: true }`, and the refreshed snapshot should show detached HEAD.
 - Detached HEAD snapshot -> `branch` may be `"HEAD"`, `isDetachedHead` is `true`, and `headHash` carries the current short commit hash for UI labels.
+- Safe delete of an unmerged branch -> bridge returns `blockReason: "unmerged-branch"` and leaves the branch intact; force delete is attempted only after the second danger confirmation.
 
 ### 5. Good/Base/Bad Cases
 
@@ -1383,6 +1394,8 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - Good: the changed-files panel keeps stage/unstage/discard controls in the header and shows immediate per-file loading feedback before the refreshed snapshot arrives.
 - Good: switching to a clean local branch refreshes branch, graph, files, and command-running views naturally see the new working tree.
 - Good: checking out a selected commit from the commit detail dialog switches back to a matching local branch tip when one exists; otherwise it enters detached HEAD, refreshes files/branch/graph, and highlights the current commit through `headHash`.
+- Good: creating a branch without checkout changes only refs; checking the opt-in box performs one atomic create-and-switch operation after any required dirty-worktree confirmation.
+- Good: local and remote ref actions share authorized repository routing but expose different UI capabilities and preload commands.
 - Base: browser preview shows safe unavailable messages for write actions but still renders the Git tab.
 - Bad: a component directly calls `window.projectBridge.commitGitStaged(...)` and then forgets to refresh `project.git`.
 - Bad: running `spawn("git add " + filePath, { shell: true })`, which creates shell injection risk.
@@ -1393,6 +1406,8 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 
 - `npm run type-check` should verify bridge contracts across `src/types.ts`, fallback bridge, store actions, and components.
 - `npm run build` should verify the Git tab template compiles.
+- `npm run validate:git-commits` should verify structured refs and every branch/tag mutation against a real temporary repository.
+- `npx vitest run src/lib/projectBridge.workspace.test.ts` should verify exact repository routing, stale-target rejection, and ref invalidation for the new store actions.
 - Manual uTools smoke test: stage, unstage, discard a single file after confirmation, commit staged changes, and confirm each successful action refreshes the snapshot.
 - Manual uTools smoke test: attempt branch switching with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-switches and refreshes branch/files/graph. Then switch on a clean worktree and verify the branch and graph refresh.
 - Manual uTools smoke test: attempt commit checkout with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-checks out the selected commit and refreshes detached HEAD/current commit state. Then checkout a clean selected commit and verify detached HEAD/current commit state is visible.

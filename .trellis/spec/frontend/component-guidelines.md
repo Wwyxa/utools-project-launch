@@ -484,6 +484,31 @@ while (directory.files.length === 0 && directory.directories.size === 1) {
 
 **Related**: `src/components/project/GitTab.vue`, Streaming AI Bridge Actions in `state-management.md`.
 
+### Convention: Nested Git Commit Context Menus
+
+**What**: Git commit rows use one compact teleported context menu for commit-level actions and one sibling submenu for actions that depend on a structured local or remote branch ref.
+
+**Why**: A commit can point to multiple local and remote refs with different capabilities. A flat action list either duplicates ambiguous actions or incorrectly exposes local rename/delete behavior for remote-tracking refs. Nested menus preserve the compact history surface while keeping ref kind and risk visible.
+
+**Rules**:
+
+- Keep menu and submenu state local to `GitTab.vue`; use structured commit refs to choose actions instead of guessing from labels.
+- List every local and remote branch ref that points to the commit. Local submenus may switch, explicitly detach, rename, and delete; remote submenus may create a tracking checkout or explicitly detach, but must not expose local rename/delete.
+- Keep commit-level create-branch/create-tag actions in the first group. When no branch ref exists, show one explicit detached checkout item after the separator.
+- Let the branch-name badge copy the complete name and provide tooltip/toast feedback; do not add a separate copy icon to each row.
+- Render both levels through `Teleport`, measure after `nextTick`, and clamp with actual DOM dimensions. The state fields consumed by the style must receive the clamped values: the current main menu uses `x/y`, while the submenu uses `left/top`.
+- Internal scrolling of an overflowed main menu must keep the main menu open and close only its now-unanchored submenu. Window or history-panel scroll, resize, outside pointerdown, repository replacement, and unmount close both levels.
+- Support ArrowUp/ArrowDown/Home/End within each level, ArrowRight into a branch submenu, ArrowLeft back to the parent row, hierarchical Escape, and final focus restoration to the context-menu opener.
+- Use `ProjectActionDialog` for destructive confirmations. Do not add native confirmations or make a confirmation-only component own create/rename/tag form fields.
+
+**Validation**:
+
+- Open at every viewport edge and assert both rectangles retain the configured inset; test right-side submenu fallback to the left.
+- Force enough branch rows to scroll, scroll the main menu, and assert the main remains open while the submenu closes.
+- Test mouse, ContextMenu/Shift+F10, direction keys, Escape hierarchy, focus restoration, long/comma-containing names, copy feedback, current-branch restrictions, and local/remote action differences.
+
+**Related**: `src/components/project/GitTab.vue`, Git Commit Ref And Mutation Boundary in `type-safety.md`.
+
 ### Convention: Markdown Commit Tooltips
 
 **What**: Git commit rows may show a delayed structured markdown tooltip for the full commit details, while the row itself stays compact and displays only the short hash, subject, refs, author, and relative time.

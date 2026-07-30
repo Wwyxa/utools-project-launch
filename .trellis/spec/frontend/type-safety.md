@@ -169,6 +169,81 @@ const body = commitTooltipBody(commit);
 
 Keep tooltip parsing explicit and format-aware so the dense row can show the raw subject while the tooltip shows a readable title plus markdown body.
 
+## Scenario: Git Commit Ref And Mutation Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: commit decorations and branch/tag mutations cross `public/preload.js`, `ProjectBridge`, Pinia, and `GitTab.vue`.
+- Trigger: local branches, remote-tracking refs, tags, HEAD state, dirty-worktree blockers, and unmerged-delete blockers change UI capabilities and data-loss confirmations.
+
+### 2. Signatures
+
+- `ProjectGitCommitRefKind = "head" | "local" | "remote" | "tag"`.
+- `ProjectGitCommitRef = { kind: ProjectGitCommitRefKind; name: string; head?: boolean }`.
+- `ProjectGitCommitSummary.refNames?: ProjectGitCommitRef[]`; legacy `refs?: string` remains a compatibility fallback.
+- `ProjectGitActionBlockReason = "dirty-worktree" | "unmerged-branch"`.
+- `ProjectGitActionResult.blockReason?: ProjectGitActionBlockReason`.
+- Bridge/store actions: `createGitBranch(..., { checkout?, force? })`, `createGitTag(..., { annotated?, message? })`, `renameGitBranch(...)`, `deleteGitBranch(..., { force? })`, `checkoutGitRemoteBranch(..., { force? })`, and `checkoutGitCommit(..., { detach?, force?, preferredBranch? })`.
+
+### 3. Contracts
+
+- Real preload commit reads must populate structured refs from full ref namespaces. GitTab prefers `refNames`; only legacy/browser fixtures may fall back to parsing `refs`.
+- Build one ref map with `git for-each-ref`; do not split `%D` by comma as the authoritative protocol. Peel annotated tags to their target commit and preserve Git-valid comma names.
+- `kind` decides UI capabilities. Never infer local/remote/tag behavior from color, display text, or a hard-coded remote prefix when structured data exists.
+- Preload validates names with `git check-ref-format`, validates `<hash>^{commit}`, and treats same names in `refs/heads` and `refs/tags` as valid independent refs.
+- Dirty atomic create-and-switch, tracking checkout, branch switch, and detached checkout return `blockReason: "dirty-worktree"` before mutation. UI may pass `force: true` only after the app-rendered destructive confirmation.
+- Safe delete returns `blockReason: "unmerged-branch"` without deleting. Force delete is a separate confirmed call; current branch deletion is rejected in UI and preload.
+- `detach: true` must bypass matching local branch tips and always enter detached HEAD.
+- Every ref mutation routes through the store with full refresh and `refs: true`, so stale repository snapshots cannot overwrite the result.
+
+### 4. Validation & Error Matrix
+
+- Git-valid local/tag name containing comma -> one structured ref with the complete name.
+- Annotated tag -> tag decoration maps to the peeled commit, not the tag object id.
+- Invalid or same-namespace duplicate name -> failed action with a user-facing Git validation message; no ref changes.
+- Branch and tag share the same short name -> both succeed and remain distinguishable by `kind`.
+- Dirty create-and-switch without force -> `dirty-worktree`; branch is not created. Confirmed force -> one atomic create-and-switch action.
+- Safe delete of an unmerged branch -> `unmerged-branch`; branch remains. Confirmed force -> delete attempt uses `-D`.
+- Delete current or linked-worktree branch -> Git rejection remains authoritative; no hidden retry.
+- Remote-tracking ref -> tracking checkout or detached checkout only; local rename/delete APIs are not called.
+- Browser fallback -> same method signatures return typed unavailable results instead of throwing.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `feature/a,b` arrives as one local ref, opens a local submenu, copies intact, and survives a full ref refresh.
+- Good: an unmerged delete attempt opens a second danger confirmation only after the typed blocker result.
+- Base: an older browser fixture has only `refs`; GitTab uses the compatibility parser and existing local branch snapshot.
+- Bad: `commit.refs.split(",")` controls real local/remote actions; a valid comma name becomes two fake refs.
+- Bad: `result.message.includes("未提交变更")` selects a destructive flow; localization or changed wording silently bypasses the intended blocker.
+- Bad: a remote label is passed to local `git branch -m` or `git branch -d`.
+
+### 6. Tests Required
+
+- `npm run validate:git-commits` must use a real temporary repository and assert comma refs, peeled annotated tags, namespace coexistence, atomic create/switch, typed dirty and unmerged blockers, safe/force delete, tracking checkout, current-branch restrictions, and explicit detached checkout.
+- `npx vitest run src/lib/projectBridge.workspace.test.ts` must assert exact repository target routing, stale-target rejection, and full ref refresh for the new store actions.
+- Run `node --check public/preload.js`, `npm run type-check`, and `npm run build` after changing these contracts.
+- Browser/uTools smoke must check local/remote submenu differences, confirmations, copied-name feedback, viewport clamping, and snapshot refresh.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const refs = commit.refs?.split(",") || [];
+if (!result.ok && result.message.includes("未提交变更")) requestForce();
+```
+
+This treats ambiguous presentation text and localized error text as domain protocols.
+
+#### Correct
+
+```ts
+const refs = commit.refNames ?? legacyRefPresentations(commit.refs);
+if (!result.ok && result.blockReason === "dirty-worktree") requestForce();
+```
+
+Keep ref kind and risk reasons structured across every layer; use text only for display.
+
 ## Scenario: Git Commit Tooltip Detail Enrichment Boundary
 
 ### 1. Scope / Trigger
