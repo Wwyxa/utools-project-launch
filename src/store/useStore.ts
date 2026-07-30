@@ -2227,7 +2227,7 @@ export const useStore = defineStore("app", {
     },
     async refreshGitSnapshot(
       projectId: string,
-      options: { force?: boolean } = {},
+      options: { force?: boolean; maxAgeMs?: number } = {},
       target: ProjectGitRepositoryTarget = { kind: "main" },
     ) {
       const context = this.resolveGitRepositoryContext(projectId, target);
@@ -2236,6 +2236,20 @@ export const useStore = defineStore("app", {
       const existingRefresh = gitSnapshotRefreshPromises.get(context.contextKey);
       if (existingRefresh && !options.force) {
         return existingRefresh;
+      }
+
+      const currentSnapshot = this.gitSnapshotForRepository(projectId, target);
+      const refreshedAt = Date.parse(currentSnapshot?.lastRefreshedAt || "");
+      const snapshotAgeMs = Date.now() - refreshedAt;
+      if (
+        !options.force &&
+        typeof options.maxAgeMs === "number" &&
+        options.maxAgeMs > 0 &&
+        Number.isFinite(refreshedAt) &&
+        snapshotAgeMs >= 0 &&
+        snapshotAgeMs < options.maxAgeMs
+      ) {
+        return;
       }
 
       this.gitRepositoryRefreshing[context.contextKey] = true;

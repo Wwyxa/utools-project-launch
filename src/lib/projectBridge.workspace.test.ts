@@ -349,6 +349,50 @@ describe("browser Git workspace fallback", () => {
     });
   });
 
+  it("skips automatic full Git refreshes only while a snapshot is fresh", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async (repositoryPath) =>
+      gitSnapshot(repositoryPath, "refreshed"),
+    );
+    window.projectBridge = { ...getProjectBridge(), readGitSnapshot };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-fresh-snapshot", "C:\\project");
+    project.git = {
+      ...gitSnapshot(project.path, "fresh"),
+      lastRefreshedAt: new Date().toISOString(),
+    };
+    store.projects = [project];
+
+    await store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000 });
+    expect(readGitSnapshot).not.toHaveBeenCalled();
+
+    project.git = {
+      ...project.git,
+      lastRefreshedAt: new Date(Date.now() - 15_001).toISOString(),
+    };
+    await store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000 });
+    expect(readGitSnapshot).toHaveBeenCalledTimes(1);
+
+    project.git = { ...project.git, lastRefreshedAt: "not-a-date" };
+    await store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000 });
+    expect(readGitSnapshot).toHaveBeenCalledTimes(2);
+
+    project.git = {
+      ...project.git,
+      lastRefreshedAt: new Date().toISOString(),
+    };
+    await store.refreshGitSnapshot(project.id, { force: true, maxAgeMs: 15_000 });
+    await store.refreshGitSnapshot(project.id);
+    expect(readGitSnapshot).toHaveBeenCalledTimes(4);
+  });
+
   it("isolates full snapshots and deduplication by repository context", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },
