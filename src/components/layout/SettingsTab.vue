@@ -925,7 +925,7 @@ watch(
           <div class="flex items-center gap-2 text-sm text-on-surface-variant">
             <span class="font-medium">{{ t.settings.version }}</span>
             <span class="rounded-full bg-surface-variant px-2 py-0.5 font-mono text-xs text-on-surface-variant"
-              >v1.6.8</span
+              >v1.7.0</span
             >
           </div>
           <a
