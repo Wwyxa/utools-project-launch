@@ -34,7 +34,7 @@ const {
   orientation: "vertical",
   defaultFirstRatio: 0.34,
   minFirstSize: 88,
-  minSecondSize: 180,
+  minSecondSize: 192,
 });
 
 const scriptStatusLabel = (status: Project["scripts"][number]["status"]) => {

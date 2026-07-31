@@ -250,7 +250,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="h-full min-h-[14rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm"
+    class="h-full min-h-[12rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm"
   >
     <div
       class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3"
@@ -350,10 +350,11 @@ onBeforeUnmount(() => {
     <div class="min-h-0 flex-1 bg-surface-container-lowest">
       <div
         ref="scrollRef"
+        v-overlay-scrollbar
         @scroll="handleLogScroll"
         @wheel="handleLogWheel"
         @contextmenu="openContextMenu"
-        class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-on-surface [overscroll-behavior-y:contain]"
+        class="themed-scrollbar h-full overflow-y-auto px-0 py-3 font-mono text-xs leading-relaxed text-on-surface [overscroll-behavior-y:contain]"
       >
         <div v-for="(log, index) in filteredLogs" :key="index" class="flex mb-1 group">
           <span class="w-20 text-right mr-4 shrink-0 terminal-log-timestamp select-none">
@@ -363,13 +364,18 @@ onBeforeUnmount(() => {
             {{ log.message }}
           </span>
         </div>
-        <div v-if="logTargets.length === 0" class="text-on-surface-variant italic">
-          {{ t.terminal.ready }}
+        <div v-if="logTargets.length === 0" class="flex mb-1">
+          <span class="w-20 mr-4 shrink-0" aria-hidden="true" />
+          <span class="text-on-surface-variant italic">{{ t.terminal.ready }}</span>
         </div>
-        <div v-else-if="filteredLogs.length === 0" class="text-on-surface-variant italic">
-          {{ t.terminal.empty }}
+        <div v-else-if="filteredLogs.length === 0" class="flex mb-1">
+          <span class="w-20 mr-4 shrink-0" aria-hidden="true" />
+          <span class="text-on-surface-variant italic">{{ t.terminal.empty }}</span>
         </div>
-        <div class="animate-pulse text-primary mt-1">_</div>
+        <div class="flex mt-1">
+          <span class="w-20 mr-4 shrink-0" aria-hidden="true" />
+          <span class="animate-pulse text-primary">_</span>
+        </div>
       </div>
     </div>
     <Teleport to="body">
@@ -406,7 +412,7 @@ onBeforeUnmount(() => {
       </Transition>
     </Teleport>
     <form
-      class="flex items-center gap-2 border-t border-border-subtle bg-surface-container-low px-3 py-2"
+      class="flex shrink-0 items-center gap-1.5 border-t border-border-subtle bg-surface-container-low px-2 py-1"
       @submit.prevent="handleInputSubmit"
     >
       <input
