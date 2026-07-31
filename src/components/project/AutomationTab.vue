@@ -364,6 +364,27 @@ const statusDotClass = (status: string) =>
         : status === "skipped" || status === "missed"
           ? "bg-status-warning"
           : "bg-outline-variant";
+
+const taskSummary = computed(() => {
+  const summary = { enabled: 0, running: 0, failed: 0, missed: 0 };
+  for (const task of tasks.value) {
+    if (task.enabled) summary.enabled += 1;
+    const status = taskCurrentStatus(task);
+    if (status === "running") summary.running += 1;
+    if (status === "failed") summary.failed += 1;
+    if (status === "missed") summary.missed += 1;
+  }
+  return summary;
+});
+
+const taskSummaryText = computed(() =>
+  t.value.automation.summary
+    .replace("{enabled}", String(taskSummary.value.enabled))
+    .replace("{total}", String(tasks.value.length))
+    .replace("{running}", String(taskSummary.value.running))
+    .replace("{failed}", String(taskSummary.value.failed))
+    .replace("{missed}", String(taskSummary.value.missed)),
+);
 </script>
 
 <template>
@@ -372,11 +393,17 @@ const statusDotClass = (status: string) =>
       class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
     >
       <div class="ui-panel-header">
-        <div class="ui-panel-title">
-          <CalendarClock :size="14" class="text-primary" />
-          <span>{{ t.automation.title }}</span>
+        <div class="ui-panel-title min-w-0">
+          <CalendarClock :size="14" class="shrink-0 text-primary" />
+          <span class="shrink-0">{{ t.automation.title }}</span>
+          <span
+            v-if="tasks.length > 0"
+            class="min-w-0 truncate border-l border-border-subtle pl-2 text-[10px] font-normal text-on-surface-variant"
+          >
+            {{ t.automation.overview }} · {{ taskSummaryText }}
+          </span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <span class="ui-panel-meta">{{ tasks.length }}</span>
           <button
             type="button"
@@ -390,7 +417,7 @@ const statusDotClass = (status: string) =>
           </button>
         </div>
       </div>
-      <div class="themed-scrollbar h-full min-h-0 overflow-auto pb-12">
+      <div class="themed-scrollbar h-full min-h-0 overflow-auto pb-6">
         <div
           v-if="actionFeedback"
           :class="
@@ -408,12 +435,18 @@ const statusDotClass = (status: string) =>
         </div>
         <div
           v-if="tasks.length === 0"
-          class="m-3 flex flex-col items-start gap-3 rounded-lg border border-dashed border-border-subtle bg-surface-container-low p-6 text-sm text-on-surface-variant"
+          class="flex min-h-full flex-col items-center justify-center px-4 py-8 text-center"
         >
-          <span>{{ t.automation.empty }}</span>
+          <span
+            class="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-surface-container-low text-primary"
+          >
+            <CalendarClock :size="18" />
+          </span>
+          <span class="text-sm font-semibold text-on-surface">{{ t.automation.empty }}</span>
+          <p class="mt-1 max-w-sm text-xs leading-5 text-on-surface-variant">{{ t.automation.formHint }}</p>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90"
+            class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90"
             @click="openCreateTask"
           >
             <Plus :size="13" />
@@ -423,9 +456,9 @@ const statusDotClass = (status: string) =>
         <article
           v-for="task in tasks"
           :key="task.id"
-          class="border-b border-border-subtle px-3 py-4 transition-colors even:bg-surface-container-low first:pt-3 last:border-b-0 last:pb-3 hover:bg-surface-container-low"
+          class="border-b border-border-subtle px-3 py-3 transition-colors even:bg-surface-container-low first:pt-3 last:border-b-0 last:pb-3 hover:bg-surface-container-low"
         >
-          <div class="flex items-start justify-between gap-3">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div class="flex min-w-0 flex-1 items-start gap-2">
               <span
                 :class="cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', statusDotClass(taskCurrentStatus(task)))"
@@ -452,7 +485,9 @@ const statusDotClass = (status: string) =>
                 </p>
               </div>
             </div>
-            <div class="flex shrink-0 items-center gap-0.5">
+            <div
+              class="flex flex-wrap items-center gap-0.5 border-t border-border-subtle pt-1.5 sm:shrink-0 sm:border-l sm:border-t-0 sm:pl-2 sm:pt-0"
+            >
               <button
                 type="button"
                 class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
@@ -523,8 +558,8 @@ const statusDotClass = (status: string) =>
               </button>
             </div>
           </div>
-          <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1.5 text-xs">
-            <div class="flex min-w-0 items-center gap-1.5">
+          <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border-subtle pt-2 text-xs sm:grid-cols-3">
+            <div class="col-span-2 flex min-w-0 items-center gap-1.5 sm:col-span-1">
               <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{ t.automation.nextRun }}</span>
               <span class="truncate font-mono font-bold text-on-surface">{{ formatDateTime(nextRun(task)) }}</span>
             </div>
@@ -556,7 +591,7 @@ const statusDotClass = (status: string) =>
               </span>
             </div>
           </div>
-          <div class="mt-2 flex flex-wrap items-center gap-1 pt-1">
+          <div class="mt-2 flex flex-wrap items-center gap-1 border-t border-border-subtle pt-2">
             <span
               v-for="entry in taskPlan(task).entries"
               :key="entry.id"
