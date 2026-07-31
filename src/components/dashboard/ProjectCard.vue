@@ -48,6 +48,12 @@ let visibleScriptMeasureFrame: number | null = null;
 
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
+const isWarning = computed(() => props.project.status === ProjectStatus.WARNING);
+const cardStatusLabel = computed(() => {
+  if (isRunning.value) return t.value.common.running;
+  if (isError.value) return t.value.common.error;
+  return t.value.common.warning;
+});
 const isTiny = computed(() => props.project.cardStyle === "tiny");
 const isUnavailable = computed(() => props.project.pathExists === false);
 const tinyRunTarget = computed(() => {
@@ -408,6 +414,22 @@ const handleDelete = (event: MouseEvent) => {
         >
           {{ project.name }}
         </h3>
+        <span
+          v-if="isRunning || isError || isWarning"
+          class="inline-flex shrink-0 items-center"
+          role="status"
+          :title="cardStatusLabel"
+          :aria-label="cardStatusLabel"
+        >
+          <span
+            :class="
+              cn(
+                'h-2 w-2 rounded-full',
+                isRunning ? 'bg-status-running animate-pulse' : isError ? 'bg-status-error' : 'bg-status-warning',
+              )
+            "
+          />
+        </span>
         <GripVertical
           v-if="isSorting"
           :size="14"
@@ -510,7 +532,13 @@ const handleDelete = (event: MouseEvent) => {
         :class="
           cn(
             'absolute -left-px -top-px -bottom-px w-[5px] rounded-l-lg rounded-r-none pointer-events-none',
-            isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'transparent',
+            isRunning
+              ? 'bg-status-running'
+              : isError
+                ? 'bg-status-error'
+                : isWarning
+                  ? 'bg-status-warning'
+                  : 'transparent',
           )
         "
       />
@@ -544,16 +572,25 @@ const handleDelete = (event: MouseEvent) => {
               {{ project.name }}
             </h3>
             <span
-              v-if="isRunning"
-              class="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-running/25 bg-status-running/10 px-1.5 py-0.5 text-[9px] font-bold text-status-running"
+              v-if="isRunning || isError || isWarning"
+              class="inline-flex shrink-0 items-center"
+              role="status"
+              :title="cardStatusLabel"
+              :aria-label="cardStatusLabel"
             >
-              <span class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse" />
-              {{ t.common.running }}
+              <span
+                :class="
+                  cn(
+                    'h-2 w-2 rounded-full',
+                    isRunning ? 'bg-status-running animate-pulse' : isError ? 'bg-status-error' : 'bg-status-warning',
+                  )
+                "
+              />
             </span>
           </div>
         </div>
 
-        <div v-if="isSorting || quickLink || isError" class="flex shrink-0 items-center justify-end gap-1">
+        <div v-if="isSorting || quickLink" class="flex shrink-0 items-center justify-end gap-1">
           <button
             v-if="quickLink && !isSorting"
             type="button"
@@ -570,20 +607,6 @@ const handleDelete = (event: MouseEvent) => {
             :size="16"
             class="shrink-0 text-on-surface-variant/55 dark:text-on-surface-variant"
           />
-
-          <div
-            v-else-if="isError"
-            :class="
-              cn(
-                'inline-flex shrink-0 items-center gap-1 rounded-full border border-status-error/25 bg-status-error/10 px-1.5 py-0.5 text-[9px] font-bold text-status-error',
-              )
-            "
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-status-error" />
-            <span class="truncate">
-              {{ t.common.error }}
-            </span>
-          </div>
         </div>
       </div>
 
@@ -808,7 +831,13 @@ const handleDelete = (event: MouseEvent) => {
       :class="
         cn(
           'absolute -left-px -top-px -bottom-px w-[5px] rounded-l-lg rounded-r-none pointer-events-none',
-          isRunning ? 'bg-status-running' : isError ? 'bg-status-error' : 'transparent',
+          isRunning
+            ? 'bg-status-running'
+            : isError
+              ? 'bg-status-error'
+              : isWarning
+                ? 'bg-status-warning'
+                : 'transparent',
         )
       "
     />
