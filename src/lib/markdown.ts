@@ -110,7 +110,7 @@ const splitMarkdownDocument = (content: string): MarkdownDocumentParts => {
 
 const defaultImageRenderer =
   markdown.renderer.rules.image ||
-  ((tokens, index, options, environment, renderer) => renderer.renderToken(tokens, index, options));
+  ((tokens, index, options, _environment, renderer) => renderer.renderToken(tokens, index, options));
 
 markdown.renderer.rules.image = (tokens, index, options, environment: MarkdownRenderEnvironment, renderer) => {
   const token = tokens[index];

@@ -77,7 +77,6 @@ import type {
   ProjectVisibility,
   ProjectScript,
   ProjectScriptFormValue,
-  TerminalPreferences,
   TodoItem,
 } from "../types";
 

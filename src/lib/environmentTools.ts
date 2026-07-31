@@ -2,7 +2,6 @@ import type {
   BuiltinEnvironmentToolOverride,
   CustomEnvironmentTool,
   EnvironmentToolDefinition,
-  EnvironmentToolKey,
   EnvironmentToolRequest,
 } from "../types";
 
