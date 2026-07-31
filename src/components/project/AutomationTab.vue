@@ -39,6 +39,7 @@ const store = useStore();
 const t = useI18n();
 const editingTaskId = ref<string | null>(null);
 const formDialogOpen = ref(false);
+const historyDialogTaskId = ref<string | null>(null);
 const feedback = ref("");
 const actionFeedback = ref<{ message: string; tone: "success" | "warning" } | null>(null);
 const isMissedPolicyMenuOpen = ref(false);
@@ -86,6 +87,7 @@ const createDefaultForm = (): AutomationFormState => ({
 
 const form = reactive<AutomationFormState>(createDefaultForm());
 const tasks = computed(() => props.project.automationTasks || []);
+const historyDialogTask = computed(() => tasks.value.find((task) => task.id === historyDialogTaskId.value) || null);
 const activeProjectRunId = computed(() => store.automationActiveProjectRuns[props.project.id] || "");
 const today = computed(() => dateKey());
 const missedPolicyOptions = computed<{ id: ProjectAutomationMissedPolicy; label: string }[]>(() => [
@@ -116,9 +118,23 @@ const closeForm = () => {
   resetForm();
 };
 
+const openHistory = (task: ProjectAutomationTask) => {
+  historyDialogTaskId.value = task.id;
+};
+
+const closeHistory = () => {
+  historyDialogTaskId.value = null;
+};
+
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (isMissedPolicyMenuOpen.value) {
     isMissedPolicyMenuOpen.value = false;
+    event.detail.handle();
+    return;
+  }
+
+  if (historyDialogTaskId.value) {
+    closeHistory();
     event.detail.handle();
     return;
   }
@@ -300,6 +316,7 @@ const historyTime = (entry: ProjectAutomationHistoryEntry) =>
   new Date(entry.endedAt || entry.startedAt || entry.plannedAt || 0).getTime();
 const taskHistory = (task: ProjectAutomationTask) =>
   [...task.history].sort((left, right) => historyTime(right) - historyTime(left));
+const historyDialogEntries = computed(() => (historyDialogTask.value ? taskHistory(historyDialogTask.value) : []));
 const latestHistory = (task: ProjectAutomationTask) => taskHistory(task)[0];
 const runningEntry = (task: ProjectAutomationTask) =>
   task.dailyPlans.flatMap((plan) => plan.entries).find((entry) => entry.status === "running") || null;
@@ -336,6 +353,17 @@ const statusClass = (status: string) =>
         : status === "skipped" || status === "missed"
           ? "border-status-warning/30 bg-status-warning/10 text-status-warning"
           : "border-border-subtle bg-surface-container-low text-on-surface-variant";
+
+const statusDotClass = (status: string) =>
+  status === "running"
+    ? "bg-status-info"
+    : status === "completed"
+      ? "bg-status-running"
+      : status === "failed"
+        ? "bg-status-error"
+        : status === "skipped" || status === "missed"
+          ? "bg-status-warning"
+          : "bg-outline-variant";
 </script>
 
 <template>
@@ -362,12 +390,12 @@ const statusClass = (status: string) =>
           </button>
         </div>
       </div>
-      <div class="themed-scrollbar h-full min-h-0 space-y-3 overflow-auto p-3 pb-12">
+      <div class="themed-scrollbar h-full min-h-0 overflow-auto pb-12">
         <div
           v-if="actionFeedback"
           :class="
             cn(
-              'sticky top-0 z-10 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm',
+              'sticky top-0 z-10 mx-3 mt-3 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm',
               actionFeedback.tone === 'success'
                 ? 'border-status-running/30 bg-status-running/10 text-status-running'
                 : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
@@ -380,7 +408,7 @@ const statusClass = (status: string) =>
         </div>
         <div
           v-if="tasks.length === 0"
-          class="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border-subtle bg-surface-container-low p-6 text-sm text-on-surface-variant"
+          class="m-3 flex flex-col items-start gap-3 rounded-lg border border-dashed border-border-subtle bg-surface-container-low p-6 text-sm text-on-surface-variant"
         >
           <span>{{ t.automation.empty }}</span>
           <button
@@ -395,33 +423,39 @@ const statusClass = (status: string) =>
         <article
           v-for="task in tasks"
           :key="task.id"
-          class="rounded-lg border border-border-subtle bg-surface-container-low p-3"
+          class="border-b border-border-subtle px-3 py-4 transition-colors even:bg-surface-container-low first:pt-3 last:border-b-0 last:pb-3 hover:bg-surface-container-low"
         >
           <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="truncate text-sm font-bold text-on-surface">{{ task.name }}</h3>
-                <span
-                  :class="
-                    cn(
-                      'rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                      task.enabled
-                        ? 'border-status-running/30 bg-status-running/10 text-status-running'
-                        : 'border-border-subtle bg-surface text-on-surface-variant',
-                    )
-                  "
-                >
-                  {{ task.enabled ? t.automation.enabled : t.automation.disabled }}
-                </span>
+            <div class="flex min-w-0 flex-1 items-start gap-2">
+              <span
+                :class="cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', statusDotClass(taskCurrentStatus(task)))"
+                aria-hidden="true"
+              />
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="truncate text-sm font-bold text-on-surface">{{ task.name }}</h3>
+                  <span
+                    :class="
+                      cn(
+                        'rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                        task.enabled
+                          ? 'border-status-running/30 bg-status-running/10 text-status-running'
+                          : 'border-border-subtle bg-surface text-on-surface-variant',
+                      )
+                    "
+                  >
+                    {{ task.enabled ? t.automation.enabled : t.automation.disabled }}
+                  </span>
+                </div>
+                <p class="mt-1 truncate text-xs text-on-surface-variant">
+                  {{ task.scriptIds.map(scriptName).join(" -> ") }}
+                </p>
               </div>
-              <p class="mt-1 truncate text-xs text-on-surface-variant">
-                {{ task.scriptIds.map(scriptName).join(" -> ") }}
-              </p>
             </div>
-            <div class="flex shrink-0 items-center gap-1">
+            <div class="flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 :disabled="!canRunTaskNow(task)"
                 :title="t.automation.runNow"
                 :aria-label="t.automation.runNow"
@@ -433,10 +467,8 @@ const statusClass = (status: string) =>
                 type="button"
                 :class="
                   cn(
-                    'rounded-lg border p-1.5 text-on-surface-variant hover:bg-surface-variant',
-                    task.enabled
-                      ? 'border-status-running/30 bg-status-running/10 text-status-running'
-                      : 'border-border-subtle bg-surface',
+                    'rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant',
+                    task.enabled ? 'bg-status-running/10 text-status-running' : '',
                   )
                 "
                 :title="task.enabled ? t.automation.disableTask : t.automation.enableTask"
@@ -447,7 +479,7 @@ const statusClass = (status: string) =>
               </button>
               <button
                 type="button"
-                class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant"
                 :title="task.notifyEnabled ? t.automation.notificationsOn : t.automation.notificationsOff"
                 :aria-label="task.notifyEnabled ? t.automation.notificationsOn : t.automation.notificationsOff"
                 @click="store.updateAutomationTask(project.id, task.id, { notifyEnabled: !task.notifyEnabled })"
@@ -457,7 +489,7 @@ const statusClass = (status: string) =>
               </button>
               <button
                 type="button"
-                class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant"
                 :title="t.common.copy"
                 :aria-label="t.common.copy"
                 @click="duplicateTask(task)"
@@ -466,14 +498,23 @@ const statusClass = (status: string) =>
               </button>
               <button
                 type="button"
-                class="rounded-lg border border-border-subtle bg-surface px-2 py-1 text-xs font-semibold text-on-surface hover:bg-surface-variant"
+                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant"
+                :title="t.automation.history"
+                :aria-label="t.automation.history"
+                @click="openHistory(task)"
+              >
+                <History :size="14" />
+              </button>
+              <button
+                type="button"
+                class="rounded-md px-2 py-1 text-xs font-semibold text-on-surface transition-colors hover:bg-surface-variant"
                 @click="openEditTask(task)"
               >
                 {{ t.common.edit }}
               </button>
               <button
                 type="button"
-                class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-status-error/10 hover:text-status-error"
+                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-status-error/10 hover:text-status-error"
                 :title="t.common.delete"
                 :aria-label="t.common.delete"
                 @click="store.deleteAutomationTask(project.id, task.id)"
@@ -482,17 +523,19 @@ const statusClass = (status: string) =>
               </button>
             </div>
           </div>
-          <div class="mt-3 grid grid-cols-3 gap-2 text-xs">
-            <div class="rounded-lg border border-border-subtle bg-surface px-2 py-2">
-              <div class="text-[10px] font-semibold text-on-surface-variant">{{ t.automation.nextRun }}</div>
-              <div class="mt-1 truncate font-mono font-bold text-on-surface">{{ formatDateTime(nextRun(task)) }}</div>
+          <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1.5 text-xs">
+            <div class="flex min-w-0 items-center gap-1.5">
+              <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{ t.automation.nextRun }}</span>
+              <span class="truncate font-mono font-bold text-on-surface">{{ formatDateTime(nextRun(task)) }}</span>
             </div>
-            <div class="rounded-lg border border-border-subtle bg-surface px-2 py-2">
-              <div class="text-[10px] font-semibold text-on-surface-variant">{{ t.automation.latestResult }}</div>
-              <div
+            <div class="flex items-center gap-1.5">
+              <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{
+                t.automation.latestResult
+              }}</span>
+              <span
                 :class="
                   cn(
-                    'mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
                     statusClass(taskCurrentStatus(task)),
                   )
                 "
@@ -502,31 +545,34 @@ const statusClass = (status: string) =>
                   class="h-1.5 w-1.5 rounded-full bg-status-info animate-pulse"
                 />
                 {{ statusLabel(taskCurrentStatus(task)) }}
-              </div>
+              </span>
             </div>
-            <div class="rounded-lg border border-border-subtle bg-surface px-2 py-2">
-              <div class="text-[10px] font-semibold text-on-surface-variant">{{ t.automation.maxRuntime }}</div>
-              <div class="mt-1 font-mono font-bold text-on-surface">
+            <div class="flex items-center gap-1.5">
+              <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{
+                t.automation.maxRuntime
+              }}</span>
+              <span class="font-mono font-bold text-on-surface">
                 {{ formatMinutes(task.maxScriptRuntimeMinutes) }}
-              </div>
+              </span>
             </div>
           </div>
-          <div class="mt-3 flex flex-wrap gap-1.5">
+          <div class="mt-2 flex flex-wrap items-center gap-1 pt-1">
             <span
               v-for="entry in taskPlan(task).entries"
               :key="entry.id"
               :class="
                 cn(
-                  'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold',
+                  'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold',
                   statusClass(entry.status),
                 )
               "
             >
-              <Clock :size="11" /> {{ formatTime(entry.plannedAt) }} · {{ statusLabel(entry.status) }}
+              <Clock :size="10" />
+              {{ formatTime(entry.plannedAt) }} · {{ statusLabel(entry.status) }}
               <button
                 v-if="isFuturePendingPlanEntry(entry)"
                 type="button"
-                class="ml-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-surface text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                class="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-surface text-on-surface-variant hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 :disabled="!canRunPlanEntryEarly(task)"
                 :title="t.automation.runEarly"
                 :aria-label="t.automation.runEarly"
@@ -536,39 +582,78 @@ const statusClass = (status: string) =>
               </button>
             </span>
           </div>
-          <details class="mt-3 rounded-lg border border-border-subtle bg-surface px-3 py-2">
-            <summary
-              class="flex cursor-pointer list-none items-center gap-2 text-xs font-bold text-on-surface [&::-webkit-details-marker]:hidden"
-            >
-              <History :size="13" class="text-primary" /> {{ t.automation.history }}
-            </summary>
-            <div class="mt-2 space-y-2">
-              <div v-if="taskHistory(task).length === 0" class="text-xs text-on-surface-variant">
-                {{ t.common.noData }}
-              </div>
-              <div
-                v-for="entry in taskHistory(task)"
-                :key="entry.id"
-                class="rounded-md border border-border-subtle bg-surface-container-low px-2 py-2 text-xs"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <span
-                    :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', statusClass(entry.status))"
-                    >{{ statusLabel(entry.status) }}</span
-                  >
-                  <span class="font-mono text-[10px] text-on-surface-variant">{{ formatDateTime(entry.endedAt) }}</span>
-                </div>
-                <div class="mt-1 grid gap-1 text-[10px] text-on-surface-variant sm:grid-cols-2">
-                  <span>{{ t.automation.plannedAt }}: {{ formatDateTime(entry.plannedAt) }}</span>
-                  <span>{{ t.automation.finishedAt }}: {{ formatDateTime(entry.endedAt) }}</span>
-                </div>
-                <p v-if="entry.reason" class="mt-1 text-on-surface-variant">{{ entry.reason }}</p>
-              </div>
-            </div>
-          </details>
         </article>
       </div>
     </section>
+
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="historyDialogTask"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          @click.self="closeHistory"
+        >
+          <section
+            class="flex max-h-[78vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="automation-history-title"
+          >
+            <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+              <div class="min-w-0">
+                <h3 id="automation-history-title" class="text-sm font-bold text-on-surface">
+                  {{ t.automation.history }}
+                </h3>
+                <p class="mt-0.5 truncate text-xs text-on-surface-variant">{{ historyDialogTask.name }}</p>
+              </div>
+              <button
+                type="button"
+                class="rounded-md p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                :title="t.common.close"
+                :aria-label="t.common.close"
+                @click="closeHistory"
+              >
+                <X :size="16" />
+              </button>
+            </div>
+            <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-2">
+              <div v-if="historyDialogEntries.length === 0" class="py-6 text-xs text-on-surface-variant">
+                {{ t.common.noData }}
+              </div>
+              <table v-else class="min-w-[32rem] w-full border-collapse text-xs">
+                <tbody>
+                  <tr
+                    v-for="entry in historyDialogEntries"
+                    :key="entry.id"
+                    class="border-b border-border-subtle last:border-b-0"
+                  >
+                    <td class="py-2 pr-3">
+                      <span
+                        :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', statusClass(entry.status))"
+                      >
+                        {{ statusLabel(entry.status) }}
+                      </span>
+                    </td>
+                    <td class="whitespace-nowrap py-2 pr-3 font-mono text-[10px] text-on-surface">
+                      <span class="mr-1 font-sans font-semibold text-on-surface-variant">{{
+                        t.automation.plannedAt
+                      }}</span>
+                      {{ formatDateTime(entry.plannedAt) }}
+                    </td>
+                    <td class="whitespace-nowrap py-2 font-mono text-[10px] text-on-surface">
+                      <span class="mr-1 font-sans font-semibold text-on-surface-variant">{{
+                        t.automation.finishedAt
+                      }}</span>
+                      {{ formatDateTime(entry.endedAt) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <Transition name="scale">
@@ -595,8 +680,8 @@ const statusClass = (status: string) =>
               </button>
             </div>
             <div class="themed-scrollbar min-h-0 flex-1 overflow-auto p-4">
-              <div class="space-y-3 text-xs">
-                <section class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+              <div class="space-y-4 text-xs">
+                <section class="border-b border-border-subtle pb-4">
                   <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem]">
                     <label class="block">
                       <span class="mb-1 block font-semibold text-on-surface-variant">{{ t.automation.taskName }}</span>
@@ -619,19 +704,15 @@ const statusClass = (status: string) =>
                     </label>
                   </div>
                   <div class="mt-3 flex flex-wrap gap-2">
-                    <label
-                      class="inline-flex items-center gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 font-semibold text-on-surface"
-                    >
+                    <label class="inline-flex items-center gap-2 rounded-md px-1.5 py-1 font-semibold text-on-surface">
                       <input v-model="form.enabled" type="checkbox" /> {{ t.automation.enabled }}
                     </label>
-                    <label
-                      class="inline-flex items-center gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 font-semibold text-on-surface"
-                    >
+                    <label class="inline-flex items-center gap-2 rounded-md px-1.5 py-1 font-semibold text-on-surface">
                       <input v-model="form.notifyEnabled" type="checkbox" /> {{ t.automation.notifications }}
                     </label>
                   </div>
                 </section>
-                <section class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                <section class="border-b border-border-subtle pb-4">
                   <div class="mb-2 flex items-center justify-between gap-2">
                     <div>
                       <div class="font-semibold text-on-surface">{{ t.automation.scripts }}</div>
@@ -647,40 +728,42 @@ const statusClass = (status: string) =>
                     <label
                       v-for="script in orderedScripts"
                       :key="script.id"
-                      class="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-on-surface"
+                      class="flex h-9 min-w-0 items-center gap-2 border-b border-border-subtle text-on-surface last:border-b-0"
                     >
                       <input
                         type="checkbox"
                         :checked="form.scriptIds.includes(script.id)"
                         @change="toggleScript(script.id)"
                       />
-                      <span class="truncate font-mono">{{ script.name }}</span>
-                      <span v-if="form.scriptIds.includes(script.id)" class="ml-auto flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          class="rounded border border-border-subtle bg-surface p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
-                          :disabled="form.scriptIds.indexOf(script.id) === 0"
-                          :title="t.automation.moveScriptUp"
-                          :aria-label="t.automation.moveScriptUp"
-                          @click.prevent="moveSelectedScript(script.id, 'up')"
-                        >
-                          <ArrowUp :size="12" />
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded border border-border-subtle bg-surface p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
-                          :disabled="form.scriptIds.indexOf(script.id) === form.scriptIds.length - 1"
-                          :title="t.automation.moveScriptDown"
-                          :aria-label="t.automation.moveScriptDown"
-                          @click.prevent="moveSelectedScript(script.id, 'down')"
-                        >
-                          <ArrowDown :size="12" />
-                        </button>
+                      <span class="min-w-0 truncate font-mono">{{ script.name }}</span>
+                      <span class="ml-auto flex h-6 w-14 shrink-0 items-center justify-end gap-1">
+                        <template v-if="form.scriptIds.includes(script.id)">
+                          <button
+                            type="button"
+                            class="rounded border border-border-subtle bg-surface p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
+                            :disabled="form.scriptIds.indexOf(script.id) === 0"
+                            :title="t.automation.moveScriptUp"
+                            :aria-label="t.automation.moveScriptUp"
+                            @click.prevent="moveSelectedScript(script.id, 'up')"
+                          >
+                            <ArrowUp :size="12" />
+                          </button>
+                          <button
+                            type="button"
+                            class="rounded border border-border-subtle bg-surface p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
+                            :disabled="form.scriptIds.indexOf(script.id) === form.scriptIds.length - 1"
+                            :title="t.automation.moveScriptDown"
+                            :aria-label="t.automation.moveScriptDown"
+                            @click.prevent="moveSelectedScript(script.id, 'down')"
+                          >
+                            <ArrowDown :size="12" />
+                          </button>
+                        </template>
                       </span>
                     </label>
                   </div>
                 </section>
-                <section class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                <section class="border-b border-border-subtle pb-4">
                   <div class="mb-2 flex items-center justify-between gap-2">
                     <div class="font-semibold text-on-surface">{{ t.automation.schedule }}</div>
                     <div class="flex rounded-lg border border-border-subtle bg-surface p-1">
@@ -688,8 +771,10 @@ const statusClass = (status: string) =>
                         type="button"
                         :class="
                           cn(
-                            'rounded-md px-3 py-1.5 font-bold',
-                            form.scheduleType === 'fixed' ? 'bg-primary text-on-primary' : 'text-on-surface-variant',
+                            'rounded-md border px-3 py-1.5 font-bold',
+                            form.scheduleType === 'fixed'
+                              ? 'border-border-subtle bg-surface-container-high text-on-surface'
+                              : 'border-transparent text-on-surface-variant hover:bg-surface-variant',
                           )
                         "
                         @click="form.scheduleType = 'fixed'"
@@ -700,8 +785,10 @@ const statusClass = (status: string) =>
                         type="button"
                         :class="
                           cn(
-                            'rounded-md px-3 py-1.5 font-bold',
-                            form.scheduleType === 'random' ? 'bg-primary text-on-primary' : 'text-on-surface-variant',
+                            'rounded-md border px-3 py-1.5 font-bold',
+                            form.scheduleType === 'random'
+                              ? 'border-border-subtle bg-surface-container-high text-on-surface'
+                              : 'border-transparent text-on-surface-variant hover:bg-surface-variant',
                           )
                         "
                         @click="form.scheduleType = 'random'"
@@ -800,7 +887,7 @@ const statusClass = (status: string) =>
                             :class="
                               cn(
                                 'mode-menu-item text-xs font-normal',
-                                form.missedPolicy === option.id && 'bg-primary/10 text-primary',
+                                form.missedPolicy === option.id && 'bg-surface-variant text-on-surface',
                               )
                             "
                             @click="selectMissedPolicy(option.id)"
@@ -822,7 +909,7 @@ const statusClass = (status: string) =>
                     </label>
                   </div>
                 </section>
-                <details class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                <details class="border-b border-border-subtle pb-4">
                   <summary
                     class="cursor-pointer list-none font-bold text-on-surface [&::-webkit-details-marker]:hidden"
                   >
@@ -834,13 +921,13 @@ const statusClass = (status: string) =>
                   <div
                     v-for="scriptId in form.scriptIds"
                     :key="scriptId"
-                    class="mt-2 rounded-lg border border-border-subtle bg-surface p-3"
+                    class="mt-3 border-l-2 border-border-subtle pl-3"
                   >
                     <div class="mb-2 flex items-center justify-between gap-2">
                       <span class="font-mono font-bold text-on-surface">{{ scriptName(scriptId) }}</span>
                       <button
                         type="button"
-                        class="rounded-lg border border-border-subtle px-3 py-1.5 font-semibold text-primary hover:bg-surface-variant"
+                        class="rounded-md border border-border-subtle px-3 py-1.5 font-semibold text-primary hover:bg-surface-variant"
                         @click="addInputStep(scriptId)"
                       >
                         {{ t.common.add }}
@@ -849,7 +936,7 @@ const statusClass = (status: string) =>
                     <div
                       v-for="step in form.inputConfigs[scriptId] || []"
                       :key="step.id"
-                      class="mb-2 space-y-2 rounded-lg border border-border-subtle bg-surface-container-low p-2"
+                      class="mb-2 space-y-2 border-b border-border-subtle pb-2 last:mb-0"
                     >
                       <div class="flex flex-wrap items-center gap-1.5">
                         <button
@@ -858,8 +945,8 @@ const statusClass = (status: string) =>
                             cn(
                               'rounded-md px-3 py-1.5 font-bold',
                               step.mode === 'output-match'
-                                ? 'bg-primary text-on-primary'
-                                : 'bg-surface text-on-surface-variant',
+                                ? 'border border-border-subtle bg-surface-container-high text-on-surface'
+                                : 'border border-transparent bg-transparent text-on-surface-variant hover:bg-surface-variant',
                             )
                           "
                           @click="step.mode = 'output-match'"
@@ -872,8 +959,8 @@ const statusClass = (status: string) =>
                             cn(
                               'rounded-md px-3 py-1.5 font-bold',
                               step.mode === 'delay'
-                                ? 'bg-primary text-on-primary'
-                                : 'bg-surface text-on-surface-variant',
+                                ? 'border border-border-subtle bg-surface-container-high text-on-surface'
+                                : 'border border-transparent bg-transparent text-on-surface-variant hover:bg-surface-variant',
                             )
                           "
                           @click="step.mode = 'delay'"

@@ -896,7 +896,7 @@ const handleProjectDragEnd = () => {
           @click.self="automationOverviewOpen = false"
         >
           <section
-            class="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
+            class="flex min-h-[min(34rem,calc(100vh-2rem))] max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
           >
             <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
               <div class="min-w-0">
@@ -922,20 +922,17 @@ const handleProjectDragEnd = () => {
                 <X :size="16" />
               </button>
             </div>
-            <div class="themed-scrollbar min-h-0 space-y-3 overflow-auto p-4">
+            <div class="themed-scrollbar min-h-0 overflow-auto px-4 pb-4">
               <p
                 v-if="automationOverviewFeedback"
-                class="rounded-lg border border-status-info/20 bg-status-info/10 px-3 py-2 text-xs font-semibold text-status-info"
+                class="border-b border-status-info/30 pb-2 pt-3 text-xs font-semibold text-status-info"
                 role="status"
                 aria-live="polite"
               >
                 {{ automationOverviewFeedback }}
               </p>
-              <div
-                v-if="missedAutomationTasks.length > 0"
-                class="rounded-lg border border-status-warning/30 bg-status-warning/10 p-3"
-              >
-                <div class="mb-2 flex items-center justify-between gap-2">
+              <div v-if="missedAutomationTasks.length > 0" class="border-b border-status-warning/30 pb-3 pt-3">
+                <div class="mb-1 flex items-center justify-between gap-2">
                   <div class="text-xs font-bold text-status-warning">{{ t.automation.missedTasks }}</div>
                   <span
                     class="rounded-full border border-status-warning/30 bg-surface px-2 py-0.5 text-[10px] font-bold text-status-warning"
@@ -946,7 +943,7 @@ const handleProjectDragEnd = () => {
                 <div
                   v-for="item in missedAutomationTasks"
                   :key="`${item.project.id}-${item.task.id}-missed`"
-                  class="mb-1.5 flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-xs transition-colors hover:bg-surface-variant"
+                  class="flex cursor-pointer items-center justify-between gap-2 py-2 text-xs transition-colors hover:bg-surface-container-low"
                   role="button"
                   tabindex="0"
                   @click="openProjectAutomation(item.project.id)"
@@ -962,7 +959,7 @@ const handleProjectDragEnd = () => {
                   <div class="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
-                      class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                       :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
                       :title="t.automation.runNow"
                       :aria-label="t.automation.runNow"
@@ -972,7 +969,7 @@ const handleProjectDragEnd = () => {
                     </button>
                     <button
                       type="button"
-                      class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-status-warning/10 hover:text-status-warning"
+                      class="rounded-md p-1.5 text-on-surface-variant hover:bg-status-warning/10 hover:text-status-warning"
                       :title="t.automation.ignoreMissed"
                       :aria-label="t.automation.ignoreMissed"
                       @click.stop="ignoreMissedAutomationTask(item.project.id, item.task.id)"
@@ -982,8 +979,8 @@ const handleProjectDragEnd = () => {
                   </div>
                 </div>
               </div>
-              <div class="grid gap-3 md:grid-cols-2">
-                <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+              <div class="grid gap-3 border-b border-border-subtle md:grid-cols-2">
+                <section class="min-w-0 py-3 md:border-r md:border-border-subtle md:pr-3">
                   <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.nextRun }}</div>
                   <div v-if="upcomingAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
                     {{ t.common.noData }}
@@ -991,7 +988,7 @@ const handleProjectDragEnd = () => {
                   <div
                     v-for="item in upcomingAutomationTasks"
                     :key="`${item.project.id}-${item.task.id}-next`"
-                    class="mb-1.5 flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
+                    class="flex w-full items-center justify-between gap-2 border-b border-border-subtle py-2 text-left text-xs last:border-b-0 hover:bg-surface-container-low"
                     role="button"
                     tabindex="0"
                     @click="openProjectAutomation(item.project.id)"
@@ -1012,7 +1009,7 @@ const handleProjectDragEnd = () => {
                       <button
                         v-if="item.nextEntry"
                         type="button"
-                        class="rounded-md border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                        class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                         :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
                         :title="t.automation.runEarly"
                         :aria-label="t.automation.runEarly"
@@ -1024,8 +1021,8 @@ const handleProjectDragEnd = () => {
                       </button>
                     </span>
                   </div>
-                </div>
-                <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                </section>
+                <section class="min-w-0 py-3 md:pl-3">
                   <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.recentResults }}</div>
                   <div v-if="recentAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
                     {{ t.common.noData }}
@@ -1034,7 +1031,7 @@ const handleProjectDragEnd = () => {
                     v-for="item in recentAutomationTasks"
                     :key="`${item.project.id}-${item.task.id}-recent`"
                     type="button"
-                    class="mb-1.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2 py-2 text-left text-xs transition-colors hover:bg-surface-variant"
+                    class="flex w-full items-center justify-between gap-2 border-b border-border-subtle py-2 text-left text-xs last:border-b-0 hover:bg-surface-container-low"
                     @click="openProjectAutomation(item.project.id)"
                   >
                     <span class="min-w-0">
@@ -1043,49 +1040,63 @@ const handleProjectDragEnd = () => {
                         {{ item.project.name }} ·
                         {{ formatAutomationDateTime(item.latestHistory?.endedAt || item.latestHistory?.plannedAt) }}
                       </span>
-                      <span
-                        v-if="item.latestHistory?.reason"
-                        class="block truncate text-[10px] text-on-surface-variant"
-                      >
-                        {{ item.latestHistory.reason }}
-                      </span>
                     </span>
                     <span
-                      class="shrink-0 rounded-full border border-border-subtle bg-surface-container-low px-2 py-0.5 text-[10px] font-bold text-on-surface-variant"
+                      :class="
+                        cn(
+                          'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                          automationStatusClass(item.latestHistory?.status),
+                        )
+                      "
                     >
                       {{ automationStatusLabel(item.latestHistory?.status) }}
                     </span>
                   </button>
-                </div>
+                </section>
               </div>
-              <div class="rounded-lg border border-border-subtle bg-surface-container-low p-3">
-                <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.allTasks }}</div>
+              <section class="pt-3">
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <div class="text-xs font-bold text-on-surface-variant">{{ t.automation.allTasks }}</div>
+                  <span class="ui-panel-meta">{{ automationSummary.total }}</span>
+                </div>
                 <div v-if="automationProjectGroups.length === 0" class="text-xs text-on-surface-variant">
                   {{ t.common.noData }}
                 </div>
                 <div
                   v-for="group in automationProjectGroups"
                   :key="group.project.id"
-                  class="mb-2 rounded-lg border border-border-subtle bg-surface p-2"
+                  class="border-t border-border-subtle py-3 first:border-t-0"
                 >
-                  <div class="mb-1.5 flex items-center gap-2">
-                    <span class="truncate text-xs font-bold text-on-surface">{{ group.project.name }}</span>
+                  <div class="mb-1.5 flex min-w-0 items-center gap-2">
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-xs font-bold text-on-surface">{{ group.project.name }}</span>
+                    </span>
+                    <span class="ui-panel-meta">{{ group.tasks.length }}</span>
                   </div>
-                  <div class="space-y-1">
+                  <div class="divide-y divide-border-subtle">
                     <div
                       v-for="item in group.tasks"
                       :key="`${item.project.id}-${item.task.id}-project`"
-                      class="flex cursor-pointer items-center justify-between gap-2 rounded-md bg-surface-container-low px-2 py-1.5 text-xs transition-colors hover:bg-surface-variant"
+                      class="flex cursor-pointer items-center justify-between gap-2 py-2 pl-1 text-xs transition-colors hover:bg-surface-container-low"
                       role="button"
                       tabindex="0"
                       @click="openProjectAutomation(item.project.id)"
                       @keydown.enter.self="openProjectAutomation(item.project.id)"
                       @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
                     >
-                      <span class="min-w-0">
-                        <span class="block truncate font-semibold text-on-surface">{{ item.task.name }}</span>
-                        <span class="block truncate text-[10px] text-on-surface-variant">
-                          {{ formatAutomationDateTime(item.runningEntry?.plannedAt || item.nextEntry?.plannedAt) }}
+                      <span class="h-1 w-1 shrink-0 rounded-full bg-outline-variant" aria-hidden="true" />
+                      <span class="min-w-0 flex-1 truncate">
+                        <span class="font-semibold text-on-surface">{{ item.task.name }}</span>
+                        <span class="ml-1 text-[10px] text-on-surface-variant">
+                          ·
+                          {{
+                            formatAutomationDateTime(
+                              item.runningEntry?.plannedAt ||
+                                item.nextEntry?.plannedAt ||
+                                item.latestHistory?.endedAt ||
+                                item.latestHistory?.plannedAt,
+                            )
+                          }}
                         </span>
                       </span>
                       <div class="flex shrink-0 items-center justify-end gap-1">
@@ -1105,7 +1116,7 @@ const handleProjectDragEnd = () => {
                         </span>
                         <button
                           type="button"
-                          class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                          class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                           :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
                           :title="t.automation.runNow"
                           :aria-label="t.automation.runNow"
@@ -1117,7 +1128,7 @@ const handleProjectDragEnd = () => {
                     </div>
                   </div>
                 </div>
-              </div>
+              </section>
             </div>
           </section>
         </div>
