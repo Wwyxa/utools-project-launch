@@ -83,6 +83,16 @@ If a test runner is added later, prefer focused component or store tests around 
 
 **Prevention**: For each teleported popup, assert both `getComputedStyle(popup).position === "fixed"` and its settled bounding box against the viewport after the overlay scrollbar initializes.
 
+### Common Mistake: Relying On Tailwind Dark Variants Without Verifying Them
+
+**Symptom**: A `dark:*` utility is present, but the rendered text still uses the original opacity or muted color.
+
+**Cause**: This renderer toggles a root `.dark` class but does not configure Tailwind's `dark` variant to match that class. A utility can compile without matching the actual theme state.
+
+**Fix**: Put dark-only overrides in `src/index.css` under an explicit `.dark ...` selector and use the shared semantic token. Reuse `.dark-readable-meta` for compact metadata; keep same-role controls on the same base color instead of adding per-control classes for cosmetic differences.
+
+**Prevention**: Check the computed style in a dark browser viewport for each new theme rule, especially placeholder and compact metadata text.
+
 ### Common Mistake: Relying on Native Popups Inside Dense Panels
 
 **Symptom**: A `select` or `input[type=date]` looks styled, but its browser popup still appears in the default system style or opens beneath the trigger where it gets clipped by the surrounding panel.
