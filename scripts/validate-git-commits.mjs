@@ -23,8 +23,10 @@ runGit("config", "user.name", "Git Commits Validation");
 fs.writeFileSync(path.join(projectRoot, "history.txt"), "first\n");
 runGit("add", "--", "history.txt");
 runGit("commit", "-m", "first commit");
+const chineseFileName = "中文文件名.txt";
 fs.appendFileSync(path.join(projectRoot, "history.txt"), "second\n");
-runGit("add", "--", "history.txt");
+fs.writeFileSync(path.join(projectRoot, chineseFileName), "中文文件名\n");
+runGit("add", "--", "history.txt", chineseFileName);
 runGit("commit", "-m", "second commit");
 const rootHash = runGit("rev-list", "--max-parents=0", "HEAD").trim();
 runGit("branch", "feature,comma", rootHash);
@@ -75,6 +77,11 @@ try {
   assert.match(rootCommit.hash, /^[0-9a-f]{40,64}$/);
   assert.deepEqual(Array.from(latestCommit.parents), [rootCommit.hash]);
   assert.deepEqual(Array.from(rootCommit.parents), []);
+  const latestCommitFiles = await bridge.readGitCommitFiles(projectRoot, latestCommit.hash);
+  assert.equal(
+    latestCommitFiles.some((file) => file.path === chineseFileName),
+    true,
+  );
   assert.deepEqual(
     Array.from(rootCommit.refNames, (ref) => ({ kind: ref.kind, name: ref.name })),
     [

@@ -4227,8 +4227,9 @@ function readGitCommitFiles(projectPath, commitHash) {
     return [];
   }
 
-  const numstatOutput = runGit(repositoryPath, ["show", "--format=", "--numstat", hash]);
-  const statusOutput = runGit(repositoryPath, ["show", "--format=", "--name-status", hash]);
+  const gitPathOptions = ["-c", "core.quotePath=false"];
+  const numstatOutput = runGit(repositoryPath, [...gitPathOptions, "show", "--format=", "--numstat", hash]);
+  const statusOutput = runGit(repositoryPath, [...gitPathOptions, "show", "--format=", "--name-status", hash]);
   if (numstatOutput === null || statusOutput === null) {
     throw new Error("无法读取提交变更。");
   }
