@@ -384,6 +384,13 @@ return `${firstSize}px ${separatorSize}px minmax(0, 0.71fr)`;
 
 **Ref Classification Rule**: Parse each `git log --decorate=short` ref through one presentation helper shared by the dense row and its tooltip. A current-HEAD node is only an exact `HEAD` ref or `HEAD -> <non-empty branch>`; never use `refs.includes("HEAD")`, because historical symbolic refs such as `remote/HEAD` or `fork/HEAD` would otherwise receive the current-HEAD node style. Classify tags first, then configured/prefix-matched remotes, then known local branches. Only a known local `main` or `master` gets the primary-local variant; an unrecognized string must stay neutral rather than being guessed as a local branch.
 
+**Compact Ref Badge Rule**: Keep the tooltip's full ref presentation, but compact multiple refs in the dense row. When the HEAD badge already names the current local branch, omit the duplicate local badge with the same label. A single remote ref must keep its cloud icon and branch label. When a commit has multiple remote refs, keep one representative remote as a full badge and render each additional remote as its own icon-only cloud badge with its own native title; do not merge or discard them. Prefer a real branch over a symbolic `*/HEAD` ref as the representative and place it first. Keep tags and unrelated local branches visible because they carry distinct information. A fixture containing only remote `origin/develop` must render its full label. A fixture containing HEAD `master`, local `master`, `origin/HEAD`, `origin/master`, and tag `master` must render four dense-row badges (HEAD, full `origin/master`, icon-only `origin/HEAD`, and tag), while its tooltip still renders all five refs.
+
+```ts
+const primaryRemote = remoteRefs.find((ref) => !ref.refName.endsWith("/HEAD")) || remoteRefs[0];
+const showLabel = remote === primaryRemote;
+```
+
 ```ts
 const isHeadRef = (refName: string) => refName === "HEAD" || /^HEAD ->\s+\S+$/.test(refName);
 const isRemoteRef = (refName: string) =>

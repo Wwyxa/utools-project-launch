@@ -3210,6 +3210,30 @@ const refPresentations = (commit: ProjectGitCommitSummary) =>
   commit.refNames
     ? commit.refNames.map((ref) => refPresentation(ref.name, ref.kind))
     : refsForCommit(commit.refs).map((ref) => refPresentation(ref));
+const compactCommitRefPresentations = (commit: ProjectGitCommitSummary) => {
+  const refs = refPresentations(commit);
+  const headLabel = refs.find((ref) => ref.isHead)?.label;
+  const remoteRefs = refs.filter((ref) => ref.kind === "remote");
+  const primaryRemote = remoteRefs.find((ref) => !ref.refName.endsWith("/HEAD")) || remoteRefs[0];
+  const orderedRemoteRefs = primaryRemote ? [primaryRemote, ...remoteRefs.filter((ref) => ref !== primaryRemote)] : [];
+  let hasRemote = false;
+
+  return refs
+    .filter((ref) => {
+      if ((ref.kind === "local" || ref.kind === "primary") && ref.label === headLabel) return false;
+      return true;
+    })
+    .flatMap((ref) => {
+      if (ref.kind !== "remote") return [{ ...ref, title: ref.refName, showLabel: true }];
+      if (hasRemote) return [];
+      hasRemote = true;
+      return orderedRemoteRefs.map((remote, index) => ({
+        ...remote,
+        title: remote.refName,
+        showLabel: index === 0,
+      }));
+    });
+};
 const isHeadCommit = (commit: ProjectGitCommitSummary) => refPresentations(commit).some((ref) => ref.isHead);
 const graphStrokeColors = ["#0ea5e9", "#e91e9d", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16"];
 const laneWidth = 14;
@@ -4884,10 +4908,10 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                             {{ row.commit.message }}
                           </span>
                           <span
-                            v-for="ref in refPresentations(row.commit)"
+                            v-for="ref in compactCommitRefPresentations(row.commit)"
                             :key="`${row.commit.hash}-${ref.kind}-${ref.refName}`"
-                            :class="ref.className"
-                            :title="ref.refName"
+                            :class="cn(ref.className, !ref.showLabel && 'h-[18px] w-[18px] justify-center px-0')"
+                            :title="ref.title"
                           >
                             <component
                               v-if="ref.icon"
@@ -4896,7 +4920,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                               :stroke-width="2.25"
                               aria-hidden="true"
                             />
-                            <span class="min-w-0 truncate">{{ ref.label }}</span>
+                            <span v-if="ref.showLabel" class="min-w-0 truncate">{{ ref.label }}</span>
                           </span>
                           <span
                             v-if="snapshot?.isDetachedHead && commitHashMatches(row.commit.hash, snapshot?.headHash)"
