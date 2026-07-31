@@ -365,6 +365,12 @@ const statusDotClass = (status: string) =>
           ? "bg-status-warning"
           : "bg-outline-variant";
 
+const toggleButtonClass = (enabled: boolean) =>
+  cn(
+    "rounded-md p-1.5 transition-colors hover:bg-surface-variant",
+    enabled ? "bg-status-running/10 text-status-running" : "text-on-surface-variant",
+  );
+
 const taskSummary = computed(() => {
   const summary = { enabled: 0, running: 0, failed: 0, missed: 0 };
   for (const task of tasks.value) {
@@ -456,7 +462,7 @@ const taskSummaryText = computed(() =>
         <article
           v-for="task in tasks"
           :key="task.id"
-          class="border-b border-border-subtle px-3 py-3 transition-colors even:bg-surface-container-low first:pt-3 last:border-b-0 last:pb-3 hover:bg-surface-container-low"
+          class="mx-3 mt-3 rounded-lg border border-border-subtle bg-surface-container-lowest px-3 py-3 transition-colors last:mb-3 hover:bg-surface-container-low"
         >
           <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div class="flex min-w-0 flex-1 items-start gap-2">
@@ -500,12 +506,7 @@ const taskSummaryText = computed(() =>
               </button>
               <button
                 type="button"
-                :class="
-                  cn(
-                    'rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant',
-                    task.enabled ? 'bg-status-running/10 text-status-running' : '',
-                  )
-                "
+                :class="toggleButtonClass(task.enabled)"
                 :title="task.enabled ? t.automation.disableTask : t.automation.enableTask"
                 :aria-label="task.enabled ? t.automation.disableTask : t.automation.enableTask"
                 @click="store.updateAutomationTask(project.id, task.id, { enabled: !task.enabled })"
@@ -514,7 +515,7 @@ const taskSummaryText = computed(() =>
               </button>
               <button
                 type="button"
-                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant"
+                :class="toggleButtonClass(task.notifyEnabled)"
                 :title="task.notifyEnabled ? t.automation.notificationsOn : t.automation.notificationsOff"
                 :aria-label="task.notifyEnabled ? t.automation.notificationsOn : t.automation.notificationsOff"
                 @click="store.updateAutomationTask(project.id, task.id, { notifyEnabled: !task.notifyEnabled })"
@@ -592,17 +593,13 @@ const taskSummaryText = computed(() =>
             </div>
           </div>
           <div class="mt-2 flex flex-wrap items-center gap-1 border-t border-border-subtle pt-2">
+            <Clock :size="10" class="shrink-0 text-on-surface-variant" aria-hidden="true" />
             <span
               v-for="entry in taskPlan(task).entries"
               :key="entry.id"
-              :class="
-                cn(
-                  'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold',
-                  statusClass(entry.status),
-                )
-              "
+              class="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface px-1.5 py-0.5 text-[9px] font-medium text-on-surface-variant"
             >
-              <Clock :size="10" />
+              <span :class="cn('h-1.5 w-1.5 shrink-0 rounded-full', statusDotClass(entry.status))" aria-hidden="true" />
               {{ formatTime(entry.plannedAt) }} · {{ statusLabel(entry.status) }}
               <button
                 v-if="isFuturePendingPlanEntry(entry)"
