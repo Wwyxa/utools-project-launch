@@ -4173,7 +4173,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               ref="commitMessageTextareaRef"
               v-model="commitMessage"
               rows="1"
-              class="themed-scrollbar h-[3.75rem] max-h-[12rem] min-h-[3.75rem] w-full min-w-0 shrink-0 resize-none overflow-hidden rounded border border-transparent bg-surface-container-low px-2 py-1.5 text-xs leading-4 text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/55 focus:border-primary/45 focus:bg-surface"
+              class="git-commit-message-input themed-scrollbar h-[3.75rem] max-h-[12rem] min-h-[3.75rem] w-full min-w-0 shrink-0 resize-none overflow-hidden rounded border border-transparent bg-surface-container-low px-2 py-1.5 text-xs leading-4 text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/70 focus:border-primary/45 focus:bg-surface"
               placeholder="输入 commit message..."
               @input="resizeCommitMessageTextarea"
             ></textarea>
@@ -4244,7 +4244,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             <button
               v-if="bulkSecondaryGitFileAction"
               type="button"
-              class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-surface-variant hover:text-secondary disabled:cursor-not-allowed disabled:opacity-35"
+              class="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-secondary disabled:cursor-not-allowed disabled:opacity-35"
               :disabled="isAnyGitWriteRunning"
               :title="bulkActionTitle(bulkSecondaryGitFileAction)"
               :aria-label="bulkActionAriaLabel(bulkSecondaryGitFileAction)"
@@ -4334,7 +4334,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                     </span>
                     <span
                       v-if="gitFileDirectory(file)"
-                      class="min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65"
+                      class="dark-readable-meta min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65"
                     >
                       {{ gitFileDirectory(file) }}
                     </span>
@@ -4354,7 +4354,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 >
                   <button
                     type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-45"
+                    class="git-file-action-button flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-45"
                     :disabled="!canRunFileAction(file, group.scope === 'staged' ? 'unstage' : 'stage')"
                     :title="
                       group.scope === 'staged'
@@ -4373,7 +4373,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                   </button>
                   <button
                     type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-status-error disabled:cursor-wait disabled:opacity-45"
+                    class="git-file-action-button flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-surface-variant hover:text-status-error disabled:cursor-wait disabled:opacity-45"
                     :disabled="!canRunFileAction(file, 'discard')"
                     :title="`丢弃文件变更：${gitFileDisplayPath(file)}`"
                     aria-label="丢弃文件变更"
@@ -4383,7 +4383,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                   </button>
                   <button
                     type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/80 transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                    class="git-file-action-button flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
                     :disabled="file.status === 'DELETED'"
                     :title="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
                     :aria-label="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
@@ -4660,7 +4660,10 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                         class="ui-field ui-field-compact flex w-full items-center justify-between gap-2 text-left"
                         @click.stop="openDatePicker('since')"
                       >
-                        <span :class="commitSince ? 'text-on-surface' : 'text-on-surface-variant/70'">
+                        <span
+                          class="dark-readable-meta"
+                          :class="commitSince ? 'text-on-surface' : 'text-on-surface-variant/70'"
+                        >
                           {{ commitSince || t.git.since }}
                         </span>
                         <CalendarDays :size="13" class="text-on-surface-variant" />
@@ -4711,7 +4714,10 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                         class="ui-field ui-field-compact flex w-full items-center justify-between gap-2 text-left"
                         @click.stop="openDatePicker('until')"
                       >
-                        <span :class="commitUntil ? 'text-on-surface' : 'text-on-surface-variant/70'">
+                        <span
+                          class="dark-readable-meta"
+                          :class="commitUntil ? 'text-on-surface' : 'text-on-surface-variant/70'"
+                        >
                           {{ commitUntil || t.git.until }}
                         </span>
                         <CalendarDays :size="13" class="text-on-surface-variant" />
@@ -4899,7 +4905,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                             HEAD
                           </span>
                         </div>
-                        <div class="mt-px truncate text-[9px] leading-3 text-on-surface-variant/75">
+                        <div class="dark-readable-meta mt-px truncate text-[9px] leading-3 text-on-surface-variant/75">
                           {{ row.commit.author }} · {{ formatCommitTime(row.commit.date).text }}
                         </div>
                       </button>
@@ -5003,7 +5009,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                               </span>
                               <span
                                 v-if="commitFileViewMode === 'list' && gitFileDirectory(item.file)"
-                                class="min-w-0 truncate text-[10px] leading-4 text-on-surface-variant/75"
+                                class="dark-readable-meta min-w-0 truncate text-[10px] leading-4 text-on-surface-variant/75"
                               >
                                 {{ gitFileDirectory(item.file) }}
                               </span>
@@ -5555,14 +5561,14 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               </span>
               <span
                 v-if="formatCommitTime(commitTooltip.commit.date).text"
-                class="inline-flex items-center gap-1 text-[10px] font-semibold leading-4 text-on-surface-variant"
+                class="dark-readable-meta inline-flex items-center gap-1 text-[10px] font-semibold leading-4 text-on-surface-variant"
               >
-                <Clock3 :size="11" class="shrink-0 text-on-surface-variant/70" />
+                <Clock3 :size="11" class="dark-readable-meta shrink-0 text-on-surface-variant/70" />
                 {{ formatCommitTime(commitTooltip.commit.date).text }}
               </span>
               <span
                 v-if="formatCommitTime(commitTooltip.commit.date).title"
-                class="break-words text-[10px] font-medium leading-4 text-on-surface-variant/80"
+                class="dark-readable-meta break-words text-[10px] font-medium leading-4 text-on-surface-variant/80"
               >
                 ({{ formatCommitTime(commitTooltip.commit.date).title }})
               </span>

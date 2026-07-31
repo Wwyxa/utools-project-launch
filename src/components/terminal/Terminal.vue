@@ -356,7 +356,7 @@ onBeforeUnmount(() => {
         class="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-on-surface [overscroll-behavior-y:contain]"
       >
         <div v-for="(log, index) in filteredLogs" :key="index" class="flex mb-1 group">
-          <span class="w-20 text-right mr-4 shrink-0 text-on-surface-variant/70 select-none">
+          <span class="w-20 text-right mr-4 shrink-0 terminal-log-timestamp select-none">
             {{ log.timestamp }}
           </span>
           <span :class="cn('break-all', resolveLogTone(log.message, log.type))">

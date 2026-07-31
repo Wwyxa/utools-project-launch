@@ -112,7 +112,7 @@
     --color-surface-container-high: #474b52;
     --color-surface-container-highest: #4d525a;
     --color-on-surface: #e0e4e8;
-    --color-on-surface-variant: #adb4be;
+    --color-on-surface-variant: #c1c7cf;
     --color-inverse-surface: #e4e2e1;
     --color-inverse-on-surface: #303030;
     --color-outline: #7c838d;
@@ -204,7 +204,7 @@
 
   .dark input::placeholder,
   .dark textarea::placeholder {
-    color: color-mix(in srgb, var(--color-on-surface-variant) 72%, transparent);
+    color: var(--color-on-surface-variant);
   }
 
   .dark select option {
@@ -443,6 +443,31 @@
 
 .ui-field::placeholder {
   color: color-mix(in srgb, var(--color-on-surface-variant) 70%, transparent);
+}
+
+.dark .ui-field::placeholder {
+  color: var(--color-on-surface-variant);
+}
+
+.terminal-log-timestamp {
+  color: color-mix(in srgb, var(--color-on-surface-variant) 70%, transparent);
+}
+
+.dark .terminal-log-timestamp,
+.dark .git-commit-message-input::placeholder {
+  color: var(--color-on-surface-variant);
+}
+
+.dark .dark-readable-meta {
+  color: var(--color-on-surface-variant);
+}
+
+.git-file-action-button {
+  color: color-mix(in srgb, var(--color-on-surface-variant) 80%, transparent);
+}
+
+:where(.dark) .git-file-action-button {
+  color: var(--color-on-surface-variant);
 }
 
 .ui-select-wrap {

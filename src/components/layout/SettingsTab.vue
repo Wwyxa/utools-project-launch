@@ -698,7 +698,9 @@ watch(
                   @click="selectedAiModeId = mode.id"
                 >
                   <span class="truncate">{{ mode.name }}</span>
-                  <span v-if="mode.builtIn" class="shrink-0 text-[9px] text-on-surface-variant/70">默认</span>
+                  <span v-if="mode.builtIn" class="dark-readable-meta shrink-0 text-[9px] text-on-surface-variant/70">
+                    默认
+                  </span>
                 </button>
               </div>
             </div>
