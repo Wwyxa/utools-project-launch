@@ -5658,7 +5658,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           <button
             type="button"
             role="menuitem"
-            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[11px] font-semibold text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
             :disabled="isAnyGitWriteRunning"
             @click="openRefDialog('create-branch', commitContextMenu.commit)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -5669,7 +5669,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
           <button
             type="button"
             role="menuitem"
-            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[11px] font-semibold text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
             :disabled="isAnyGitWriteRunning"
             @click="openRefDialog('create-tag', commitContextMenu.commit)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -5684,7 +5684,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             data-tag-list
             aria-haspopup="menu"
             :aria-expanded="commitSubmenu?.kind === 'tags'"
-            class="flex h-7 w-full cursor-default items-center gap-1.5 rounded px-1.5 text-[10px] font-medium text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+            class="flex h-7 w-full cursor-default items-center gap-1.5 rounded px-1.5 text-[11px] font-semibold text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
             @click="
               openCommitSubmenu(
                 { kind: 'tags', tags: commitTagRefs(commitContextMenu.commit) },
@@ -5717,7 +5717,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                 commitSubmenu.branch.kind === branch.kind &&
                 commitSubmenu.branch.name === branch.name
               "
-              class="flex h-7 w-full cursor-default items-center gap-1 rounded px-1 text-[10px] font-medium text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+              class="flex h-7 w-full cursor-default items-center gap-1 rounded px-1 text-[11px] font-semibold text-on-surface hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
               @click="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
               @mouseenter="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
               @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -5747,7 +5747,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             v-else
             type="button"
             role="menuitem"
-            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-on-surface transition-colors hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
+            class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[11px] font-semibold text-on-surface transition-colors hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45"
             :disabled="isAnyGitWriteRunning || !canCheckoutDetachedCommit(commitContextMenu.commit)"
             :title="detachedCheckoutTitle(commitContextMenu.commit)"
             @click="handleCheckoutCommit(commitContextMenu.commit)"
@@ -5775,7 +5775,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             <button
               type="button"
               role="menuitem"
-              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:opacity-45"
+              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[11px] font-semibold hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:opacity-45"
               :disabled="isAnyGitWriteRunning || commitSubmenu.branch.current"
               @click="
                 commitSubmenu.branch.kind === 'local'
@@ -5792,7 +5792,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
             <button
               type="button"
               role="menuitem"
-              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:opacity-45"
+              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[11px] font-semibold hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none disabled:opacity-45"
               :disabled="isAnyGitWriteRunning || !canCheckoutDetachedCommit(commitContextMenu.commit)"
               @click="handleCheckoutCommit(commitContextMenu.commit)"
               @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -5805,7 +5805,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               <button
                 type="button"
                 role="menuitem"
-                class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
+                class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[11px] font-semibold hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none"
                 :disabled="isAnyGitWriteRunning"
                 @click="openRefDialog('rename-branch', commitContextMenu.commit, commitSubmenu.branch.name)"
                 @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -5816,7 +5816,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               <button
                 type="button"
                 role="menuitem"
-                class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-status-error hover:bg-status-error/10 focus-visible:bg-status-error/10 focus-visible:outline-none disabled:opacity-40"
+                class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[11px] font-semibold text-status-error hover:bg-status-error/10 focus-visible:bg-status-error/10 focus-visible:outline-none disabled:opacity-40"
                 :disabled="isAnyGitWriteRunning || commitSubmenu.branch.current"
                 :title="commitSubmenu.branch.current ? '不能删除当前检出的分支' : '先执行安全删除'"
                 @click="requestDeleteBranch(commitSubmenu.branch)"
@@ -5833,7 +5833,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               :key="tagName"
               type="button"
               role="menuitem"
-              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[10px] font-medium text-status-error hover:bg-status-error/10 focus-visible:bg-status-error/10 focus-visible:outline-none disabled:opacity-40"
+              class="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-[11px] font-semibold text-status-error hover:bg-status-error/10 focus-visible:bg-status-error/10 focus-visible:outline-none disabled:opacity-40"
               :disabled="isAnyGitWriteRunning"
               :title="`删除标签 ${tagName}`"
               @click="requestDeleteTag(tagName)"
