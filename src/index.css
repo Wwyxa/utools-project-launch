@@ -158,10 +158,10 @@
     --toolbar-primary-bg: #32664d;
     --toolbar-primary-fg: #d8dedb;
     --toolbar-primary-bg-hover: #2f6249;
-    --code-preview-bg: #0d1117;
-    --code-preview-gutter-bg: #161b22;
-    --code-preview-border: #30363d;
-    --syntax-fg: #e6edf3;
+    --code-preview-bg: var(--color-surface-container-lowest);
+    --code-preview-gutter-bg: var(--color-surface-container-low);
+    --code-preview-border: var(--color-border-subtle);
+    --syntax-fg: var(--color-on-surface-variant);
     --syntax-comment: #8b949e;
     --syntax-keyword: #ff7b72;
     --syntax-name: #7ee787;
@@ -170,7 +170,7 @@
     --syntax-number: #79c0ff;
     --syntax-symbol: #ffa657;
     --syntax-meta: #ffa657;
-    --syntax-subst: #e6edf3;
+    --syntax-subst: var(--color-on-surface-variant);
     --syntax-addition-fg: #aff5b4;
     --syntax-addition-bg: rgba(46, 160, 67, 0.18);
     --syntax-deletion-fg: #ffdcd7;
@@ -970,6 +970,10 @@
   grid-template-columns: var(--file-code-gutter-width) minmax(0, 1fr);
   height: 100%;
   overflow: auto;
+}
+
+.file-code-scroll-no-gutter {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .file-code-gutter,

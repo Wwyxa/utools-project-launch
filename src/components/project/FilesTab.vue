@@ -74,6 +74,7 @@ const rootInlineInputRef = ref<HTMLInputElement | null>(null);
 const contextMenuRef = ref<HTMLElement | null>(null);
 const isFindOpen = ref(false);
 const isReplaceOpen = ref(false);
+const showLineNumbers = ref(false);
 const findQuery = ref("");
 const replaceValue = ref("");
 const activeMatchIndex = ref(0);
@@ -129,6 +130,12 @@ const isDirty = computed(
 const canEdit = computed(() => Boolean(selectedFile.value?.editable));
 const canSave = computed(() => canEdit.value && isDirty.value && !isSaving.value);
 const canSearchCurrentFile = computed(() => selectedFile.value?.previewKind === "text");
+const canToggleLineNumbers = computed(
+  () => selectedFile.value?.previewKind === "text" && (!isMarkdownPreview.value || isEditing.value || isFindOpen.value),
+);
+const lineNumberToggleLabel = computed(() =>
+  showLineNumbers.value ? t.value.files.hideLineNumbers : t.value.files.showLineNumbers,
+);
 const canReplaceCurrentFile = computed(() => selectedFile.value?.previewKind === "text" && canEdit.value);
 const contextMenuStyle = computed(() => ({
   left: `${contextMenu.value?.x || 0}px`,
@@ -1172,6 +1179,11 @@ const enterEdit = () => {
   }
 };
 
+const toggleLineNumbers = () => {
+  if (!canToggleLineNumbers.value) return;
+  showLineNumbers.value = !showLineNumbers.value;
+};
+
 const exitEdit = () => {
   isEditing.value = false;
 };
@@ -1619,6 +1631,36 @@ watch(filterQuery, (query) => {
         <div class="flex shrink-0 items-center gap-2">
           <button
             type="button"
+            role="switch"
+            :aria-checked="showLineNumbers"
+            :disabled="!canToggleLineNumbers"
+            class="flex h-7 w-7 items-center justify-center rounded bg-transparent text-on-surface-variant transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            :aria-label="lineNumberToggleLabel"
+            :title="lineNumberToggleLabel"
+            @click="toggleLineNumbers"
+          >
+            <span
+              :class="
+                cn(
+                  'flex h-3.5 w-6 items-center overflow-hidden rounded-full border px-0.5 transition-colors',
+                  showLineNumbers
+                    ? 'justify-end border-primary bg-primary/20'
+                    : 'justify-start border-border-subtle bg-surface-container-high',
+                )
+              "
+            >
+              <span
+                :class="
+                  cn(
+                    'h-2.5 w-2.5 shrink-0 rounded-full transition-colors',
+                    showLineNumbers ? 'bg-primary' : 'bg-on-surface-variant',
+                  )
+                "
+              />
+            </span>
+          </button>
+          <button
+            type="button"
             @click="openFind"
             :disabled="!canSearchCurrentFile"
             class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
@@ -1779,11 +1821,20 @@ watch(filterQuery, (query) => {
         <div class="min-h-0 flex-1 overflow-hidden">
           <div
             v-if="isLoadingFile"
-            class="themed-scrollbar h-full overflow-auto bg-[var(--code-preview-bg)] px-2 py-3 font-mono text-xs leading-5"
+            :class="
+              cn(
+                'themed-scrollbar h-full overflow-auto bg-[var(--code-preview-bg)] px-2 py-3 font-mono text-xs leading-5',
+                !showLineNumbers && 'file-code-scroll-no-gutter',
+              )
+            "
             aria-busy="true"
           >
-            <div v-for="row in 12" :key="row" class="grid grid-cols-[3rem_minmax(0,1fr)] gap-2 px-2 py-0.5">
-              <span class="skeleton h-2.5 w-6" />
+            <div
+              v-for="row in 12"
+              :key="row"
+              :class="cn('grid grid-cols-[3rem_minmax(0,1fr)] gap-2 px-2 py-0.5', !showLineNumbers && 'grid-cols-1')"
+            >
+              <span v-if="showLineNumbers" class="skeleton h-2.5 w-6" />
               <span
                 :class="[
                   'skeleton h-2.5',
@@ -1817,12 +1868,13 @@ watch(filterQuery, (query) => {
           >
             <div
               ref="codeScrollRef"
-              class="themed-scrollbar file-code-scroll"
+              :class="cn('themed-scrollbar file-code-scroll', !showLineNumbers && 'file-code-scroll-no-gutter')"
               :style="editorContentStyle"
               @scroll="handleCodeScroll"
             >
               <pre
-                class="file-code-gutter select-none border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 py-4 text-right text-on-surface-variant/70"
+                v-if="showLineNumbers"
+                class="file-code-gutter select-none border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 py-4 text-right text-on-surface-variant"
                 >{{ lineNumbers }}</pre
               >
               <div class="file-code-main">
