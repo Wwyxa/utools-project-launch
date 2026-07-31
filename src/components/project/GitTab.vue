@@ -33,22 +33,23 @@ import {
   CloudUpload,
   ClipboardCopy,
   FileSearch,
+  Filter,
   Folder,
   GitBranch,
   GitPullRequestArrow,
   Clock3,
   X,
   Sparkles,
-  SlidersHorizontal,
   Tag,
   WandSparkles,
   ChevronDown,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Check,
+  ListChecks,
   GitCommitHorizontal,
   List,
+  ListX,
   ListTree,
   Minus,
   Plus,
@@ -4523,7 +4524,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               aria-label="选择全部可见提交"
               @click="selectVisibleCommits"
             >
-              <Check :size="13" />
+              <ListChecks :size="13" />
             </button>
             <button
               v-if="selectedCommitCount > 0"
@@ -4533,7 +4534,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               aria-label="清空提交选择"
               @click="clearCommitSelection"
             >
-              <X :size="13" />
+              <ListX :size="13" />
             </button>
             <button
               type="button"
@@ -4550,7 +4551,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               :aria-pressed="showCommitFilters"
               @click="toggleCommitFilters"
             >
-              <SlidersHorizontal :size="13" />
+              <Filter :size="13" />
             </button>
             <button
               type="button"
