@@ -23,9 +23,11 @@ try {
 
 const activeProcesses = new Map();
 const activeProcessMetadata = new Map();
+const processStopEscalationTimers = new Map();
 const completedProcessResults = new Map();
 const completedAutomationProcessResults = new Map();
 const completedProcessResultLimit = 100;
+const processStopGracePeriodMs = 3500;
 const gitCommitAvatarResults = new Map();
 const gitCommitAvatarResultLimit = 160;
 const gitCommitAvatarRequestTimeoutMs = 3500;
@@ -4901,6 +4903,9 @@ function runCommand(payload) {
     cwd: resolvedCwd,
     env: { ...process.env, ...payload.env },
     shell: false,
+    // On Unix, this makes the command shell the leader of a process group so
+    // Stop can terminate make, package managers, and their descendants.
+    detached: process.platform !== "win32",
     windowsHide: true,
   });
   const childPid = typeof child.pid === "number" ? child.pid : -1;
@@ -4918,6 +4923,11 @@ function runCommand(payload) {
 
   const cleanupProcess = () => {
     if (childPid > 0) {
+      const escalationTimer = processStopEscalationTimers.get(childPid);
+      if (escalationTimer) {
+        clearTimeout(escalationTimer);
+        processStopEscalationTimers.delete(childPid);
+      }
       activeProcesses.delete(childPid);
       activeProcessMetadata.delete(childPid);
       launchedProcessIds.delete(childPid);
@@ -5100,6 +5110,44 @@ function stopWindowsProcessTree(pid) {
   });
 }
 
+function signalUnixProcessTree(pid, child, signal) {
+  try {
+    // A negative pid targets the detached command process group.
+    process.kill(-pid, signal);
+    return;
+  } catch (error) {
+    // Fall back for commands started before process groups were enabled.
+  }
+
+  try {
+    process.kill(pid, signal);
+    return;
+  } catch (error) {
+    // Some test or host runtimes may not expose process.kill.
+  }
+
+  try {
+    child?.kill?.(signal);
+  } catch (error) {
+    // Stopping is best-effort; the child exit event remains the source of truth.
+  }
+}
+
+function stopUnixProcessTree(pid, child) {
+  signalUnixProcessTree(pid, child, "SIGTERM");
+  if (processStopEscalationTimers.has(pid)) {
+    return;
+  }
+
+  const escalationTimer = setTimeout(() => {
+    processStopEscalationTimers.delete(pid);
+    if (activeProcesses.has(pid)) {
+      signalUnixProcessTree(pid, activeProcesses.get(pid), "SIGKILL");
+    }
+  }, processStopGracePeriodMs);
+  processStopEscalationTimers.set(pid, escalationTimer);
+}
+
 async function stopProcess(pid, options) {
   const child = activeProcesses.get(pid);
   const metadata = activeProcessMetadata.get(pid);
@@ -5118,11 +5166,7 @@ async function stopProcess(pid, options) {
     if (process.platform === "win32") {
       await stopWindowsProcessTree(pid);
     } else {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch (error) {
-        // ignore
-      }
+      stopUnixProcessTree(pid, child);
     }
   }
 

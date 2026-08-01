@@ -70,6 +70,10 @@ For the uTools preload boundary, failures must be surfaced through the existing 
   contain secrets.
 - Makefile discovery is static: parse target names only and never run `make`
   while inspecting a project.
+- On Unix-like hosts, launch user commands as detached process groups. Stop
+  the group with `SIGTERM`, then escalate to `SIGKILL` after a bounded grace
+  period when it is still active. This prevents nested command runners from
+  leaving scripts stuck in `STOPPING`.
 - uTools validates preload entries as `.js` and loads them through CommonJS.
   In this ESM package, keep `plugin.json` pointed at `preload.js`, and copy a
   `package.json` with `"type": "commonjs"` into `dist/` so that Node classifies

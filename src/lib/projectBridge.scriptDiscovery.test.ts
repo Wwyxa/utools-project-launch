@@ -143,14 +143,24 @@ describe("project script discovery", () => {
     expect(spawn).toHaveBeenLastCalledWith(
       "/bin/zsh",
       ["-ilc", "node --version"],
-      expect.objectContaining({ cwd: "/project", shell: false, env: { SHELL: "/bin/zsh", PROJECT_VALUE: "set" } }),
+      expect.objectContaining({
+        cwd: "/project",
+        shell: false,
+        detached: true,
+        env: { SHELL: "/bin/zsh", PROJECT_VALUE: "set" },
+      }),
     );
 
     run("win32", { ComSpec: "C:\\Windows\\System32\\cmd.exe" });
     expect(spawn).toHaveBeenLastCalledWith(
       "C:\\Windows\\System32\\cmd.exe",
       ["/d", "/s", "/c", "node --version"],
-      expect.objectContaining({ cwd: "/project", shell: false, env: { ComSpec: "C:\\Windows\\System32\\cmd.exe", PROJECT_VALUE: "set" } }),
+      expect.objectContaining({
+        cwd: "/project",
+        shell: false,
+        detached: false,
+        env: { ComSpec: "C:\\Windows\\System32\\cmd.exe", PROJECT_VALUE: "set" },
+      }),
     );
   });
 });
