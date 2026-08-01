@@ -80,3 +80,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 61: 优化 Git 提交图布局与引用徽标
+
+**Date**: 2026-08-01
+**Task**: 优化 Git 提交图布局与引用徽标
+**Branch**: `refactor/git-commit-tree`
+
+### Summary
+
+提取支持重复泳道的 Git 图布局与结构化引用展示，完成 GitTab 行级宽度集成、回归测试、规格同步和浏览器布局验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ecc9ecd` | (see git log) |
+
+### Status
+
+[OK] **Completed**

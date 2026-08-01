@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 60
+- **Total Sessions**: 61
 - **Last Active**: 2026-08-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~82 | Active |
+| `journal-2.md` | ~103 | Active |
 | `journal-1.md` | ~1977 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 61 | 2026-08-01 | 优化 Git 提交图布局与引用徽标 | `ecc9ecd` | `refactor/git-commit-tree` |
 | 60 | 2026-08-01 | Git 工作区与提交树交互重构 | `a0eedd6` | `refactor/git-commit-tree` |
 | 59 | 2026-07-30 | 完善 Git 提交引用菜单 | `555a6f0` | `master` |
 | 58 | 2026-07-29 | 支持配置外部应用打开项目 | `9e51cb3` | `master` |
