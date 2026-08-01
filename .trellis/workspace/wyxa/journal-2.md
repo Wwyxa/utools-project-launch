@@ -59,3 +59,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 60: Git 工作区与提交树交互重构
+
+**Date**: 2026-08-01
+**Task**: Git 工作区与提交树交互重构
+**Branch**: `refactor/git-commit-tree`
+
+### Summary
+
+完成 Git 工作区双栏布局、提交树交互优化与折叠状态会话保存；已通过 lint 和浏览器验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0eedd6` | (see git log) |
+
+### Status
+
+[OK] **Completed**
