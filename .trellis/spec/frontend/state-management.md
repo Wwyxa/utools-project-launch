@@ -1194,28 +1194,34 @@ Validate both lexical and canonical boundaries, and reject direct link mutation 
 - Loading more commits must not overwrite the current `files`, `branches`, `branch`, `headHash`, or `isDetachedHead` fields. Those fields belong to status refresh.
 - Git write actions that only affect the index or worktree, such as stage and unstage, should refresh through `readGitStatusSnapshot` instead of rereading commit history.
 - The preload bridge should request `limit + 1` commits from `git log` to derive `hasMoreCommits`, then trim the returned page to `limit`.
-- UI components should use `hasMoreCommits` to show an explicit load-more affordance instead of rendering the full repository history.
+- The Git history viewport uses a fixed-height bottom sentinel observed with `IntersectionObserver` (`root` is the graph scrollport; bottom `rootMargin` is about `120px`) instead of a manual load-more button. One false-to-true intersection may request one page only; an already intersecting sentinel must not recursively chase filtered history to the repository end.
+- The sentinel stays mounted at a stable height and shows only an in-place spinner while loading. Commit rows retain stable hash keys and append below the existing list so scroll position and graph coordinates do not jump.
+- Disconnect the observer when its scrollport/sentinel changes, the commit tree closes, the repository context changes, or the component unmounts.
 
 ### 4. Validation & Error Matrix
 
 - Missing Git repository -> return an empty snapshot with `hasMoreCommits: false`.
 - Invalid `limit` or `skip` -> clamp to a safe bounded page in preload.
 - Loading more with no existing snapshot -> no-op.
+- Sentinel remains intersecting after a filtered append -> do not immediately request another page; wait for a new false-to-true intersection.
+- Commit tree closes, repository context changes, or the component unmounts -> disconnect the old observer so it cannot request against stale data.
 - Stage/unstage while a full refresh is in flight -> keep the latest status/files from the lightweight refresh, but still accept the full refresh's first commit page when HEAD/reference state has not changed.
 - Commit, branch switch, or checkout while a full refresh is in flight -> reject or ignore the stale full refresh commit page unless it was started after the ref-changing mutation.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: the Git tab shows the first page quickly and appends another page only when the user asks for more.
+- Good: the Git tab shows the first page quickly and appends one additional page as its bottom sentinel enters the graph viewport prefetch margin.
 - Good: staging one file updates W/S counts and row state without paying for another `git log` page.
-- Base: a small repository returns fewer than `limit` commits and hides the load-more control.
+- Base: a small repository returns fewer than `limit` commits and renders no actionable sentinel content.
 - Bad: running `git log --all` without a max count and rendering every commit.
 - Bad: implementing load-more by calling `readGitSnapshot` and replacing the entire Git snapshot, which makes status refresh slow and can overwrite current worktree state.
+- Bad: observing the sentinel without an intersection-edge guard, which can recursively load every history page when filtering leaves it visible.
 
 ### 6. Tests Required
 
 - `npm run lint` should verify the bridge option signature across types, fallback bridge, store, and components.
 - `npm run build` should verify the Git tab compiles with the pagination UI.
+- Browser smoke should verify one page per new sentinel intersection, stable scroll position/spinner height, and observer cleanup after collapsing or switching repositories.
 
 ### 7. Wrong vs Correct
 

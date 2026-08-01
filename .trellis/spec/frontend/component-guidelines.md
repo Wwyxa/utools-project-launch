@@ -372,13 +372,17 @@ return `${firstSize}px ${separatorSize}px minmax(0, 0.71fr)`;
 
 ### Convention: Compact Git History Rows
 
-**What**: Git history rows should keep hash, message, refs, author, and relative time readable while fitting into a compact fixed-height row.
+**What**: Git history rows should reserve a graph track plus message and compact refs, with a subdued author/relative-time line below. Full hash, full timestamps, body, and summaries live in the hover preview.
 
-**Why**: Moving author/time below the commit message improves scanability, but if the row height stays too large the graph feels stretched and wastes vertical space.
+**Why**: A weak metadata line preserves a useful scan cue without restoring a hash column or stretching the graph; detailed content remains available on demand.
+
+**Metadata Rule**: Keep the author and relative time in one low-contrast, small-text line (for example, `dark-readable-meta text-[9px]`) beneath the subject. Keep the shared fixed `rowHeight` in the graph geometry; do not restore a visible hash or a standalone hash-copy control to the dense row.
 
 **Graph Width Rule**: The SVG graph column must use the actual lane span as its CSS grid width. Do not cap the graph column to an arbitrary maximum such as `104px`; dense branch histories should make the row horizontally scrollable instead of clipping lanes or scaling each row differently.
 
-**Continuous Graph Rule**: Render Git graph lanes with a list-level shared SVG layer, not one isolated SVG per row. Compute row `y` coordinates from the same fixed row height and row gap used by the visible rows, keep the SVG layer `pointer-events: none`, and place it above hover/selected row backgrounds so branch lines and nodes remain visible while row clicks, selection buttons, hash copy, and tooltips continue to work. Keep that SVG inside the loaded-row container and clip it there; the graph must not visually extend into empty states or the "load more" area. Prefer a stable left-side mainline. For cross-lane parent links, non-first parents should fan out near the merge commit and branch lanes should fan back in near the target/base commit, then continue vertically; do not draw one long diagonal or long Bezier across many rows.
+**Grid Track Rule**: When removing selection or hash tracks, keep the graph as the first grid track and explicitly place the row content after it (for example, `col-start-2`). A lone auto-placed content element otherwise lands in the graph track and overlaps the shared SVG.
+
+**Continuous Graph Rule**: Render Git graph lanes with a list-level shared SVG layer, not one isolated SVG per row. Compute row `y` coordinates from the same fixed row height and row gap used by the visible rows, keep the SVG layer `pointer-events: none`, and place it above hover/selected row backgrounds so branch lines and nodes remain visible while row clicks, modifier-key selection, and tooltips continue to work. Keep that SVG inside the loaded-row container and clip it there; the graph must not visually extend into empty states or the load sentinel. Prefer a stable left-side mainline. For cross-lane parent links, non-first parents should fan out near the merge commit and branch lanes should fan back in near the target/base commit, then continue vertically; do not draw one long diagonal or long Bezier across many rows.
 
 **Dot Alignment Rule**: Commit rows must use the same pixel row-height constant as the SVG coordinate system. Do not rely on a rem-based utility such as `h-8` for Git graph rows while SVG nodes use numeric pixel coordinates, because root font size, zoom, or rendered content can make dots drift above or below their matching commit row. Set the row height from the shared `rowHeight` value and compute node `y` values from that same value plus the row gap.
 
@@ -448,13 +452,14 @@ while (directory.files.length === 0 && directory.directories.size === 1) {
 **Example**:
 
 ```vue
-<div class="grid h-8 min-w-[30rem] items-center gap-1.5 rounded px-2 text-xs">
-  <span class="truncate font-mono text-[10px] font-semibold">abc1234</span>
-  <div class="min-w-0 overflow-hidden">
+<div
+  class="grid h-[30px] min-w-[16rem] items-center gap-1 px-1 text-xs"
+  :style="{ gridTemplateColumns: `${graphColumnWidth}px minmax(14rem, 1fr)` }"
+>
+  <div class="col-start-2 min-w-0 overflow-hidden">
     <div class="flex min-w-0 items-center gap-1.5 leading-4">
       <span class="truncate text-[11px] font-semibold">Fix layout</span>
     </div>
-    <div class="mt-px truncate text-[9px] leading-3">wyxa · 2 小时前</div>
   </div>
 </div>
 ```
@@ -463,23 +468,26 @@ while (directory.files.length === 0 && directory.directories.size === 1) {
 
 ### Convention: Git History Selection Controls
 
-**What**: When Git history rows support manual selection for batch AI analysis, selection uses a dedicated compact button at the start of each row. The row click remains reserved for opening commit details.
+**What**: When Git history rows support manual selection for batch AI analysis, Ctrl/Cmd click toggles selection while an unmodified row click expands or collapses that commit's inline files.
 
-**Why**: Dense Git rows already have multiple meanings: graph scanning, hash copy, tooltip preview, and detail opening. A dedicated selection control lets users choose arbitrary commits without accidentally opening details or losing the compact row layout.
+**Why**: Modifier-key selection keeps dense rows flat and removes the checkbox/hash tracks without giving ordinary clicks two meanings.
 
 **Example**:
 
 ```vue
-<div class="grid h-8 items-center" @click="openCommitDetails(row.commit.hash)">
-  <button
-    type="button"
-    :aria-label="isCommitSelected(row.commit.hash) ? '取消选择该提交' : '选择该提交'"
-    @click.stop="toggleCommitSelection(row.commit.hash)"
-  >
-    <Check v-if="isCommitSelected(row.commit.hash)" :size="12" />
-  </button>
-  <!-- graph, hash, message, refs, author/time -->
+<div role="button" @click="handleCommitRowClick($event, row.commit.hash)">
+  <!-- graph, message, compact refs -->
 </div>
+```
+
+```ts
+const handleCommitRowClick = (event: MouseEvent, hash: string) => {
+  if (event.ctrlKey || event.metaKey) {
+    toggleCommitSelection(hash);
+    return;
+  }
+  void toggleCommitFiles(hash);
+};
 ```
 
 **Rules**:
@@ -487,7 +495,7 @@ while (directory.files.length === 0 && directory.directories.size === 1) {
 - Keep selection state local to `GitTab.vue` unless another view needs to consume it.
 - AI batch scope should prefer explicitly selected commits, falling back to the filtered visible commit list when nothing is selected.
 - Bulk actions such as select visible and clear selection belong near the filter/AI action area, and the toolbar should wrap in narrow windows.
-- Do not make the whole row toggle selection; preserve row click for commit details and `@click.stop` for hash copy and selection buttons.
+- Modifier-key selection must return before toggling inline files. Do not add checkboxes, Shift-range selection, or a second row click mode.
 
 **Related**: `src/components/project/GitTab.vue`, Streaming AI Bridge Actions in `state-management.md`.
 
@@ -518,7 +526,7 @@ while (directory.files.length === 0 && directory.directories.size === 1) {
 
 ### Convention: Markdown Commit Tooltips
 
-**What**: Git commit rows may show a delayed structured markdown tooltip for the full commit details, while the row itself stays compact and displays only the short hash, subject, refs, author, and relative time.
+**What**: Git commit rows may show a delayed structured markdown preview for full commit details, while the row stays compact with graph, subject, necessary refs, and subdued author/time metadata. The preview owns the full hash and its copy action.
 
 **Why**: Commit bodies often contain markdown lists. Native `title` tooltips flatten formatting and cannot render list structure, but immediate custom tooltips feel noisy when scanning a dense history list.
 
@@ -526,14 +534,14 @@ while (directory.files.length === 0 && directory.directories.size === 1) {
 
 - Render rich commit tooltips with a `Teleport` to `body` so nested Git panel `overflow` rules do not clip the floating layer.
 - Use a short hover delay before showing the tooltip. Current Git history uses about `450ms`.
-- Keep row text compact; put detailed absolute time in the custom tooltip instead of a native `title` on the author/time row.
-- Do not repeat the short commit hash inside the tooltip header; the row already shows it. It is fine to use the hash only for stable Vue keys.
-- Store the hovered commit object plus coordinates in tooltip state instead of storing only a precomputed string. The tooltip needs `message`, `body`, `author`, `date`, and `refs` to build the header and markdown body.
+- Keep row text compact; retain only a subdued author and relative-time line, while full hash, absolute time, markdown body, and summary stay in the preview.
+- Put a short hash at the start of the preview footer, before the change summary. The hash text itself is the copy control: it copies the full hash with `@click.stop`; do not add a separate copy icon or a message-copy button.
+- Store the hovered commit object and trigger row bounds (`top` / `bottom`), not only precomputed text. The preview needs `message`, `body`, `author`, `date`, and `refs` to build its content.
 - Let tooltip width fit content with a max-width cap. Do not add a fixed/minimum width that leaves empty space for short commit messages.
-- Positioning should stay simple: default above the cursor/row, fall below only when there is not enough top space. Avoid complex left/right flipping that can make the tooltip appear far from the hovered commit.
-- When placing above, prefer CSS transform based on the tooltip's real height, such as `transform: translateY(-100%)`, instead of subtracting an estimated height from `top`.
+- Anchor the preview's left edge to the graph scrollport's right edge plus its fixed gap. Center it on the trigger row with its measured DOM height, then clamp the top/bottom and right viewport insets; do not cursor-follow or horizontally flip it.
+- Measure the teleported shell after mount and with `ResizeObserver`; never estimate its height or rely on a CSS transform for final positioning.
 - In a height-constrained tooltip, make the shell and content area flex columns with `min-h-0`; keep the header, title, change summary, and refs non-shrinking, and let only the markdown body use the remaining height with `overflow-y-auto`. With a long body at compact max-height, assert that the body scrolls and the summary remains fully inside the panel bounds.
-- Clear pending timers and visible tooltip state on mouse leave and component unmount.
+- Clear pending timers and visible tooltip state on mouse leave, scroll, resize, every layout-changing section collapse, repository reset, and component unmount.
 - Normalize common commit formats before rendering the tooltip body:
   - Subject-only commit: show the subject as the tooltip title and omit the body area.
   - `body` starts with the same subject line or a truncated/expanded version of it: remove that first body line before markdown rendering.
@@ -544,13 +552,14 @@ while (directory.files.length === 0 && directory.directories.size === 1) {
 **Example**:
 
 ```ts
-type CommitTooltipState = { commit: ProjectGitCommitSummary; x: number; y: number };
+type CommitTooltipState = { commit: ProjectGitCommitSummary; top: number; bottom: number };
 
 const commitTooltip = ref<CommitTooltipState | null>(null);
 const pendingCommitTooltip = ref<CommitTooltipState | null>(null);
 
 const showCommitTooltip = (event: MouseEvent, commit: ProjectGitCommitSummary) => {
-  pendingCommitTooltip.value = { commit, x: event.clientX, y: event.clientY };
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  pendingCommitTooltip.value = { commit, top: rect.top, bottom: rect.bottom };
 };
 ```
 

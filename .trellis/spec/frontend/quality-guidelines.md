@@ -48,7 +48,7 @@ Minimum checks for frontend changes today:
 - run `npm run build`
 - manually inspect the dashboard and project detail flows for layout overflow, broken tab switching, and clipped terminal output
 - verify that normal readiness logs remain neutral/success-toned while real errors stay red
-- for hover tooltips in dense panels, verify delayed appearance, tab switching/unmount cleanup, markdown rendering, and placement above/below the cursor in a compact window
+- for interactive hover previews in dense panels, verify the cold-open delay, immediate warm switching, tab switching/unmount cleanup, Markdown rendering, stable panel-edge anchoring, full viewport bounds, and cleanup after every layout-changing section collapse in a compact window
 
 If a test runner is added later, prefer focused component or store tests around the project shell and store mutations first.
 
@@ -82,6 +82,22 @@ If a test runner is added later, prefer focused component or store tests around 
 ```
 
 **Prevention**: For each teleported popup, assert both `getComputedStyle(popup).position === "fixed"` and its settled bounding box against the viewport after the overlay scrollbar initializes.
+
+### Common Mistake: Estimating A Side Preview's Size
+
+**Symptom**: A side-aligned interactive preview initially looks aligned, then shifts, overlaps a list row, or clips at the viewport edge after Markdown, avatars, or asynchronous summary content loads.
+
+**Cause**: Its vertical position is calculated from a fixed estimated height or pointer offset even though the card's rendered dimensions can change after it opens.
+
+**Fix**: Anchor the horizontal edge to the owning panel rather than the pointer. Measure the teleported fixed shell after mount and observe it with `ResizeObserver`; center it on the active row using the measured height, then clamp it to the viewport.
+
+```ts
+const rowCenter = (rowRect.top + rowRect.bottom) / 2;
+const popupHeight = popup.getBoundingClientRect().height;
+const top = clamp(rowCenter - popupHeight / 2, viewportInset, viewportHeight - popupHeight - viewportInset);
+```
+
+**Prevention**: In a dense list, test short and long content, loading-to-loaded size changes, top/middle/bottom rows, a cold hover, adjacent warm switches, and pointer transfer into the interactive card.
 
 ### Common Mistake: Relying On Tailwind Dark Variants Without Verifying Them
 
