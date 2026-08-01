@@ -58,7 +58,7 @@ const sandbox = {
         },
       };
     }
-    if (moduleName === "node:child_process") {
+    if (moduleName === "child_process") {
       return {
         ...childProcess,
         spawn() {

@@ -1,8 +1,10 @@
-const fs = require("node:fs");
-const path = require("node:path");
-const os = require("node:os");
-const { spawn, spawnSync, execFile, execFileSync } = require("node:child_process");
-const { TextDecoder } = require("node:util");
+// Use legacy Node builtin names: older uTools Electron versions do not resolve
+// the newer `node:` specifier and would skip the entire preload bridge.
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const { spawn, spawnSync, execFile, execFileSync } = require("child_process");
+const { TextDecoder } = require("util");
 const { shell } = require("electron");
 
 const activeProcesses = new Map();
@@ -3723,17 +3725,25 @@ function detectNodeUnit(rootPath, targetPath) {
   }));
 }
 
-function discoverProjectScripts(projectPath) {
+function discoverProjectScripts(projectPath, options = {}) {
   const resolvedPath = expandPath(projectPath);
   if (!pathExists(projectPath)) {
     return { scripts: [], message: "路径不存在或当前设备无法访问。" };
   }
 
-  const packageScripts = commonProjectDirs.flatMap((dirName) => {
-    const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
-    return detectNodeUnit(resolvedPath, targetPath);
-  });
-  const makefileScripts = readMakefileScripts(resolvedPath).scripts;
+  const requestedSources = Array.isArray(options.sources) ? options.sources : ["package-json", "makefile"];
+  const sources = new Set(requestedSources.filter((source) => source === "package-json" || source === "makefile"));
+  if (sources.size === 0) {
+    return { scripts: [], message: "请至少选择一种识别来源。" };
+  }
+
+  const packageScripts = sources.has("package-json")
+    ? commonProjectDirs.flatMap((dirName) => {
+        const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
+        return detectNodeUnit(resolvedPath, targetPath);
+      })
+    : [];
+  const makefileScripts = sources.has("makefile") ? readMakefileScripts(resolvedPath).scripts : [];
   return { scripts: [...packageScripts, ...makefileScripts] };
 }
 

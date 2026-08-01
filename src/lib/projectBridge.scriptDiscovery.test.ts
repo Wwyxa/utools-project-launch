@@ -83,7 +83,8 @@ describe("project script discovery", () => {
       "utf8",
     );
 
-    const result = await loadPreloadBridge().discoverProjectScripts(directory);
+    const bridge = loadPreloadBridge();
+    const result = await bridge.discoverProjectScripts(directory, { sources: ["package-json", "makefile"] });
 
     expect(result.scripts).toEqual(
       expect.arrayContaining([
@@ -98,10 +99,16 @@ describe("project script discovery", () => {
     expect(result.scripts.map((script) => script.command)).not.toEqual(
       expect.arrayContaining(["make %.o", "make $(GENERATED)", "make unsafe;target"]),
     );
+    expect((await bridge.discoverProjectScripts(directory, { sources: ["package-json"] })).scripts).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ source: "makefile" })]),
+    );
+    expect((await bridge.discoverProjectScripts(directory, { sources: ["makefile"] })).scripts).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ source: "package-json" })]),
+    );
   });
 
   it("returns no candidates for a missing project path", () => {
-    expect(loadPreloadBridge().discoverProjectScripts(join(tmpdir(), "missing-utools-script-project"))).toEqual(
+    expect(loadPreloadBridge().discoverProjectScripts(join(tmpdir(), "missing-utools-script-project"), { sources: ["makefile"] })).toEqual(
       expect.objectContaining({ scripts: [], message: expect.any(String) }),
     );
   });
@@ -119,7 +126,7 @@ describe("project script discovery", () => {
       const bridge = loadPreloadBridge({
         platform,
         env,
-        moduleOverrides: { "node:child_process": { ...nodeRequire("node:child_process"), spawn } },
+        moduleOverrides: { child_process: { ...nodeRequire("child_process"), spawn } },
       });
       bridge.runCommand({
         projectId: "project",

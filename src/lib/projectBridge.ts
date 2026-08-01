@@ -706,7 +706,7 @@ const fallbackBridge: ProjectBridge = {
       message: "浏览器预览无法读取本地目录，已保留手动填写。",
     };
   },
-  async discoverProjectScripts(): Promise<ProjectScriptDiscoveryResult> {
+  async discoverProjectScripts(_projectPath, _options): Promise<ProjectScriptDiscoveryResult> {
     return { scripts: [], message: "浏览器预览无法读取本地项目脚本。" };
   },
   async pickProjectPath() {

@@ -39,7 +39,7 @@ describe("project form script discovery", () => {
     store.updateProjectForm({ path: "/project" });
     store.updateScriptEntry(store.projectFormDraft.scripts[0]!.id, { command: "manual start" });
 
-    const candidates = await store.discoverProjectFormScripts();
+    const candidates = await store.discoverProjectFormScripts(["makefile"]);
     expect(store.importProjectFormScripts([candidates[1]!])).toBe(1);
     expect(store.importProjectFormScripts([candidates[1]!])).toBe(0);
 

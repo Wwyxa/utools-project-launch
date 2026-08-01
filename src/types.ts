@@ -664,6 +664,12 @@ export interface ProjectScriptDiscoveryResult {
   message?: string;
 }
 
+export type ProjectScriptDiscoverySource = Extract<ProjectScriptSource, "package-json" | "makefile">;
+
+export interface ProjectScriptDiscoveryOptions {
+  sources: ProjectScriptDiscoverySource[];
+}
+
 export interface ProjectImportResult {
   imported: number;
   skipped: number;
@@ -871,7 +877,10 @@ export interface ProjectBridge {
     onDone: AiStreamDoneHandler,
   ): Promise<void>;
   inspectProjectPath(projectPath: string): Promise<ProjectPathInspection>;
-  discoverProjectScripts(projectPath: string): Promise<ProjectScriptDiscoveryResult>;
+  discoverProjectScripts(
+    projectPath: string,
+    options: ProjectScriptDiscoveryOptions,
+  ): Promise<ProjectScriptDiscoveryResult>;
   pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pickQuickLinkPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pathExists(projectPath: string): Promise<boolean>;

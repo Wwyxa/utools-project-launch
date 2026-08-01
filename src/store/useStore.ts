@@ -77,6 +77,7 @@ import type {
   ProjectVisibility,
   ProjectScript,
   ProjectBridgeScriptCandidate,
+  ProjectScriptDiscoverySource,
   ProjectScriptFormValue,
   TodoItem,
 } from "../types";
@@ -1791,7 +1792,7 @@ export const useStore = defineStore("app", {
         this.projectFormInspecting = false;
       }
     },
-    async discoverProjectFormScripts(): Promise<ProjectBridgeScriptCandidate[]> {
+    async discoverProjectFormScripts(sources: ProjectScriptDiscoverySource[]): Promise<ProjectBridgeScriptCandidate[]> {
       const projectPath = this.projectFormDraft.path.trim();
       if (!projectPath) {
         this.projectFormInspectionMessage = "请先填写项目路径";
@@ -1800,7 +1801,7 @@ export const useStore = defineStore("app", {
 
       this.projectFormInspecting = true;
       try {
-        const result = await bridge.discoverProjectScripts(projectPath);
+        const result = await bridge.discoverProjectScripts(projectPath, { sources });
         this.projectFormInspectionMessage = result.message || `发现 ${result.scripts.length} 条可导入命令`;
         return result.scripts;
       } finally {
