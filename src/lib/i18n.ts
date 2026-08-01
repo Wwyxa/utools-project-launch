@@ -80,7 +80,7 @@ const messages = {
       files: "文件",
       git: "Git",
       memo: "备忘",
-      reorderTabsHint: "长按拖动排序",
+      reorderTabsHint: "长按标签拖动排序",
       openProject: "打开项目目录",
       noScripts: "还没有配置可启动脚本。",
       refreshUnavailable: "项目路径不可用，无法刷新",
@@ -100,6 +100,7 @@ const messages = {
       startScript: "启动",
       stopScript: "停止",
       resizePanels: "调整脚本列表和终端面板高度",
+      dragToReorder: "拖动排序命令",
     },
     automation: {
       title: "任务",
@@ -470,7 +471,7 @@ const messages = {
       files: "Files",
       git: "Git",
       memo: "Memo",
-      reorderTabsHint: "Hold and drag to reorder",
+      reorderTabsHint: "Hold a tab to drag and reorder",
       openProject: "Open Folder",
       noScripts: "No launch scripts yet.",
       refreshUnavailable: "Project path is unavailable, refresh disabled",
@@ -491,6 +492,7 @@ const messages = {
       startScript: "Start",
       stopScript: "Stop",
       resizePanels: "Resize the script list and terminal panel heights",
+      dragToReorder: "Drag to reorder commands",
     },
     automation: {
       title: "Tasks",

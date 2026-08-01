@@ -71,6 +71,10 @@ Good candidates in the current app include:
 - project form drafts, because create/edit flows update multiple panels and store-owned domain state
 - preload bridge results such as Git snapshots and running process metadata
 
+### Convention: Persisted Project Script Reordering
+
+Script ordering is project configuration, so the Scripts tab keeps drag state locally and calls the Pinia `reorderProjectScripts` action when a drop succeeds. The store updates the project array before persisting it; drag state and drop highlighting must not be persisted.
+
 Do not move purely visual state into the store if a component can manage it locally.
 
 ---

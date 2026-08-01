@@ -113,4 +113,28 @@ describe("project form script discovery", () => {
       scripts: [expect.objectContaining({ id: source.scripts[0]?.id })],
     });
   });
+
+  it("reorders persisted project scripts when their drag handles are dropped", async () => {
+    stubWindow();
+    const { useStore } = await import("./useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project: Project = {
+      id: "ordered-project",
+      name: "Ordered",
+      path: "/workspace/ordered",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [
+        { id: "first", name: "first", command: "first", status: "IDLE", cwd: ".", note: "", source: "manual" },
+        { id: "second", name: "second", command: "second", status: "IDLE", cwd: ".", note: "", source: "manual" },
+      ],
+      env: {},
+    };
+    store.projects = [project];
+
+    expect(store.reorderProjectScripts(project.id, "first", "second")).toBe(true);
+    expect(store.projects[0]?.scripts.map((script) => script.id)).toEqual(["second", "first"]);
+  });
 });

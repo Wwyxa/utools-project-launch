@@ -1947,9 +1947,32 @@ export const useStore = defineStore("app", {
       }
 
       const [script] = scripts.splice(currentIndex, 1);
-      const insertIndex = currentIndex < targetIndex ? targetIndex - 1 : targetIndex;
-      scripts.splice(insertIndex, 0, script);
+      scripts.splice(targetIndex, 0, script);
       this.projectFormDraft.scripts = scripts;
+    },
+    reorderProjectScripts(projectId: string, scriptId: string, targetScriptId: string) {
+      if (scriptId === targetScriptId) {
+        return false;
+      }
+
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return false;
+      }
+
+      const sourceIndex = project.scripts.findIndex((script) => script.id === scriptId);
+      const targetIndex = project.scripts.findIndex((script) => script.id === targetScriptId);
+      if (sourceIndex < 0 || targetIndex < 0) {
+        return false;
+      }
+
+      const scripts = [...project.scripts];
+      const [script] = scripts.splice(sourceIndex, 1);
+      scripts.splice(targetIndex, 0, script);
+      project.scripts = scripts;
+      project.lastUpdated = new Date().toLocaleString();
+      void this.persistProjects();
+      return true;
     },
     async saveProjectForm() {
       const current = this.projectFormDraft;
