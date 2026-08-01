@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Route review to state, component and type conventions without truncated injection."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check reported performance evidence and executable regressions."}
+{"file":".trellis/tasks/08-01-git-interaction-performance/research/git-interaction-performance-paths.md","reason":"Verify command counts, measurement protocol and invalidation boundaries."}

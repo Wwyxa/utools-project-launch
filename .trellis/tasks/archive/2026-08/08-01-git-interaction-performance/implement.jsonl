@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Route implementation to state, component and type conventions; task research contains the focused Git contracts."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply executable and interactive hover performance regression checks."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Map measurement and invalidation through Vue, Store, bridge and preload."}
+{"file":".trellis/tasks/08-01-git-interaction-performance/research/git-interaction-performance-paths.md","reason":"Use the static command map, benchmark fixture and cache invalidation matrix."}
