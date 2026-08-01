@@ -101,3 +101,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 62: 优化 Git 提交交互性能
+
+**Date**: 2026-08-02
+**Task**: 优化 Git 提交交互性能
+**Branch**: `refactor/git-commit-tree`
+
+### Summary
+
+完成 Git 提交树与文件暂存交互性能优化：合并初始刷新、复用提交 tooltip 会话，并将轻量提交统计随历史结果返回；补充基准、测试与前端状态契约。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9a147af` | (see git log) |
+
+### Status
+
+[OK] **Completed**
