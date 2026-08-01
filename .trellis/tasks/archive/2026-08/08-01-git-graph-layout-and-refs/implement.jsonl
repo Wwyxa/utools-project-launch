@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Route implementation to the frontend component and type conventions; task research contains the Git-specific extracted contracts."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply focused tests, theme checks and dense-panel geometry validation."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Create one graph/ref source of truth and remove the old inline duplicates."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Keep preload ref data, shared types and component presentation aligned."}
+{"file":".trellis/tasks/08-01-git-graph-layout-and-refs/research/git-graph-layout-and-ref-presentation.md","reason":"Implement the verified swimlane transition, per-row width and ref fixtures."}
