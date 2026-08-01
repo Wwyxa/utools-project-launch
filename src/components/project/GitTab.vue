@@ -95,6 +95,13 @@ import {
   type GitAiAnalysisSession,
   type GitAiAnalysisSessionInput,
 } from "../../lib/gitAiAnalysisSession";
+import {
+  GIT_COMMIT_GRAPH_GEOMETRY,
+  layoutGitCommitGraph,
+  type GitCommitGraphRow,
+  type GitCommitGraphSegment,
+} from "../../lib/gitCommitGraph";
+import { presentGitCommitRefs, type GitCommitRefPresentationMember } from "../../lib/gitCommitRefs";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -3264,9 +3271,7 @@ const refsForCommit = (refs?: string) =>
     .map((refName) => refName.trim())
     .filter(Boolean);
 
-type GitRefKind = "head" | "primary" | "local" | "remote" | "tag" | "unknown";
 type GitRefPresentation = {
-  kind: GitRefKind;
   refName: string;
   label: string;
   className: string;
@@ -3276,56 +3281,47 @@ type GitRefPresentation = {
 
 const refBadgeBaseClass =
   "inline-flex max-w-40 shrink-0 items-center gap-1 overflow-hidden rounded border px-1.5 py-px text-[9px] font-bold leading-3";
-const isHeadRef = (refName: string) => refName === "HEAD" || /^HEAD ->\s+\S+$/.test(refName);
-const refDisplayName = (refName: string) => (isHeadRef(refName) ? refName.replace(/^HEAD ->\s*/, "").trim() : refName);
 const isRemoteRef = (refName: string) =>
   /^(?:origin|upstream|remote|remotes\/[^/]+)\//.test(refName) ||
   (snapshot.value?.remotes || []).some((remote) => refName.startsWith(`${remote.name}/`));
-const isLocalBranchRef = (refName: string) =>
-  (snapshot.value?.branches || []).some((branch) => branch.name === refName);
 const isPrimaryBranchRef = (refName: string) => refName === "main" || refName === "master";
 
-const refPresentation = (refName: string, structuredKind?: ProjectGitCommitRef["kind"]): GitRefPresentation => {
-  const label = structuredKind === "head" ? refName.replace(/^HEAD ->\s*/, "").trim() : refDisplayName(refName);
-  if (structuredKind === "head" || (!structuredKind && isHeadRef(refName))) {
+const refPresentation = (ref: GitCommitRefPresentationMember): GitRefPresentation => {
+  if (ref.kind === "head") {
     return {
-      kind: "head",
-      refName,
-      label,
+      refName: ref.name,
+      label: ref.label,
       className: cn(refBadgeBaseClass, "border-primary/70 bg-primary/10 text-primary"),
       icon: CircleDot,
-      isHead: true,
+      isHead: ref.isCurrentHead,
     };
   }
-  if (structuredKind === "tag" || (!structuredKind && refName.startsWith("tag:"))) {
+  if (ref.kind === "tag") {
     return {
-      kind: "tag",
-      refName,
-      label: structuredKind === "tag" ? refName : label,
+      refName: ref.name,
+      label: ref.label,
       className: cn(refBadgeBaseClass, "border-tertiary/30 bg-tertiary/10 text-tertiary"),
       icon: Tag,
       isHead: false,
     };
   }
-  if (structuredKind === "remote" || (!structuredKind && isRemoteRef(refName))) {
+  if (ref.kind === "remote") {
     return {
-      kind: "remote",
-      refName,
-      label,
+      refName: ref.name,
+      label: ref.label,
       className: cn(refBadgeBaseClass, "border-secondary/35 bg-secondary/10 text-secondary"),
       icon: Cloud,
       isHead: false,
     };
   }
-  if (structuredKind === "local" || (!structuredKind && isLocalBranchRef(refName))) {
-    const kind = isPrimaryBranchRef(refName) ? "primary" : "local";
+  if (ref.kind === "local") {
+    const isPrimary = isPrimaryBranchRef(ref.label);
     return {
-      kind,
-      refName,
-      label,
+      refName: ref.name,
+      label: ref.label,
       className: cn(
         refBadgeBaseClass,
-        kind === "primary"
+        isPrimary
           ? "border-status-running/35 bg-status-running/10 text-status-running"
           : "border-status-warning/35 bg-status-warning/10 text-status-warning",
       ),
@@ -3334,50 +3330,36 @@ const refPresentation = (refName: string, structuredKind?: ProjectGitCommitRef["
     };
   }
   return {
-    kind: "unknown",
-    refName,
-    label,
+    refName: ref.name,
+    label: ref.label,
     className: cn(refBadgeBaseClass, "border-border-subtle bg-surface-container-low text-on-surface-variant"),
     icon: null,
     isHead: false,
   };
 };
 
+const commitRefPresentation = (commit: ProjectGitCommitSummary) =>
+  presentGitCommitRefs(commit, {
+    branch: snapshot.value?.branch,
+    headHash: snapshot.value?.headHash,
+    branches: snapshot.value?.branches,
+    remotes: snapshot.value?.remotes,
+    upstream: snapshot.value?.upstream,
+  });
 const refPresentations = (commit: ProjectGitCommitSummary) =>
-  commit.refNames
-    ? commit.refNames.map((ref) => refPresentation(ref.name, ref.kind))
-    : refsForCommit(commit.refs).map((ref) => refPresentation(ref));
-const compactCommitRefPresentations = (commit: ProjectGitCommitSummary) => {
-  const refs = refPresentations(commit);
-  const headLabel = refs.find((ref) => ref.isHead)?.label;
-  const remoteRefs = refs.filter((ref) => ref.kind === "remote");
-  const primaryRemote = remoteRefs.find((ref) => !ref.refName.endsWith("/HEAD")) || remoteRefs[0];
-  const orderedRemoteRefs = primaryRemote ? [primaryRemote, ...remoteRefs.filter((ref) => ref !== primaryRemote)] : [];
-  let hasRemote = false;
-
-  return refs
-    .filter((ref) => {
-      if ((ref.kind === "local" || ref.kind === "primary") && ref.label === headLabel) return false;
-      return true;
-    })
-    .flatMap((ref) => {
-      if (ref.kind !== "remote") return [{ ...ref, title: ref.refName, showLabel: true }];
-      if (hasRemote) return [];
-      hasRemote = true;
-      return orderedRemoteRefs.map((remote, index) => ({
-        ...remote,
-        title: remote.refName,
-        showLabel: index === 0,
-      }));
-    });
-};
-const isHeadCommit = (commit: ProjectGitCommitSummary) => refPresentations(commit).some((ref) => ref.isHead);
+  commitRefPresentation(commit).full.map((ref) => refPresentation(ref));
+const compactCommitRefPresentations = (commit: ProjectGitCommitSummary) =>
+  commitRefPresentation(commit).dense.members.map((ref) => ({
+    ...refPresentation(ref),
+    title: ref.title,
+    showLabel: ref.display === "label",
+  }));
+const isHeadCommit = (commit: ProjectGitCommitSummary) =>
+  commitRefPresentation(commit).full.some((ref) => ref.isCurrentHead);
 const graphStrokeColors = ["#0ea5e9", "#e91e9d", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16"];
-const laneWidth = 14;
-const graphPaddingX = 3;
+const graphStrokeColor = (colorIndex: number) => graphStrokeColors[colorIndex % graphStrokeColors.length] || graphStrokeColors[0];
 const graphRowPaddingX = 4;
-const rowHeight = 32;
-const rowGap = 1;
+const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
 const rowPitch = rowHeight + rowGap;
 const createCommitFileTreeNode = (): CommitFileTreeNode => ({ directories: new Map(), files: [] });
 const compareCommitFileTreeNames = (left: string, right: string) => (left === right ? 0 : left < right ? -1 : 1);
@@ -3482,26 +3464,12 @@ const expandedCommitFilesHeight = (hash: string) => {
   return Math.min(240, commitFileDisplayItems(hash).length * 24 + 10);
 };
 const dotRadius = 3.9;
-const laneCenter = (lane: number) => lane * laneWidth + laneWidth / 2 + graphPaddingX;
-const minGraphColumnWidth = 28;
 const graphLayerLeft = graphRowPaddingX;
-
-type GitGraphRow = { commit: ProjectGitCommitSummary; lane: number; color: string; y: number };
-type GitGraphPath = { id: string; d: string; color: string; opacity: number };
-type GitGraphNode = { hash: string; x: number; y: number; color: string; isHead: boolean };
 type GitGraphPathMode = "vertical" | "fanOut" | "fanIn";
-type GitGraphEdge = {
-  sourceHash: string;
-  parentHash: string;
-  parentIndex: number;
-  color: string;
-};
-
-const refsIncludeBranch = (commit: ProjectGitCommitSummary, branch: string) =>
-  (commit.refNames?.map((ref) => ref.name) || refsForCommit(commit.refs)).some((refName) => {
-    const cleanRef = refName.replace(/^HEAD ->\s*/, "").trim();
-    return cleanRef === branch || cleanRef === `origin/${branch}`;
-  });
+const graphNodeX = (lane: number) =>
+  GIT_COMMIT_GRAPH_GEOMETRY.paddingX +
+  lane * GIT_COMMIT_GRAPH_GEOMETRY.laneWidth +
+  GIT_COMMIT_GRAPH_GEOMETRY.laneWidth / 2;
 
 const graphPathData = (sourceX: number, sourceY: number, targetX: number, targetY: number, mode: GitGraphPathMode) => {
   if (sourceX === targetX) {
@@ -3525,159 +3493,73 @@ const graphPathData = (sourceX: number, sourceY: number, targetX: number, target
   return `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + curveY} ${targetX} ${switchY - curveY} ${targetX} ${switchY} L ${targetX} ${targetY}`;
 };
 
-const graphLayout = computed(() => {
-  const visibleCommits = commits.value;
-  const visibleIndex = new Map(visibleCommits.map((commit, index) => [commit.hash, index]));
-  const activeLanes: Array<string | null> = [];
-  const laneColors = new Map<number, string>();
-  let colorIndex = 0;
-  let maxLane = 0;
-  const rows: GitGraphRow[] = [];
-  const edges: GitGraphEdge[] = [];
-  const currentBranch = snapshot.value?.branch || "";
-  let expandedHeight = 0;
-
-  const nextColor = () => graphStrokeColors[colorIndex++ % graphStrokeColors.length];
-  const ensureLaneColor = (lane: number) => {
-    if (!laneColors.has(lane)) {
-      laneColors.set(lane, nextColor());
-    }
-    return laneColors.get(lane) || graphStrokeColors[0];
-  };
-  const setLaneColor = (lane: number, color: string) => {
-    laneColors.set(lane, color);
-    return color;
-  };
-  const findLane = (hash: string) => activeLanes.indexOf(hash);
-  const allocLane = (color = nextColor(), startLane = 0) => {
-    const firstCandidate = Math.max(0, startLane);
-    let lane = -1;
-    for (let index = firstCandidate; index < activeLanes.length; index += 1) {
-      if (activeLanes[index] === null) {
-        lane = index;
-        break;
-      }
-    }
-    if (lane < 0) {
-      lane = Math.max(firstCandidate, activeLanes.length);
-      while (activeLanes.length <= lane) {
-        activeLanes.push(null);
-      }
-    }
-    setLaneColor(lane, color);
-    return lane;
-  };
-
-  if (currentBranch) {
-    const headCommit = visibleCommits.find((commit) => refsIncludeBranch(commit, currentBranch));
-    if (headCommit) {
-      activeLanes[0] = headCommit.hash;
-      setLaneColor(0, nextColor());
-    }
+const graphSegmentPathData = (segment: GitCommitGraphSegment) => {
+  if (
+    segment.kind === "root-termination" &&
+    segment.from.x === segment.to.x &&
+    segment.from.y === segment.to.y
+  ) {
+    return "";
   }
+  const mode: GitGraphPathMode =
+    segment.kind === "duplicate-convergence" || segment.kind === "lane-shift"
+      ? "fanIn"
+      : segment.kind === "additional-parent-fan-out" || segment.kind === "first-parent-continuation"
+        ? "fanOut"
+        : "vertical";
+  return graphPathData(segment.from.x, segment.from.y, segment.to.x, segment.to.y, mode);
+};
 
-  visibleCommits.forEach((commit, index) => {
-    const existingLane = findLane(commit.hash);
-    let lane = existingLane;
-    if (lane < 0) {
-      lane = allocLane();
-      activeLanes[lane] = commit.hash;
-    }
-
-    const color = ensureLaneColor(lane);
-    rows.push({ commit, lane, color, y: index * rowPitch + rowHeight / 2 + expandedHeight });
-    maxLane = Math.max(maxLane, lane);
-    activeLanes[lane] = null;
-
-    (commit.parents || []).forEach((parentHash, parentIndex) => {
-      if (!visibleIndex.has(parentHash)) {
-        return;
-      }
-
-      let parentLane = findLane(parentHash);
-      if (parentLane < 0) {
-        if (parentIndex === 0 && activeLanes[lane] === null) {
-          parentLane = lane;
-          activeLanes[parentLane] = parentHash;
-          setLaneColor(parentLane, color);
-        } else {
-          parentLane = allocLane(undefined, parentIndex > 0 ? lane + 1 : 0);
-          activeLanes[parentLane] = parentHash;
-        }
-      } else if (parentIndex === 0 && parentLane > lane && activeLanes[lane] === null) {
-        activeLanes[parentLane] = null;
-        parentLane = lane;
-        activeLanes[parentLane] = parentHash;
-        setLaneColor(parentLane, color);
-      }
-
-      const parentColor = parentIndex === 0 ? color : ensureLaneColor(parentLane);
-      edges.push({
-        sourceHash: commit.hash,
-        parentHash,
-        parentIndex,
-        color: parentColor,
-      });
-      maxLane = Math.max(maxLane, parentLane);
-    });
-
-    while (activeLanes.length && activeLanes[activeLanes.length - 1] === null) {
-      activeLanes.pop();
-    }
-    expandedHeight += expandedCommitFilesHeight(commit.hash);
-  });
-
-  const rowByHash = new Map(rows.map((row) => [row.commit.hash, row]));
-  const paths = edges.flatMap((edge) => {
-    const sourceRow = rowByHash.get(edge.sourceHash);
-    const parentRow = rowByHash.get(edge.parentHash);
-    if (!sourceRow || !parentRow || parentRow.y <= sourceRow.y) {
-      return [];
-    }
-
-    const sourceX = laneCenter(sourceRow.lane);
-    const targetX = laneCenter(parentRow.lane);
-    const sourceY = sourceRow.y;
-    const targetY = parentRow.y;
-    const mode = sourceRow.lane === parentRow.lane ? "vertical" : edge.parentIndex > 0 ? "fanOut" : "fanIn";
-
-    return [
-      {
-        id: `${edge.sourceHash}-${edge.parentHash}-${edge.parentIndex}`,
-        d: graphPathData(sourceX, sourceY, targetX, targetY, mode),
-        color: edge.color,
-        opacity: edge.parentIndex === 0 ? 0.82 : 0.72,
-      },
-    ];
-  });
-  const nodes = rows.map((row) => ({
-    hash: row.commit.hash,
-    x: laneCenter(row.lane),
-    y: row.y,
-    color: row.color,
-    isHead: isHeadCommit(row.commit),
-  }));
-  const laneCount = rows.length > 0 ? maxLane + 1 : 1;
-  const columnWidth = Math.max(minGraphColumnWidth, laneCount * laneWidth + graphPaddingX * 2);
-  const height = rows.length > 0 ? rows.length * rowHeight + Math.max(0, rows.length - 1) * rowGap + expandedHeight : 0;
-
-  return { rows, paths, nodes, columnWidth, height };
-});
+const graphLayout = computed(() =>
+  layoutGitCommitGraph(commits.value, {
+    expandedRowHeights: Object.fromEntries(
+      commits.value.map((commit) => [commit.hash, expandedCommitFilesHeight(commit.hash)]),
+    ),
+  }),
+);
 
 const graphRows = computed(() => graphLayout.value.rows);
-const graphPaths = computed(() => graphLayout.value.paths);
-const graphNodes = computed(() => graphLayout.value.nodes);
-const graphColumnWidth = computed(() => graphLayout.value.columnWidth);
+const graphPaths = computed(() =>
+  graphRows.value.flatMap((row) =>
+    row.segments.flatMap((segment, segmentIndex) => {
+      const d = graphSegmentPathData(segment);
+      if (!d) return [];
+      return [
+        {
+          id: `${row.commit.hash}-${segmentIndex}`,
+          d,
+          color: graphStrokeColor(segment.colorIndex),
+          opacity: segment.kind === "additional-parent-fan-out" ? 0.72 : 0.82,
+        },
+      ];
+    }),
+  ),
+);
+const graphNodes = computed(() =>
+  graphRows.value.map((row) => ({
+    hash: row.commit.hash,
+    x: graphNodeX(row.nodeLane),
+    y: row.y,
+    color: graphStrokeColor(row.nodeColorIndex),
+    isHead: isHeadCommit(row.commit),
+  })),
+);
+const graphCanvasWidth = computed(() => graphLayout.value.canvasWidth);
 const graphContentHeight = computed(() => graphLayout.value.height);
-const graphViewBox = computed(() => `0 0 ${graphColumnWidth.value} ${Math.max(rowHeight, graphContentHeight.value)}`);
+const graphViewBox = computed(() => `0 0 ${graphCanvasWidth.value} ${Math.max(rowHeight, graphContentHeight.value)}`);
 const graphLayerStyle = computed(() => ({
   left: `${graphLayerLeft}px`,
-  width: `${graphColumnWidth.value}px`,
+  width: `${graphCanvasWidth.value}px`,
   height: `${graphContentHeight.value}px`,
 }));
 
-const graphRowColumns = computed(() => `${graphColumnWidth.value}px minmax(14rem, 1fr)`);
-const graphRowMinWidth = computed(() => `max(16rem, calc(${graphColumnWidth.value}px + 14rem))`);
+const graphRowLayoutSpacing = 1 + 8;
+const graphCanvasMinWidth = computed(
+  () => `max(16rem, calc(${graphCanvasWidth.value}px + 14rem + ${graphRowLayoutSpacing}px))`,
+);
+const graphRowColumns = (row: GitCommitGraphRow) => `${row.graphWidth}px minmax(14rem, 1fr)`;
+const graphRowMinWidth = (row: GitCommitGraphRow) =>
+  `max(16rem, calc(${row.graphWidth}px + 14rem + ${graphRowLayoutSpacing}px))`;
 const fileLabel = (status: string) => {
   if (status === "ADDED") return t.value.git.added;
   if (status === "DELETED") return t.value.git.deleted;
@@ -4882,7 +4764,7 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
               <div
                 v-if="graphRows.length > 0"
                 class="relative min-w-full overflow-hidden"
-                :style="{ minWidth: graphRowMinWidth }"
+                :style="{ minWidth: graphCanvasMinWidth }"
               >
                 <svg
                   class="pointer-events-none absolute top-0 z-20 block overflow-hidden"
@@ -4930,8 +4812,8 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                       )
                     "
                     :style="{
-                      gridTemplateColumns: graphRowColumns,
-                      minWidth: graphRowMinWidth,
+                      gridTemplateColumns: graphRowColumns(row),
+                      minWidth: graphRowMinWidth(row),
                       height: `${rowHeight}px`,
                       marginTop: rowIndex === 0 ? '0' : `${rowGap}px`,
                     }"
@@ -4987,15 +4869,15 @@ const commitTooltipTitle = (commit: ProjectGitCommitSummary) => {
                     class="relative z-10 overflow-hidden border-y border-outline-variant/50 bg-surface-container py-1 pr-2"
                     :style="{
                       height: `${expandedCommitFilesHeight(row.commit.hash)}px`,
-                      minWidth: graphRowMinWidth,
-                      paddingLeft: `${graphLayerLeft + graphColumnWidth + 4}px`,
+                      minWidth: graphRowMinWidth(row),
+                      paddingLeft: `${graphLayerLeft + row.graphWidth + 4}px`,
                     }"
                     aria-live="polite"
                   >
                     <span
                       aria-hidden="true"
                       class="absolute bottom-1 top-1 w-px bg-primary/45"
-                      :style="{ left: `${graphLayerLeft + graphColumnWidth}px` }"
+                      :style="{ left: `${graphLayerLeft + row.graphWidth}px` }"
                     ></span>
                     <div
                       v-if="expandedCommitFiles[row.commit.hash]?.isLoading"

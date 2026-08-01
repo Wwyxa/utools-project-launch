@@ -24,5 +24,6 @@
     "types": ["vite/client"],
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["references"]
 }
