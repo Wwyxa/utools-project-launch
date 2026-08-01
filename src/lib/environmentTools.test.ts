@@ -326,6 +326,73 @@ describe("environment tools", () => {
     await refresh;
   });
 
+  it("passes built-in Windows environment commands to cmd without POSIX quotes", async () => {
+    const outputs = ["v22.0.0\r\n", "C:\\Program Files\\nodejs\\node.exe\r\n"];
+    let invocationIndex = 0;
+    const spawn = vi.fn(() => {
+      const output = outputs[invocationIndex++]!;
+      let stdoutListener: ((chunk: Buffer) => void) | undefined;
+      let closeListener: ((status: number) => void) | undefined;
+      const child = {
+        stdout: {
+          on: vi.fn((event: string, listener: (chunk: Buffer) => void) => {
+            if (event === "data") stdoutListener = listener;
+          }),
+        },
+        stderr: { on: vi.fn() },
+        on: vi.fn((event: string, listener: (status: number) => void) => {
+          if (event === "close") closeListener = listener;
+        }),
+        kill: vi.fn(),
+      };
+      Promise.resolve().then(() => {
+        stdoutListener?.(Buffer.from(output));
+        closeListener?.(0);
+      });
+      return child;
+    });
+    const nodeRequire = createRequire(import.meta.url);
+    const sandboxWindow: { projectBridge?: ProjectBridge } = {};
+    const sandbox = {
+      require: (id: string) =>
+        id === "electron" ? { shell: {} } : id === "child_process" ? { ...nodeRequire(id), spawn } : nodeRequire(id),
+      process: {
+        platform: "win32",
+        env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" },
+        once: () => undefined,
+        exit: () => undefined,
+      },
+      Buffer,
+      console,
+      setTimeout,
+      clearTimeout,
+      window: sandboxWindow,
+    };
+    createContext(sandbox);
+    runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
+    const preloadBridge = sandboxWindow.projectBridge;
+    expect(preloadBridge).toBeDefined();
+    if (!preloadBridge) throw new Error("The real preload did not register projectBridge.");
+
+    await expect(preloadBridge.detectEnvironmentTool({ kind: "builtin", key: "node" })).resolves.toMatchObject({
+      status: "available",
+      version: "v22.0.0",
+      executablePath: "C:\\Program Files\\nodejs\\node.exe",
+    });
+    expect(spawn).toHaveBeenNthCalledWith(
+      1,
+      "C:\\Windows\\System32\\cmd.exe",
+      ["/d", "/s", "/c", "node --version"],
+      expect.objectContaining({ windowsHide: true }),
+    );
+    expect(spawn).toHaveBeenNthCalledWith(
+      2,
+      "C:\\Windows\\System32\\cmd.exe",
+      ["/d", "/s", "/c", "where node"],
+      expect.objectContaining({ windowsHide: true }),
+    );
+  });
+
   it.runIf(process.platform === "win32")(
     "detects validated Windows command shims through the real preload",
     async () => {

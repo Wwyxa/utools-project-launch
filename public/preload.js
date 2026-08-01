@@ -887,7 +887,10 @@ function runToolCommand(command, args, direct = false) {
     const start = async () => {
       try {
         const resolvedCommand = direct ? await resolveWindowsDirectCommand(command) : command;
-        const commandLine = [command, ...args].map(quoteShellToken).join(" ");
+        const commandLine =
+          process.platform === "win32"
+            ? [command, ...args].join(" ")
+            : [command, ...args].map(quoteShellToken).join(" ");
         const spawnOptions = { stdio: ["ignore", "pipe", "pipe"], windowsHide: true };
         const usesWindowsShim =
           direct && process.platform === "win32" && windowsCommandShimPattern.test(resolvedCommand);
