@@ -70,7 +70,7 @@ describe("project script discovery", () => {
     writeFileSync(
       join(directory, "Makefile"),
       [
-        ".PHONY: dev build",
+        ".PHONY: dev build phony-only",
         "dev: ## start locally",
         "build test: ## build and test",
         "%.o: %.c",
@@ -94,6 +94,7 @@ describe("project script discovery", () => {
         expect.objectContaining({ name: "dev", command: "make dev", cwd: ".", source: "makefile" }),
         expect.objectContaining({ name: "build", command: "make build", cwd: ".", source: "makefile" }),
         expect.objectContaining({ name: "test", command: "make test", cwd: ".", source: "makefile" }),
+        expect.objectContaining({ name: "phony-only", command: "make phony-only", cwd: ".", source: "makefile" }),
       ]),
     );
     expect(result.scripts.map((script) => script.command)).not.toEqual(

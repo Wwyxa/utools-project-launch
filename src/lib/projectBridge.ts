@@ -707,7 +707,7 @@ const fallbackBridge: ProjectBridge = {
     };
   },
   async discoverProjectScripts(_projectPath, _options): Promise<ProjectScriptDiscoveryResult> {
-    return { scripts: [], message: "浏览器预览无法读取本地项目脚本。" };
+    return { scripts: [], message: "uTools 本地桥接未加载，无法读取项目文件；请从 dist/plugin.json 重新加载插件。" };
   },
   async pickProjectPath() {
     return { canceled: true, message: "浏览器预览无法打开系统文件夹选择器，请手动填写路径。" };

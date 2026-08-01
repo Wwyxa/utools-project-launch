@@ -5,7 +5,19 @@ const path = require("path");
 const os = require("os");
 const { spawn, spawnSync, execFile, execFileSync } = require("child_process");
 const { TextDecoder } = require("util");
-const { shell } = require("electron");
+const unavailableElectronShell = {
+  openExternal: async () => {
+    throw new Error("Electron shell API is unavailable.");
+  },
+  openPath: async () => "Electron shell API is unavailable.",
+  showItemInFolder() {},
+};
+let shell = unavailableElectronShell;
+try {
+  shell = require("electron")?.shell || unavailableElectronShell;
+} catch (error) {
+  console.warn("[utools-project-launch] Electron shell API is unavailable; continuing with the project bridge.");
+}
 
 const activeProcesses = new Map();
 const activeProcessMetadata = new Map();
@@ -3560,6 +3572,13 @@ function readMakefileScripts(projectPath) {
     fs.readFileSync(makefilePath, "utf8")
       .split(/\r?\n/)
       .forEach((line) => {
+        const phonyMatch = /^\s*\.PHONY\s*:\s*(.*)$/.exec(line);
+        if (phonyMatch) {
+          phonyMatch[1].split(/\s+/).forEach((target) => {
+            if (makeTargetPattern.test(target)) targets.add(target);
+          });
+          return;
+        }
         if (!line || /^\s/.test(line) || /^\s*(?:#|include\b|-include\b|define\b|endef\b|ifeq\b|ifneq\b|ifdef\b|ifndef\b|else\b|endif\b)/.test(line)) {
           return;
         }
