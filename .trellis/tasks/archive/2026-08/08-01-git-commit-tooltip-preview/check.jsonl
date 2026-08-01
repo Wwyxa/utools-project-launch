@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check fixed-shell positioning, internal scrolling, viewport bounds, lifecycle cleanup, type safety, build success, and compact-window behavior."}
+{"file":".trellis/tasks/08-01-git-commit-tooltip-preview/research/vscode-hover-preview-reference.md","reason":"Verify the delivered layout and interactions match the agreed source-control reference without old-mode fallback, recursive pagination, or unrelated behavior."}

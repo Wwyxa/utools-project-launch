@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply fixed-popup, overflow, viewport, type-check, build, and compact-window validation requirements."}
+{"file":".trellis/tasks/08-01-git-commit-tooltip-preview/research/vscode-hover-preview-reference.md","reason":"Implement the agreed VS Code-style left source-control layout, right review surface, compact commit rows, stable auto-pagination, and right-side warm-switching preview."}
