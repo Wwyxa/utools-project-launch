@@ -3555,9 +3555,10 @@ function readPackageScripts(projectPath) {
       source: "package-json",
     }));
 
-    return { scripts, packagePath };
+    return { scripts, packagePath, error: "" };
   } catch (error) {
-    return { scripts: [], packagePath };
+    const reason = error instanceof Error && error.message ? error.message : "未知错误";
+    return { scripts: [], packagePath, error: `无法解析 ${packagePath}：${reason}` };
   }
 }
 
@@ -3611,9 +3612,11 @@ function readMakefileScripts(projectPath) {
         source: "makefile",
       })),
       makefilePath,
+      error: "",
     };
   } catch (error) {
-    return { scripts: [], makefilePath };
+    const reason = error instanceof Error && error.message ? error.message : "未知错误";
+    return { scripts: [], makefilePath, error: `无法读取 ${makefilePath}：${reason}` };
   }
 }
 
@@ -3735,17 +3738,20 @@ function writeLegacyStoredProjects(projects) {
 function detectNodeUnit(rootPath, targetPath) {
   const packageResult = readPackageScripts(targetPath);
   if (!packageResult.packagePath) {
-    return [];
+    return { scripts: [], error: "" };
   }
 
   const cwd = toRelativeCwd(rootPath, targetPath);
-  return packageResult.scripts.map((script) => ({
-    name: cwd === "." ? script.name : `${cwd}:${script.name}`,
-    command: script.command,
-    cwd,
-    note: `package.json: ${toRelativeCwd(rootPath, packageResult.packagePath)}`,
-    source: "package-json",
-  }));
+  return {
+    scripts: packageResult.scripts.map((script) => ({
+      name: cwd === "." ? script.name : `${cwd}:${script.name}`,
+      command: script.command,
+      cwd,
+      note: `package.json: ${toRelativeCwd(rootPath, packageResult.packagePath)}`,
+      source: "package-json",
+    })),
+    error: packageResult.error,
+  };
 }
 
 function discoverProjectScripts(projectPath, options = {}) {
@@ -3760,14 +3766,20 @@ function discoverProjectScripts(projectPath, options = {}) {
     return { scripts: [], message: "请至少选择一种识别来源。" };
   }
 
-  const packageScripts = sources.has("package-json")
-    ? commonProjectDirs.flatMap((dirName) => {
+  const packageResults = sources.has("package-json")
+    ? commonProjectDirs.map((dirName) => {
         const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
         return detectNodeUnit(resolvedPath, targetPath);
       })
     : [];
-  const makefileScripts = sources.has("makefile") ? readMakefileScripts(resolvedPath).scripts : [];
-  return { scripts: [...packageScripts, ...makefileScripts] };
+  const makefileResult = sources.has("makefile")
+    ? readMakefileScripts(resolvedPath)
+    : { scripts: [], makefilePath: null, error: "" };
+  const errors = [...packageResults.map((result) => result.error), makefileResult.error].filter(Boolean);
+  return {
+    scripts: [...packageResults.flatMap((result) => result.scripts), ...makefileResult.scripts],
+    ...(errors.length > 0 ? { message: errors.join("；") } : {}),
+  };
 }
 
 function readLegacyStoredProjects() {

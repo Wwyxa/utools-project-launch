@@ -30,6 +30,9 @@ const discoveryScanned = ref(false);
 
 const discoveryKey = (candidate: ProjectBridgeScriptCandidate) =>
   `${candidate.source}\u0000${candidate.cwd || "."}\u0000${candidate.command}`;
+const riskyMakeTargetPattern = /(?:^|[-_])(clean|reset|destroy|delete|remove|purge|drop|down|teardown)(?:[-_]|$)/i;
+const requiresExplicitImport = (candidate: ProjectBridgeScriptCandidate) =>
+  candidate.source === "makefile" && riskyMakeTargetPattern.test(candidate.name);
 
 const closeMenus = () => {
   groupMenuOpen.value = false;
@@ -46,7 +49,7 @@ const openScriptDiscovery = () => {
 const discoverScripts = async () => {
   const candidates = await store.discoverProjectFormScripts(selectedDiscoverySources.value);
   discoveryCandidates.value = candidates;
-  selectedDiscoveryKeys.value = candidates.map(discoveryKey);
+  selectedDiscoveryKeys.value = candidates.filter((candidate) => !requiresExplicitImport(candidate)).map(discoveryKey);
   discoveryScanned.value = true;
 };
 
@@ -181,6 +184,12 @@ const handleScriptDrop = (targetScriptId: string) => {
             class="themed-scrollbar bg-surface p-5 overflow-y-auto space-y-6 [color-scheme:inherit]"
             @click="closeMenus"
           >
+            <p
+              v-if="store.projectFormMode === 'duplicate'"
+              class="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-on-surface-variant"
+            >
+              {{ t.modal.duplicateScopeHint }}
+            </p>
             <section class="grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-4">
               <label class="space-y-1.5 md:col-span-4">
                 <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.name }}</span>
@@ -425,6 +434,9 @@ const handleScriptDrop = (targetScriptId: string) => {
                   </button>
                 </div>
                 <p v-if="discoveryScanned && discoveryCandidates.length === 0" class="text-xs text-on-surface-variant">{{ t.modal.noDiscoveredScripts }}</p>
+                <p v-else-if="discoveryCandidates.some(requiresExplicitImport)" class="text-xs text-status-warning">
+                  {{ t.modal.riskyScriptsNotSelected }}
+                </p>
                 <label
                   v-for="candidate in discoveryCandidates"
                   :key="discoveryKey(candidate)"
@@ -435,10 +447,14 @@ const handleScriptDrop = (targetScriptId: string) => {
                     <span class="block truncate font-mono font-semibold text-on-surface">{{ candidate.command }}</span>
                     <span class="block truncate text-on-surface-variant">{{ candidate.name }} · {{ candidate.note || candidate.source }}</span>
                   </span>
-                  <span class="rounded border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-on-surface-variant">{{ candidate.source }}</span>
+                  <span
+                    :class="cn('rounded border px-1.5 py-0.5 font-mono text-[10px]', requiresExplicitImport(candidate) ? 'border-status-warning/40 bg-status-warning/10 text-status-warning' : 'border-border-subtle text-on-surface-variant')"
+                  >
+                    {{ requiresExplicitImport(candidate) ? t.modal.requiresExplicitImport : candidate.source }}
+                  </span>
                 </label>
                 <div v-if="discoveryCandidates.length > 0" class="flex justify-end">
-                  <button type="button" class="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90" @click="importDiscoveredScripts">
+                  <button type="button" :disabled="selectedDiscoveryKeys.length === 0" class="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45" @click="importDiscoveredScripts">
                     {{ t.modal.importSelectedScripts }}
                   </button>
                 </div>

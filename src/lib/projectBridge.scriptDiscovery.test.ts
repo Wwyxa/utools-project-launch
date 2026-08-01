@@ -114,6 +114,17 @@ describe("project script discovery", () => {
     );
   });
 
+  it("reports malformed package.json instead of silently presenting an empty scan", async () => {
+    const directory = createFixtureDirectory();
+    writeFileSync(join(directory, "package.json"), '{"scripts":', "utf8");
+
+    const result = await loadPreloadBridge().discoverProjectScripts(directory, { sources: ["package-json"] });
+
+    expect(result.scripts).toEqual([]);
+    expect(result.message).toContain("无法解析");
+    expect(result.message).toContain("package.json");
+  });
+
   it("uses an explicit platform shell for commands instead of relying on Node's implicit shell", () => {
     const child = {
       pid: 42,

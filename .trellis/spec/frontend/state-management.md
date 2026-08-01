@@ -75,6 +75,10 @@ Good candidates in the current app include:
 
 Script ordering is project configuration, so the Scripts tab keeps drag state locally and calls the Pinia `reorderProjectScripts` action when a drop succeeds. The store updates the project array before persisting it; drag state and drop highlighting must not be persisted.
 
+### Convention: Safe Script Discovery Defaults
+
+Script discovery may preselect ordinary candidates, but potentially destructive Makefile targets such as clean, reset, destroy, delete, purge, drop, down, and teardown require an explicit checkbox selection. The selection state remains local to the project form; only imported commands become project configuration.
+
 Do not move purely visual state into the store if a component can manage it locally.
 
 ---

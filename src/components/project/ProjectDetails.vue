@@ -6,6 +6,7 @@ import {
   FolderOpen,
   GitCommitHorizontal,
   GripHorizontal,
+  Copy,
   Pencil,
   ArrowLeft,
   ChevronDown,
@@ -137,6 +138,7 @@ const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
 const handleOpenEditor = (applicationId: string) => store.openProjectInEditor(props.project.id, applicationId);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
+const handleDuplicate = () => store.openDuplicateProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
 const handleRefresh = async () => {
   const projectId = props.project.id;
@@ -248,8 +250,7 @@ function handleTabPointerMove(event: PointerEvent) {
     const bounds = button.getBoundingClientRect();
     return event.clientX < bounds.left + bounds.width / 2;
   });
-  const insertionIndex =
-    nextIndex < 0 ? tabOrder.value.length - 1 : nextIndex > currentIndex ? nextIndex - 1 : nextIndex;
+  const insertionIndex = nextIndex < 0 ? tabOrder.value.length - 1 : nextIndex;
   if (insertionIndex === currentIndex) return;
 
   const nextOrder = [...tabOrder.value];
@@ -484,6 +485,15 @@ watch(
           :aria-label="t.common.edit"
         >
           <Pencil :size="18" />
+        </button>
+        <button
+          type="button"
+          @click="handleDuplicate"
+          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-primary hover:bg-primary/10 p-2 rounded-lg transition-all shadow-sm"
+          :title="t.projectActions.duplicateProject"
+          :aria-label="t.projectActions.duplicateProject"
+        >
+          <Copy :size="18" />
         </button>
         <button
           type="button"

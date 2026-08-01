@@ -70,6 +70,9 @@ For the uTools preload boundary, failures must be surfaced through the existing 
   contain secrets.
 - Makefile discovery is static: parse target names only and never run `make`
   while inspecting a project.
+- A malformed `package.json` or unreadable Makefile must return a discovery
+  message naming the failed file; never collapse a parse failure into an
+  indistinguishable empty command list.
 - On Unix-like hosts, launch user commands as detached process groups. Stop
   the group with `SIGTERM`, then escalate to `SIGKILL` after a bounded grace
   period when it is still active. This prevents nested command runners from
