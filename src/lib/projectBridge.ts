@@ -29,6 +29,7 @@ import type {
   ProjectBridgeGitSnapshot,
   ProjectGitCommitMessageDiffResult,
   ProjectBridgePackageScript,
+  ProjectScriptDiscoveryResult,
   ProjectBridgeTerminalLaunchPayload,
   ProjectBridgeTerminalLaunchResult,
   ProjectBridgeExternalApplicationLaunchPayload,
@@ -704,6 +705,9 @@ const fallbackBridge: ProjectBridge = {
       git: emptyGitSnapshot(),
       message: "浏览器预览无法读取本地目录，已保留手动填写。",
     };
+  },
+  async discoverProjectScripts(): Promise<ProjectScriptDiscoveryResult> {
+    return { scripts: [], message: "浏览器预览无法读取本地项目脚本。" };
   },
   async pickProjectPath() {
     return { canceled: true, message: "浏览器预览无法打开系统文件夹选择器，请手动填写路径。" };

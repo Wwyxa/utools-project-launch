@@ -791,6 +791,23 @@ function saveAiPreferences(preferences) {
 const windowsNativeCommandPattern = /\.(?:com|exe)$/i;
 const windowsCommandShimPattern = /\.(?:bat|cmd)$/i;
 const windowsCommandShimUnsafePattern = /["&|<>^%!()\r\n]/;
+const makeTargetPattern = /^[A-Za-z0-9][A-Za-z0-9_.@/+-]*$/;
+
+function shellCommandInvocation(command) {
+  if (process.platform === "win32") {
+    return {
+      executable: process.env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", command],
+    };
+  }
+
+  const shellPath = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/sh");
+  const shellName = path.basename(shellPath);
+  return {
+    executable: shellPath,
+    args: [shellName === "sh" ? "-lc" : "-ilc", command],
+  };
+}
 
 function resolveWindowsDirectCommand(command) {
   if (process.platform !== "win32" || path.extname(command)) return Promise.resolve(command);
@@ -853,8 +870,6 @@ function runToolCommand(command, args, direct = false) {
       try {
         const resolvedCommand = direct ? await resolveWindowsDirectCommand(command) : command;
         const commandLine = [command, ...args].map(quoteShellToken).join(" ");
-        const shellPath = process.env.SHELL || "/bin/sh";
-        const shellName = path.basename(shellPath);
         const spawnOptions = { stdio: ["ignore", "pipe", "pipe"], windowsHide: true };
         const usesWindowsShim =
           direct && process.platform === "win32" && windowsCommandShimPattern.test(resolvedCommand);
@@ -867,11 +882,12 @@ function runToolCommand(command, args, direct = false) {
         }
         const child = usesWindowsShim
           ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/c", resolvedCommand, ...args], spawnOptions)
-          : direct
+          : direct && process.platform === "win32"
             ? spawn(resolvedCommand, args, spawnOptions)
-            : process.platform === "win32"
-              ? spawn(command, args, { ...spawnOptions, shell: true })
-              : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], spawnOptions);
+            : (() => {
+                const invocation = shellCommandInvocation(commandLine);
+                return spawn(invocation.executable, invocation.args, spawnOptions);
+              })();
         timeout = setTimeout(() => {
           timedOut = true;
           child.kill();
@@ -3527,6 +3543,55 @@ function readPackageScripts(projectPath) {
   }
 }
 
+function readMakefileScripts(projectPath) {
+  const resolvedPath = expandPath(projectPath);
+  const makefilePath = ["Makefile", "makefile", "GNUmakefile"]
+    .map((name) => path.join(resolvedPath, name))
+    .find((candidate) => fs.existsSync(candidate));
+
+  if (!makefilePath) {
+    return { scripts: [], makefilePath: null };
+  }
+
+  try {
+    const targets = new Set();
+    fs.readFileSync(makefilePath, "utf8")
+      .split(/\r?\n/)
+      .forEach((line) => {
+        if (!line || /^\s/.test(line) || /^\s*(?:#|include\b|-include\b|define\b|endef\b|ifeq\b|ifneq\b|ifdef\b|ifndef\b|else\b|endif\b)/.test(line)) {
+          return;
+        }
+        const separator = line.indexOf(":");
+        if (separator <= 0 || line[separator + 1] === "=") {
+          return;
+        }
+        const targetList = line.slice(0, separator).trim();
+        if (!targetList || /[=$%]/.test(targetList)) {
+          return;
+        }
+        targetList.split(/\s+/).forEach((target) => {
+          if (!target || target.startsWith(".") || !makeTargetPattern.test(target)) {
+            return;
+          }
+          targets.add(target);
+        });
+      });
+
+    return {
+      scripts: [...targets].map((target) => ({
+        name: target,
+        command: `make ${target}`,
+        cwd: ".",
+        note: `Makefile: ${path.basename(makefilePath)}`,
+        source: "makefile",
+      })),
+      makefilePath,
+    };
+  } catch (error) {
+    return { scripts: [], makefilePath };
+  }
+}
+
 function toRelativeCwd(rootPath, targetPath) {
   const relativePath = path.relative(expandPath(rootPath), expandPath(targetPath));
   return relativePath ? relativePath.replace(/\\/g, "/") : ".";
@@ -3656,6 +3721,20 @@ function detectNodeUnit(rootPath, targetPath) {
     note: `package.json: ${toRelativeCwd(rootPath, packageResult.packagePath)}`,
     source: "package-json",
   }));
+}
+
+function discoverProjectScripts(projectPath) {
+  const resolvedPath = expandPath(projectPath);
+  if (!pathExists(projectPath)) {
+    return { scripts: [], message: "路径不存在或当前设备无法访问。" };
+  }
+
+  const packageScripts = commonProjectDirs.flatMap((dirName) => {
+    const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
+    return detectNodeUnit(resolvedPath, targetPath);
+  });
+  const makefileScripts = readMakefileScripts(resolvedPath).scripts;
+  return { scripts: [...packageScripts, ...makefileScripts] };
 }
 
 function readLegacyStoredProjects() {
@@ -4333,19 +4412,6 @@ async function inspectProjectPath(projectPath) {
     };
   }
 
-  const detectedScripts = commonProjectDirs.flatMap((dirName) => {
-    const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
-    return detectNodeUnit(resolvedPath, targetPath);
-  });
-
-  const hasNode = detectedScripts.some((script) => script.source === "package-json");
-  const packageResult = readPackageScripts(projectPath);
-  if (hasNode) {
-    result.packagePath = packageResult.packagePath;
-  }
-
-  result.scripts = detectedScripts;
-
   result.git = await readGitSnapshot(projectPath);
   result.gitLatestCommitAt = result.git?.commits?.[0]?.date || "";
   result.branch = result.git?.branch || "main";
@@ -4799,10 +4865,11 @@ function runCommand(payload) {
   const resolvedCwd = expandPath(payload.cwd);
   const decodeStdout = createProcessOutputDecoder();
   const decodeStderr = createProcessOutputDecoder();
-  const child = spawn(payload.command, {
+  const invocation = shellCommandInvocation(payload.command);
+  const child = spawn(invocation.executable, invocation.args, {
     cwd: resolvedCwd,
     env: { ...process.env, ...payload.env },
-    shell: true,
+    shell: false,
     windowsHide: true,
   });
   const childPid = typeof child.pid === "number" ? child.pid : -1;
@@ -4860,6 +4927,7 @@ function runCommand(payload) {
     pid: childPid,
     automationRunId: payload.automationRunId,
     message: payload.command,
+    cwd: resolvedCwd,
   });
 
   child.stdout?.on("data", (chunk) => {
@@ -5097,6 +5165,7 @@ window.projectBridge = {
   loadUiPreferences: readUiPreferences,
   saveUiPreferences,
   inspectProjectPath,
+  discoverProjectScripts,
   pickProjectPath,
   pickQuickLinkPath,
   pathExists,

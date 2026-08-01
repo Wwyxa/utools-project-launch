@@ -58,6 +58,19 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 - Git unavailable / not a repository -> return an empty `ProjectGitSnapshot` with a user-facing `statusText`
 - package script parsing failure -> return an empty script list and preserve manually configured commands
 
+### Convention: Host command environment parity
+
+- Project command execution and environment-tool checks must use the same
+  platform command interpreter.
+- On macOS, invoke the user's login/interactive shell so GUI-launched uTools
+  receives shell-managed PATH entries; on Windows, invoke `ComSpec` with
+  explicit cmd arguments.
+- Apply project environment values after the inherited host environment. Never
+  print the full environment to user-visible terminal logs, because it can
+  contain secrets.
+- Makefile discovery is static: parse target names only and never run `make`
+  while inspecting a project.
+
 ### Scenario: External terminal launch failures
 
 ### Scenario: External application launch and process cleanup failures

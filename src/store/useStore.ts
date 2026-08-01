@@ -76,6 +76,7 @@ import type {
   ProjectDetailsTabId,
   ProjectVisibility,
   ProjectScript,
+  ProjectBridgeScriptCandidate,
   ProjectScriptFormValue,
   TodoItem,
 } from "../types";
@@ -113,7 +114,7 @@ const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
 const projectKinds = new Set<ProjectKind>(["node", "python", "go", "executable", "custom"]);
 const projectScriptStatuses = new Set<ProjectScript["status"]>(["IDLE", "RUNNING", "STOPPING", "ERROR", "STOPPED"]);
-const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>(["manual", "package-json", "preset"]);
+const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>(["manual", "package-json", "makefile", "preset"]);
 const automationMissedPolicies = new Set<ProjectAutomationMissedPolicy>(["grace-run", "run-now", "mark-missed"]);
 let projectConfigMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
@@ -693,6 +694,10 @@ function scriptFromForm(projectId: string, script: ProjectScriptFormValue, index
     note: script.note.trim(),
     source: script.source,
   };
+}
+
+function scriptDiscoveryKey(script: Pick<ProjectScriptFormValue, "source" | "cwd" | "command">): string {
+  return `${script.source}\u0000${script.cwd.trim() || "."}\u0000${script.command.trim()}`;
 }
 
 function formFromProject(project: Project): ProjectFormValue {
@@ -1766,15 +1771,6 @@ export const useStore = defineStore("app", {
       const currentName = this.projectFormDraft.name.trim();
       try {
         const result = await bridge.inspectProjectPath(projectPath);
-        const scripts = result.scripts.map((script, index) => ({
-          id: `script-${Date.now()}-${index}`,
-          name: script.name,
-          command: script.command,
-          cwd: script.cwd || ".",
-          note: script.note || (result.packagePath ? `package.json: ${result.packagePath}` : ""),
-          source: script.source || "package-json",
-        })) satisfies ProjectScriptFormValue[];
-
         this.projectFormDraft = {
           ...this.projectFormDraft,
           name: currentName || result.name || this.projectFormDraft.name,
@@ -1787,7 +1783,6 @@ export const useStore = defineStore("app", {
               result.type || this.projectFormDraft.type,
               result.name || currentName,
             ),
-          scripts: scripts.length > 0 ? scripts : this.projectFormDraft.scripts,
         };
         await this.refreshProjectFormCwdSuggestions(projectPath);
         this.projectFormInspectionMessage =
@@ -1795,6 +1790,45 @@ export const useStore = defineStore("app", {
       } finally {
         this.projectFormInspecting = false;
       }
+    },
+    async discoverProjectFormScripts(): Promise<ProjectBridgeScriptCandidate[]> {
+      const projectPath = this.projectFormDraft.path.trim();
+      if (!projectPath) {
+        this.projectFormInspectionMessage = "请先填写项目路径";
+        return [];
+      }
+
+      this.projectFormInspecting = true;
+      try {
+        const result = await bridge.discoverProjectScripts(projectPath);
+        this.projectFormInspectionMessage = result.message || `发现 ${result.scripts.length} 条可导入命令`;
+        return result.scripts;
+      } finally {
+        this.projectFormInspecting = false;
+      }
+    },
+    importProjectFormScripts(candidates: ProjectBridgeScriptCandidate[]) {
+      const existing = new Set(this.projectFormDraft.scripts.map(scriptDiscoveryKey));
+      const additions = candidates.reduce<ProjectScriptFormValue[]>((scripts, candidate, index) => {
+        const script: ProjectScriptFormValue = {
+          id: `script-${Date.now()}-${index}`,
+          name: candidate.name,
+          command: candidate.command,
+          cwd: candidate.cwd || ".",
+          note: candidate.note || "",
+          source: candidate.source,
+        };
+        const key = scriptDiscoveryKey(script);
+        if (!script.command || existing.has(key)) return scripts;
+        existing.add(key);
+        scripts.push(script);
+        return scripts;
+      }, []);
+      if (additions.length > 0) {
+        this.projectFormDraft.scripts = [...this.projectFormDraft.scripts, ...additions];
+      }
+      this.projectFormInspectionMessage = additions.length > 0 ? `已导入 ${additions.length} 条命令` : "所选命令已在列表中";
+      return additions.length;
     },
     async refreshProjectFormCwdSuggestions(projectPath?: string) {
       const normalizedPath = (projectPath ?? this.projectFormDraft.path).trim();
@@ -4275,7 +4309,14 @@ export const useStore = defineStore("app", {
           project.status = deriveProjectStatus(project);
           project.lastUpdated = new Date().toLocaleString();
         }
-        this.addLog(event.projectId, createLogEntry(`started (pid ${event.pid})`, "SUCCESS"), event.scriptId);
+        const launchContext = [
+          `started (pid ${event.pid})`,
+          event.message ? `command: ${event.message}` : "",
+          event.cwd ? `cwd: ${event.cwd}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        this.addLog(event.projectId, createLogEntry(launchContext, "SUCCESS"), event.scriptId);
       }
 
       if (event.type === "stdout" || event.type === "stderr") {

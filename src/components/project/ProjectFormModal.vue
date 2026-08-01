@@ -4,7 +4,7 @@ import { Check, ChevronDown, X, Plus, Trash2, Save, WandSparkles, FolderOpen, Gr
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
-import type { ProjectIconKey, ProjectKind } from "../../types";
+import type { ProjectBridgeScriptCandidate, ProjectIconKey, ProjectKind } from "../../types";
 import ProjectIcon from "./ProjectIcon.vue";
 
 const store = useStore();
@@ -18,10 +18,29 @@ const existingGroups = computed(() => [
 const draggedScriptId = ref<string | null>(null);
 const groupMenuOpen = ref(false);
 const cwdMenuScriptId = ref<string | null>(null);
+const discoveryOpen = ref(false);
+const discoveryCandidates = ref<ProjectBridgeScriptCandidate[]>([]);
+const selectedDiscoveryKeys = ref<string[]>([]);
+
+const discoveryKey = (candidate: ProjectBridgeScriptCandidate) =>
+  `${candidate.source}\u0000${candidate.cwd || "."}\u0000${candidate.command}`;
 
 const closeMenus = () => {
   groupMenuOpen.value = false;
   cwdMenuScriptId.value = null;
+};
+
+const discoverScripts = async () => {
+  const candidates = await store.discoverProjectFormScripts();
+  discoveryCandidates.value = candidates;
+  selectedDiscoveryKeys.value = candidates.map(discoveryKey);
+  discoveryOpen.value = true;
+};
+
+const importDiscoveredScripts = () => {
+  const selected = discoveryCandidates.value.filter((candidate) => selectedDiscoveryKeys.value.includes(discoveryKey(candidate)));
+  store.importProjectFormScripts(selected);
+  discoveryOpen.value = false;
 };
 
 const selectGroup = (group: string) => {
@@ -47,7 +66,12 @@ const toggleCwdMenu = (scriptId: string) => {
 watch(
   () => store.projectFormOpen,
   (open) => {
-    if (!open) closeMenus();
+    if (!open) {
+      closeMenus();
+      discoveryOpen.value = false;
+      discoveryCandidates.value = [];
+      selectedDiscoveryKeys.value = [];
+    }
   },
 );
 
@@ -179,10 +203,10 @@ const handleScriptDrop = (targetScriptId: string) => {
                 }}</span>
                 <button
                   type="button"
-                  @click="store.inspectCurrentProjectPath"
+                  @click="discoverScripts"
                   class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 font-bold text-primary hover:bg-surface"
                 >
-                  <WandSparkles :size="14" /> {{ store.projectFormInspecting ? "识别中" : "识别" }}
+                  <WandSparkles :size="14" /> {{ store.projectFormInspecting ? t.modal.discoveringScripts : t.modal.discoverScripts }}
                 </button>
               </div>
               <div class="space-y-1.5 md:col-span-12">
@@ -359,6 +383,32 @@ const handleScriptDrop = (targetScriptId: string) => {
                 >
                   <Plus :size="14" /> {{ t.modal.addScript }}
                 </button>
+              </div>
+              <div v-if="discoveryOpen" class="space-y-3 rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-xs font-semibold text-on-surface">{{ t.modal.discoveredScripts }}</p>
+                  <button type="button" class="text-xs font-semibold text-on-surface-variant hover:text-on-surface" @click="discoveryOpen = false">
+                    {{ t.common.cancel }}
+                  </button>
+                </div>
+                <p v-if="discoveryCandidates.length === 0" class="text-xs text-on-surface-variant">{{ t.modal.noDiscoveredScripts }}</p>
+                <label
+                  v-for="candidate in discoveryCandidates"
+                  :key="discoveryKey(candidate)"
+                  class="flex cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-surface px-3 py-2 text-xs hover:border-primary/30"
+                >
+                  <input v-model="selectedDiscoveryKeys" type="checkbox" :value="discoveryKey(candidate)" class="accent-primary" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-mono font-semibold text-on-surface">{{ candidate.command }}</span>
+                    <span class="block truncate text-on-surface-variant">{{ candidate.name }} · {{ candidate.note || candidate.source }}</span>
+                  </span>
+                  <span class="rounded border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-on-surface-variant">{{ candidate.source }}</span>
+                </label>
+                <div v-if="discoveryCandidates.length > 0" class="flex justify-end">
+                  <button type="button" class="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90" @click="importDiscoveredScripts">
+                    {{ t.modal.importSelectedScripts }}
+                  </button>
+                </div>
               </div>
               <div class="space-y-2">
                 <div
