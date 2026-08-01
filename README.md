@@ -106,7 +106,7 @@ src/
 
 public/
 ├── plugin.json               # uTools 插件配置
-├── preload.js                # uTools preload，本地文件/进程/Git 能力
+├── preload.js                # uTools CommonJS preload，本地文件/进程/Git 能力
 ├── logo.png
 └── logo.svg
 ```

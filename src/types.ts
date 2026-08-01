@@ -227,8 +227,10 @@ export interface ProjectScript {
   cwd?: string;
   pid?: number;
   note?: string;
-  source?: "manual" | "package-json" | "preset";
+  source?: ProjectScriptSource;
 }
+
+export type ProjectScriptSource = "manual" | "package-json" | "makefile" | "preset";
 
 export type ProjectAutomationSchedule =
   | {
@@ -585,7 +587,7 @@ export interface ProjectScriptFormValue {
   command: string;
   cwd: string;
   note: string;
-  source: "manual" | "package-json" | "preset";
+  source: ProjectScriptSource;
 }
 
 export interface ProjectEnvironmentEntry {
@@ -655,6 +657,17 @@ export interface ProjectPathInspection {
   packagePath: string | null;
   git?: ProjectBridgeGitSnapshot | null;
   message?: string;
+}
+
+export interface ProjectScriptDiscoveryResult {
+  scripts: ProjectBridgeScriptCandidate[];
+  message?: string;
+}
+
+export type ProjectScriptDiscoverySource = Extract<ProjectScriptSource, "package-json" | "makefile">;
+
+export interface ProjectScriptDiscoveryOptions {
+  sources: ProjectScriptDiscoverySource[];
 }
 
 export interface ProjectImportResult {
@@ -753,7 +766,11 @@ export interface ProjectBridgePackageScript {
   command: string;
   cwd?: string;
   note?: string;
-  source?: "manual" | "package-json" | "preset";
+  source?: ProjectScriptSource;
+}
+
+export interface ProjectBridgeScriptCandidate extends ProjectBridgePackageScript {
+  source: Extract<ProjectScriptSource, "package-json" | "makefile">;
 }
 
 export interface ProjectBridgeGitSnapshot extends ProjectGitSnapshot {}
@@ -827,6 +844,7 @@ export interface ProjectBridgeEvent {
   scriptId: string;
   pid: number;
   message?: string;
+  cwd?: string;
   code?: number | null;
   signal?: string | null;
   stoppedByUser?: boolean;
@@ -859,6 +877,10 @@ export interface ProjectBridge {
     onDone: AiStreamDoneHandler,
   ): Promise<void>;
   inspectProjectPath(projectPath: string): Promise<ProjectPathInspection>;
+  discoverProjectScripts(
+    projectPath: string,
+    options: ProjectScriptDiscoveryOptions,
+  ): Promise<ProjectScriptDiscoveryResult>;
   pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pickQuickLinkPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pathExists(projectPath: string): Promise<boolean>;

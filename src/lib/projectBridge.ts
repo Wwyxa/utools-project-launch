@@ -29,6 +29,7 @@ import type {
   ProjectBridgeGitSnapshot,
   ProjectGitCommitMessageDiffResult,
   ProjectBridgePackageScript,
+  ProjectScriptDiscoveryResult,
   ProjectBridgeTerminalLaunchPayload,
   ProjectBridgeTerminalLaunchResult,
   ProjectBridgeExternalApplicationLaunchPayload,
@@ -704,6 +705,9 @@ const fallbackBridge: ProjectBridge = {
       git: emptyGitSnapshot(),
       message: "浏览器预览无法读取本地目录，已保留手动填写。",
     };
+  },
+  async discoverProjectScripts(_projectPath, _options): Promise<ProjectScriptDiscoveryResult> {
+    return { scripts: [], message: "uTools 本地桥接未加载，无法读取项目文件；请从 dist/plugin.json 重新加载插件。" };
   },
   async pickProjectPath() {
     return { canceled: true, message: "浏览器预览无法打开系统文件夹选择器，请手动填写路径。" };

@@ -309,7 +309,7 @@ describe("uTools preload external application preferences", () => {
     });
     const spawn = vi.fn(() => child);
     const bridge = loadPreloadBridge(createStorage().api, {
-      "node:child_process": { ...nodeRequire("node:child_process"), spawn },
+      child_process: { ...nodeRequire("child_process"), spawn },
     });
     const projectPath = resolve(".");
 

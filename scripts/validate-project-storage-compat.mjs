@@ -97,7 +97,7 @@ function createBridge({ docs = [], legacyProjects = [], localDeviceId = "device-
   };
   sandbox.globalThis = sandbox;
 
-  vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
+vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
 
   return { bridge: sandbox.window.projectBridge, docsById };
 }

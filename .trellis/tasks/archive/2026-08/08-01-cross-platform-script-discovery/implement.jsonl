@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Project form interaction and accessibility conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Pinia form state and bridge-result conventions."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Preload process errors must remain user-visible typed state."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Do not expose environment secrets in process logs."}

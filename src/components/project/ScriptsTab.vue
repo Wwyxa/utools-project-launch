@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Play, Square, TerminalSquare } from "lucide-vue-next";
+import { Play, Square, TerminalSquare, GripVertical } from "lucide-vue-next";
 import { Project } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -16,6 +16,8 @@ const store = useStore();
 const t = useI18n();
 const splitContainerRef = ref<HTMLElement | null>(null);
 const scriptsPaneRef = ref<HTMLElement | null>(null);
+const draggedScriptId = ref<string | null>(null);
+const dragOverScriptId = ref<string | null>(null);
 
 const scripts = computed(() => props.project.scripts);
 const isUnavailable = computed(() => props.project.pathExists === false);
@@ -58,6 +60,36 @@ const handleStop = async (scriptId: string) => {
   }
   await store.stopScript(props.project.id, scriptId);
 };
+
+const handleScriptDragStart = (event: DragEvent, scriptId: string) => {
+  draggedScriptId.value = scriptId;
+  event.dataTransfer?.setData("text/plain", scriptId);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+};
+
+const handleScriptDragOver = (event: DragEvent, scriptId: string) => {
+  event.preventDefault();
+  if (draggedScriptId.value && draggedScriptId.value !== scriptId) {
+    dragOverScriptId.value = scriptId;
+  }
+};
+
+const handleScriptDrop = (event: DragEvent, targetScriptId: string) => {
+  event.preventDefault();
+  const sourceScriptId = draggedScriptId.value || event.dataTransfer?.getData("text/plain");
+  if (sourceScriptId) {
+    store.reorderProjectScripts(props.project.id, sourceScriptId, targetScriptId);
+  }
+  draggedScriptId.value = null;
+  dragOverScriptId.value = null;
+};
+
+const clearScriptDrag = () => {
+  draggedScriptId.value = null;
+  dragOverScriptId.value = null;
+};
 </script>
 
 <template>
@@ -83,8 +115,27 @@ const handleStop = async (scriptId: string) => {
           <div
             v-for="script in scripts"
             :key="script.id"
-            class="grid grid-cols-[minmax(8rem,1.1fr)_auto_minmax(0,2fr)_minmax(6rem,0.8fr)_auto] gap-3 px-3 py-2 border-b border-border-subtle last:border-b-0 items-center hover:bg-surface-container-low transition-colors"
+            @dragover="handleScriptDragOver($event, script.id)"
+            @drop="handleScriptDrop($event, script.id)"
+            :class="
+              cn(
+                'grid grid-cols-[auto_minmax(8rem,1.1fr)_auto_minmax(0,2fr)_minmax(6rem,0.8fr)_auto] gap-3 border-b border-border-subtle px-3 py-2 last:border-b-0 items-center transition-colors hover:bg-surface-container-low',
+                draggedScriptId === script.id && 'opacity-55',
+                dragOverScriptId === script.id && 'bg-primary/10 ring-1 ring-inset ring-primary/35',
+              )
+            "
           >
+            <button
+              type="button"
+              draggable="true"
+              @dragstart="handleScriptDragStart($event, script.id)"
+              @dragend="clearScriptDrag"
+              class="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded text-on-surface-variant/65 transition-colors hover:bg-surface-container-high hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:cursor-grabbing"
+              :title="t.scripts.dragToReorder"
+              :aria-label="`${t.scripts.dragToReorder}: ${script.name}`"
+            >
+              <GripVertical :size="15" />
+            </button>
             <div class="min-w-0">
               <div class="font-mono text-xs font-bold text-on-surface truncate" :title="script.name">
                 {{ script.name }}

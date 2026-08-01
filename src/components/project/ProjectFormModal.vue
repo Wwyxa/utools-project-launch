@@ -4,24 +4,59 @@ import { Check, ChevronDown, X, Plus, Trash2, Save, WandSparkles, FolderOpen, Gr
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
-import type { ProjectIconKey, ProjectKind } from "../../types";
+import type { ProjectBridgeScriptCandidate, ProjectIconKey, ProjectKind, ProjectScriptDiscoverySource } from "../../types";
 import ProjectIcon from "./ProjectIcon.vue";
 
 const store = useStore();
 const t = useI18n();
 
 const form = computed(() => store.projectFormDraft);
-const title = computed(() => (store.projectFormMode === "edit" ? t.value.modal.editTitle : t.value.modal.createTitle));
+const title = computed(() => {
+  if (store.projectFormMode === "edit") return t.value.modal.editTitle;
+  if (store.projectFormMode === "duplicate") return t.value.modal.duplicateTitle;
+  return t.value.modal.createTitle;
+});
 const existingGroups = computed(() => [
   ...new Set(store.projects.map((project) => (project.group ?? "").trim()).filter(Boolean)),
 ]);
 const draggedScriptId = ref<string | null>(null);
 const groupMenuOpen = ref(false);
 const cwdMenuScriptId = ref<string | null>(null);
+const discoveryOpen = ref(false);
+const discoveryCandidates = ref<ProjectBridgeScriptCandidate[]>([]);
+const selectedDiscoveryKeys = ref<string[]>([]);
+const selectedDiscoverySources = ref<ProjectScriptDiscoverySource[]>(["package-json", "makefile"]);
+const discoveryScanned = ref(false);
+
+const discoveryKey = (candidate: ProjectBridgeScriptCandidate) =>
+  `${candidate.source}\u0000${candidate.cwd || "."}\u0000${candidate.command}`;
+const riskyMakeTargetPattern = /(?:^|[-_])(clean|reset|destroy|delete|remove|purge|drop|down|teardown)(?:[-_]|$)/i;
+const requiresExplicitImport = (candidate: ProjectBridgeScriptCandidate) =>
+  candidate.source === "makefile" && riskyMakeTargetPattern.test(candidate.name);
 
 const closeMenus = () => {
   groupMenuOpen.value = false;
   cwdMenuScriptId.value = null;
+};
+
+const openScriptDiscovery = () => {
+  discoveryOpen.value = true;
+  discoveryCandidates.value = [];
+  selectedDiscoveryKeys.value = [];
+  discoveryScanned.value = false;
+};
+
+const discoverScripts = async () => {
+  const candidates = await store.discoverProjectFormScripts(selectedDiscoverySources.value);
+  discoveryCandidates.value = candidates;
+  selectedDiscoveryKeys.value = candidates.filter((candidate) => !requiresExplicitImport(candidate)).map(discoveryKey);
+  discoveryScanned.value = true;
+};
+
+const importDiscoveredScripts = () => {
+  const selected = discoveryCandidates.value.filter((candidate) => selectedDiscoveryKeys.value.includes(discoveryKey(candidate)));
+  store.importProjectFormScripts(selected);
+  discoveryOpen.value = false;
 };
 
 const selectGroup = (group: string) => {
@@ -47,7 +82,14 @@ const toggleCwdMenu = (scriptId: string) => {
 watch(
   () => store.projectFormOpen,
   (open) => {
-    if (!open) closeMenus();
+    if (!open) {
+      closeMenus();
+      discoveryOpen.value = false;
+      discoveryCandidates.value = [];
+      selectedDiscoveryKeys.value = [];
+      selectedDiscoverySources.value = ["package-json", "makefile"];
+      discoveryScanned.value = false;
+    }
   },
 );
 
@@ -142,6 +184,12 @@ const handleScriptDrop = (targetScriptId: string) => {
             class="themed-scrollbar bg-surface p-5 overflow-y-auto space-y-6 [color-scheme:inherit]"
             @click="closeMenus"
           >
+            <p
+              v-if="store.projectFormMode === 'duplicate'"
+              class="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-on-surface-variant"
+            >
+              {{ t.modal.duplicateScopeHint }}
+            </p>
             <section class="grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-4">
               <label class="space-y-1.5 md:col-span-4">
                 <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.name }}</span>
@@ -179,10 +227,10 @@ const handleScriptDrop = (targetScriptId: string) => {
                 }}</span>
                 <button
                   type="button"
-                  @click="store.inspectCurrentProjectPath"
+                  @click="openScriptDiscovery"
                   class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 font-bold text-primary hover:bg-surface"
                 >
-                  <WandSparkles :size="14" /> {{ store.projectFormInspecting ? "识别中" : "识别" }}
+                  <WandSparkles :size="14" /> {{ store.projectFormInspecting ? t.modal.discoveringScripts : t.modal.discoverScripts }}
                 </button>
               </div>
               <div class="space-y-1.5 md:col-span-12">
@@ -359,6 +407,57 @@ const handleScriptDrop = (targetScriptId: string) => {
                 >
                   <Plus :size="14" /> {{ t.modal.addScript }}
                 </button>
+              </div>
+              <div v-if="discoveryOpen" class="space-y-3 rounded-lg border border-border-subtle bg-surface-container-low p-3">
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-xs font-semibold text-on-surface">{{ t.modal.selectDiscoverySources }}</p>
+                  <button type="button" class="text-xs font-semibold text-on-surface-variant hover:text-on-surface" @click="discoveryOpen = false">
+                    {{ t.common.cancel }}
+                  </button>
+                </div>
+                <div class="flex flex-wrap gap-4 text-xs text-on-surface">
+                  <label class="inline-flex cursor-pointer items-center gap-2">
+                    <input v-model="selectedDiscoverySources" type="checkbox" value="package-json" class="accent-primary" />
+                    package.json
+                  </label>
+                  <label class="inline-flex cursor-pointer items-center gap-2">
+                    <input v-model="selectedDiscoverySources" type="checkbox" value="makefile" class="accent-primary" />
+                    Makefile
+                  </label>
+                  <button
+                    type="button"
+                    class="rounded-md border border-primary/30 px-3 py-1 font-bold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="selectedDiscoverySources.length === 0 || store.projectFormInspecting"
+                    @click="discoverScripts"
+                  >
+                    {{ store.projectFormInspecting ? t.modal.discoveringScripts : t.modal.scanSelectedSources }}
+                  </button>
+                </div>
+                <p v-if="discoveryScanned && discoveryCandidates.length === 0" class="text-xs text-on-surface-variant">{{ t.modal.noDiscoveredScripts }}</p>
+                <p v-else-if="discoveryCandidates.some(requiresExplicitImport)" class="text-xs text-status-warning">
+                  {{ t.modal.riskyScriptsNotSelected }}
+                </p>
+                <label
+                  v-for="candidate in discoveryCandidates"
+                  :key="discoveryKey(candidate)"
+                  class="flex cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-surface px-3 py-2 text-xs hover:border-primary/30"
+                >
+                  <input v-model="selectedDiscoveryKeys" type="checkbox" :value="discoveryKey(candidate)" class="accent-primary" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-mono font-semibold text-on-surface">{{ candidate.command }}</span>
+                    <span class="block truncate text-on-surface-variant">{{ candidate.name }} · {{ candidate.note || candidate.source }}</span>
+                  </span>
+                  <span
+                    :class="cn('rounded border px-1.5 py-0.5 font-mono text-[10px]', requiresExplicitImport(candidate) ? 'border-status-warning/40 bg-status-warning/10 text-status-warning' : 'border-border-subtle text-on-surface-variant')"
+                  >
+                    {{ requiresExplicitImport(candidate) ? t.modal.requiresExplicitImport : candidate.source }}
+                  </span>
+                </label>
+                <div v-if="discoveryCandidates.length > 0" class="flex justify-end">
+                  <button type="button" :disabled="selectedDiscoveryKeys.length === 0" class="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45" @click="importDiscoveredScripts">
+                    {{ t.modal.importSelectedScripts }}
+                  </button>
+                </div>
               </div>
               <div class="space-y-2">
                 <div

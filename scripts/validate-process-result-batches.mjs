@@ -14,6 +14,7 @@ const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"
 const childProcess = require("node:child_process");
 const spawnedChildren = [];
 const dispatchedEvents = [];
+const processKillCalls = [];
 let nextPid = 4100;
 
 class MockChildProcess extends EventEmitter {
@@ -47,6 +48,10 @@ const sandbox = {
     platform: process.platform,
     once() {},
     exit() {},
+    kill(pid, signal) {
+      processKillCalls.push({ pid, signal });
+      return true;
+    },
   },
   require(moduleName) {
     if (moduleName === "electron") {
@@ -58,7 +63,7 @@ const sandbox = {
         },
       };
     }
-    if (moduleName === "node:child_process") {
+    if (moduleName === "child_process") {
       return {
         ...childProcess,
         spawn() {
@@ -247,6 +252,13 @@ assert.notEqual(
 );
 
 const manualStop = await launchAndStop(basePayload, undefined, { code: 4294967295 });
+if (process.platform !== "win32") {
+  assert.deepEqual(
+    processKillCalls.at(-1),
+    { pid: -manualStop.pid, signal: "SIGTERM" },
+    "Unix stop must signal the detached command process group, not only its shell",
+  );
+}
 assert.notEqual(
   bridge.getProcessStatus(manualStop.pid).automationExitMatched,
   true,

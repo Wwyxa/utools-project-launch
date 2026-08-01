@@ -1,15 +1,33 @@
-const fs = require("node:fs");
-const path = require("node:path");
-const os = require("node:os");
-const { spawn, spawnSync, execFile, execFileSync } = require("node:child_process");
-const { TextDecoder } = require("node:util");
-const { shell } = require("electron");
+// uTools loads this file with CommonJS require(). public/package.json is copied
+// to dist/ to keep this `.js` preload in a local CommonJS package scope.
+// Use legacy Node builtin names: older uTools Electron versions do not resolve
+// the newer `node:` specifier and would skip the entire preload bridge.
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const { spawn, spawnSync, execFile, execFileSync } = require("child_process");
+const { TextDecoder } = require("util");
+const unavailableElectronShell = {
+  openExternal: async () => {
+    throw new Error("Electron shell API is unavailable.");
+  },
+  openPath: async () => "Electron shell API is unavailable.",
+  showItemInFolder() {},
+};
+let shell = unavailableElectronShell;
+try {
+  shell = require("electron")?.shell || unavailableElectronShell;
+} catch (error) {
+  console.warn("[utools-project-launch] Electron shell API is unavailable; continuing with the project bridge.");
+}
 
 const activeProcesses = new Map();
 const activeProcessMetadata = new Map();
+const processStopEscalationTimers = new Map();
 const completedProcessResults = new Map();
 const completedAutomationProcessResults = new Map();
 const completedProcessResultLimit = 100;
+const processStopGracePeriodMs = 3500;
 const gitCommitAvatarResults = new Map();
 const gitCommitAvatarResultLimit = 160;
 const gitCommitAvatarRequestTimeoutMs = 3500;
@@ -791,6 +809,23 @@ function saveAiPreferences(preferences) {
 const windowsNativeCommandPattern = /\.(?:com|exe)$/i;
 const windowsCommandShimPattern = /\.(?:bat|cmd)$/i;
 const windowsCommandShimUnsafePattern = /["&|<>^%!()\r\n]/;
+const makeTargetPattern = /^[A-Za-z0-9][A-Za-z0-9_.@/+-]*$/;
+
+function shellCommandInvocation(command) {
+  if (process.platform === "win32") {
+    return {
+      executable: process.env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", command],
+    };
+  }
+
+  const shellPath = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/sh");
+  const shellName = path.basename(shellPath);
+  return {
+    executable: shellPath,
+    args: [shellName === "sh" ? "-lc" : "-ilc", command],
+  };
+}
 
 function resolveWindowsDirectCommand(command) {
   if (process.platform !== "win32" || path.extname(command)) return Promise.resolve(command);
@@ -853,8 +888,6 @@ function runToolCommand(command, args, direct = false) {
       try {
         const resolvedCommand = direct ? await resolveWindowsDirectCommand(command) : command;
         const commandLine = [command, ...args].map(quoteShellToken).join(" ");
-        const shellPath = process.env.SHELL || "/bin/sh";
-        const shellName = path.basename(shellPath);
         const spawnOptions = { stdio: ["ignore", "pipe", "pipe"], windowsHide: true };
         const usesWindowsShim =
           direct && process.platform === "win32" && windowsCommandShimPattern.test(resolvedCommand);
@@ -867,11 +900,12 @@ function runToolCommand(command, args, direct = false) {
         }
         const child = usesWindowsShim
           ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/c", resolvedCommand, ...args], spawnOptions)
-          : direct
+          : direct && process.platform === "win32"
             ? spawn(resolvedCommand, args, spawnOptions)
-            : process.platform === "win32"
-              ? spawn(command, args, { ...spawnOptions, shell: true })
-              : spawn(shellPath, [shellName === "sh" ? "-lc" : "-ilc", commandLine], spawnOptions);
+            : (() => {
+                const invocation = shellCommandInvocation(commandLine);
+                return spawn(invocation.executable, invocation.args, spawnOptions);
+              })();
         timeout = setTimeout(() => {
           timedOut = true;
           child.kill();
@@ -3521,9 +3555,68 @@ function readPackageScripts(projectPath) {
       source: "package-json",
     }));
 
-    return { scripts, packagePath };
+    return { scripts, packagePath, error: "" };
   } catch (error) {
-    return { scripts: [], packagePath };
+    const reason = error instanceof Error && error.message ? error.message : "未知错误";
+    return { scripts: [], packagePath, error: `无法解析 ${packagePath}：${reason}` };
+  }
+}
+
+function readMakefileScripts(projectPath) {
+  const resolvedPath = expandPath(projectPath);
+  const makefilePath = ["Makefile", "makefile", "GNUmakefile"]
+    .map((name) => path.join(resolvedPath, name))
+    .find((candidate) => fs.existsSync(candidate));
+
+  if (!makefilePath) {
+    return { scripts: [], makefilePath: null };
+  }
+
+  try {
+    const targets = new Set();
+    fs.readFileSync(makefilePath, "utf8")
+      .split(/\r?\n/)
+      .forEach((line) => {
+        const phonyMatch = /^\s*\.PHONY\s*:\s*(.*)$/.exec(line);
+        if (phonyMatch) {
+          phonyMatch[1].split(/\s+/).forEach((target) => {
+            if (makeTargetPattern.test(target)) targets.add(target);
+          });
+          return;
+        }
+        if (!line || /^\s/.test(line) || /^\s*(?:#|include\b|-include\b|define\b|endef\b|ifeq\b|ifneq\b|ifdef\b|ifndef\b|else\b|endif\b)/.test(line)) {
+          return;
+        }
+        const separator = line.indexOf(":");
+        if (separator <= 0 || line[separator + 1] === "=") {
+          return;
+        }
+        const targetList = line.slice(0, separator).trim();
+        if (!targetList || /[=$%]/.test(targetList)) {
+          return;
+        }
+        targetList.split(/\s+/).forEach((target) => {
+          if (!target || target.startsWith(".") || !makeTargetPattern.test(target)) {
+            return;
+          }
+          targets.add(target);
+        });
+      });
+
+    return {
+      scripts: [...targets].map((target) => ({
+        name: target,
+        command: `make ${target}`,
+        cwd: ".",
+        note: `Makefile: ${path.basename(makefilePath)}`,
+        source: "makefile",
+      })),
+      makefilePath,
+      error: "",
+    };
+  } catch (error) {
+    const reason = error instanceof Error && error.message ? error.message : "未知错误";
+    return { scripts: [], makefilePath, error: `无法读取 ${makefilePath}：${reason}` };
   }
 }
 
@@ -3645,17 +3738,48 @@ function writeLegacyStoredProjects(projects) {
 function detectNodeUnit(rootPath, targetPath) {
   const packageResult = readPackageScripts(targetPath);
   if (!packageResult.packagePath) {
-    return [];
+    return { scripts: [], error: "" };
   }
 
   const cwd = toRelativeCwd(rootPath, targetPath);
-  return packageResult.scripts.map((script) => ({
-    name: cwd === "." ? script.name : `${cwd}:${script.name}`,
-    command: script.command,
-    cwd,
-    note: `package.json: ${toRelativeCwd(rootPath, packageResult.packagePath)}`,
-    source: "package-json",
-  }));
+  return {
+    scripts: packageResult.scripts.map((script) => ({
+      name: cwd === "." ? script.name : `${cwd}:${script.name}`,
+      command: script.command,
+      cwd,
+      note: `package.json: ${toRelativeCwd(rootPath, packageResult.packagePath)}`,
+      source: "package-json",
+    })),
+    error: packageResult.error,
+  };
+}
+
+function discoverProjectScripts(projectPath, options = {}) {
+  const resolvedPath = expandPath(projectPath);
+  if (!pathExists(projectPath)) {
+    return { scripts: [], message: "路径不存在或当前设备无法访问。" };
+  }
+
+  const requestedSources = Array.isArray(options.sources) ? options.sources : ["package-json", "makefile"];
+  const sources = new Set(requestedSources.filter((source) => source === "package-json" || source === "makefile"));
+  if (sources.size === 0) {
+    return { scripts: [], message: "请至少选择一种识别来源。" };
+  }
+
+  const packageResults = sources.has("package-json")
+    ? commonProjectDirs.map((dirName) => {
+        const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
+        return detectNodeUnit(resolvedPath, targetPath);
+      })
+    : [];
+  const makefileResult = sources.has("makefile")
+    ? readMakefileScripts(resolvedPath)
+    : { scripts: [], makefilePath: null, error: "" };
+  const errors = [...packageResults.map((result) => result.error), makefileResult.error].filter(Boolean);
+  return {
+    scripts: [...packageResults.flatMap((result) => result.scripts), ...makefileResult.scripts],
+    ...(errors.length > 0 ? { message: errors.join("；") } : {}),
+  };
 }
 
 function readLegacyStoredProjects() {
@@ -4333,19 +4457,6 @@ async function inspectProjectPath(projectPath) {
     };
   }
 
-  const detectedScripts = commonProjectDirs.flatMap((dirName) => {
-    const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
-    return detectNodeUnit(resolvedPath, targetPath);
-  });
-
-  const hasNode = detectedScripts.some((script) => script.source === "package-json");
-  const packageResult = readPackageScripts(projectPath);
-  if (hasNode) {
-    result.packagePath = packageResult.packagePath;
-  }
-
-  result.scripts = detectedScripts;
-
   result.git = await readGitSnapshot(projectPath);
   result.gitLatestCommitAt = result.git?.commits?.[0]?.date || "";
   result.branch = result.git?.branch || "main";
@@ -4799,10 +4910,14 @@ function runCommand(payload) {
   const resolvedCwd = expandPath(payload.cwd);
   const decodeStdout = createProcessOutputDecoder();
   const decodeStderr = createProcessOutputDecoder();
-  const child = spawn(payload.command, {
+  const invocation = shellCommandInvocation(payload.command);
+  const child = spawn(invocation.executable, invocation.args, {
     cwd: resolvedCwd,
     env: { ...process.env, ...payload.env },
-    shell: true,
+    shell: false,
+    // On Unix, this makes the command shell the leader of a process group so
+    // Stop can terminate make, package managers, and their descendants.
+    detached: process.platform !== "win32",
     windowsHide: true,
   });
   const childPid = typeof child.pid === "number" ? child.pid : -1;
@@ -4820,6 +4935,11 @@ function runCommand(payload) {
 
   const cleanupProcess = () => {
     if (childPid > 0) {
+      const escalationTimer = processStopEscalationTimers.get(childPid);
+      if (escalationTimer) {
+        clearTimeout(escalationTimer);
+        processStopEscalationTimers.delete(childPid);
+      }
       activeProcesses.delete(childPid);
       activeProcessMetadata.delete(childPid);
       launchedProcessIds.delete(childPid);
@@ -4860,6 +4980,7 @@ function runCommand(payload) {
     pid: childPid,
     automationRunId: payload.automationRunId,
     message: payload.command,
+    cwd: resolvedCwd,
   });
 
   child.stdout?.on("data", (chunk) => {
@@ -5001,6 +5122,44 @@ function stopWindowsProcessTree(pid) {
   });
 }
 
+function signalUnixProcessTree(pid, child, signal) {
+  try {
+    // A negative pid targets the detached command process group.
+    process.kill(-pid, signal);
+    return;
+  } catch (error) {
+    // Fall back for commands started before process groups were enabled.
+  }
+
+  try {
+    process.kill(pid, signal);
+    return;
+  } catch (error) {
+    // Some test or host runtimes may not expose process.kill.
+  }
+
+  try {
+    child?.kill?.(signal);
+  } catch (error) {
+    // Stopping is best-effort; the child exit event remains the source of truth.
+  }
+}
+
+function stopUnixProcessTree(pid, child) {
+  signalUnixProcessTree(pid, child, "SIGTERM");
+  if (processStopEscalationTimers.has(pid)) {
+    return;
+  }
+
+  const escalationTimer = setTimeout(() => {
+    processStopEscalationTimers.delete(pid);
+    if (activeProcesses.has(pid)) {
+      signalUnixProcessTree(pid, activeProcesses.get(pid), "SIGKILL");
+    }
+  }, processStopGracePeriodMs);
+  processStopEscalationTimers.set(pid, escalationTimer);
+}
+
 async function stopProcess(pid, options) {
   const child = activeProcesses.get(pid);
   const metadata = activeProcessMetadata.get(pid);
@@ -5019,11 +5178,7 @@ async function stopProcess(pid, options) {
     if (process.platform === "win32") {
       await stopWindowsProcessTree(pid);
     } else {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch (error) {
-        // ignore
-      }
+      stopUnixProcessTree(pid, child);
     }
   }
 
@@ -5097,6 +5252,7 @@ window.projectBridge = {
   loadUiPreferences: readUiPreferences,
   saveUiPreferences,
   inspectProjectPath,
+  discoverProjectScripts,
   pickProjectPath,
   pickQuickLinkPath,
   pathExists,
