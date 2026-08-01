@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.cjs"), "utf8");
+const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "git-diff-"));
 const projectRoot = path.join(fixtureRoot, "project");
 
@@ -48,7 +48,7 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
-vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.cjs" });
+vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
 const bridge = sandbox.window.projectBridge;
 
 try {

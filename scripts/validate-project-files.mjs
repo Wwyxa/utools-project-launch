@@ -8,11 +8,20 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.cjs"), "utf8");
+const pluginManifest = JSON.parse(fs.readFileSync(path.join(repoRoot, "public", "plugin.json"), "utf8"));
+const preloadPackageScope = JSON.parse(fs.readFileSync(path.join(repoRoot, "public", "package.json"), "utf8"));
+const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "project-files-"));
 const projectRoot = path.join(fixtureRoot, "project");
 const outsideRoot = path.join(fixtureRoot, "outside");
 const revealedPaths = [];
+
+assert.equal(pluginManifest.preload, "preload.js", "uTools only accepts a .js preload entry");
+assert.equal(
+  preloadPackageScope.type,
+  "commonjs",
+  "the public package scope must keep preload.js compatible with uTools require()",
+);
 
 fs.mkdirSync(path.join(projectRoot, "src", "nested"), { recursive: true });
 fs.mkdirSync(path.join(projectRoot, "node_modules", "hidden"), { recursive: true });
@@ -59,7 +68,7 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
-vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.cjs" });
+vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
 const bridge = sandbox.window.projectBridge;
 
 try {
