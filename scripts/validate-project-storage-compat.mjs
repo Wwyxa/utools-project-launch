@@ -8,7 +8,7 @@ import vm from "node:vm";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
+const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.cjs"), "utf8");
 const storageKey = "utools-project-launch.projects.v1";
 const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const projectDocPrefix = "utools-project-launch/project/";
@@ -97,7 +97,7 @@ function createBridge({ docs = [], legacyProjects = [], localDeviceId = "device-
   };
   sandbox.globalThis = sandbox;
 
-  vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
+vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.cjs" });
 
   return { bridge: sandbox.window.projectBridge, docsById };
 }

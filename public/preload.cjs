@@ -1,3 +1,5 @@
+// This file intentionally uses the .cjs extension. uTools loads its preload
+// entry with CommonJS require(), while this package is otherwise ESM.
 // Use legacy Node builtin names: older uTools Electron versions do not resolve
 // the newer `node:` specifier and would skip the entire preload bridge.
 const fs = require("fs");

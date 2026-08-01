@@ -64,7 +64,7 @@ const loadPreloadBridge = (
     window: sandboxWindow,
   };
   createContext(sandbox);
-  runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
+  runInContext(readFileSync(resolve("public/preload.cjs"), "utf8"), sandbox);
   if (!sandboxWindow.projectBridge) throw new Error("The real preload did not register projectBridge.");
   return sandboxWindow.projectBridge;
 };

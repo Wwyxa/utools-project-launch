@@ -355,7 +355,7 @@ describe("environment tools", () => {
           window: sandboxWindow,
         };
         createContext(sandbox);
-        runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
+        runInContext(readFileSync(resolve("public/preload.cjs"), "utf8"), sandbox);
         const preloadBridge = sandboxWindow.projectBridge;
         expect(preloadBridge).toBeDefined();
         if (!preloadBridge) throw new Error("The real preload did not register projectBridge.");

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
+const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.cjs"), "utf8");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "git workspace 空格-"));
 const projectRoot = path.join(fixtureRoot, "super project");
 const linkedRoot = path.join(fixtureRoot, "linked ü");
@@ -61,7 +61,7 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
-vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
+vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.cjs" });
 
 const oid40 = "a".repeat(40);
 const oid64 = "b".repeat(64);

@@ -10,7 +10,7 @@ import { createServer } from "vite";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
+const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.cjs"), "utf8");
 const childProcess = require("node:child_process");
 const spawnedChildren = [];
 const dispatchedEvents = [];
@@ -87,7 +87,7 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
-vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
+vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.cjs" });
 
 const bridge = sandbox.window.projectBridge;
 const basePayload = {
@@ -347,7 +347,7 @@ function createStoredProject(entries, scriptIds = ["shared-script"]) {
 }
 
 const runtimeSource = [
-  path.join(repoRoot, "public", "preload.js"),
+  path.join(repoRoot, "public", "preload.cjs"),
   ...fs
     .readdirSync(path.join(repoRoot, "src"), { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && /\.(?:ts|vue)$/.test(entry.name))

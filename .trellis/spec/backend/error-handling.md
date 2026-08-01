@@ -70,6 +70,10 @@ For the uTools preload boundary, failures must be surfaced through the existing 
   contain secrets.
 - Makefile discovery is static: parse target names only and never run `make`
   while inspecting a project.
+- uTools loads preload entries through CommonJS. In this ESM package, preload
+  files must use the `.cjs` extension and `plugin.json` must reference that
+  exact filename; a `.js` preload is classified as ESM and fails before the
+  bridge can be exposed.
 
 ### Scenario: External terminal launch failures
 

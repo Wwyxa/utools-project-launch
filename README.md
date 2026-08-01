@@ -63,7 +63,7 @@ npm run build
 dist/
 ├── index.html
 ├── plugin.json
-├── preload.js
+├── preload.cjs
 ├── logo.png
 ├── logo.svg
 └── assets/
@@ -106,7 +106,7 @@ src/
 
 public/
 ├── plugin.json               # uTools 插件配置
-├── preload.js                # uTools preload，本地文件/进程/Git 能力
+├── preload.cjs               # uTools CommonJS preload，本地文件/进程/Git 能力
 ├── logo.png
 └── logo.svg
 ```
@@ -114,7 +114,7 @@ public/
 ## 数据与权限说明
 
 - 项目配置、偏好设置、AI 配置、备忘和待办主要保存在本地 uTools / 浏览器存储中。
-- `preload.js` 会使用 Node.js 能力访问本地项目目录、启动/停止命令、读取文件、执行 Git 命令和检测开发工具版本。
+- `preload.cjs` 会使用 Node.js 能力访问本地项目目录、启动/停止命令、读取文件、执行 Git 命令和检测开发工具版本。
 - Git 写操作仅围绕本地工作区展开，例如暂存、撤销、提交、切换分支或检出提交；使用前建议确认当前工作区状态。
 - AI 分析会把选定的 Git 信息或 diff 发送给你配置的模型提供方；涉及私有项目时请先确认模型与接口策略。
 

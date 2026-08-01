@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
+const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.cjs"), "utf8");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "project-files-"));
 const projectRoot = path.join(fixtureRoot, "project");
 const outsideRoot = path.join(fixtureRoot, "outside");
@@ -59,7 +59,7 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
-vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
+vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.cjs" });
 const bridge = sandbox.window.projectBridge;
 
 try {
