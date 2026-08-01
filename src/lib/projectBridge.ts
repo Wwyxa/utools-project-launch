@@ -551,6 +551,16 @@ const emptyGitStatusSnapshot = (): ProjectBridgeGitStatusSnapshot => {
   };
 };
 
+const emptyGitWorkingTreeSnapshot = () => {
+  const snapshot = emptyGitStatusSnapshot();
+  return {
+    files: snapshot.files,
+    repositoryPath: snapshot.repositoryPath,
+    lastRefreshedAt: snapshot.lastRefreshedAt,
+    statusText: snapshot.statusText,
+  };
+};
+
 const emptyGitCommitPage = (): ProjectBridgeGitCommitPage => {
   const snapshot = emptyGitSnapshot();
   return {
@@ -745,6 +755,9 @@ const fallbackBridge: ProjectBridge = {
   },
   async readGitStatusSnapshot(): Promise<ProjectBridgeGitStatusSnapshot> {
     return emptyGitStatusSnapshot();
+  },
+  async readGitWorkingTreeSnapshot() {
+    return emptyGitWorkingTreeSnapshot();
   },
   async readGitCommits(): Promise<ProjectBridgeGitCommitPage> {
     return emptyGitCommitPage();

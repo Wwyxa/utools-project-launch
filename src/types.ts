@@ -405,6 +405,12 @@ export interface ProjectGitCommitRef {
   head?: boolean;
 }
 
+export interface ProjectGitCommitShortStats {
+  readonly files: number;
+  readonly additions: number;
+  readonly deletions: number;
+}
+
 export interface ProjectGitCommitSummary {
   hash: string;
   message: string;
@@ -416,6 +422,7 @@ export interface ProjectGitCommitSummary {
   refs?: string;
   refNames?: ProjectGitCommitRef[];
   files?: ProjectGitFileChange[];
+  readonly shortStats?: ProjectGitCommitShortStats;
 }
 
 export interface ProjectGitSnapshot {
@@ -777,6 +784,13 @@ export interface ProjectBridgeGitSnapshot extends ProjectGitSnapshot {}
 
 export interface ProjectBridgeGitStatusSnapshot extends ProjectGitStatusSnapshot {}
 
+export interface ProjectBridgeGitWorkingTreeSnapshot {
+  files: ProjectGitFileChange[];
+  repositoryPath: string;
+  lastRefreshedAt: string;
+  statusText: string;
+}
+
 export interface ProjectBridgeGitCommitPage extends ProjectGitCommitPage {}
 
 export interface ProjectBridgeGitWorkspaceSnapshot extends ProjectGitWorkspaceSnapshot {}
@@ -893,6 +907,7 @@ export interface ProjectBridge {
   readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>;
   readGitWorkspaceSnapshot(projectPath: string): Promise<ProjectBridgeGitWorkspaceSnapshot>;
   readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>;
+  readGitWorkingTreeSnapshot(projectPath: string): Promise<ProjectBridgeGitWorkingTreeSnapshot>;
   readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>;
   readGitFileDiff(
     projectPath: string,

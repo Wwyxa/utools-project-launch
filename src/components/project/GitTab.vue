@@ -101,6 +101,13 @@ import {
   type GitCommitGraphRow,
   type GitCommitGraphSegment,
 } from "../../lib/gitCommitGraph";
+import {
+  clearGitCommitTooltipSessionsForProject,
+  hasUsableGitCommitShortStats,
+  loadGitCommitTooltipSessionDetails,
+  markGitCommitTooltipSessionAvatarUnavailable,
+  pruneGitCommitTooltipSession,
+} from "../../lib/gitCommitTooltipSession";
 import { presentGitCommitRefs, type GitCommitRefPresentationMember } from "../../lib/gitCommitRefs";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -149,6 +156,7 @@ type CommitTooltipDetailsState = {
   isLoadingAvatar: boolean;
   requestGeneration: number;
   contextGeneration: number;
+  contextKey: string;
 };
 type CommitTooltipSummary = {
   state: "loading" | "ready" | "unavailable";
@@ -2609,80 +2617,83 @@ const isCurrentExpandedCommitFilesRequest = (hash: string, requestGeneration: nu
   );
 };
 
-const isCurrentCommitTooltipDetailsRequest = (hash: string, requestGeneration: number, contextGeneration: number) => {
+const isCurrentCommitTooltipDetailsRequest = (
+  hash: string,
+  requestGeneration: number,
+  contextGeneration: number,
+  contextKey: string,
+) => {
   const state = commitTooltipDetails.value[hash];
   return (
+    activeRepositoryContext.value?.contextKey === contextKey &&
     contextGeneration === commitTooltipDetailsContextGeneration &&
     state?.requestGeneration === requestGeneration &&
-    state.contextGeneration === contextGeneration
+    state.contextGeneration === contextGeneration &&
+    state.contextKey === contextKey
   );
 };
 
 const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
   const hash = commit.hash;
-  if (!hash || commitTooltipDetails.value[hash]) return;
+  const context = activeRepositoryContext.value;
+  if (!hash || !context || commitTooltipDetails.value[hash]) return;
 
   const requestGeneration = ++commitTooltipDetailsRequestGeneration;
   const contextGeneration = commitTooltipDetailsContextGeneration;
-  const target = activeRepositoryTarget.value;
+  const contextKey = context.contextKey;
+  const target = context.target;
   const canReadFiles = Boolean(snapshot.value?.repositoryPath);
+  const hasPreloadedShortStats = hasUsableGitCommitShortStats(commit.shortStats);
+  const shouldReadFiles = canReadFiles && !hasPreloadedShortStats;
   commitTooltipDetails.value = {
     ...commitTooltipDetails.value,
     [hash]: {
       files: null,
-      isLoadingFiles: canReadFiles,
-      filesUnavailable: !canReadFiles,
+      isLoadingFiles: shouldReadFiles,
+      filesUnavailable: !shouldReadFiles,
       avatarUrl: null,
       isLoadingAvatar: true,
       requestGeneration,
       contextGeneration,
+      contextKey,
     },
   };
 
-  if (canReadFiles) {
-    void store
-      .readGitCommitFiles(props.project.id, hash, target)
-      .then((files) => {
-        if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
-        const state = commitTooltipDetails.value[hash];
-        commitTooltipDetails.value = {
-          ...commitTooltipDetails.value,
-          [hash]: { ...state, files, isLoadingFiles: false },
-        };
-      })
-      .catch(() => {
-        if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
-        const state = commitTooltipDetails.value[hash];
-        commitTooltipDetails.value = {
-          ...commitTooltipDetails.value,
-          [hash]: { ...state, files: null, isLoadingFiles: false, filesUnavailable: true },
-        };
-      });
-  }
-
-  void store
-    .readGitCommitAuthorAvatar(props.project.id, hash, target)
-    .then((avatarUrl) => {
-      if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
+  const details = loadGitCommitTooltipSessionDetails(contextKey, hash, {
+    preloadedShortStats: commit.shortStats,
+    loadFiles: canReadFiles ? () => store.readGitCommitFiles(props.project.id, hash, target) : undefined,
+    loadAvatar: () => store.readGitCommitAuthorAvatar(props.project.id, hash, target),
+  });
+  if (shouldReadFiles) {
+    void details.files.then((result) => {
+      if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration, contextKey)) return;
       const state = commitTooltipDetails.value[hash];
       commitTooltipDetails.value = {
         ...commitTooltipDetails.value,
-        [hash]: { ...state, avatarUrl, isLoadingAvatar: false },
-      };
-    })
-    .catch(() => {
-      if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration)) return;
-      const state = commitTooltipDetails.value[hash];
-      commitTooltipDetails.value = {
-        ...commitTooltipDetails.value,
-        [hash]: { ...state, isLoadingAvatar: false },
+        [hash]: {
+          ...state,
+          files: result.files,
+          isLoadingFiles: false,
+          filesUnavailable: result.unavailable,
+        },
       };
     });
+  }
+
+  void details.avatar.then((result) => {
+    if (!isCurrentCommitTooltipDetailsRequest(hash, requestGeneration, contextGeneration, contextKey)) return;
+    const state = commitTooltipDetails.value[hash];
+    commitTooltipDetails.value = {
+      ...commitTooltipDetails.value,
+      [hash]: { ...state, avatarUrl: result.avatarUrl, isLoadingAvatar: false },
+    };
+  });
 };
 
 const markCommitAvatarUnavailable = (hash: string) => {
   const state = commitTooltipDetails.value[hash];
   if (!state) return;
+  markGitCommitTooltipSessionAvatarUnavailable(state.contextKey, hash);
   commitTooltipDetails.value = {
     ...commitTooltipDetails.value,
     [hash]: { ...state, avatarUrl: null, isLoadingAvatar: false },
@@ -3111,7 +3122,7 @@ const restoreProjectRepositoryState = (projectId: string) => {
   commitMessage.value = context ? commitDraftsByContext.get(context.contextKey) || "" : "";
   if (!workspace) void store.refreshGitWorkspace(projectId);
   if (context && !store.gitSnapshotForRepository(projectId, target)) {
-    void store.refreshGitSnapshot(projectId, { force: true }, target);
+    void store.refreshGitSnapshot(projectId, {}, target);
   }
   scheduleCommitMessageTextareaResize();
 };
@@ -3121,6 +3132,7 @@ onBeforeUnmount(() => {
   const context = activeRepositoryContext.value;
   if (context) commitDraftsByContext.set(context.contextKey, commitMessage.value);
   if (store.selectedProjectId !== props.project.id) {
+    clearGitCommitTooltipSessionsForProject(props.project.id);
     clearGitAiAnalysisSessionsForProject(props.project.id);
   }
   hideCommitTooltip();
@@ -3194,10 +3206,21 @@ watch(
   (projectId, previousProjectId) => {
     const previousContext = store.resolveGitRepositoryContext(previousProjectId, activeRepositoryTarget.value);
     if (previousContext) commitDraftsByContext.set(previousContext.contextKey, commitMessage.value);
+    clearGitCommitTooltipSessionsForProject(previousProjectId);
     clearRepositoryBoundState(previousProjectId);
     stagedGroupOpen.value = true;
     unstagedGroupOpen.value = true;
     restoreProjectRepositoryState(projectId);
+  },
+);
+
+watch(
+  () => props.project.path,
+  (projectPath, previousProjectPath) => {
+    if (projectPath === previousProjectPath) return;
+    clearGitCommitTooltipSessionsForProject(props.project.id);
+    clearCommitTooltipDetails();
+    hideCommitTooltip();
   },
 );
 
@@ -3236,13 +3259,13 @@ watch(
       commitMessage.value = mainContext ? commitDraftsByContext.get(mainContext.contextKey) || "" : "";
       setGitActionResult("warning", "之前选择的仓库已不可用，已返回主仓库。");
       if (mainContext && !store.gitSnapshotForRepository(props.project.id, { kind: "main" })) {
-        void store.refreshGitSnapshot(props.project.id, { force: true }, { kind: "main" });
+        void store.refreshGitSnapshot(props.project.id, {}, { kind: "main" });
       }
       return;
     }
 
     if (context && !store.gitSnapshotForRepository(props.project.id, context.target)) {
-      void store.refreshGitSnapshot(props.project.id, { force: true }, context.target);
+      void store.refreshGitSnapshot(props.project.id, {}, context.target);
     }
   },
 );
@@ -3250,10 +3273,13 @@ watch(
 watch(
   () => (snapshot.value?.commits || []).map((commit) => commit.hash).join("|"),
   () => {
-    const availableHashes = new Set((snapshot.value?.commits || []).map((commit) => commit.hash));
+    const commits = snapshot.value?.commits;
+    const availableHashes = new Set((commits || []).map((commit) => commit.hash));
     selectedCommitHashes.value = selectedCommitHashes.value.filter((hash) => availableHashes.has(hash));
     pruneExpandedCommitFiles(availableHashes);
     pruneCommitTooltipDetails(availableHashes);
+    const contextKey = activeRepositoryContext.value?.contextKey;
+    if (commits && contextKey) pruneGitCommitTooltipSession(contextKey, availableHashes);
   },
 );
 
@@ -3357,7 +3383,8 @@ const compactCommitRefPresentations = (commit: ProjectGitCommitSummary) =>
 const isHeadCommit = (commit: ProjectGitCommitSummary) =>
   commitRefPresentation(commit).full.some((ref) => ref.isCurrentHead);
 const graphStrokeColors = ["#0ea5e9", "#e91e9d", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16"];
-const graphStrokeColor = (colorIndex: number) => graphStrokeColors[colorIndex % graphStrokeColors.length] || graphStrokeColors[0];
+const graphStrokeColor = (colorIndex: number) =>
+  graphStrokeColors[colorIndex % graphStrokeColors.length] || graphStrokeColors[0];
 const graphRowPaddingX = 4;
 const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
 const rowPitch = rowHeight + rowGap;
@@ -3494,11 +3521,7 @@ const graphPathData = (sourceX: number, sourceY: number, targetX: number, target
 };
 
 const graphSegmentPathData = (segment: GitCommitGraphSegment) => {
-  if (
-    segment.kind === "root-termination" &&
-    segment.from.x === segment.to.x &&
-    segment.from.y === segment.to.y
-  ) {
+  if (segment.kind === "root-termination" && segment.from.x === segment.to.x && segment.from.y === segment.to.y) {
     return "";
   }
   const mode: GitGraphPathMode =
@@ -3656,6 +3679,15 @@ const shortCommitHash = (hash: string) => hash.slice(0, 7);
 const commitTooltipDetailsFor = (hash: string) => commitTooltipDetails.value[hash] || null;
 
 const commitTooltipSummary = (commit: ProjectGitCommitSummary): CommitTooltipSummary => {
+  if (hasUsableGitCommitShortStats(commit.shortStats)) {
+    return {
+      state: "ready",
+      fileCount: commit.shortStats.files,
+      additions: commit.shortStats.additions,
+      deletions: commit.shortStats.deletions,
+    };
+  }
+
   const details = commitTooltipDetailsFor(commit.hash);
   if (!details || details.isLoadingFiles) {
     return { state: "loading", fileCount: 0, additions: 0, deletions: 0 };

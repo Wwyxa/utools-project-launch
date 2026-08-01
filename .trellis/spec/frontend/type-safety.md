@@ -81,7 +81,9 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 ### 2. Signatures
 
 - `ProjectGitCommitSummary = { hash: string; message: string; body?: string; author: string; date: string; graph?: string; parents?: string[]; refs?: string }`, where `hash` and every `parents` entry use the repository's full object-id format.
+- `ProjectGitCommitShortStats = { readonly files: number; readonly additions: number; readonly deletions: number }`; `ProjectGitCommitSummary.shortStats?` carries this immutable summary with the history page.
 - Preload git read path should populate `message` with the compact subject line and `body` with the full commit message body when available.
+- Preload history reads use one `git log --shortstat` invocation per page. A dedicated separator after `%B` isolates the multiline body from the following short-stat text before parsing it.
 - Tooltip state should keep the whole commit object plus cursor coordinates, e.g. `{ commit: ProjectGitCommitSummary; x: number; y: number }`, because the tooltip header needs `author`, `date`, and `refs` while the body parser needs both `message` and `body`.
 - UI parser helpers may stay local to `GitTab.vue`, but their output contract is structured: `title: string` for the header and `body: string` for markdown rendering.
 
@@ -92,7 +94,9 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 - The preload boundary must keep `hash` as the full `%H` value and every `parents` entry as the full `%P` value. Git graph edges compare these values directly, while dense rows render a shortened hash without truncating the copied or bridged value.
 - The git log parser must preserve newlines in `body`; do not rely on `%s` alone when tooltip markdown needs lists or paragraphs.
 - Use robust field/record separators for git output parsing when reading multiline bodies. Tab-separated parsing is not enough once `%B` is included.
+- A non-empty short-stat section that cannot be parsed is `undefined`, not a zero summary. Only an actually empty section represents `{ files: 0, additions: 0, deletions: 0 }`.
 - Avoid `git log --graph` in the backend/preload data fetch when parsing multiline bodies. ASCII graph prefixes can pollute markdown lines and break list rendering. The frontend already draws its own graph from `parents`.
+- A tooltip with usable `shortStats` renders its file count and line totals immediately and must not call `readGitCommitFiles` for that summary. Legacy, missing, or invalid stats use the existing file-detail fallback. Expanding a commit's file list remains an independent full-detail read.
 - Tooltip rendering should normalize common Git message shapes before rendering:
   - if `body` is missing or equals `message`, render only the title and omit the body panel;
   - if the first `body` line equals, prefixes, or extends `message`, drop that first body line before rendering markdown;
@@ -107,6 +111,9 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 - Malformed commit record without a hash -> skip that record.
 - Full child hash paired with abbreviated parent hashes -> invalid graph input; use `%H` with `%P` so every visible parent can match a commit `hash` exactly.
 - Multiline body with markdown lists -> preserve newline structure and render via `renderMarkdown` in the UI.
+- Valid short-stat output -> expose non-negative safe-integer counts that equal the full file-detail totals for the same commit.
+- Non-empty unparsable short-stat output or invalid numeric counts -> leave `shortStats` absent and use the legacy tooltip detail path; never display fabricated zero totals.
+- Empty short-stat section -> expose a zero summary without a tooltip file-detail request.
 - Body repeats the subject line -> remove the duplicate line so tooltip title/body do not show the same sentence twice.
 - Message is itself a markdown list -> do not coerce the first list item into a plain bold title.
 - Chained conventional commits with repeated body lines -> trim only exact repeated trailing segments; keep the body lines available for markdown rendering.
@@ -115,17 +122,22 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 
 - Good: row displays `message`, tooltip title/body split removes duplicated subject text and renders `body` with markdown bullets preserved.
 - Good: each non-root commit's visible parent entry exactly equals the corresponding full commit `hash`, so the graph can draw the edge.
+- Good: a loaded commit has valid `shortStats`; after the normal hover delay its tooltip immediately renders totals while only the optional avatar enhancement may still load.
 - Base: commit has only a subject; both row and tooltip use `message`.
+- Base: an older bridge result lacks `shortStats`; the tooltip keeps its existing delayed full-detail fallback.
 - Base: a root commit has an empty `parents` array.
 - Bad: combining full `%H` child hashes with abbreviated `%p` parent hashes; records parse, but graph edges silently disappear.
 - Bad: using `--pretty=format:%h\t...\t%s` and expecting tooltip markdown lists to exist.
+- Bad: treating an unknown short-stat parse as zero or running `readGitCommitFiles` for every visible tooltip despite a valid preloaded summary.
 - Bad: always rendering `message` as a plain tooltip title when `message` starts with `- `; this breaks list-style commit messages.
 - Bad: always rendering the full subject as title when the body repeats trailing `fix:` / `change:` segments; this creates a long duplicate title and repeated body.
 
 ### 6. Tests Required
 
 - `npm run build` after changing commit metadata parsing or tooltip rendering.
-- `npm run validate:git-commits` must create two commits through a real temporary repository and assert `latestCommit.parents[0] === rootCommit.hash` plus an empty root `parents` array.
+- `npm run validate:git-commits` must create two commits through a real temporary repository, assert `latestCommit.parents[0] === rootCommit.hash`, an empty root `parents` array, and that `latestCommit.shortStats` equals `readGitCommitFiles(latestCommit.hash)` totals.
+- `npx vitest run src/lib/gitCommitTooltipSession.test.ts` must prove valid preloaded stats skip the file-detail loader while the avatar loader remains optional and cacheable.
+- `npm run benchmark:git-interactions -- --report after` must assert cold/A-B-A/remount tooltip models issue no `readGitCommitFiles` bridge call when commits carry usable short stats.
 - Manual smoke test with commits containing a subject plus markdown body list items (`- item`).
 - Manual smoke test with subject-only commits to verify tooltip fallback remains readable.
 - Manual smoke test with list-only commit messages where the first line starts with `- ` and should render as markdown.
@@ -168,6 +180,28 @@ const body = commitTooltipBody(commit);
 ```
 
 Keep tooltip parsing explicit and format-aware so the dense row can show the raw subject while the tooltip shows a readable title plus markdown body.
+
+#### Wrong
+
+```ts
+const files = await store.readGitCommitFiles(projectId, commit.hash, target);
+return summarizeFiles(files);
+```
+
+This repeats Git work for every cold tooltip even though the history page already has an immutable summary.
+
+#### Correct
+
+```ts
+if (hasUsableGitCommitShortStats(commit.shortStats)) {
+  return commit.shortStats;
+}
+
+const files = await store.readGitCommitFiles(projectId, commit.hash, target);
+return summarizeFiles(files);
+```
+
+Use the preloaded summary first and retain the detail reader only as a compatibility fallback.
 
 ## Scenario: Git Commit Ref And Mutation Boundary
 

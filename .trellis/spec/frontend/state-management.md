@@ -1332,9 +1332,11 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - `ProjectGitActionResult = { ok: boolean; message: string; blockReason?: "dirty-worktree" | "unmerged-branch"; path?: string; paths?: string[]; count?: number; branch?: string; commitHash?: string; isDetachedHead?: boolean }`
 - `ProjectGitCommitMessageDiffResult = { ok: boolean; scope: "staged" | "working-tree"; diff: string; truncated?: boolean; message?: string }`
 - `ProjectGitStatusSnapshot = { branch: string; headHash?: string; isDetachedHead?: boolean; ahead: number; behind: number; files: ProjectGitFileChange[]; branches?: ProjectGitBranchSummary[]; repositoryPath: string; lastRefreshedAt: string; statusText: string }`
+- `ProjectBridgeGitWorkingTreeSnapshot = { files: ProjectGitFileChange[]; repositoryPath: string; lastRefreshedAt: string; statusText: string }`
 - `ProjectGitCommitPage = { commits: ProjectGitCommitSummary[]; hasMoreCommits?: boolean; repositoryPath: string; lastRefreshedAt: string }`
 - `ProjectGitSnapshot = { branch: string; headHash?: string; isDetachedHead?: boolean; ahead: number; behind: number; files: ProjectGitFileChange[]; commits: ProjectGitCommitSummary[]; branches?: ProjectGitBranchSummary[]; ... }`
 - `ProjectBridge.readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>`
+- `ProjectBridge.readGitWorkingTreeSnapshot(projectPath: string): Promise<ProjectBridgeGitWorkingTreeSnapshot>`
 - `ProjectBridge.readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>`
 - `ProjectBridge.stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
 - `ProjectBridge.unstageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
@@ -1356,10 +1358,13 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 
 - Components call store actions such as `store.stageGitFile(project.id, file.path)`, never `window.projectBridge` directly.
 - Store actions resolve the project id to the project path, call the bridge, and choose the lightest post-write refresh that preserves correctness.
-- Stage/unstage single-file and batch actions should bump the Git mutation version and refresh `readGitStatusSnapshot(project.path)` after successful writes. They must not reread commit history on the success path.
+- Stage/unstage single-file and batch actions should bump the Git mutation version and await `readGitWorkingTreeSnapshot(project.path)` after successful writes. Fresh porcelain and staged/unstaged numstat output remain authoritative for rename, untracked, partial-stage, batch, and concurrent working-tree changes; the Store replaces only files and status metadata while retaining the current branch, HEAD, refs, remotes, upstream, and commits. A detached snapshot keeps its `detached HEAD @ <hash> ·` status prefix.
+- The working-tree reader may do root discovery, NUL-delimited porcelain, and unstaged/staged numstat reads, but must not issue commit, ref, branch, remote, or upstream reads on the stage/unstage foreground path.
+- Start forced workspace inventory after an index-only write without awaiting it. `refreshGitWorkspace` catches its own bridge failures and accepts results only while its force token and project path remain current, so background inventory cannot create an unhandled rejection or replace newer data.
 - Commit, branch switch, checkout, and discard actions can change HEAD, refs, or file contents beyond index-only state; refresh `readGitSnapshot(project.path, { limit: 80, skip: 0 })` after successful results.
 - Create/rename/delete branch, create tag, tracking checkout, branch switch, and commit checkout are ref mutations. Route them through `runAuthorizedGitWrite` with `{ refresh: "full", refs: true }` so every related repository snapshot and stale ref request is invalidated.
-- Full refresh and lightweight status refresh may overlap. The store must track mutation/ref versions so a stale full refresh does not overwrite newer status/files, and so full refresh commit pages are only merged when no ref-changing mutation happened after the full refresh started.
+- Full, status, and working-tree refreshes may overlap. The store must track mutation/ref versions so a stale full refresh does not overwrite newer status/files, and the working-tree coordinator must check its own token after the bridge await. Clearing coordination on project replacement must reject an A -> B -> A old response even when the context key later matches again.
+- Every automatic GitTab missing-snapshot path, including its workspace inventory watcher, calls `refreshGitSnapshot` without `force` so it joins the Store's context-scoped initial request. `refreshActiveRepository` is the manual path and remains forced.
 - Browser fallback must implement the same methods and return user-facing unavailable messages instead of throwing.
 - Preload Git write commands must use argument arrays with `spawnSync` or `execFileSync`, e.g. `git -C <repo> add -- <path>`. Do not build shell command strings for Git writes.
 - Preload resolves `relativePath` under the Git repository root before running Git, rejecting path traversal through the existing child-path resolver.
@@ -1399,10 +1404,14 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - Commit checkout target is not any local branch tip -> bridge returns `{ ok: true, commitHash, isDetachedHead: true }`, and the refreshed snapshot should show detached HEAD.
 - Detached HEAD snapshot -> `branch` may be `"HEAD"`, `isDetachedHead` is `true`, and `headHash` carries the current short commit hash for UI labels.
 - Safe delete of an unmerged branch -> bridge returns `blockReason: "unmerged-branch"` and leaves the branch intact; force delete is attempted only after the second danger confirmation.
+- Stage/unstage after a detached snapshot -> fresh files/status update while the displayed status retains `detached HEAD @ <hash> ·`.
+- Workspace inventory rejects after a successful stage/unstage -> foreground action resolves from the working-tree snapshot; inventory logs a warning and does not reject into the caller.
+- Project path changes A -> B -> A while a working-tree read is pending -> the pre-reset token cannot merge its old files after the new A request settles.
+- Parent initial refresh, GitTab restore, and its workspace watcher overlap -> one `readGitSnapshot` bridge call; an explicit manual refresh remains a forced replacement.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: clicking a file stage button calls the store, preload runs `git add -- <file>`, then the store refreshes only the Git status snapshot and the row shows staged state without reloading the commit graph.
+- Good: clicking a file stage button calls the store, preload runs `git add -- <file>`, then the Store awaits the fresh working-tree snapshot while workspace inventory continues in the background; the row shows Git-derived staged state without reloading the commit graph.
 - Good: AI commit message generation includes actual diff text from staged changes, and falls back to working-tree diff only when nothing is staged.
 - Good: editing the commit-message prompt in Settings persists through browser fallback and preload storage, then the next Git tab generation uses that stored template.
 - Good: the changed-files panel keeps stage/unstage/discard controls in the header and shows immediate per-file loading feedback before the refreshed snapshot arrives.
@@ -1411,7 +1420,9 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - Good: creating a branch without checkout changes only refs; checking the opt-in box performs one atomic create-and-switch operation after any required dirty-worktree confirmation.
 - Good: local and remote ref actions share authorized repository routing but expose different UI capabilities and preload commands.
 - Base: browser preview shows safe unavailable messages for write actions but still renders the Git tab.
+- Base: browser preview returns the typed empty working-tree snapshot and retains the existing full snapshot metadata.
 - Bad: a component directly calls `window.projectBridge.commitGitStaged(...)` and then forgets to refresh `project.git`.
+- Bad: awaiting workspace inventory alongside the working-tree snapshot after every stage/unstage, or merging a pre-reset working-tree result after a newer same-context request settles.
 - Bad: running `spawn("git add " + filePath, { shell: true })`, which creates shell injection risk.
 - Bad: using recursive filesystem deletion for a Git discard action from a compact UI.
 - Bad: showing a native confirmation dialog for discard, because it can hide or detach the compact uTools plugin UI.
@@ -1421,7 +1432,8 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - `npm run type-check` should verify bridge contracts across `src/types.ts`, fallback bridge, store actions, and components.
 - `npm run build` should verify the Git tab template compiles.
 - `npm run validate:git-commits` should verify structured refs and every branch/tag mutation against a real temporary repository.
-- `npx vitest run src/lib/projectBridge.workspace.test.ts` should verify exact repository routing, stale-target rejection, and ref invalidation for the new store actions.
+- `npx vitest run src/lib/projectBridge.workspace.test.ts` should verify exact repository routing, one shared parent/GitTab/workspace initial snapshot with a forced manual refresh, foreground working-tree-only stage/unstage calls, background inventory completion, stale-target/mutation/project-reset rejection, detached status preservation, and ref invalidation for the new store actions.
+- `npm run validate:git-commits` must also assert that working-tree snapshots preserve staged renames, nested untracked files, and partial staging.
 - Manual uTools smoke test: stage, unstage, discard a single file after confirmation, commit staged changes, and confirm each successful action refreshes the snapshot.
 - Manual uTools smoke test: attempt branch switching with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-switches and refreshes branch/files/graph. Then switch on a clean worktree and verify the branch and graph refresh.
 - Manual uTools smoke test: attempt commit checkout with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-checks out the selected commit and refreshes detached HEAD/current commit state. Then checkout a clean selected commit and verify detached HEAD/current commit state is visible.
@@ -1445,6 +1457,26 @@ const result = await store.commitGitStaged(project.id, message);
 ```
 
 Let the store own project lookup, bridge fallback, and post-success snapshot refresh.
+
+#### Wrong
+
+```ts
+await Promise.all([
+  this.refreshGitStatusSnapshot(projectId, target),
+  this.refreshGitWorkspace(projectId, { force: true }),
+]);
+```
+
+This makes unrelated branch/ref/workspace work gate an index-only action.
+
+#### Correct
+
+```ts
+void this.refreshGitWorkspace(projectId, { force: true });
+await this.refreshGitWorkingTreeSnapshot(projectId, target);
+```
+
+The foreground merges only fresh Git-derived file state; the workspace action owns error handling and token-guarded background publication.
 
 #### Wrong
 

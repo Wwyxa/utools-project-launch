@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { getProjectBridge } from "./projectBridge";
@@ -6,7 +7,9 @@ import { ProjectStatus } from "../types";
 import type {
   Project,
   ProjectBridge,
+  ProjectBridgeGitWorkingTreeSnapshot,
   ProjectGitRepositoryTarget,
+  ProjectGitFileChange,
   ProjectGitSnapshot,
   ProjectGitSubmoduleSummary,
   ProjectGitWorkspaceSnapshot,
@@ -88,6 +91,16 @@ const gitSnapshot = (repositoryPath: string, branch: string, hash = "c".repeat(4
   statusText: branch,
 });
 
+const workingTreeSnapshot = (
+  repositoryPath: string,
+  files: ProjectGitFileChange[],
+): ProjectBridgeGitWorkingTreeSnapshot => ({
+  files,
+  repositoryPath,
+  lastRefreshedAt: "2026-08-01T10:00:00.000Z",
+  statusText: files.length === 0 ? "工作区干净" : `${files.length} 个文件变更`,
+});
+
 describe("browser Git workspace fallback", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -101,7 +114,10 @@ describe("browser Git workspace fallback", () => {
       projectBridge: undefined,
     });
 
-    const snapshot = await getProjectBridge().readGitWorkspaceSnapshot("C:\\preview-only");
+    const [snapshot, workingTree] = await Promise.all([
+      getProjectBridge().readGitWorkspaceSnapshot("C:\\preview-only"),
+      getProjectBridge().readGitWorkingTreeSnapshot("C:\\preview-only"),
+    ]);
 
     expect(snapshot.repositoryPath).toBe("");
     expect(snapshot.objectFormat).toBeNull();
@@ -116,6 +132,12 @@ describe("browser Git workspace fallback", () => {
       failure: { code: "unsupported-output", operation: "repository" },
     });
     expect(Number.isNaN(Date.parse(snapshot.lastRefreshedAt))).toBe(false);
+    expect(workingTree).toMatchObject({
+      files: [],
+      repositoryPath: "",
+      statusText: "离线预览",
+    });
+    expect(Number.isNaN(Date.parse(workingTree.lastRefreshedAt))).toBe(false);
   });
 
   it("compares Windows paths case-insensitively without collapsing absolute roots", () => {
@@ -393,6 +415,68 @@ describe("browser Git workspace fallback", () => {
     expect(readGitSnapshot).toHaveBeenCalledTimes(4);
   });
 
+  it("joins the parent initial snapshot from GitTab restore and workspace inventory", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const parentSnapshot = createDeferred<ProjectGitSnapshot>();
+    const gitTabSnapshot = createDeferred<ProjectGitSnapshot>();
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>();
+    readGitSnapshot.mockReturnValueOnce(parentSnapshot.promise).mockReturnValueOnce(gitTabSnapshot.promise);
+    window.projectBridge = { ...getProjectBridge(), readGitSnapshot };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-initial-snapshot", "C:\\project");
+    store.projects = [project];
+
+    const parentRefresh = store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000 });
+    const gitTabSource = readFileSync(new URL("../components/project/GitTab.vue", import.meta.url), "utf8");
+    const restoreStart = gitTabSource.indexOf("const restoreProjectRepositoryState =");
+    const restoreEnd = gitTabSource.indexOf("\nonBeforeUnmount", restoreStart);
+    const restoreProjectRepositoryState = gitTabSource.slice(restoreStart, restoreEnd);
+    const workspaceWatcherStart = gitTabSource.indexOf('() => gitWorkspaceSnapshot.value?.lastRefreshedAt || "",');
+    const workspaceWatcherEnd = gitTabSource.indexOf(
+      "\n\nwatch(\n  () => (snapshot.value?.commits",
+      workspaceWatcherStart,
+    );
+    const workspaceWatcher = gitTabSource.slice(workspaceWatcherStart, workspaceWatcherEnd);
+    const manualRefreshStart = gitTabSource.indexOf("const refreshActiveRepository = async () =>");
+    const manualRefreshEnd = gitTabSource.indexOf("\n\nconst isRefreshRunning", manualRefreshStart);
+    const manualRefresh = gitTabSource.slice(manualRefreshStart, manualRefreshEnd);
+    const gitTabOptions = restoreProjectRepositoryState.includes(
+      "void store.refreshGitSnapshot(projectId, { force: true }, target);",
+    )
+      ? { force: true }
+      : {};
+    const workspaceOptions = workspaceWatcher.includes(
+      "void store.refreshGitSnapshot(props.project.id, { force: true }, context.target);",
+    )
+      ? { force: true }
+      : {};
+    const gitTabRefresh = store.refreshGitSnapshot(project.id, gitTabOptions, { kind: "main" });
+    const workspaceRefresh = store.refreshGitSnapshot(project.id, workspaceOptions, { kind: "main" });
+
+    expect(readGitSnapshot).toHaveBeenCalledOnce();
+    expect(restoreProjectRepositoryState).toContain("void store.refreshGitSnapshot(projectId, {}, target);");
+    expect(workspaceWatcher).toContain("void store.refreshGitSnapshot(props.project.id, {}, context.target);");
+    expect(workspaceWatcher).toContain('void store.refreshGitSnapshot(props.project.id, {}, { kind: "main" });');
+    expect(manualRefresh).toContain(
+      "store.refreshGitSnapshot(props.project.id, { force: true }, activeRepositoryTarget.value)",
+    );
+    const snapshot = gitSnapshot(project.path, "initial");
+    parentSnapshot.resolve(snapshot);
+    await expect(Promise.all([parentRefresh, gitTabRefresh, workspaceRefresh])).resolves.toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(project.git).toMatchObject(snapshot);
+  });
+
   it("isolates full snapshots and deduplication by repository context", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },
@@ -572,6 +656,275 @@ describe("browser Git workspace fallback", () => {
 
     expect(readGitStatusSnapshot).toHaveBeenCalledTimes(2);
     expect(store.gitSnapshotForRepository(project.id, submoduleTarget)?.branch).toBe("fresh-submodule-status");
+  });
+
+  it("uses working-tree snapshots for selected and all stage actions without awaiting workspace inventory", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const currentWorkspace = workspaceSnapshot(mainPath, "2026-08-01T10:00:00.000Z");
+    const pendingWorkspace = createDeferred<ProjectGitWorkspaceSnapshot>();
+    const success = { ok: true, message: "ok" };
+    const stageGitFile = vi.fn<ProjectBridge["stageGitFile"]>(async () => success);
+    const unstageGitFile = vi.fn<ProjectBridge["unstageGitFile"]>(async () => success);
+    const stageGitFiles = vi.fn<ProjectBridge["stageGitFiles"]>(async () => success);
+    const unstageGitFiles = vi.fn<ProjectBridge["unstageGitFiles"]>(async () => success);
+    const readGitWorkingTreeSnapshot = vi.fn<ProjectBridge["readGitWorkingTreeSnapshot"]>();
+    readGitWorkingTreeSnapshot
+      .mockResolvedValueOnce(
+        workingTreeSnapshot(mainPath, [
+          { path: "selected.txt", additions: 2, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        workingTreeSnapshot(mainPath, [
+          { path: "selected.txt", additions: 2, deletions: 0, status: "MODIFIED", staged: false, unstaged: true },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        workingTreeSnapshot(mainPath, [
+          { path: "first.txt", additions: 1, deletions: 0, status: "ADDED", staged: true, unstaged: false },
+          { path: "second.txt", additions: 1, deletions: 0, status: "ADDED", staged: true, unstaged: false },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        workingTreeSnapshot(mainPath, [
+          { path: "first.txt", additions: 1, deletions: 0, status: "ADDED", staged: false, unstaged: true },
+          { path: "second.txt", additions: 1, deletions: 0, status: "ADDED", staged: false, unstaged: true },
+        ]),
+      );
+    const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>();
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>();
+    const readGitCommits = vi.fn<ProjectBridge["readGitCommits"]>();
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(() => pendingWorkspace.promise);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      stageGitFile,
+      unstageGitFile,
+      stageGitFiles,
+      unstageGitFiles,
+      readGitWorkingTreeSnapshot,
+      readGitStatusSnapshot,
+      readGitSnapshot,
+      readGitCommits,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-working-tree-writes", mainPath);
+    project.git = gitSnapshot(mainPath, "main");
+    store.projects = [project];
+
+    await expect(store.stageGitFile(project.id, "selected.txt")).resolves.toEqual(success);
+    expect(store.gitWorkspaceRefreshing[project.id]).toBe(true);
+    expect(project.git?.files).toEqual([
+      { path: "selected.txt", additions: 2, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+    ]);
+    await expect(store.unstageGitFile(project.id, "selected.txt")).resolves.toEqual(success);
+    await expect(store.stageGitFiles(project.id, ["first.txt", "second.txt"], { all: true })).resolves.toEqual(success);
+    await expect(store.unstageGitFiles(project.id, ["first.txt", "second.txt"], { all: true })).resolves.toEqual(
+      success,
+    );
+
+    expect(stageGitFile).toHaveBeenCalledWith(mainPath, "selected.txt");
+    expect(unstageGitFile).toHaveBeenCalledWith(mainPath, "selected.txt");
+    expect(stageGitFiles).toHaveBeenCalledWith(mainPath, ["first.txt", "second.txt"], { all: true });
+    expect(unstageGitFiles).toHaveBeenCalledWith(mainPath, ["first.txt", "second.txt"], { all: true });
+    expect(readGitWorkingTreeSnapshot).toHaveBeenCalledTimes(4);
+    expect(readGitWorkingTreeSnapshot.mock.calls.map(([repositoryPath]) => repositoryPath)).toEqual([
+      mainPath,
+      mainPath,
+      mainPath,
+      mainPath,
+    ]);
+    expect(readGitStatusSnapshot).not.toHaveBeenCalled();
+    expect(readGitSnapshot).not.toHaveBeenCalled();
+    expect(readGitCommits).not.toHaveBeenCalled();
+    expect(readGitWorkspaceSnapshot).toHaveBeenCalledTimes(4);
+    expect(project.git?.files).toEqual([
+      { path: "first.txt", additions: 1, deletions: 0, status: "ADDED", staged: false, unstaged: true },
+      { path: "second.txt", additions: 1, deletions: 0, status: "ADDED", staged: false, unstaged: true },
+    ]);
+
+    pendingWorkspace.resolve(currentWorkspace);
+  });
+
+  it("drops working-tree results after their repository context becomes stale", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const worktreePath = "C:\\project-worktree";
+    const pending = createDeferred<ProjectBridgeGitWorkingTreeSnapshot>();
+    const readGitWorkingTreeSnapshot = vi.fn<ProjectBridge["readGitWorkingTreeSnapshot"]>(() => pending.promise);
+    window.projectBridge = { ...getProjectBridge(), readGitWorkingTreeSnapshot };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-stale-working-tree", mainPath);
+    project.git = gitSnapshot(mainPath, "main");
+    store.projects = [project];
+    store.gitWorkspaces[project.id] = {
+      ...workspaceSnapshot(mainPath, "2026-08-01T10:00:00.000Z"),
+      worktrees: { state: "ready", failure: null, entries: [healthyWorktree(worktreePath)] },
+    };
+    const target = { kind: "worktree", path: worktreePath } as const;
+    const context = store.resolveGitRepositoryContext(project.id, target)!;
+    store.gitRepositorySnapshots[context.contextKey] = gitSnapshot(worktreePath, "current");
+
+    const refresh = store.refreshGitWorkingTreeSnapshot(project.id, target);
+    store.gitWorkspaces[project.id] = {
+      ...store.gitWorkspaces[project.id]!,
+      worktrees: { state: "ready", failure: null, entries: [] },
+    };
+    pending.resolve(
+      workingTreeSnapshot(worktreePath, [
+        { path: "stale.txt", additions: 1, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+      ]),
+    );
+    await refresh;
+
+    expect(store.gitRepositorySnapshots[context.contextKey]?.files).toEqual([]);
+  });
+
+  it("retries a working-tree read after a later write mutation", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const stale = createDeferred<ProjectBridgeGitWorkingTreeSnapshot>();
+    const fresh = createDeferred<ProjectBridgeGitWorkingTreeSnapshot>();
+    const readGitWorkingTreeSnapshot = vi.fn<ProjectBridge["readGitWorkingTreeSnapshot"]>();
+    readGitWorkingTreeSnapshot.mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise);
+    const stageGitFile = vi.fn<ProjectBridge["stageGitFile"]>(async () => ({ ok: true, message: "ok" }));
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(async () =>
+      workspaceSnapshot(mainPath, "2026-08-01T10:00:00.000Z"),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      stageGitFile,
+      readGitWorkingTreeSnapshot,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-working-tree-mutation", mainPath);
+    project.git = gitSnapshot(mainPath, "main");
+    store.projects = [project];
+
+    const initialRefresh = store.refreshGitWorkingTreeSnapshot(project.id);
+    const write = store.stageGitFile(project.id, "fresh.txt");
+    await vi.waitFor(() => expect(readGitWorkspaceSnapshot).toHaveBeenCalledOnce());
+    stale.resolve(
+      workingTreeSnapshot(mainPath, [
+        { path: "stale.txt", additions: 1, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+      ]),
+    );
+    await vi.waitFor(() => expect(readGitWorkingTreeSnapshot).toHaveBeenCalledTimes(2));
+    expect(project.git?.files).toEqual([]);
+    fresh.resolve(
+      workingTreeSnapshot(mainPath, [
+        { path: "fresh.txt", additions: 1, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+      ]),
+    );
+    await Promise.all([initialRefresh, write]);
+
+    expect(project.git?.files).toEqual([
+      { path: "fresh.txt", additions: 1, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+    ]);
+  });
+
+  it("rejects a pre-reset working-tree response when a project id is recreated", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
+    const mainPath = "C:\\project";
+    const stale = createDeferred<ProjectBridgeGitWorkingTreeSnapshot>();
+    const fresh = createDeferred<ProjectBridgeGitWorkingTreeSnapshot>();
+    const readGitWorkingTreeSnapshot = vi
+      .fn<ProjectBridge["readGitWorkingTreeSnapshot"]>()
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(fresh.promise);
+    window.projectBridge = { ...getProjectBridge(), readGitWorkingTreeSnapshot };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-working-tree-reset", mainPath);
+    project.git = gitSnapshot(mainPath, "main");
+    store.projects = [project];
+
+    const staleRefresh = store.refreshGitWorkingTreeSnapshot(project.id);
+    await store.deleteProject(project.id);
+
+    const replacement = createProject(project.id, mainPath);
+    replacement.git = gitSnapshot(mainPath, "main");
+    store.projects = [replacement];
+    const freshRefresh = store.refreshGitWorkingTreeSnapshot(replacement.id);
+    fresh.resolve(
+      workingTreeSnapshot(mainPath, [
+        { path: "fresh.txt", additions: 1, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+      ]),
+    );
+    await freshRefresh;
+
+    stale.resolve(
+      workingTreeSnapshot(mainPath, [
+        { path: "stale.txt", additions: 1, deletions: 0, status: "MODIFIED", staged: false, unstaged: true },
+      ]),
+    );
+    await staleRefresh;
+
+    expect(replacement.git?.files).toEqual([
+      { path: "fresh.txt", additions: 1, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+    ]);
+  });
+
+  it("preserves detached HEAD status text while merging a working-tree refresh", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const headHash = "d".repeat(40);
+    const readGitWorkingTreeSnapshot = vi.fn<ProjectBridge["readGitWorkingTreeSnapshot"]>(async () =>
+      workingTreeSnapshot(mainPath, [
+        { path: "changed.txt", additions: 1, deletions: 0, status: "MODIFIED", staged: true, unstaged: false },
+      ]),
+    );
+    window.projectBridge = { ...getProjectBridge(), readGitWorkingTreeSnapshot };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-detached-working-tree", mainPath);
+    project.git = {
+      ...gitSnapshot(mainPath, "HEAD", headHash),
+      isDetachedHead: true,
+      statusText: `detached HEAD @ ${headHash} · 工作区干净`,
+    };
+    store.projects = [project];
+
+    await store.refreshGitWorkingTreeSnapshot(project.id);
+
+    expect(project.git?.statusText).toBe(`detached HEAD @ ${headHash} · 1 个文件变更`);
   });
 
   it("routes writes to the exact authorized repository and keeps main checkout isolated", async () => {

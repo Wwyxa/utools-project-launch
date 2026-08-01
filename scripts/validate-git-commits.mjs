@@ -69,6 +69,28 @@ try {
     true,
   );
 
+  fs.appendFileSync(path.join(projectRoot, "history.txt"), "staged working-tree change\n");
+  runGit("add", "--", "history.txt");
+  fs.appendFileSync(path.join(projectRoot, "history.txt"), "unstaged working-tree change\n");
+  runGit("mv", chineseFileName, "renamed-stage.txt");
+  fs.mkdirSync(path.join(projectRoot, "untracked", "nested"), { recursive: true });
+  fs.writeFileSync(path.join(projectRoot, "untracked", "nested", "entry.txt"), "untracked\n");
+
+  const workingTree = await bridge.readGitWorkingTreeSnapshot(projectRoot);
+  const partiallyStaged = workingTree.files.find((file) => file.path === "history.txt");
+  const renamed = workingTree.files.find((file) => file.path === "renamed-stage.txt");
+  const untracked = workingTree.files.find((file) => file.path === "untracked/nested/entry.txt");
+  assert.equal(path.resolve(workingTree.repositoryPath), path.resolve(projectRoot));
+  assert.equal(partiallyStaged?.staged, true);
+  assert.equal(partiallyStaged?.unstaged, true);
+  assert.equal(renamed?.status, "RENAMED");
+  assert.equal(renamed?.staged, true);
+  assert.equal(renamed?.originalPath, chineseFileName);
+  assert.equal(untracked?.status, "UNTRACKED");
+  assert.equal(untracked?.unstaged, true);
+  runGit("reset", "--hard");
+  runGit("clean", "-fd");
+
   const page = await bridge.readGitCommits(projectRoot, { limit: 20 });
   assert.equal(page.commits.length, 2);
 
@@ -78,6 +100,15 @@ try {
   assert.deepEqual(Array.from(latestCommit.parents), [rootCommit.hash]);
   assert.deepEqual(Array.from(rootCommit.parents), []);
   const latestCommitFiles = await bridge.readGitCommitFiles(projectRoot, latestCommit.hash);
+  assert.ok(latestCommit.shortStats);
+  assert.deepEqual(
+    { ...latestCommit.shortStats },
+    {
+      files: latestCommitFiles.length,
+      additions: latestCommitFiles.reduce((total, file) => total + file.additions, 0),
+      deletions: latestCommitFiles.reduce((total, file) => total + file.deletions, 0),
+    },
+  );
   assert.equal(
     latestCommitFiles.some((file) => file.path === chineseFileName),
     true,

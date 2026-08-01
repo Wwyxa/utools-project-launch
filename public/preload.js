@@ -53,6 +53,7 @@ const projectDocPrefix = "utools-project-launch/project/";
 const schemaVersion = 1;
 const gitCommitFieldSeparator = "\x1f";
 const gitCommitRecordSeparator = "\x1e";
+const gitCommitShortStatSeparator = "\x1d";
 const commonProjectDirs = [".", "frontend", "backend", "client", "server", "api", "src"];
 const terminalKinds = new Set(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
 const editorKinds = new Set(["vscode", "cursor", "custom"]);
@@ -3587,7 +3588,11 @@ function readMakefileScripts(projectPath) {
           });
           return;
         }
-        if (!line || /^\s/.test(line) || /^\s*(?:#|include\b|-include\b|define\b|endef\b|ifeq\b|ifneq\b|ifdef\b|ifndef\b|else\b|endif\b)/.test(line)) {
+        if (
+          !line ||
+          /^\s/.test(line) ||
+          /^\s*(?:#|include\b|-include\b|define\b|endef\b|ifeq\b|ifneq\b|ifdef\b|ifndef\b|else\b|endif\b)/.test(line)
+        ) {
           return;
         }
         const separator = line.indexOf(":");
@@ -4537,49 +4542,7 @@ async function importProjects() {
   }
 }
 
-async function readGitStatusSnapshot(projectPath) {
-  const repositoryPath = await findGitRootAsync(projectPath);
-  const now = new Date().toISOString();
-
-  if (!repositoryPath) {
-    return {
-      branch: "main",
-      ahead: 0,
-      behind: 0,
-      files: [],
-      branches: [],
-      remotes: [],
-      upstream: null,
-      repositoryPath: "",
-      lastRefreshedAt: now,
-      statusText: "未检测到 Git 仓库",
-    };
-  }
-
-  const [
-    branchOutput,
-    symbolicBranchOutput,
-    headHashOutput,
-    statusEntries,
-    numstatOutput,
-    cachedNumstatOutput,
-    branches,
-    remotes,
-    upstream,
-  ] = await Promise.all([
-    runGitAsync(repositoryPath, ["status", "--short", "--branch"]),
-    runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
-    runGitAsync(repositoryPath, ["rev-parse", "--short", "HEAD"]),
-    readGitStatusEntriesAsync(repositoryPath),
-    collectNumstatAsync(repositoryPath, ["diff", "--numstat"]),
-    collectNumstatAsync(repositoryPath, ["diff", "--cached", "--numstat"]),
-    readGitBranchesAsync(repositoryPath),
-    readGitRemotesAsync(repositoryPath),
-    readGitUpstreamAsync(repositoryPath),
-  ]);
-  const symbolicBranch = String(symbolicBranchOutput || "").trim();
-  const headHash = String(headHashOutput || "").trim();
-  const isDetachedHead = !symbolicBranch && Boolean(headHash);
+function parseGitWorkingTreeFiles(repositoryPath, statusEntries, numstatOutput, cachedNumstatOutput) {
   const fileMap = new Map();
 
   statusEntries.forEach((entry) => {
@@ -4654,6 +4617,78 @@ async function readGitStatusSnapshot(projectPath) {
     }
   });
 
+  return {
+    files: Array.from(fileMap.values()).filter((file) => {
+      // 过滤掉文件夹条目（路径以 / 或 \ 结尾）
+      return !file.path.endsWith("/") && !file.path.endsWith("\\");
+    }),
+    changeCount: fileMap.size,
+  };
+}
+
+async function readGitWorkingTreeData(repositoryPath) {
+  const [statusEntries, numstatOutput, cachedNumstatOutput] = await Promise.all([
+    readGitStatusEntriesAsync(repositoryPath),
+    collectNumstatAsync(repositoryPath, ["diff", "--numstat"]),
+    collectNumstatAsync(repositoryPath, ["diff", "--cached", "--numstat"]),
+  ]);
+  return parseGitWorkingTreeFiles(repositoryPath, statusEntries, numstatOutput, cachedNumstatOutput);
+}
+
+async function readGitWorkingTreeSnapshot(projectPath) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const now = new Date().toISOString();
+
+  if (!repositoryPath) {
+    return {
+      files: [],
+      repositoryPath: "",
+      lastRefreshedAt: now,
+      statusText: "未检测到 Git 仓库",
+    };
+  }
+
+  const workingTree = await readGitWorkingTreeData(repositoryPath);
+  return {
+    files: workingTree.files,
+    repositoryPath,
+    lastRefreshedAt: now,
+    statusText: workingTree.changeCount === 0 ? "工作区干净" : `${workingTree.changeCount} 个文件变更`,
+  };
+}
+
+async function readGitStatusSnapshot(projectPath) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const now = new Date().toISOString();
+
+  if (!repositoryPath) {
+    return {
+      branch: "main",
+      ahead: 0,
+      behind: 0,
+      files: [],
+      branches: [],
+      remotes: [],
+      upstream: null,
+      repositoryPath: "",
+      lastRefreshedAt: now,
+      statusText: "未检测到 Git 仓库",
+    };
+  }
+
+  const [branchOutput, symbolicBranchOutput, headHashOutput, workingTree, branches, remotes, upstream] =
+    await Promise.all([
+      runGitAsync(repositoryPath, ["status", "--short", "--branch"]),
+      runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
+      runGitAsync(repositoryPath, ["rev-parse", "--short", "HEAD"]),
+      readGitWorkingTreeData(repositoryPath),
+      readGitBranchesAsync(repositoryPath),
+      readGitRemotesAsync(repositoryPath),
+      readGitUpstreamAsync(repositoryPath),
+    ]);
+  const symbolicBranch = String(symbolicBranchOutput || "").trim();
+  const headHash = String(headHashOutput || "").trim();
+  const isDetachedHead = !symbolicBranch && Boolean(headHash);
   const branchLine = branchOutput ? String(branchOutput).split(/\r?\n/)[0] : "";
   const branchMatch = branchLine.match(/^##\s+([^\.\s]+)(?:\.\.\.(?:[^\s]+))?(?:\s+\[(.+)\])?/);
   const branch = symbolicBranch || (isDetachedHead ? "HEAD" : branchMatch?.[1] || "main");
@@ -4669,16 +4704,13 @@ async function readGitStatusSnapshot(projectPath) {
     isDetachedHead,
     ahead,
     behind,
-    files: Array.from(fileMap.values()).filter((file) => {
-      // 过滤掉文件夹条目（路径以 / 或 \ 结尾）
-      return !file.path.endsWith("/") && !file.path.endsWith("\\");
-    }),
+    files: workingTree.files,
     branches,
     remotes,
     upstream,
     repositoryPath,
     lastRefreshedAt: now,
-    statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${fileMap.size === 0 ? "工作区干净" : `${fileMap.size} 个文件变更`}`,
+    statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${workingTree.changeCount === 0 ? "工作区干净" : `${workingTree.changeCount} 个文件变更`}`,
   };
 }
 
@@ -4839,7 +4871,8 @@ async function readGitCommits(projectPath, options = {}) {
       "--decorate=short",
       `--max-count=${limit + 1}`,
       `--skip=${skip}`,
-      `--pretty=format:%H${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitRecordSeparator}`,
+      "--shortstat",
+      `--pretty=format:${gitCommitRecordSeparator}%H${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitShortStatSeparator}`,
       "--date=iso-strict",
     ]),
     readGitCommitRefs(repositoryPath),
@@ -4849,17 +4882,24 @@ async function readGitCommits(projectPath, options = {}) {
   if (commitOutput) {
     commitOutput.split(gitCommitRecordSeparator).forEach((record) => {
       const normalizedRecord = record.trimEnd();
-      if (!normalizedRecord.trim()) {
+      const shortStatSeparatorIndex = normalizedRecord.indexOf(gitCommitShortStatSeparator);
+      const commitRecord =
+        shortStatSeparatorIndex < 0 ? normalizedRecord : normalizedRecord.slice(0, shortStatSeparatorIndex);
+      const shortStatOutput =
+        shortStatSeparatorIndex < 0
+          ? ""
+          : normalizedRecord.slice(shortStatSeparatorIndex + gitCommitShortStatSeparator.length);
+      if (!commitRecord.trim()) {
         return;
       }
 
-      const hashIndex = normalizedRecord.search(/[0-9a-f]{40,64}\x1f/);
+      const hashIndex = commitRecord.search(/[0-9a-f]{40,64}\x1f/);
       if (hashIndex < 0) {
         return;
       }
 
-      const graph = normalizedRecord.slice(0, hashIndex).trimEnd();
-      const [hash, parentText, author, date, refs, message, ...bodyParts] = normalizedRecord
+      const graph = commitRecord.slice(0, hashIndex).trimEnd();
+      const [hash, parentText, author, date, refs, message, ...bodyParts] = commitRecord
         .slice(hashIndex)
         .split(gitCommitFieldSeparator);
       if (!hash) {
@@ -4867,6 +4907,18 @@ async function readGitCommits(projectPath, options = {}) {
       }
 
       const body = bodyParts.join(gitCommitFieldSeparator).trim();
+      const shortStatMatch = shortStatOutput.match(
+        /(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/,
+      );
+      const shortStats = shortStatMatch
+        ? {
+            files: Number(shortStatMatch[1]),
+            additions: Number(shortStatMatch[2]) || 0,
+            deletions: Number(shortStatMatch[3]) || 0,
+          }
+        : shortStatSeparatorIndex >= 0 && !shortStatOutput.trim()
+          ? { files: 0, additions: 0, deletions: 0 }
+          : undefined;
 
       commits.push({
         hash,
@@ -4878,6 +4930,7 @@ async function readGitCommits(projectPath, options = {}) {
         refNames: refsByCommit.get(hash) || [],
         message: message || body.split(/\r?\n/)[0] || "",
         body: body || message || "",
+        shortStats,
       });
     });
   }
@@ -5280,6 +5333,7 @@ window.projectBridge = {
   readGitSnapshot,
   readGitWorkspaceSnapshot,
   readGitStatusSnapshot,
+  readGitWorkingTreeSnapshot,
   readGitCommits,
   readGitFileDiff,
   readGitCommitFileDiff,

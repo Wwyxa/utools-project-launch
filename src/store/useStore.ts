@@ -64,6 +64,7 @@ import type {
   ProjectGitRepositoryTarget,
   ProjectGitSnapshot,
   ProjectGitStatusSnapshot,
+  ProjectBridgeGitWorkingTreeSnapshot,
   ProjectGitWorkspaceSnapshot,
   ProjectFileListResult,
   ProjectFileMutationKind,
@@ -115,16 +116,23 @@ const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
 const projectKinds = new Set<ProjectKind>(["node", "python", "go", "executable", "custom"]);
 const projectScriptStatuses = new Set<ProjectScript["status"]>(["IDLE", "RUNNING", "STOPPING", "ERROR", "STOPPED"]);
-const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>(["manual", "package-json", "makefile", "preset"]);
+const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>([
+  "manual",
+  "package-json",
+  "makefile",
+  "preset",
+]);
 const automationMissedPolicies = new Set<ProjectAutomationMissedPolicy>(["grace-run", "run-now", "mark-missed"]);
 let projectConfigMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
 let runtimeReconciliationPromise: Promise<void> | null = null;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
 const gitStatusRefreshPromises = new Map<string, Promise<void>>();
+const gitWorkingTreeRefreshPromises = new Map<string, Promise<void>>();
 const gitLoadMorePromises = new Map<string, Promise<void>>();
 const gitWorkspaceRefreshPromises = new Map<string, Promise<void>>();
 const gitSnapshotRefreshTokens = new Map<string, symbol>();
+const gitWorkingTreeRefreshTokens = new Map<string, symbol>();
 const gitLoadMoreTokens = new Map<string, symbol>();
 const gitWorkspaceRefreshTokens = new Map<string, symbol>();
 const gitMutationVersions = new Map<string, number>();
@@ -229,8 +237,10 @@ function clearGitRepositoryCoordination(projectId: string) {
   [
     gitSnapshotRefreshPromises,
     gitStatusRefreshPromises,
+    gitWorkingTreeRefreshPromises,
     gitLoadMorePromises,
     gitSnapshotRefreshTokens,
+    gitWorkingTreeRefreshTokens,
     gitLoadMoreTokens,
     gitMutationVersions,
   ].forEach((state) => {
@@ -659,6 +669,27 @@ function mergeGitStatusSnapshot(
     repositoryPath: statusSnapshot.repositoryPath || currentSnapshot?.repositoryPath || "",
     lastRefreshedAt: statusSnapshot.lastRefreshedAt || new Date().toISOString(),
     statusText: statusSnapshot.statusText || currentSnapshot?.statusText || "OK",
+  };
+}
+
+function mergeGitWorkingTreeSnapshot(
+  currentSnapshot: ProjectGitSnapshot | null | undefined,
+  workingTreeSnapshot: ProjectBridgeGitWorkingTreeSnapshot,
+): ProjectGitSnapshot | null {
+  if (!currentSnapshot) return null;
+
+  const statusText = workingTreeSnapshot.statusText || currentSnapshot.statusText || "OK";
+  const detachedHeadPrefix =
+    currentSnapshot.isDetachedHead && currentSnapshot.headHash && !statusText.startsWith("detached HEAD @")
+      ? `detached HEAD @ ${currentSnapshot.headHash} · `
+      : "";
+
+  return {
+    ...currentSnapshot,
+    files: workingTreeSnapshot.files,
+    repositoryPath: workingTreeSnapshot.repositoryPath || currentSnapshot.repositoryPath || "",
+    lastRefreshedAt: workingTreeSnapshot.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
+    statusText: `${detachedHeadPrefix}${statusText}`,
   };
 }
 
@@ -1847,7 +1878,8 @@ export const useStore = defineStore("app", {
       if (additions.length > 0) {
         this.projectFormDraft.scripts = [...this.projectFormDraft.scripts, ...additions];
       }
-      this.projectFormInspectionMessage = additions.length > 0 ? `已导入 ${additions.length} 条命令` : "所选命令已在列表中";
+      this.projectFormInspectionMessage =
+        additions.length > 0 ? `已导入 ${additions.length} 条命令` : "所选命令已在列表中";
       return additions.length;
     },
     async refreshProjectFormCwdSuggestions(projectPath?: string) {
@@ -2392,11 +2424,14 @@ export const useStore = defineStore("app", {
             gitSnapshotRefreshTokens.delete(context.contextKey);
             this.gitRepositoryRefreshing[context.contextKey] = false;
             this.gitRepositoryStatusRefreshing[context.contextKey] = Boolean(
-              gitStatusRefreshPromises.get(context.contextKey),
+              gitStatusRefreshPromises.get(context.contextKey) || gitWorkingTreeRefreshPromises.get(context.contextKey),
             );
             if (context.target.kind === "main") {
               this.gitRefreshing[projectId] = false;
-              this.gitStatusRefreshing[projectId] = Boolean(gitStatusRefreshPromises.get(context.contextKey));
+              this.gitStatusRefreshing[projectId] = Boolean(
+                gitStatusRefreshPromises.get(context.contextKey) ||
+                gitWorkingTreeRefreshPromises.get(context.contextKey),
+              );
             }
           }
         }
@@ -2447,6 +2482,65 @@ export const useStore = defineStore("app", {
       gitWorkspaceRefreshPromises.set(projectId, refreshPromise);
       return refreshPromise;
     },
+    async refreshGitWorkingTreeSnapshot(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }) {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return;
+
+      const existingRefresh = gitWorkingTreeRefreshPromises.get(context.contextKey);
+      if (existingRefresh) return existingRefresh;
+
+      this.gitRepositoryStatusRefreshing[context.contextKey] = true;
+      if (context.target.kind === "main") this.gitStatusRefreshing[projectId] = true;
+      const refreshToken = Symbol(context.contextKey);
+      gitWorkingTreeRefreshTokens.set(context.contextKey, refreshToken);
+      const refreshPromise = (async () => {
+        try {
+          let needsAnotherRead = true;
+          while (needsAnotherRead) {
+            const startedAtVersion = gitMutationVersion(context.contextKey);
+            const startedAtRefVersion = gitRefMutationVersion(projectId);
+            const workingTreeSnapshot = await bridge.readGitWorkingTreeSnapshot(context.repositoryPath);
+            if (gitWorkingTreeRefreshTokens.get(context.contextKey) !== refreshToken) return;
+            const latestContext = this.resolveGitRepositoryContext(projectId, context.target);
+            if (latestContext?.contextKey !== context.contextKey) return;
+            if (
+              startedAtVersion !== gitMutationVersion(context.contextKey) ||
+              startedAtRefVersion !== gitRefMutationVersion(projectId)
+            ) {
+              continue;
+            }
+
+            const project = this.projects.find((item) => item.id === projectId);
+            if (!project) return;
+            const currentSnapshot =
+              context.target.kind === "main" ? project.git : this.gitRepositorySnapshots[context.contextKey] || null;
+            const nextSnapshot = mergeGitWorkingTreeSnapshot(currentSnapshot, workingTreeSnapshot);
+            if (context.target.kind === "main") {
+              if (nextSnapshot) project.git = nextSnapshot;
+              this.stagedFiles[projectId] = workingTreeSnapshot.files;
+            } else if (nextSnapshot) {
+              this.gitRepositorySnapshots[context.contextKey] = nextSnapshot;
+            }
+            needsAnotherRead = false;
+          }
+        } finally {
+          if (gitWorkingTreeRefreshTokens.get(context.contextKey) === refreshToken) {
+            gitWorkingTreeRefreshPromises.delete(context.contextKey);
+            gitWorkingTreeRefreshTokens.delete(context.contextKey);
+            this.gitRepositoryStatusRefreshing[context.contextKey] = Boolean(
+              gitSnapshotRefreshPromises.get(context.contextKey) || gitStatusRefreshPromises.get(context.contextKey),
+            );
+            if (context.target.kind === "main") {
+              this.gitStatusRefreshing[projectId] = Boolean(
+                gitSnapshotRefreshPromises.get(context.contextKey) || gitStatusRefreshPromises.get(context.contextKey),
+              );
+            }
+          }
+        }
+      })();
+      gitWorkingTreeRefreshPromises.set(context.contextKey, refreshPromise);
+      return refreshPromise;
+    },
     async refreshGitStatusSnapshot(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }) {
       const context = this.resolveGitRepositoryContext(projectId, target);
       if (!context) return;
@@ -2486,10 +2580,13 @@ export const useStore = defineStore("app", {
         } finally {
           gitStatusRefreshPromises.delete(context.contextKey);
           this.gitRepositoryStatusRefreshing[context.contextKey] = Boolean(
-            gitSnapshotRefreshPromises.get(context.contextKey),
+            gitSnapshotRefreshPromises.get(context.contextKey) || gitWorkingTreeRefreshPromises.get(context.contextKey),
           );
           if (context.target.kind === "main") {
-            this.gitStatusRefreshing[projectId] = Boolean(gitSnapshotRefreshPromises.get(context.contextKey));
+            this.gitStatusRefreshing[projectId] = Boolean(
+              gitSnapshotRefreshPromises.get(context.contextKey) ||
+              gitWorkingTreeRefreshPromises.get(context.contextKey),
+            );
           }
         }
       })();
@@ -2656,7 +2753,7 @@ export const useStore = defineStore("app", {
       projectId: string,
       target: ProjectGitRepositoryTarget,
       action: (context: ProjectGitRepositoryContext) => Promise<ProjectGitActionResult>,
-      options: { refresh: "status" | "full"; refs?: boolean; refreshOnFailure?: boolean },
+      options: { refresh: "working-tree" | "status" | "full"; refs?: boolean; refreshOnFailure?: boolean },
     ): Promise<ProjectGitActionResult | null> {
       const context = this.resolveGitRepositoryContext(projectId, target);
       if (!context) return null;
@@ -2679,11 +2776,17 @@ export const useStore = defineStore("app", {
         }
 
         const refreshes: Array<Promise<void> | undefined> = [
-          options.refresh === "status"
-            ? this.refreshGitStatusSnapshot(projectId, context.target)
-            : this.refreshGitSnapshot(projectId, { force: true }, context.target),
-          this.refreshGitWorkspace(projectId, { force: true }),
+          options.refresh === "working-tree"
+            ? this.refreshGitWorkingTreeSnapshot(projectId, context.target)
+            : options.refresh === "status"
+              ? this.refreshGitStatusSnapshot(projectId, context.target)
+              : this.refreshGitSnapshot(projectId, { force: true }, context.target),
         ];
+        if (options.refresh === "working-tree") {
+          void this.refreshGitWorkspace(projectId, { force: true });
+        } else {
+          refreshes.push(this.refreshGitWorkspace(projectId, { force: true }));
+        }
         if (options.refs && context.target.kind !== "main") {
           refreshes.push(this.refreshGitSnapshot(projectId, { force: true }, { kind: "main" }));
         }
@@ -2702,7 +2805,7 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.stageGitFile(context.repositoryPath, relativePath),
-        { refresh: "status" },
+        { refresh: "working-tree" },
       );
     },
     async unstageGitFile(
@@ -2714,7 +2817,7 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.unstageGitFile(context.repositoryPath, relativePath),
-        { refresh: "status" },
+        { refresh: "working-tree" },
       );
     },
     async discardGitFile(
@@ -2739,7 +2842,7 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.stageGitFiles(context.repositoryPath, relativePaths, options),
-        { refresh: "status" },
+        { refresh: "working-tree" },
       );
     },
     async unstageGitFiles(
@@ -2752,7 +2855,7 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.unstageGitFiles(context.repositoryPath, relativePaths, options),
-        { refresh: "status" },
+        { refresh: "working-tree" },
       );
     },
     async discardGitFiles(
