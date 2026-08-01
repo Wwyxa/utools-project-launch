@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   FolderOpen,
   Pencil,
+  Copy,
   TerminalSquare,
   Trash2,
   ChevronDown,
@@ -281,6 +282,11 @@ const handleCardSelect = () => {
 const handleEdit = (event: MouseEvent) => {
   event.stopPropagation();
   store.openEditProjectForm(props.project.id);
+};
+
+const handleDuplicate = (event: MouseEvent) => {
+  event.stopPropagation();
+  store.openDuplicateProjectForm(props.project.id);
 };
 
 const handleOpenFolder = async (event: MouseEvent) => {
@@ -748,7 +754,7 @@ const handleDelete = (event: MouseEvent) => {
       </div>
 
       <div
-        class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_6.75rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2"
+        class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_8rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2"
       >
         <div class="min-w-0 text-[11px] text-on-surface-variant">
           <span
@@ -771,7 +777,7 @@ const handleDelete = (event: MouseEvent) => {
         <div
           :class="
             cn(
-              'flex w-[6.75rem] shrink-0 items-center justify-end gap-0.5 transition-all',
+              'flex w-[8rem] shrink-0 items-center justify-end gap-0.5 transition-all',
               isSorting
                 ? 'opacity-100'
                 : 'opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:pointer-events-auto',
@@ -814,6 +820,14 @@ const handleDelete = (event: MouseEvent) => {
               :aria-label="t.common.edit"
             >
               <Pencil :size="15" />
+            </button>
+            <button
+              @click.stop="handleDuplicate"
+              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+              :title="t.projectActions.duplicateProject"
+              :aria-label="t.projectActions.duplicateProject"
+            >
+              <Copy :size="15" />
             </button>
             <button
               @click.stop="handleDelete"

@@ -1053,7 +1053,7 @@ export const useStore = defineStore("app", {
     projectFormInspecting: false,
     projectFormCwdSuggestions: ["."] as string[],
     projectFormOpen: false,
-    projectFormMode: "create" as "create" | "edit",
+    projectFormMode: "create" as "create" | "edit" | "duplicate",
     projectFormDraft: createBlankProjectForm() as ProjectFormValue,
     pendingDeleteProjectId: null as string | null,
     uiPreferences: bridge.loadUiPreferences(),
@@ -1746,6 +1746,25 @@ export const useStore = defineStore("app", {
       this.projectFormDraft = formFromProject(project);
       this.projectFormInspectionMessage =
         project.pathExists === false ? project.unavailableReason || "当前路径不可用" : "";
+      void this.refreshProjectFormCwdSuggestions(project.path);
+      this.projectFormOpen = true;
+    },
+    openDuplicateProjectForm(projectId: string) {
+      const project = this.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return;
+      }
+
+      const sourceForm = formFromProject(project);
+      this.projectFormMode = "duplicate";
+      this.projectFormDraft = {
+        ...sourceForm,
+        id: null,
+        name: `${sourceForm.name} - Copy`,
+        // Empty ids make saveProjectForm generate script ids scoped to the new project.
+        scripts: sourceForm.scripts.map((script) => ({ ...script, id: "" })),
+      };
+      this.projectFormInspectionMessage = "已复制项目配置，请修改名称或路径后保存。";
       void this.refreshProjectFormCwdSuggestions(project.path);
       this.projectFormOpen = true;
     },

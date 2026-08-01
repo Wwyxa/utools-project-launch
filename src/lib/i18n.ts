@@ -90,6 +90,7 @@ const messages = {
       openWithApplicationMenu: "使用 {name} 打开；右键选择其他应用",
       chooseApplication: "选择打开应用",
       openQuickLink: "打开快捷链接",
+      duplicateProject: "复制并编辑项目",
       deleteProject: "删除项目",
       deleteConfirm: "确定删除项目“{name}”吗？这只会移除启动器中的项目配置，不会删除磁盘目录。",
       moreRunning: "另有 {count} 个命令运行中",
@@ -356,6 +357,7 @@ const messages = {
     modal: {
       createTitle: "新增项目",
       editTitle: "编辑项目",
+      duplicateTitle: "复制项目",
       name: "项目名称",
       path: "项目路径",
       icon: "项目图标",
@@ -478,6 +480,7 @@ const messages = {
       openWithApplicationMenu: "Open with {name}; right-click to choose another application",
       chooseApplication: "Choose an application",
       openQuickLink: "Open quick link",
+      duplicateProject: "Duplicate and edit project",
       deleteProject: "Delete project",
       deleteConfirm:
         'Delete "{name}" from the launcher? This only removes the project configuration and does not delete its folder.',
@@ -749,6 +752,7 @@ const messages = {
     modal: {
       createTitle: "Add Project",
       editTitle: "Edit Project",
+      duplicateTitle: "Duplicate Project",
       name: "Name",
       path: "Path",
       icon: "Project Icon",

@@ -11,7 +11,11 @@ const store = useStore();
 const t = useI18n();
 
 const form = computed(() => store.projectFormDraft);
-const title = computed(() => (store.projectFormMode === "edit" ? t.value.modal.editTitle : t.value.modal.createTitle));
+const title = computed(() => {
+  if (store.projectFormMode === "edit") return t.value.modal.editTitle;
+  if (store.projectFormMode === "duplicate") return t.value.modal.duplicateTitle;
+  return t.value.modal.createTitle;
+});
 const existingGroups = computed(() => [
   ...new Set(store.projects.map((project) => (project.group ?? "").trim()).filter(Boolean)),
 ]);
