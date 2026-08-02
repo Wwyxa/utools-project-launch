@@ -185,3 +185,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 66: Git 提交历史窗口化与引用规范
+
+**Date**: 2026-08-03
+**Task**: Git 提交历史窗口化与引用规范
+**Branch**: `refactor/git-commit-tree`
+
+### Summary
+
+完成 Git 提交历史的视口窗口化、共享 SVG 裁剪、可变高度滚动锚定与引用呈现修复；补充前端性能和徽标约束。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5ddf71a` | (see git log) |
+| `f42d46f` | (see git log) |
+
+### Status
+
+[OK] **Completed**
