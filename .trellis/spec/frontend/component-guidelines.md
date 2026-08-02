@@ -370,6 +370,35 @@ return `${firstSize}px ${separatorSize}px minmax(0, 0.71fr)`;
 
 **Related**: `src/components/project/AiReasoningResult.vue`, Streaming AI Bridge Actions in `state-management.md`.
 
+### Convention: Git Tab Domain Ownership
+
+**What**: Keep `GitTab.vue` as the repository-context and cross-region coordinator. Give a complete interaction lifecycle to `GitChangesPane.vue`, `GitCommitHistory.vue`, or `GitAiAnalysisDialog.vue` when that lifecycle is only meaningful within one Git surface.
+
+**Why**: Working-tree writes, history scrolling/preview, and AI streaming each change independently. Moving only one handler or passing a copied snapshot creates two selection sources and makes repository cleanup ambiguous.
+
+**Rules**:
+
+- Pinia remains the only owner of Git snapshots, mutations, refresh state, and write concurrency. Children read it directly instead of receiving a snapshot or action proxy.
+- `GitTab.vue` owns the active repository, split/diff coordination, repository-scoped draft, top-level section state, cross-region selections, feedback, and its existing public expose API.
+- `GitChangesPane.vue` owns staged/unstaged expansion, composer sizing, and working-tree actions; `GitCommitHistory.vue` owns filters, pagination, expanded files, graph/ref/tooltip/menu lifecycle; `GitAiAnalysisDialog.vue` owns stream/result session lifecycle.
+- Props and events describe only coordination intents. Do not use a `GitTabContext`, `provide/inject`, a one-consumer composable, or duplicate selection state.
+
+**Example**:
+
+```vue
+<GitCommitHistory
+  v-model:open="historyOpen"
+  :project-id="project.id"
+  :repository-target="activeRepositoryTarget"
+  :selected-commit-hashes="selectedCommitHashes"
+  @update:selected-commit-hashes="selectedCommitHashes = $event"
+  @review-file="reviewCommitFile"
+  @request-ai="showAiAnalysisDialog = true"
+/>
+```
+
+**Related**: `src/components/project/GitTab.vue`, `src/components/project/GitChangesPane.vue`, `src/components/project/GitCommitHistory.vue`, `src/components/project/GitAiAnalysisDialog.vue`.
+
 ### Convention: Compact Git History Rows
 
 **What**: Git history rows should reserve a graph track plus message and compact refs, with a subdued author/relative-time line below. Full hash, full timestamps, body, and summaries live in the hover preview.

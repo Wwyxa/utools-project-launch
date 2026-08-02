@@ -119,6 +119,37 @@ const top = clamp(rowCenter - popupHeight / 2, viewportInset, viewportHeight - p
 
 **Prevention**: When reviewing compact dialogs and settings panes, check the full interaction, not just the trigger styling. If the popup is part of a dense surface, verify clipping, placement, and scrollbar behavior in the browser.
 
+### Common Mistake: Leaving Teleported Controls Open When Their Owner Collapses
+
+**Symptom**: A panel closes with its local filter hidden, but a calendar or other Teleport-based popup remains visible in the viewport after keyboard interaction or a state-driven collapse.
+
+**Cause**: The owner uses `v-show` or a separate `open` prop while the Teleport condition only depends on popup-local state. Pointer interactions can accidentally close the popup first, masking the missing lifecycle path.
+
+**Fix**: Keep popup state local to its owning component and explicitly close the parent filter and child popup whenever the owner transitions to closed, as well as during context cleanup and unmount.
+
+**Prevention**: Open the popup, then close the owner with mouse, Enter/Space, and a reactive state transition. Each path must remove the teleported surface from `body`.
+
+### Common Mistake: Sizing Only the Collapsible Bar
+
+**Symptom**: A dense section appears to be 32px or 28px high, but its title/toggle button has only text-line height. Keyboard focus and the click target occupy a narrow strip inside the visual bar.
+
+**Cause**: The parent flex row receives the fixed height while its direct `button[aria-expanded]` is allowed to size to content. Global button resets can also remove the browser outline.
+
+**Fix**: Stretch the direct toggle to its owning bar and give it the same semantic focus rule as adjacent action controls.
+
+```css
+:where(.git-section-bar, .git-subsection-bar) > button[aria-expanded] {
+  height: 100%;
+}
+
+:where(.git-section-bar, .git-subsection-bar) > button[aria-expanded]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+```
+
+**Prevention**: In browser checks, measure both the bar and the direct toggle. Assert 32px for primary and 28px for secondary headers, then use a keyboard-initiated focus interaction to verify the visible outline at normal and host-like widths.
+
 ### Common Mistake: Over-Tall AI Dialogs with Duplicate Summary Cards
 
 **Symptom**: The AI analysis dialog opens with a large blank area, a separate summary card, and an inner scrollbar that competes with the rest of the panel.

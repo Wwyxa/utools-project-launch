@@ -23,6 +23,26 @@ export type GitAiAnalysisSessionInput = Pick<
   "basePrompt" | "scopeSummary" | "notice" | "modeId" | "includeDiffContext"
 >;
 
+const rememberedGitAiAnalysisSessions = new Map<string, GitAiAnalysisSession>();
+
+export const getRememberedGitAiAnalysisSession = (contextKey: string) =>
+  rememberedGitAiAnalysisSessions.get(contextKey) ?? null;
+
+export const setRememberedGitAiAnalysisSession = (contextKey: string, session: GitAiAnalysisSession) => {
+  rememberedGitAiAnalysisSessions.set(contextKey, session);
+};
+
+export const deleteRememberedGitAiAnalysisSession = (contextKey: string) => {
+  rememberedGitAiAnalysisSessions.delete(contextKey);
+};
+
+export const clearGitAiAnalysisSessionsForProject = (projectId: string) => {
+  const contextPrefix = `${projectId}::`;
+  for (const contextKey of rememberedGitAiAnalysisSessions.keys()) {
+    if (contextKey.startsWith(contextPrefix)) rememberedGitAiAnalysisSessions.delete(contextKey);
+  }
+};
+
 export const createGitAiAnalysisSession = (input: GitAiAnalysisSessionInput): GitAiAnalysisSession => ({
   ...input,
   versions: [],

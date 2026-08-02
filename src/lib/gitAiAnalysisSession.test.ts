@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { AiReasoningStreamState } from "./aiReasoning";
 import {
   appendGitAiAnalysisVersion,
+  clearGitAiAnalysisSessionsForProject,
   composeGitAiRefinementPrompt,
   createGitAiAnalysisSession,
+  deleteRememberedGitAiAnalysisSession,
+  getRememberedGitAiAnalysisSession,
   resolveGitAiAnalysisVersion,
   restoreGitAiAnalysisVersion,
+  setRememberedGitAiAnalysisSession,
 } from "./gitAiAnalysisSession";
 
 const createSession = () =>
@@ -72,6 +76,26 @@ describe("Git AI analysis session", () => {
 
     expect(fourth.versions.map((version) => version.id)).toEqual([1, 2, 3, 4]);
     expect(fourth.nextVersionId).toBe(5);
+  });
+
+  it("clears remembered sessions for one project without affecting another", () => {
+    const projectId = "git-ai-session-test-project";
+    const otherProjectId = "git-ai-session-test-other-project";
+    const contextKey = `${projectId}::main`;
+    const otherContextKey = `${otherProjectId}::main`;
+    const session = createSession();
+
+    clearGitAiAnalysisSessionsForProject(projectId);
+    clearGitAiAnalysisSessionsForProject(otherProjectId);
+    setRememberedGitAiAnalysisSession(contextKey, session);
+    setRememberedGitAiAnalysisSession(otherContextKey, session);
+
+    clearGitAiAnalysisSessionsForProject(projectId);
+
+    expect(getRememberedGitAiAnalysisSession(contextKey)).toBeNull();
+    expect(getRememberedGitAiAnalysisSession(otherContextKey)).toBe(session);
+
+    deleteRememberedGitAiAnalysisSession(otherContextKey);
   });
 
   it("trims valid instructions, rejects blank ones, and excludes prior transcript data from prompts", () => {

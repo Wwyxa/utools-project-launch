@@ -454,24 +454,179 @@
   color: var(--color-on-surface-variant);
 }
 
+.ui-field:disabled {
+  cursor: not-allowed;
+  background: var(--color-surface-container);
+  color: var(--color-on-surface-variant);
+  opacity: 0.65;
+}
+
+.ui-field[aria-busy="true"] {
+  cursor: wait;
+}
+
+.git-commit-message-input {
+  min-height: 2rem;
+  height: 2rem;
+  max-height: 9rem;
+  overflow-x: hidden;
+  border-color: transparent;
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+:where(.git-top-action, .git-section-action, .git-row-action) {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  color: var(--color-on-surface-variant);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    transform 120ms ease;
+}
+
+:where(.git-top-action, .git-section-action, .git-row-action):hover:not(:disabled) {
+  background: var(--color-surface-variant);
+  color: var(--color-primary);
+}
+
+:where(
+  .git-top-action,
+  .git-section-action,
+  .git-row-action,
+  .git-section-bar > button[aria-expanded],
+  .git-subsection-bar > button[aria-expanded]
+):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+:where(.git-top-action, .git-section-action, .git-row-action):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+:where(.git-top-action, .git-section-action, .git-row-action):disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+:where(.git-top-action, .git-section-action, .git-row-action)[aria-busy="true"] {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.git-top-action {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface);
+}
+
+.git-top-action > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.git-section-action {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.git-section-action > svg {
+  width: 13px;
+  height: 13px;
+}
+
+.git-section-ai-action {
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.git-section-ai-action:hover:not(:disabled) {
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.git-section-action--segment {
+  border-right: 1px solid var(--color-border-subtle);
+  border-radius: 0;
+}
+
+.git-row-action {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.git-row-action > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.git-action-danger:hover:not(:disabled) {
+  @apply text-status-error;
+}
+
+.git-ai-composer-action:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.git-section-bar {
+  display: flex;
+  height: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-container-low);
+  padding: 0 0.5rem;
+}
+
+.git-subsection-bar {
+  display: flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.25rem;
+  border-top: 1px solid var(--color-border-subtle);
+  color: var(--color-on-surface-variant);
+  padding: 0 0.5rem;
+}
+
+:where(.git-section-bar, .git-subsection-bar) > button[aria-expanded] {
+  height: 100%;
+}
+
+.git-ref-badge {
+  display: inline-flex;
+  height: 18px;
+  max-width: 9rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid;
+  padding: 0 0.25rem;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 0.75rem;
+}
+
 .terminal-log-timestamp {
   color: color-mix(in srgb, var(--color-on-surface-variant) 70%, transparent);
 }
 
-.dark .terminal-log-timestamp,
-.dark .git-commit-message-input::placeholder {
+.dark .terminal-log-timestamp {
   color: var(--color-on-surface-variant);
 }
 
 .dark .dark-readable-meta {
-  color: var(--color-on-surface-variant);
-}
-
-.git-file-action-button {
-  color: color-mix(in srgb, var(--color-on-surface-variant) 80%, transparent);
-}
-
-:where(.dark) .git-file-action-button {
   color: var(--color-on-surface-variant);
 }
 
