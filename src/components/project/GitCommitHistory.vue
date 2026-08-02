@@ -22,6 +22,7 @@ import {
   List,
   ListChecks,
   ListTree,
+  ListX,
   Pencil,
   Tag,
   Target,
@@ -1640,7 +1641,7 @@ onBeforeUnmount(() => {
           aria-label="清空提交选择"
           @click="clearCommitSelection"
         >
-          <X :size="13" />
+          <ListX :size="13" />
         </button>
         <button
           ref="commitFilterTriggerRef"
@@ -2226,12 +2227,12 @@ onBeforeUnmount(() => {
       v-if="commitContextMenu"
       ref="commitContextMenuRef"
       data-commit-context-menu
-      class="fixed z-[75] max-h-[min(28rem,calc(100vh-1rem))] w-64 overflow-y-auto rounded-md border border-border-subtle bg-surface-container-lowest p-1 shadow-xl"
+      class="fixed z-[75] w-fit min-w-[7.85rem] max-w-[13rem] rounded-md border border-outline-variant/70 bg-surface-container-lowest shadow-2xl"
       role="menu"
       :style="{ left: `${commitContextMenu.x}px`, top: `${commitContextMenu.y}px` }"
       @click.stop
     >
-      <div v-overlay-scrollbar class="themed-scrollbar max-h-[min(28rem,calc(100vh-1rem))] overflow-y-auto">
+      <div v-overlay-scrollbar class="themed-scrollbar max-h-60 overflow-y-auto p-0.5">
         <button
           type="button"
           role="menuitem"
@@ -2327,13 +2328,13 @@ onBeforeUnmount(() => {
       v-if="commitSubmenu && commitContextMenu"
       ref="commitSubmenuRef"
       data-commit-context-menu
-      class="fixed z-[76] max-h-[min(28rem,calc(100vh-1rem))] w-64 overflow-y-auto rounded-md border border-border-subtle bg-surface-container-lowest p-1 shadow-xl"
+      class="fixed z-[76] w-fit min-w-[7.85rem] max-w-[13rem] rounded-md border border-outline-variant/70 bg-surface-container-lowest shadow-2xl"
       role="menu"
       :aria-label="commitSubmenu.kind === 'branch' ? `${commitSubmenu.branch.name} 操作` : '删除标签'"
       :style="{ left: `${commitSubmenu.left}px`, top: `${commitSubmenu.top}px` }"
       @click.stop
     >
-      <div v-overlay-scrollbar class="themed-scrollbar max-h-[min(28rem,calc(100vh-1rem))] overflow-y-auto">
+      <div v-overlay-scrollbar class="themed-scrollbar max-h-60 overflow-y-auto p-0.5">
         <template v-if="commitSubmenu.kind === 'branch'">
           <button
             type="button"
