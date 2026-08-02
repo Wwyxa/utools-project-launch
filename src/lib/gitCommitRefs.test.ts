@@ -45,7 +45,7 @@ describe("presentGitCommitRefs", () => {
         { kind: "remote", name: "fork/topic" },
         { kind: "local", name: "alpha" },
       ]),
-      gitContext({ graphColorByRefName: { "feature/colored": 7 } }),
+      gitContext({ graphColorByRefIdentity: { "local:feature/colored": 7 } }),
     );
 
     expect(presentation.full.map((member) => member.name)).toEqual([
@@ -108,11 +108,11 @@ describe("presentGitCommitRefs", () => {
         { kind: "tag", name: "main" },
       ]),
       gitContext({
-        graphColorByRefName: {
-          main: 0,
-          "origin/main": 0,
-          release: 1,
-          "fork/topic": 2,
+        graphColorByRefIdentity: {
+          "local:main": 0,
+          "remote:origin/main": 0,
+          "local:release": 1,
+          "remote:fork/topic": 2,
         },
       }),
     );
@@ -129,6 +129,9 @@ describe("presentGitCommitRefs", () => {
       { name: "main", kind: "tag", isCurrentHead: false, priority: 6 },
     ]);
     expect(presentation.full.some((member) => member.name === "HEAD -> main")).toBe(false);
+    expect(
+      presentation.full.find((member) => member.kind === "tag" && member.name === "main")?.graphColorIndex,
+    ).toBeUndefined();
     expect(
       presentation.dense.members.map(({ name, kind, display, memberNames }) => ({ name, kind, display, memberNames })),
     ).toEqual([
@@ -152,7 +155,7 @@ describe("presentGitCommitRefs", () => {
       gitContext({
         upstream: null,
         base: { remote: "remote", branch: "master", ref: "remote/master" },
-        graphColorByRefName: { "remote/master": 1 },
+        graphColorByRefIdentity: { "remote:remote/master": 1 },
       }),
     );
 
@@ -216,10 +219,10 @@ describe("presentGitCommitRefs", () => {
         headHash: "another-commit",
         upstream: null,
         base: { remote: "origin", branch: "main", ref: "origin/main" },
-        graphColorByRefName: {
-          "origin/main": 1,
-          "fork/topic": 2,
-          "origin/topic": 2,
+        graphColorByRefIdentity: {
+          "remote:origin/main": 1,
+          "remote:fork/topic": 2,
+          "remote:origin/topic": 2,
         },
       }),
     );
@@ -236,7 +239,7 @@ describe("presentGitCommitRefs", () => {
   it("keeps an old uncolored branch visible in the compact presentation", () => {
     const presentation = presentGitCommitRefs(
       commit([{ kind: "local", name: "archive/merged-last-year" }], undefined, "old-commit"),
-      gitContext({ headHash: "head", graphColorByRefName: { main: 0 } }),
+      gitContext({ headHash: "head", graphColorByRefIdentity: { "local:main": 0 } }),
     );
 
     expect(
@@ -255,7 +258,7 @@ describe("presentGitCommitRefs", () => {
         headHash: "another-commit",
         upstream: null,
         base: { remote: "remote", branch: "master", ref: "remote/master" },
-        graphColorByRefName: { "remote/master": 1 },
+        graphColorByRefIdentity: { "remote:remote/master": 1 },
       }),
     );
 

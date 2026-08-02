@@ -39,6 +39,7 @@ import type {
 import {
   GIT_COMMIT_GRAPH_GEOMETRY,
   layoutGitCommitGraph,
+  selectGitCommitGraphWindow,
   type GitCommitGraphRow,
   type GitCommitGraphSegment,
 } from "../../lib/gitCommitGraph";
@@ -55,7 +56,11 @@ import {
   markGitCommitTooltipSessionAvatarUnavailable,
   pruneGitCommitTooltipSession,
 } from "../../lib/gitCommitTooltipSession";
-import { presentGitCommitRefs, type GitCommitRefPresentationMember } from "../../lib/gitCommitRefs";
+import {
+  gitCommitRefIdentity,
+  presentGitCommitRefs,
+  type GitCommitRefPresentationMember,
+} from "../../lib/gitCommitRefs";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
@@ -134,6 +139,7 @@ const emit = defineEmits<{
 const store = useStore();
 const t = useI18n();
 const graphScrollRef = ref<HTMLElement | null>(null);
+const graphViewport = ref({ top: 0, height: 0 });
 const loadMoreSentinelRef = ref<HTMLElement | null>(null);
 const commitFilterTriggerRef = ref<HTMLElement | null>(null);
 const commitFiltersPopoverRef = ref<HTMLElement | null>(null);
@@ -180,6 +186,10 @@ let commitTooltipDetailsContextGeneration = 0;
 let commitTooltipOpenTimer: number | undefined;
 let commitTooltipCloseTimer: number | undefined;
 let commitTooltipResizeObserver: ResizeObserver | null = null;
+let graphViewportFrame: number | undefined;
+let graphViewportResizeObserver: ResizeObserver | null = null;
+let pendingGraphScrollAnchor: { hash: string; offset: number } | null = null;
+let graphScrollAnchorRestoreScheduled = false;
 let loadMoreObserver: IntersectionObserver | null = null;
 let loadMoreSentinelWasIntersecting = false;
 let stopAppEscapeListener = () => {};
@@ -352,13 +362,15 @@ const gitFileDirectory = (file: ProjectGitFileChange) =>
   file.path.split(/[\\/]/).filter(Boolean).slice(0, -1).join("/");
 const toggleCommitDirectory = (hash: string, path: string) => {
   const normalizedPath = normalizeCommitFilePath(path);
-  const nextDirectories = { ...(expandedCommitDirectories.value[hash] || {}) };
-  if (isCommitDirectoryExpanded(hash, normalizedPath)) nextDirectories[normalizedPath] = false;
-  else delete nextDirectories[normalizedPath];
-  const nextState = { ...expandedCommitDirectories.value };
-  if (Object.keys(nextDirectories).length) nextState[hash] = nextDirectories;
-  else delete nextState[hash];
-  expandedCommitDirectories.value = nextState;
+  changeExpandedCommitFileGeometry(() => {
+    const nextDirectories = { ...(expandedCommitDirectories.value[hash] || {}) };
+    if (isCommitDirectoryExpanded(hash, normalizedPath)) nextDirectories[normalizedPath] = false;
+    else delete nextDirectories[normalizedPath];
+    const nextState = { ...expandedCommitDirectories.value };
+    if (Object.keys(nextDirectories).length) nextState[hash] = nextDirectories;
+    else delete nextState[hash];
+    expandedCommitDirectories.value = nextState;
+  });
 };
 const commitFileDisplayItems = (hash: string): CommitFileDisplayItem[] => {
   const state = expandedCommitFiles.value[hash];
@@ -382,12 +394,14 @@ const clearExpandedCommitFiles = () => {
   expandedCommitDirectories.value = {};
 };
 const closeExpandedCommitFiles = (hash: string) => {
-  const nextFiles = { ...expandedCommitFiles.value };
-  const nextDirectories = { ...expandedCommitDirectories.value };
-  delete nextFiles[hash];
-  delete nextDirectories[hash];
-  expandedCommitFiles.value = nextFiles;
-  expandedCommitDirectories.value = nextDirectories;
+  changeExpandedCommitFileGeometry(() => {
+    const nextFiles = { ...expandedCommitFiles.value };
+    const nextDirectories = { ...expandedCommitDirectories.value };
+    delete nextFiles[hash];
+    delete nextDirectories[hash];
+    expandedCommitFiles.value = nextFiles;
+    expandedCommitDirectories.value = nextDirectories;
+  });
 };
 const toggleCommitFiles = async (hash: string) => {
   hideCommitTooltip();
@@ -397,37 +411,48 @@ const toggleCommitFiles = async (hash: string) => {
   }
   const requestGeneration = ++commitFilesRequestGeneration;
   const contextGeneration = commitFilesContextGeneration;
-  expandedCommitFiles.value = {
-    ...expandedCommitFiles.value,
-    [hash]: { files: [], isLoading: true, error: "", requestGeneration, contextGeneration },
-  };
+  changeExpandedCommitFileGeometry(() => {
+    expandedCommitFiles.value = {
+      ...expandedCommitFiles.value,
+      [hash]: { files: [], isLoading: true, error: "", requestGeneration, contextGeneration },
+    };
+  });
   try {
     const files = await store.readGitCommitFiles(props.projectId, hash, props.repositoryTarget);
     const state = expandedCommitFiles.value[hash];
     if (state?.requestGeneration === requestGeneration && state.contextGeneration === contextGeneration) {
-      expandedCommitFiles.value = { ...expandedCommitFiles.value, [hash]: { ...state, files } };
+      changeExpandedCommitFileGeometry(() => {
+        expandedCommitFiles.value = { ...expandedCommitFiles.value, [hash]: { ...state, files } };
+      });
     }
   } catch (error) {
     const state = expandedCommitFiles.value[hash];
     if (state?.requestGeneration === requestGeneration && state.contextGeneration === contextGeneration) {
-      expandedCommitFiles.value = {
-        ...expandedCommitFiles.value,
-        [hash]: { ...state, error: error instanceof Error ? error.message : "读取提交文件失败。" },
-      };
+      changeExpandedCommitFileGeometry(() => {
+        expandedCommitFiles.value = {
+          ...expandedCommitFiles.value,
+          [hash]: { ...state, error: error instanceof Error ? error.message : "读取提交文件失败。" },
+        };
+      });
     }
   } finally {
     const state = expandedCommitFiles.value[hash];
     if (state?.requestGeneration === requestGeneration && state.contextGeneration === contextGeneration) {
-      expandedCommitFiles.value = { ...expandedCommitFiles.value, [hash]: { ...state, isLoading: false } };
+      changeExpandedCommitFileGeometry(() => {
+        expandedCommitFiles.value = { ...expandedCommitFiles.value, [hash]: { ...state, isLoading: false } };
+      });
     }
   }
 };
 const toggleCommitFileViewMode = () => {
-  commitFileViewMode.value = commitFileViewMode.value === "tree" ? "list" : "tree";
-  rememberedCommitFileViewMode = commitFileViewMode.value;
+  changeExpandedCommitFileGeometry(() => {
+    commitFileViewMode.value = commitFileViewMode.value === "tree" ? "list" : "tree";
+    rememberedCommitFileViewMode = commitFileViewMode.value;
+  });
 };
 
 const graphRowPaddingX = 4;
+const graphWindowOverscan = 256;
 const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
 const rowPitch = rowHeight + rowGap;
 const graphStrokeColors = ["#2563eb", "#d97706", "#db2777", "#0f766e", "#7c3aed"];
@@ -462,21 +487,40 @@ const graphSegmentPathData = (segment: GitCommitGraphSegment) => {
   return graphPathData(segment.from.x, segment.from.y, segment.to.x, segment.to.y, mode);
 };
 const graphReferences = computed(() => {
-  const references: { name: string; colorIndex: number }[] = [];
+  const references: { identity: string; name: string; colorIndex: number }[] = [];
   const currentSnapshot = snapshot.value;
   if (!currentSnapshot) return references;
-  if (currentSnapshot.isDetachedHead) references.push({ name: "HEAD", colorIndex: 0 });
-  else if (currentSnapshot.branch) references.push({ name: currentSnapshot.branch, colorIndex: 0 });
-  if (currentSnapshot.upstream?.ref) references.push({ name: currentSnapshot.upstream.ref, colorIndex: 2 });
-  if (currentSnapshot.base?.ref) references.push({ name: currentSnapshot.base.ref, colorIndex: 1 });
+  if (currentSnapshot.isDetachedHead) {
+    references.push({ identity: gitCommitRefIdentity("head", "HEAD"), name: "HEAD", colorIndex: 0 });
+  } else if (currentSnapshot.branch) {
+    references.push({
+      identity: gitCommitRefIdentity("local", currentSnapshot.branch),
+      name: currentSnapshot.branch,
+      colorIndex: 0,
+    });
+  }
+  if (currentSnapshot.upstream?.ref) {
+    references.push({
+      identity: gitCommitRefIdentity("remote", currentSnapshot.upstream.ref),
+      name: currentSnapshot.upstream.ref,
+      colorIndex: 2,
+    });
+  }
+  if (currentSnapshot.base?.ref) {
+    references.push({
+      identity: gitCommitRefIdentity("remote", currentSnapshot.base.ref),
+      name: currentSnapshot.base.ref,
+      colorIndex: 1,
+    });
+  }
   return references.filter(
-    (reference, index) => references.findIndex((candidate) => candidate.name === reference.name) === index,
+    (reference, index) => references.findIndex((candidate) => candidate.identity === reference.identity) === index,
   );
 });
-const graphColorByRefName = computed(() => {
+const graphColorByRefIdentity = computed(() => {
   const colors: Record<string, number> = {};
   for (const reference of graphReferences.value) {
-    colors[reference.name] = reference.colorIndex;
+    colors[reference.identity] = reference.colorIndex;
   }
   return colors;
 });
@@ -492,7 +536,9 @@ const graphCommitColorByHash = computed(() => {
       upstream: snapshot.value?.upstream,
       base: snapshot.value?.base,
     }).full;
-    const reference = graphReferences.value.find((candidate) => refs.some((ref) => ref.name === candidate.name));
+    const reference = graphReferences.value.find((candidate) =>
+      refs.some((ref) => ref.identity === candidate.identity),
+    );
     if (reference) {
       colors[commit.hash] = reference.colorIndex;
     }
@@ -508,16 +554,21 @@ const graphLayout = computed(() =>
   }),
 );
 const graphRows = computed(() => graphLayout.value.rows);
+const graphWindow = computed(() =>
+  selectGitCommitGraphWindow(graphLayout.value, {
+    top: graphViewport.value.top,
+    height: graphViewport.value.height,
+    overscan: graphWindowOverscan,
+  }),
+);
 const graphPaths = computed(() =>
-  graphRows.value.flatMap((row) =>
-    row.segments.flatMap((segment, index) => {
-      const d = graphSegmentPathData(segment);
-      return d ? [{ id: `${row.commit.hash}-${index}`, d, color: graphStrokeColor(segment.colorIndex) }] : [];
-    }),
-  ),
+  graphWindow.value.segments.flatMap(({ row, index, segment }) => {
+    const d = graphSegmentPathData(segment);
+    return d ? [{ id: `${row.commit.hash}-${index}`, d, color: graphStrokeColor(segment.colorIndex) }] : [];
+  }),
 );
 const graphNodes = computed(() =>
-  graphRows.value.map((row) => {
+  graphWindow.value.nodes.map((row) => {
     const refs = commitRefPresentation(row.commit).full;
     const isHead = refs.some((ref) => ref.isCurrentHead);
     return {
@@ -532,12 +583,75 @@ const graphNodes = computed(() =>
 );
 const graphCanvasWidth = computed(() => graphLayout.value.canvasWidth);
 const graphContentHeight = computed(() => graphLayout.value.height);
-const graphViewBox = computed(() => `0 0 ${graphCanvasWidth.value} ${Math.max(rowHeight, graphContentHeight.value)}`);
+const graphWindowHeight = computed(() => Math.max(0, graphWindow.value.bottom - graphWindow.value.top));
+const graphViewBox = computed(
+  () => `0 ${graphWindow.value.top} ${graphCanvasWidth.value} ${Math.max(1, graphWindowHeight.value)}`,
+);
 const graphLayerStyle = computed(() => ({
   left: `${graphRowPaddingX}px`,
+  top: `${graphWindow.value.top}px`,
   width: `${graphCanvasWidth.value}px`,
+  height: `${graphWindowHeight.value}px`,
+}));
+const graphSurfaceStyle = computed(() => ({
+  minWidth: graphCanvasMinWidth.value,
   height: `${graphContentHeight.value}px`,
 }));
+const updateGraphViewport = () => {
+  const root = graphScrollRef.value;
+  const top = root?.scrollTop ?? 0;
+  const height = root?.clientHeight ?? 0;
+  if (graphViewport.value.top === top && graphViewport.value.height === height) return;
+  graphViewport.value = { top, height };
+};
+const scheduleGraphViewportUpdate = () => {
+  if (graphViewportFrame !== undefined) return;
+  graphViewportFrame = window.requestAnimationFrame(() => {
+    graphViewportFrame = undefined;
+    updateGraphViewport();
+  });
+};
+const observeGraphViewport = () => {
+  graphViewportResizeObserver?.disconnect();
+  graphViewportResizeObserver = null;
+  const root = graphScrollRef.value;
+  if (!root || !props.open) {
+    updateGraphViewport();
+    return;
+  }
+  if (typeof ResizeObserver !== "undefined") {
+    graphViewportResizeObserver = new ResizeObserver(scheduleGraphViewportUpdate);
+    graphViewportResizeObserver.observe(root);
+  }
+  scheduleGraphViewportUpdate();
+};
+const captureGraphScrollAnchor = () => {
+  const root = graphScrollRef.value;
+  if (!root) return null;
+  const row = graphRows.value.find((candidate) => candidate.top + rowHeight + candidate.blockHeight > root.scrollTop);
+  return row ? { hash: row.commit.hash, offset: root.scrollTop - row.top } : null;
+};
+const restoreGraphScrollAnchor = (anchor: { hash: string; offset: number } | null) => {
+  if (!anchor) return;
+  const root = graphScrollRef.value;
+  const row = graphRows.value.find((candidate) => candidate.commit.hash === anchor.hash);
+  if (!root || !row) return;
+  const maxScrollTop = Math.max(0, root.scrollHeight - root.clientHeight);
+  root.scrollTop = Math.max(0, Math.min(row.top + anchor.offset, maxScrollTop));
+  scheduleGraphViewportUpdate();
+};
+const changeExpandedCommitFileGeometry = (change: () => void) => {
+  pendingGraphScrollAnchor ||= captureGraphScrollAnchor();
+  change();
+  if (graphScrollAnchorRestoreScheduled) return;
+  graphScrollAnchorRestoreScheduled = true;
+  void nextTick(() => {
+    graphScrollAnchorRestoreScheduled = false;
+    const anchor = pendingGraphScrollAnchor;
+    pendingGraphScrollAnchor = null;
+    restoreGraphScrollAnchor(anchor);
+  });
+};
 const graphRowColumns = (row: GitCommitGraphRow) => `${row.graphWidth}px minmax(14rem, 1fr)`;
 const graphRowMinWidth = (row: GitCommitGraphRow) => `max(16rem, calc(${row.graphWidth}px + 14rem + 9px))`;
 const graphCanvasMinWidth = computed(() => `max(16rem, calc(${graphCanvasWidth.value}px + 14rem + 9px))`);
@@ -612,7 +726,7 @@ const commitRefPresentation = (commit: ProjectGitCommitSummary) =>
     remotes: snapshot.value?.remotes,
     upstream: snapshot.value?.upstream,
     base: snapshot.value?.base,
-    graphColorByRefName: graphColorByRefName.value,
+    graphColorByRefIdentity: graphColorByRefIdentity.value,
   });
 const refPresentations = (commit: ProjectGitCommitSummary) =>
   commitRefPresentation(commit).full.map((ref) => ({
@@ -1236,9 +1350,10 @@ const openCommitContextMenu = async (event: MouseEvent, commit: ProjectGitCommit
 };
 const closeCommitContextMenu = (restoreFocus = true) => {
   const opener = commitMenuOpener.value;
+  commitMenuOpener.value = null;
   commitSubmenu.value = null;
   commitContextMenu.value = null;
-  if (restoreFocus) void nextTick(() => opener?.focus());
+  if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
 };
 const handleCommitRowClick = (event: MouseEvent, hash: string) => {
   if (event.ctrlKey || event.metaKey) toggleCommitSelection(hash);
@@ -1422,6 +1537,23 @@ watch(
   { flush: "post" },
 );
 watch(
+  () => [graphScrollRef.value, props.open],
+  () => observeGraphViewport(),
+  { flush: "post" },
+);
+watch(
+  graphWindow,
+  (nextWindow) => {
+    const renderedHashes = new Set(nextWindow.rows.map((row) => row.commit.hash));
+    const tooltipHash = commitTooltip.value?.commit.hash || pendingCommitTooltip.value?.commit.hash;
+    if (tooltipHash && !renderedHashes.has(tooltipHash)) hideCommitTooltip();
+    if (commitContextMenu.value && !renderedHashes.has(commitContextMenu.value.commit.hash)) {
+      closeCommitContextMenu(false);
+    }
+  },
+  { flush: "pre" },
+);
+watch(
   () => context.value?.contextKey || "",
   () => clearHistoryState(),
 );
@@ -1459,6 +1591,7 @@ watch(
 );
 onMounted(() => {
   if (typeof ResizeObserver !== "undefined") commitTooltipResizeObserver = new ResizeObserver(measureCommitTooltip);
+  observeGraphViewport();
   window.addEventListener("pointerdown", handleWindowPointerDown);
   window.addEventListener("resize", handleFloatingViewportChange);
   window.addEventListener("scroll", handleFloatingViewportChange, true);
@@ -1470,6 +1603,10 @@ onBeforeUnmount(() => {
     clearGitCommitTooltipSessionsForProject(props.projectId);
   }
   commitTooltipResizeObserver?.disconnect();
+  graphViewportResizeObserver?.disconnect();
+  if (graphViewportFrame !== undefined) window.cancelAnimationFrame(graphViewportFrame);
+  pendingGraphScrollAnchor = null;
+  graphScrollAnchorRestoreScheduled = false;
   window.clearTimeout(copiedTimer.value);
   window.removeEventListener("pointerdown", handleWindowPointerDown);
   window.removeEventListener("resize", handleFloatingViewportChange);
@@ -1741,14 +1878,11 @@ onBeforeUnmount(() => {
       <div
         ref="graphScrollRef"
         class="themed-scrollbar min-h-0 flex-1 overflow-auto bg-surface-container-lowest p-2 text-on-surface [overscroll-behavior-y:contain]"
+        @scroll.passive="scheduleGraphViewportUpdate"
         @wheel="transferWheelAtScrollBoundary($event, graphScrollRef)"
       >
         <div class="min-w-full">
-          <div
-            v-if="graphRows.length"
-            class="relative min-w-full overflow-hidden"
-            :style="{ minWidth: graphCanvasMinWidth }"
-          >
+          <div v-if="graphRows.length" class="relative min-w-full overflow-hidden" :style="graphSurfaceStyle">
             <svg
               class="pointer-events-none absolute top-0 z-20 block overflow-hidden"
               :style="graphLayerStyle"
@@ -1785,7 +1919,7 @@ onBeforeUnmount(() => {
                 />
               </g>
             </svg>
-            <template v-for="(row, rowIndex) in graphRows" :key="row.commit.hash">
+            <template v-for="row in graphWindow.rows" :key="row.commit.hash">
               <div
                 role="button"
                 tabindex="0"
@@ -1794,15 +1928,15 @@ onBeforeUnmount(() => {
                 :aria-controls="`git-commit-files-${row.commit.hash}`"
                 :class="
                   cn(
-                    'group relative z-10 grid min-w-[16rem] cursor-pointer items-center gap-px px-1 text-xs transition-colors hover:bg-surface-container-high',
+                    'group absolute left-0 z-10 grid w-full min-w-[16rem] cursor-pointer items-center gap-px px-1 text-xs transition-colors hover:bg-surface-container-high',
                     isCommitSelected(row.commit.hash) && 'bg-primary/10 shadow-[inset_2px_0_0_var(--color-primary)]',
                   )
                 "
                 :style="{
+                  top: `${row.top}px`,
                   gridTemplateColumns: graphRowColumns(row),
                   minWidth: graphRowMinWidth(row),
                   height: `${rowHeight}px`,
-                  marginTop: rowIndex === 0 ? '0' : `${rowGap}px`,
                 }"
                 @click="handleCommitRowClick($event, row.commit.hash)"
                 @keydown.enter.prevent="toggleCommitFiles(row.commit.hash)"
@@ -1861,8 +1995,9 @@ onBeforeUnmount(() => {
               <div
                 v-if="isCommitFilesExpanded(row.commit.hash)"
                 :id="`git-commit-files-${row.commit.hash}`"
-                class="relative z-10 overflow-hidden border-y border-outline-variant/50 bg-surface-container py-1 pr-2"
+                class="absolute left-0 z-10 w-full overflow-hidden border-y border-outline-variant/50 bg-surface-container py-1 pr-2"
                 :style="{
+                  top: `${row.top + rowHeight}px`,
                   height: `${expandedCommitFilesHeight(row.commit.hash)}px`,
                   minWidth: graphRowMinWidth(row),
                   paddingLeft: `${graphRowPaddingX + row.graphWidth + 4}px`,

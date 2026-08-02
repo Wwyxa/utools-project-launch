@@ -51,6 +51,8 @@ export interface GitCommitGraphRow {
   isMerge: boolean;
   laneSpan: number;
   graphWidth: number;
+  top: number;
+  blockHeight: number;
   y: number;
   segments: GitCommitGraphSegment[];
 }
@@ -66,6 +68,26 @@ export interface GitCommitGraphLayout {
   rows: GitCommitGraphRow[];
   canvasWidth: number;
   height: number;
+}
+
+export interface GitCommitGraphWindowOptions {
+  top: number;
+  height: number;
+  overscan?: number;
+}
+
+export interface GitCommitGraphWindowSegment {
+  row: GitCommitGraphRow;
+  index: number;
+  segment: GitCommitGraphSegment;
+}
+
+export interface GitCommitGraphWindow {
+  top: number;
+  bottom: number;
+  rows: GitCommitGraphRow[];
+  nodes: GitCommitGraphRow[];
+  segments: GitCommitGraphWindowSegment[];
 }
 
 type SegmentEndpoint = "top" | "node" | "output";
@@ -98,6 +120,25 @@ const expandedRowHeight = (hash: string, options: GitCommitGraphLayoutOptions) =
 const explicitNodeColorIndex = (hash: string, options: GitCommitGraphLayoutOptions) => {
   const colorIndex = options.colorIndexByCommitHash?.[hash];
   return typeof colorIndex === "number" && Number.isInteger(colorIndex) && colorIndex >= 0 ? colorIndex : undefined;
+};
+
+const nonNegativeFinite = (value: number | undefined) =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+
+const rowContentBottom = (row: GitCommitGraphRow) => row.top + GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + row.blockHeight;
+
+const firstRowIntersecting = (rows: readonly GitCommitGraphRow[], top: number) => {
+  let low = 0;
+  let high = rows.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const row = rows[middle];
+    if (row && rowContentBottom(row) <= top) low = middle + 1;
+    else high = middle;
+  }
+
+  return low;
 };
 
 export const layoutGitCommitGraph = (
@@ -274,6 +315,8 @@ export const layoutGitCommitGraph = (
       isMerge: parents.length > 1,
       laneSpan,
       graphWidth,
+      top: rowTop,
+      blockHeight: extraHeight,
       y,
       segments,
     });
@@ -287,4 +330,40 @@ export const layoutGitCommitGraph = (
     canvasWidth: rows.reduce((width, row) => Math.max(width, row.graphWidth), GIT_COMMIT_GRAPH_GEOMETRY.minimumWidth),
     height,
   };
+};
+
+export const selectGitCommitGraphWindow = (
+  layout: GitCommitGraphLayout,
+  options: GitCommitGraphWindowOptions,
+): GitCommitGraphWindow => {
+  const layoutHeight = nonNegativeFinite(layout.height);
+  const viewportTop = Math.min(nonNegativeFinite(options.top), layoutHeight);
+  const viewportBottom = Math.min(layoutHeight, viewportTop + nonNegativeFinite(options.height));
+  const overscan = nonNegativeFinite(options.overscan);
+  const top = Math.max(0, viewportTop - overscan);
+  const bottom = Math.min(layoutHeight, viewportBottom + overscan);
+  const firstRowIndex = firstRowIntersecting(layout.rows, top);
+  const rows: GitCommitGraphRow[] = [];
+
+  for (let index = firstRowIndex; index < layout.rows.length; index += 1) {
+    const row = layout.rows[index];
+    if (!row || row.top >= bottom) break;
+    if (rowContentBottom(row) > top) rows.push(row);
+  }
+
+  const nodes = rows.filter((row) => row.y >= top && row.y <= bottom);
+  const segments: GitCommitGraphWindowSegment[] = [];
+  const firstSegmentRowIndex = Math.max(0, firstRowIndex - 1);
+
+  for (let rowIndex = firstSegmentRowIndex; rowIndex < layout.rows.length; rowIndex += 1) {
+    const row = layout.rows[rowIndex];
+    if (!row || row.top > bottom) break;
+    row.segments.forEach((segment, index) => {
+      const segmentTop = Math.min(segment.from.y, segment.to.y);
+      const segmentBottom = Math.max(segment.from.y, segment.to.y);
+      if (segmentBottom >= top && segmentTop <= bottom) segments.push({ row, index, segment });
+    });
+  }
+
+  return { top, bottom, rows, nodes, segments };
 };

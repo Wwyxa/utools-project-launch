@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectGitCommitSummary } from "../types";
-import { GIT_COMMIT_GRAPH_GEOMETRY, layoutGitCommitGraph, type GitCommitGraphLayout } from "./gitCommitGraph";
+import {
+  GIT_COMMIT_GRAPH_GEOMETRY,
+  layoutGitCommitGraph,
+  selectGitCommitGraphWindow,
+  type GitCommitGraphLayout,
+} from "./gitCommitGraph";
 
 const commit = (hash: string, parents: string[] = []): ProjectGitCommitSummary => ({
   hash,
@@ -229,5 +234,59 @@ describe("layoutGitCommitGraph", () => {
     expect(layout.height).toBe(
       GIT_COMMIT_GRAPH_GEOMETRY.rowHeight * 3 + GIT_COMMIT_GRAPH_GEOMETRY.rowGap * 2 + 40 + 24,
     );
+    expect(layout.rows.map((row) => ({ hash: row.commit.hash, top: row.top, blockHeight: row.blockHeight }))).toEqual([
+      { hash: "A", top: 0, blockHeight: 40 },
+      { hash: "B", top: rowPitch + 40, blockHeight: 24 },
+      { hash: "C", top: rowPitch * 2 + 40 + 24, blockHeight: 0 },
+    ]);
+  });
+
+  it("selects a finite row window while retaining the preceding boundary segment", () => {
+    const layout = layoutGitCommitGraph([commit("A", ["B"]), commit("B", ["C"]), commit("C")]);
+    const selection = selectGitCommitGraphWindow(layout, {
+      top: GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap,
+      height: GIT_COMMIT_GRAPH_GEOMETRY.rowHeight,
+    });
+
+    expect(selection.rows.map((row) => row.commit.hash)).toEqual(["B"]);
+    expect(selection.nodes.map((row) => row.commit.hash)).toEqual(["B"]);
+    expect(selection.segments.map(({ row }) => row.commit.hash)).toEqual(["A", "B"]);
+  });
+
+  it("uses inclusive geometry bounds for paths and expanded file blocks", () => {
+    const layout = layoutGitCommitGraph([commit("A", ["B"]), commit("B", ["C"]), commit("C")], {
+      expandedRowHeights: { A: 40 },
+    });
+    const boundaryLayout = layoutGitCommitGraph([commit("A", ["B"]), commit("B", ["C"]), commit("C")]);
+    const expandedSelection = selectGitCommitGraphWindow(layout, { top: 36, height: 20 });
+    const boundarySelection = selectGitCommitGraphWindow(boundaryLayout, { top: 65, height: 1 });
+
+    expect(expandedSelection.rows.map((row) => row.commit.hash)).toEqual(["A"]);
+    expect(expandedSelection.nodes).toEqual([]);
+    expect(expandedSelection.segments.map(({ row }) => row.commit.hash)).toEqual(["A"]);
+    expect(boundarySelection.rows).toEqual([]);
+    expect(boundarySelection.segments.map(({ row }) => row.commit.hash)).toEqual(["B", "C"]);
+  });
+
+  it("bounds a middle window while retaining its one preceding intersecting segment", () => {
+    const commits = Array.from({ length: 32 }, (_, index) => commit(`C${index}`, index < 31 ? [`C${index + 1}`] : []));
+    const layout = layoutGitCommitGraph(commits);
+    const rowPitch = GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap;
+    const selection = selectGitCommitGraphWindow(layout, {
+      top: rowPitch * 20,
+      height: GIT_COMMIT_GRAPH_GEOMETRY.rowHeight,
+      overscan: rowPitch,
+    });
+
+    expect(selection.rows.map((row) => row.commit.hash)).toEqual(["C19", "C20", "C21"]);
+    expect(selection.nodes.map((row) => row.commit.hash)).toEqual(["C19", "C20", "C21"]);
+    expect(selection.segments.map(({ row }) => row.commit.hash)).toEqual(["C18", "C19", "C20", "C21"]);
+  });
+
+  it("clamps invalid and trailing viewport bounds without selecting off-canvas geometry", () => {
+    const layout = layoutGitCommitGraph([commit("A", ["B"]), commit("B")]);
+    const selection = selectGitCommitGraphWindow(layout, { top: Number.POSITIVE_INFINITY, height: -1, overscan: -20 });
+
+    expect(selection).toMatchObject({ top: 0, bottom: 0, rows: [], nodes: [], segments: [] });
   });
 });

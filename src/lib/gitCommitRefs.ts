@@ -11,7 +11,7 @@ export type GitCommitRefDenseDisplay = "label" | "icon";
 export type GitCommitRefPresentationContext = Partial<
   Pick<ProjectGitSnapshot, "branch" | "headHash" | "isDetachedHead" | "branches" | "remotes" | "upstream" | "base">
 > & {
-  graphColorByRefName?: Readonly<Record<string, number>>;
+  graphColorByRefIdentity?: Readonly<Record<string, number>>;
 };
 
 export interface GitCommitRefPresentationMember {
@@ -58,6 +58,8 @@ const refLabel = (name: string) =>
 const compareNames = (left: string, right: string) => (left === right ? 0 : left < right ? -1 : 1);
 const normalizeRemoteRefName = (name: string) => name.replace(/^refs\/remotes\//, "");
 const hashesMatch = (left: string, right: string) => left === right || left.startsWith(right) || right.startsWith(left);
+
+export const gitCommitRefIdentity = (kind: GitCommitRefPresentationKind, name: string) => `${kind}:${name}`;
 
 const legacyRefs = (refs?: string): SourceRef[] =>
   (refs || "")
@@ -141,7 +143,8 @@ export const presentGitCommitRefs = (
     const isHeadReference = kind === "head" && isExactHeadReference(ref.name) && currentCommit;
     const isCurrentUpstream = kind === "remote" && upstreamNames.has(normalizeRemoteRefName(ref.name));
     const isCurrentBase = kind === "remote" && baseNames.has(normalizeRemoteRefName(ref.name));
-    const possibleGraphColorIndex = context.graphColorByRefName?.[ref.name];
+    const identity = gitCommitRefIdentity(kind, ref.name);
+    const possibleGraphColorIndex = context.graphColorByRefIdentity?.[identity];
     const graphColorIndex =
       typeof possibleGraphColorIndex === "number" && Number.isFinite(possibleGraphColorIndex)
         ? possibleGraphColorIndex
@@ -150,7 +153,7 @@ export const presentGitCommitRefs = (
     return {
       kind,
       name: ref.name,
-      identity: `${kind}:${ref.name}`,
+      identity,
       label,
       title: ref.name,
       isCurrentUpstream,
