@@ -488,58 +488,61 @@ const generateCommitMessage = async () => {
   commitMessageAiResult.value = originResult;
   commitMessageAiState.value = "loading";
   reportFeedback("loading", "正在生成 commit message...");
-  await waitForVisualFeedback();
-  const promptResult = await buildCommitMessagePrompt(originProjectId, originContext.target);
-  if (!promptResult.ok) {
-    if (
-      repositoryContextGeneration.value === originGeneration &&
-      activeRepositoryContext.value?.contextKey === originContextKey
-    ) {
-      reportFeedback("warning", promptResult.message);
-      commitMessageAiState.value = "warning";
-    }
-    return;
-  }
-  if (
-    repositoryContextGeneration.value !== originGeneration ||
-    activeRepositoryContext.value?.contextKey !== originContextKey
-  ) {
-    return;
-  }
+  const isOriginVisible = () =>
+    repositoryContextGeneration.value === originGeneration &&
+    activeRepositoryContext.value?.contextKey === originContextKey;
 
-  await store.analyzeGitWithAiStream(originProjectId, promptResult.prompt, {
-    onChunk: (chunk) => {
-      originResult = appendAiStreamChunk(originResult, chunk);
-      if (
-        repositoryContextGeneration.value === originGeneration &&
-        activeRepositoryContext.value?.contextKey === originContextKey
-      ) {
-        commitMessageAiResult.value = originResult;
+  try {
+    await waitForVisualFeedback();
+    const promptResult = await buildCommitMessagePrompt(originProjectId, originContext.target);
+    if (!promptResult.ok) {
+      if (isOriginVisible()) {
+        reportFeedback("warning", promptResult.message);
+        commitMessageAiState.value = "warning";
       }
-    },
-    onDone: (result) => {
-      const finalResult = aiReasoningStateFromResult(result);
-      if (hasAiReasoningDisplay(finalResult) || !hasAiReasoningDisplay(originResult)) {
-        originResult = finalResult;
-      }
-      const generated = aiReasoningCopyText(originResult).trim();
-      const isOriginVisible =
-        repositoryContextGeneration.value === originGeneration &&
-        activeRepositoryContext.value?.contextKey === originContextKey;
-      if (result.ok && generated) {
-        if (isOriginVisible) {
+      return;
+    }
+    if (!isOriginVisible()) return;
+
+    await store.analyzeGitWithAiStream(originProjectId, promptResult.prompt, {
+      onChunk: (chunk) => {
+        originResult = appendAiStreamChunk(originResult, chunk);
+        if (isOriginVisible()) {
           commitMessageAiResult.value = originResult;
-          commitMessageAiState.value = "success";
-          emit("update:commitMessage", generated);
+          const generated = aiReasoningCopyText(originResult);
+          if (generated) emit("update:commitMessage", generated);
         }
-        return;
-      }
-      if (isOriginVisible) {
-        reportFeedback("warning", result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 生成失败。");
-        commitMessageAiState.value = result.ok ? "warning" : "error";
-      }
-    },
-  });
+      },
+      onDone: (result) => {
+        const finalResult = aiReasoningStateFromResult(result);
+        if (hasAiReasoningDisplay(finalResult) || !hasAiReasoningDisplay(originResult)) {
+          originResult = finalResult;
+        }
+        const generated = aiReasoningCopyText(originResult).trim();
+        if (result.ok && generated) {
+          if (isOriginVisible()) {
+            commitMessageAiResult.value = originResult;
+            commitMessageAiState.value = "success";
+            emit("update:commitMessage", generated);
+            reportFeedback("success", "已填入提交信息。");
+          }
+          return;
+        }
+        if (isOriginVisible()) {
+          reportFeedback(
+            result.ok ? "warning" : "error",
+            result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 生成失败。",
+          );
+          commitMessageAiState.value = result.ok ? "warning" : "error";
+        }
+      },
+    });
+  } catch (error) {
+    if (isOriginVisible()) {
+      reportFeedback("error", error instanceof Error ? error.message : "AI 生成失败。");
+      commitMessageAiState.value = "error";
+    }
+  }
 };
 
 const toggleGroup = (scope: WorktreeDiffScope) => {

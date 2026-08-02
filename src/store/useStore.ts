@@ -1659,7 +1659,11 @@ export const useStore = defineStore("app", {
         this.aiModelTesting = false;
       }
     },
-    async analyzeGitWithAiStream(projectId: string, prompt: string, handlers: AiStreamHandlers = {}) {
+    async analyzeGitWithAiStream(
+      projectId: string,
+      prompt: string,
+      handlers: AiStreamHandlers = {},
+    ): Promise<AiAnalyzeResult> {
       const project = this.projects.find((item) => item.id === projectId);
       if (!project) {
         const result: AiAnalyzeResult = { ok: false, content: "", message: "项目不存在，无法进行 AI 分析。" };
@@ -1668,30 +1672,36 @@ export const useStore = defineStore("app", {
       }
       let finalResult: AiAnalyzeResult | undefined;
       let completed = false;
-      handlers.onStart?.();
+      const complete = (result: AiAnalyzeResult) => {
+        if (completed) return;
+        completed = true;
+        finalResult = result;
+        handlers.onDone?.(result);
+      };
       try {
+        handlers.onStart?.();
         await bridge.analyzeWithAiStream(
           { preferences: { ...this.aiPreferences }, prompt },
           (chunk) => {
             handlers.onChunk?.(chunk);
           },
           (result) => {
-            completed = true;
-            finalResult = result;
-            handlers.onDone?.(result);
+            complete(result);
           },
         );
+        if (!completed) {
+          complete({ ok: false, content: "", message: "AI 流式响应未返回完成结果。" });
+        }
       } catch (error) {
         if (!completed) {
-          finalResult = {
+          complete({
             ok: false,
             content: "",
             message: error instanceof Error ? error.message : "AI 分析失败。",
-          };
-          handlers.onDone?.(finalResult);
+          });
         }
       }
-      return finalResult;
+      return finalResult!;
     },
     async analyzeGitWithAi(projectId: string, prompt: string) {
       const project = this.projects.find((item) => item.id === projectId);

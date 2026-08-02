@@ -830,7 +830,7 @@ Keep framework event payloads out of domain-action parameters.
 ### 2. Signatures
 
 - Type contract: `ProjectBridge.analyzeWithAiStream(payload, onChunk, onDone): Promise<void>`.
-- Store action: `analyzeGitWithAiStream(projectId: string, prompt: string, handlers?: AiStreamHandlers): Promise<AiAnalyzeResult | undefined>`.
+- Store action: `analyzeGitWithAiStream(projectId: string, prompt: string, handlers?: AiStreamHandlers): Promise<AiAnalyzeResult>`.
 - `AiAnalyzeResult = { ok: boolean; content: string; reasoning?: string; rawContent?: string; message?: string }`.
 - `AiStreamChunk = { content?: string; reasoning?: string; rawContent?: string }`.
 - `AiStreamChunkPayload = string | AiStreamChunk`; legacy string chunks remain valid for fallback and browser preview paths.
@@ -847,12 +847,12 @@ Keep framework event payloads out of domain-action parameters.
 - Store actions own provider preferences and project lookup, then delegate to the bridge with cloned AI preferences.
 - `onStart` fires before bridge delegation starts.
 - `onChunk` may fire zero or more times and should append structured chunks in the component or caller-owned state.
-- `onDone` must fire exactly once for every started analysis path, including validation failures and thrown bridge errors.
+- `onDone` must fire exactly once for every started analysis path, including validation failures, thrown bridge errors, and a bridge promise that resolves without invoking its completion callback.
 - OpenAI-compatible and Anthropic-compatible providers use real SSE / `ReadableStream` parsing in preload and emit chunks as provider deltas arrive.
 - uTools built-in AI supports real streaming through `utools.ai(option, streamCallback)`. The preload `provider === "utools"` branch should call the streaming signature, keep `delta.reasoning_content` in `chunk.reasoning`, keep `delta.content` in `chunk.content`, and keep `chunk.rawContent` as the provider-order concatenation for conservative parsing/debug preservation. User-facing copy actions should copy `content`, not `rawContent`.
 - OpenAI-compatible streams should preserve provider reasoning fields such as `delta.reasoning_content`, `delta.reasoning`, `delta.thinking`, or `message.reasoning_content` separately from `delta.content` when present.
 - Components should use the shared AI reasoning stream helpers to merge chunks, parse conservative inline tags, and render final content. Do not concatenate structured reasoning into the visible answer before the UI has a chance to collapse it.
-- AI commit message generation should write only the final visible content into the Git commit textarea. It must not render a separate generated-result box in the changed-files sidebar and must not copy structured reasoning or raw preservation text into the textarea.
+- AI commit message generation should mirror each non-empty visible content delta into the Git commit textarea so real provider streaming remains visible. It must not render a separate generated-result box in the changed-files sidebar or copy structured reasoning or raw preservation text into the textarea.
 - Settings prompt editors must not show placeholder help buttons or tooltip/popover guidance. Prompt editing UX should encourage general instructions; runtime Git AI flows append the required context automatically.
 - Inline reasoning-tag fallback is conservative: split only complete block-start tags (`<think>`, `<thinking>`, `<reasoning>`) outside Markdown fences and inline code. Incomplete tags or tags embedded in ordinary prose/code stay in the visible content.
 - Browser preview fallback is also non-streaming; it should call `onDone` only and avoid pretending preview output is incremental.
@@ -870,17 +870,20 @@ Keep framework event payloads out of domain-action parameters.
 - Complete block-start `<think>...</think>` text outside code -> collapse tag content into reasoning and render surrounding text as final content.
 - Incomplete or inline/code-fenced reasoning tag -> leave the entire text visible; do not hide content.
 - Bridge throws before calling `onDone` -> store catches and calls `onDone` with an error result.
+- Bridge resolves without calling `onDone` -> store calls `onDone({ ok: false, content: "", message: "AI 流式响应未返回完成结果。" })` so the component leaves loading.
 - Bridge calls `onDone` then throws -> store must not call `onDone` a second time.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a commit detail panel keeps its own `streamingText`, appends chunks, and switches from loading to success/warning/error in `onDone`.
 - Good: a Git AI panel keeps `content`, `reasoning`, and `rawContent` in one local AI reasoning stream state, rendering reasoning through a default-collapsed block while final content continues streaming.
+- Good: commit-message generation mirrors only non-empty visible `content` chunks into its controlled textarea and reports success after `onDone`, replacing the parent loading feedback.
 - Good: settings edits an AI mode prompt, and both the batch Git AI dialog and commit detail AI panel use that prompt on their next generation.
 - Good: uTools built-in AI streams deltas via `onChunk` and returns the aggregated content in `onDone.content` when the streaming promise resolves.
 - Base: a third-party provider sends small SSE deltas and the component appends them directly into its local result text.
 - Base: a provider sends no reasoning fields; content renders exactly like the old path and no empty reasoning block appears.
 - Bad: a component sets loading before calling the store action, the bridge throws, and no `onDone` handler clears loading.
+- Bad: updating only an invisible local commit-message result in `onChunk` and waiting until `onDone` to update the textarea; this hides real streaming from the user.
 - Bad: emitting the full uTools result via `onChunk` to create the appearance of streaming.
 - Bad: joining `reasoning_content` and `content` into one string before calling `onChunk`, because the UI can no longer collapse reasoning reliably.
 
@@ -889,7 +892,9 @@ Keep framework event payloads out of domain-action parameters.
 - `npm run lint` after changing `ProjectBridge`, `AiAnalyzeResult`, or store AI actions.
 - `npm run validate:ai-reasoning` after changing inline tag parsing, stream merging, or AI reasoning display behavior.
 - `npm run build` after changing Vue templates that render streaming output.
+- `npx vitest run src/store/useStore.aiStream.test.ts` must prove a missing completion callback produces one error result and duplicate callbacks preserve the first terminal result.
 - Manual smoke test with a third-party provider: verify text appears progressively and the final state changes from loading to success.
+- Manual smoke test for commit-message generation: verify visible content progressively replaces the textarea value, structured reasoning never enters it, and the top-right loading feedback becomes success after completion.
 - Manual smoke test with invalid AI config: verify the panel shows an error and does not remain loading.
 - Manual smoke test for uTools: verify text appears progressively through `utools.ai(option, streamCallback)` and the final state uses the aggregated content.
 - Manual smoke test for settings: edit/add/delete/restore prompt modes, then generate from both Git AI entry points and confirm the selected mode is used.
@@ -910,14 +915,21 @@ This makes a complete non-streaming response look like streaming output and dupl
 
 ```ts
 let completed = false;
+const complete = (result) => {
+  if (completed) return;
+  completed = true;
+  onDone(result);
+};
 try {
   await bridge.analyzeWithAiStream(payload, onChunk, (result) => {
-    completed = true;
-    onDone(result);
+    complete(result);
   });
+  if (!completed) {
+    complete({ ok: false, content: "", message: "AI 流式响应未返回完成结果。" });
+  }
 } catch (error) {
   if (!completed) {
-    onDone({ ok: false, content: "", message: error instanceof Error ? error.message : "AI 分析失败。" });
+    complete({ ok: false, content: "", message: error instanceof Error ? error.message : "AI 分析失败。" });
   }
 }
 ```

@@ -432,6 +432,11 @@ const buildAiPrompt = async (target: ProjectGitRepositoryTarget) => {
 const isCurrentAiRequest = (contextKey: string, requestGeneration: number) =>
   activeRepositoryContext.value?.contextKey === contextKey && aiDialogRequestGeneration === requestGeneration;
 
+const reportAiDialogUnexpectedFailure = (contextKey: string, requestGeneration: number, error: unknown) => {
+  if (!isCurrentAiRequest(contextKey, requestGeneration)) return;
+  reportAiDialogFailure("error", error instanceof Error ? error.message : "AI 分析失败。");
+};
+
 const generateAiAnalysis = async () => {
   if (isAiDialogSetupLocked.value) return;
   const originContext = activeRepositoryContext.value;
@@ -441,47 +446,51 @@ const generateAiAnalysis = async () => {
   aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
   aiDialogState.value = "loading";
-  await waitForVisualFeedback();
+  try {
+    await waitForVisualFeedback();
 
-  const promptResult = await buildAiPrompt(originContext.target);
-  if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
+    const promptResult = await buildAiPrompt(originContext.target);
+    if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
 
-  aiDialogNotice.value = promptResult.truncated
-    ? selectedCommitCount.value > 0
-      ? "Diff 已截断，所有提交信息已保留"
-      : "工作区 Diff 已截断"
-    : "";
-  const sessionInput: GitAiAnalysisSessionInput = {
-    basePrompt: promptResult.prompt,
-    scopeSummary: filterStatusSummary.value,
-    notice: aiDialogNotice.value,
-    modeId: aiMode.value,
-    includeDiffContext: aiDialogIncludeDiffContext.value,
-  };
-  await store.analyzeGitWithAiStream(props.projectId, promptResult.prompt, {
-    onChunk: (chunk) => {
-      if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
-      aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
-    },
-    onDone: (result) => {
-      if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
-      const completedResult = finalAiDialogResult(aiReasoningStateFromResult(result));
-      if (result.ok && hasAiDialogFinalContent(completedResult)) {
-        rememberAiDialogSession(
-          appendGitAiAnalysisVersion(createGitAiAnalysisSession(sessionInput), completedResult),
-          originContext.contextKey,
+    aiDialogNotice.value = promptResult.truncated
+      ? selectedCommitCount.value > 0
+        ? "Diff 已截断，所有提交信息已保留"
+        : "工作区 Diff 已截断"
+      : "";
+    const sessionInput: GitAiAnalysisSessionInput = {
+      basePrompt: promptResult.prompt,
+      scopeSummary: filterStatusSummary.value,
+      notice: aiDialogNotice.value,
+      modeId: aiMode.value,
+      includeDiffContext: aiDialogIncludeDiffContext.value,
+    };
+    await store.analyzeGitWithAiStream(props.projectId, promptResult.prompt, {
+      onChunk: (chunk) => {
+        if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
+        aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
+      },
+      onDone: (result) => {
+        if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
+        const completedResult = finalAiDialogResult(aiReasoningStateFromResult(result));
+        if (result.ok && hasAiDialogFinalContent(completedResult)) {
+          rememberAiDialogSession(
+            appendGitAiAnalysisVersion(createGitAiAnalysisSession(sessionInput), completedResult),
+            originContext.contextKey,
+          );
+          aiDialogResult.value = completedResult;
+          aiDialogMessage.value = result.message || "";
+          aiDialogState.value = "success";
+          return;
+        }
+        reportAiDialogFailure(
+          result.ok ? "warning" : "error",
+          result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 分析失败。",
         );
-        aiDialogResult.value = completedResult;
-        aiDialogMessage.value = result.message || "";
-        aiDialogState.value = "success";
-        return;
-      }
-      reportAiDialogFailure(
-        result.ok ? "warning" : "error",
-        result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 分析失败。",
-      );
-    },
-  });
+      },
+    });
+  } catch (error) {
+    reportAiDialogUnexpectedFailure(originContext.contextKey, originAiDialogRequestGeneration, error);
+  }
 };
 
 const refineAiAnalysis = async () => {
@@ -497,35 +506,39 @@ const refineAiAnalysis = async () => {
   aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
   aiDialogState.value = "loading";
-  await waitForVisualFeedback();
+  try {
+    await waitForVisualFeedback();
 
-  if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
+    if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
 
-  await store.analyzeGitWithAiStream(props.projectId, prompt, {
-    onChunk: (chunk) => {
-      if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
-      aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
-    },
-    onDone: (result) => {
-      if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
-      const completedResult = finalAiDialogResult(aiReasoningStateFromResult(result));
-      if (result.ok && hasAiDialogFinalContent(completedResult)) {
-        rememberAiDialogSession(
-          appendGitAiAnalysisVersion(session, completedResult, sourceVersion.id, instruction),
-          originContext.contextKey,
+    await store.analyzeGitWithAiStream(props.projectId, prompt, {
+      onChunk: (chunk) => {
+        if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
+        aiDialogResult.value = appendAiStreamChunk(aiDialogResult.value, chunk);
+      },
+      onDone: (result) => {
+        if (!isCurrentAiRequest(originContext.contextKey, originAiDialogRequestGeneration)) return;
+        const completedResult = finalAiDialogResult(aiReasoningStateFromResult(result));
+        if (result.ok && hasAiDialogFinalContent(completedResult)) {
+          rememberAiDialogSession(
+            appendGitAiAnalysisVersion(session, completedResult, sourceVersion.id, instruction),
+            originContext.contextKey,
+          );
+          aiDialogResult.value = completedResult;
+          aiDialogFollowUp.value = "";
+          aiDialogMessage.value = result.message || "";
+          aiDialogState.value = "success";
+          return;
+        }
+        reportAiDialogFailure(
+          result.ok ? "warning" : "error",
+          result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 分析失败。",
         );
-        aiDialogResult.value = completedResult;
-        aiDialogFollowUp.value = "";
-        aiDialogMessage.value = result.message || "";
-        aiDialogState.value = "success";
-        return;
-      }
-      reportAiDialogFailure(
-        result.ok ? "warning" : "error",
-        result.ok ? "AI 已返回成功，但没有生成内容。" : result.message || "AI 分析失败。",
-      );
-    },
-  });
+      },
+    });
+  } catch (error) {
+    reportAiDialogUnexpectedFailure(originContext.contextKey, originAiDialogRequestGeneration, error);
+  }
 };
 
 const copyText = async (value: string) => {
