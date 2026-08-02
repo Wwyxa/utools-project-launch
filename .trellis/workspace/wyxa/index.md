@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 64
+- **Total Sessions**: 65
 - **Last Active**: 2026-08-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~166 | Active |
+| `journal-2.md` | ~187 | Active |
 | `journal-1.md` | ~1977 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 65 | 2026-08-02 | 优化 Git 提交图与悬浮详情 | `1bc7fc2` | `refactor/git-commit-tree` |
 | 64 | 2026-08-02 | 完成 Git 提交树与交互性能集成 | `24e0b65` | `refactor/git-commit-tree` |
 | 63 | 2026-08-02 | 拆分 Git Tab 并恢复提交记录交互 | `594f9b5` | `refactor/git-commit-tree` |
 | 62 | 2026-08-02 | 优化 Git 提交交互性能 | `9a147af` | `refactor/git-commit-tree` |

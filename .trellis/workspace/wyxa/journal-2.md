@@ -164,3 +164,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 65: 优化 Git 提交图与悬浮详情
+
+**Date**: 2026-08-02
+**Task**: 优化 Git 提交图与悬浮详情
+**Branch**: `refactor/git-commit-tree`
+
+### Summary
+
+完善提交图 base/ref 语义、VS Code 风格徽标与 tooltip 渲染性能；已提交并更新前端规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1bc7fc2` | (see git log) |
+
+### Status
+
+[OK] **Completed**
