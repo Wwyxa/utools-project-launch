@@ -1,7 +1,7 @@
 <script lang="ts">
-import type { CommitFileViewMode } from "../../lib/gitCommitFileTree";
+import type { CommitFileViewMode as RememberedCommitFileViewMode } from "../../lib/gitCommitFileTree";
 
-let rememberedCommitFileViewMode: CommitFileViewMode = "list";
+let rememberedCommitFileViewMode: RememberedCommitFileViewMode = "list";
 </script>
 
 <script setup lang="ts">
@@ -566,6 +566,7 @@ const refPresentations = (commit: ProjectGitCommitSummary) => commitRefPresentat
 const compactCommitRefPresentations = (commit: ProjectGitCommitSummary) =>
   commitRefPresentation(commit).dense.members.map((ref) => ({
     ...refPresentation(ref),
+    kind: ref.kind,
     showLabel: ref.display === "label",
   }));
 const isHeadCommit = (commit: ProjectGitCommitSummary) =>
@@ -1327,7 +1328,8 @@ const handleWindowPointerDown = (event: PointerEvent) => {
 const handleFloatingViewportChange = (event: Event) => {
   const isTooltipScroll =
     event.type === "scroll" && event.target instanceof Node && commitTooltipRef.value?.contains(event.target);
-  if (!isTooltipScroll) hideCommitTooltip();
+  const isGraphScroll = event.type === "scroll" && event.target === graphScrollRef.value;
+  if (!isTooltipScroll && !isGraphScroll) hideCommitTooltip();
   if (openDatePickerKind.value) positionCommitDatePicker();
   if (
     event.type === "scroll" &&
