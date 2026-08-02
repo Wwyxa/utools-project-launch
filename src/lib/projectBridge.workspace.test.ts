@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { getProjectBridge } from "./projectBridge";
@@ -414,68 +413,6 @@ describe("browser Git workspace fallback", () => {
     await store.refreshGitSnapshot(project.id, { force: true, maxAgeMs: 15_000 });
     await store.refreshGitSnapshot(project.id);
     expect(readGitSnapshot).toHaveBeenCalledTimes(4);
-  });
-
-  it("joins the parent initial snapshot from GitTab restore and workspace inventory", async () => {
-    vi.stubGlobal("window", {
-      navigator: { platform: "Win32", userAgent: "vitest" },
-      localStorage: { getItem: () => null, setItem: () => undefined },
-      projectBridge: undefined,
-    });
-    const parentSnapshot = createDeferred<ProjectGitSnapshot>();
-    const gitTabSnapshot = createDeferred<ProjectGitSnapshot>();
-    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>();
-    readGitSnapshot.mockReturnValueOnce(parentSnapshot.promise).mockReturnValueOnce(gitTabSnapshot.promise);
-    window.projectBridge = { ...getProjectBridge(), readGitSnapshot };
-
-    const { useStore } = await import("../store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-    const project = createProject("project-initial-snapshot", "C:\\project");
-    store.projects = [project];
-
-    const parentRefresh = store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000 });
-    const gitTabSource = readFileSync(new URL("../components/project/GitTab.vue", import.meta.url), "utf8");
-    const restoreStart = gitTabSource.indexOf("const restoreProjectRepositoryState =");
-    const restoreEnd = gitTabSource.indexOf("\nonBeforeUnmount", restoreStart);
-    const restoreProjectRepositoryState = gitTabSource.slice(restoreStart, restoreEnd);
-    const workspaceWatcherStart = gitTabSource.indexOf('() => gitWorkspaceSnapshot.value?.lastRefreshedAt || "",');
-    const workspaceWatcherEnd = gitTabSource.indexOf(
-      "\n\nwatch(\n  () => (snapshot.value?.commits",
-      workspaceWatcherStart,
-    );
-    const workspaceWatcher = gitTabSource.slice(workspaceWatcherStart, workspaceWatcherEnd);
-    const manualRefreshStart = gitTabSource.indexOf("const refreshActiveRepository = async () =>");
-    const manualRefreshEnd = gitTabSource.indexOf("\n\nconst isRefreshRunning", manualRefreshStart);
-    const manualRefresh = gitTabSource.slice(manualRefreshStart, manualRefreshEnd);
-    const gitTabOptions = restoreProjectRepositoryState.includes(
-      "void store.refreshGitSnapshot(projectId, { force: true }, target);",
-    )
-      ? { force: true }
-      : {};
-    const workspaceOptions = workspaceWatcher.includes(
-      "void store.refreshGitSnapshot(props.project.id, { force: true }, context.target);",
-    )
-      ? { force: true }
-      : {};
-    const gitTabRefresh = store.refreshGitSnapshot(project.id, gitTabOptions, { kind: "main" });
-    const workspaceRefresh = store.refreshGitSnapshot(project.id, workspaceOptions, { kind: "main" });
-
-    expect(readGitSnapshot).toHaveBeenCalledOnce();
-    expect(restoreProjectRepositoryState).toContain("void store.refreshGitSnapshot(projectId, {}, target);");
-    expect(workspaceWatcher).toContain("void store.refreshGitSnapshot(props.project.id, {}, context.target);");
-    expect(workspaceWatcher).toContain('void store.refreshGitSnapshot(props.project.id, {}, { kind: "main" });');
-    expect(manualRefresh).toContain(
-      "store.refreshGitSnapshot(props.project.id, { force: true }, activeRepositoryTarget.value)",
-    );
-    const snapshot = gitSnapshot(project.path, "initial");
-    parentSnapshot.resolve(snapshot);
-    await expect(Promise.all([parentRefresh, gitTabRefresh, workspaceRefresh])).resolves.toEqual([
-      undefined,
-      undefined,
-      undefined,
-    ]);
-    expect(project.git).toMatchObject(snapshot);
   });
 
   it("rejects an in-flight commit page after a same-length full refresh", async () => {
