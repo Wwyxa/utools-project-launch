@@ -122,3 +122,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 63: 拆分 Git Tab 并恢复提交记录交互
+
+**Date**: 2026-08-02
+**Task**: 拆分 Git Tab 并恢复提交记录交互
+**Branch**: `refactor/git-commit-tree`
+
+### Summary
+
+完成 Git Tab 领域组件拆分与紧凑控件样式统一，恢复提交记录 tooltip 的可悬停、时间、变更摘要与哈希复制；工作提交已通过 focused 测试、类型检查和生产构建。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `594f9b5` | (see git log) |
+
+### Status
+
+[OK] **Completed**
