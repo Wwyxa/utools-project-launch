@@ -5,8 +5,6 @@ const rememberedGitRepositoryTargets = new Map<string, RememberedProjectGitRepos
 const rememberedRepositorySectionOpen = new Map<string, boolean>();
 const rememberedTopInfoCollapsed = new Map<string, boolean>();
 const rememberedChangesSectionOpen = new Map<string, boolean>();
-const changesSectionManualCollapsedWithChanges = new Set<string>();
-const rememberedCommitTreeSectionOpen = new Map<string, boolean>();
 const repositorySectionChoiceMade = new Set<string>();
 const repositorySectionAutoOpened = new Set<string>();
 const commitDraftsByContext = new Map<string, string>();
@@ -61,6 +59,7 @@ type RemoteDialogMode = "add" | "edit";
 type WorktreeDiffScope = Exclude<ProjectGitDiffScope, "combined">;
 type FileReviewSelection = { path: string; scope: WorktreeDiffScope };
 type CommitReviewSelection = { commitHash: string; commitMessage: string; path: string };
+type GitLeftContext = "changes" | "history";
 type AppDialogKind = "danger" | "warning";
 type AppActionDialog = {
   kind?: AppDialogKind;
@@ -101,7 +100,6 @@ const store = useStore();
 const t = useI18n();
 const splitContainerRef = ref<HTMLElement | null>(null);
 const filesPaneRef = ref<HTMLElement | null>(null);
-const changesPaneRef = ref<HTMLElement | null>(null);
 const activeRepositoryTarget = ref<ProjectGitRepositoryTarget>(
   rememberedGitRepositoryTargets.get(props.project.id) || { kind: "main" },
 );
@@ -110,7 +108,11 @@ const isTopInfoCollapsed = ref(rememberedTopInfoCollapsed.get(props.project.id) 
 const repositoryContextGeneration = ref(0);
 const repositoryMenu = ref<GitRepositoryMenuState | null>(null);
 const changesSectionOpen = ref(false);
-const commitTreeSectionOpen = ref(rememberedCommitTreeSectionOpen.get(props.project.id) ?? true);
+const leftContext = computed<GitLeftContext>(() => (changesSectionOpen.value ? "changes" : "history"));
+const gitChangesTabRef = ref<HTMLButtonElement | null>(null);
+const gitHistoryTabRef = ref<HTMLButtonElement | null>(null);
+const changesToolbarRef = ref<HTMLElement | null>(null);
+const commitHistoryToolbarRef = ref<HTMLElement | null>(null);
 const isAiDialogOpen = ref(false);
 const isBranchMenuOpen = ref(false);
 const isRemoteMenuOpen = ref(false);
@@ -143,25 +145,9 @@ const {
   firstPaneRef: filesPaneRef,
   layoutKey: "git-main",
   orientation: "horizontal",
-  defaultFirstRatio: 0.38,
+  defaultFirstRatio: 0.44,
   minFirstSize: 200,
   minSecondSize: 280,
-});
-const {
-  bounds: changesHistorySplitBounds,
-  firstSize: changesHistoryFirstSize,
-  gridTemplateStyle: changesHistorySplitGridTemplateStyle,
-  handleSeparatorKeydown: handleChangesHistorySeparatorKeydown,
-  isResizing: isChangesHistoryResizing,
-  startResize: startChangesHistoryResize,
-} = useResizableSplit({
-  containerRef: filesPaneRef,
-  firstPaneRef: changesPaneRef,
-  layoutKey: "git-changes-history",
-  orientation: "vertical",
-  defaultFirstRatio: 0.45,
-  minFirstSize: 128,
-  minSecondSize: 160,
 });
 let stopAppEscapeListener = () => {};
 
@@ -179,18 +165,6 @@ const reviewScrollTop = ref(0);
 let diffRequestGeneration = 0;
 const worktreeSelectionKey = (selection: FileReviewSelection) => `${selection.scope}:${selection.path}`;
 const hasUncommittedChanges = computed(() => files.value.length > 0);
-const isChangesHistoryResizable = computed(
-  () => changesSectionOpen.value && commitTreeSectionOpen.value && hasUncommittedChanges.value,
-);
-const changesHistoryGridTemplateStyle = computed(() => {
-  if (isChangesHistoryResizable.value) return changesHistorySplitGridTemplateStyle.value;
-  if (changesSectionOpen.value && commitTreeSectionOpen.value) {
-    return { gridTemplateRows: "auto 0px minmax(0, 1fr)" };
-  }
-  if (changesSectionOpen.value) return { gridTemplateRows: "minmax(0, 1fr) 0px auto" };
-  if (commitTreeSectionOpen.value) return { gridTemplateRows: "auto 0px minmax(0, 1fr)" };
-  return { gridTemplateRows: "auto 0px auto" };
-});
 const branchOptions = computed(() => {
   const branches = snapshot.value?.branches || [];
   if (branches.length > 0) return branches;
@@ -220,7 +194,7 @@ const remoteStatusText = computed(() => {
     return upstream.value.ref;
   }
   if (remotes.value.length > 0) {
-    return "当前分支未设置 upstream";
+    return "此分支暂无 remote";
   }
   return "未配置 remote";
 });
@@ -437,11 +411,6 @@ const setChangesSectionOpen = (open: boolean) => {
   const stateKey = changesSectionStateKey();
   changesSectionOpen.value = open;
   rememberedChangesSectionOpen.set(stateKey, open);
-  if (open || !hasUncommittedChanges.value) {
-    changesSectionManualCollapsedWithChanges.delete(stateKey);
-  } else {
-    changesSectionManualCollapsedWithChanges.add(stateKey);
-  }
 };
 
 const refreshActiveRepository = async () => {
@@ -514,11 +483,6 @@ const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingDiff = ref(false);
 const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
-
-const setCommitTreeSectionOpen = (open: boolean) => {
-  commitTreeSectionOpen.value = open;
-  rememberedCommitTreeSectionOpen.set(props.project.id, open);
-};
 
 const openAiDialog = () => {
   isAiDialogOpen.value = true;
@@ -967,6 +931,19 @@ const clearCommitSelection = () => {
   selectedCommitHashes.value = [];
 };
 
+const setLeftContext = (context: GitLeftContext, shouldFocus = false) => {
+  setChangesSectionOpen(context === "changes");
+  if (shouldFocus) {
+    void nextTick(() => (context === "changes" ? gitChangesTabRef.value : gitHistoryTabRef.value)?.focus());
+  }
+};
+
+const handleLeftContextKeydown = (event: KeyboardEvent) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  setLeftContext(event.key === "ArrowLeft" || event.key === "Home" ? "changes" : "history", true);
+};
+
 const copyText = async (value: string) => {
   if (!value) return false;
   try {
@@ -1069,7 +1046,6 @@ const restoreProjectRepositoryState = (projectId: string) => {
   repositorySectionOpen.value = rememberedRepositorySectionOpen.get(projectId) || false;
   isTopInfoCollapsed.value = rememberedTopInfoCollapsed.get(projectId) || false;
   restoreChangesSectionOpen(projectId, target);
-  commitTreeSectionOpen.value = rememberedCommitTreeSectionOpen.get(projectId) ?? true;
   const hasRelatedRepositories = Boolean(
     workspace &&
     (workspace.worktrees.entries.some((entry) => entry.kind === "linked") || workspace.submodules.entries.length > 0),
@@ -1164,23 +1140,6 @@ watch(
       void store.refreshGitSnapshot(props.project.id, {}, context.target);
     }
   },
-);
-
-watch(
-  [() => activeRepositoryContext.value?.contextKey, () => files.value.length],
-  ([contextKey, fileCount]) => {
-    if (
-      !contextKey ||
-      fileCount === 0 ||
-      changesSectionOpen.value ||
-      changesSectionManualCollapsedWithChanges.has(contextKey)
-    ) {
-      return;
-    }
-    changesSectionOpen.value = true;
-    rememberedChangesSectionOpen.set(contextKey, true);
-  },
-  { immediate: true },
 );
 
 watch(
@@ -1602,20 +1561,75 @@ watch(
     <div ref="splitContainerRef" class="relative grid min-h-0 flex-1 overflow-hidden" :style="gridTemplateStyle">
       <div
         ref="filesPaneRef"
-        class="relative grid min-h-0 min-w-0 content-start grid-cols-[minmax(0,1fr)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
-        :style="changesHistoryGridTemplateStyle"
+        class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       >
-        <div ref="changesPaneRef" class="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <div
+          class="flex h-8 shrink-0 min-w-0 items-center gap-1 overflow-x-clip border-b border-border-subtle bg-surface-container-low px-1.5"
+        >
+          <div
+            role="tablist"
+            aria-label="Git 左侧内容"
+            class="flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-surface-container-high p-0.5"
+            @keydown="handleLeftContextKeydown"
+          >
+            <button
+              id="git-changes-tab"
+              ref="gitChangesTabRef"
+              type="button"
+              role="tab"
+              aria-controls="git-changes-panel"
+              :aria-selected="leftContext === 'changes'"
+              :tabindex="leftContext === 'changes' ? 0 : -1"
+              :class="
+                cn(
+                  'h-5 rounded px-1.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none',
+                  leftContext === 'changes' && 'bg-surface text-on-surface shadow-sm',
+                )
+              "
+              @click="setLeftContext('changes')"
+            >
+              更改
+            </button>
+            <button
+              id="git-history-tab"
+              ref="gitHistoryTabRef"
+              type="button"
+              role="tab"
+              aria-controls="git-commit-history-panel"
+              :aria-selected="leftContext === 'history'"
+              :tabindex="leftContext === 'history' ? 0 : -1"
+              :class="
+                cn(
+                  'h-5 rounded px-1.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none',
+                  leftContext === 'history' && 'bg-surface text-on-surface shadow-sm',
+                )
+              "
+              @click="setLeftContext('history')"
+            >
+              提交树
+            </button>
+          </div>
+          <div v-show="leftContext === 'changes'" class="flex min-w-0 flex-1 justify-end overflow-x-clip">
+            <div ref="changesToolbarRef" class="flex h-6 w-max shrink-0 items-center gap-px" />
+          </div>
+          <div v-show="leftContext === 'history'" class="flex min-w-0 flex-1 justify-end overflow-x-clip">
+            <div ref="commitHistoryToolbarRef" class="flex h-6 w-max shrink-0 items-center gap-px" />
+          </div>
+        </div>
+
+        <div
+          v-show="leftContext === 'changes'"
+          id="git-changes-panel"
+          role="tabpanel"
+          aria-labelledby="git-changes-tab"
+          class="flex min-h-0 flex-1 flex-col"
+        >
           <GitChangesPane
-            :class="
-              cn(
-                'min-w-0 border-b border-border-subtle',
-                changesSectionOpen && hasUncommittedChanges ? 'flex-1' : 'shrink-0',
-              )
-            "
+            class="min-h-0 min-w-0 flex-1"
             :project-id="props.project.id"
             :repository-target="activeRepositoryTarget"
-            :open="changesSectionOpen"
+            :toolbar-target="changesToolbarRef"
+            :open="leftContext === 'changes'"
             :commit-message="commitMessage"
             :selection="worktreeSelection"
             :disabled="isChangesPaneExternallyDisabled"
@@ -1631,54 +1645,27 @@ watch(
         </div>
 
         <div
-          v-if="isChangesHistoryResizable"
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="调整更改与提交树的高度"
-          :aria-valuemin="Math.round(changesHistorySplitBounds.min)"
-          :aria-valuemax="Math.round(changesHistorySplitBounds.max)"
-          :aria-valuenow="Math.round(changesHistoryFirstSize ?? 0)"
-          tabindex="0"
-          :class="
-            cn(
-              'group/git-sections-split relative z-10 cursor-row-resize touch-none outline-none',
-              isChangesHistoryResizing && 'bg-primary/10',
-            )
-          "
-          @pointerdown="startChangesHistoryResize($event)"
-          @keydown="handleChangesHistorySeparatorKeydown($event)"
+          v-show="leftContext === 'history'"
+          id="git-commit-history-panel"
+          role="tabpanel"
+          aria-labelledby="git-history-tab"
+          class="flex min-h-0 flex-1 flex-col"
         >
-          <span
-            :class="
-              cn(
-                'absolute inset-x-2 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-border-subtle transition-colors group-hover/git-sections-split:bg-primary group-focus/git-sections-split:bg-primary',
-                isChangesHistoryResizing && 'bg-primary',
-              )
-            "
+          <GitCommitHistory
+            class="min-h-0 min-w-0"
+            :project-id="props.project.id"
+            :repository-target="activeRepositoryTarget"
+            :toolbar-target="commitHistoryToolbarRef"
+            :open="leftContext === 'history'"
+            :disabled="isAnyGitWriteRunning"
+            :selected-commit-hashes="selectedCommitHashes"
+            @update:selected-commit-hashes="(hashes) => (selectedCommitHashes = hashes)"
+            @review-file="({ commitHash, commitMessage, path }) => handleViewDiff(commitHash, path, commitMessage)"
+            @request-ai="openAiDialog"
+            @feedback="setGitActionResult"
+            @busy-change="(busy) => (isCommitHistoryBusy = busy)"
           />
         </div>
-        <div v-else aria-hidden="true" class="min-h-0" />
-
-        <GitCommitHistory
-          :class="
-            cn(
-              'min-h-0 min-w-0',
-              commitTreeSectionOpen ? 'h-full' : 'shrink-0',
-              changesSectionOpen && !commitTreeSectionOpen && 'self-end',
-            )
-          "
-          :project-id="props.project.id"
-          :repository-target="activeRepositoryTarget"
-          :open="commitTreeSectionOpen"
-          :disabled="isAnyGitWriteRunning"
-          :selected-commit-hashes="selectedCommitHashes"
-          @update:open="setCommitTreeSectionOpen"
-          @update:selected-commit-hashes="(hashes) => (selectedCommitHashes = hashes)"
-          @review-file="({ commitHash, commitMessage, path }) => handleViewDiff(commitHash, path, commitMessage)"
-          @request-ai="openAiDialog"
-          @feedback="setGitActionResult"
-          @busy-change="(busy) => (isCommitHistoryBusy = busy)"
-        />
       </div>
 
       <div
@@ -1706,20 +1693,35 @@ watch(
       </div>
 
       <div
-        class="@container bg-surface border border-border-subtle rounded-lg overflow-hidden shadow-sm min-h-0 flex min-w-0 flex-col"
+        class="@container flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       >
-        <GitDiffViewer
-          v-if="worktreeSelection || commitReviewSelection"
-          v-model:scroll-top="reviewScrollTop"
-          :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
-          :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
-          :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
-        />
         <div
-          v-else
-          class="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-on-surface-variant"
+          class="flex h-8 shrink-0 min-w-0 items-center justify-end border-b border-border-subtle bg-surface-container-low px-3"
         >
-          从左侧变更列表或提交树展开文件中选择文件。
+          <div class="min-w-0 text-right">
+            <div class="truncate font-mono text-[10px] font-bold text-on-surface">
+              {{ worktreeSelection?.path || commitReviewSelection?.path || "选择文件开始审阅" }}
+            </div>
+            <div v-if="worktreeSelection || commitReviewSelection" class="truncate text-[9px] text-on-surface-variant">
+              {{ worktreeSelection ? worktreeSelection.scope : commitReviewSelection?.commitMessage }}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex min-h-0 flex-1 flex-col">
+          <GitDiffViewer
+            v-if="worktreeSelection || commitReviewSelection"
+            v-model:scroll-top="reviewScrollTop"
+            :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
+            :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
+            :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
+          />
+          <div
+            v-else
+            class="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-on-surface-variant"
+          >
+            从左侧变更列表或提交树展开文件中选择文件。
+          </div>
         </div>
       </div>
     </div>

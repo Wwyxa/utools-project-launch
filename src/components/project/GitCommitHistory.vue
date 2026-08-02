@@ -114,6 +114,7 @@ const props = withDefaults(
     projectId: string;
     repositoryTarget: ProjectGitRepositoryTarget;
     open: boolean;
+    toolbarTarget?: HTMLElement | null;
     disabled?: boolean;
     selectedCommitHashes: string[];
   }>(),
@@ -1417,20 +1418,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section v-bind="$attrs" :class="['flex min-h-0 flex-col', open ? 'flex-1' : 'shrink-0']">
-    <div class="git-section-bar">
-      <button
-        type="button"
-        class="flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-bold text-on-surface"
-        :aria-expanded="open"
-        :title="open ? '收起提交树' : '展开提交树'"
-        :aria-label="open ? '收起提交树' : '展开提交树'"
-        @click="emit('update:open', !open)"
-      >
-        <ChevronDown v-if="open" :size="13" class="shrink-0 text-on-surface-variant" />
-        <ChevronRight v-else :size="13" class="shrink-0 text-on-surface-variant" />
-        <h3 class="min-w-0 truncate">提交树</h3>
-        <span class="shrink-0 font-mono text-[10px] font-semibold text-on-surface-variant">{{ commits.length }}</span>
-      </button>
+    <Teleport v-if="toolbarTarget" :to="toolbarTarget">
       <div class="flex shrink-0 items-center gap-px">
         <span v-if="selectedCommitCount" class="mr-1 font-mono text-[10px] font-semibold text-primary">{{
           selectedCommitCount
@@ -1489,7 +1477,7 @@ onBeforeUnmount(() => {
           <List v-if="commitFileViewMode === 'tree'" :size="13" /><ListTree v-else :size="13" />
         </button>
       </div>
-    </div>
+    </Teleport>
     <div v-show="open" class="relative flex min-h-0 flex-1 flex-col">
       <Transition name="fade">
         <div

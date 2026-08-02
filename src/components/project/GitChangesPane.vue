@@ -56,6 +56,7 @@ const props = withDefaults(
     projectId: string;
     repositoryTarget: ProjectGitRepositoryTarget;
     open: boolean;
+    toolbarTarget?: HTMLElement | null;
     commitMessage: string;
     selection: FileReviewSelection | null;
     disabled?: boolean;
@@ -590,7 +591,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="flex min-h-8 flex-col overflow-hidden">
-    <div class="git-section-bar">
+    <div v-show="!toolbarTarget" class="git-section-bar">
       <button
         type="button"
         class="flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-bold text-on-surface"
@@ -604,30 +605,32 @@ onBeforeUnmount(() => {
         <h3 class="min-w-0 truncate">更改</h3>
         <span class="shrink-0 font-mono text-[10px] font-semibold text-on-surface-variant">{{ files.length }}</span>
       </button>
-      <div class="flex shrink-0 items-center gap-px">
-        <button
-          type="button"
-          class="git-section-action git-section-ai-action"
-          :disabled="disabled || isChangesWriteBusy || commitMessageAiState === 'loading'"
-          :aria-busy="commitMessageAiState === 'loading'"
-          :title="commitMessageAiState === 'loading' ? '正在生成 commit message' : 'AI 生成 commit message'"
-          :aria-label="commitMessageAiState === 'loading' ? '正在生成 commit message' : 'AI 生成 commit message'"
-          @click="generateCommitMessage"
-        >
-          <WandSparkles :size="13" :class="commitMessageAiState === 'loading' ? 'animate-pulse' : ''" />
-        </button>
-        <button
-          type="button"
-          class="git-section-action"
-          :disabled="disabled || isChangesWriteBusy || !hasStagedChanges || !commitMessage.trim()"
-          :aria-busy="activeGitAction === 'commit'"
-          :title="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
-          :aria-label="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
-          @click="handleCommitStaged"
-        >
-          <Check :size="13" :class="activeGitAction === 'commit' ? 'animate-pulse' : ''" :stroke-width="2.5" />
-        </button>
-      </div>
+      <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
+        <div class="flex shrink-0 items-center gap-px">
+          <button
+            type="button"
+            class="git-section-action git-section-ai-action"
+            :disabled="disabled || isChangesWriteBusy || commitMessageAiState === 'loading'"
+            :aria-busy="commitMessageAiState === 'loading'"
+            :title="commitMessageAiState === 'loading' ? '正在生成 commit message' : 'AI 生成 commit message'"
+            :aria-label="commitMessageAiState === 'loading' ? '正在生成 commit message' : 'AI 生成 commit message'"
+            @click="generateCommitMessage"
+          >
+            <WandSparkles :size="13" :class="commitMessageAiState === 'loading' ? 'animate-pulse' : ''" />
+          </button>
+          <button
+            type="button"
+            class="git-section-action"
+            :disabled="disabled || isChangesWriteBusy || !hasStagedChanges || !commitMessage.trim()"
+            :aria-busy="activeGitAction === 'commit'"
+            :title="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
+            :aria-label="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
+            @click="handleCommitStaged"
+          >
+            <Check :size="13" :class="activeGitAction === 'commit' ? 'animate-pulse' : ''" :stroke-width="2.5" />
+          </button>
+        </div>
+      </Teleport>
     </div>
     <div
       v-show="open"
