@@ -12,7 +12,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CircleDot,
   Clock3,
   Cloud,
   CloudDownload,
@@ -25,6 +24,7 @@ import {
   ListTree,
   Pencil,
   Tag,
+  Target,
   Trash2,
   WandSparkles,
   X,
@@ -76,6 +76,7 @@ type ExpandedCommitFilesState = {
 };
 type CommitTooltipState = { commit: ProjectGitCommitSummary; top: number; bottom: number };
 type CommitTooltipDetailsState = {
+  hash: string;
   files: ProjectGitFileChange[] | null;
   isLoadingFiles: boolean;
   filesUnavailable: boolean;
@@ -154,7 +155,7 @@ const commitTooltip = ref<CommitTooltipState | null>(null);
 const pendingCommitTooltip = ref<CommitTooltipState | null>(null);
 const commitTooltipRef = ref<HTMLElement | null>(null);
 const commitTooltipHeight = ref(0);
-const commitTooltipDetails = ref<Record<string, CommitTooltipDetailsState>>({});
+const commitTooltipDetails = ref<CommitTooltipDetailsState | null>(null);
 const commitContextMenu = ref<CommitContextMenuState | null>(null);
 const commitContextMenuRef = ref<HTMLElement | null>(null);
 const commitSubmenu = ref<CommitSubmenuState | null>(null);
@@ -429,14 +430,7 @@ const toggleCommitFileViewMode = () => {
 const graphRowPaddingX = 4;
 const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
 const rowPitch = rowHeight + rowGap;
-const graphLayout = computed(() =>
-  layoutGitCommitGraph(commits.value, {
-    expandedRowHeights: Object.fromEntries(
-      commits.value.map((commit) => [commit.hash, expandedCommitFilesHeight(commit.hash)]),
-    ),
-  }),
-);
-const graphStrokeColors = ["#0ea5e9", "#e91e9d", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16"];
+const graphStrokeColors = ["#2563eb", "#d97706", "#db2777", "#0f766e", "#7c3aed"];
 const graphStrokeColor = (index: number) => graphStrokeColors[index % graphStrokeColors.length] || graphStrokeColors[0];
 const graphNodeX = (lane: number) =>
   GIT_COMMIT_GRAPH_GEOMETRY.paddingX +
@@ -467,6 +461,52 @@ const graphSegmentPathData = (segment: GitCommitGraphSegment) => {
         : "vertical";
   return graphPathData(segment.from.x, segment.from.y, segment.to.x, segment.to.y, mode);
 };
+const graphReferences = computed(() => {
+  const references: { name: string; colorIndex: number }[] = [];
+  const currentSnapshot = snapshot.value;
+  if (!currentSnapshot) return references;
+  if (currentSnapshot.isDetachedHead) references.push({ name: "HEAD", colorIndex: 0 });
+  else if (currentSnapshot.branch) references.push({ name: currentSnapshot.branch, colorIndex: 0 });
+  if (currentSnapshot.upstream?.ref) references.push({ name: currentSnapshot.upstream.ref, colorIndex: 2 });
+  if (currentSnapshot.base?.ref) references.push({ name: currentSnapshot.base.ref, colorIndex: 1 });
+  return references.filter(
+    (reference, index) => references.findIndex((candidate) => candidate.name === reference.name) === index,
+  );
+});
+const graphColorByRefName = computed(() => {
+  const colors: Record<string, number> = {};
+  for (const reference of graphReferences.value) {
+    colors[reference.name] = reference.colorIndex;
+  }
+  return colors;
+});
+const graphCommitColorByHash = computed(() => {
+  const colors: Record<string, number> = {};
+  for (const commit of commits.value) {
+    const refs = presentGitCommitRefs(commit, {
+      branch: snapshot.value?.branch,
+      headHash: snapshot.value?.headHash,
+      isDetachedHead: snapshot.value?.isDetachedHead,
+      branches: snapshot.value?.branches,
+      remotes: snapshot.value?.remotes,
+      upstream: snapshot.value?.upstream,
+      base: snapshot.value?.base,
+    }).full;
+    const reference = graphReferences.value.find((candidate) => refs.some((ref) => ref.name === candidate.name));
+    if (reference) {
+      colors[commit.hash] = reference.colorIndex;
+    }
+  }
+  return colors;
+});
+const graphLayout = computed(() =>
+  layoutGitCommitGraph(commits.value, {
+    expandedRowHeights: Object.fromEntries(
+      commits.value.map((commit) => [commit.hash, expandedCommitFilesHeight(commit.hash)]),
+    ),
+    colorIndexByCommitHash: graphCommitColorByHash.value,
+  }),
+);
 const graphRows = computed(() => graphLayout.value.rows);
 const graphPaths = computed(() =>
   graphRows.value.flatMap((row) =>
@@ -477,13 +517,18 @@ const graphPaths = computed(() =>
   ),
 );
 const graphNodes = computed(() =>
-  graphRows.value.map((row) => ({
-    hash: row.commit.hash,
-    x: graphNodeX(row.nodeLane),
-    y: row.y,
-    color: graphStrokeColor(row.nodeColorIndex),
-    isHead: isHeadCommit(row.commit),
-  })),
+  graphRows.value.map((row) => {
+    const refs = commitRefPresentation(row.commit).full;
+    const isHead = refs.some((ref) => ref.isCurrentHead);
+    return {
+      hash: row.commit.hash,
+      x: graphNodeX(row.nodeLane),
+      y: row.y,
+      color: graphStrokeColor(row.nodeColorIndex),
+      isHead,
+      isMerge: row.isMerge,
+    };
+  }),
 );
 const graphCanvasWidth = computed(() => graphLayout.value.canvasWidth);
 const graphContentHeight = computed(() => graphLayout.value.height);
@@ -498,16 +543,15 @@ const graphRowMinWidth = (row: GitCommitGraphRow) => `max(16rem, calc(${row.grap
 const graphCanvasMinWidth = computed(() => `max(16rem, calc(${graphCanvasWidth.value}px + 14rem + 9px))`);
 
 const refBadgeBaseClass = "git-ref-badge";
-const isPrimaryBranchRef = (name: string) => name === "main" || name === "master";
 const refPresentation = (ref: GitCommitRefPresentationMember) => {
   if (ref.kind === "head") {
     return {
       refName: ref.name,
       label: ref.label,
       title: ref.title,
-      icon: CircleDot as Component,
+      icon: Target as Component,
       isHead: true,
-      className: cn(refBadgeBaseClass, "border-primary/70 bg-primary/10 text-primary"),
+      className: cn(refBadgeBaseClass, "git-ref-badge--current", "border-primary/70 bg-primary/10 text-primary"),
     };
   }
   if (ref.kind === "tag") {
@@ -535,12 +579,12 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
       refName: ref.name,
       label: ref.label,
       title: ref.title,
-      icon: GitBranch as Component,
-      isHead: false,
+      icon: (ref.isCurrentHead ? Target : GitBranch) as Component,
+      isHead: ref.isCurrentHead,
       className: cn(
         refBadgeBaseClass,
-        isPrimaryBranchRef(ref.label)
-          ? "border-status-running/35 bg-status-running/10 text-status-running"
+        ref.isCurrentHead
+          ? "git-ref-badge--current border-primary/70 bg-primary/10 text-primary"
           : "border-status-warning/35 bg-status-warning/10 text-status-warning",
       ),
     };
@@ -554,23 +598,35 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
     className: cn(refBadgeBaseClass, "border-border-subtle bg-surface-container-low text-on-surface-variant"),
   };
 };
+const refGraphAccentStyle = (ref: GitCommitRefPresentationMember) => {
+  if (ref.graphColorIndex === undefined) return undefined;
+  const color = graphStrokeColor(ref.graphColorIndex);
+  return { "--git-ref-graph-color": color };
+};
 const commitRefPresentation = (commit: ProjectGitCommitSummary) =>
   presentGitCommitRefs(commit, {
     branch: snapshot.value?.branch,
     headHash: snapshot.value?.headHash,
+    isDetachedHead: snapshot.value?.isDetachedHead,
     branches: snapshot.value?.branches,
     remotes: snapshot.value?.remotes,
     upstream: snapshot.value?.upstream,
+    base: snapshot.value?.base,
+    graphColorByRefName: graphColorByRefName.value,
   });
-const refPresentations = (commit: ProjectGitCommitSummary) => commitRefPresentation(commit).full.map(refPresentation);
+const refPresentations = (commit: ProjectGitCommitSummary) =>
+  commitRefPresentation(commit).full.map((ref) => ({
+    ...refPresentation(ref),
+    graphAccentStyle: refGraphAccentStyle(ref),
+  }));
 const compactCommitRefPresentations = (commit: ProjectGitCommitSummary) =>
   commitRefPresentation(commit).dense.members.map((ref) => ({
     ...refPresentation(ref),
     kind: ref.kind,
     showLabel: ref.display === "label",
+    count: ref.memberNames.length,
+    graphAccentStyle: refGraphAccentStyle(ref),
   }));
-const isHeadCommit = (commit: ProjectGitCommitSummary) =>
-  commitRefPresentation(commit).full.some((ref) => ref.isCurrentHead);
 const commitHashMatches = (left?: string, right?: string) =>
   Boolean(left && right && (left === right || left.startsWith(right) || right.startsWith(left)));
 const isCommitDetachedHead = (commit: ProjectGitCommitSummary) =>
@@ -630,7 +686,10 @@ const tooltipStyle = computed(() => {
     maxHeight: `${maxHeight}px`,
   };
 });
-const tooltipDetailsFor = (hash: string) => commitTooltipDetails.value[hash] || null;
+const tooltipDetailsFor = (hash: string) => {
+  const details = commitTooltipDetails.value;
+  return details?.hash === hash ? details : null;
+};
 const tooltipSummary = (commit: ProjectGitCommitSummary): CommitTooltipSummary => {
   if (hasUsableGitCommitShortStats(commit.shortStats))
     return {
@@ -779,23 +838,26 @@ const tooltipTitle = (commit: ProjectGitCommitSummary) => {
 };
 const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
   const repositoryContext = context.value;
-  if (!repositoryContext || commitTooltipDetails.value[commit.hash]) return;
+  if (
+    !repositoryContext ||
+    (commitTooltipDetails.value?.hash === commit.hash &&
+      commitTooltipDetails.value.contextKey === repositoryContext.contextKey)
+  )
+    return;
   const requestGeneration = ++commitTooltipDetailsRequestGeneration;
   const contextGeneration = commitTooltipDetailsContextGeneration;
   const contextKey = repositoryContext.contextKey;
   const hasPreloadedStats = hasUsableGitCommitShortStats(commit.shortStats);
   commitTooltipDetails.value = {
-    ...commitTooltipDetails.value,
-    [commit.hash]: {
-      files: null,
-      isLoadingFiles: !hasPreloadedStats,
-      filesUnavailable: hasPreloadedStats,
-      avatarUrl: null,
-      isLoadingAvatar: true,
-      requestGeneration,
-      contextGeneration,
-      contextKey,
-    },
+    hash: commit.hash,
+    files: null,
+    isLoadingFiles: !hasPreloadedStats,
+    filesUnavailable: hasPreloadedStats,
+    avatarUrl: null,
+    isLoadingAvatar: true,
+    requestGeneration,
+    contextGeneration,
+    contextKey,
   };
   const details = loadGitCommitTooltipSessionDetails(contextKey, commit.hash, {
     preloadedShortStats: commit.shortStats,
@@ -805,42 +867,40 @@ const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
     loadAvatar: () => store.readGitCommitAuthorAvatar(props.projectId, commit.hash, props.repositoryTarget),
   });
   void details.files.then((result) => {
-    const state = commitTooltipDetails.value[commit.hash];
+    const state = commitTooltipDetails.value;
     if (
       !state ||
+      state.hash !== commit.hash ||
       state.requestGeneration !== requestGeneration ||
       state.contextGeneration !== contextGeneration ||
       state.contextKey !== contextKey
     )
       return;
     commitTooltipDetails.value = {
-      ...commitTooltipDetails.value,
-      [commit.hash]: { ...state, files: result.files, isLoadingFiles: false, filesUnavailable: result.unavailable },
+      ...state,
+      files: result.files,
+      isLoadingFiles: false,
+      filesUnavailable: result.unavailable,
     };
   });
   void details.avatar.then((result) => {
-    const state = commitTooltipDetails.value[commit.hash];
+    const state = commitTooltipDetails.value;
     if (
       !state ||
+      state.hash !== commit.hash ||
       state.requestGeneration !== requestGeneration ||
       state.contextGeneration !== contextGeneration ||
       state.contextKey !== contextKey
     )
       return;
-    commitTooltipDetails.value = {
-      ...commitTooltipDetails.value,
-      [commit.hash]: { ...state, avatarUrl: result.avatarUrl, isLoadingAvatar: false },
-    };
+    commitTooltipDetails.value = { ...state, avatarUrl: result.avatarUrl, isLoadingAvatar: false };
   });
 };
 const markCommitAvatarUnavailable = (hash: string) => {
-  const state = commitTooltipDetails.value[hash];
-  if (!state) return;
+  const state = commitTooltipDetails.value;
+  if (!state || state.hash !== hash) return;
   markGitCommitTooltipSessionAvatarUnavailable(state.contextKey, hash);
-  commitTooltipDetails.value = {
-    ...commitTooltipDetails.value,
-    [hash]: { ...state, avatarUrl: null, isLoadingAvatar: false },
-  };
+  commitTooltipDetails.value = { ...state, avatarUrl: null, isLoadingAvatar: false };
 };
 const measureCommitTooltip = () => {
   if (commitTooltipRef.value)
@@ -1287,7 +1347,7 @@ const clearHistoryState = () => {
   commitFilesContextGeneration += 1;
   commitTooltipDetailsContextGeneration += 1;
   clearExpandedCommitFiles();
-  commitTooltipDetails.value = {};
+  commitTooltipDetails.value = null;
   closeHistoryFloatingControls();
   disconnectLoadMoreObserver();
 };
@@ -1701,25 +1761,35 @@ onBeforeUnmount(() => {
                 :d="path.d"
                 :stroke="path.color"
                 fill="none"
-                stroke-width="2.2"
+                stroke-width="1.8"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               />
-              <circle
-                v-for="node in graphNodes"
-                :key="node.hash"
-                :cx="node.x"
-                :cy="node.y"
-                :r="node.isHead ? 4.8 : 3.9"
-                :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
-                :stroke="node.color"
-                :stroke-width="node.isHead ? 2.5 : 1.5"
-              />
+              <g v-for="node in graphNodes" :key="node.hash">
+                <circle
+                  v-if="node.isHead || node.isMerge"
+                  :cx="node.x"
+                  :cy="node.y"
+                  :r="node.isHead ? 6.8 : 6.1"
+                  :fill="node.color"
+                  stroke="var(--color-surface-container-lowest)"
+                  stroke-width="1.6"
+                />
+                <circle
+                  :cx="node.x"
+                  :cy="node.y"
+                  :r="node.isHead ? 3 : node.isMerge ? 2.5 : 4.2"
+                  :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
+                  stroke="var(--color-surface-container-lowest)"
+                  :stroke-width="node.isHead || node.isMerge ? 1.3 : 1.6"
+                />
+              </g>
             </svg>
             <template v-for="(row, rowIndex) in graphRows" :key="row.commit.hash">
               <div
                 role="button"
                 tabindex="0"
+                v-memo="[row, isCommitSelected(row.commit.hash), expandedCommitFiles[row.commit.hash]]"
                 :aria-expanded="isCommitFilesExpanded(row.commit.hash)"
                 :aria-controls="`git-commit-files-${row.commit.hash}`"
                 :class="
@@ -1743,32 +1813,48 @@ onBeforeUnmount(() => {
                 @mouseleave="scheduleCommitTooltipClose"
               >
                 <div class="col-start-2 min-w-0 self-stretch py-px">
-                  <div class="flex min-w-0 items-center gap-1.5 leading-4">
-                    <span class="min-w-0 truncate text-[11px] font-semibold text-on-surface">{{
-                      row.commit.message
-                    }}</span
-                    ><span
-                      v-for="ref in compactCommitRefPresentations(row.commit)"
-                      :key="`${row.commit.hash}-${ref.kind}-${ref.refName}`"
-                      :class="cn(ref.className, !ref.showLabel && 'h-[18px] w-[18px] justify-center px-0')"
-                      :title="ref.title"
-                      ><component
-                        v-if="ref.icon"
-                        :is="ref.icon"
-                        :size="10"
-                        :stroke-width="2.25"
-                        aria-hidden="true"
-                      /><span v-if="ref.showLabel" class="min-w-0 truncate">{{ ref.label }}</span></span
-                    >
-                  </div>
-                  <div
-                    class="dark-readable-meta mt-0 flex min-w-0 items-center gap-1 text-[9px] font-medium leading-3 text-on-surface-variant/75"
-                  >
-                    <span class="min-w-0 truncate">{{ row.commit.author }}</span
-                    ><span v-if="formatCommitTime(row.commit.date).text" aria-hidden="true">·</span
-                    ><span v-if="formatCommitTime(row.commit.date).text" class="shrink-0">{{
-                      formatCommitTime(row.commit.date).text
-                    }}</span>
+                  <div class="flex min-w-0 items-stretch gap-1.5">
+                    <div class="min-w-0 flex-1 py-px">
+                      <span class="block min-w-0 truncate text-[11px] font-semibold leading-4 text-on-surface">{{
+                        row.commit.message
+                      }}</span>
+                      <div
+                        class="dark-readable-meta mt-0 flex min-w-0 items-center gap-1 text-[9px] font-medium leading-3 text-on-surface-variant/75"
+                      >
+                        <span class="min-w-0 truncate">{{ row.commit.author }}</span
+                        ><span v-if="formatCommitTime(row.commit.date).text" aria-hidden="true">·</span
+                        ><span v-if="formatCommitTime(row.commit.date).text" class="shrink-0">{{
+                          formatCommitTime(row.commit.date).text
+                        }}</span>
+                      </div>
+                    </div>
+                    <div class="flex shrink-0 items-stretch gap-1 py-0.5">
+                      <span
+                        v-for="ref in compactCommitRefPresentations(row.commit)"
+                        :key="`${row.commit.hash}-${ref.kind}-${ref.refName}`"
+                        :class="
+                          cn(
+                            ref.className,
+                            'git-ref-badge--history',
+                            ref.graphAccentStyle && 'git-ref-badge--graph-linked',
+                            ref.showLabel && 'git-ref-badge--dense-label',
+                            !ref.showLabel && 'w-[18px] justify-center px-0',
+                          )
+                        "
+                        :style="ref.graphAccentStyle"
+                        :title="ref.title"
+                        ><span v-if="!ref.showLabel && ref.count > 1" class="text-[8px] leading-none">{{
+                          ref.count
+                        }}</span
+                        ><component
+                          v-if="ref.icon"
+                          :is="ref.icon"
+                          :size="10"
+                          :stroke-width="2.25"
+                          aria-hidden="true"
+                        /><span v-if="ref.showLabel" class="min-w-0 truncate">{{ ref.label }}</span></span
+                      >
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1989,9 +2075,12 @@ onBeforeUnmount(() => {
           <span
             v-for="ref in refPresentations(commitTooltip.commit)"
             :key="`tooltip-${ref.refName}`"
-            :class="ref.className"
+            :class="cn(ref.className, 'git-ref-badge--tooltip', ref.graphAccentStyle && 'git-ref-badge--graph-linked')"
+            :style="ref.graphAccentStyle"
             :title="ref.title"
-            ><component v-if="ref.icon" :is="ref.icon" :size="10" /><span class="truncate">{{ ref.label }}</span></span
+            ><component v-if="ref.icon" :is="ref.icon" :size="10" /><span class="git-ref-badge__tooltip-label">{{
+              ref.label
+            }}</span></span
           >
         </div>
       </div>

@@ -643,6 +643,7 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
     branches: snapshot.branches || [],
     remotes: snapshot.remotes || [],
     upstream: snapshot.upstream || null,
+    base: snapshot.base || null,
     hasMoreCommits: snapshot.hasMoreCommits || false,
     repositoryPath: snapshot.repositoryPath || "",
     lastRefreshedAt: snapshot.lastRefreshedAt || new Date().toISOString(),
@@ -665,6 +666,7 @@ function mergeGitStatusSnapshot(
     branches: statusSnapshot.branches || currentSnapshot?.branches || [],
     remotes: statusSnapshot.remotes || currentSnapshot?.remotes || [],
     upstream: statusSnapshot.upstream || null,
+    base: statusSnapshot.base || null,
     hasMoreCommits: currentSnapshot?.hasMoreCommits || false,
     repositoryPath: statusSnapshot.repositoryPath || currentSnapshot?.repositoryPath || "",
     lastRefreshedAt: statusSnapshot.lastRefreshedAt || new Date().toISOString(),
@@ -2609,10 +2611,7 @@ export const useStore = defineStore("app", {
       gitStatusRefreshPromises.set(context.contextKey, refreshPromise);
       return refreshPromise;
     },
-    async loadMoreGitCommits(
-      projectId: string,
-      target: ProjectGitRepositoryTarget = { kind: "main" },
-    ): Promise<void> {
+    async loadMoreGitCommits(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }): Promise<void> {
       const context = this.resolveGitRepositoryContext(projectId, target);
       if (!context) return;
       const snapshotRefresh = gitSnapshotRefreshPromises.get(context.contextKey);

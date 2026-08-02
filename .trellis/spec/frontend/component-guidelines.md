@@ -421,11 +421,17 @@ return `${firstSize}px ${separatorSize}px minmax(0, 0.71fr)`;
 
 **Ref Classification Rule**: Parse each `git log --decorate=short` ref through one presentation helper shared by the dense row and its tooltip. Prefer structured `refNames`; use comma-splitting only as a legacy fallback. A current-HEAD node is only an exact `HEAD` ref or `HEAD -> <non-empty branch>`; never use `refs.includes("HEAD")`, because historical symbolic refs such as `remote/HEAD` or `fork/HEAD` would otherwise receive the current-HEAD node style. For legacy refs, classify tags first, then exact known local branch names, then configured/prefix-matched remotes; this preserves a valid local branch such as `origin/topic`. Only a known local `main` or `master` gets the primary-local variant; an unrecognized string must stay neutral rather than being guessed as a local branch.
 
-**Compact Ref Badge Rule**: Keep the tooltip's full ref presentation, but compact multiple refs in the dense row. When the HEAD badge already names the current local branch, omit the duplicate local badge with the same label. A single remote ref must keep its cloud icon and branch label. When a commit has multiple remote refs, keep one representative remote as a full badge and render each additional remote as its own icon-only cloud badge with its own native title; do not merge or discard them. Prefer a real branch over a symbolic `*/HEAD` ref as the representative and place it first. Keep the current HEAD (or the highest-priority non-remote ref when no HEAD exists) and the primary remote labeled; render remaining local, tag, and remote refs as individual icon badges with titles so the subject keeps usable width. Keep tags and unrelated local branches visible because they carry distinct information. A fixture containing only remote `origin/develop` must render its full label. A fixture containing HEAD `master`, local `master`, `origin/HEAD`, `origin/master`, and tag `master` must render four dense-row badges (HEAD, full `origin/master`, icon-only `origin/HEAD`, and tag), while its tooltip still renders all five refs.
+**Compact Ref Badge Rule**: `presentGitCommitRefs(...)` owns both surfaces. Its `full` list retains every structured local, remote, tag, and detached HEAD reference for the tooltip. Its `dense` list first folds an attached `HEAD -> branch` into the matching local branch, then renders one primary label and icon-only companions. Never filter a dense ref merely because it has no graph color: old merged branches, tags, and symbolic remote refs still carry useful information.
+
+Choose the primary label from the first graph-colored ref in priority order, then fall back to the current HEAD or the first non-tag ref. Group the remaining icon-only refs by graph color plus ref kind; show one icon with a count for every group with multiple members. This follows the VS Code history model of one readable badge plus compact color/icon groups without making the dense row discard the tooltip's information. A fixture with `remote/master`, `master`, and `remote/HEAD` must render one label and two icon-only badges when their group keys differ. A single old local branch without a graph color must still render a label.
 
 ```ts
-const primaryRemote = remoteRefs.find((ref) => !ref.refName.endsWith("/HEAD")) || remoteRefs[0];
-const showLabel = remote === primaryRemote;
+const primary =
+  full.find((ref) => ref.graphColorIndex !== undefined) ??
+  full.find((ref) => ref.isCurrentHead) ??
+  full.find((ref) => ref.kind !== "tag");
+
+const groupKey = `${ref.graphColorIndex ?? "none"}:${ref.kind}`;
 ```
 
 ```ts
@@ -567,6 +573,8 @@ const handleCommitRowClick = (event: MouseEvent, hash: string) => {
 
 - Render rich commit tooltips with a `Teleport` to `body` so nested Git panel `overflow` rules do not clip the floating layer.
 - Use a short hover delay before showing the tooltip. Current Git history uses about `450ms`.
+- Cache settled and in-flight detail promises by repository context plus full commit hash in the renderer session, with a fixed capacity. Keep only the currently visible commit's detail state reactive in `GitCommitHistory.vue`; do not grow a component-local `Record<hash, details>` for every commit the pointer has visited.
+- Keep stable history-row subtrees behind `v-memo` keyed by the graph row, selected state, and expanded-file state. Tooltip pending/detail changes must not reconcile badge and metadata DOM for every loaded commit row.
 - Keep row text compact; retain only a subdued author and relative-time line, while full hash, absolute time, markdown body, and summary stay in the preview.
 - Put a short hash at the start of the preview footer, before the change summary. The hash text itself is the copy control: it copies the full hash with `@click.stop`; do not add a separate copy icon or a message-copy button.
 - Store the hovered commit object and trigger row bounds (`top` / `bottom`), not only precomputed text. The preview needs `message`, `body`, `author`, `date`, and `refs` to build its content.

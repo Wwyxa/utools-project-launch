@@ -85,6 +85,7 @@ const gitSnapshot = (repositoryPath: string, branch: string, hash = "c".repeat(4
   branches: [],
   remotes: [],
   upstream: null,
+  base: null,
   hasMoreCommits: false,
   repositoryPath,
   lastRefreshedAt: "2026-07-19T10:00:00.000Z",
@@ -487,10 +488,7 @@ describe("browser Git workspace fallback", () => {
     await loadMore;
 
     expect(readGitCommits).toHaveBeenCalledWith(projectPath, { limit: 80, skip: 1 });
-    expect(project.git?.commits.map((commit) => commit.hash)).toEqual([
-      freshSnapshot.commits[0].hash,
-      freshPage.hash,
-    ]);
+    expect(project.git?.commits.map((commit) => commit.hash)).toEqual([freshSnapshot.commits[0].hash, freshPage.hash]);
   });
 
   it("isolates full snapshots and deduplication by repository context", async () => {

@@ -1,10 +1,15 @@
-import type { ProjectGitCommitRef, ProjectGitCommitRefKind, ProjectGitCommitSummary, ProjectGitSnapshot } from "../types";
+import type {
+  ProjectGitCommitRef,
+  ProjectGitCommitRefKind,
+  ProjectGitCommitSummary,
+  ProjectGitSnapshot,
+} from "../types";
 
 export type GitCommitRefPresentationKind = ProjectGitCommitRefKind | "unknown";
 export type GitCommitRefDenseDisplay = "label" | "icon";
 
 export type GitCommitRefPresentationContext = Partial<
-  Pick<ProjectGitSnapshot, "branch" | "headHash" | "branches" | "remotes" | "upstream">
+  Pick<ProjectGitSnapshot, "branch" | "headHash" | "isDetachedHead" | "branches" | "remotes" | "upstream" | "base">
 > & {
   graphColorByRefName?: Readonly<Record<string, number>>;
 };
@@ -18,8 +23,8 @@ export interface GitCommitRefPresentationMember {
   priority: number;
   order: number;
   isCurrentHead: boolean;
-  isHeadTarget: boolean;
   isCurrentUpstream: boolean;
+  isCurrentBase: boolean;
   graphColorIndex?: number;
   groupKey: string;
 }
@@ -40,11 +45,16 @@ export interface GitCommitRefPresentation {
   dense: GitCommitRefDensePresentation;
 }
 
-type SourceRef = Pick<ProjectGitCommitRef, "name"> & Partial<Pick<ProjectGitCommitRef, "kind">>;
-type Candidate = Omit<GitCommitRefPresentationMember, "order" | "isHeadTarget"> & { sourceIndex: number };
+type SourceRef = Pick<ProjectGitCommitRef, "name"> & Partial<Pick<ProjectGitCommitRef, "kind" | "head">>;
+type Candidate = Omit<GitCommitRefPresentationMember, "priority" | "order" | "isCurrentHead"> & {
+  sourceIndex: number;
+  current: boolean;
+  isHeadReference: boolean;
+};
 
 const isExactHeadReference = (name: string) => name === "HEAD" || /^HEAD ->\s+\S+$/.test(name);
-const refLabel = (name: string) => (isExactHeadReference(name) && name !== "HEAD" ? name.replace(/^HEAD ->\s*/, "").trim() : name);
+const refLabel = (name: string) =>
+  isExactHeadReference(name) && name !== "HEAD" ? name.replace(/^HEAD ->\s*/, "").trim() : name;
 const compareNames = (left: string, right: string) => (left === right ? 0 : left < right ? -1 : 1);
 const normalizeRemoteRefName = (name: string) => name.replace(/^refs\/remotes\//, "");
 const hashesMatch = (left: string, right: string) => left === right || left.startsWith(right) || right.startsWith(left);
@@ -68,7 +78,8 @@ const refKind = (ref: SourceRef, context: GitCommitRefPresentationContext): GitC
   if (ref.kind) return ref.kind;
   if (isExactHeadReference(ref.name)) return "head";
   if (ref.name.startsWith("tag:")) return "tag";
-  if (context.branch === ref.name || (context.branches || []).some((branch) => branch.name === ref.name)) return "local";
+  if (context.branch === ref.name || (context.branches || []).some((branch) => branch.name === ref.name))
+    return "local";
   if (isRemoteReference(ref.name, context)) return "remote";
   return "unknown";
 };
@@ -79,6 +90,11 @@ const upstreamRefNames = (context: GitCommitRefPresentationContext) => {
   return new Set([upstream.ref, `${upstream.remote}/${upstream.branch}`].filter(Boolean).map(normalizeRemoteRefName));
 };
 
+const baseRefNames = (context: GitCommitRefPresentationContext) => {
+  const base = context.base;
+  return new Set([base?.ref, base && `${base.remote}/${base.branch}`].filter(Boolean).map(normalizeRemoteRefName));
+};
+
 const remainingPriority = (kind: GitCommitRefPresentationKind) => {
   if (kind === "local") return 3;
   if (kind === "remote") return 4;
@@ -86,12 +102,30 @@ const remainingPriority = (kind: GitCommitRefPresentationKind) => {
   return 6;
 };
 
-const denseMember = (member: GitCommitRefPresentationMember, display: GitCommitRefDenseDisplay): GitCommitRefDenseMember => ({
-  ...member,
-  display,
-  memberNames: [member.name],
-  memberTitles: [member.title],
-});
+const denseMember = (
+  source: readonly GitCommitRefPresentationMember[],
+  display: GitCommitRefDenseDisplay,
+): GitCommitRefDenseMember => {
+  const member = source[0];
+  if (!member) throw new Error("A dense Git reference group must contain a member.");
+  const memberNames = source.map((candidate) => candidate.name);
+  const memberTitles = source.map((candidate) => candidate.title);
+  return {
+    ...member,
+    title: memberTitles.join("\n"),
+    display,
+    memberNames,
+    memberTitles,
+  };
+};
+
+const candidatePriority = (candidate: Candidate & Pick<GitCommitRefPresentationMember, "isCurrentHead">) => {
+  if (candidate.isCurrentHead) return 0;
+  if (candidate.isCurrentUpstream) return 1;
+  if (candidate.isCurrentBase) return 2;
+  if (candidate.graphColorIndex !== undefined) return 3;
+  return remainingPriority(candidate.kind) + 1;
+};
 
 export const presentGitCommitRefs = (
   commit: ProjectGitCommitSummary,
@@ -99,63 +133,81 @@ export const presentGitCommitRefs = (
 ): GitCommitRefPresentation => {
   const refs: SourceRef[] = commit.refNames === undefined ? legacyRefs(commit.refs) : commit.refNames;
   const upstreamNames = upstreamRefNames(context);
+  const baseNames = baseRefNames(context);
+  const currentCommit = !context.headHash || hashesMatch(context.headHash, commit.hash);
   const candidates: Candidate[] = refs.map((ref, sourceIndex) => {
     const kind = refKind(ref, context);
-    const isCurrentHead =
-      kind === "head" && isExactHeadReference(ref.name) && (!context.headHash || hashesMatch(context.headHash, commit.hash));
+    const label = refLabel(ref.name);
+    const isHeadReference = kind === "head" && isExactHeadReference(ref.name) && currentCommit;
     const isCurrentUpstream = kind === "remote" && upstreamNames.has(normalizeRemoteRefName(ref.name));
+    const isCurrentBase = kind === "remote" && baseNames.has(normalizeRemoteRefName(ref.name));
     const possibleGraphColorIndex = context.graphColorByRefName?.[ref.name];
     const graphColorIndex =
-      typeof possibleGraphColorIndex === "number" && Number.isFinite(possibleGraphColorIndex) ? possibleGraphColorIndex : undefined;
-    const priority = isCurrentHead ? 0 : isCurrentUpstream ? 1 : graphColorIndex === undefined ? remainingPriority(kind) : 2;
+      typeof possibleGraphColorIndex === "number" && Number.isFinite(possibleGraphColorIndex)
+        ? possibleGraphColorIndex
+        : undefined;
 
     return {
       kind,
       name: ref.name,
       identity: `${kind}:${ref.name}`,
-      label: refLabel(ref.name),
+      label,
       title: ref.name,
-      priority,
-      isCurrentHead,
       isCurrentUpstream,
+      isCurrentBase,
       graphColorIndex,
       groupKey: `${graphColorIndex ?? "none"}:${kind}`,
       sourceIndex,
+      current: Boolean(ref.head),
+      isHeadReference,
     };
   });
-  const sortedCandidates = candidates.sort(
-    (left, right) => left.priority - right.priority || compareNames(left.name, right.name) || left.sourceIndex - right.sourceIndex,
+  const headReference = candidates.find((candidate) => candidate.isHeadReference);
+  const headTarget =
+    !context.isDetachedHead && currentCommit
+      ? candidates.find(
+          (candidate) =>
+            candidate.kind === "local" &&
+            (candidate.current || candidate.label === headReference?.label || candidate.label === context.branch),
+        )
+      : undefined;
+  const sortedCandidates = candidates
+    .filter((candidate) => candidate !== headReference || !headTarget)
+    .map((candidate) => ({
+      ...candidate,
+      isCurrentHead: candidate === headTarget || (!headTarget && candidate.isHeadReference),
+    }))
+    .map((candidate) => ({ ...candidate, priority: candidatePriority(candidate) }))
+    .sort(
+      (left, right) =>
+        left.priority - right.priority || compareNames(left.name, right.name) || left.sourceIndex - right.sourceIndex,
+    );
+  const full = sortedCandidates.map(
+    ({ sourceIndex: _sourceIndex, current: _current, isHeadReference: _isHeadReference, ...member }, order) => ({
+      ...member,
+      order,
+    }),
   );
-  const currentHeadLabel = sortedCandidates.find((member) => member.isCurrentHead)?.label;
-  const full = sortedCandidates.map(({ sourceIndex: _sourceIndex, ...member }, order) => ({
-    ...member,
-    order,
-    isHeadTarget: member.kind === "local" && member.label === currentHeadLabel,
-  }));
-  const hiddenMembers = full.filter(
-    (member) => member.kind === "local" && currentHeadLabel !== undefined && member.label === currentHeadLabel,
-  );
-  const denseSource = full.filter((member) => !hiddenMembers.includes(member));
-  const primaryNonRemote =
-    denseSource.find((member) => member.isCurrentHead) ?? denseSource.find((member) => member.kind !== "remote");
-  const remoteMembers = denseSource.filter((member) => member.kind === "remote");
-  const firstRemote = remoteMembers[0];
-  const primaryRemote = remoteMembers.find((member) => !member.name.endsWith("/HEAD")) || firstRemote;
-  const orderedRemoteMembers = primaryRemote
-    ? [primaryRemote, ...remoteMembers.filter((member) => member !== primaryRemote)]
-    : [];
   const members: GitCommitRefDenseMember[] = [];
-
-  for (const member of denseSource) {
-    if (member.kind !== "remote") {
-      members.push(denseMember(member, member === primaryNonRemote ? "label" : "icon"));
-      continue;
-    }
-    if (member !== firstRemote) continue;
-    for (const remote of orderedRemoteMembers) {
-      members.push(denseMember(remote, remote === primaryRemote ? "label" : "icon"));
-    }
+  let remaining = full.slice();
+  const firstColored = remaining.find((member) => member.graphColorIndex !== undefined);
+  const primary =
+    firstColored ??
+    remaining.find((member) => member.isCurrentHead) ??
+    remaining.find((member) => member.kind !== "tag");
+  if (primary) {
+    members.push(denseMember([primary], "label"));
+    remaining = remaining.filter((member) => member !== primary);
+  }
+  const groups = new Map<string, GitCommitRefPresentationMember[]>();
+  for (const member of remaining) {
+    const group = groups.get(member.groupKey);
+    if (group) group.push(member);
+    else groups.set(member.groupKey, [member]);
+  }
+  for (const group of groups.values()) {
+    members.push(denseMember(group, "icon"));
   }
 
-  return { full, dense: { members, hiddenMembers } };
+  return { full, dense: { members, hiddenMembers: [] } };
 };

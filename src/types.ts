@@ -370,6 +370,12 @@ export interface ProjectGitUpstreamSummary {
   behind: number;
 }
 
+export interface ProjectGitBaseSummary {
+  remote: string;
+  branch: string;
+  ref: string;
+}
+
 export type ProjectGitActionBlockReason = "dirty-worktree" | "unmerged-branch";
 
 export interface ProjectGitActionResult {
@@ -436,6 +442,7 @@ export interface ProjectGitSnapshot {
   branches?: ProjectGitBranchSummary[];
   remotes?: ProjectGitRemoteSummary[];
   upstream?: ProjectGitUpstreamSummary | null;
+  base?: ProjectGitBaseSummary | null;
   hasMoreCommits?: boolean;
   repositoryPath: string;
   lastRefreshedAt: string;
@@ -452,6 +459,7 @@ export interface ProjectGitStatusSnapshot {
   branches?: ProjectGitBranchSummary[];
   remotes?: ProjectGitRemoteSummary[];
   upstream?: ProjectGitUpstreamSummary | null;
+  base?: ProjectGitBaseSummary | null;
   repositoryPath: string;
   lastRefreshedAt: string;
   statusText: string;

@@ -3,8 +3,8 @@ import type { ProjectGitCommitSummary } from "../types";
 /** Geometry shared by the layout calculation and its future renderer. */
 export const GIT_COMMIT_GRAPH_GEOMETRY = {
   laneWidth: 14,
-  paddingX: 3,
-  minimumWidth: 28,
+  paddingX: 2,
+  minimumWidth: 24,
   rowHeight: 32,
   rowGap: 1,
 } as const;
@@ -48,6 +48,7 @@ export interface GitCommitGraphRow {
   outputLanes: GitCommitGraphLane[];
   nodeLane: number;
   nodeColorIndex: number;
+  isMerge: boolean;
   laneSpan: number;
   graphWidth: number;
   y: number;
@@ -57,6 +58,8 @@ export interface GitCommitGraphRow {
 export interface GitCommitGraphLayoutOptions {
   /** Extra visible height immediately below each matching commit row. */
   expandedRowHeights?: Readonly<Record<string, number>>;
+  /** Explicit graph colors for current, upstream, or base reference commits. */
+  colorIndexByCommitHash?: Readonly<Record<string, number>>;
 }
 
 export interface GitCommitGraphLayout {
@@ -83,11 +86,18 @@ interface VisibleParent {
 }
 
 const laneCenter = (lane: number) =>
-  GIT_COMMIT_GRAPH_GEOMETRY.paddingX + lane * GIT_COMMIT_GRAPH_GEOMETRY.laneWidth + GIT_COMMIT_GRAPH_GEOMETRY.laneWidth / 2;
+  GIT_COMMIT_GRAPH_GEOMETRY.paddingX +
+  lane * GIT_COMMIT_GRAPH_GEOMETRY.laneWidth +
+  GIT_COMMIT_GRAPH_GEOMETRY.laneWidth / 2;
 
 const expandedRowHeight = (hash: string, options: GitCommitGraphLayoutOptions) => {
   const height = options.expandedRowHeights?.[hash] ?? 0;
   return Number.isFinite(height) ? Math.max(0, height) : 0;
+};
+
+const explicitNodeColorIndex = (hash: string, options: GitCommitGraphLayoutOptions) => {
+  const colorIndex = options.colorIndexByCommitHash?.[hash];
+  return typeof colorIndex === "number" && Number.isInteger(colorIndex) && colorIndex >= 0 ? colorIndex : undefined;
 };
 
 export const layoutGitCommitGraph = (
@@ -105,7 +115,10 @@ export const layoutGitCommitGraph = (
     const inputLanes = previousOutputLanes.map((lane) => ({ ...lane }));
     const nodeLane = inputLanes.findIndex((lane) => lane.id === commit.hash);
     const resolvedNodeLane = nodeLane === -1 ? inputLanes.length : nodeLane;
-    const nodeColorIndex = inputLanes[resolvedNodeLane]?.colorIndex ?? nextColorIndex++;
+    const preferredNodeColorIndex = explicitNodeColorIndex(commit.hash, options);
+    const inputNodeColorIndex = inputLanes[resolvedNodeLane]?.colorIndex;
+    const nodeColorIndex = preferredNodeColorIndex ?? inputNodeColorIndex ?? nextColorIndex++;
+    if (preferredNodeColorIndex !== undefined) nextColorIndex = Math.max(nextColorIndex, preferredNodeColorIndex + 1);
     const parents = commit.parents || [];
     const visibleParents: VisibleParent[] = [];
 
@@ -138,17 +151,39 @@ export const layoutGitCommitGraph = (
         hasCurrentLane = true;
         if (firstVisibleParent) {
           const outputLane = outputLanes.length;
-          outputLanes.push({ id: firstVisibleParent.id, colorIndex: lane.colorIndex });
+          const continuationColorIndex = preferredNodeColorIndex ?? lane.colorIndex;
+          outputLanes.push({ id: firstVisibleParent.id, colorIndex: continuationColorIndex });
           firstVisibleParentHandled = true;
-          plannedSegments.push({
-            kind: "first-parent-continuation",
-            fromLane: inputLane,
-            toLane: outputLane,
-            from: "top",
-            to: "output",
-            colorIndex: lane.colorIndex,
-            parentIndex: firstVisibleParent.parentIndex,
-          });
+          if (continuationColorIndex === lane.colorIndex) {
+            plannedSegments.push({
+              kind: "first-parent-continuation",
+              fromLane: inputLane,
+              toLane: outputLane,
+              from: "top",
+              to: "output",
+              colorIndex: lane.colorIndex,
+              parentIndex: firstVisibleParent.parentIndex,
+            });
+          } else {
+            plannedSegments.push({
+              kind: "first-parent-continuation",
+              fromLane: inputLane,
+              toLane: resolvedNodeLane,
+              from: "top",
+              to: "node",
+              colorIndex: lane.colorIndex,
+              parentIndex: firstVisibleParent.parentIndex,
+            });
+            plannedSegments.push({
+              kind: "first-parent-continuation",
+              fromLane: resolvedNodeLane,
+              toLane: outputLane,
+              from: "node",
+              to: "output",
+              colorIndex: continuationColorIndex,
+              parentIndex: firstVisibleParent.parentIndex,
+            });
+          }
         } else {
           plannedSegments.push({
             kind: parents.length === 0 ? "root-termination" : "first-parent-continuation",
@@ -203,7 +238,8 @@ export const layoutGitCommitGraph = (
     }
 
     const extraHeight = expandedRowHeight(commit.hash, options);
-    const rowTop = rowIndex * (GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap) + expandedHeightBeforeRow;
+    const rowTop =
+      rowIndex * (GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap) + expandedHeightBeforeRow;
     const y = rowTop + GIT_COMMIT_GRAPH_GEOMETRY.rowHeight / 2;
     const outputY =
       rowIndex < commits.length - 1
@@ -235,6 +271,7 @@ export const layoutGitCommitGraph = (
       outputLanes,
       nodeLane: resolvedNodeLane,
       nodeColorIndex,
+      isMerge: parents.length > 1,
       laneSpan,
       graphWidth,
       y,

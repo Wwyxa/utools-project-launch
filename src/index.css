@@ -606,7 +606,7 @@
 .git-ref-badge {
   display: inline-flex;
   height: 18px;
-  max-width: 9rem;
+  max-width: 100px;
   flex-shrink: 0;
   align-items: center;
   gap: 0.25rem;
@@ -616,6 +616,56 @@
   font-size: 9px;
   font-weight: 700;
   line-height: 0.75rem;
+}
+
+.git-ref-badge > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-ref-badge--dense-label {
+  max-width: 100px;
+}
+
+.git-ref-badge--dense-label > span:last-child {
+  min-width: 0;
+  max-width: calc(100px - 1.5rem);
+}
+
+.git-ref-badge--history {
+  height: auto;
+  min-height: 18px;
+  align-self: stretch;
+  margin-block: 1px;
+}
+
+.git-ref-badge--tooltip {
+  max-width: none;
+  flex-shrink: 1;
+}
+
+.git-ref-badge--tooltip > .git-ref-badge__tooltip-label {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.git-ref-badge--graph-linked {
+  border-color: var(--git-ref-graph-color);
+  background-color: var(--git-ref-graph-color);
+  color: #fff;
+}
+
+.git-ref-badge--current {
+  font-weight: 800;
+}
+
+.git-ref-badge--graph-linked.git-ref-badge--current {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68);
 }
 
 .terminal-log-timestamp {

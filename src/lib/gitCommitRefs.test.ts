@@ -27,11 +27,12 @@ const gitContext = (overrides: Partial<GitCommitRefPresentationContext> = {}): G
     { name: "remote", fetchUrl: "", pushUrl: "" },
   ],
   upstream: { remote: "origin", branch: "main", ref: "origin/main", ahead: 0, behind: 0 },
+  base: null,
   ...overrides,
 });
 
 describe("presentGitCommitRefs", () => {
-  it("orders structured HEAD, upstream, graph-colored, and remaining ref kinds", () => {
+  it("orders current, upstream, graph-colored, and remaining ref kinds", () => {
     const presentation = presentGitCommitRefs(
       commit([
         { kind: "tag", name: "z-tag" },
@@ -69,7 +70,7 @@ describe("presentGitCommitRefs", () => {
       "tag",
       "tag",
     ]);
-    expect(presentation.full.map((member) => member.priority)).toEqual([0, 1, 2, 3, 3, 4, 4, 5, 5]);
+    expect(presentation.full.map((member) => member.priority)).toEqual([0, 1, 3, 4, 4, 5, 5, 6, 6]);
     expect(presentation.full.map((member) => member.order)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     expect(presentation.full[0]).toMatchObject({
       identity: "head:HEAD -> main",
@@ -95,7 +96,7 @@ describe("presentGitCommitRefs", () => {
     });
   });
 
-  it("hides only the duplicate HEAD local while preserving every remote in dense output", () => {
+  it("folds an attached HEAD into its local branch and keeps every other ref", () => {
     const presentation = presentGitCommitRefs(
       commit([
         { kind: "head", name: "HEAD -> main", head: true },
@@ -106,66 +107,62 @@ describe("presentGitCommitRefs", () => {
         { kind: "remote", name: "fork/topic" },
         { kind: "tag", name: "main" },
       ]),
-      gitContext(),
+      gitContext({
+        graphColorByRefName: {
+          main: 0,
+          "origin/main": 0,
+          release: 1,
+          "fork/topic": 2,
+        },
+      }),
     );
 
-    expect(presentation.dense.hiddenMembers.map((member) => member.name)).toEqual(["main"]);
-    expect(presentation.dense.members.filter((member) => member.kind === "local").map((member) => member.name)).toEqual(["release"]);
-    expect(presentation.dense.members.filter((member) => member.kind === "tag").map((member) => member.name)).toEqual(["main"]);
-    expect(presentation.dense.members.find((member) => member.isCurrentHead)).toMatchObject({
-      name: "HEAD -> main",
-      display: "label",
-    });
+    expect(presentation.dense.hiddenMembers).toEqual([]);
     expect(
-      presentation.dense.members
-        .filter((member) => member.kind === "remote")
-        .map(({ name, display, title, memberNames, memberTitles }) => ({ name, display, title, memberNames, memberTitles })),
+      presentation.full.map(({ name, kind, isCurrentHead, priority }) => ({ name, kind, isCurrentHead, priority })),
     ).toEqual([
-      {
-        name: "origin/main",
-        display: "label",
-        title: "origin/main",
-        memberNames: ["origin/main"],
-        memberTitles: ["origin/main"],
-      },
-      {
-        name: "fork/topic",
-        display: "icon",
-        title: "fork/topic",
-        memberNames: ["fork/topic"],
-        memberTitles: ["fork/topic"],
-      },
-      {
-        name: "origin/HEAD",
-        display: "icon",
-        title: "origin/HEAD",
-        memberNames: ["origin/HEAD"],
-        memberTitles: ["origin/HEAD"],
-      },
+      { name: "main", kind: "local", isCurrentHead: true, priority: 0 },
+      { name: "origin/main", kind: "remote", isCurrentHead: false, priority: 1 },
+      { name: "fork/topic", kind: "remote", isCurrentHead: false, priority: 3 },
+      { name: "release", kind: "local", isCurrentHead: false, priority: 3 },
+      { name: "origin/HEAD", kind: "remote", isCurrentHead: false, priority: 5 },
+      { name: "main", kind: "tag", isCurrentHead: false, priority: 6 },
     ]);
-    expect(presentation.full.map(({ name, title }) => ({ name, title }))).toEqual([
-      { name: "HEAD -> main", title: "HEAD -> main" },
-      { name: "origin/main", title: "origin/main" },
-      { name: "main", title: "main" },
-      { name: "release", title: "release" },
-      { name: "fork/topic", title: "fork/topic" },
-      { name: "origin/HEAD", title: "origin/HEAD" },
-      { name: "main", title: "main" },
+    expect(presentation.full.some((member) => member.name === "HEAD -> main")).toBe(false);
+    expect(
+      presentation.dense.members.map(({ name, kind, display, memberNames }) => ({ name, kind, display, memberNames })),
+    ).toEqual([
+      { name: "main", kind: "local", display: "label", memberNames: ["main"] },
+      { name: "origin/main", kind: "remote", display: "icon", memberNames: ["origin/main"] },
+      { name: "fork/topic", kind: "remote", display: "icon", memberNames: ["fork/topic"] },
+      { name: "release", kind: "local", display: "icon", memberNames: ["release"] },
+      { name: "origin/HEAD", kind: "remote", display: "icon", memberNames: ["origin/HEAD"] },
+      { name: "main", kind: "tag", display: "icon", memberNames: ["main"] },
     ]);
   });
 
-  it("keeps one non-remote representative beside the primary remote while icon-compacting other refs", () => {
+  it("prefers the current base remote as the branch label", () => {
     const presentation = presentGitCommitRefs(
       commit([
-        { kind: "local", name: "main" },
-        { kind: "remote", name: "origin/main" },
+        { kind: "local", name: "master" },
+        { kind: "remote", name: "remote/master" },
         { kind: "remote", name: "origin/HEAD" },
         { kind: "tag", name: "release,annotated" },
       ]),
-      gitContext(),
+      gitContext({
+        upstream: null,
+        base: { remote: "remote", branch: "master", ref: "remote/master" },
+        graphColorByRefName: { "remote/master": 1 },
+      }),
     );
 
-    expect(presentation.full.map((member) => member.name)).toEqual(["origin/main", "main", "origin/HEAD", "release,annotated"]);
+    expect(presentation.full.map((member) => member.name)).toEqual([
+      "remote/master",
+      "master",
+      "origin/HEAD",
+      "release,annotated",
+    ]);
+    expect(presentation.full[0]).toMatchObject({ isCurrentBase: true, priority: 2 });
     expect(
       presentation.dense.members.map(({ name, display, title, memberNames, memberTitles }) => ({
         name,
@@ -176,11 +173,18 @@ describe("presentGitCommitRefs", () => {
       })),
     ).toEqual([
       {
-        name: "origin/main",
+        name: "remote/master",
         display: "label",
-        title: "origin/main",
-        memberNames: ["origin/main"],
-        memberTitles: ["origin/main"],
+        title: "remote/master",
+        memberNames: ["remote/master"],
+        memberTitles: ["remote/master"],
+      },
+      {
+        name: "master",
+        display: "icon",
+        title: "master",
+        memberNames: ["master"],
+        memberTitles: ["master"],
       },
       {
         name: "origin/HEAD",
@@ -188,13 +192,6 @@ describe("presentGitCommitRefs", () => {
         title: "origin/HEAD",
         memberNames: ["origin/HEAD"],
         memberTitles: ["origin/HEAD"],
-      },
-      {
-        name: "main",
-        display: "label",
-        title: "main",
-        memberNames: ["main"],
-        memberTitles: ["main"],
       },
       {
         name: "release,annotated",
@@ -206,26 +203,68 @@ describe("presentGitCommitRefs", () => {
     ]);
   });
 
-  it("keeps one remote labeled and never promotes symbolic remote HEAD refs", () => {
-    const singleRemote = presentGitCommitRefs(commit([{ kind: "remote", name: "origin/develop" }]), gitContext({ upstream: null }));
-    const symbolicRemotes = presentGitCommitRefs(
+  it("groups same-colored secondary refs behind their icon count", () => {
+    const presentation = presentGitCommitRefs(
       commit([
-        { kind: "remote", name: "remote/HEAD" },
-        { kind: "remote", name: "origin/HEAD" },
-        { kind: "remote", name: "fork/HEAD" },
+        { kind: "local", name: "main" },
+        { kind: "remote", name: "origin/main" },
+        { kind: "remote", name: "fork/topic" },
+        { kind: "remote", name: "origin/topic" },
       ]),
-      gitContext({ upstream: null }),
+      gitContext({
+        branch: "feature/current",
+        headHash: "another-commit",
+        upstream: null,
+        base: { remote: "origin", branch: "main", ref: "origin/main" },
+        graphColorByRefName: {
+          "origin/main": 1,
+          "fork/topic": 2,
+          "origin/topic": 2,
+        },
+      }),
     );
 
-    expect(singleRemote.dense.members).toEqual([
-      expect.objectContaining({ name: "origin/develop", display: "label", title: "origin/develop" }),
+    expect(
+      presentation.dense.members.map(({ name, display, memberNames }) => ({ name, display, memberNames })),
+    ).toEqual([
+      { name: "origin/main", display: "label", memberNames: ["origin/main"] },
+      { name: "fork/topic", display: "icon", memberNames: ["fork/topic", "origin/topic"] },
+      { name: "main", display: "icon", memberNames: ["main"] },
     ]);
-    expect(symbolicRemotes.full.map((member) => member.kind)).toEqual(["remote", "remote", "remote"]);
-    expect(symbolicRemotes.full.every((member) => !member.isCurrentHead)).toBe(true);
-    expect(symbolicRemotes.dense.members.map(({ name, display }) => ({ name, display }))).toEqual([
-      { name: "fork/HEAD", display: "label" },
-      { name: "origin/HEAD", display: "icon" },
-      { name: "remote/HEAD", display: "icon" },
+  });
+
+  it("keeps an old uncolored branch visible in the compact presentation", () => {
+    const presentation = presentGitCommitRefs(
+      commit([{ kind: "local", name: "archive/merged-last-year" }], undefined, "old-commit"),
+      gitContext({ headHash: "head", graphColorByRefName: { main: 0 } }),
+    );
+
+    expect(
+      presentation.dense.members.map(({ name, display, memberNames }) => ({ name, display, memberNames })),
+    ).toEqual([{ name: "archive/merged-last-year", display: "label", memberNames: ["archive/merged-last-year"] }]);
+  });
+
+  it("shows one primary label and icon-only companions for local and remote refs", () => {
+    const presentation = presentGitCommitRefs(
+      commit([
+        { kind: "remote", name: "remote/master" },
+        { kind: "local", name: "master" },
+        { kind: "remote", name: "remote/HEAD" },
+      ]),
+      gitContext({
+        headHash: "another-commit",
+        upstream: null,
+        base: { remote: "remote", branch: "master", ref: "remote/master" },
+        graphColorByRefName: { "remote/master": 1 },
+      }),
+    );
+
+    expect(
+      presentation.dense.members.map(({ name, kind, display, memberNames }) => ({ name, kind, display, memberNames })),
+    ).toEqual([
+      { name: "remote/master", kind: "remote", display: "label", memberNames: ["remote/master"] },
+      { name: "master", kind: "local", display: "icon", memberNames: ["master"] },
+      { name: "remote/HEAD", kind: "remote", display: "icon", memberNames: ["remote/HEAD"] },
     ]);
   });
 
@@ -260,7 +299,9 @@ describe("presentGitCommitRefs", () => {
       { name: "origin/HEAD", kind: "remote", isCurrentHead: false },
       { name: "tag: v1", kind: "tag", isCurrentHead: false },
     ]);
-    expect(bareHeadPresentation.full.map(({ name, kind, label, isCurrentHead }) => ({ name, kind, label, isCurrentHead }))).toEqual([
+    expect(
+      bareHeadPresentation.full.map(({ name, kind, label, isCurrentHead }) => ({ name, kind, label, isCurrentHead })),
+    ).toEqual([
       { name: "HEAD", kind: "head", label: "HEAD", isCurrentHead: true },
       { name: "remote/HEAD", kind: "remote", label: "remote/HEAD", isCurrentHead: false },
     ]);

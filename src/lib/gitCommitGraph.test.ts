@@ -40,6 +40,8 @@ describe("layoutGitCommitGraph", () => {
     ]);
     const mergeRow = rowFor(layout, "M");
 
+    expect(mergeRow.isMerge).toBe(true);
+    expect(rowFor(layout, "F3").isMerge).toBe(false);
     expect(
       layout.rows.map((row) => ({
         hash: row.commit.hash,
@@ -61,10 +63,9 @@ describe("layoutGitCommitGraph", () => {
       "first-parent-continuation",
       "additional-parent-fan-out",
     ]);
-    expect(mergeRow.segments.flatMap((segment) => (segment.parentIndex === undefined ? [] : [segment.parentIndex]))).toEqual([
-      0,
-      1,
-    ]);
+    expect(
+      mergeRow.segments.flatMap((segment) => (segment.parentIndex === undefined ? [] : [segment.parentIndex])),
+    ).toEqual([0, 1]);
     expect(mergeRow.graphWidth).toBe(
       Math.max(
         GIT_COMMIT_GRAPH_GEOMETRY.minimumWidth,
@@ -157,11 +158,20 @@ describe("layoutGitCommitGraph", () => {
       { kind: "vertical-bypass", parentIndex: undefined },
       { kind: "first-parent-continuation", parentIndex: 1 },
     ]);
-    expect(layout.rows.flatMap((row) => row.outputLanes.map((lane) => lane.id))).not.toEqual(expect.arrayContaining(["M2", "F1"]));
+    expect(layout.rows.flatMap((row) => row.outputLanes.map((lane) => lane.id))).not.toEqual(
+      expect.arrayContaining(["M2", "F1"]),
+    );
   });
 
   it("assigns deterministic numeric colors while retaining duplicate ids", () => {
-    const commits = [commit("F3", ["F2"]), commit("M", ["M2", "F2"]), commit("M2", ["B"]), commit("F2", ["F1"]), commit("F1", ["B"]), commit("B")];
+    const commits = [
+      commit("F3", ["F2"]),
+      commit("M", ["M2", "F2"]),
+      commit("M2", ["B"]),
+      commit("F2", ["F1"]),
+      commit("F1", ["B"]),
+      commit("B"),
+    ];
     const firstLayout = layoutGitCommitGraph(commits);
     const secondLayout = layoutGitCommitGraph(commits);
 
@@ -170,6 +180,32 @@ describe("layoutGitCommitGraph", () => {
       { id: "F2", colorIndex: 0 },
       { id: "M2", colorIndex: 1 },
       { id: "F2", colorIndex: 2 },
+    ]);
+  });
+
+  it("switches the first-parent continuation to an explicit reference color", () => {
+    const layout = layoutGitCommitGraph([commit("F", ["M"]), commit("M", ["A", "B"]), commit("A"), commit("B")], {
+      colorIndexByCommitHash: { M: 1 },
+    });
+    const mergeRow = rowFor(layout, "M");
+
+    expect(mergeRow.nodeColorIndex).toBe(1);
+    expect(mergeRow.outputLanes.map((lane) => ({ id: lane.id, colorIndex: lane.colorIndex }))).toEqual([
+      { id: "A", colorIndex: 1 },
+      { id: "B", colorIndex: 2 },
+    ]);
+    expect(
+      mergeRow.segments.map((segment) => ({
+        kind: segment.kind,
+        from: segment.from.y === mergeRow.y ? "node" : "top",
+        to: segment.to.y === mergeRow.y ? "node" : "output",
+        colorIndex: segment.colorIndex,
+        parentIndex: segment.parentIndex,
+      })),
+    ).toEqual([
+      { kind: "first-parent-continuation", from: "top", to: "node", colorIndex: 0, parentIndex: 0 },
+      { kind: "first-parent-continuation", from: "node", to: "output", colorIndex: 1, parentIndex: 0 },
+      { kind: "additional-parent-fan-out", from: "node", to: "output", colorIndex: 2, parentIndex: 1 },
     ]);
   });
 
@@ -184,8 +220,14 @@ describe("layoutGitCommitGraph", () => {
       GIT_COMMIT_GRAPH_GEOMETRY.rowHeight / 2 + rowPitch + 40,
       GIT_COMMIT_GRAPH_GEOMETRY.rowHeight / 2 + rowPitch * 2 + 40 + 24,
     ]);
-    expect(rowFor(layout, "A").segments[0].to.y).toBe(GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap + 40);
-    expect(rowFor(layout, "B").segments[0].to.y).toBe(GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap + rowPitch + 40 + 24);
-    expect(layout.height).toBe(GIT_COMMIT_GRAPH_GEOMETRY.rowHeight * 3 + GIT_COMMIT_GRAPH_GEOMETRY.rowGap * 2 + 40 + 24);
+    expect(rowFor(layout, "A").segments[0].to.y).toBe(
+      GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap + 40,
+    );
+    expect(rowFor(layout, "B").segments[0].to.y).toBe(
+      GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap + rowPitch + 40 + 24,
+    );
+    expect(layout.height).toBe(
+      GIT_COMMIT_GRAPH_GEOMETRY.rowHeight * 3 + GIT_COMMIT_GRAPH_GEOMETRY.rowGap * 2 + 40 + 24,
+    );
   });
 });

@@ -2721,6 +2721,93 @@ async function readGitUpstreamAsync(repositoryPath) {
   return { remote, branch, ref, ahead, behind };
 }
 
+function parseGitRemoteBranchRef(ref, remotes) {
+  const normalizedRef = String(ref || "")
+    .trim()
+    .replace(/^refs\/remotes\//, "");
+  const remote = remotes.find((candidate) => normalizedRef.startsWith(`${candidate.name}/`));
+  if (!remote) {
+    return null;
+  }
+
+  const branch = normalizedRef.slice(remote.name.length + 1);
+  return branch ? { remote: remote.name, branch, ref: `${remote.name}/${branch}` } : null;
+}
+
+async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream) {
+  if (!branch || branch === "HEAD") {
+    return null;
+  }
+
+  const resolveBase = async (ref) => {
+    const base = parseGitRemoteBranchRef(ref, remotes);
+    if (!base || base.ref === upstream?.ref) {
+      return null;
+    }
+
+    const commit = await runGitAsync(repositoryPath, ["rev-parse", "--verify", "--quiet", `${base.ref}^{commit}`]);
+    return commit ? base : null;
+  };
+
+  const configuredRef = String(
+    (await runGitAsync(repositoryPath, ["config", "--get", `branch.${branch}.vscode-merge-base`])) || "",
+  ).trim();
+  const configuredBase = await resolveBase(configuredRef);
+  if (configuredBase) {
+    return configuredBase;
+  }
+
+  const reflogEntries = String(
+    (await runGitAsync(repositoryPath, [
+      "reflog",
+      "show",
+      "--format=%gs",
+      "--grep-reflog=^branch: Created from ",
+      `refs/heads/${branch}`,
+    ])) || "",
+  )
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (reflogEntries.length === 1) {
+    const createdFrom = reflogEntries[0].match(/^branch: Created from (.+)$/)?.[1] || "";
+    const reflogBase = await resolveBase(createdFrom);
+    if (reflogBase) {
+      return reflogBase;
+    }
+    if (createdFrom && createdFrom !== "HEAD") {
+      const createdBranchUpstream = String(
+        (await runGitAsync(repositoryPath, [
+          "for-each-ref",
+          "--format=%(upstream:short)",
+          `refs/heads/${createdFrom}`,
+        ])) || "",
+      ).trim();
+      const upstreamBase = await resolveBase(createdBranchUpstream);
+      if (upstreamBase) {
+        return upstreamBase;
+      }
+    }
+  }
+
+  const preferredRemoteNames = [
+    upstream?.remote,
+    remotes.find((remote) => remote.name === "origin")?.name,
+    ...remotes.map((remote) => remote.name),
+  ].filter((remote, index, names) => Boolean(remote) && names.indexOf(remote) === index);
+  for (const remote of preferredRemoteNames) {
+    const defaultRemoteRef = String(
+      (await runGitAsync(repositoryPath, ["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`])) || "",
+    ).trim();
+    const defaultBase = await resolveBase(defaultRemoteRef);
+    if (defaultBase) {
+      return defaultBase;
+    }
+  }
+
+  return null;
+}
+
 function parseGitHubRepository(remoteUrl) {
   const value = String(remoteUrl || "").trim();
   if (!value) {
@@ -4670,6 +4757,7 @@ async function readGitStatusSnapshot(projectPath) {
       branches: [],
       remotes: [],
       upstream: null,
+      base: null,
       repositoryPath: "",
       lastRefreshedAt: now,
       statusText: "未检测到 Git 仓库",
@@ -4697,6 +4785,7 @@ async function readGitStatusSnapshot(projectPath) {
   const behindMatch = upstreamInfo.match(/behind\s+(\d+)/);
   const ahead = upstream?.ahead ?? (aheadMatch ? Number(aheadMatch[1]) : 0);
   const behind = upstream?.behind ?? (behindMatch ? Number(behindMatch[1]) : 0);
+  const base = await readGitBranchBaseAsync(repositoryPath, symbolicBranch, remotes, upstream);
 
   return {
     branch,
@@ -4708,6 +4797,7 @@ async function readGitStatusSnapshot(projectPath) {
     branches,
     remotes,
     upstream,
+    base,
     repositoryPath,
     lastRefreshedAt: now,
     statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${workingTree.changeCount === 0 ? "工作区干净" : `${workingTree.changeCount} 个文件变更`}`,

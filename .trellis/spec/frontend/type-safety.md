@@ -82,6 +82,7 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 
 - `ProjectGitCommitSummary = { hash: string; message: string; body?: string; author: string; date: string; graph?: string; parents?: string[]; refs?: string }`, where `hash` and every `parents` entry use the repository's full object-id format.
 - `ProjectGitCommitShortStats = { readonly files: number; readonly additions: number; readonly deletions: number }`; `ProjectGitCommitSummary.shortStats?` carries this immutable summary with the history page.
+- `ProjectGitBaseSummary = { remote: string; branch: string; ref: string }`; `ProjectGitSnapshot.base?` and `ProjectGitStatusSnapshot.base?` carry a resolved comparison/base remote or `null`.
 - Preload git read path should populate `message` with the compact subject line and `body` with the full commit message body when available.
 - Preload history reads use one `git log --shortstat` invocation per page. A dedicated separator after `%B` isolates the multiline body from the following short-stat text before parsing it.
 - Tooltip state should keep the whole commit object plus cursor coordinates, e.g. `{ commit: ProjectGitCommitSummary; x: number; y: number }`, because the tooltip header needs `author`, `date`, and `refs` while the body parser needs both `message` and `body`.
@@ -97,6 +98,8 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 - A non-empty short-stat section that cannot be parsed is `undefined`, not a zero summary. Only an actually empty section represents `{ files: 0, additions: 0, deletions: 0 }`.
 - Avoid `git log --graph` in the backend/preload data fetch when parsing multiline bodies. ASCII graph prefixes can pollute markdown lines and break list rendering. The frontend already draws its own graph from `parents`.
 - A tooltip with usable `shortStats` renders its file count and line totals immediately and must not call `readGitCommitFiles` for that summary. Legacy, missing, or invalid stats use the existing file-detail fallback. Expanding a commit's file list remains an independent full-detail read.
+- The status snapshot resolves `base` once at the preload boundary. It prefers `branch.<branch>.vscode-merge-base`, then a single branch-creation reflog source or that source branch's upstream, then configured remotes' symbolic `HEAD` refs. Each candidate must resolve to a known remote-tracking commit; the current upstream is not duplicated as a base.
+- Bridge empty snapshots, store normalization, and status-only snapshot merges preserve `base: null` rather than leaving consumers to infer a hard-coded `master` or `main` branch.
 - Tooltip rendering should normalize common Git message shapes before rendering:
   - if `body` is missing or equals `message`, render only the title and omit the body panel;
   - if the first `body` line equals, prefixes, or extends `message`, drop that first body line before rendering markdown;
@@ -114,6 +117,8 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 - Valid short-stat output -> expose non-negative safe-integer counts that equal the full file-detail totals for the same commit.
 - Non-empty unparsable short-stat output or invalid numeric counts -> leave `shortStats` absent and use the legacy tooltip detail path; never display fabricated zero totals.
 - Empty short-stat section -> expose a zero summary without a tooltip file-detail request.
+- Detached HEAD, missing branch, an unresolved candidate, or a candidate equal to the upstream -> expose `base: null`.
+- A configured `vscode-merge-base` pointing at an unavailable remote ref -> ignore it and continue through the documented fallback order.
 - Body repeats the subject line -> remove the duplicate line so tooltip title/body do not show the same sentence twice.
 - Message is itself a markdown list -> do not coerce the first list item into a plain bold title.
 - Chained conventional commits with repeated body lines -> trim only exact repeated trailing segments; keep the body lines available for markdown rendering.
@@ -123,12 +128,15 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 - Good: row displays `message`, tooltip title/body split removes duplicated subject text and renders `body` with markdown bullets preserved.
 - Good: each non-root commit's visible parent entry exactly equals the corresponding full commit `hash`, so the graph can draw the edge.
 - Good: a loaded commit has valid `shortStats`; after the normal hover delay its tooltip immediately renders totals while only the optional avatar enhancement may still load.
+- Good: a feature branch created from `remote/master` resolves `base.ref === "remote/master"`, so the renderer can assign the comparison lane without guessing a default branch.
 - Base: commit has only a subject; both row and tooltip use `message`.
+- Base: a repository with only an upstream or no resolvable remote base carries `base: null` and keeps ordinary lane coloring.
 - Base: an older bridge result lacks `shortStats`; the tooltip keeps its existing delayed full-detail fallback.
 - Base: a root commit has an empty `parents` array.
 - Bad: combining full `%H` child hashes with abbreviated `%p` parent hashes; records parse, but graph edges silently disappear.
 - Bad: using `--pretty=format:%h\t...\t%s` and expecting tooltip markdown lists to exist.
 - Bad: treating an unknown short-stat parse as zero or running `readGitCommitFiles` for every visible tooltip despite a valid preloaded summary.
+- Bad: deriving a base ref in a component from a literal `origin/main`, which breaks non-origin repositories and makes graph/ref colors drift from the snapshot.
 - Bad: always rendering `message` as a plain tooltip title when `message` starts with `- `; this breaks list-style commit messages.
 - Bad: always rendering the full subject as title when the body repeats trailing `fix:` / `change:` segments; this creates a long duplicate title and repeated body.
 
@@ -138,6 +146,7 @@ Preload bridge contracts should be represented in `src/types.ts` and consumed th
 - `npm run validate:git-commits` must create two commits through a real temporary repository, assert `latestCommit.parents[0] === rootCommit.hash`, an empty root `parents` array, and that `latestCommit.shortStats` equals `readGitCommitFiles(latestCommit.hash)` totals.
 - `npx vitest run src/lib/gitCommitTooltipSession.test.ts` must prove valid preloaded stats skip the file-detail loader while the avatar loader remains optional and cacheable.
 - `npm run benchmark:git-interactions -- --report after` must assert cold/A-B-A/remount tooltip models issue no `readGitCommitFiles` bridge call when commits carry usable short stats.
+- `node --check public/preload.js`, `npx vitest run src/lib/gitCommitGraph.test.ts src/lib/gitCommitRefs.test.ts`, and `npx vitest run src/lib/projectBridge.workspace.test.ts` must cover base propagation, invalid-base fallback, and graph/ref color selection.
 - Manual smoke test with commits containing a subject plus markdown body list items (`- item`).
 - Manual smoke test with subject-only commits to verify tooltip fallback remains readable.
 - Manual smoke test with list-only commit messages where the first line starts with `- ` and should render as markdown.
@@ -202,6 +211,23 @@ return summarizeFiles(files);
 ```
 
 Use the preloaded summary first and retain the detail reader only as a compatibility fallback.
+
+#### Wrong
+
+```ts
+const base = { remote: "origin", branch: "main", ref: "origin/main" };
+```
+
+This guesses repository topology in the renderer and cannot distinguish an upstream from an independent comparison base.
+
+#### Correct
+
+```ts
+const base = await readGitBranchBaseAsync(repositoryPath, symbolicBranch, remotes, upstream);
+return { ...statusSnapshot, base };
+```
+
+Resolve and validate the base where Git configuration and refs are available, then carry the typed nullable value through the existing snapshot contract.
 
 ## Scenario: Git Commit Ref And Mutation Boundary
 
@@ -289,7 +315,8 @@ Keep ref kind and risk reasons structured across every layer; use text only for 
 
 - `ProjectBridge.readGitCommitAuthorAvatar(projectPath: string, commitHash: string): Promise<string | null>`.
 - Store proxy: `readGitCommitAuthorAvatar(projectId: string, commitHash: string): Promise<string | null>`.
-- Tooltip detail state is keyed by full commit hash and contains local files, file-summary loading/unavailable state, avatar loading state, and nullable avatar URL.
+- `GitCommitTooltipSessionDetails` is keyed by repository context plus full commit hash and contains local files, file-summary loading/unavailable state, avatar loading state, and nullable avatar URL.
+- The component-owned visible state is one `CommitTooltipDetailsState | null` with its active `hash`, request/context generations, and display values; it is not a growing record of every hovered hash.
 
 ### 3. Contracts
 
@@ -297,6 +324,7 @@ Keep ref kind and risk reasons structured across every layer; use text only for 
 - Preload selects a GitHub remote in this order: GitHub upstream, GitHub `origin`, then another GitHub remote. It supports HTTPS, SCP-style SSH, and `ssh://` GitHub URLs.
 - The GitHub commit endpoint receives only remote owner, repository, and the full commit hash. Return only an HTTPS `author.avatar_url` or `null`.
 - Cache in-flight and settled avatar results, including `null`, by normalized repository and full commit hash in a bounded in-memory preload cache.
+- Keep the renderer tooltip session bounded by `GIT_COMMIT_TOOLTIP_SESSION_MAX_HASHES`. Switching from A to B replaces the active reactive detail state; returning to A consumes its session promise without retaining B's UI state in the component.
 - Do not use Gravatar, author email, GitHub tokens, persistent cache storage, provider settings, raw remote URLs, or raw HTTP error messages in renderer state.
 - The renderer always has a deterministic initials badge. It replaces a missing, loading, rejected, or image-error avatar; stale async detail results must be ignored after project/repository context changes.
 
@@ -308,18 +336,22 @@ Keep ref kind and risk reasons structured across every layer; use text only for 
 - Browser fallback -> return `null` without network work.
 - Local file read pending -> show a neutral loading summary; rejected/unavailable data -> show a neutral unavailable summary, never synthetic zero totals.
 - Avatar image load failure -> remove the URL from local tooltip state and show initials.
+- An A request resolving after a visible switch to B, a repository replacement, or an unmount -> ignore the stale result by active hash, request generation, and context generation.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a GitHub-backed public commit opens after the normal delay, immediately shows initials and metadata, then replaces initials with a cached avatar while local additions/deletions load independently.
+- Good: scanning 240 history rows replaces one visible tooltip state at a time while the bounded renderer session reuses eligible detail promises.
 - Base: an offline, private, or non-GitHub repository shows initials and an available local summary without a visible network error.
 - Bad: dispatching avatar or file reads on `mouseenter` before the delay, which creates unnecessary work while scanning dense rows.
+- Bad: copying a growing reactive hash-to-details record on every hover result, which makes a tooltip update reconcile an increasingly large history view.
 - Bad: sending `authorEmail` to Gravatar or exposing a GitHub URL/error in tooltip copy.
 
 ### 6. Tests Required
 
 - `node --check public/preload.js` after changing GitHub remote parsing, cache behavior, or request timeout handling.
 - `npm run lint`, `npm run type-check`, and `npm run build` after changing the bridge, store proxy, or tooltip template.
+- `npx vitest run src/lib/gitCommitTooltipSession.test.ts` must cover capacity, A-B-A session reuse, and stale-result isolation; manual smoke should include repeated tooltip switching after loading 160 and 240 commits.
 - Manual uTools smoke test: hover a GitHub public commit, a non-GitHub/offline commit, and leave before the hover delay; verify delayed loading, initials fallback, summary counts, Escape cleanup, and no stale result after switching projects.
 
 ### 7. Wrong vs Correct
@@ -342,6 +374,22 @@ commitTooltipOpenTimer = window.setTimeout(() => {
 ```
 
 Keep detail loading behind the visible-tooltip transition so cacheable enhancements remain advisory.
+
+#### Wrong
+
+```ts
+const commitTooltipDetails = ref<Record<string, CommitTooltipDetailsState>>({});
+```
+
+This retains and copies reactive UI state for every hovered commit even though the renderer session already owns reusable promise caching.
+
+#### Correct
+
+```ts
+const commitTooltipDetails = ref<CommitTooltipDetailsState | null>(null);
+```
+
+Keep only the visible tooltip reactive and use the bounded session for cross-hover reuse.
 
 ## Scenario: Git Bulk File Action Boundary
 
