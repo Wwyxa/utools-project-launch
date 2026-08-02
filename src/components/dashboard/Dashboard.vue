@@ -319,7 +319,7 @@ const automationSummary = computed(() => {
 });
 const upcomingAutomationTasks = computed(() =>
   automationTasks.value
-    .filter((item) => item.nextEntry)
+    .filter((item) => item.task.enabled && item.nextEntry)
     .sort(
       (left, right) =>
         new Date(left.nextEntry?.plannedAt || 0).getTime() - new Date(right.nextEntry?.plannedAt || 0).getTime(),
