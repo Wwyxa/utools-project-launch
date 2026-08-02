@@ -433,6 +433,10 @@ return `${firstSize}px ${separatorSize}px minmax(0, 0.71fr)`;
 
 Choose the primary label from the first graph-colored ref in priority order, then fall back to the current HEAD or the first non-tag ref. Group the remaining icon-only refs by graph color plus ref kind; show one icon with a count for every group with multiple members. This follows the VS Code history model of one readable badge plus compact color/icon groups without making the dense row discard the tooltip's information. A fixture with `remote/master`, `master`, and `remote/HEAD` must render one label and two icon-only badges when their group keys differ. A single old local branch without a graph color must still render a label.
 
+**Ref Color Identity Rule**: Map graph colors by `${kind}:${name}`, never bare name, so `local:main` and `tag:main` cannot share a color. Test same-name refs across kinds.
+
+**Compact Badge Geometry Rule**: Text refs are pills; icon-only history refs are centered `18px` squares with `border-radius: 50%`. Do not inherit row stretching, or they become ovals.
+
 ```ts
 const primary =
   full.find((ref) => ref.graphColorIndex !== undefined) ??
