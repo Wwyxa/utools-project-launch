@@ -24,7 +24,21 @@ const reportTarget = reportArguments[1] || "before";
 const usesPreloadedTooltipSummary = reportTarget === "after";
 const reportFileName =
   reportTarget === "before" ? "git-interaction-performance-baseline.md" : "git-interaction-performance-after.md";
-const researchDirectory = path.join(repoRoot, ".trellis", "tasks", "08-01-git-interaction-performance", "research");
+const taskDirectory = path.join(repoRoot, ".trellis", "tasks");
+const activeResearchDirectory = path.join(taskDirectory, "08-01-git-interaction-performance", "research");
+const archiveDirectory = path.join(taskDirectory, "archive");
+const archivedResearchDirectory = fs.existsSync(archiveDirectory)
+  ? fs
+      .readdirSync(archiveDirectory, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(archiveDirectory, entry.name, "08-01-git-interaction-performance", "research"))
+      .find((directory) => fs.existsSync(directory))
+  : undefined;
+const researchDirectory = fs.existsSync(activeResearchDirectory) ? activeResearchDirectory : archivedResearchDirectory;
+if (!researchDirectory) {
+  throw new Error("Cannot find the git-interaction-performance research directory.");
+}
+const isArchivedResearchDirectory = researchDirectory === archivedResearchDirectory;
 const reportPath = path.join(researchDirectory, reportFileName);
 const baselineReportPath = path.join(researchDirectory, "git-interaction-performance-baseline.md");
 const warmSampleCount = 5;
@@ -687,7 +701,9 @@ ${tooltipConclusions}
 ${nextOptimization}
 `;
 
-  fs.writeFileSync(reportPath, report, "utf8");
+  if (!isArchivedResearchDirectory) {
+    fs.writeFileSync(reportPath, report, "utf8");
+  }
 }
 
 function prepareStage() {
@@ -948,7 +964,15 @@ try {
   assertTooltipAfterBridgeCalls(scenarios);
   writeReport(fixture, scenarios);
   console.log("benchmark:git-interactions passed");
-  console.log(`Report: ${path.relative(repoRoot, reportPath)}`);
+  if (isArchivedResearchDirectory) {
+    console.log(
+      reportTarget === "after"
+        ? `Verified against archived baseline without persisting a report: ${path.relative(repoRoot, baselineReportPath)}`
+        : "Archived task report was not persisted.",
+    );
+  } else {
+    console.log(`Report: ${path.relative(repoRoot, reportPath)}`);
+  }
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }

@@ -7,6 +7,7 @@ import { ProjectStatus } from "../types";
 import type {
   Project,
   ProjectBridge,
+  ProjectBridgeGitCommitPage,
   ProjectBridgeGitWorkingTreeSnapshot,
   ProjectGitRepositoryTarget,
   ProjectGitFileChange,
@@ -475,6 +476,84 @@ describe("browser Git workspace fallback", () => {
       undefined,
     ]);
     expect(project.git).toMatchObject(snapshot);
+  });
+
+  it("rejects an in-flight commit page after a same-length full refresh", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const projectPath = "C:\\project";
+    const stalePage = createDeferred<ProjectBridgeGitCommitPage>();
+    const freshSnapshot = gitSnapshot(projectPath, "fresh", "f".repeat(40));
+    const readGitCommits = vi.fn<ProjectBridge["readGitCommits"]>(() => stalePage.promise);
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async () => freshSnapshot);
+    window.projectBridge = { ...getProjectBridge(), readGitCommits, readGitSnapshot };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-refresh-pagination", projectPath);
+    project.git = { ...gitSnapshot(projectPath, "old", "a".repeat(40)), hasMoreCommits: true };
+    store.projects = [project];
+    const contextKey = store.resolveGitRepositoryContext(project.id)!.contextKey;
+
+    const loadMore = store.loadMoreGitCommits(project.id);
+    expect(store.gitRepositoryLoadingMore[contextKey]).toBe(true);
+    await store.refreshGitSnapshot(project.id, { force: true });
+
+    expect(store.gitRepositoryLoadingMore[contextKey]).toBe(false);
+    stalePage.resolve({
+      commits: [gitSnapshot(projectPath, "stale-page", "b".repeat(40)).commits[0]],
+      hasMoreCommits: false,
+      repositoryPath: projectPath,
+      lastRefreshedAt: "2026-08-02T00:00:00.000Z",
+    });
+    await loadMore;
+
+    expect(project.git?.commits.map((commit) => commit.hash)).toEqual([freshSnapshot.commits[0].hash]);
+  });
+
+  it("waits for an in-flight full refresh before loading another commit page", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const projectPath = "C:\\project";
+    const pendingSnapshot = createDeferred<ProjectGitSnapshot>();
+    const freshSnapshot = { ...gitSnapshot(projectPath, "fresh", "f".repeat(40)), hasMoreCommits: true };
+    const freshPage = gitSnapshot(projectPath, "fresh-page", "b".repeat(40)).commits[0];
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(() => pendingSnapshot.promise);
+    const readGitCommits = vi.fn<ProjectBridge["readGitCommits"]>(async () => ({
+      commits: [freshPage],
+      hasMoreCommits: false,
+      repositoryPath: projectPath,
+      lastRefreshedAt: "2026-08-02T00:00:00.000Z",
+    }));
+    window.projectBridge = { ...getProjectBridge(), readGitCommits, readGitSnapshot };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-refresh-before-pagination", projectPath);
+    project.git = { ...gitSnapshot(projectPath, "old", "a".repeat(40)), hasMoreCommits: true };
+    store.projects = [project];
+
+    const refresh = store.refreshGitSnapshot(project.id, { force: true });
+    const loadMore = store.loadMoreGitCommits(project.id);
+
+    expect(readGitCommits).not.toHaveBeenCalled();
+    pendingSnapshot.resolve(freshSnapshot);
+    await refresh;
+    await loadMore;
+
+    expect(readGitCommits).toHaveBeenCalledWith(projectPath, { limit: 80, skip: 1 });
+    expect(project.git?.commits.map((commit) => commit.hash)).toEqual([
+      freshSnapshot.commits[0].hash,
+      freshPage.hash,
+    ]);
   });
 
   it("isolates full snapshots and deduplication by repository context", async () => {

@@ -63,6 +63,8 @@ import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import ProjectActionDialog from "./ProjectActionDialog.vue";
 
+defineOptions({ inheritAttrs: false });
+
 type GitFeedbackState = "loading" | "success" | "warning" | "error";
 type CommitReviewFileRequest = { commitHash: string; commitMessage: string; path: string };
 type ExpandedCommitFilesState = {
@@ -1414,7 +1416,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section :class="['flex min-h-0 flex-col', open ? 'flex-1' : 'shrink-0']">
+  <section v-bind="$attrs" :class="['flex min-h-0 flex-col', open ? 'flex-1' : 'shrink-0']">
     <div class="git-section-bar">
       <button
         type="button"

@@ -47,6 +47,7 @@ const isExactHeadReference = (name: string) => name === "HEAD" || /^HEAD ->\s+\S
 const refLabel = (name: string) => (isExactHeadReference(name) && name !== "HEAD" ? name.replace(/^HEAD ->\s*/, "").trim() : name);
 const compareNames = (left: string, right: string) => (left === right ? 0 : left < right ? -1 : 1);
 const normalizeRemoteRefName = (name: string) => name.replace(/^refs\/remotes\//, "");
+const hashesMatch = (left: string, right: string) => left === right || left.startsWith(right) || right.startsWith(left);
 
 const legacyRefs = (refs?: string): SourceRef[] =>
   (refs || "")
@@ -100,7 +101,8 @@ export const presentGitCommitRefs = (
   const upstreamNames = upstreamRefNames(context);
   const candidates: Candidate[] = refs.map((ref, sourceIndex) => {
     const kind = refKind(ref, context);
-    const isCurrentHead = kind === "head" && isExactHeadReference(ref.name) && (!context.headHash || context.headHash === commit.hash);
+    const isCurrentHead =
+      kind === "head" && isExactHeadReference(ref.name) && (!context.headHash || hashesMatch(context.headHash, commit.hash));
     const isCurrentUpstream = kind === "remote" && upstreamNames.has(normalizeRemoteRefName(ref.name));
     const possibleGraphColorIndex = context.graphColorByRefName?.[ref.name];
     const graphColorIndex =

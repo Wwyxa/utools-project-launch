@@ -2369,6 +2369,12 @@ export const useStore = defineStore("app", {
         return;
       }
 
+      if (gitLoadMorePromises.has(context.contextKey)) {
+        gitLoadMorePromises.delete(context.contextKey);
+        gitLoadMoreTokens.delete(context.contextKey);
+        this.gitRepositoryLoadingMore[context.contextKey] = false;
+      }
+
       this.gitRepositoryRefreshing[context.contextKey] = true;
       this.gitRepositoryStatusRefreshing[context.contextKey] = true;
       if (context.target.kind === "main") {
@@ -2593,10 +2599,20 @@ export const useStore = defineStore("app", {
       gitStatusRefreshPromises.set(context.contextKey, refreshPromise);
       return refreshPromise;
     },
-    async loadMoreGitCommits(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }) {
+    async loadMoreGitCommits(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<void> {
       const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return;
+      const snapshotRefresh = gitSnapshotRefreshPromises.get(context.contextKey);
+      if (snapshotRefresh) {
+        await snapshotRefresh;
+        return this.loadMoreGitCommits(projectId, target);
+      }
+
       const currentSnapshot = this.gitSnapshotForRepository(projectId, target);
-      if (!context || !currentSnapshot) return;
+      if (!currentSnapshot) return;
       const existingLoad = gitLoadMorePromises.get(context.contextKey);
       if (existingLoad) return existingLoad;
 

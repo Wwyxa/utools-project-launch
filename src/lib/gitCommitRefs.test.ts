@@ -81,6 +81,20 @@ describe("presentGitCommitRefs", () => {
     expect(presentation.full[2]).toMatchObject({ graphColorIndex: 7, groupKey: "7:local" });
   });
 
+  it("matches the abbreviated snapshot HEAD to a full commit hash", () => {
+    const hash = "abcdef0123456789abcdef0123456789abcdef01";
+    const presentation = presentGitCommitRefs(
+      commit([{ kind: "head", name: "HEAD -> main", head: true }], undefined, hash),
+      gitContext({ headHash: hash.slice(0, 7) }),
+    );
+
+    expect(presentation.full[0]).toMatchObject({
+      name: "HEAD -> main",
+      priority: 0,
+      isCurrentHead: true,
+    });
+  });
+
   it("hides only the duplicate HEAD local while preserving every remote in dense output", () => {
     const presentation = presentGitCommitRefs(
       commit([

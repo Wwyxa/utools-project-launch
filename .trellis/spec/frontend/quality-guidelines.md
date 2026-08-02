@@ -150,6 +150,29 @@ const top = clamp(rowCenter - popupHeight / 2, viewportInset, viewportHeight - p
 
 **Prevention**: In browser checks, measure both the bar and the direct toggle. Assert 32px for primary and 28px for secondary headers, then use a keyboard-initiated focus interaction to verify the visible outline at normal and host-like widths.
 
+### Common Mistake: Letting Layout Attributes Fall Through a Teleport Fragment
+
+**Symptom**: Vue warns that non-prop attributes such as `class` cannot be inherited because a component renders a fragment or Teleport root. Parent layout constraints silently disappear from the visible panel.
+
+**Cause**: A component with one visible root plus one or more `Teleport` siblings is a multi-root component. Vue cannot choose where to apply fallthrough attributes automatically.
+
+**Fix**: Disable implicit inheritance and forward attributes to the component's canonical visible root.
+
+```vue
+<script setup lang="ts">
+defineOptions({ inheritAttrs: false });
+</script>
+
+<template>
+	<section v-bind="$attrs" class="flex min-h-0 flex-col">
+		<!-- Visible component content. -->
+	</section>
+	<Teleport to="body"><!-- Floating content. --></Teleport>
+</template>
+```
+
+**Prevention**: When a reusable panel contains a `Teleport`, verify its parent-supplied `class`, `id`, and accessibility attributes appear on the visible root. Open the panel once in the browser and confirm the Vue fallthrough warning is absent.
+
 ### Common Mistake: Over-Tall AI Dialogs with Duplicate Summary Cards
 
 **Symptom**: The AI analysis dialog opens with a large blank area, a separate summary card, and an inner scrollbar that competes with the rest of the panel.
