@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend quality-routing context for the affected Git history surface."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required TypeScript/build/browser quality checks and dense hover constraints."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Cross-layer regression checklist for Store, bridge, preload, and component boundaries."}
+{"file":".trellis/tasks/08-02-git-history-virtualization/research/local-vscode-history-rendering.md","reason":"Correctness risks for viewport rows and geometry-intersecting shared SVG paths."}
+{"file":".trellis/tasks/08-02-git-history-virtualization/research/renderer-performance-baseline.md","reason":"Baseline counts and measurement gate for the final performance check."}

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend layer index and pre-development routing for the Vue Git history renderer."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Dense hover preview, overlay, scroll-container, and browser validation requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Data-flow and lifecycle boundary checklist for component, Store, bridge, and preload interactions."}
+{"file":".trellis/tasks/08-02-git-history-virtualization/research/local-vscode-history-rendering.md","reason":"Local VS Code comparison, windowed-SVG decision, and compatibility risks."}
+{"file":".trellis/tasks/08-02-git-history-virtualization/research/renderer-performance-baseline.md","reason":"Pre-implementation DOM/SVG measurements, tooltip isolation proof, and baseline test status."}
