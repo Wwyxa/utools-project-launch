@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Route implementation to the project's Vue, Pinia, type and quality conventions without truncating large layer documents."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply theme, narrow-layout, hover and executable validation requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Coordinate the preload to bridge to Store to Vue data flow without drift."}
+{"file":".trellis/tasks/archive/2026-08/08-01-git-graph-layout-and-refs/research/git-graph-layout-and-ref-presentation.md","reason":"Use the verified VS Code swimlane/ref comparison and regression fixtures."}
+{"file":".trellis/tasks/archive/2026-08/08-01-git-interaction-performance/research/git-interaction-performance-paths.md","reason":"Use the measured-path plan and invalidation boundaries for performance work."}
+{"file":".trellis/tasks/archive/2026-08/08-01-git-tab-refactor-and-styles/research/git-tab-boundaries-and-compact-controls.md","reason":"Use the minimum stable component boundaries and compact control hierarchy."}

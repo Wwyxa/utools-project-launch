@@ -1,0 +1,30 @@
+{
+  "id": "git-commit-tree-and-performance",
+  "name": "git-commit-tree-and-performance",
+  "title": "优化 Git 提交树与交互性能",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "wyxa",
+  "assignee": "wyxa",
+  "createdAt": "2026-08-01",
+  "completedAt": "2026-08-02",
+  "branch": null,
+  "base_branch": "refactor/git-commit-tree",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-01-git-graph-layout-and-refs",
+    "08-01-git-interaction-performance",
+    "08-01-git-tab-refactor-and-styles"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

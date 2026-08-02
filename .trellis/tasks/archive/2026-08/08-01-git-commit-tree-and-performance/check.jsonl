@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Route review to the project's frontend convention set without truncated context injection."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run the required executable, theme and narrow-layout quality gates."}
+{"file":".trellis/tasks/archive/2026-08/08-01-git-graph-layout-and-refs/research/git-graph-layout-and-ref-presentation.md","reason":"Verify topology and badge findings remain satisfied after later children."}
+{"file":".trellis/tasks/archive/2026-08/08-01-git-interaction-performance/research/git-interaction-performance-paths.md","reason":"Verify performance claims use the agreed baseline and invalidation model."}
+{"file":".trellis/tasks/archive/2026-08/08-01-git-tab-refactor-and-styles/research/git-tab-boundaries-and-compact-controls.md","reason":"Verify decomposition avoids empty abstractions and UI regressions."}
