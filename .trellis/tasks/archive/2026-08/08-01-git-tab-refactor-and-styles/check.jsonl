@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Route review to component, state and type conventions without truncated injection."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check theme, focus, narrow layout and executable validation requirements."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check for empty wrappers, duplicated constants and dead inline owners."}
+{"file":".trellis/tasks/08-01-git-tab-refactor-and-styles/research/git-tab-boundaries-and-compact-controls.md","reason":"Verify the delivered split matches the researched minimum boundary."}

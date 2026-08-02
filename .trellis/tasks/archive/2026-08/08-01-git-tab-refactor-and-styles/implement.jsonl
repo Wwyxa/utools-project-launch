@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Keep extracted modules and project components in established feature locations."}
+{"file":".trellis/spec/frontend/index.md","reason":"Route implementation to component, state and type conventions; task research contains the focused Git boundaries."}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"Avoid one-consumer composables and keep complete local lifecycles in components."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Apply semantic-token, dark-theme, hover and narrow-overflow checks."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Extract real complex logic without adding pass-through wrappers."}
+{"file":".trellis/tasks/08-01-git-tab-refactor-and-styles/research/git-tab-boundaries-and-compact-controls.md","reason":"Implement the minimum stable split and compact control dimensions."}
