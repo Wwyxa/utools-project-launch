@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend package conventions and the entry point for the scoped guidelines."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Review explicit dark theme contrast, type/build checks, and layout integrity."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Review whether the projection helper reuses existing patterns without speculative abstraction."}
+{"file": ".trellis/tasks/08-03-improve-git-review-view/research/sourcegit-diff-reference.md", "reason": "Review whether the adopted SourceGit behaviors remain within the planned scope."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Review typed Diff options and failure propagation through preload, bridge, and Store."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review that the command option extension stays inside the established client bridge boundary."}

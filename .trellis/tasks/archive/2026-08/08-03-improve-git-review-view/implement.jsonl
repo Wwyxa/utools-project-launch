@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend package conventions and the entry point for the scoped guidelines."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Explicit dark-theme semantic tokens and frontend validation requirements."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Search before adding the side-by-side projection helper."}
+{"file": ".trellis/tasks/08-03-improve-git-review-view/research/sourcegit-diff-reference.md", "reason": "Local SourceGit interaction reference and deliberate scope exclusions."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Typed preload Diff failures and user-visible result handling across the bridge."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Keep Git process options inside the existing bridge boundary without adding a backend."}
