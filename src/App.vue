@@ -1,20 +1,59 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from "vue";
-import { useStore } from "./store/useStore";
+import { type ProjectStatusMessageState, useStore } from "./store/useStore";
 import Dashboard from "./components/dashboard/Dashboard.vue";
 import ProjectDetails from "./components/project/ProjectDetails.vue";
 import ProjectFormModal from "./components/project/ProjectFormModal.vue";
 import SettingsTab from "./components/layout/SettingsTab.vue";
 import EnvironmentTab from "./components/environment/EnvironmentTab.vue";
 import { useI18n } from "./lib/i18n";
+import { cn } from "./lib/utils";
 import { requestAppEscape } from "./lib/escape";
 import type { ProjectBridgeEvent } from "./types";
+
+type GlobalProjectStatus = { message: string; state: ProjectStatusMessageState };
 
 const store = useStore();
 const storeMessages = useI18n();
 const selectedProject = computed(() => store.selectedProject);
 const activeTab = computed(() => store.activeTab);
 const theme = computed(() => store.theme);
+const globalProjectStatus = computed<GlobalProjectStatus | null>(() => {
+  if (store.projectStatusMessage) {
+    return { message: store.projectStatusMessage, state: store.projectStatusMessageState };
+  }
+  if (Object.values(store.gitRepositoryRefreshing).some(Boolean)) {
+    return { message: "正在刷新 Git 快照...", state: "loading" };
+  }
+  if (Object.values(store.gitRepositoryStatusRefreshing).some(Boolean)) {
+    return { message: "正在更新 Git 状态...", state: "loading" };
+  }
+  if (Object.values(store.gitRepositoryLoadingMore).some(Boolean)) {
+    return { message: "正在加载更多提交...", state: "loading" };
+  }
+  return null;
+});
+const globalProjectStatusIconClass = computed(() => {
+  const state = globalProjectStatus.value?.state;
+  if (state === "success") return "border-status-running bg-status-running";
+  if (state === "warning") return "border-status-warning bg-status-warning";
+  if (state === "error") return "border-status-error bg-status-error";
+  return "animate-spin border-primary border-t-transparent";
+});
+const globalProjectStatusTextClass = computed(() => {
+  const state = globalProjectStatus.value?.state;
+  if (state === "success") return "text-status-running";
+  if (state === "warning") return "text-status-warning";
+  if (state === "error") return "text-status-error";
+  return "text-primary";
+});
+const globalProjectStatusBorderClass = computed(() => {
+  const state = globalProjectStatus.value?.state;
+  if (state === "success") return "border-status-running/30";
+  if (state === "warning") return "border-status-warning/30";
+  if (state === "error") return "border-status-error/30";
+  return "border-primary/30";
+});
 let pluginOutHookRegistered = false;
 
 const extractPluginSearchText = (action: unknown): string => {
@@ -185,6 +224,29 @@ onUnmounted(() => {
         </Transition>
       </main>
     </div>
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <div
+          v-if="globalProjectStatus"
+          :class="
+            cn(
+              'fixed right-4 top-16 z-50 flex max-w-xs items-center gap-2.5 rounded-lg border bg-surface px-3 py-2 shadow-lg',
+              globalProjectStatusBorderClass,
+            )
+          "
+          role="status"
+          aria-live="polite"
+          :title="globalProjectStatus.message"
+        >
+          <div class="flex h-4 w-4 shrink-0 items-center justify-center">
+            <div :class="cn('h-3 w-3 rounded-full border-2', globalProjectStatusIconClass)" />
+          </div>
+          <span :class="cn('text-xs font-medium', globalProjectStatusTextClass)">
+            {{ globalProjectStatus.message }}
+          </span>
+        </div>
+      </Transition>
+    </Teleport>
     <ProjectFormModal />
     <Teleport to="body">
       <Transition name="scale">

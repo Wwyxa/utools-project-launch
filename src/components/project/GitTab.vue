@@ -42,7 +42,7 @@ import {
   type ProjectGitRepositoryTarget,
 } from "../../types";
 import { cn } from "../../lib/utils";
-import { useStore } from "../../store/useStore";
+import { type ProjectStatusMessageState, useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useResizableSplit } from "../../composables/useResizableSplit";
@@ -55,7 +55,7 @@ import GitAiAnalysisDialog from "./GitAiAnalysisDialog.vue";
 import { clearGitAiAnalysisSessionsForProject } from "../../lib/gitAiAnalysisSession";
 import ExternalApplicationLaunchButton from "./ExternalApplicationLaunchButton.vue";
 
-type GitActionState = "idle" | "loading" | "success" | "warning" | "error";
+type GitActionState = ProjectStatusMessageState;
 type GitRemoteActionName = "fetch" | "pull" | "push";
 type RemoteDialogMode = "add" | "edit";
 type WorktreeDiffScope = Exclude<ProjectGitDiffScope, "combined">;
@@ -129,9 +129,6 @@ const gitActionState = ref<GitActionState>("idle");
 const activeGitAction = ref("");
 const isChangesPaneBusy = ref(false);
 const isCommitHistoryBusy = ref(false);
-const gitToastMessage = ref("");
-const gitToastState = ref<Exclude<GitActionState, "idle">>("loading");
-const gitToastTimer = ref<number | undefined>();
 const commitMessage = ref("");
 const confirmationDialog = ref<AppActionDialog | null>(null);
 const isConfirmationRunning = ref(false);
@@ -439,57 +436,9 @@ const isRefreshRunning = () => isGitRefreshing.value || isGitWorkspaceRefreshing
 
 defineExpose({ refreshActiveRepository, isRefreshRunning, isTopInfoCollapsed, toggleTopInfo });
 
-// 全局统一 Loading 状态栏
-const globalLoadingMessage = computed(() => {
-  // 显式 Git 写操作提示优先于后续刷新状态，避免操作结果一闪而过。
-  if (gitToastMessage.value) {
-    return gitToastMessage.value;
-  }
-
-  // Git 刷新操作
-  if (isGitSnapshotRefreshing.value) {
-    return "正在刷新 Git 快照...";
-  }
-  if (isGitStatusRefreshing.value) {
-    return "正在更新 Git 状态...";
-  }
-
-  // 加载更多提交
-  if (isLoadingMore.value) {
-    return "正在加载更多提交...";
-  }
-
-  return "";
-});
-
-const showGlobalLoadingBar = computed(() => Boolean(globalLoadingMessage.value));
-const isGitToastVisible = computed(() => Boolean(gitToastMessage.value));
-const globalLoadingIconClass = computed(() => {
-  if (isGitToastVisible.value && gitToastState.value === "success") return "border-status-running bg-status-running";
-  if (isGitToastVisible.value && gitToastState.value === "warning") return "border-status-warning bg-status-warning";
-  if (isGitToastVisible.value && gitToastState.value === "error") return "border-status-error bg-status-error";
-  return "animate-spin border-primary border-t-transparent";
-});
-const globalLoadingTextClass = computed(() => {
-  if (isGitToastVisible.value && gitToastState.value === "success") return "text-status-running";
-  if (isGitToastVisible.value && gitToastState.value === "warning") return "text-status-warning";
-  if (isGitToastVisible.value && gitToastState.value === "error") return "text-status-error";
-  return "text-primary";
-});
-const globalLoadingBorderClass = computed(() => {
-  if (isGitToastVisible.value && gitToastState.value === "success") return "border-status-running/30";
-  if (isGitToastVisible.value && gitToastState.value === "warning") return "border-status-warning/30";
-  if (isGitToastVisible.value && gitToastState.value === "error") return "border-status-error/30";
-  return "border-primary/30";
-});
-
 const repositoryPath = computed(
   () => snapshot.value?.repositoryPath || activeRepositoryContext.value?.repositoryPath || props.project.path,
 );
-const isLoadingMore = computed(() => {
-  const context = activeRepositoryContext.value;
-  return Boolean(context && store.gitRepositoryLoadingMore[context.contextKey]);
-});
 const selectedDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingDiff = ref(false);
 const copiedText = ref("");
@@ -770,18 +719,7 @@ const requestRemoveRemote = (remote: ProjectGitRemoteSummary) => {
 const setGitActionResult = (state: GitActionState, message: string) => {
   gitActionState.value = state;
   gitActionMessage.value = message;
-  window.clearTimeout(gitToastTimer.value);
-  if (state === "idle" || !message) {
-    gitToastMessage.value = "";
-    return;
-  }
-  gitToastState.value = state;
-  gitToastMessage.value = message;
-  if (state !== "loading") {
-    gitToastTimer.value = window.setTimeout(() => {
-      gitToastMessage.value = "";
-    }, 2200);
-  }
+  store.setProjectStatusMessage(state, message);
 };
 
 const isDirtyGitWriteBlock = (result: ProjectGitActionResult, options: { force?: boolean }) =>
@@ -1128,7 +1066,6 @@ onBeforeUnmount(() => {
   const context = activeRepositoryContext.value;
   if (context) commitDraftsByContext.set(context.contextKey, commitMessage.value);
   window.clearTimeout(copiedTimer.value);
-  window.clearTimeout(gitToastTimer.value);
   window.removeEventListener("pointerdown", handleWindowPointerDown);
   window.removeEventListener("resize", handleFloatingViewportChange);
   window.removeEventListener("scroll", handleFloatingViewportChange, true);
@@ -1210,24 +1147,6 @@ watch(
 
 <template>
   <div class="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden" @click="closeFloatingControls">
-    <!-- 全局 Loading 提示 - 右下角浮动 Toast -->
-    <Transition name="slide-up">
-      <div
-        v-if="showGlobalLoadingBar"
-        :class="
-          cn(
-            'fixed right-4 top-16 z-50 flex max-w-xs items-center gap-2.5 rounded-lg border bg-surface px-3 py-2 shadow-lg',
-            globalLoadingBorderClass,
-          )
-        "
-      >
-        <div class="flex h-4 w-4 items-center justify-center shrink-0">
-          <div :class="cn('h-3 w-3 rounded-full border-2', globalLoadingIconClass)"></div>
-        </div>
-        <span :class="cn('text-xs font-medium', globalLoadingTextClass)">{{ globalLoadingMessage }}</span>
-      </div>
-    </Transition>
-
     <section
       id="git-top-info-panel"
       :aria-hidden="isTopInfoCollapsed"

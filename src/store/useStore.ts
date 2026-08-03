@@ -88,6 +88,7 @@ import type {
 const bridge = getProjectBridge();
 
 type AiAnalysisState = "idle" | "loading" | "success" | "warning" | "error";
+export type ProjectStatusMessageState = "idle" | "loading" | "success" | "warning" | "error";
 
 interface AiStreamHandlers {
   onStart?: () => void;
@@ -113,6 +114,7 @@ const defaultAutomationSchedule = (): ProjectAutomationSchedule => ({
   intervalMinutes: 60,
 });
 const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
+const PROJECT_STATUS_MESSAGE_CLEAR_DELAY_MS = 2200;
 const AUTOMATION_HISTORY_LIMIT = 20;
 const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
@@ -126,6 +128,7 @@ const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>([
 ]);
 const automationMissedPolicies = new Set<ProjectAutomationMissedPolicy>(["grace-run", "run-now", "mark-missed"]);
 let projectConfigMessageClearTimer: number | null = null;
+let projectStatusMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
 let runtimeReconciliationPromise: Promise<void> | null = null;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
@@ -215,6 +218,13 @@ function cancelProjectConfigMessageClear() {
   if (projectConfigMessageClearTimer) {
     window.clearTimeout(projectConfigMessageClearTimer);
     projectConfigMessageClearTimer = null;
+  }
+}
+
+function cancelProjectStatusMessageClear() {
+  if (projectStatusMessageClearTimer) {
+    window.clearTimeout(projectStatusMessageClearTimer);
+    projectStatusMessageClearTimer = null;
   }
 }
 
@@ -1099,6 +1109,8 @@ export const useStore = defineStore("app", {
     projectsLoaded: false,
     projectStorageMessage: "",
     projectConfigMessage: "",
+    projectStatusMessage: "",
+    projectStatusMessageState: "idle" as ProjectStatusMessageState,
     projectFormInspectionMessage: "",
     projectFormInspecting: false,
     projectFormCwdSuggestions: ["."] as string[],
@@ -1294,6 +1306,22 @@ export const useStore = defineStore("app", {
         }
         projectConfigMessageClearTimer = null;
       }, PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS);
+    },
+    setProjectStatusMessage(state: ProjectStatusMessageState, message: string) {
+      cancelProjectStatusMessageClear();
+      this.projectStatusMessageState = state;
+      this.projectStatusMessage = message;
+      if (state === "idle" || !message || state === "loading") {
+        return;
+      }
+
+      projectStatusMessageClearTimer = window.setTimeout(() => {
+        if (this.projectStatusMessageState === state && this.projectStatusMessage === message) {
+          this.projectStatusMessageState = "idle";
+          this.projectStatusMessage = "";
+        }
+        projectStatusMessageClearTimer = null;
+      }, PROJECT_STATUS_MESSAGE_CLEAR_DELAY_MS);
     },
     setDefaultTerminal(kind: DefaultTerminalKind) {
       this.terminalPreferences.kind = kind;
