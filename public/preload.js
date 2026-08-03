@@ -3360,6 +3360,95 @@ function commitGitStaged(projectPath, message) {
   return { ok: true, commitHash, message: commitHash ? `提交成功：${commitHash}` : "提交成功。" };
 }
 
+function normalizeGitStashRef(value) {
+  const stashRef = typeof value === "string" ? value.trim() : "";
+  const match = /^(?:refs\/)?stash@\{(0|[1-9]\d*)\}$/.exec(stashRef);
+  return match ? `stash@{${match[1]}}` : "";
+}
+
+function validateGitStashRef(repositoryPath, stashRef) {
+  const normalized = normalizeGitStashRef(stashRef);
+  return normalized &&
+    runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", `${normalized}^{commit}`]).status === 0
+    ? normalized
+    : "";
+}
+
+function createGitStash(projectPath, message, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  const stashMessage = typeof message === "string" ? message.trim() : "";
+  const includeUntracked = Boolean(options?.includeUntracked);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  const hasStashableChanges = readGitStatusEntries(repositoryPath).some(
+    (status) => includeUntracked || status.status !== "UNTRACKED",
+  );
+  if (!hasStashableChanges) {
+    return {
+      ok: false,
+      message: includeUntracked ? "当前没有可保存到 stash 的变更。" : "当前没有可保存到 stash 的已跟踪文件变更。",
+    };
+  }
+
+  const args = ["stash", "push"];
+  if (includeUntracked) args.push("--include-untracked");
+  if (stashMessage) args.push("--message", stashMessage);
+  const result = runGitResult(repositoryPath, args);
+  return result.status === 0
+    ? { ok: true, message: "已保存当前变更到 stash。" }
+    : { ok: false, message: firstGitError(result, "保存到 stash 失败。") };
+}
+
+function applyGitStash(projectPath, stashRef) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  const normalized = validateGitStashRef(repositoryPath, stashRef);
+  if (!normalized) {
+    return { ok: false, message: "指定的 stash 不存在。" };
+  }
+
+  const result = runGitResult(repositoryPath, ["stash", "apply", normalized]);
+  return result.status === 0
+    ? { ok: true, message: `已应用 ${normalized}。` }
+    : { ok: false, message: firstGitError(result, `应用 ${normalized} 失败。`) };
+}
+
+function popGitStash(projectPath, stashRef) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  const normalized = validateGitStashRef(repositoryPath, stashRef);
+  if (!normalized) {
+    return { ok: false, message: "指定的 stash 不存在。" };
+  }
+
+  const result = runGitResult(repositoryPath, ["stash", "pop", normalized]);
+  return result.status === 0
+    ? { ok: true, message: `已恢复并移除 ${normalized}。` }
+    : { ok: false, message: firstGitError(result, `弹出 ${normalized} 失败。`) };
+}
+
+function dropGitStash(projectPath, stashRef) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  const normalized = validateGitStashRef(repositoryPath, stashRef);
+  if (!normalized) {
+    return { ok: false, message: "指定的 stash 不存在。" };
+  }
+
+  const result = runGitResult(repositoryPath, ["stash", "drop", normalized]);
+  return result.status === 0
+    ? { ok: true, message: `已删除 ${normalized}。` }
+    : { ok: false, message: firstGitError(result, `删除 ${normalized} 失败。`) };
+}
+
 function switchGitBranch(projectPath, branchName, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   const targetBranch = typeof branchName === "string" ? branchName.trim() : "";
@@ -4436,23 +4525,7 @@ function readGitFileDiff(projectPath, relativePath, options = {}) {
   };
 }
 
-function readGitCommitFiles(projectPath, commitHash) {
-  const repositoryPath = findGitRoot(projectPath);
-  const hash = String(commitHash || "").trim();
-  if (!repositoryPath) {
-    throw new Error("未检测到 Git 仓库。");
-  }
-  if (!hash) {
-    return [];
-  }
-
-  const gitPathOptions = ["-c", "core.quotePath=false"];
-  const numstatOutput = runGit(repositoryPath, [...gitPathOptions, "show", "--format=", "--numstat", hash]);
-  const statusOutput = runGit(repositoryPath, [...gitPathOptions, "show", "--format=", "--name-status", hash]);
-  if (numstatOutput === null || statusOutput === null) {
-    throw new Error("无法读取提交变更。");
-  }
-
+function parseGitCommitFileChanges(numstatOutput, statusOutput) {
   const numstatLines = numstatOutput.split(/\r?\n/);
   const statusLines = statusOutput.split(/\r?\n/);
   const statusByPath = new Map();
@@ -4482,7 +4555,81 @@ function readGitCommitFiles(projectPath, commitHash) {
     });
 }
 
-function readGitCommitFileDiff(projectPath, commitHash, relativePath) {
+function readGitFileChanges(repositoryPath, numstatArgs, statusArgs) {
+  const numstatOutput = runGit(repositoryPath, numstatArgs);
+  const statusOutput = runGit(repositoryPath, statusArgs);
+  if (numstatOutput === null || statusOutput === null) {
+    throw new Error("无法读取提交变更。");
+  }
+  return parseGitCommitFileChanges(numstatOutput, statusOutput);
+}
+
+function normalizeGitStashDiffDetails(value) {
+  if (!value || typeof value !== "object") return null;
+  const baseHash = typeof value.baseHash === "string" ? value.baseHash.trim() : "";
+  const untrackedFilesHash = typeof value.untrackedFilesHash === "string" ? value.untrackedFilesHash.trim() : "";
+  return baseHash ? { baseHash, untrackedFilesHash: untrackedFilesHash || null } : null;
+}
+
+function readGitStashFileChanges(repositoryPath, hash, stash) {
+  const gitPathOptions = ["-c", "core.quotePath=false"];
+  const trackedChanges = readGitFileChanges(
+    repositoryPath,
+    [...gitPathOptions, "diff", "--numstat", stash.baseHash, hash],
+    [...gitPathOptions, "diff", "--name-status", stash.baseHash, hash],
+  );
+  if (!stash.untrackedFilesHash) return trackedChanges;
+
+  const untrackedChanges = readGitFileChanges(
+    repositoryPath,
+    [...gitPathOptions, "diff-tree", "--no-commit-id", "--root", "-r", "--numstat", stash.untrackedFilesHash],
+    [...gitPathOptions, "diff-tree", "--no-commit-id", "--root", "-r", "--name-status", stash.untrackedFilesHash],
+  ).map((file) => ({ ...file, status: file.status === "ADDED" ? "UNTRACKED" : file.status }));
+  return [...trackedChanges, ...untrackedChanges];
+}
+
+function readGitCommitFiles(projectPath, commitHash, stash) {
+  const repositoryPath = findGitRoot(projectPath);
+  const hash = String(commitHash || "").trim();
+  if (!repositoryPath) {
+    throw new Error("未检测到 Git 仓库。");
+  }
+  if (!hash) {
+    return [];
+  }
+
+  const stashDetails = normalizeGitStashDiffDetails(stash);
+  if (stashDetails) {
+    return readGitStashFileChanges(repositoryPath, hash, stashDetails);
+  }
+
+  const gitPathOptions = ["-c", "core.quotePath=false"];
+  return readGitFileChanges(
+    repositoryPath,
+    [...gitPathOptions, "show", "--format=", "--numstat", hash],
+    [...gitPathOptions, "show", "--format=", "--name-status", hash],
+  );
+}
+
+function readGitStashFileDiff(repositoryPath, hash, relativePath, stash) {
+  const trackedDiff = runGitDiff(repositoryPath, ["diff", stash.baseHash, hash, "--", relativePath]);
+  if (trackedDiff) return trackedDiff;
+  if (!stash.untrackedFilesHash) return "";
+  return (
+    runGitDiff(repositoryPath, [
+      "diff-tree",
+      "--no-commit-id",
+      "--root",
+      "-r",
+      "-p",
+      stash.untrackedFilesHash,
+      "--",
+      relativePath,
+    ]) || ""
+  );
+}
+
+function readGitCommitFileDiff(projectPath, commitHash, relativePath, stash) {
   const repositoryPath = findGitRoot(projectPath);
   const hash = String(commitHash || "").trim();
   const filePath = String(relativePath || "").trim();
@@ -4491,7 +4638,10 @@ function readGitCommitFileDiff(projectPath, commitHash, relativePath) {
   }
 
   const resolved = resolveProjectChild(repositoryPath, filePath);
-  const diff = runGitDiff(repositoryPath, ["show", "--format=", hash, "--", resolved.relativePath]);
+  const stashDetails = normalizeGitStashDiffDetails(stash);
+  const diff = stashDetails
+    ? readGitStashFileDiff(repositoryPath, hash, resolved.relativePath, stashDetails)
+    : runGitDiff(repositoryPath, ["show", "--format=", hash, "--", resolved.relativePath]) || "";
   return {
     path: resolved.relativePath,
     diff,
@@ -4889,7 +5039,39 @@ async function removeGitRemote(projectPath, remoteName) {
     : { ok: false, remote: name, message: firstGitError(result, "删除 remote 失败。") };
 }
 
-async function readGitCommitRefs(repositoryPath) {
+async function readGitStashes(repositoryPath) {
+  const fieldSeparator = "\x1f";
+  const stashOutput = await runGitAsync(repositoryPath, [
+    "reflog",
+    `--format=%H${fieldSeparator}%P${fieldSeparator}%an${fieldSeparator}%ad${fieldSeparator}%s`,
+    "--date=iso-strict",
+    "refs/stash",
+    "--",
+  ]);
+  const stashes = [];
+
+  String(stashOutput || "")
+    .split(/\r?\n/)
+    .forEach((line, index) => {
+      const [hash, parentText, author, date, message] = line.split(fieldSeparator);
+      const parents = parentText ? parentText.split(" ").filter(Boolean) : [];
+      const baseHash = parents[0];
+      if (!hash || !baseHash) return;
+      stashes.push({
+        hash,
+        baseHash,
+        selector: `stash@{${index}}`,
+        untrackedFilesHash: parents.length === 3 ? parents[2] || null : null,
+        author: author || "",
+        date: date || "",
+        message: message || "",
+      });
+    });
+
+  return stashes;
+}
+
+async function readGitCommitRefs(repositoryPath, stashes = []) {
   const fieldSeparator = "\x1f";
   const [refOutput, symbolicHead, headHash] = await Promise.all([
     runGitAsync(repositoryPath, [
@@ -4927,6 +5109,8 @@ async function readGitCommitRefs(repositoryPath) {
       }
     });
 
+  stashes.forEach((stash) => addRef(stash.hash, { kind: "stash", name: stash.selector }));
+
   const currentHash = String(headHash || "").trim();
   if (currentHash) {
     addRef(currentHash, {
@@ -4936,6 +5120,63 @@ async function readGitCommitRefs(repositoryPath) {
     });
   }
   return refsByCommit;
+}
+
+function insertGitStashes(commits, stashes, refsByCommit) {
+  const stashesByHash = new Map();
+  const stashesByBaseHash = new Map();
+  const stashMetadata = (stash) => ({
+    selector: stash.selector,
+    baseHash: stash.baseHash,
+    untrackedFilesHash: stash.untrackedFilesHash,
+  });
+
+  stashes.forEach((stash) => {
+    if (stashesByHash.has(stash.hash)) return;
+    stashesByHash.set(stash.hash, stash);
+    const baseStashes = stashesByBaseHash.get(stash.baseHash) || [];
+    baseStashes.push(stash);
+    stashesByBaseHash.set(stash.baseHash, baseStashes);
+  });
+
+  const insertedStashHashes = new Set();
+  const stashCommit = (stash) => ({
+    hash: stash.hash,
+    parents: [stash.baseHash],
+    author: stash.author,
+    date: stash.date,
+    refs: stash.selector,
+    refNames: refsByCommit.get(stash.hash) || [{ kind: "stash", name: stash.selector }],
+    stash: stashMetadata(stash),
+    message: stash.message,
+    body: stash.message,
+  });
+  const displayedCommits = [];
+
+  commits.forEach((commit) => {
+    const baseStashes = stashesByBaseHash.get(commit.hash) || [];
+    baseStashes.forEach((stash) => {
+      if (insertedStashHashes.has(stash.hash)) return;
+      displayedCommits.push(stashCommit(stash));
+      insertedStashHashes.add(stash.hash);
+    });
+
+    const matchingStash = stashesByHash.get(commit.hash);
+    if (matchingStash) {
+      displayedCommits.push({
+        ...commit,
+        parents: [matchingStash.baseHash],
+        refs: matchingStash.selector,
+        refNames: refsByCommit.get(commit.hash) || commit.refNames,
+        stash: stashMetadata(matchingStash),
+      });
+      insertedStashHashes.add(commit.hash);
+      return;
+    }
+    displayedCommits.push(commit);
+  });
+
+  return displayedCommits;
 }
 
 async function readGitCommits(projectPath, options = {}) {
@@ -4948,15 +5189,17 @@ async function readGitCommits(projectPath, options = {}) {
     return {
       commits: [],
       hasMoreCommits: false,
+      nextCommitSkip: 0,
       repositoryPath: "",
       lastRefreshedAt: now,
     };
   }
 
+  const stashes = await readGitStashes(repositoryPath);
+  const stashBaseHashes = [...new Set(stashes.map((stash) => stash.baseHash))];
   const [commitOutput, refsByCommit] = await Promise.all([
     runGitAsync(repositoryPath, [
       "log",
-      "--all",
       "--topo-order",
       "--decorate=short",
       `--max-count=${limit + 1}`,
@@ -4964,8 +5207,14 @@ async function readGitCommits(projectPath, options = {}) {
       "--shortstat",
       `--pretty=format:${gitCommitRecordSeparator}%H${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitShortStatSeparator}`,
       "--date=iso-strict",
+      "--branches",
+      "--tags",
+      "--remotes",
+      "HEAD",
+      ...stashBaseHashes,
+      "--",
     ]),
-    readGitCommitRefs(repositoryPath),
+    readGitCommitRefs(repositoryPath, stashes),
   ]);
 
   const commits = [];
@@ -5029,10 +5278,12 @@ async function readGitCommits(projectPath, options = {}) {
   if (hasMoreCommits) {
     commits.length = limit;
   }
+  const nextCommitSkip = skip + commits.length;
 
   return {
-    commits,
+    commits: insertGitStashes(commits, stashes, refsByCommit),
     hasMoreCommits,
+    nextCommitSkip,
     repositoryPath,
     lastRefreshedAt: now,
   };
@@ -5047,6 +5298,7 @@ async function readGitSnapshot(projectPath, options = {}) {
     ...statusSnapshot,
     commits: commitPage.commits,
     hasMoreCommits: commitPage.hasMoreCommits,
+    nextCommitSkip: commitPage.nextCommitSkip,
     repositoryPath: statusSnapshot.repositoryPath || commitPage.repositoryPath,
     lastRefreshedAt: statusSnapshot.lastRefreshedAt,
   };
@@ -5437,6 +5689,10 @@ window.projectBridge = {
   unstageGitFiles,
   discardGitFiles,
   commitGitStaged,
+  createGitStash,
+  applyGitStash,
+  popGitStash,
+  dropGitStash,
   switchGitBranch,
   checkoutGitCommit,
   createGitBranch,

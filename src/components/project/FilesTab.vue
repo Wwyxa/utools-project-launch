@@ -31,6 +31,7 @@ import {
   collectMarkdownImageSources,
   highlightCode,
   isMarkdownFile,
+  languageForFilePath,
   renderMarkdown,
   type MarkdownImageResolution,
 } from "../../lib/markdown";
@@ -200,65 +201,9 @@ const renderedMarkdown = computed(() =>
     imageFallbackText: t.value.files.localImageUnavailable,
   }),
 );
-const previewLanguage = computed(() => {
-  const extension = selectedFile.value?.extension.toLowerCase().replace(/^\./, "") || "";
-  const name = selectedFile.value?.name.toLowerCase() || "";
-
-  if (name === "dockerfile") return "dockerfile";
-
-  switch (extension) {
-    case "js":
-    case "mjs":
-    case "cjs":
-    case "jsx":
-      return "javascript";
-    case "ts":
-    case "tsx":
-    case "cts":
-    case "mts":
-      return "typescript";
-    case "html":
-    case "htm":
-    case "vue":
-    case "xml":
-      return "xml";
-    case "md":
-    case "markdown":
-      return "markdown";
-    case "json":
-      return "json";
-    case "css":
-      return "css";
-    case "yml":
-    case "yaml":
-      return "yaml";
-    case "sh":
-    case "bash":
-      return "bash";
-    case "sql":
-      return "sql";
-    case "ini":
-      return "ini";
-    case "py":
-      return "python";
-    case "go":
-      return "go";
-    case "rs":
-      return "rust";
-    case "java":
-      return "java";
-    case "c":
-    case "h":
-      return "c";
-    case "cpp":
-    case "cc":
-    case "cxx":
-    case "hpp":
-      return "cpp";
-    default:
-      return "";
-  }
-});
+const previewLanguage = computed(() =>
+  languageForFilePath(selectedFile.value?.relativePath || selectedFile.value?.name || ""),
+);
 const renderedCode = computed(() => highlightCode(draftContent.value, previewLanguage.value));
 const searchMatches = computed<SearchMatch[]>(() => {
   const query = findQuery.value;

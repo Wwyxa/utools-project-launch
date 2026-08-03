@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
+  Archive,
   Check,
   CircleCheck,
   ChevronDown,
@@ -26,6 +27,7 @@ import {
   hasAiReasoningDisplay,
 } from "../../lib/aiReasoning";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import ProjectActionDialog from "./ProjectActionDialog.vue";
@@ -89,6 +91,11 @@ const commitMessageAiResult = ref(createAiReasoningStreamState());
 const commitMessageAiState = ref<AiState>("idle");
 const confirmationDialog = ref<AppActionDialog | null>(null);
 const isConfirmationRunning = ref(false);
+const stashDialogOpen = ref(false);
+const stashMessage = ref("");
+const stashIncludeUntracked = ref(false);
+const stashMessageInputRef = ref<HTMLInputElement | null>(null);
+const stashDialogOpener = ref<HTMLElement | null>(null);
 const repositoryContextGeneration = ref(0);
 const commitMessageTextareaMinHeight = 32;
 const commitMessageTextareaMaxHeight = 144;
@@ -117,6 +124,8 @@ const visibleWorktreeItems = computed(() =>
   ),
 );
 const isChangesWriteBusy = computed(() => Boolean(activeGitAction.value) || activeGitFileActions.value.length > 0);
+const isStashDialogBusy = computed(() => activeGitAction.value === "stash");
+const canCreateStash = computed(() => !props.disabled && !isChangesWriteBusy.value && files.value.length > 0);
 const canCommitStaged = computed(
   () => !props.disabled && !isChangesWriteBusy.value && hasStagedChanges.value && Boolean(props.commitMessage.trim()),
 );
@@ -391,6 +400,55 @@ const closeConfirmationDialog = () => {
   if (!isConfirmationRunning.value) confirmationDialog.value = null;
 };
 
+const closeStashDialog = (restoreFocus = true, force = false) => {
+  if (isStashDialogBusy.value && !force) return;
+  stashDialogOpen.value = false;
+  const opener = stashDialogOpener.value;
+  stashDialogOpener.value = null;
+  if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
+};
+
+const openStashDialog = async (event: MouseEvent) => {
+  if (!canCreateStash.value) return;
+  stashDialogOpener.value = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  stashMessage.value = "";
+  stashIncludeUntracked.value = false;
+  stashDialogOpen.value = true;
+  await nextTick();
+  stashMessageInputRef.value?.focus();
+};
+
+const handleCreateGitStash = async () => {
+  if (!canCreateStash.value) return;
+  let saved = false;
+  emit("worktree-action-started");
+  activeGitAction.value = "stash";
+  reportFeedback("loading", t.value.git.stashSaving);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.createGitStash(
+      props.projectId,
+      stashMessage.value,
+      { includeUntracked: stashIncludeUntracked.value },
+      props.repositoryTarget,
+    );
+    if (!result) {
+      reportFeedback("warning", "当前项目不可用，无法保存到 stash。");
+      return;
+    }
+    reportFeedback(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      saved = true;
+      emit("select-file", null);
+    }
+  } catch (error) {
+    reportFeedback("error", error instanceof Error ? error.message : "保存到 stash 失败。");
+  } finally {
+    activeGitAction.value = "";
+    if (saved) closeStashDialog();
+  }
+};
+
 const confirmRiskyAction = async () => {
   const dialog = confirmationDialog.value;
   if (!dialog || isConfirmationRunning.value) return;
@@ -566,6 +624,17 @@ const requestOpenFile = (file: ProjectGitFileChange) => {
   if (file.status !== "DELETED") emit("open-file", file.path);
 };
 
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (event.detail.handled || !stashDialogOpen.value || isStashDialogBusy.value) return;
+  closeStashDialog();
+  event.detail.handle();
+};
+
+let stopAppEscapeListener = () => {};
+onMounted(() => {
+  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+});
+
 watch(isChangesWriteBusy, (busy) => emit("busy-change", busy), { immediate: true });
 
 watch(
@@ -573,6 +642,7 @@ watch(
   () => {
     repositoryContextGeneration.value += 1;
     confirmationDialog.value = null;
+    closeStashDialog(false, true);
     commitMessageAiResult.value = createAiReasoningStreamState();
     commitMessageAiState.value = "idle";
   },
@@ -590,6 +660,7 @@ watch(
 watch([() => props.commitMessage, () => props.open], scheduleCommitMessageTextareaResize, { immediate: true });
 
 onBeforeUnmount(() => {
+  stopAppEscapeListener();
   repositoryContextGeneration.value += 1;
   emit("busy-change", false);
 });
@@ -623,6 +694,17 @@ onBeforeUnmount(() => {
             @click="generateCommitMessage"
           >
             <WandSparkles :size="13" :class="commitMessageAiState === 'loading' ? 'animate-pulse' : ''" />
+          </button>
+          <button
+            type="button"
+            class="git-section-action"
+            :disabled="!canCreateStash"
+            :aria-busy="isStashDialogBusy"
+            :title="t.git.stashChanges"
+            :aria-label="t.git.stashChanges"
+            @click="openStashDialog($event)"
+          >
+            <Archive :size="13" :class="isStashDialogBusy ? 'animate-pulse' : ''" />
           </button>
           <button
             type="button"
@@ -844,5 +926,68 @@ onBeforeUnmount(() => {
       @cancel="closeConfirmationDialog"
       @primary="confirmRiskyAction"
     />
+
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="stashDialogOpen"
+          class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+          @click.self="closeStashDialog"
+        >
+          <form
+            class="w-[min(24rem,92vw)] overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="git-stash-dialog-title"
+            @submit.prevent="handleCreateGitStash"
+          >
+            <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
+              <h3 id="git-stash-dialog-title" class="text-sm font-bold text-on-surface">{{ t.git.stashChanges }}</h3>
+            </div>
+            <div class="space-y-3 px-4 py-3">
+              <label class="block text-xs font-bold text-on-surface">
+                <span>{{ t.git.stashMessage }}</span>
+                <input
+                  ref="stashMessageInputRef"
+                  v-model="stashMessage"
+                  type="text"
+                  autocomplete="off"
+                  class="ui-field mt-1 w-full"
+                  :disabled="isStashDialogBusy"
+                  :placeholder="t.git.stashMessagePlaceholder"
+                />
+              </label>
+              <label class="flex items-center gap-2 text-xs font-medium text-on-surface">
+                <input
+                  v-model="stashIncludeUntracked"
+                  type="checkbox"
+                  class="accent-primary"
+                  :disabled="isStashDialogBusy"
+                />
+                <span>{{ t.git.stashIncludeUntracked }}</span>
+              </label>
+              <div class="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+                  :disabled="isStashDialogBusy"
+                  @click="closeStashDialog"
+                >
+                  {{ t.common.cancel }}
+                </button>
+                <button
+                  type="submit"
+                  class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                  :disabled="isStashDialogBusy"
+                >
+                  <Archive :size="13" :class="isStashDialogBusy ? 'animate-pulse' : ''" />
+                  {{ isStashDialogBusy ? t.git.stashSaving : t.git.stashSave }}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </Transition>
+    </Teleport>
   </section>
 </template>

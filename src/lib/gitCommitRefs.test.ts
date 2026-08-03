@@ -247,6 +247,18 @@ describe("presentGitCommitRefs", () => {
     ).toEqual([{ name: "archive/merged-last-year", display: "label", memberNames: ["archive/merged-last-year"] }]);
   });
 
+  it("keeps a structured stash ref as an actionable dense label", () => {
+    const presentation = presentGitCommitRefs(
+      commit([{ kind: "stash", name: "stash@{0}" }], undefined, "stash-commit"),
+      gitContext({ headHash: "head", upstream: null }),
+    );
+
+    expect(presentation.full).toMatchObject([{ kind: "stash", name: "stash@{0}", priority: 6 }]);
+    expect(
+      presentation.dense.members.map(({ kind, name, display, memberNames }) => ({ kind, name, display, memberNames })),
+    ).toEqual([{ kind: "stash", name: "stash@{0}", display: "label", memberNames: ["stash@{0}"] }]);
+  });
+
   it("shows one primary label and icon-only companions for local and remote refs", () => {
     const presentation = presentGitCommitRefs(
       commit([

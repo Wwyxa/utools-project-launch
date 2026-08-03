@@ -395,6 +395,10 @@ export interface ProjectGitBulkFileActionOptions {
   all?: boolean;
 }
 
+export interface ProjectGitStashOptions {
+  includeUntracked?: boolean;
+}
+
 export interface ProjectGitCommitMessageDiffResult {
   ok: boolean;
   scope: "staged" | "working-tree";
@@ -403,12 +407,18 @@ export interface ProjectGitCommitMessageDiffResult {
   message?: string;
 }
 
-export type ProjectGitCommitRefKind = "head" | "local" | "remote" | "tag";
+export type ProjectGitCommitRefKind = "head" | "local" | "remote" | "tag" | "stash";
 
 export interface ProjectGitCommitRef {
   kind: ProjectGitCommitRefKind;
   name: string;
   head?: boolean;
+}
+
+export interface ProjectGitStash {
+  selector: string;
+  baseHash: string;
+  untrackedFilesHash: string | null;
 }
 
 export interface ProjectGitCommitShortStats {
@@ -427,6 +437,7 @@ export interface ProjectGitCommitSummary {
   parents?: string[];
   refs?: string;
   refNames?: ProjectGitCommitRef[];
+  stash?: ProjectGitStash;
   files?: ProjectGitFileChange[];
   readonly shortStats?: ProjectGitCommitShortStats;
 }
@@ -444,6 +455,7 @@ export interface ProjectGitSnapshot {
   upstream?: ProjectGitUpstreamSummary | null;
   base?: ProjectGitBaseSummary | null;
   hasMoreCommits?: boolean;
+  nextCommitSkip?: number;
   repositoryPath: string;
   lastRefreshedAt: string;
   statusText: string;
@@ -468,6 +480,7 @@ export interface ProjectGitStatusSnapshot {
 export interface ProjectGitCommitPage {
   commits: ProjectGitCommitSummary[];
   hasMoreCommits?: boolean;
+  nextCommitSkip?: number;
   repositoryPath: string;
   lastRefreshedAt: string;
 }
@@ -926,8 +939,9 @@ export interface ProjectBridge {
     projectPath: string,
     commitHash: string,
     relativePath: string,
+    stash?: ProjectGitStash,
   ): Promise<ProjectGitFileDiffResult>;
-  readGitCommitFiles(projectPath: string, commitHash: string): Promise<ProjectGitFileChange[]>;
+  readGitCommitFiles(projectPath: string, commitHash: string, stash?: ProjectGitStash): Promise<ProjectGitFileChange[]>;
   readGitCommitAuthorAvatar(projectPath: string, commitHash: string): Promise<string | null>;
   readGitCommitMessageDiff(projectPath: string): Promise<ProjectGitCommitMessageDiffResult>;
   stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
@@ -949,6 +963,14 @@ export interface ProjectBridge {
     options?: ProjectGitBulkFileActionOptions,
   ): Promise<ProjectGitActionResult>;
   commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>;
+  createGitStash(
+    projectPath: string,
+    message?: string,
+    options?: ProjectGitStashOptions,
+  ): Promise<ProjectGitActionResult>;
+  applyGitStash(projectPath: string, stashRef: string): Promise<ProjectGitActionResult>;
+  popGitStash(projectPath: string, stashRef: string): Promise<ProjectGitActionResult>;
+  dropGitStash(projectPath: string, stashRef: string): Promise<ProjectGitActionResult>;
   switchGitBranch(
     projectPath: string,
     branchName: string,

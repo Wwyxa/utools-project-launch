@@ -130,6 +130,89 @@ try {
     true,
   );
 
+  const untrackedOnlyPath = path.join(projectRoot, "untracked-only.txt");
+  fs.writeFileSync(untrackedOnlyPath, "untracked only\n");
+  assert.equal((await bridge.createGitStash(projectRoot, "ignored untracked")).ok, false);
+  assert.equal(fs.existsSync(untrackedOnlyPath), true);
+  fs.appendFileSync(path.join(projectRoot, "history.txt"), "first stash change\n");
+  fs.writeFileSync(path.join(projectRoot, "staged-stash.txt"), "staged stash change\n");
+  runGit("add", "staged-stash.txt");
+  assert.equal((await bridge.createGitStash(projectRoot, "first stash", { includeUntracked: true })).ok, true);
+  assert.equal(fs.existsSync(untrackedOnlyPath), false);
+  fs.appendFileSync(path.join(projectRoot, "history.txt"), "second stash change\n");
+  assert.equal((await bridge.createGitStash(projectRoot, "second stash")).ok, true);
+  const stashPage = await bridge.readGitCommits(projectRoot, { limit: 20 });
+  assert.equal(stashPage.nextCommitSkip, 2);
+  const stashCommits = stashPage.commits.filter((commit) => commit.refNames.some((ref) => ref.kind === "stash"));
+  assert.deepEqual(
+    Array.from(stashCommits, (commit) => commit.refNames.find((ref) => ref.kind === "stash")?.name),
+    ["stash@{0}", "stash@{1}"],
+  );
+  assert.deepEqual(
+    Array.from(stashCommits, (commit) => Array.from(commit.parents || [])),
+    [[latestCommit.hash], [latestCommit.hash]],
+  );
+  assert.deepEqual(
+    Array.from(stashCommits, (commit) => ({
+      selector: commit.stash?.selector,
+      baseHash: commit.stash?.baseHash,
+    })),
+    [
+      { selector: "stash@{0}", baseHash: latestCommit.hash },
+      { selector: "stash@{1}", baseHash: latestCommit.hash },
+    ],
+  );
+  assert.equal(stashCommits[0]?.stash?.untrackedFilesHash, null);
+  assert.match(stashCommits[1]?.stash?.untrackedFilesHash || "", /^[0-9a-f]{40,64}$/);
+  const firstStashFiles = await bridge.readGitCommitFiles(projectRoot, stashCommits[1].hash, stashCommits[1].stash);
+  assert.deepEqual(
+    Array.from(firstStashFiles, (file) => ({ path: file.path, status: file.status })).sort((left, right) =>
+      left.path.localeCompare(right.path),
+    ),
+    [
+      { path: "history.txt", status: "MODIFIED" },
+      { path: "staged-stash.txt", status: "ADDED" },
+      { path: "untracked-only.txt", status: "UNTRACKED" },
+    ],
+  );
+  const firstStashStagedDiff = await bridge.readGitCommitFileDiff(
+    projectRoot,
+    stashCommits[1].hash,
+    "staged-stash.txt",
+    stashCommits[1].stash,
+  );
+  assert.match(firstStashStagedDiff.diff, /\+staged stash change/);
+  const firstStashUntrackedDiff = await bridge.readGitCommitFileDiff(
+    projectRoot,
+    stashCommits[1].hash,
+    "untracked-only.txt",
+    stashCommits[1].stash,
+  );
+  assert.match(firstStashUntrackedDiff.diff, /\+untracked only/);
+  assert.equal(
+    stashPage.commits.some((commit) => /^(?:index|untracked files) on /.test(commit.message)),
+    false,
+  );
+  assert.equal((await bridge.applyGitStash(projectRoot, "stash@{1}")).ok, true);
+  assert.equal(fs.existsSync(untrackedOnlyPath), true);
+  runGit("reset", "--hard");
+  runGit("clean", "-fd");
+  assert.equal((await bridge.dropGitStash(projectRoot, "stash@{1}")).ok, true);
+  assert.equal((await bridge.applyGitStash(projectRoot, "stash@{0}")).ok, true);
+  assert.match(fs.readFileSync(path.join(projectRoot, "history.txt"), "utf8"), /second stash change/);
+  assert.equal((await bridge.dropGitStash(projectRoot, "stash@{0}")).ok, true);
+  assert.equal(runGit("stash", "list").trim(), "");
+  runGit("reset", "--hard");
+  runGit("clean", "-fd");
+
+  fs.appendFileSync(path.join(projectRoot, "history.txt"), "stash pop change\n");
+  assert.equal((await bridge.createGitStash(projectRoot, "pop validation")).ok, true);
+  assert.equal((await bridge.popGitStash(projectRoot, "stash@{0}")).ok, true);
+  assert.match(fs.readFileSync(path.join(projectRoot, "history.txt"), "utf8"), /stash pop change/);
+  assert.equal(runGit("stash", "list").trim(), "");
+  runGit("reset", "--hard");
+  runGit("clean", "-fd");
+
   assert.equal((await bridge.createGitBranch(projectRoot, "created", rootCommit.hash)).ok, true);
   assert.equal(runGit("rev-parse", "created").trim(), rootCommit.hash);
   assert.equal((await bridge.createGitBranch(projectRoot, "created", rootCommit.hash)).ok, false);

@@ -992,7 +992,13 @@ const handleViewDiff = async (commitHash: string, path: string, commitMessage?: 
   isLoadingDiff.value = true;
   selectedDiff.value = { path, diff: "" };
   try {
-    const result = await store.readGitCommitFileDiff(props.project.id, commitHash, path, activeRepositoryTarget.value);
+    const result = await store.readGitCommitFileDiff(
+      props.project.id,
+      commitHash,
+      path,
+      activeRepositoryTarget.value,
+      commit.stash,
+    );
     if (
       generation === diffRequestGeneration &&
       commitReviewSelection.value?.commitHash === commitHash &&
@@ -1727,6 +1733,7 @@ watch(
             v-if="worktreeSelection || commitReviewSelection"
             v-model:scroll-top="reviewScrollTop"
             :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
+            :path="worktreeSelection?.path || commitReviewSelection?.path || ''"
             :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
             :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
           />

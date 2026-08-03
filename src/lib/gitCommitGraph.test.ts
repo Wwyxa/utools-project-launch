@@ -1,18 +1,25 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectGitCommitSummary } from "../types";
 import {
+  collapseGitStashAuxiliaryCommits,
   GIT_COMMIT_GRAPH_GEOMETRY,
+  isGitStashCommit,
   layoutGitCommitGraph,
   selectGitCommitGraphWindow,
   type GitCommitGraphLayout,
 } from "./gitCommitGraph";
 
-const commit = (hash: string, parents: string[] = []): ProjectGitCommitSummary => ({
+const commit = (
+  hash: string,
+  parents: string[] = [],
+  overrides: Partial<ProjectGitCommitSummary> = {},
+): ProjectGitCommitSummary => ({
   hash,
   message: hash,
   author: "Test Author",
   date: "2026-08-01T00:00:00.000Z",
   parents,
+  ...overrides,
 });
 
 const rowFor = (layout: GitCommitGraphLayout, hash: string) => {
@@ -22,6 +29,62 @@ const rowFor = (layout: GitCommitGraphLayout, hash: string) => {
 };
 
 describe("layoutGitCommitGraph", () => {
+  it("recognizes structured and legacy stash references", () => {
+    expect(
+      isGitStashCommit(
+        commit("metadata", [], {
+          stash: { selector: "stash@{0}", baseHash: "base", untrackedFilesHash: null },
+        }),
+      ),
+    ).toBe(true);
+    expect(isGitStashCommit(commit("structured", [], { refNames: [{ kind: "stash", name: "stash@{0}" }] }))).toBe(true);
+    expect(isGitStashCommit(commit("legacy", [], { refs: "refs/stash" }))).toBe(true);
+    expect(isGitStashCommit(commit("ordinary", [], { refs: "main" }))).toBe(false);
+  });
+
+  it("collapses unreferenced stash index and untracked commits", () => {
+    const commits = [
+      commit("stash", ["base", "index", "untracked"], {
+        refNames: [{ kind: "stash", name: "stash@{0}" }],
+      }),
+      commit("untracked"),
+      commit("index", ["base"]),
+      commit("base"),
+    ];
+
+    const compacted = collapseGitStashAuxiliaryCommits(commits);
+    const layout = layoutGitCommitGraph(compacted);
+
+    expect(compacted.map((candidate) => candidate.hash)).toEqual(["stash", "base"]);
+    expect(compacted[0]?.parents).toEqual(["base"]);
+    expect(commits[0]?.parents).toEqual(["base", "index", "untracked"]);
+    expect(rowFor(layout, "stash").isMerge).toBe(false);
+    expect(rowFor(layout, "stash").nodeLane).toBe(1);
+    expect(rowFor(layout, "stash").outputLanes.map((lane) => lane.id)).toEqual(["base", "base"]);
+  });
+
+  it("keeps every leading stash in a side lane beside its base", () => {
+    const layout = layoutGitCommitGraph(
+      [
+        commit("stash-0", ["base"], {
+          stash: { selector: "stash@{0}", baseHash: "base", untrackedFilesHash: null },
+        }),
+        commit("stash-1", ["base"], {
+          stash: { selector: "stash@{1}", baseHash: "base", untrackedFilesHash: "untracked" },
+        }),
+        commit("base"),
+      ],
+      { colorIndexByCommitHash: { "stash-0": 1, "stash-1": 1, base: 0 } },
+    );
+
+    expect(rowFor(layout, "stash-0").inputLanes.map((lane) => lane.id)).toEqual(["base"]);
+    expect(rowFor(layout, "stash-0").nodeLane).toBe(1);
+    expect(rowFor(layout, "stash-0").outputLanes.map((lane) => lane.id)).toEqual(["base", "base"]);
+    expect(rowFor(layout, "stash-1").nodeLane).toBe(2);
+    expect(rowFor(layout, "stash-1").outputLanes.map((lane) => lane.id)).toEqual(["base", "base", "base"]);
+    expect(rowFor(layout, "base").inputLanes.map((lane) => lane.id)).toEqual(["base", "base", "base"]);
+  });
+
   it("clones output lanes into the next row and terminates roots", () => {
     const layout = layoutGitCommitGraph([commit("A", ["B"]), commit("B")]);
 

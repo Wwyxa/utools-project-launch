@@ -100,7 +100,7 @@ const baseRefNames = (context: GitCommitRefPresentationContext) => {
 const remainingPriority = (kind: GitCommitRefPresentationKind) => {
   if (kind === "local") return 3;
   if (kind === "remote") return 4;
-  if (kind === "tag") return 5;
+  if (kind === "tag" || kind === "stash") return 5;
   return 6;
 };
 

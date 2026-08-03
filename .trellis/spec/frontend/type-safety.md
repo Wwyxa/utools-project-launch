@@ -688,3 +688,97 @@ const payload = normalizeProjectImportPayload(parsed);
 ```
 
 External JSON must pass through runtime validation before store merge.
+
+## Scenario: Git Stash History And Graph Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: stash history crosses `public/preload.js`, `ProjectBridge`, Pinia snapshots, `GitCommitHistory.vue`, and the pure commit graph layout.
+- Trigger: Git stores only the newest stash at `refs/stash`; older entries must be read from its reflog and remain actionable in the rendered history.
+
+### 2. Signatures
+
+- `ProjectGitStash = { selector: string; baseHash: string; untrackedFilesHash: string | null }`.
+- `ProjectGitCommitSummary.stash?: ProjectGitStash`; `refNames` retains a `{ kind: "stash", name: selector }` presentation ref.
+- Store and bridge actions use `createGitStash(...)`, `applyGitStash(projectPath, selector)`, `popGitStash(projectPath, selector)`, and `dropGitStash(projectPath, selector)`.
+- Detail readers accept the same optional metadata: `readGitCommitFiles(projectPath, commitHash, stash?: ProjectGitStash)` and `readGitCommitFileDiff(projectPath, commitHash, relativePath, stash?: ProjectGitStash)`.
+
+### 3. Contracts
+
+- Preload reads `refs/stash` through `git reflog` in newest-first order and derives the canonical action selector as `stash@{<entry index>}`. Do not use `%gD` as the numeric selector source while `--date=iso-strict` is active: Git emits a timestamp selector instead.
+- Every reflog entry becomes one synthetic history commit immediately before its visible `baseHash`, with `parents: [baseHash]`. The index and optional untracked-file helper commits stay out of the visible history while `untrackedFilesHash` remains available in metadata.
+- A stash at the top of a filtered history must preseed a visible base lane when no lane for that base exists. Its node therefore occupies a side lane; the base/mainline must not be replaced by the first stash node.
+- Components select Apply, Pop, and Drop targets from `commit.stash.selector` first. Structured and legacy stash refs are presentation fallbacks only.
+- History expansion, tooltip fallback, right-side file preview, and AI diff context pass `commit.stash` to the detail readers. Ordinary commits omit it and retain the generic commit reader path.
+- For a stash detail reader, compare `baseHash` to the stash hash for tracked files. When `untrackedFilesHash` is non-null, append that root tree's `diff-tree --root` files and patches, and label its added files `UNTRACKED`.
+- Stash writes always refresh the full Git snapshot; Pop and Drop also refresh refs because selector indices can change.
+
+### 4. Validation & Error Matrix
+
+- No `refs/stash` reflog -> no synthetic stash commits.
+- Two stashes sharing one base -> expose `stash@{0}` and `stash@{1}` in stack order, each with the same `baseHash`.
+- A stash created with `--include-untracked` -> preserve a non-null `untrackedFilesHash` but display no `index on ...` or `untracked files on ...` helper rows.
+- A stash containing staged, tracked working-tree, and untracked changes -> file details include all three categories; the untracked entry has `status: "UNTRACKED"` and its single-file patch is non-empty.
+- A stash detail reader invoked without metadata -> do not infer a stash from generic merge parents; keep the normal commit reader path so unrelated merge commits retain their established behavior.
+- A filtered-out stash base -> do not synthesize a dangling base lane outside the visible graph window.
+- An invalid or stale selector -> preload returns the existing typed failure without invoking a stash mutation.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a stack at the current branch tip displays every stash as a distinct side-lane node beside the base commit.
+- Good: opening a historical stash lists staged, tracked, and untracked files, and selecting each file displays the corresponding patch.
+- Base: a stash behind a newer regular commit reuses that commit's existing base lane and still fans into the correct base.
+- Bad: treating `refs/stash` as the only stash ref, which silently drops every older stack entry.
+- Bad: feeding a leading stash into the ordinary layout with no base lane, which renders it as the blue mainline node.
+- Bad: calling `git show <stash-hash>` for a stash merge commit; Git's combined merge diff can omit staged and untracked files.
+
+### 6. Tests Required
+
+- `npm run validate:git-commits` must create two stashes, assert both selectors/base hashes, assert the untracked parent is metadata rather than a visible helper commit, and verify staged/untracked file rows plus their individual patches for a historical stash.
+- `npx vitest run src/lib/gitCommitGraph.test.ts` must cover a leading multi-stash stack whose first stash has `nodeLane > 0`.
+- Run `node --check public/preload.js`, `npm run lint`, and `npm run build` after changing the stash bridge, types, or renderer.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+const selector = reflogRecord.fullSelector; // `%gD` with --date=iso-strict
+```
+
+This can produce `refs/stash@{<timestamp>}` rather than the numeric stack selector used by the UI actions.
+
+#### Correct
+
+```js
+reflogLines.forEach((line, index) => {
+  stashes.push({ selector: `stash@{${index}}`, baseHash, untrackedFilesHash });
+});
+```
+
+Keep selector generation tied to reflog stack order, then carry it as structured metadata through the graph and context menu.
+
+#### Wrong
+
+```js
+runGit(repositoryPath, ["show", "--format=", "--name-status", stashHash]);
+```
+
+This asks Git for a combined merge diff, which can hide file changes stored in the stash index or untracked parent.
+
+#### Correct
+
+```js
+readGitFileChanges(
+  repositoryPath,
+  ["diff", "--numstat", stash.baseHash, stashHash],
+  ["diff", "--name-status", stash.baseHash, stashHash],
+);
+readGitFileChanges(
+  repositoryPath,
+  ["diff-tree", "--no-commit-id", "--root", "-r", "--numstat", stash.untrackedFilesHash],
+  ["diff-tree", "--no-commit-id", "--root", "-r", "--name-status", stash.untrackedFilesHash],
+);
+```
+
+Use the first-parent range for tracked changes and the root-tree range for the optional untracked payload.

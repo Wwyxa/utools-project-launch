@@ -125,6 +125,51 @@ const explicitNodeColorIndex = (hash: string, options: GitCommitGraphLayoutOptio
 const nonNegativeFinite = (value: number | undefined) =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 
+const legacyCommitRefNames = (commit: ProjectGitCommitSummary) =>
+  (commit.refs || "")
+    .split(",")
+    .map((ref) => ref.trim())
+    .filter(Boolean);
+
+export const isGitStashCommit = (commit: ProjectGitCommitSummary) =>
+  Boolean(commit.stash) ||
+  commit.refNames?.some((ref) => ref.kind === "stash") ||
+  legacyCommitRefNames(commit).some((ref) => ref === "refs/stash" || /^stash@\{\d+\}$/.test(ref));
+
+const hasNonStashRef = (commit: ProjectGitCommitSummary) => {
+  if (commit.refNames?.length) return commit.refNames.some((ref) => ref.kind !== "stash");
+  return legacyCommitRefNames(commit).some((ref) => ref !== "refs/stash" && !/^stash@\{\d+\}$/.test(ref));
+};
+
+export const collapseGitStashAuxiliaryCommits = (
+  commits: readonly ProjectGitCommitSummary[],
+): ProjectGitCommitSummary[] => {
+  const commitsByHash = new Map(commits.map((commit) => [commit.hash, commit]));
+  const auxiliaryHashes = new Set<string>();
+
+  for (const stashCommit of commits) {
+    const [baseHash, ...parentHashes] = stashCommit.parents || [];
+    if (!isGitStashCommit(stashCommit) || !baseHash) continue;
+
+    for (const [index, parentHash] of parentHashes.entries()) {
+      const parent = commitsByHash.get(parentHash);
+      if (!parent || hasNonStashRef(parent)) continue;
+
+      const isIndexCommit = index === 0 && (parent.parents || []).length === 1 && parent.parents?.[0] === baseHash;
+      const isUntrackedCommit = index > 0 && (parent.parents || []).length === 0;
+      if (isIndexCommit || isUntrackedCommit) auxiliaryHashes.add(parentHash);
+    }
+  }
+
+  return commits
+    .filter((commit) => !auxiliaryHashes.has(commit.hash))
+    .map((commit) => {
+      const parents = commit.parents || [];
+      const visibleParents = parents.filter((parentHash) => !auxiliaryHashes.has(parentHash));
+      return visibleParents.length === parents.length ? commit : { ...commit, parents: visibleParents };
+    });
+};
+
 const rowContentBottom = (row: GitCommitGraphRow) => row.top + GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + row.blockHeight;
 
 const firstRowIntersecting = (rows: readonly GitCommitGraphRow[], top: number) => {
@@ -154,6 +199,12 @@ export const layoutGitCommitGraph = (
 
   for (const [rowIndex, commit] of commits.entries()) {
     const inputLanes = previousOutputLanes.map((lane) => ({ ...lane }));
+    const stashBaseHash = isGitStashCommit(commit) ? commit.stash?.baseHash || commit.parents?.[0] : undefined;
+    if (stashBaseHash && visibleHashes.has(stashBaseHash) && !inputLanes.some((lane) => lane.id === stashBaseHash)) {
+      const baseColorIndex = explicitNodeColorIndex(stashBaseHash, options) ?? nextColorIndex++;
+      nextColorIndex = Math.max(nextColorIndex, baseColorIndex + 1);
+      inputLanes.push({ id: stashBaseHash, colorIndex: baseColorIndex });
+    }
     const nodeLane = inputLanes.findIndex((lane) => lane.id === commit.hash);
     const resolvedNodeLane = nodeLane === -1 ? inputLanes.length : nodeLane;
     const preferredNodeColorIndex = explicitNodeColorIndex(commit.hash, options);

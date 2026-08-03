@@ -170,6 +170,70 @@ export const highlightCode = (source: string, language: string) => {
   return markdown.utils.escapeHtml(source);
 };
 
+export const languageForFilePath = (filePath: string) => {
+  const fileName = String(filePath || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .split("/")
+    .at(-1)
+    ?.toLowerCase();
+  if (fileName === "dockerfile") return "dockerfile";
+
+  const extension = /\.([^.]+)$/.exec(fileName || "")?.[1] || "";
+  switch (extension) {
+    case "js":
+    case "mjs":
+    case "cjs":
+    case "jsx":
+      return "javascript";
+    case "ts":
+    case "tsx":
+    case "cts":
+    case "mts":
+      return "typescript";
+    case "html":
+    case "htm":
+    case "vue":
+    case "xml":
+      return "xml";
+    case "md":
+    case "markdown":
+      return "markdown";
+    case "json":
+      return "json";
+    case "css":
+      return "css";
+    case "yml":
+    case "yaml":
+      return "yaml";
+    case "sh":
+    case "bash":
+      return "bash";
+    case "sql":
+      return "sql";
+    case "ini":
+      return "ini";
+    case "py":
+      return "python";
+    case "go":
+      return "go";
+    case "rs":
+      return "rust";
+    case "java":
+      return "java";
+    case "c":
+    case "h":
+      return "c";
+    case "cpp":
+    case "cc":
+    case "cxx":
+    case "hpp":
+      return "cpp";
+    default:
+      return "";
+  }
+};
+
 export const isMarkdownFile = (fileName: string, extension = "") => {
   const normalizedExtension = extension.toLowerCase();
   return (

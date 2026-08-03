@@ -63,6 +63,8 @@ import type {
   ProjectGitRepositoryContext,
   ProjectGitRepositoryTarget,
   ProjectGitSnapshot,
+  ProjectGitStash,
+  ProjectGitStashOptions,
   ProjectGitStatusSnapshot,
   ProjectBridgeGitWorkingTreeSnapshot,
   ProjectGitWorkspaceSnapshot,
@@ -627,10 +629,15 @@ function resolveScriptCwd(projectPath: string, scriptCwd: string | undefined): s
   return `${projectPath.replace(/[\\/]$/, "")}/${cwd}`;
 }
 
+const normalizeGitCommitSkip = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+
 function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): ProjectGitSnapshot | null {
   if (!snapshot) {
     return null;
   }
+
+  const commits = snapshot.commits || [];
 
   return {
     branch: snapshot.branch || "main",
@@ -639,12 +646,13 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
     ahead: snapshot.ahead || 0,
     behind: snapshot.behind || 0,
     files: snapshot.files || [],
-    commits: snapshot.commits || [],
+    commits,
     branches: snapshot.branches || [],
     remotes: snapshot.remotes || [],
     upstream: snapshot.upstream || null,
     base: snapshot.base || null,
     hasMoreCommits: snapshot.hasMoreCommits || false,
+    nextCommitSkip: normalizeGitCommitSkip(snapshot.nextCommitSkip, commits.length),
     repositoryPath: snapshot.repositoryPath || "",
     lastRefreshedAt: snapshot.lastRefreshedAt || new Date().toISOString(),
     statusText: snapshot.statusText || "OK",
@@ -668,6 +676,7 @@ function mergeGitStatusSnapshot(
     upstream: statusSnapshot.upstream || null,
     base: statusSnapshot.base || null,
     hasMoreCommits: currentSnapshot?.hasMoreCommits || false,
+    nextCommitSkip: currentSnapshot?.nextCommitSkip ?? currentSnapshot?.commits.length ?? 0,
     repositoryPath: statusSnapshot.repositoryPath || currentSnapshot?.repositoryPath || "",
     lastRefreshedAt: statusSnapshot.lastRefreshedAt || new Date().toISOString(),
     statusText: statusSnapshot.statusText || currentSnapshot?.statusText || "OK",
@@ -700,6 +709,10 @@ function mergeGitCommitPage(currentSnapshot: ProjectGitSnapshot, commitPage: Pro
     ...currentSnapshot,
     commits: [...currentSnapshot.commits, ...(commitPage.commits || [])],
     hasMoreCommits: commitPage.hasMoreCommits || false,
+    nextCommitSkip: normalizeGitCommitSkip(
+      commitPage.nextCommitSkip,
+      currentSnapshot.nextCommitSkip ?? currentSnapshot.commits.length,
+    ),
     repositoryPath: commitPage.repositoryPath || currentSnapshot.repositoryPath,
     lastRefreshedAt: commitPage.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
   };
@@ -713,6 +726,10 @@ function replaceGitCommitPage(
     ...currentSnapshot,
     commits: commitPage.commits || [],
     hasMoreCommits: commitPage.hasMoreCommits || false,
+    nextCommitSkip: normalizeGitCommitSkip(
+      commitPage.nextCommitSkip,
+      currentSnapshot.nextCommitSkip ?? currentSnapshot.commits.length,
+    ),
     repositoryPath: commitPage.repositoryPath || currentSnapshot.repositoryPath,
     lastRefreshedAt: commitPage.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
   };
@@ -2625,7 +2642,7 @@ export const useStore = defineStore("app", {
       const existingLoad = gitLoadMorePromises.get(context.contextKey);
       if (existingLoad) return existingLoad;
 
-      const skip = currentSnapshot.commits.length;
+      const skip = currentSnapshot.nextCommitSkip ?? currentSnapshot.commits.length;
       const startedAtRefVersion = gitRefMutationVersion(projectId);
       const loadToken = Symbol(context.contextKey);
       gitLoadMoreTokens.set(context.contextKey, loadToken);
@@ -2640,7 +2657,7 @@ export const useStore = defineStore("app", {
             latestContext?.contextKey !== context.contextKey ||
             startedAtRefVersion !== gitRefMutationVersion(projectId) ||
             !latestSnapshot ||
-            latestSnapshot.commits.length !== skip
+            (latestSnapshot.nextCommitSkip ?? latestSnapshot.commits.length) !== skip
           ) {
             return;
           }
@@ -2731,10 +2748,11 @@ export const useStore = defineStore("app", {
       commitHash: string,
       relativePath: string,
       target: ProjectGitRepositoryTarget = { kind: "main" },
+      stash?: ProjectGitStash,
     ): Promise<ProjectGitFileDiffResult | null> {
       const context = this.resolveGitRepositoryContext(projectId, target);
       if (!context) return null;
-      const result = await bridge.readGitCommitFileDiff(context.repositoryPath, commitHash, relativePath);
+      const result = await bridge.readGitCommitFileDiff(context.repositoryPath, commitHash, relativePath, stash);
       return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
         ? result
         : null;
@@ -2743,10 +2761,11 @@ export const useStore = defineStore("app", {
       projectId: string,
       commitHash: string,
       target: ProjectGitRepositoryTarget = { kind: "main" },
+      stash?: ProjectGitStash,
     ): Promise<ProjectGitFileChange[]> {
       const context = this.resolveGitRepositoryContext(projectId, target);
       if (!context) return [];
-      const result = await bridge.readGitCommitFiles(context.repositoryPath, commitHash);
+      const result = await bridge.readGitCommitFiles(context.repositoryPath, commitHash, stash);
       return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
         ? result
         : [];
@@ -2905,6 +2924,55 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.commitGitStaged(context.repositoryPath, message),
+        { refresh: "full", refs: true },
+      );
+    },
+    async createGitStash(
+      projectId: string,
+      message = "",
+      options: ProjectGitStashOptions = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.createGitStash(context.repositoryPath, message, options),
+        { refresh: "full", refs: true },
+      );
+    },
+    async applyGitStash(
+      projectId: string,
+      stashRef: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.applyGitStash(context.repositoryPath, stashRef),
+        { refresh: "full", refreshOnFailure: true },
+      );
+    },
+    async popGitStash(
+      projectId: string,
+      stashRef: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.popGitStash(context.repositoryPath, stashRef),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
+    },
+    async dropGitStash(
+      projectId: string,
+      stashRef: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.dropGitStash(context.repositoryPath, stashRef),
         { refresh: "full", refs: true },
       );
     },

@@ -351,7 +351,7 @@ const buildSelectedHistoryContext = async (target: ProjectGitRepositoryTarget) =
   for (const commit of manuallySelectedCommits.value) {
     let commitFiles: ProjectGitFileChange[] = [];
     try {
-      commitFiles = await store.readGitCommitFiles(props.projectId, commit.hash, target);
+      commitFiles = await store.readGitCommitFiles(props.projectId, commit.hash, target, commit.stash);
     } catch {
       commitFiles = [];
     }
@@ -376,7 +376,7 @@ const buildSelectedHistoryContext = async (target: ProjectGitRepositoryTarget) =
       for (const file of commitFiles) {
         let result: ProjectGitFileDiffResult | null = null;
         try {
-          result = await store.readGitCommitFileDiff(props.projectId, commit.hash, file.path, target);
+          result = await store.readGitCommitFileDiff(props.projectId, commit.hash, file.path, target, commit.stash);
         } catch {
           continue;
         }

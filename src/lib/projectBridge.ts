@@ -529,6 +529,7 @@ const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   upstream: null,
   base: null,
   hasMoreCommits: false,
+  nextCommitSkip: 0,
   repositoryPath: "",
   lastRefreshedAt: new Date().toISOString(),
   statusText: "离线预览",
@@ -568,6 +569,7 @@ const emptyGitCommitPage = (): ProjectBridgeGitCommitPage => {
   return {
     commits: snapshot.commits,
     hasMoreCommits: snapshot.hasMoreCommits,
+    nextCommitSkip: snapshot.nextCommitSkip,
     repositoryPath: snapshot.repositoryPath,
     lastRefreshedAt: snapshot.lastRefreshedAt,
   };
@@ -814,6 +816,18 @@ const fallbackBridge: ProjectBridge = {
   },
   async commitGitStaged(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法提交 staged 变更。");
+  },
+  async createGitStash(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法创建 Git stash。");
+  },
+  async applyGitStash(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法应用 Git stash。");
+  },
+  async popGitStash(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法弹出 Git stash。");
+  },
+  async dropGitStash(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法删除 Git stash。");
   },
   async switchGitBranch(
     _projectPath: string,

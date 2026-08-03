@@ -453,7 +453,7 @@ describe("browser Git workspace fallback", () => {
     expect(project.git?.commits.map((commit) => commit.hash)).toEqual([freshSnapshot.commits[0].hash]);
   });
 
-  it("waits for an in-flight full refresh before loading another commit page", async () => {
+  it("waits for an in-flight full refresh before loading from a stash-expanded commit page", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },
       localStorage: { getItem: () => null, setItem: () => undefined },
@@ -461,7 +461,21 @@ describe("browser Git workspace fallback", () => {
     });
     const projectPath = "C:\\project";
     const pendingSnapshot = createDeferred<ProjectGitSnapshot>();
-    const freshSnapshot = { ...gitSnapshot(projectPath, "fresh", "f".repeat(40)), hasMoreCommits: true };
+    const baseSnapshot = gitSnapshot(projectPath, "fresh", "f".repeat(40));
+    const freshSnapshot = {
+      ...baseSnapshot,
+      commits: [
+        {
+          ...baseSnapshot.commits[0]!,
+          hash: "s".repeat(40),
+          message: "stash",
+          refNames: [{ kind: "stash" as const, name: "stash@{0}" }],
+        },
+        baseSnapshot.commits[0]!,
+      ],
+      hasMoreCommits: true,
+      nextCommitSkip: 1,
+    };
     const freshPage = gitSnapshot(projectPath, "fresh-page", "b".repeat(40)).commits[0];
     const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(() => pendingSnapshot.promise);
     const readGitCommits = vi.fn<ProjectBridge["readGitCommits"]>(async () => ({
@@ -488,7 +502,11 @@ describe("browser Git workspace fallback", () => {
     await loadMore;
 
     expect(readGitCommits).toHaveBeenCalledWith(projectPath, { limit: 80, skip: 1 });
-    expect(project.git?.commits.map((commit) => commit.hash)).toEqual([freshSnapshot.commits[0].hash, freshPage.hash]);
+    expect(project.git?.commits.map((commit) => commit.hash)).toEqual([
+      "s".repeat(40),
+      baseSnapshot.commits[0]!.hash,
+      freshPage.hash,
+    ]);
   });
 
   it("isolates full snapshots and deduplication by repository context", async () => {
@@ -766,6 +784,62 @@ describe("browser Git workspace fallback", () => {
     ]);
 
     pendingWorkspace.resolve(currentWorkspace);
+  });
+
+  it("routes stash writes through full snapshots and refreshes after a failed apply", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const success = { ok: true, message: "ok" };
+    const conflicted = { ok: false, message: "conflict" };
+    const createGitStash = vi.fn<ProjectBridge["createGitStash"]>(async () => success);
+    const applyGitStash = vi.fn<ProjectBridge["applyGitStash"]>(async () => conflicted);
+    const popGitStash = vi.fn<ProjectBridge["popGitStash"]>(async () => success);
+    const dropGitStash = vi.fn<ProjectBridge["dropGitStash"]>(async () => success);
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async (repositoryPath) =>
+      gitSnapshot(repositoryPath, "main"),
+    );
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(async (repositoryPath) =>
+      workspaceSnapshot(repositoryPath, "2026-08-03T00:00:00.000Z"),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      createGitStash,
+      applyGitStash,
+      popGitStash,
+      dropGitStash,
+      readGitSnapshot,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-stash-writes", mainPath);
+    project.git = gitSnapshot(mainPath, "main");
+    store.projects = [project];
+
+    await expect(store.createGitStash(project.id, "before refactor", { includeUntracked: true })).resolves.toEqual(
+      success,
+    );
+    await expect(store.applyGitStash(project.id, "stash@{0}")).resolves.toEqual(conflicted);
+    await expect(store.popGitStash(project.id, "stash@{0}")).resolves.toEqual(success);
+    await expect(store.dropGitStash(project.id, "stash@{0}")).resolves.toEqual(success);
+
+    expect(createGitStash).toHaveBeenCalledWith(mainPath, "before refactor", { includeUntracked: true });
+    expect(applyGitStash).toHaveBeenCalledWith(mainPath, "stash@{0}");
+    expect(popGitStash).toHaveBeenCalledWith(mainPath, "stash@{0}");
+    expect(dropGitStash).toHaveBeenCalledWith(mainPath, "stash@{0}");
+    expect(readGitSnapshot).toHaveBeenCalledTimes(4);
+    expect(readGitSnapshot.mock.calls.map(([repositoryPath]) => repositoryPath)).toEqual([
+      mainPath,
+      mainPath,
+      mainPath,
+      mainPath,
+    ]);
   });
 
   it("drops working-tree results after their repository context becomes stale", async () => {

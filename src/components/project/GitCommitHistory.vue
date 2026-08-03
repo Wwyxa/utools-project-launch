@@ -7,6 +7,7 @@ let rememberedCommitFileViewMode: RememberedCommitFileViewMode = "list";
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
 import {
+  Archive,
   CalendarDays,
   Check,
   ChevronDown,
@@ -27,6 +28,7 @@ import {
   Tag,
   Target,
   Trash2,
+  Undo,
   WandSparkles,
   X,
 } from "lucide-vue-next";
@@ -38,7 +40,9 @@ import type {
   ProjectGitRepositoryTarget,
 } from "../../types";
 import {
+  collapseGitStashAuxiliaryCommits,
   GIT_COMMIT_GRAPH_GEOMETRY,
+  isGitStashCommit,
   layoutGitCommitGraph,
   selectGitCommitGraphWindow,
   type GitCommitGraphRow,
@@ -301,7 +305,7 @@ const commits = computed(() => {
   const author = commitAuthor.value.trim().toLocaleLowerCase();
   const since = commitSince.value ? new Date(`${commitSince.value}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
   const until = commitUntil.value ? new Date(`${commitUntil.value}T23:59:59.999`).getTime() : Number.POSITIVE_INFINITY;
-  return (snapshot.value?.commits || []).filter((commit) => {
+  return collapseGitStashAuxiliaryCommits(snapshot.value?.commits || []).filter((commit) => {
     const searchable = `${commit.message}\n${commit.body || ""}\n${commit.refs || ""}`.toLocaleLowerCase();
     const commitDate = new Date(commit.date).getTime();
     return (
@@ -404,6 +408,7 @@ const closeExpandedCommitFiles = (hash: string) => {
     expandedCommitDirectories.value = nextDirectories;
   });
 };
+const stashForCommitHash = (hash: string) => commits.value.find((commit) => commit.hash === hash)?.stash;
 const toggleCommitFiles = async (hash: string) => {
   hideCommitTooltip();
   if (isCommitFilesExpanded(hash)) {
@@ -419,7 +424,12 @@ const toggleCommitFiles = async (hash: string) => {
     };
   });
   try {
-    const files = await store.readGitCommitFiles(props.projectId, hash, props.repositoryTarget);
+    const files = await store.readGitCommitFiles(
+      props.projectId,
+      hash,
+      props.repositoryTarget,
+      stashForCommitHash(hash),
+    );
     const state = expandedCommitFiles.value[hash];
     if (state?.requestGeneration === requestGeneration && state.contextGeneration === contextGeneration) {
       changeExpandedCommitFileGeometry(() => {
@@ -457,6 +467,7 @@ const graphWindowOverscan = 256;
 const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
 const rowPitch = rowHeight + rowGap;
 const graphStrokeColors = ["#2563eb", "#d97706", "#db2777", "#0f766e", "#7c3aed"];
+const stashGraphColorIndex = 1;
 const graphStrokeColor = (index: number) => graphStrokeColors[index % graphStrokeColors.length] || graphStrokeColors[0];
 const graphNodeX = (lane: number) =>
   GIT_COMMIT_GRAPH_GEOMETRY.paddingX +
@@ -542,6 +553,8 @@ const graphCommitColorByHash = computed(() => {
     );
     if (reference) {
       colors[commit.hash] = reference.colorIndex;
+    } else if (isGitStashCommit(commit)) {
+      colors[commit.hash] = stashGraphColorIndex;
     }
   }
   return colors;
@@ -565,7 +578,19 @@ const graphWindow = computed(() =>
 const graphPaths = computed(() =>
   graphWindow.value.segments.flatMap(({ row, index, segment }) => {
     const d = graphSegmentPathData(segment);
-    return d ? [{ id: `${row.commit.hash}-${index}`, d, color: graphStrokeColor(segment.colorIndex) }] : [];
+    return d
+      ? [
+          {
+            id: `${row.commit.hash}-${index}`,
+            d,
+            color: graphStrokeColor(segment.colorIndex),
+            strokeDasharray:
+              isGitStashCommit(row.commit) && (segment.fromLane === row.nodeLane || segment.toLane === row.nodeLane)
+                ? "3 2"
+                : undefined,
+          },
+        ]
+      : [];
   }),
 );
 const graphNodes = computed(() =>
@@ -579,6 +604,7 @@ const graphNodes = computed(() =>
       color: graphStrokeColor(row.nodeColorIndex),
       isHead,
       isMerge: row.isMerge,
+      isStash: isGitStashCommit(row.commit),
     };
   }),
 );
@@ -677,6 +703,16 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
       icon: Tag as Component,
       isHead: false,
       className: cn(refBadgeBaseClass, "border-tertiary/30 bg-tertiary/10 text-tertiary"),
+    };
+  }
+  if (ref.kind === "stash") {
+    return {
+      refName: ref.name,
+      label: ref.label,
+      title: ref.title,
+      icon: Archive as Component,
+      isHead: false,
+      className: cn(refBadgeBaseClass, "border-status-warning/35 bg-status-warning/10 text-status-warning"),
     };
   }
   if (ref.kind === "remote") {
@@ -780,6 +816,16 @@ const commitTagRefs = (commit: ProjectGitCommitSummary) =>
         .map((name) => name.trim())
         .filter((name) => name.startsWith("tag:"))
         .map((name) => name.replace(/^tag:\s*/, ""));
+const commitStashRef = (commit: ProjectGitCommitSummary) => {
+  if (commit.stash?.selector) return commit.stash.selector;
+  const structuredRef = commit.refNames?.find((ref) => ref.kind === "stash")?.name;
+  if (structuredRef) return structuredRef;
+  const legacyRef = (commit.refs || "")
+    .split(",")
+    .map((ref) => ref.trim())
+    .find((ref) => ref === "refs/stash" || /^stash@\{\d+\}$/.test(ref));
+  return legacyRef ? "stash@{0}" : null;
+};
 
 const tooltipStyle = computed(() => {
   const tooltip = commitTooltip.value;
@@ -978,7 +1024,7 @@ const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
     preloadedShortStats: commit.shortStats,
     loadFiles: hasPreloadedStats
       ? undefined
-      : () => store.readGitCommitFiles(props.projectId, commit.hash, props.repositoryTarget),
+      : () => store.readGitCommitFiles(props.projectId, commit.hash, props.repositoryTarget, commit.stash),
     loadAvatar: () => store.readGitCommitAuthorAvatar(props.projectId, commit.hash, props.repositoryTarget),
   });
   void details.files.then((result) => {
@@ -1184,6 +1230,18 @@ const deleteTag = async (tagName: string) => {
   );
   if (result) report(result.ok ? "success" : "error", result.message);
 };
+const executeStashAction = async (action: "apply" | "pop" | "drop", commit: ProjectGitCommitSummary) => {
+  const stashRef = commitStashRef(commit);
+  if (!stashRef || isInteractionDisabled.value) return null;
+  closeCommitContextMenu(false);
+  const result = await runAction(`stash:${action}:${stashRef}`, () => {
+    if (action === "apply") return store.applyGitStash(props.projectId, stashRef, props.repositoryTarget);
+    if (action === "pop") return store.popGitStash(props.projectId, stashRef, props.repositoryTarget);
+    return store.dropGitStash(props.projectId, stashRef, props.repositoryTarget);
+  });
+  if (result) report(result.ok ? "success" : "error", result.message);
+  return result;
+};
 const requestDeleteBranch = (branch: CommitBranchRef) => {
   if (branch.kind !== "local" || branch.current || isInteractionDisabled.value) return;
   closeCommitContextMenu();
@@ -1204,6 +1262,21 @@ const requestDeleteTag = (tagName: string) => {
     confirmLabel: "删除标签",
     cancelLabel: t.value.common.cancel,
     onConfirm: () => deleteTag(tagName),
+  });
+};
+const requestDropStash = (commit: ProjectGitCommitSummary) => {
+  const stashRef = commitStashRef(commit);
+  if (!stashRef || isInteractionDisabled.value) return;
+  closeCommitContextMenu();
+  requestConfirmation({
+    title: t.value.git.stashDropTitle,
+    message: t.value.git.stashDropMessage,
+    detail: stashRef,
+    confirmLabel: t.value.git.stashDrop,
+    cancelLabel: t.value.common.cancel,
+    onConfirm: async (): Promise<void> => {
+      await executeStashAction("drop", commit);
+    },
   });
 };
 const openRefDialog = async (mode: RefDialogMode, commit: ProjectGitCommitSummary, sourceBranch?: string) => {
@@ -1895,29 +1968,43 @@ onBeforeUnmount(() => {
                 :key="path.id"
                 :d="path.d"
                 :stroke="path.color"
+                :stroke-dasharray="path.strokeDasharray"
                 fill="none"
                 stroke-width="1.8"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               />
               <g v-for="node in graphNodes" :key="node.hash">
-                <circle
-                  v-if="node.isHead || node.isMerge"
-                  :cx="node.x"
-                  :cy="node.y"
-                  :r="node.isHead ? 6.8 : 6.1"
+                <rect
+                  v-if="node.isStash && !node.isHead"
+                  :x="node.x - 4.3"
+                  :y="node.y - 4.3"
+                  width="8.6"
+                  height="8.6"
+                  rx="1.6"
                   :fill="node.color"
                   stroke="var(--color-surface-container-lowest)"
-                  stroke-width="1.6"
+                  stroke-width="1.5"
                 />
-                <circle
-                  :cx="node.x"
-                  :cy="node.y"
-                  :r="node.isHead ? 3 : node.isMerge ? 2.5 : 4.2"
-                  :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
-                  stroke="var(--color-surface-container-lowest)"
-                  :stroke-width="node.isHead || node.isMerge ? 1.3 : 1.6"
-                />
+                <template v-else>
+                  <circle
+                    v-if="node.isHead || node.isMerge"
+                    :cx="node.x"
+                    :cy="node.y"
+                    :r="node.isHead ? 6.8 : 6.1"
+                    :fill="node.color"
+                    stroke="var(--color-surface-container-lowest)"
+                    stroke-width="1.6"
+                  />
+                  <circle
+                    :cx="node.x"
+                    :cy="node.y"
+                    :r="node.isHead ? 3 : node.isMerge ? 2.5 : 4.2"
+                    :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
+                    stroke="var(--color-surface-container-lowest)"
+                    :stroke-width="node.isHead || node.isMerge ? 1.3 : 1.6"
+                  />
+                </template>
               </g>
             </svg>
             <template v-for="row in graphWindow.rows" :key="row.commit.hash">
@@ -2266,6 +2353,39 @@ onBeforeUnmount(() => {
         >
           <Tag :size="12" />新建标签
         </button>
+        <template v-if="commitStashRef(commitContextMenu.commit)">
+          <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            class="git-history-menu-item"
+            :disabled="isInteractionDisabled"
+            @click="executeStashAction('apply', commitContextMenu.commit)"
+            @keydown="handleCommitMenuKeydown($event, 'main')"
+          >
+            <Archive :size="12" />{{ t.git.stashApply }}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="git-history-menu-item"
+            :disabled="isInteractionDisabled"
+            @click="executeStashAction('pop', commitContextMenu.commit)"
+            @keydown="handleCommitMenuKeydown($event, 'main')"
+          >
+            <Undo :size="12" />{{ t.git.stashPop }}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="git-history-menu-item text-status-error"
+            :disabled="isInteractionDisabled"
+            @click="requestDropStash(commitContextMenu.commit)"
+            @keydown="handleCommitMenuKeydown($event, 'main')"
+          >
+            <Trash2 :size="12" />{{ t.git.stashDrop }}
+          </button>
+        </template>
         <div
           v-if="commitTagRefs(commitContextMenu.commit).length"
           role="menuitem"

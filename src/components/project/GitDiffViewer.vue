@@ -2,17 +2,20 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { ChevronDown, ChevronUp, WrapText } from "lucide-vue-next";
 import { parseGitDiff, type GitDiffRow } from "../../lib/gitDiff";
+import { highlightCode, languageForFilePath } from "../../lib/markdown";
 import { cn } from "../../lib/utils";
 
 const props = withDefaults(
   defineProps<{
     diff?: string;
+    path?: string;
     loading?: boolean;
     message?: string;
     scrollTop?: number;
   }>(),
   {
     diff: "",
+    path: "",
     loading: false,
     message: "",
     scrollTop: 0,
@@ -27,6 +30,15 @@ const scrollRef = ref<HTMLDivElement | null>(null);
 const wrapsLongLines = ref(false);
 const activeHunkIndex = ref(0);
 const parsedDiff = computed(() => parseGitDiff(props.diff));
+const diffLanguage = computed(() => languageForFilePath(props.path));
+const highlightedCodeByRowId = computed(() => {
+  const language = diffLanguage.value;
+  return new Map(
+    parsedDiff.value.rows
+      .filter((row) => row.kind === "addition" || row.kind === "deletion" || row.kind === "context")
+      .map((row) => [row.id, highlightCode(row.content, language)]),
+  );
+});
 const isBinaryDiff = computed(() => /^(?:Binary files .* differ|GIT binary patch)$/m.test(props.diff));
 const hunkProgress = computed(() =>
   parsedDiff.value.hunks.length ? `${activeHunkIndex.value + 1}/${parsedDiff.value.hunks.length}` : "0/0",
@@ -38,6 +50,8 @@ const rowPrefix = (row: GitDiffRow) => {
   if (row.kind === "context") return " ";
   return "";
 };
+
+const highlightedCode = (row: GitDiffRow) => highlightedCodeByRowId.value.get(row.id) || "";
 
 const displayLineNumber = (row: GitDiffRow) => row.newLineNumber ?? row.oldLineNumber;
 const lineNumberLabel = (row: GitDiffRow) => {
@@ -221,9 +235,10 @@ watch(
             >
               {{ displayLineNumber(row) ?? "" }}
             </span>
-            <span :class="cn('px-3', wrapsLongLines ? 'whitespace-pre-wrap break-words' : 'whitespace-pre')">
-              {{ `${rowPrefix(row)}${row.content}` || " " }}
-            </span>
+            <span
+              :class="cn('px-3', wrapsLongLines ? 'whitespace-pre-wrap break-words' : 'whitespace-pre')"
+              v-html="`${rowPrefix(row)}${highlightedCode(row)}` || ' '"
+            />
           </template>
         </div>
       </div>
