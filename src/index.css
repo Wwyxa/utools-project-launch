@@ -86,9 +86,9 @@
   --code-preview-gutter-bg: #f6f8fa;
   --code-preview-border: #d0d7de;
   --diff-context-line-number: #5f6b66;
-  --diff-inline-addition-bg: #b7f0c2;
+  --diff-inline-addition-bg: #a7e1a7;
   --diff-inline-addition-fg: #075b27;
-  --diff-inline-deletion-bg: #ffc9c5;
+  --diff-inline-deletion-bg: #f19b9d;
   --diff-inline-deletion-fg: #7d1020;
   --diff-active-hunk-border: #008a5d;
   --syntax-fg: #24292f;
@@ -102,9 +102,9 @@
   --syntax-meta: #953800;
   --syntax-subst: #24292f;
   --syntax-addition-fg: #116329;
-  --syntax-addition-bg: #dafbe1;
+  --syntax-addition-bg: #e3f7e7;
   --syntax-deletion-fg: #82071e;
-  --syntax-deletion-bg: #ffebe9;
+  --syntax-deletion-bg: #fdf0ef;
 }
 
 @layer base {
@@ -168,9 +168,9 @@
     --code-preview-gutter-bg: var(--color-surface-container-low);
     --code-preview-border: var(--color-border-subtle);
     --diff-context-line-number: #b8c1ca;
-    --diff-inline-addition-bg: #285d3b;
+    --diff-inline-addition-bg: #347c37;
     --diff-inline-addition-fg: #d5f7d7;
-    --diff-inline-deletion-bg: #693038;
+    --diff-inline-deletion-bg: #813d40;
     --diff-inline-deletion-fg: #ffe0db;
     --diff-active-hunk-border: #81f9c1;
     --syntax-fg: var(--color-on-surface-variant);
@@ -184,9 +184,9 @@
     --syntax-meta: #ffa657;
     --syntax-subst: var(--color-on-surface-variant);
     --syntax-addition-fg: #aff5b4;
-    --syntax-addition-bg: rgba(46, 160, 67, 0.18);
+    --syntax-addition-bg: rgba(46, 160, 67, 0.16);
     --syntax-deletion-fg: #ffdcd7;
-    --syntax-deletion-bg: rgba(248, 81, 73, 0.16);
+    --syntax-deletion-bg: rgba(248, 81, 73, 0.14);
     color-scheme: dark;
   }
 
