@@ -3116,7 +3116,7 @@ function removeGitWorktreePath(targetPath) {
   fs.rmSync(targetPath, { force: true });
 }
 
-function truncateGitDiff(diff, maxLength = 18000) {
+function truncateGitDiff(diff, maxLength = 32000) {
   if (diff.length <= maxLength) {
     return { diff, truncated: false };
   }

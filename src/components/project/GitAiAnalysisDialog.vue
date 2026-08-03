@@ -306,7 +306,7 @@ const commonGitContextSection = () =>
     `Git 状态：${snapshot.value?.statusText || t.value.git.noRepo}`,
   ].join("\n");
 
-const gitAiDiffContextMaxChars = 14000;
+const gitAiDiffContextMaxChars = 32000;
 
 const buildGitAiDiffContext = async (
   sourceFiles: ProjectGitFileChange[],
