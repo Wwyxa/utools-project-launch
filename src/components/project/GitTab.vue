@@ -36,6 +36,7 @@ import {
   type ProjectGitActionResult,
   type ProjectGitDiffScope,
   type ProjectGitFileChange,
+  type ProjectGitFileDiffOptions,
   type ProjectGitFileDiffResult,
   type ProjectGitRemoteSummary,
   type ProjectGitRepositoryTarget,
@@ -163,6 +164,15 @@ const worktreeDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingWorktreeDiff = ref(false);
 const commitReviewSelection = ref<CommitReviewSelection | null>(null);
 const reviewScrollTop = ref(0);
+const diffReadOptions = ref<Pick<ProjectGitFileDiffOptions, "fullFile" | "ignoreWhitespace">>({
+  fullFile: false,
+  ignoreWhitespace: false,
+});
+const currentDiffReadOptions = () => ({
+  fullFile: diffReadOptions.value.fullFile === true,
+  ignoreWhitespace: diffReadOptions.value.ignoreWhitespace === true,
+});
+const isDiffViewerExpanded = ref(false);
 let diffRequestGeneration = 0;
 const worktreeSelectionKey = (selection: FileReviewSelection) => `${selection.scope}:${selection.path}`;
 const hasUncommittedChanges = computed(() => files.value.length > 0);
@@ -503,6 +513,12 @@ const hasFloatingControlsOpen = () => isBranchMenuOpen.value || isRemoteMenuOpen
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (event.detail.handled) return;
+  if (isDiffViewerExpanded.value) {
+    isDiffViewerExpanded.value = false;
+    event.detail.handle();
+    return;
+  }
+
   if (isRemoteDialogOpen.value) {
     closeRemoteDialog();
     event.detail.handle();
@@ -521,6 +537,7 @@ const clearRepositoryBoundState = (projectId = props.project.id) => {
   closeFloatingControls();
   isRemoteDialogOpen.value = false;
   isAiDialogOpen.value = false;
+  isDiffViewerExpanded.value = false;
   confirmationDialog.value = null;
   worktreeSelection.value = null;
   worktreeDiff.value = null;
@@ -795,6 +812,7 @@ const confirmRiskyAction = async () => {
 
 const clearWorktreeReview = () => {
   diffRequestGeneration += 1;
+  isDiffViewerExpanded.value = false;
   worktreeSelection.value = null;
   worktreeDiff.value = null;
   isLoadingWorktreeDiff.value = false;
@@ -810,7 +828,7 @@ const loadWorktreeDiff = async (selection: FileReviewSelection) => {
     const result = await store.readGitFileDiff(
       props.project.id,
       selection.path,
-      { scope: selection.scope },
+      { scope: selection.scope, ...currentDiffReadOptions() },
       activeRepositoryTarget.value,
     );
     if (
@@ -998,6 +1016,7 @@ const handleViewDiff = async (commitHash: string, path: string, commitMessage?: 
       path,
       activeRepositoryTarget.value,
       commit.stash,
+      currentDiffReadOptions(),
     );
     if (
       generation === diffRequestGeneration &&
@@ -1017,6 +1036,37 @@ const handleViewDiff = async (commitHash: string, path: string, commitMessage?: 
   } finally {
     if (generation === diffRequestGeneration) isLoadingDiff.value = false;
   }
+};
+
+const updateDiffReadOptions = (options: Partial<Pick<ProjectGitFileDiffOptions, "fullFile" | "ignoreWhitespace">>) => {
+  if (isLoadingWorktreeDiff.value || isLoadingDiff.value) return;
+  const nextOptions = { ...diffReadOptions.value, ...options };
+  if (
+    nextOptions.fullFile === diffReadOptions.value.fullFile &&
+    nextOptions.ignoreWhitespace === diffReadOptions.value.ignoreWhitespace
+  ) {
+    return;
+  }
+
+  diffReadOptions.value = nextOptions;
+  if (worktreeSelection.value) {
+    void loadWorktreeDiff(worktreeSelection.value);
+  } else if (commitReviewSelection.value) {
+    void handleViewDiff(
+      commitReviewSelection.value.commitHash,
+      commitReviewSelection.value.path,
+      commitReviewSelection.value.commitMessage,
+    );
+  }
+};
+
+const toggleDiffViewerDialog = () => {
+  if (!worktreeSelection.value && !commitReviewSelection.value) return;
+  isDiffViewerExpanded.value = !isDiffViewerExpanded.value;
+};
+
+const closeDiffViewerDialog = () => {
+  isDiffViewerExpanded.value = false;
 };
 
 const handleWindowPointerDown = (event: PointerEvent) => {
@@ -1715,35 +1765,50 @@ watch(
       <div
         class="@container flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       >
-        <div
-          class="flex h-8 shrink-0 min-w-0 items-center justify-end border-b border-border-subtle bg-surface-container-low px-3"
-        >
-          <div class="min-w-0 text-right">
-            <div class="truncate font-mono text-[10px] font-bold text-on-surface">
-              {{ worktreeSelection?.path || commitReviewSelection?.path || "选择文件开始审阅" }}
-            </div>
-            <div v-if="worktreeSelection || commitReviewSelection" class="truncate text-[9px] text-on-surface-variant">
-              {{ worktreeSelection ? worktreeSelection.scope : commitReviewSelection?.commitMessage }}
-            </div>
-          </div>
-        </div>
-
-        <div class="flex min-h-0 flex-1 flex-col">
-          <GitDiffViewer
-            v-if="worktreeSelection || commitReviewSelection"
-            v-model:scroll-top="reviewScrollTop"
-            :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
-            :path="worktreeSelection?.path || commitReviewSelection?.path || ''"
-            :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
-            :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
-          />
+        <Teleport to="body" :disabled="!isDiffViewerExpanded">
           <div
-            v-else
-            class="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-on-surface-variant"
+            :class="
+              isDiffViewerExpanded
+                ? 'fixed inset-0 z-[90] flex items-center justify-center bg-scrim/35 p-4 backdrop-blur-sm'
+                : 'flex min-h-0 flex-1 flex-col'
+            "
+            :role="isDiffViewerExpanded ? 'dialog' : undefined"
+            :aria-modal="isDiffViewerExpanded ? 'true' : undefined"
+            aria-label="放大 Git diff 审阅"
+            @click.self="closeDiffViewerDialog"
           >
-            从左侧变更列表或提交树展开文件中选择文件。
+            <div
+              :class="
+                isDiffViewerExpanded
+                  ? 'flex h-[min(92vh,72rem)] w-[min(96vw,96rem)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl'
+                  : 'flex min-h-0 flex-1 flex-col'
+              "
+            >
+              <GitDiffViewer
+                v-if="worktreeSelection || commitReviewSelection"
+                v-model:scroll-top="reviewScrollTop"
+                :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
+                :path="worktreeSelection?.path || commitReviewSelection?.path || ''"
+                :branch="currentGitRefLabel"
+                :subtitle="worktreeSelection ? worktreeSelection.scope : commitReviewSelection?.commitMessage || ''"
+                :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
+                :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
+                :full-file="diffReadOptions.fullFile"
+                :ignore-whitespace="diffReadOptions.ignoreWhitespace"
+                :expanded="isDiffViewerExpanded"
+                @update:full-file="(fullFile) => updateDiffReadOptions({ fullFile })"
+                @update:ignore-whitespace="(ignoreWhitespace) => updateDiffReadOptions({ ignoreWhitespace })"
+                @toggle-expanded="toggleDiffViewerDialog"
+              />
+              <div
+                v-else
+                class="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-on-surface-variant"
+              >
+                从左侧变更列表或提交树展开文件中选择文件。
+              </div>
+            </div>
           </div>
-        </div>
+        </Teleport>
       </div>
     </div>
 

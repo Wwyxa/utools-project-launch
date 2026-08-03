@@ -342,6 +342,8 @@ export type ProjectGitDiffScope = "combined" | "staged" | "unstaged";
 
 export interface ProjectGitFileDiffOptions {
   scope?: ProjectGitDiffScope;
+  fullFile?: boolean;
+  ignoreWhitespace?: boolean;
 }
 
 export interface ProjectGitFileDiffResult {
@@ -940,6 +942,7 @@ export interface ProjectBridge {
     commitHash: string,
     relativePath: string,
     stash?: ProjectGitStash,
+    options?: ProjectGitFileDiffOptions,
   ): Promise<ProjectGitFileDiffResult>;
   readGitCommitFiles(projectPath: string, commitHash: string, stash?: ProjectGitStash): Promise<ProjectGitFileChange[]>;
   readGitCommitAuthorAvatar(projectPath: string, commitHash: string): Promise<string | null>;

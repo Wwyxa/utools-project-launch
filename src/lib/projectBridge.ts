@@ -24,6 +24,7 @@ import type {
   ProjectConfigFile,
   ProjectGitFileChange,
   ProjectGitFileDiffOptions,
+  ProjectGitStash,
   ProjectGitActionResult,
   ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
@@ -775,7 +776,13 @@ const fallbackBridge: ProjectBridge = {
       message: projectPath ? "浏览器预览无法读取 Git diff。" : "项目路径为空，无法读取 Git diff。",
     };
   },
-  async readGitCommitFileDiff(projectPath: string, commitHash: string, relativePath: string) {
+  async readGitCommitFileDiff(
+    projectPath: string,
+    commitHash: string,
+    relativePath: string,
+    _stash?: ProjectGitStash,
+    _options?: ProjectGitFileDiffOptions,
+  ) {
     return {
       path: relativePath,
       diff: "",

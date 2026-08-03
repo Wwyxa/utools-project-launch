@@ -82,6 +82,85 @@ For the uTools preload boundary, failures must be surfaced through the existing 
   `package.json` with `"type": "commonjs"` into `dist/` so that Node classifies
   this one file correctly before the bridge is exposed.
 
+### Scenario: Git Diff Read Options
+
+#### 1. Scope / Trigger
+
+- Trigger: the Git review UI requests a working-tree, commit, or stash file
+  diff with full context or whitespace filtering enabled.
+
+#### 2. Signatures
+
+```ts
+ProjectBridge.readGitFileDiff(
+  projectPath: string,
+  relativePath: string,
+  options?: ProjectGitFileDiffOptions,
+): Promise<ProjectGitFileDiffResult>;
+
+ProjectBridge.readGitCommitFileDiff(
+  projectPath: string,
+  commitHash: string,
+  relativePath: string,
+  stash?: ProjectGitStash,
+  options?: ProjectGitFileDiffOptions,
+): Promise<ProjectGitFileDiffResult>;
+```
+
+#### 3. Contracts
+
+- `scope` accepts only `combined`, `staged`, or `unstaged`; preload normalizes
+  any other value to `combined`.
+- `fullFile: true` appends `--unified=999999999` to every tracked Git diff
+  command so unchanged text between hunks is included.
+- `ignoreWhitespace: true` appends both `--ignore-space-change` and
+  `--ignore-blank-lines`.
+- Options are passed before `--` for working-tree `diff`, commit `show`, and
+  both tracked and untracked stash diff paths. Omitted or non-boolean options
+  preserve the prior command arguments.
+
+#### 4. Validation & Error Matrix
+
+- Unknown `scope` -> read the combined working-tree diff.
+- `fullFile` or `ignoreWhitespace` not exactly `true` -> do not add the
+  corresponding command flags.
+- Empty path -> return the existing empty result and selection message.
+- Path outside the repository -> preserve `resolveProjectChild` rejection.
+- Missing repository or failed Git command -> return the existing empty diff
+  result and user-facing message; do not throw raw process errors into Vue.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: all three readers receive the same normalized flags, so a review
+  option behaves identically for a working tree, commit, and stash.
+- Base: callers omit options and receive the original scoped or commit diff.
+- Bad: adding flags only to the working-tree reader makes commit and stash
+  reviews silently disagree with the selected UI state.
+
+#### 6. Tests Required
+
+- `scripts/validate-git-diff.mjs` must assert default versus full-context
+  output for working-tree, commit, and stash files.
+- The same script must assert that whitespace-only changes disappear with the
+  filter while a non-whitespace change in the same file remains.
+- Run `node --check public/preload.js` and TypeScript checks for the shared
+  bridge signatures.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```js
+runGitDiff(repositoryPath, ["show", "--format=", hash, "--", relativePath]);
+```
+
+##### Correct
+
+```js
+const diffOptions = gitDiffOptionArgs(normalizeGitDiffOptions(options));
+runGitDiff(repositoryPath, ["show", "--format=", ...diffOptions, hash, "--", relativePath]);
+```
+
 ### Scenario: External terminal launch failures
 
 ### Scenario: External application launch and process cleanup failures

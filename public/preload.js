@@ -4469,9 +4469,26 @@ function writeProjectFile(projectPath, relativePath, content) {
   return { path: resolved.targetPath, relativePath: resolved.relativePath, savedAt: new Date().toISOString() };
 }
 
-function readGitFileDiff(projectPath, relativePath, options = {}) {
+function normalizeGitDiffOptions(options = {}) {
   const requestedScope = String(options?.scope || "combined");
-  const scope = ["combined", "staged", "unstaged"].includes(requestedScope) ? requestedScope : "combined";
+  return {
+    scope: ["combined", "staged", "unstaged"].includes(requestedScope) ? requestedScope : "combined",
+    fullFile: options?.fullFile === true,
+    ignoreWhitespace: options?.ignoreWhitespace === true,
+  };
+}
+
+function gitDiffOptionArgs(options) {
+  const args = [];
+  if (options.fullFile) args.push("--unified=999999999");
+  if (options.ignoreWhitespace) args.push("--ignore-space-change", "--ignore-blank-lines");
+  return args;
+}
+
+function readGitFileDiff(projectPath, relativePath, options = {}) {
+  const normalizedOptions = normalizeGitDiffOptions(options);
+  const { scope } = normalizedOptions;
+  const diffOptions = gitDiffOptionArgs(normalizedOptions);
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
     return { path: relativePath || "", scope, diff: "", message: "未检测到 Git 仓库" };
@@ -4484,8 +4501,9 @@ function readGitFileDiff(projectPath, relativePath, options = {}) {
   }
 
   const status = getGitFileStatus(repositoryPath, diffPath);
-  const headDiff = scope === "staged" ? "" : runGitDiff(repositoryPath, ["diff", "--", diffPath]);
-  const cachedDiff = scope === "unstaged" ? "" : runGitDiff(repositoryPath, ["diff", "--cached", "--", diffPath]);
+  const headDiff = scope === "staged" ? "" : runGitDiff(repositoryPath, ["diff", ...diffOptions, "--", diffPath]);
+  const cachedDiff =
+    scope === "unstaged" ? "" : runGitDiff(repositoryPath, ["diff", "--cached", ...diffOptions, "--", diffPath]);
 
   const isFileUntracked =
     status?.status === "UNTRACKED" ||
@@ -4496,7 +4514,8 @@ function readGitFileDiff(projectPath, relativePath, options = {}) {
   let untrackedDiff = "";
   if (scope !== "staged" && isFileUntracked) {
     const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
-    untrackedDiff = runGitDiff(repositoryPath, ["diff", "--no-index", "--", nullDevice, diffPath]) || "";
+    untrackedDiff =
+      runGitDiff(repositoryPath, ["diff", "--no-index", ...diffOptions, "--", nullDevice, diffPath]) || "";
     if (!untrackedDiff) {
       try {
         const content = fs.readFileSync(resolved.targetPath, "utf-8");
@@ -4611,8 +4630,8 @@ function readGitCommitFiles(projectPath, commitHash, stash) {
   );
 }
 
-function readGitStashFileDiff(repositoryPath, hash, relativePath, stash) {
-  const trackedDiff = runGitDiff(repositoryPath, ["diff", stash.baseHash, hash, "--", relativePath]);
+function readGitStashFileDiff(repositoryPath, hash, relativePath, stash, diffOptions) {
+  const trackedDiff = runGitDiff(repositoryPath, ["diff", ...diffOptions, stash.baseHash, hash, "--", relativePath]);
   if (trackedDiff) return trackedDiff;
   if (!stash.untrackedFilesHash) return "";
   return (
@@ -4622,6 +4641,7 @@ function readGitStashFileDiff(repositoryPath, hash, relativePath, stash) {
       "--root",
       "-r",
       "-p",
+      ...diffOptions,
       stash.untrackedFilesHash,
       "--",
       relativePath,
@@ -4629,7 +4649,7 @@ function readGitStashFileDiff(repositoryPath, hash, relativePath, stash) {
   );
 }
 
-function readGitCommitFileDiff(projectPath, commitHash, relativePath, stash) {
+function readGitCommitFileDiff(projectPath, commitHash, relativePath, stash, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   const hash = String(commitHash || "").trim();
   const filePath = String(relativePath || "").trim();
@@ -4639,9 +4659,10 @@ function readGitCommitFileDiff(projectPath, commitHash, relativePath, stash) {
 
   const resolved = resolveProjectChild(repositoryPath, filePath);
   const stashDetails = normalizeGitStashDiffDetails(stash);
+  const diffOptions = gitDiffOptionArgs(normalizeGitDiffOptions(options));
   const diff = stashDetails
-    ? readGitStashFileDiff(repositoryPath, hash, resolved.relativePath, stashDetails)
-    : runGitDiff(repositoryPath, ["show", "--format=", hash, "--", resolved.relativePath]) || "";
+    ? readGitStashFileDiff(repositoryPath, hash, resolved.relativePath, stashDetails, diffOptions)
+    : runGitDiff(repositoryPath, ["show", "--format=", ...diffOptions, hash, "--", resolved.relativePath]) || "";
   return {
     path: resolved.relativePath,
     diff,

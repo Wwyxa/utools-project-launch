@@ -46,6 +46,9 @@ Minimum checks for frontend changes today:
 
 - run `npm run lint`
 - run `npm run build`
+- for inline Git diff highlights, test a paired line with an insertion or deletion on only one side; the unchanged side must not suppress the other side's mark
+- for Git diff hunk navigation, test three hunk headers that fit in one scrollport; next/previous must progress `1/3 -> 2/3 -> 3/3 -> 2/3` even when `scrollTop` remains unchanged. In a scrollable full-file diff, also verify that the final change block remains active at the bottom when it cannot align with the scrollport top. In unified and side-by-side layouts, calculate the target from the block and scroll-container rectangles; do not use `offsetTop` across a toolbar or Teleport boundary.
+- keep the active Git diff block navigation-owned; scroll events and parent scroll-position synchronization must not recompute it, so its block-border highlighting survives manual scrolling.
 - manually inspect the dashboard and project detail flows for layout overflow, broken tab switching, and clipped terminal output
 - verify that normal readiness logs remain neutral/success-toned while real errors stay red
 - for interactive hover previews in dense panels, verify the cold-open delay, immediate warm switching, tab switching/unmount cleanup, Markdown rendering, stable panel-edge anchoring, full viewport bounds, and cleanup after every layout-changing section collapse in a compact window
@@ -82,6 +85,28 @@ If a test runner is added later, prefer focused component or store tests around 
 ```
 
 **Prevention**: For each teleported popup, assert both `getComputedStyle(popup).position === "fixed"` and its settled bounding box against the viewport after the overlay scrollbar initializes.
+
+### Common Mistake: Breaking A Split Pane's Flex Height Chain
+
+**Symptom**: A side-by-side code or Diff pane leaves a large blank area below short content, and its supposedly scrollable columns grow only to their content height instead of filling the dialog.
+
+**Cause**: An intermediate wrapper remains a block element. Its child has `flex-1`, but that property cannot consume vertical space until every parent in the height chain is a constrained Flex container.
+
+**Fix**: Make the intermediate wrapper a `flex min-h-0 flex-1` container before giving its split child `flex-1`.
+
+```vue
+<!-- Wrong: the inner flex row is a normal block child. -->
+<div class="min-h-0 flex-1 overflow-hidden">
+	<div class="flex min-h-0 flex-1"><!-- panes --></div>
+</div>
+
+<!-- Correct: both levels participate in the constrained Flex chain. -->
+<div class="flex min-h-0 flex-1 overflow-hidden">
+	<div class="flex min-h-0 flex-1"><!-- panes --></div>
+</div>
+```
+
+**Prevention**: In a compact and an expanded dialog, measure the intermediate wrapper and both scroll panes. Their client height must fill the available review area for both short and long diffs; horizontal scrolling must remain local to each pane.
 
 ### Common Mistake: Estimating A Side Preview's Size
 
@@ -164,10 +189,10 @@ defineOptions({ inheritAttrs: false });
 </script>
 
 <template>
-	<section v-bind="$attrs" class="flex min-h-0 flex-col">
-		<!-- Visible component content. -->
-	</section>
-	<Teleport to="body"><!-- Floating content. --></Teleport>
+  <section v-bind="$attrs" class="flex min-h-0 flex-col">
+    <!-- Visible component content. -->
+  </section>
+  <Teleport to="body"><!-- Floating content. --></Teleport>
 </template>
 ```
 

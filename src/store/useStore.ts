@@ -2749,10 +2749,17 @@ export const useStore = defineStore("app", {
       relativePath: string,
       target: ProjectGitRepositoryTarget = { kind: "main" },
       stash?: ProjectGitStash,
+      options?: ProjectGitFileDiffOptions,
     ): Promise<ProjectGitFileDiffResult | null> {
       const context = this.resolveGitRepositoryContext(projectId, target);
       if (!context) return null;
-      const result = await bridge.readGitCommitFileDiff(context.repositoryPath, commitHash, relativePath, stash);
+      const result = await bridge.readGitCommitFileDiff(
+        context.repositoryPath,
+        commitHash,
+        relativePath,
+        stash,
+        options,
+      );
       return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
         ? result
         : null;

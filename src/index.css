@@ -85,6 +85,12 @@
   --code-preview-bg: #ffffff;
   --code-preview-gutter-bg: #f6f8fa;
   --code-preview-border: #d0d7de;
+  --diff-context-line-number: #5f6b66;
+  --diff-inline-addition-bg: #b7f0c2;
+  --diff-inline-addition-fg: #075b27;
+  --diff-inline-deletion-bg: #ffc9c5;
+  --diff-inline-deletion-fg: #7d1020;
+  --diff-active-hunk-border: #008a5d;
   --syntax-fg: #24292f;
   --syntax-comment: #6e7781;
   --syntax-keyword: #cf222e;
@@ -161,6 +167,12 @@
     --code-preview-bg: var(--color-surface-container-lowest);
     --code-preview-gutter-bg: var(--color-surface-container-low);
     --code-preview-border: var(--color-border-subtle);
+    --diff-context-line-number: #b8c1ca;
+    --diff-inline-addition-bg: #285d3b;
+    --diff-inline-addition-fg: #d5f7d7;
+    --diff-inline-deletion-bg: #693038;
+    --diff-inline-deletion-fg: #ffe0db;
+    --diff-active-hunk-border: #81f9c1;
     --syntax-fg: var(--color-on-surface-variant);
     --syntax-comment: #8b949e;
     --syntax-keyword: #ff7b72;
@@ -1307,6 +1319,41 @@
 .file-search-match-active {
   background: color-mix(in srgb, var(--color-primary) 38%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 68%, transparent);
+}
+
+.diff-line-number-context {
+  color: var(--diff-context-line-number);
+  font-weight: 500;
+}
+
+.diff-inline-addition,
+.diff-inline-deletion {
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.diff-inline-addition {
+  background: var(--diff-inline-addition-bg);
+  color: var(--diff-inline-addition-fg);
+}
+
+.diff-inline-deletion {
+  background: var(--diff-inline-deletion-bg);
+  color: var(--diff-inline-deletion-fg);
+}
+
+.diff-active-hunk-start > :last-child {
+  box-shadow: inset 0 1px 0 var(--diff-active-hunk-border);
+}
+
+.diff-active-hunk-end > :last-child {
+  box-shadow: inset 0 -1px 0 var(--diff-active-hunk-border);
+}
+
+.diff-active-hunk-start.diff-active-hunk-end > :last-child {
+  box-shadow:
+    inset 0 1px 0 var(--diff-active-hunk-border),
+    inset 0 -1px 0 var(--diff-active-hunk-border);
 }
 
 .memo-rendered .hljs {
