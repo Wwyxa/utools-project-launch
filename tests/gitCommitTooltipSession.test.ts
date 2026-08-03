@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProjectGitFileChange } from "../types";
+import type { ProjectGitFileChange } from "../src/types";
 import {
   clearGitCommitTooltipSessionsForProject,
   GIT_COMMIT_TOOLTIP_SESSION_MAX_HASHES,
@@ -7,7 +7,7 @@ import {
   markGitCommitTooltipSessionAvatarUnavailable,
   pruneGitCommitTooltipSession,
   type GitCommitTooltipSessionLoaders,
-} from "./gitCommitTooltipSession";
+} from "../src/lib/gitCommitTooltipSession";
 
 const projectIds = [
   "tooltip-preloaded",

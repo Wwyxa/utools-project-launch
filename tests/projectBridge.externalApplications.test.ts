@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
-import { getProjectBridge } from "./projectBridge";
-import { ProjectStatus } from "../types";
-import type { ExternalApplicationPreferences, Project, ProjectBridge } from "../types";
+import { getProjectBridge } from "../src/lib/projectBridge";
+import { ProjectStatus } from "../src/types";
+import type { ExternalApplicationPreferences, Project, ProjectBridge } from "../src/types";
 
 const preferencesKey = "utools-project-launch.local-external-applications.v1";
 const localLegacyKey = "utools-project-launch.local-editor-settings.v1";
@@ -193,7 +193,7 @@ describe("browser external application preferences", () => {
       openExternalApplication,
       pathExists: async () => true,
     };
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project: Project = {

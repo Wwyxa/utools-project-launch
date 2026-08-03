@@ -5,7 +5,7 @@ import {
   markGitDiffInlineRanges,
   parseGitDiff,
   toGitDiffSideBySideRows,
-} from "./gitDiff";
+} from "../src/lib/gitDiff";
 
 describe("parseGitDiff", () => {
   it("tracks line numbers through context, deletion and addition rows", () => {

@@ -61,6 +61,18 @@ Keep new features close to the screen that owns them. For example, a future proj
 
 There is no separate `pages/` or `composables/` directory yet. If one is added later, it should solve an actual reuse problem rather than just moving code around.
 
+## Test Layout
+
+Vitest files live in the top-level `tests/` directory, rather than alongside production modules in `src/`. Keep the test directory flat while retaining the source area in the filename, such as `tests/gitDiff.test.ts` and `tests/useStore.aiStream.test.ts`.
+
+The Vitest include pattern is `tests/**/*.test.ts`. Import the production module explicitly from `../src/` so test discovery and source ownership remain separate:
+
+```ts
+import { parseGitDiff } from "../src/lib/gitDiff";
+```
+
+Do not add `*.test.ts` files beneath `src/`.
+
 ---
 
 ## Naming Conventions

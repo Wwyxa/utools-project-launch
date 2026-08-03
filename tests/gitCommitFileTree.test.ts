@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectGitFileChange } from "../types";
-import { buildCommitFileItems, normalizeCommitFilePath } from "./gitCommitFileTree";
+import type { ProjectGitFileChange } from "../src/types";
+import { buildCommitFileItems, normalizeCommitFilePath } from "../src/lib/gitCommitFileTree";
 
 const file = (path: string, originalPath?: string): ProjectGitFileChange => ({
   path,

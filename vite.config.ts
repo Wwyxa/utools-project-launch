@@ -23,6 +23,7 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === "true" ? null : {},
     },
     test: {
+      include: ["tests/**/*.test.ts"],
       exclude: [...configDefaults.exclude, "**/references/**"],
     },
   };

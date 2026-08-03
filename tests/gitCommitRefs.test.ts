@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectGitCommitRef, ProjectGitCommitSummary } from "../types";
-import { presentGitCommitRefs, type GitCommitRefPresentationContext } from "./gitCommitRefs";
+import type { ProjectGitCommitRef, ProjectGitCommitSummary } from "../src/types";
+import { presentGitCommitRefs, type GitCommitRefPresentationContext } from "../src/lib/gitCommitRefs";
 
 const commit = (refNames?: ProjectGitCommitRef[], refs?: string, hash = "head"): ProjectGitCommitSummary => ({
   hash,

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProjectBridge } from "../types";
+import type { ProjectBridge } from "../src/types";
 
 const fixtureDirectories: string[] = [];
 
@@ -22,7 +22,9 @@ const loadPreloadBridge = (
   } = {},
 ) => {
   const nodeRequire = createRequire(import.meta.url);
-  const sandboxWindow: { projectBridge?: ProjectBridge; dispatchEvent: () => void } = { dispatchEvent: () => undefined };
+  const sandboxWindow: { projectBridge?: ProjectBridge; dispatchEvent: () => void } = {
+    dispatchEvent: () => undefined,
+  };
   const sandbox = {
     require: (id: string) => (id === "electron" ? { shell: {} } : (options.moduleOverrides?.[id] ?? nodeRequire(id))),
     process: {
@@ -90,7 +92,12 @@ describe("project script discovery", () => {
       expect.arrayContaining([
         expect.objectContaining({ name: "dev", command: "npm run dev", cwd: ".", source: "package-json" }),
         expect.objectContaining({ name: "build", command: "npm run build", cwd: ".", source: "package-json" }),
-        expect.objectContaining({ name: "frontend:test", command: "npm run test", cwd: "frontend", source: "package-json" }),
+        expect.objectContaining({
+          name: "frontend:test",
+          command: "npm run test",
+          cwd: "frontend",
+          source: "package-json",
+        }),
         expect.objectContaining({ name: "dev", command: "make dev", cwd: ".", source: "makefile" }),
         expect.objectContaining({ name: "build", command: "make build", cwd: ".", source: "makefile" }),
         expect.objectContaining({ name: "test", command: "make test", cwd: ".", source: "makefile" }),
@@ -109,9 +116,11 @@ describe("project script discovery", () => {
   });
 
   it("returns no candidates for a missing project path", () => {
-    expect(loadPreloadBridge().discoverProjectScripts(join(tmpdir(), "missing-utools-script-project"), { sources: ["makefile"] })).toEqual(
-      expect.objectContaining({ scripts: [], message: expect.any(String) }),
-    );
+    expect(
+      loadPreloadBridge().discoverProjectScripts(join(tmpdir(), "missing-utools-script-project"), {
+        sources: ["makefile"],
+      }),
+    ).toEqual(expect.objectContaining({ scripts: [], message: expect.any(String) }));
   });
 
   it("reports malformed package.json instead of silently presenting an empty scan", async () => {
@@ -155,7 +164,7 @@ describe("project script discovery", () => {
       "/bin/zsh",
       ["-ilc", "node --version"],
       expect.objectContaining({
-        cwd: "/project",
+        cwd: resolve("/project"),
         shell: false,
         detached: true,
         env: { SHELL: "/bin/zsh", PROJECT_VALUE: "set" },
@@ -167,7 +176,7 @@ describe("project script discovery", () => {
       "C:\\Windows\\System32\\cmd.exe",
       ["/d", "/s", "/c", "node --version"],
       expect.objectContaining({
-        cwd: "/project",
+        cwd: resolve("/project"),
         shell: false,
         detached: false,
         env: { ComSpec: "C:\\Windows\\System32\\cmd.exe", PROJECT_VALUE: "set" },

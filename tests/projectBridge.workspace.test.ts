@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { getProjectBridge } from "./projectBridge";
-import { gitRepositoryPathsEqual } from "./gitRepositoryTarget";
-import { ProjectStatus } from "../types";
+import { getProjectBridge } from "../src/lib/projectBridge";
+import { gitRepositoryPathsEqual } from "../src/lib/gitRepositoryTarget";
+import { ProjectStatus } from "../src/types";
 import type {
   Project,
   ProjectBridge,
@@ -14,7 +14,7 @@ import type {
   ProjectGitSubmoduleSummary,
   ProjectGitWorkspaceSnapshot,
   ProjectGitWorktreeSummary,
-} from "../types";
+} from "../src/types";
 
 const workspaceSnapshot = (repositoryPath: string, lastRefreshedAt: string): ProjectGitWorkspaceSnapshot => ({
   repositoryPath,
@@ -168,7 +168,7 @@ describe("browser Git workspace fallback", () => {
     const testBridge: ProjectBridge = { ...getProjectBridge(), readGitWorkspaceSnapshot };
     window.projectBridge = testBridge;
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [createProject("project-workspace", "C:\\project")];
@@ -214,7 +214,7 @@ describe("browser Git workspace fallback", () => {
     const testBridge: ProjectBridge = { ...getProjectBridge(), openExternalApplication, pathExists };
     window.projectBridge = testBridge;
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [createProject("project-workspace", "C:\\project")];
@@ -289,7 +289,7 @@ describe("browser Git workspace fallback", () => {
       projectBridge: undefined,
     });
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [createProject("project-workspace", "C:\\project-input")];
@@ -383,7 +383,7 @@ describe("browser Git workspace fallback", () => {
     );
     window.projectBridge = { ...getProjectBridge(), readGitSnapshot };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-fresh-snapshot", "C:\\project");
@@ -430,7 +430,7 @@ describe("browser Git workspace fallback", () => {
     const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async () => freshSnapshot);
     window.projectBridge = { ...getProjectBridge(), readGitCommits, readGitSnapshot };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-refresh-pagination", projectPath);
@@ -487,7 +487,7 @@ describe("browser Git workspace fallback", () => {
     }));
     window.projectBridge = { ...getProjectBridge(), readGitCommits, readGitSnapshot };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-refresh-before-pagination", projectPath);
@@ -523,7 +523,7 @@ describe("browser Git workspace fallback", () => {
     );
     window.projectBridge = { ...getProjectBridge(), readGitSnapshot };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [createProject("project-contexts", "C:\\project")];
@@ -566,7 +566,7 @@ describe("browser Git workspace fallback", () => {
     const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(() => pending.promise);
     window.projectBridge = { ...getProjectBridge(), readGitSnapshot };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const worktreePath = "C:\\stale-worktree";
@@ -619,7 +619,7 @@ describe("browser Git workspace fallback", () => {
       readGitWorkspaceSnapshot,
     };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-ref-race", mainPath);
@@ -672,7 +672,7 @@ describe("browser Git workspace fallback", () => {
       readGitWorkspaceSnapshot,
     };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-status-race", mainPath);
@@ -746,7 +746,7 @@ describe("browser Git workspace fallback", () => {
       readGitWorkspaceSnapshot,
     };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-working-tree-writes", mainPath);
@@ -816,7 +816,7 @@ describe("browser Git workspace fallback", () => {
       readGitWorkspaceSnapshot,
     };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-stash-writes", mainPath);
@@ -855,7 +855,7 @@ describe("browser Git workspace fallback", () => {
     const readGitWorkingTreeSnapshot = vi.fn<ProjectBridge["readGitWorkingTreeSnapshot"]>(() => pending.promise);
     window.projectBridge = { ...getProjectBridge(), readGitWorkingTreeSnapshot };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-stale-working-tree", mainPath);
@@ -906,7 +906,7 @@ describe("browser Git workspace fallback", () => {
       readGitWorkspaceSnapshot,
     };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-working-tree-mutation", mainPath);
@@ -952,7 +952,7 @@ describe("browser Git workspace fallback", () => {
       .mockReturnValueOnce(fresh.promise);
     window.projectBridge = { ...getProjectBridge(), readGitWorkingTreeSnapshot };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-working-tree-reset", mainPath);
@@ -1000,7 +1000,7 @@ describe("browser Git workspace fallback", () => {
     );
     window.projectBridge = { ...getProjectBridge(), readGitWorkingTreeSnapshot };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-detached-working-tree", mainPath);
@@ -1063,7 +1063,7 @@ describe("browser Git workspace fallback", () => {
       readGitWorkspaceSnapshot,
     };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project = createProject("project-writes", mainPath);
@@ -1140,7 +1140,7 @@ describe("browser Git workspace fallback", () => {
       readGitWorkspaceSnapshot,
     };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [createProject("project-stale-write", "C:\\project")];

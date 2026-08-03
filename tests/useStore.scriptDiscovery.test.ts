@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getProjectBridge } from "../lib/projectBridge";
-import { ProjectStatus, type Project } from "../types";
+import { getProjectBridge } from "../src/lib/projectBridge";
+import { ProjectStatus, type Project } from "../src/types";
 
 const stubWindow = () => {
   const storage = new Map<string, string>();
@@ -33,7 +33,7 @@ describe("project form script discovery", () => {
         ],
       }),
     };
-    const { useStore } = await import("./useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.openCreateProjectForm();
@@ -49,7 +49,7 @@ describe("project form script discovery", () => {
 
   it("opens a copied project as an editable new draft with fresh runtime identities", async () => {
     stubWindow();
-    const { useStore } = await import("./useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const source: Project = {
@@ -116,7 +116,7 @@ describe("project form script discovery", () => {
 
   it("reorders persisted project scripts when their drag handles are dropped", async () => {
     stubWindow();
-    const { useStore } = await import("./useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project: Project = {

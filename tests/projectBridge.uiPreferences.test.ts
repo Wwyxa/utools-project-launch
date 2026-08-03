@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
-import { getProjectBridge } from "./projectBridge";
-import type { ProjectBridge, ProjectDetailsTabId, UiPreferences } from "../types";
+import { getProjectBridge } from "../src/lib/projectBridge";
+import type { ProjectBridge, ProjectDetailsTabId, UiPreferences } from "../src/types";
 
 const uiPreferencesKey = "utools-project-launch.ui-preferences.v1";
 const legacyTabOrderKey = "utools-project-launch.project-details-tab-order.v1";
@@ -152,7 +152,7 @@ describe("browser UI preferences fallback", () => {
     const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
     window.projectBridge = { ...getProjectBridge(), loadUiPreferences, saveUiPreferences };
 
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port=3421 --host=0.0.0.0",
     "build": "vite build",
-    "test:git-diff": "vitest run src/lib/gitDiff.test.ts",
+    "test:git-diff": "vitest run tests/gitDiff.test.ts",
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "lint": "tsc --noEmit",
@@ -15,7 +15,7 @@
     "benchmark:git-interactions": "node scripts/benchmark-git-interactions.mjs",
     "validate:git-commits": "node scripts/validate-git-commits.mjs",
     "validate:git-diff": "node scripts/validate-git-diff.mjs",
-    "validate:git-workspace": "vitest run src/lib/projectBridge.workspace.test.ts && node scripts/validate-git-workspace.mjs",
+    "validate:git-workspace": "vitest run tests/projectBridge.workspace.test.ts && node scripts/validate-git-workspace.mjs",
     "validate:markdown-images": "node scripts/validate-markdown-images.mjs",
     "validate:project-files": "node scripts/validate-project-files.mjs",
     "validate:project-storage": "node scripts/validate-project-storage-compat.mjs",

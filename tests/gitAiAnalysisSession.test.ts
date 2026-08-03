@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AiReasoningStreamState } from "./aiReasoning";
+import type { AiReasoningStreamState } from "../src/lib/aiReasoning";
 import {
   appendGitAiAnalysisVersion,
   clearGitAiAnalysisSessionsForProject,
@@ -10,7 +10,7 @@ import {
   resolveGitAiAnalysisVersion,
   restoreGitAiAnalysisVersion,
   setRememberedGitAiAnalysisSession,
-} from "./gitAiAnalysisSession";
+} from "../src/lib/gitAiAnalysisSession";
 
 const createSession = () =>
   createGitAiAnalysisSession({

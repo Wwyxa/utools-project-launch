@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { highlightCode, languageForFilePath } from "./markdown";
+import { highlightCode, languageForFilePath } from "../src/lib/markdown";
 
 describe("languageForFilePath", () => {
   it("maps supported source paths to registered highlight languages", () => {

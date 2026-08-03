@@ -5,14 +5,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getProjectBridge } from "./projectBridge";
+import { getProjectBridge } from "../src/lib/projectBridge";
 import {
   environmentToolRequest,
   formatEnvironmentArguments,
   parseEnvironmentArguments,
   validateCustomEnvironmentToolInput,
-} from "./environmentTools";
-import type { EnvironmentPreferences, EnvironmentToolRequest, EnvironmentToolResult, ProjectBridge } from "../types";
+} from "../src/lib/environmentTools";
+import type { EnvironmentPreferences, EnvironmentToolRequest, EnvironmentToolResult, ProjectBridge } from "../src/types";
 
 const deferred = <T>() => {
   let resolve: (value: T) => void = () => undefined;
@@ -126,7 +126,7 @@ describe("environment tools", () => {
       }),
       detectEnvironmentTool,
     };
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -166,7 +166,7 @@ describe("environment tools", () => {
       }),
       detectEnvironmentTool: () => operation.promise,
     };
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -214,7 +214,7 @@ describe("environment tools", () => {
       }),
       detectEnvironmentTool,
     };
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -244,7 +244,7 @@ describe("environment tools", () => {
         .mockReturnValueOnce(operations[0]!.promise)
         .mockReturnValueOnce(operations[1]!.promise),
     };
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -272,7 +272,7 @@ describe("environment tools", () => {
       loadEnvironmentPreferences: () => ({ enabledToolKeys: ["python"], customTools: [], builtinOverrides: [] }),
       saveEnvironmentPreferences,
     };
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.environmentResults = [resultFor({ kind: "builtin", key: "python" })];
@@ -309,7 +309,7 @@ describe("environment tools", () => {
       }),
       detectEnvironmentTool,
     };
-    const { useStore } = await import("../store/useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 

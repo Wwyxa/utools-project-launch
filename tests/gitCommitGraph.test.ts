@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectGitCommitSummary } from "../types";
+import type { ProjectGitCommitSummary } from "../src/types";
 import {
   collapseGitStashAuxiliaryCommits,
   GIT_COMMIT_GRAPH_GEOMETRY,
@@ -7,7 +7,7 @@ import {
   layoutGitCommitGraph,
   selectGitCommitGraphWindow,
   type GitCommitGraphLayout,
-} from "./gitCommitGraph";
+} from "../src/lib/gitCommitGraph";
 
 const commit = (
   hash: string,

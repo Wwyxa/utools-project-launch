@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { getProjectBridge } from "../lib/projectBridge";
-import { ProjectStatus, type Project } from "../types";
+import { getProjectBridge } from "../src/lib/projectBridge";
+import { ProjectStatus, type Project } from "../src/types";
 
 const stubWindow = () => {
   const storage = new Map<string, string>();
@@ -41,7 +41,7 @@ describe("AI stream completion", () => {
         onChunk({ content: "partial result" });
       },
     };
-    const { useStore } = await import("./useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [project];
@@ -64,7 +64,7 @@ describe("AI stream completion", () => {
         onDone({ ok: false, content: "", message: "duplicate terminal result" });
       },
     };
-    const { useStore } = await import("./useStore");
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [project];
