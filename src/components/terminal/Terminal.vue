@@ -13,6 +13,7 @@ import {
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import type { ProjectScript } from "../../types";
 
@@ -32,12 +33,15 @@ const shouldFollowLogs = ref(true);
 const copiedTerminal = ref(false);
 const copiedTimer = ref<number | null>(null);
 const contextMenuPosition = ref<{ x: number; y: number } | null>(null);
+let logScrollEventElement: HTMLElement | Document | null = null;
 
 const logFollowThreshold = 32;
 const contextMenuWidth = 176;
 const contextMenuHeight = 72;
 
-const isNearBottom = (element: HTMLDivElement) =>
+const getLogScrollElement = () => getOverlayScrollbarScrollElements(scrollRef.value)?.scrollOffsetElement ?? null;
+
+const isNearBottom = (element: HTMLElement) =>
   element.scrollHeight - element.scrollTop - element.clientHeight <= logFollowThreshold;
 
 const logTargets = computed(() =>
@@ -115,28 +119,31 @@ const resolveLogTone = (message: string, type: string) => {
 
 const scrollToTop = async () => {
   await nextTick();
-  if (scrollRef.value) {
-    scrollToBoundary(scrollRef.value, "top");
+  const scrollElement = getLogScrollElement();
+  if (scrollElement) {
+    scrollToBoundary(scrollElement, "top");
     shouldFollowLogs.value = false;
   }
 };
 
 const scrollToBottom = async () => {
   await nextTick();
-  if (scrollRef.value) {
-    scrollToBoundary(scrollRef.value, "bottom");
+  const scrollElement = getLogScrollElement();
+  if (scrollElement) {
+    scrollToBoundary(scrollElement, "bottom");
     shouldFollowLogs.value = true;
   }
 };
 
 const handleLogScroll = () => {
-  if (scrollRef.value) {
-    shouldFollowLogs.value = isNearBottom(scrollRef.value);
+  const scrollElement = getLogScrollElement();
+  if (scrollElement) {
+    shouldFollowLogs.value = isNearBottom(scrollElement);
   }
 };
 
 const handleLogWheel = (event: WheelEvent) => {
-  transferWheelAtScrollBoundary(event, scrollRef.value);
+  transferWheelAtScrollBoundary(event, getLogScrollElement());
 };
 
 const closeContextMenu = () => {
@@ -237,11 +244,15 @@ watch(
 onMounted(() => {
   window.addEventListener("click", closeContextMenu);
   window.addEventListener("keydown", handleWindowKeydown);
+  logScrollEventElement = getOverlayScrollbarScrollElements(scrollRef.value)?.scrollEventElement ?? null;
+  logScrollEventElement?.addEventListener("scroll", handleLogScroll);
   void scrollToBottom();
 });
 onBeforeUnmount(() => {
   window.removeEventListener("click", closeContextMenu);
   window.removeEventListener("keydown", handleWindowKeydown);
+  logScrollEventElement?.removeEventListener("scroll", handleLogScroll);
+  logScrollEventElement = null;
   if (copiedTimer.value) {
     window.clearTimeout(copiedTimer.value);
   }
@@ -351,7 +362,6 @@ onBeforeUnmount(() => {
       <div
         ref="scrollRef"
         v-overlay-scrollbar
-        @scroll="handleLogScroll"
         @wheel="handleLogWheel"
         @contextmenu="openContextMenu"
         class="themed-scrollbar h-full overflow-y-auto px-0 py-3 font-mono text-xs leading-relaxed text-on-surface [overscroll-behavior-y:contain]"

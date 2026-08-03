@@ -9,6 +9,18 @@ const instances = new WeakMap<HTMLElement, OverlayScrollbarsInstance>();
 
 OverlayScrollbars.plugin(ClickScrollPlugin);
 
+export function getOverlayScrollbarScrollElements(element: HTMLElement | null) {
+  if (!element) {
+    return null;
+  }
+
+  const elements = instances.get(element)?.elements();
+  return {
+    scrollOffsetElement: elements?.scrollOffsetElement ?? element,
+    scrollEventElement: elements?.scrollEventElement ?? element,
+  };
+}
+
 export const overlayScrollbar: Directive<HTMLElement> = {
   beforeMount(element) {
     element.setAttribute("data-overlayscrollbars-initialize", "");
