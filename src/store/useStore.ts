@@ -2208,7 +2208,7 @@ export const useStore = defineStore("app", {
       await Promise.all(
         this.projects
           .filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false)
-          .map((project) => this.refreshGitSnapshot(project.id)),
+          .map((project) => this.refreshGitStatusSnapshot(project.id)),
       );
     },
     async moveProject(projectId: string, direction: "top" | "up" | "down", scopeProjectIds?: string[]) {

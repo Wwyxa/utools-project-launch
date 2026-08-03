@@ -27,6 +27,7 @@ import type { TodoItem } from "../../types";
 
 const store = useStore();
 const t = useI18n();
+const REFRESH_FEEDBACK_MIN_DURATION_MS = 200;
 
 const searchQuery = ref("");
 const isSearchExpanded = ref(false);
@@ -246,12 +247,17 @@ const handleRefreshAll = async () => {
     return;
   }
 
+  const refreshStartedAt = performance.now();
   isRefreshingProjects.value = true;
   await nextTick();
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   try {
     await store.refreshProjects();
   } finally {
+    const remainingFeedbackDuration = REFRESH_FEEDBACK_MIN_DURATION_MS - (performance.now() - refreshStartedAt);
+    if (remainingFeedbackDuration > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, remainingFeedbackDuration));
+    }
     isRefreshingProjects.value = false;
   }
 };
@@ -676,7 +682,7 @@ const handleProjectDragEnd = () => {
                 :title="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
                 :aria-label="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
               >
-                <RefreshCw :size="18" :class="isRefreshingProjects && 'animate-spin'" />
+                <RefreshCw :size="18" :class="isRefreshingProjects && 'animate-spin motion-reduce:animate-none'" />
               </button>
               <button
                 @click="store.openCreateProjectForm"
