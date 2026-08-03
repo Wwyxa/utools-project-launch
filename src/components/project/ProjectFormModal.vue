@@ -1,10 +1,26 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { Check, ChevronDown, X, Plus, Trash2, Save, WandSparkles, FolderOpen, GripVertical } from "lucide-vue-next";
+import {
+  Check,
+  ChevronDown,
+  X,
+  Plus,
+  Trash2,
+  Save,
+  WandSparkles,
+  FolderOpen,
+  GripVertical,
+  CircleHelp,
+} from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
-import type { ProjectBridgeScriptCandidate, ProjectIconKey, ProjectKind, ProjectScriptDiscoverySource } from "../../types";
+import type {
+  ProjectBridgeScriptCandidate,
+  ProjectIconKey,
+  ProjectKind,
+  ProjectScriptDiscoverySource,
+} from "../../types";
 import ProjectIcon from "./ProjectIcon.vue";
 
 const store = useStore();
@@ -54,7 +70,9 @@ const discoverScripts = async () => {
 };
 
 const importDiscoveredScripts = () => {
-  const selected = discoveryCandidates.value.filter((candidate) => selectedDiscoveryKeys.value.includes(discoveryKey(candidate)));
+  const selected = discoveryCandidates.value.filter((candidate) =>
+    selectedDiscoveryKeys.value.includes(discoveryKey(candidate)),
+  );
   store.importProjectFormScripts(selected);
   discoveryOpen.value = false;
 };
@@ -230,7 +248,8 @@ const handleScriptDrop = (targetScriptId: string) => {
                   @click="openScriptDiscovery"
                   class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 font-bold text-primary hover:bg-surface"
                 >
-                  <WandSparkles :size="14" /> {{ store.projectFormInspecting ? t.modal.discoveringScripts : t.modal.discoverScripts }}
+                  <WandSparkles :size="14" />
+                  {{ store.projectFormInspecting ? t.modal.discoveringScripts : t.modal.discoverScripts }}
                 </button>
               </div>
               <div class="space-y-1.5 md:col-span-12">
@@ -348,7 +367,18 @@ const handleScriptDrop = (targetScriptId: string) => {
                   </div>
                 </div>
                 <div class="space-y-1.5">
-                  <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.cardStyle }}</span>
+                  <span class="flex items-center text-xs font-bold uppercase text-on-surface-variant">
+                    {{ t.modal.cardStyle }}
+                    <span
+                      class="ml-1 inline-flex text-on-surface-variant transition-colors hover:text-primary focus:text-primary focus:outline-none"
+                      role="img"
+                      tabindex="0"
+                      :title="t.modal.cardStyleHint"
+                      :aria-label="t.modal.cardStyleHint"
+                    >
+                      <CircleHelp :size="13" :stroke-width="1.8" aria-hidden="true" />
+                    </span>
+                  </span>
                   <div class="flex w-fit rounded-lg border border-border-subtle bg-surface-container-low p-1">
                     <button
                       type="button"
@@ -408,16 +438,28 @@ const handleScriptDrop = (targetScriptId: string) => {
                   <Plus :size="14" /> {{ t.modal.addScript }}
                 </button>
               </div>
-              <div v-if="discoveryOpen" class="space-y-3 rounded-lg border border-border-subtle bg-surface-container-low p-3">
+              <div
+                v-if="discoveryOpen"
+                class="space-y-3 rounded-lg border border-border-subtle bg-surface-container-low p-3"
+              >
                 <div class="flex items-center justify-between gap-3">
                   <p class="text-xs font-semibold text-on-surface">{{ t.modal.selectDiscoverySources }}</p>
-                  <button type="button" class="text-xs font-semibold text-on-surface-variant hover:text-on-surface" @click="discoveryOpen = false">
+                  <button
+                    type="button"
+                    class="text-xs font-semibold text-on-surface-variant hover:text-on-surface"
+                    @click="discoveryOpen = false"
+                  >
                     {{ t.common.cancel }}
                   </button>
                 </div>
                 <div class="flex flex-wrap gap-4 text-xs text-on-surface">
                   <label class="inline-flex cursor-pointer items-center gap-2">
-                    <input v-model="selectedDiscoverySources" type="checkbox" value="package-json" class="accent-primary" />
+                    <input
+                      v-model="selectedDiscoverySources"
+                      type="checkbox"
+                      value="package-json"
+                      class="accent-primary"
+                    />
                     package.json
                   </label>
                   <label class="inline-flex cursor-pointer items-center gap-2">
@@ -433,7 +475,9 @@ const handleScriptDrop = (targetScriptId: string) => {
                     {{ store.projectFormInspecting ? t.modal.discoveringScripts : t.modal.scanSelectedSources }}
                   </button>
                 </div>
-                <p v-if="discoveryScanned && discoveryCandidates.length === 0" class="text-xs text-on-surface-variant">{{ t.modal.noDiscoveredScripts }}</p>
+                <p v-if="discoveryScanned && discoveryCandidates.length === 0" class="text-xs text-on-surface-variant">
+                  {{ t.modal.noDiscoveredScripts }}
+                </p>
                 <p v-else-if="discoveryCandidates.some(requiresExplicitImport)" class="text-xs text-status-warning">
                   {{ t.modal.riskyScriptsNotSelected }}
                 </p>
@@ -442,19 +486,38 @@ const handleScriptDrop = (targetScriptId: string) => {
                   :key="discoveryKey(candidate)"
                   class="flex cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-surface px-3 py-2 text-xs hover:border-primary/30"
                 >
-                  <input v-model="selectedDiscoveryKeys" type="checkbox" :value="discoveryKey(candidate)" class="accent-primary" />
+                  <input
+                    v-model="selectedDiscoveryKeys"
+                    type="checkbox"
+                    :value="discoveryKey(candidate)"
+                    class="accent-primary"
+                  />
                   <span class="min-w-0 flex-1">
                     <span class="block truncate font-mono font-semibold text-on-surface">{{ candidate.command }}</span>
-                    <span class="block truncate text-on-surface-variant">{{ candidate.name }} · {{ candidate.note || candidate.source }}</span>
+                    <span class="block truncate text-on-surface-variant"
+                      >{{ candidate.name }} · {{ candidate.note || candidate.source }}</span
+                    >
                   </span>
                   <span
-                    :class="cn('rounded border px-1.5 py-0.5 font-mono text-[10px]', requiresExplicitImport(candidate) ? 'border-status-warning/40 bg-status-warning/10 text-status-warning' : 'border-border-subtle text-on-surface-variant')"
+                    :class="
+                      cn(
+                        'rounded border px-1.5 py-0.5 font-mono text-[10px]',
+                        requiresExplicitImport(candidate)
+                          ? 'border-status-warning/40 bg-status-warning/10 text-status-warning'
+                          : 'border-border-subtle text-on-surface-variant',
+                      )
+                    "
                   >
                     {{ requiresExplicitImport(candidate) ? t.modal.requiresExplicitImport : candidate.source }}
                   </span>
                 </label>
                 <div v-if="discoveryCandidates.length > 0" class="flex justify-end">
-                  <button type="button" :disabled="selectedDiscoveryKeys.length === 0" class="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45" @click="importDiscoveredScripts">
+                  <button
+                    type="button"
+                    :disabled="selectedDiscoveryKeys.length === 0"
+                    class="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
+                    @click="importDiscoveredScripts"
+                  >
                     {{ t.modal.importSelectedScripts }}
                   </button>
                 </div>
@@ -479,7 +542,8 @@ const handleScriptDrop = (targetScriptId: string) => {
                     draggable="true"
                     @dragstart="handleScriptDragStart($event, script.id)"
                     @dragend="draggedScriptId = null"
-                    :aria-label="`拖拽排序 ${script.name || t.modal.scriptName}`"
+                    :title="t.scripts.dragToReorder"
+                    :aria-label="`${t.scripts.dragToReorder}: ${script.name || t.modal.scriptName}`"
                   >
                     <GripVertical :size="16" />
                   </button>

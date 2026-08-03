@@ -21,6 +21,7 @@ import {
   Download,
   Check,
   CheckSquare,
+  GripVertical,
 } from "lucide-vue-next";
 import type { TodoItem } from "../../types";
 
@@ -1162,6 +1163,14 @@ const handleProjectDragEnd = () => {
 
     <!-- Project sections -->
     <div v-if="projects.length > 0" class="px-5 pt-3">
+      <p
+        v-if="isSortingProjects"
+        role="status"
+        class="mb-2 inline-flex items-center gap-1 text-xs font-medium text-primary"
+      >
+        <GripVertical :size="13" aria-hidden="true" />
+        {{ t.dashboard.dragProjectsHint }}
+      </p>
       <!-- Tiny cards: compact grid row -->
       <div v-if="hasTinyProjects" class="pb-1" :class="{ 'mb-2': hasRegularProjects }">
         <div class="flex flex-wrap gap-3">

@@ -14,6 +14,7 @@ const commitDraftsByContext = new Map<string, string>();
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   Check,
+  CircleHelp,
   CloudDownload,
   CloudUpload,
   ClipboardCopy,
@@ -1609,11 +1610,21 @@ watch(
               提交树
             </button>
           </div>
-          <div v-show="leftContext === 'changes'" class="flex min-w-0 flex-1 justify-end overflow-x-clip">
-            <div ref="changesToolbarRef" class="flex h-6 w-max shrink-0 items-center gap-px" />
+          <span
+            v-if="leftContext === 'history'"
+            class="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded text-on-surface-variant transition-colors hover:text-primary focus:text-primary focus:outline-none"
+            role="img"
+            tabindex="0"
+            :title="t.git.historyInteractionsHint"
+            :aria-label="t.git.historyInteractionsHint"
+          >
+            <CircleHelp :size="12" :stroke-width="1.8" aria-hidden="true" />
+          </span>
+          <div v-show="leftContext === 'changes'" class="flex min-w-0 flex-1 overflow-x-clip">
+            <div ref="changesToolbarRef" class="ml-auto flex h-6 w-max shrink-0 items-center gap-px" />
           </div>
-          <div v-show="leftContext === 'history'" class="flex min-w-0 flex-1 justify-end overflow-x-clip">
-            <div ref="commitHistoryToolbarRef" class="flex h-6 w-max shrink-0 items-center gap-px" />
+          <div v-show="leftContext === 'history'" class="flex min-w-0 flex-1 overflow-x-clip">
+            <div ref="commitHistoryToolbarRef" class="ml-auto flex h-6 w-max shrink-0 items-center gap-px" />
           </div>
         </div>
 

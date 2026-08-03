@@ -1,6 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { Bold, Check, CheckSquare, Code, Edit3, GripVertical, Link, List, Plus, Save, Trash2 } from "lucide-vue-next";
+import {
+  Bold,
+  Check,
+  CheckSquare,
+  CircleHelp,
+  Code,
+  Edit3,
+  GripVertical,
+  Link,
+  List,
+  Plus,
+  Save,
+  Trash2,
+} from "lucide-vue-next";
 import { Project } from "../../types";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -178,6 +191,15 @@ onBeforeUnmount(flushMemo);
         <div class="ui-panel-title">
           <CheckSquare :size="14" class="text-primary" />
           <h3 class="flex items-center gap-2">{{ t.memo.taskList }}</h3>
+          <span
+            class="inline-flex cursor-help text-on-surface-variant transition-colors hover:text-primary focus:text-primary focus:outline-none"
+            role="img"
+            tabindex="0"
+            :title="t.memo.taskListHint"
+            :aria-label="t.memo.taskListHint"
+          >
+            <CircleHelp :size="13" :stroke-width="1.8" aria-hidden="true" />
+          </span>
         </div>
         <span class="ui-panel-meta">{{ projectTodos.length }}</span>
       </div>

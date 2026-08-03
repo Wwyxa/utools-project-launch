@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   Check,
+  CircleHelp,
   ChevronDown,
   ChevronUp,
   Edit3,
@@ -1443,6 +1444,15 @@ watch(filterQuery, (query) => {
         <div class="ui-panel-title min-w-0 flex-1">
           <Folder :size="14" class="text-primary" />
           <span class="file-tree-project-name truncate">{{ project.name }}</span>
+          <span
+            class="inline-flex shrink-0 cursor-help text-on-surface-variant transition-colors hover:text-primary focus:text-primary focus:outline-none"
+            role="img"
+            tabindex="0"
+            :title="t.files.contextMenuHint"
+            :aria-label="t.files.contextMenuHint"
+          >
+            <CircleHelp :size="13" :stroke-width="1.8" aria-hidden="true" />
+          </span>
         </div>
         <div class="file-tree-header-actions flex shrink-0 items-center gap-1">
           <button
