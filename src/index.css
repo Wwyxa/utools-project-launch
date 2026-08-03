@@ -674,6 +674,10 @@
   max-width: calc(100px - 1.5rem);
 }
 
+.git-ref-badge--dense-label > svg {
+  flex: 0 0 auto;
+}
+
 .git-ref-badge--history {
   height: auto;
   min-height: 18px;
@@ -685,6 +689,16 @@
   height: 18px;
   align-self: center;
   border-radius: 50%;
+}
+
+.git-ref-badge--history-icon {
+  width: 18px;
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.git-ref-badge--history-icon > svg {
+  flex: 0 0 auto;
 }
 
 .git-ref-badge--tooltip {

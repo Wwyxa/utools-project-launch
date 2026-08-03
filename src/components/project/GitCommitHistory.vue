@@ -1973,7 +1973,8 @@ onBeforeUnmount(() => {
                             'git-ref-badge--history',
                             ref.graphAccentStyle && 'git-ref-badge--graph-linked',
                             ref.showLabel && 'git-ref-badge--dense-label',
-                            !ref.showLabel && 'w-[18px] justify-center px-0',
+                            !ref.showLabel && ref.count === 1 && 'git-ref-badge--history-icon',
+                            !ref.showLabel && ref.count > 1 && 'w-[18px] justify-center px-0',
                           )
                         "
                         :style="ref.graphAccentStyle"
@@ -1984,7 +1985,7 @@ onBeforeUnmount(() => {
                         ><component
                           v-if="ref.icon"
                           :is="ref.icon"
-                          :size="10"
+                          :size="15"
                           :stroke-width="2.25"
                           aria-hidden="true"
                         /><span v-if="ref.showLabel" class="min-w-0 truncate">{{ ref.label }}</span></span
@@ -2107,117 +2108,129 @@ onBeforeUnmount(() => {
       v-if="commitTooltip"
       ref="commitTooltipRef"
       data-commit-tooltip
-      class="commit-tooltip-panel fixed z-[70] flex w-max max-w-full select-text flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest text-left shadow-2xl"
+      class="commit-tooltip-panel fixed z-[70] w-max max-w-full select-text rounded-lg text-left"
       :style="tooltipStyle"
       @mouseenter="cancelCommitTooltipClose"
       @mouseleave="scheduleCommitTooltipClose"
     >
-      <div class="shrink-0 border-b border-border-subtle bg-surface-container-low px-3 py-1.5">
-        <div class="flex min-w-0 items-center gap-2">
-          <div
-            class="relative flex h-7 w-7 shrink-0 overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container"
+      <span
+        aria-hidden="true"
+        class="absolute left-0 top-1/2 z-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border border-outline-variant/70 bg-surface-container-lowest"
+      />
+      <div
+        class="relative z-10 flex max-w-full flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest"
+      >
+        <div class="shrink-0 border-b border-border-subtle bg-surface-container-low px-3 py-1.5">
+          <div class="flex min-w-0 items-center gap-2">
+            <div
+              class="relative flex h-7 w-7 shrink-0 overflow-hidden rounded-full border border-outline-variant/70 bg-surface-container"
+            >
+              <img
+                v-if="tooltipDetailsFor(commitTooltip.commit.hash)?.avatarUrl"
+                :src="tooltipDetailsFor(commitTooltip.commit.hash)?.avatarUrl || undefined"
+                :alt="`${commitTooltip.commit.author} 的头像`"
+                class="h-full w-full object-cover"
+                referrerpolicy="no-referrer"
+                @error="markCommitAvatarUnavailable(commitTooltip.commit.hash)"
+              /><span
+                v-else
+                :class="
+                  cn(
+                    'flex h-full w-full items-center justify-center text-[10px] font-bold',
+                    commitAuthorAvatarClass(commitTooltip.commit.author),
+                    tooltipDetailsFor(commitTooltip.commit.hash)?.isLoadingAvatar && 'animate-pulse',
+                  )
+                "
+                >{{ commitAuthorInitials(commitTooltip.commit.author) }}</span
+              >
+            </div>
+            <div class="min-w-0 flex flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <span class="min-w-0 break-words text-[11px] font-bold leading-4 text-on-surface">
+                {{ commitTooltip.commit.author }}
+              </span>
+              <span
+                v-if="formatCommitTime(commitTooltip.commit.date).text"
+                class="dark-readable-meta inline-flex items-center gap-1 text-[10px] font-semibold leading-4 text-on-surface-variant"
+              >
+                <Clock3 :size="11" class="dark-readable-meta shrink-0 text-on-surface-variant/70" />
+                {{ formatCommitTime(commitTooltip.commit.date).text }}
+              </span>
+              <span
+                v-if="formatCommitTime(commitTooltip.commit.date).title"
+                class="dark-readable-meta break-words text-[10px] font-medium leading-4 text-on-surface-variant/80"
+              >
+                ({{ formatCommitTime(commitTooltip.commit.date).title }})
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-3 py-2">
+          <p
+            v-if="tooltipTitle(commitTooltip.commit)"
+            class="shrink-0 break-words text-[12px] font-bold leading-5 text-on-surface"
           >
-            <img
-              v-if="tooltipDetailsFor(commitTooltip.commit.hash)?.avatarUrl"
-              :src="tooltipDetailsFor(commitTooltip.commit.hash)?.avatarUrl || undefined"
-              :alt="`${commitTooltip.commit.author} 的头像`"
-              class="h-full w-full object-cover"
-              referrerpolicy="no-referrer"
-              @error="markCommitAvatarUnavailable(commitTooltip.commit.hash)"
-            /><span
-              v-else
+            {{ tooltipTitle(commitTooltip.commit) }}
+          </p>
+          <div
+            v-if="tooltipBody(commitTooltip.commit)"
+            v-overlay-scrollbar
+            :class="
+              cn(
+                'commit-tooltip-body themed-scrollbar min-h-0 flex-1 overflow-y-auto',
+                tooltipTitle(commitTooltip.commit) && 'mt-1',
+              )
+            "
+          >
+            <div
+              class="memo-rendered commit-tooltip-rendered block text-on-surface"
+              v-html="renderMarkdown(tooltipBody(commitTooltip.commit))"
+            />
+          </div>
+          <div
+            class="mt-2 flex shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-border-subtle/80 pt-2 text-[10px] font-medium leading-4"
+            :aria-busy="tooltipSummary(commitTooltip.commit).state === 'loading'"
+            aria-live="polite"
+          >
+            <button
+              type="button"
+              class="shrink-0 cursor-copy font-mono text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-primary"
+              :title="`${copyLabel(commitTooltip.commit.hash)}完整 commit hash`"
+              :aria-label="`${copyLabel(commitTooltip.commit.hash)}完整 commit hash`"
+              @click.stop="copyText(commitTooltip.commit.hash)"
+            >
+              {{ shortCommitHash(commitTooltip.commit.hash) }}</button
+            ><span aria-hidden="true" class="h-3 w-px shrink-0 bg-border-subtle" /><span
+              v-if="tooltipSummary(commitTooltip.commit).state === 'loading'"
+              class="text-on-surface-variant"
+              >正在读取变更摘要...</span
+            ><span
+              v-else-if="tooltipSummary(commitTooltip.commit).state === 'unavailable'"
+              class="text-on-surface-variant"
+              >变更摘要暂不可用</span
+            ><template v-else
+              ><span class="text-on-surface-variant"
+                >变更 {{ tooltipSummary(commitTooltip.commit).fileCount }} 个文件</span
+              >
+              <span class="text-status-running">{{ tooltipSummary(commitTooltip.commit).additions }} 行 (+)</span>
+              <span class="text-status-error"
+                >{{ tooltipSummary(commitTooltip.commit).deletions }} 行 (-)</span
+              ></template
+            >
+          </div>
+          <div v-if="refPresentations(commitTooltip.commit).length" class="mt-2 flex flex-wrap gap-1">
+            <span
+              v-for="ref in refPresentations(commitTooltip.commit)"
+              :key="`tooltip-${ref.refName}`"
               :class="
-                cn(
-                  'flex h-full w-full items-center justify-center text-[10px] font-bold',
-                  commitAuthorAvatarClass(commitTooltip.commit.author),
-                  tooltipDetailsFor(commitTooltip.commit.hash)?.isLoadingAvatar && 'animate-pulse',
-                )
+                cn(ref.className, 'git-ref-badge--tooltip', ref.graphAccentStyle && 'git-ref-badge--graph-linked')
               "
-              >{{ commitAuthorInitials(commitTooltip.commit.author) }}</span
+              :style="ref.graphAccentStyle"
+              :title="ref.title"
+              ><component v-if="ref.icon" :is="ref.icon" :size="12" /><span class="git-ref-badge__tooltip-label">{{
+                ref.label
+              }}</span></span
             >
           </div>
-          <div class="min-w-0 flex flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
-            <span class="min-w-0 break-words text-[11px] font-bold leading-4 text-on-surface">
-              {{ commitTooltip.commit.author }}
-            </span>
-            <span
-              v-if="formatCommitTime(commitTooltip.commit.date).text"
-              class="dark-readable-meta inline-flex items-center gap-1 text-[10px] font-semibold leading-4 text-on-surface-variant"
-            >
-              <Clock3 :size="11" class="dark-readable-meta shrink-0 text-on-surface-variant/70" />
-              {{ formatCommitTime(commitTooltip.commit.date).text }}
-            </span>
-            <span
-              v-if="formatCommitTime(commitTooltip.commit.date).title"
-              class="dark-readable-meta break-words text-[10px] font-medium leading-4 text-on-surface-variant/80"
-            >
-              ({{ formatCommitTime(commitTooltip.commit.date).title }})
-            </span>
-          </div>
-        </div>
-      </div>
-      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-3 py-2">
-        <p
-          v-if="tooltipTitle(commitTooltip.commit)"
-          class="shrink-0 break-words text-[12px] font-bold leading-5 text-on-surface"
-        >
-          {{ tooltipTitle(commitTooltip.commit) }}
-        </p>
-        <div
-          v-if="tooltipBody(commitTooltip.commit)"
-          v-overlay-scrollbar
-          :class="
-            cn(
-              'commit-tooltip-body themed-scrollbar min-h-0 flex-1 overflow-y-auto',
-              tooltipTitle(commitTooltip.commit) && 'mt-1',
-            )
-          "
-        >
-          <div
-            class="memo-rendered commit-tooltip-rendered block text-on-surface"
-            v-html="renderMarkdown(tooltipBody(commitTooltip.commit))"
-          />
-        </div>
-        <div
-          class="mt-2 flex shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 border-t border-border-subtle/80 pt-2 text-[10px] font-medium leading-4"
-          :aria-busy="tooltipSummary(commitTooltip.commit).state === 'loading'"
-          aria-live="polite"
-        >
-          <button
-            type="button"
-            class="shrink-0 cursor-copy font-mono text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-primary"
-            :title="`${copyLabel(commitTooltip.commit.hash)}完整 commit hash`"
-            :aria-label="`${copyLabel(commitTooltip.commit.hash)}完整 commit hash`"
-            @click.stop="copyText(commitTooltip.commit.hash)"
-          >
-            {{ shortCommitHash(commitTooltip.commit.hash) }}</button
-          ><span aria-hidden="true" class="h-3 w-px shrink-0 bg-border-subtle" /><span
-            v-if="tooltipSummary(commitTooltip.commit).state === 'loading'"
-            class="text-on-surface-variant"
-            >正在读取变更摘要...</span
-          ><span
-            v-else-if="tooltipSummary(commitTooltip.commit).state === 'unavailable'"
-            class="text-on-surface-variant"
-            >变更摘要暂不可用</span
-          ><template v-else
-            ><span class="text-on-surface-variant"
-              >变更 {{ tooltipSummary(commitTooltip.commit).fileCount }} 个文件</span
-            >
-            <span class="text-status-running">{{ tooltipSummary(commitTooltip.commit).additions }} 行 (+)</span>
-            <span class="text-status-error">{{ tooltipSummary(commitTooltip.commit).deletions }} 行 (-)</span></template
-          >
-        </div>
-        <div v-if="refPresentations(commitTooltip.commit).length" class="mt-2 flex flex-wrap gap-1">
-          <span
-            v-for="ref in refPresentations(commitTooltip.commit)"
-            :key="`tooltip-${ref.refName}`"
-            :class="cn(ref.className, 'git-ref-badge--tooltip', ref.graphAccentStyle && 'git-ref-badge--graph-linked')"
-            :style="ref.graphAccentStyle"
-            :title="ref.title"
-            ><component v-if="ref.icon" :is="ref.icon" :size="10" /><span class="git-ref-badge__tooltip-label">{{
-              ref.label
-            }}</span></span
-          >
         </div>
       </div>
     </div>
