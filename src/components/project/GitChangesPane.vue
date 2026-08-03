@@ -117,6 +117,9 @@ const visibleWorktreeItems = computed(() =>
   ),
 );
 const isChangesWriteBusy = computed(() => Boolean(activeGitAction.value) || activeGitFileActions.value.length > 0);
+const canCommitStaged = computed(
+  () => !props.disabled && !isChangesWriteBusy.value && hasStagedChanges.value && Boolean(props.commitMessage.trim()),
+);
 const commitMessageAiMode = computed(
   () =>
     store.aiPreferences.modes.find((mode) => mode.id === AI_COMMIT_MESSAGE_MODE_ID) ||
@@ -623,8 +626,8 @@ onBeforeUnmount(() => {
           </button>
           <button
             type="button"
-            class="git-section-action"
-            :disabled="disabled || isChangesWriteBusy || !hasStagedChanges || !commitMessage.trim()"
+            :class="cn('git-section-action', canCommitStaged && 'toolbar-primary-button')"
+            :disabled="!canCommitStaged"
             :aria-busy="activeGitAction === 'commit'"
             :title="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
             :aria-label="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"

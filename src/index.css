@@ -487,8 +487,7 @@
   transition:
     background-color 160ms ease,
     color 160ms ease,
-    opacity 160ms ease,
-    transform 120ms ease;
+    opacity 160ms ease;
 }
 
 :where(.git-top-action, .git-section-action, .git-row-action):hover:not(:disabled) {
@@ -505,10 +504,6 @@
 ):focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 1px;
-}
-
-:where(.git-top-action, .git-section-action, .git-row-action):active:not(:disabled) {
-  transform: translateY(1px);
 }
 
 :where(.git-top-action, .git-section-action, .git-row-action):disabled {
@@ -576,6 +571,11 @@
 .git-section-action {
   width: 1.5rem;
   height: 1.5rem;
+}
+
+.git-left-toolbar .git-section-action {
+  width: 1.625rem;
+  height: 1.625rem;
 }
 
 .git-section-action > svg {

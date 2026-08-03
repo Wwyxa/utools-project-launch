@@ -1621,10 +1621,13 @@ watch(
             <CircleHelp :size="12" :stroke-width="1.8" aria-hidden="true" />
           </span>
           <div v-show="leftContext === 'changes'" class="flex min-w-0 flex-1 overflow-x-clip">
-            <div ref="changesToolbarRef" class="ml-auto flex h-6 w-max shrink-0 items-center gap-px" />
+            <div ref="changesToolbarRef" class="git-left-toolbar ml-auto flex h-6 w-max shrink-0 items-center gap-px" />
           </div>
           <div v-show="leftContext === 'history'" class="flex min-w-0 flex-1 overflow-x-clip">
-            <div ref="commitHistoryToolbarRef" class="ml-auto flex h-6 w-max shrink-0 items-center gap-px" />
+            <div
+              ref="commitHistoryToolbarRef"
+              class="git-left-toolbar ml-auto flex h-6 w-max shrink-0 items-center gap-px"
+            />
           </div>
         </div>
 
