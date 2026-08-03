@@ -33,6 +33,7 @@ const tabLongPressDelayMs = 350;
 const tabPressMoveTolerance = 8;
 const gitToggleIdleDelayMs = 3_000;
 const gitInitialRefreshCacheMaxAgeMs = 15_000;
+const gitInitialCommitLimit = 20;
 
 const props = defineProps<{
   project: Project;
@@ -361,7 +362,10 @@ const scheduleInitialGitRefresh = () => {
     return;
   }
   void nextTick(() => {
-    void store.refreshGitSnapshot(props.project.id, { maxAgeMs: gitInitialRefreshCacheMaxAgeMs });
+    void store.refreshGitSnapshot(props.project.id, {
+      maxAgeMs: gitInitialRefreshCacheMaxAgeMs,
+      limit: gitInitialCommitLimit,
+    });
   });
 };
 

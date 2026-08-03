@@ -2401,7 +2401,7 @@ export const useStore = defineStore("app", {
     },
     async refreshGitSnapshot(
       projectId: string,
-      options: { force?: boolean; maxAgeMs?: number } = {},
+      options: { force?: boolean; maxAgeMs?: number; limit?: number } = {},
       target: ProjectGitRepositoryTarget = { kind: "main" },
     ) {
       const context = this.resolveGitRepositoryContext(projectId, target);
@@ -2444,7 +2444,10 @@ export const useStore = defineStore("app", {
         const startedAtVersion = gitMutationVersion(context.contextKey);
         const startedAtRefVersion = gitRefMutationVersion(projectId);
         try {
-          const snapshot = await bridge.readGitSnapshot(context.repositoryPath, { limit: 80, skip: 0 });
+          const snapshot = await bridge.readGitSnapshot(context.repositoryPath, {
+            limit: options.limit ?? 80,
+            skip: 0,
+          });
           const latestContext = this.resolveGitRepositoryContext(projectId, context.target);
           if (
             gitSnapshotRefreshTokens.get(context.contextKey) !== refreshToken ||

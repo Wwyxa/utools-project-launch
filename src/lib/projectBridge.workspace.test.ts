@@ -393,15 +393,16 @@ describe("browser Git workspace fallback", () => {
     };
     store.projects = [project];
 
-    await store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000 });
+    await store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000, limit: 20 });
     expect(readGitSnapshot).not.toHaveBeenCalled();
 
     project.git = {
       ...project.git,
       lastRefreshedAt: new Date(Date.now() - 15_001).toISOString(),
     };
-    await store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000 });
+    await store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000, limit: 20 });
     expect(readGitSnapshot).toHaveBeenCalledTimes(1);
+    expect(readGitSnapshot).toHaveBeenLastCalledWith(project.path, { limit: 20, skip: 0 });
 
     project.git = { ...project.git, lastRefreshedAt: "not-a-date" };
     await store.refreshGitSnapshot(project.id, { maxAgeMs: 15_000 });
