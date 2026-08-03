@@ -1788,7 +1788,7 @@ watch(
             <div class="flex items-center justify-end gap-2 pt-1">
               <button
                 type="button"
-                class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-50"
+                class="git-dialog-secondary"
                 :disabled="isAnyGitWriteRunning"
                 @click="closeRemoteDialog"
               >
@@ -1796,7 +1796,7 @@ watch(
               </button>
               <button
                 type="button"
-                class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                class="git-dialog-primary"
                 :disabled="isAnyGitWriteRunning"
                 @click="submitRemoteDialog"
               >

@@ -580,6 +580,56 @@
   height: 14px;
 }
 
+:where(.git-dialog-primary, .git-dialog-secondary) {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 0.5rem;
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1rem;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
+}
+
+.git-dialog-secondary {
+  background: transparent;
+  color: var(--color-on-surface-variant);
+}
+
+.git-dialog-secondary:hover:not(:disabled) {
+  background: var(--color-surface-variant);
+  color: var(--color-on-surface);
+}
+
+.git-dialog-primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.git-dialog-primary:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+:where(.git-dialog-primary, .git-dialog-secondary):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+:where(.git-dialog-primary, .git-dialog-secondary):disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .git-section-action {
   width: 1.5rem;
   height: 1.5rem;

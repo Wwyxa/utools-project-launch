@@ -969,7 +969,7 @@ onBeforeUnmount(() => {
               <div class="flex justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+                  class="git-dialog-secondary"
                   :disabled="isStashDialogBusy"
                   @click="closeStashDialog"
                 >
@@ -977,7 +977,7 @@ onBeforeUnmount(() => {
                 </button>
                 <button
                   type="submit"
-                  class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                  class="git-dialog-primary"
                   :disabled="isStashDialogBusy"
                 >
                   <Archive :size="13" :class="isStashDialogBusy ? 'animate-pulse' : ''" />
