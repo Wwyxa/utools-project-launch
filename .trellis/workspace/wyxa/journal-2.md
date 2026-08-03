@@ -207,3 +207,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 67: 完善 Git 暂存审阅与语法高亮
+
+**Date**: 2026-08-03
+**Task**: 完善 Git 暂存审阅与语法高亮
+**Branch**: `master`
+
+### Summary
+
+完成 Git stash 创建、操作、完整历史树、文件与单文件 diff 审阅；补齐 stash 文件的语法高亮、回归测试和跨层规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `525748f` | (see git log) |
+
+### Status
+
+[OK] **Completed**
