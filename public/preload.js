@@ -701,9 +701,12 @@ function saveExternalApplicationPreferences(preferences) {
   try {
     if (window.utools?.dbStorage) {
       window.utools.dbStorage.setItem(externalApplicationPreferencesV2StorageKey, normalized);
+      window.utools.dbStorage.removeItem(externalApplicationPreferencesStorageKey);
+      window.localStorage?.removeItem(externalApplicationPreferencesStorageKey);
       return;
     }
     window.localStorage?.setItem(externalApplicationPreferencesV2StorageKey, JSON.stringify(normalized));
+    window.localStorage?.removeItem(externalApplicationPreferencesStorageKey);
   } catch (error) {
     // Keep settings updates non-blocking if host storage is unavailable.
   }

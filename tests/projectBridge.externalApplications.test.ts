@@ -32,17 +32,24 @@ const createStorage = () => {
     api: {
       getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
     },
   };
 };
 
-const createDbStorage = () => {
+const createDbStorage = (options: { failExternalApplicationV2Write?: boolean } = {}) => {
   const values = new Map<string, unknown>();
   return {
     values,
     api: {
       getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: unknown) => values.set(key, value),
+      setItem: (key: string, value: unknown) => {
+        if (options.failExternalApplicationV2Write && key === preferencesKey) {
+          throw new Error("Unable to persist V2 external application preferences.");
+        }
+        values.set(key, value);
+      },
+      removeItem: (key: string) => values.delete(key),
     },
   };
 };
@@ -95,6 +102,15 @@ describe("browser external application preferences", () => {
   it("persists complete defaults when no preference exists", () => {
     expect(getProjectBridge().loadExternalApplicationPreferences()).toEqual(defaults);
     expect(JSON.parse(storage.values.get(preferencesKey)!)).toEqual(defaults);
+  });
+
+  it("removes the external application V1 key after persisting V2", () => {
+    const legacyPreferences = { ...defaults, mode: "manual" as const, defaultApplicationId: "cursor" };
+    storage.values.set(externalApplicationPreferencesV1Key, JSON.stringify(legacyPreferences));
+
+    expect(getProjectBridge().loadExternalApplicationPreferences()).toEqual(legacyPreferences);
+    expect(storage.values.has(externalApplicationPreferencesV1Key)).toBe(false);
+    expect(JSON.parse(storage.values.get(preferencesKey)!)).toEqual(legacyPreferences);
   });
 
   it.each([
@@ -345,14 +361,29 @@ describe("uTools preload external application preferences", () => {
     };
     rendererStorage.values.set(preferencesKey, JSON.stringify(preferences));
     dbStorage.values.set(externalApplicationPreferencesV1Key, { ...defaults, mode: "manual", defaultApplicationId: "cursor" });
+    rendererStorage.values.set(externalApplicationPreferencesV1Key, JSON.stringify({ ...defaults, mode: "manual", defaultApplicationId: "cursor" }));
 
     expect(loadPreloadBridge(rendererStorage.api, {}, dbStorage.api).loadExternalApplicationPreferences()).toEqual(
       preferences,
     );
     expect(dbStorage.values.get(preferencesKey)).toEqual(preferences);
+    expect(dbStorage.values.has(externalApplicationPreferencesV1Key)).toBe(false);
+    expect(rendererStorage.values.has(externalApplicationPreferencesV1Key)).toBe(false);
 
     const restartedBridge = loadPreloadBridge(createStorage().api, {}, dbStorage.api);
     expect(restartedBridge.loadExternalApplicationPreferences()).toEqual(preferences);
+  });
+
+  it("keeps the external application V1 key when V2 persistence fails", () => {
+    const dbStorage = createDbStorage({ failExternalApplicationV2Write: true });
+    const legacyPreferences: ExternalApplicationPreferences = { ...defaults, mode: "manual", defaultApplicationId: "cursor" };
+    dbStorage.values.set(externalApplicationPreferencesV1Key, legacyPreferences);
+
+    expect(loadPreloadBridge(createStorage().api, {}, dbStorage.api).loadExternalApplicationPreferences()).toEqual(
+      legacyPreferences,
+    );
+    expect(dbStorage.values.get(externalApplicationPreferencesV1Key)).toEqual(legacyPreferences);
+    expect(dbStorage.values.has(preferencesKey)).toBe(false);
   });
 
   it("matches browser migration and normalization", () => {

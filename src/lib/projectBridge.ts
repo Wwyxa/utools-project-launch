@@ -430,6 +430,7 @@ const writeStoredExternalApplicationPreferences = (preferences: ExternalApplicat
   const normalized = normalizeExternalApplicationPreferences(preferences);
   try {
     window.localStorage?.setItem(externalApplicationPreferencesV2StorageKey, JSON.stringify(normalized));
+    window.localStorage?.removeItem(externalApplicationPreferencesStorageKey);
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }

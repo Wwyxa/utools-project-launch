@@ -14,6 +14,7 @@ declare global {
       dbStorage?: {
         getItem(key: string): unknown;
         setItem(key: string, value: unknown): void;
+        removeItem(key: string): void;
       };
       db?: {
         put(doc: Record<string, unknown>): unknown;
