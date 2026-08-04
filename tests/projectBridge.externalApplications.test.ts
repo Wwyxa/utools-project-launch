@@ -351,7 +351,7 @@ describe("uTools preload external application preferences", () => {
     });
   });
 
-  it("launches editable application templates without a shell and rejects reserved id mismatches", async () => {
+  it("launches editable application templates with a resolved host launcher and rejects reserved id mismatches", async () => {
     const nodeRequire = createRequire(import.meta.url);
     const child = { once: vi.fn(), unref: vi.fn() };
     child.once.mockImplementation((event: string, listener: () => void) => {
@@ -376,12 +376,15 @@ describe("uTools preload external application preferences", () => {
       },
     });
     expect(builtinResult.launched).toBe(true);
-    expect(spawn).toHaveBeenNthCalledWith(
-      1,
-      process.platform === "win32" ? "code.cmd" : "code",
-      ["--reuse-window", projectPath],
-      { cwd: projectPath, detached: true, stdio: "ignore" },
-    );
+    const [builtinExecutable, builtinArgs, builtinOptions] = spawn.mock.calls[0];
+    expect(builtinExecutable).toEqual(expect.any(String));
+    expect(builtinOptions).toMatchObject({ cwd: projectPath, detached: true, stdio: "ignore" });
+    if (builtinOptions.env) {
+      expect(builtinArgs).toEqual(expect.arrayContaining(["/d", "/v:off", "/s", "/c"]));
+      expect(builtinOptions.env.UTOOLS_PROJECT_LAUNCH_ARGUMENT_1).toBe(projectPath);
+    } else {
+      expect(builtinArgs).toEqual(expect.arrayContaining(["--reuse-window", projectPath]));
+    }
 
     const result = await bridge.openExternalApplication({
       projectPath,

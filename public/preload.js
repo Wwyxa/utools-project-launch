@@ -1476,16 +1476,18 @@ function quoteShellToken(token) {
   return `'${String(token).replace(/'/g, `'\\''`)}'`;
 }
 
-function launchDetachedProcess(executable, args, cwd) {
+function launchDetachedProcess(executable, args, cwd, environment) {
   return new Promise((resolve) => {
     let child;
 
     try {
-      child = spawn(executable, args, {
+      const options = {
         cwd,
         detached: true,
         stdio: "ignore",
-      });
+      };
+      if (environment) options.env = environment;
+      child = spawn(executable, args, options);
     } catch (error) {
       resolve({
         launched: false,
@@ -1533,7 +1535,10 @@ const macApplications = {
 };
 
 const windowsExecutables = {
-  "windows-terminal": { commands: ["wt.exe"], paths: () => [path.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "wt.exe")] },
+  "windows-terminal": {
+    commands: ["wt.exe", "wt"],
+    paths: () => [path.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "wt.exe")],
+  },
   powershell: {
     commands: ["pwsh.exe", "powershell.exe"],
     paths: () => [
@@ -1543,7 +1548,7 @@ const windowsExecutables = {
   },
   cmd: { commands: [], paths: () => [process.env.ComSpec || path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe")] },
   vscode: {
-    commands: ["Code.exe"],
+    commands: ["Code.exe", "code.cmd", "code"],
     paths: () => [
       path.join(process.env.LOCALAPPDATA || "", "Programs", "Microsoft VS Code", "Code.exe"),
       path.join(process.env.ProgramFiles || "", "Microsoft VS Code", "Code.exe"),
@@ -1551,7 +1556,7 @@ const windowsExecutables = {
     ],
   },
   cursor: {
-    commands: ["Cursor.exe"],
+    commands: ["Cursor.exe", "cursor.cmd", "cursor"],
     paths: () => [
       path.join(process.env.LOCALAPPDATA || "", "Programs", "Cursor", "Cursor.exe"),
       path.join(process.env.ProgramFiles || "", "Cursor", "Cursor.exe"),
@@ -1573,6 +1578,10 @@ function directoryExists(targetPath) {
   } catch (error) {
     return false;
   }
+}
+
+function isWindowsAppExecutionAlias(targetPath) {
+  return /(?:^|[\\/])Microsoft[\\/]WindowsApps[\\/].+\.(?:exe|cmd)$/i.test(String(targetPath || ""));
 }
 
 function findMacApplication(kind) {
@@ -1598,7 +1607,10 @@ function findWindowsExecutable(kind) {
   for (const command of candidate.commands) {
     try {
       const output = execFileSync("where.exe", [command], { encoding: "utf8", timeout: 1500 });
-      const executable = output.split(/\r?\n/).map((item) => item.trim()).find(fileExists);
+      const executable = output
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .find((targetPath) => fileExists(targetPath) || isWindowsAppExecutionAlias(targetPath));
       if (executable) return executable;
     } catch (error) {
       // Try the next known executable without exposing a shell to the user path.
@@ -1641,10 +1653,37 @@ function isSupportedExternalApplicationKind(kind) {
   return editorKinds.has(kind);
 }
 
-function launchCustomCommand(command, resolvedPath) {
+function isWindowsApplicationCommand(kind, executable) {
+  if (getHostPlatform() !== "win32" || !executable || /[\\/]/.test(executable)) return false;
+  const candidate = windowsExecutables[kind];
+  if (!candidate) return false;
+  const normalizedExecutable = executable.toLocaleLowerCase();
+  return candidate.commands.some((commandName) => commandName.toLocaleLowerCase() === normalizedExecutable);
+}
+
+function launchCommandExecutable(executable, args, cwd) {
+  if (getHostPlatform() === "win32" && /\.(?:cmd|bat)$/i.test(executable)) {
+    const commandInterpreter = process.env.ComSpec || path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe");
+    const commandVariable = "UTOOLS_PROJECT_LAUNCH_COMMAND";
+    const argumentPrefix = "UTOOLS_PROJECT_LAUNCH_ARGUMENT_";
+    const environment = { ...process.env, [commandVariable]: executable };
+    const commandParts = [`"%${commandVariable}%"`];
+    for (const [index, argument] of args.entries()) {
+      const argumentVariable = `${argumentPrefix}${index}`;
+      environment[argumentVariable] = argument;
+      commandParts.push(`"%${argumentVariable}%"`);
+    }
+    return launchDetachedProcess(commandInterpreter, ["/d", "/v:off", "/s", "/c", commandParts.join(" ")], cwd, environment);
+  }
+  return launchDetachedProcess(executable, args, cwd);
+}
+
+function launchCustomCommand(command, resolvedPath, kind) {
   const commandTokens = splitCommandLine(command).map((token) => token.replace(/\{path\}|\{projectPath\}/g, () => resolvedPath));
   const [executable, ...args] = commandTokens;
-  return executable ? launchDetachedProcess(executable, args, resolvedPath) : Promise.resolve(null);
+  if (!executable) return Promise.resolve(null);
+  const resolvedExecutable = isWindowsApplicationCommand(kind, executable) ? findWindowsExecutable(kind) || executable : executable;
+  return launchCommandExecutable(resolvedExecutable, args, resolvedPath);
 }
 
 function launchNativeTarget(kind, resolvedPath) {
@@ -1658,7 +1697,7 @@ function launchNativeTarget(kind, resolvedPath) {
   const executable = findWindowsExecutable(kind);
   if (!executable) return Promise.resolve(null);
   if (kind === "windows-terminal") return launchDetachedProcess(executable, ["-d", resolvedPath], resolvedPath);
-  if (kind === "powershell") return launchDetachedProcess(executable, ["-NoExit", "-Command", "Set-Location", "-LiteralPath", resolvedPath], resolvedPath);
+  if (kind === "powershell") return launchDetachedProcess(executable, ["-NoExit"], resolvedPath);
   if (kind === "cmd") return launchDetachedProcess(executable, ["/d", "/k"], resolvedPath);
   return launchDetachedProcess(executable, [resolvedPath], resolvedPath);
 }
@@ -1722,7 +1761,9 @@ async function openExternalApplication(payload) {
     if (!candidate || !candidate.id || !candidate.name || !isSupportedExternalApplicationKind(candidate.kind)) continue;
     attempts.push(candidate.id);
     const useNative = candidate.kind !== "custom" && candidate.launchMode !== "command";
-    const result = useNative ? await launchNativeTarget(candidate.kind, resolvedPath) : await launchCustomCommand(candidate.command || "", resolvedPath);
+    const result = useNative
+      ? await launchNativeTarget(candidate.kind, resolvedPath)
+      : await launchCustomCommand(candidate.command || "", resolvedPath, candidate.kind);
     if (result?.launched) {
       return { ...result, applicationId: candidate.id, kind: candidate.kind, requestedApplicationId: applicationId, resolvedApplicationId: candidate.id, attempts, code: attempts.length > 1 ? "launched-with-fallback" : "launched" };
     }

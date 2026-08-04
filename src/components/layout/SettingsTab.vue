@@ -833,8 +833,8 @@ watch(
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
-        <div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+        <div class="mb-2.5 flex flex-wrap items-center gap-2">
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
             <Code2 :size="15" class="shrink-0 text-primary" />
             <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.externalApplications }}</h3>
             <span class="text-[10px] leading-4 text-on-surface-variant">
@@ -844,22 +844,24 @@ watch(
               {{ externalApplicationFeedback }}
             </span>
           </div>
-          <button
-            type="button"
-            class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-            @click="openExternalApplicationDialog()"
-          >
-            <Plus :size="12" />
-            {{ t.settings.addExternalApplication }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-            :class="store.externalApplicationPreferences.mode === 'auto' && 'border-primary/40 text-primary'"
-            @click="store.setAutomaticExternalApplication()"
-          >
-            {{ t.settings.automaticLauncher }}
-          </button>
+          <div class="ml-auto flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              :class="store.externalApplicationPreferences.mode === 'auto' && 'border-primary/40 text-primary'"
+              @click="store.setAutomaticExternalApplication()"
+            >
+              {{ t.settings.automaticLauncher }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              @click="openExternalApplicationDialog()"
+            >
+              <Plus :size="12" />
+              {{ t.settings.addExternalApplication }}
+            </button>
+          </div>
         </div>
         <div class="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <article
@@ -867,59 +869,65 @@ watch(
             :key="application.id"
             role="button"
             tabindex="0"
-            class="grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-2 transition-colors hover:bg-surface-variant"
+            class="min-w-0 cursor-pointer rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-2 transition-colors hover:bg-surface-variant"
             @click="openExternalApplicationDialog(application)"
             @keydown.enter.self.prevent="openExternalApplicationDialog(application)"
             @keydown.space.self.prevent="openExternalApplicationDialog(application)"
           >
-            <div class="min-w-0">
-              <div class="flex min-w-0 items-center gap-1">
-                <span class="truncate text-xs font-bold" :title="application.name">{{ application.name }}</span>
-                <span
-                  class="shrink-0 rounded border border-border-subtle bg-surface px-1 text-[8px] font-bold leading-3 text-on-surface-variant"
-                >
-                  {{
-                    application.kind === "custom"
-                      ? t.settings.customApplicationBadge
-                      : t.settings.presetApplicationBadge
-                  }}
-                </span>
-                <span
-                  v-if="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
-                  class="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 text-[8px] font-bold leading-3 text-primary"
-                >
-                  {{ t.settings.defaultApplicationBadge }}
-                </span>
+            <div class="flex min-w-0 items-start gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="flex min-w-0 items-center gap-1">
+                  <span class="truncate text-xs font-bold" :title="application.name">{{ application.name }}</span>
+                  <span
+                    class="shrink-0 rounded border border-border-subtle bg-surface px-1 text-[8px] font-bold leading-3 text-on-surface-variant"
+                  >
+                    {{
+                      application.kind === "custom"
+                        ? t.settings.customApplicationBadge
+                        : t.settings.presetApplicationBadge
+                    }}
+                  </span>
+                  <span
+                    v-if="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
+                    class="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 text-[8px] font-bold leading-3 text-primary"
+                  >
+                    {{ t.settings.defaultApplicationBadge }}
+                  </span>
+                </div>
+                <p class="mt-0.5 truncate font-mono text-[9px] text-on-surface-variant" :title="application.command">
+                  {{ application.command }}
+                </p>
               </div>
-              <p class="mt-0.5 truncate font-mono text-[9px] text-on-surface-variant" :title="application.command">
-                {{ application.command }}
-              </p>
-              <p v-if="externalApplicationAvailability(application) !== undefined" class="mt-0.5 text-[9px]" :class="externalApplicationAvailability(application) ? 'text-status-running' : 'text-status-warning'">
-                {{ externalApplicationAvailability(application) ? t.settings.launcherAvailable : t.settings.launcherUnavailable }}
-              </p>
-            </div>
-            <div class="flex shrink-0 items-center gap-1.5" @click.stop>
-              <label :title="t.settings.setDefaultApplication" class="flex cursor-pointer items-center">
-                <input
-                  type="radio"
-                  name="default-external-application"
-                  class="h-3.5 w-3.5 accent-primary"
-                  :checked="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
-                  :disabled="!application.enabled"
-                  :aria-label="`${t.settings.setDefaultApplication}: ${application.name}`"
-                  @change="setDefaultExternalApplication(application)"
-                />
-              </label>
-              <label :title="t.settings.applicationEnabled" class="flex cursor-pointer items-center">
-                <input
-                  type="checkbox"
-                  class="h-3.5 w-3.5 accent-primary"
-                  :checked="application.enabled"
-                  :disabled="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
-                  :aria-label="`${t.settings.applicationEnabled}: ${application.name}`"
-                  @change="setExternalApplicationEnabled(application, ($event.target as HTMLInputElement).checked)"
-                />
-              </label>
+              <div class="flex shrink-0 items-center gap-1.5" @click.stop>
+                <span
+                  v-if="externalApplicationAvailability(application) !== undefined"
+                  class="rounded border bg-surface px-1 text-[8px] font-bold leading-3"
+                  :class="externalApplicationAvailability(application) ? 'border-status-running text-status-running' : 'border-status-warning text-status-warning'"
+                >
+                  {{ externalApplicationAvailability(application) ? t.settings.launcherAvailable : t.settings.launcherUnavailable }}
+                </span>
+                <label :title="t.settings.setDefaultApplication" class="flex cursor-pointer items-center">
+                  <input
+                    type="radio"
+                    name="default-external-application"
+                    class="h-3.5 w-3.5 accent-primary"
+                    :checked="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
+                    :disabled="!application.enabled"
+                    :aria-label="`${t.settings.setDefaultApplication}: ${application.name}`"
+                    @change="setDefaultExternalApplication(application)"
+                  />
+                </label>
+                <label :title="t.settings.applicationEnabled" class="flex cursor-pointer items-center">
+                  <input
+                    type="checkbox"
+                    class="h-3.5 w-3.5 accent-primary"
+                    :checked="application.enabled"
+                    :disabled="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
+                    :aria-label="`${t.settings.applicationEnabled}: ${application.name}`"
+                    @change="setExternalApplicationEnabled(application, ($event.target as HTMLInputElement).checked)"
+                  />
+                </label>
+              </div>
             </div>
           </article>
         </div>

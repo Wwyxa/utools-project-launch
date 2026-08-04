@@ -6,13 +6,24 @@ import { createContext, runInContext } from "node:vm";
 import type { ProjectBridge } from "../src/types";
 
 type Platform = "darwin" | "win32";
+type SpawnOutcome = "spawn" | "error";
 
-const loadPreloadBridge = (platform: Platform, paths: string[]) => {
+interface PreloadFixture {
+  directories?: string[];
+  files?: string[];
+  where?: Record<string, string>;
+  spawnOutcomes?: SpawnOutcome[];
+  env?: Record<string, string>;
+}
+
+const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   const nodeRequire = createRequire(import.meta.url);
+  const spawnOutcomes = [...(fixture.spawnOutcomes || [])];
   const spawn = vi.fn(() => {
+    const outcome = spawnOutcomes.shift() || "spawn";
     const child = { once: vi.fn(), unref: vi.fn() };
-    child.once.mockImplementation((event: string, listener: () => void) => {
-      if (event === "spawn") listener();
+    child.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
+      if (event === outcome) listener(event === "error" ? new Error("launch failed") : undefined);
       return child;
     });
     return child;
@@ -20,15 +31,17 @@ const loadPreloadBridge = (platform: Platform, paths: string[]) => {
   const fs = {
     ...nodeRequire("fs"),
     statSync: (target: string) => {
-      if (paths.includes(target)) return { isDirectory: () => true, isFile: () => target.endsWith(".exe") };
+      if (fixture.directories?.includes(target)) return { isDirectory: () => true, isFile: () => false };
+      if (fixture.files?.includes(target)) return { isDirectory: () => false, isFile: () => true };
       throw new Error("not found");
     },
   };
   const childProcess = {
     ...nodeRequire("child_process"),
     spawn,
-    execFileSync: vi.fn((command: string) => {
-      if (platform === "win32" && command === "where.exe") return "C:\\Program Files\\Microsoft VS Code\\Code.exe\r\n";
+    execFileSync: vi.fn((command: string, args: string[]) => {
+      const resolved = platform === "win32" && command === "where.exe" ? fixture.where?.[args[0]] : "";
+      if (resolved) return `${resolved}\r\n`;
       throw new Error("not found");
     }),
   };
@@ -40,10 +53,16 @@ const loadPreloadBridge = (platform: Platform, paths: string[]) => {
     require: (id: string) => {
       if (id === "electron") return { shell: {} };
       if (id === "fs") return fs;
+      if (id === "path") return platform === "win32" ? nodeRequire("path").win32 : nodeRequire("path");
       if (id === "child_process") return childProcess;
       return nodeRequire(id);
     },
-    process: { platform, env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" }, once: () => undefined, exit: () => undefined },
+    process: {
+      platform,
+      env: { ComSpec: "C:\\Windows\\System32\\cmd.exe", ...fixture.env },
+      once: () => undefined,
+      exit: () => undefined,
+    },
     Buffer,
     console,
     setTimeout,
@@ -59,7 +78,9 @@ const loadPreloadBridge = (platform: Platform, paths: string[]) => {
 describe("native project launchers", () => {
   it("detects macOS apps without spawning and opens Terminal with separate arguments", async () => {
     const projectPath = "/Projects/中文 project";
-    const { bridge, spawn } = loadPreloadBridge("darwin", [projectPath, "/System/Applications/Utilities/Terminal.app"]);
+    const { bridge, spawn } = loadPreloadBridge("darwin", {
+      directories: [projectPath, "/System/Applications/Utilities/Terminal.app"],
+    });
 
     const capabilities = await bridge.detectHostLaunchCapabilities();
     expect(capabilities.platform).toBe("darwin");
@@ -79,17 +100,121 @@ describe("native project launchers", () => {
     });
   });
 
-  it("starts Windows CMD in cwd without placing the path in a shell command", async () => {
-    const projectPath = "/项目 & workspace";
-    const { bridge, spawn } = loadPreloadBridge("win32", [projectPath, "C:\\Windows\\System32\\cmd.exe"]);
+  it("uses Windows app execution aliases and PATH command shims", async () => {
+    const projectPath = "C:\\Projects\\workspace & %USERPROFILE% !unsafe!";
+    const windowsApps = "C:\\Users\\Test\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe";
+    const codeShim = "C:\\Users\\Test\\AppData\\Roaming\\Code\\bin\\code.cmd";
+    const cursorShim = "C:\\Users\\Test\\AppData\\Roaming\\Cursor\\bin\\cursor.cmd";
+    const { bridge, spawn } = loadPreloadBridge("win32", {
+      directories: [projectPath],
+      files: [codeShim, cursorShim],
+      where: { "wt.exe": windowsApps, "code.cmd": codeShim, "cursor.cmd": cursorShim },
+      env: { LOCALAPPDATA: "C:\\Users\\Test\\AppData\\Local" },
+    });
+
+    const capabilities = await bridge.detectHostLaunchCapabilities();
+    expect(capabilities.terminals.find((candidate) => candidate.kind === "windows-terminal")?.available).toBe(true);
+    expect(capabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
+    expect(capabilities.editors.find((candidate) => candidate.kind === "cursor")?.available).toBe(true);
 
     await expect(
       bridge.openTerminal({
         projectPath,
-        terminal: { schemaVersion: 2, mode: "manual", kind: "cmd", customCommand: "" },
+        terminal: { schemaVersion: 2, mode: "manual", kind: "windows-terminal", customCommand: "" },
       }),
-    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "cmd" });
-    expect(spawn).toHaveBeenCalledWith("C:\\Windows\\System32\\cmd.exe", ["/d", "/k"], {
+    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "windows-terminal" });
+    expect(spawn).toHaveBeenNthCalledWith(1, windowsApps, ["-d", projectPath], {
+      cwd: projectPath,
+      detached: true,
+      stdio: "ignore",
+    });
+
+    await expect(
+      bridge.openExternalApplication({
+        projectPath,
+        application: {
+          id: "vscode",
+          name: "VS Code",
+          kind: "vscode",
+          command: 'code --reuse-window "{path}"',
+          enabled: true,
+          launchMode: "command",
+        },
+      }),
+    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedApplicationId: "vscode" });
+    const [, commandArgs, commandOptions] = spawn.mock.calls[1];
+    expect(spawn.mock.calls[1][0]).toBe("C:\\Windows\\System32\\cmd.exe");
+    expect(commandArgs).toEqual([
+      "/d",
+      "/v:off",
+      "/s",
+      "/c",
+      '"%UTOOLS_PROJECT_LAUNCH_COMMAND%" "%UTOOLS_PROJECT_LAUNCH_ARGUMENT_0%" "%UTOOLS_PROJECT_LAUNCH_ARGUMENT_1%"',
+    ]);
+    expect(commandArgs.join(" ")).not.toContain(projectPath);
+    expect(commandOptions).toMatchObject({
+      cwd: projectPath,
+      detached: true,
+      stdio: "ignore",
+      env: {
+        UTOOLS_PROJECT_LAUNCH_COMMAND: codeShim,
+        UTOOLS_PROJECT_LAUNCH_ARGUMENT_0: "--reuse-window",
+        UTOOLS_PROJECT_LAUNCH_ARGUMENT_1: projectPath,
+      },
+    });
+  });
+
+  it("starts PowerShell in cwd without placing the project path in a command", async () => {
+    const projectPath = "C:\\项目 & workspace; $(Get-ChildItem)";
+    const powershellPath = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+    const { bridge, spawn } = loadPreloadBridge("win32", {
+      directories: [projectPath],
+      files: [powershellPath],
+      env: { SystemRoot: "C:\\Windows" },
+    });
+
+    await expect(
+      bridge.openTerminal({
+        projectPath,
+        terminal: { schemaVersion: 2, mode: "manual", kind: "powershell", customCommand: "" },
+      }),
+    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "powershell" });
+    expect(spawn).toHaveBeenCalledWith(powershellPath, ["-NoExit"], {
+      cwd: projectPath,
+      detached: true,
+      stdio: "ignore",
+    });
+  });
+
+  it("falls back to PowerShell when Windows Terminal fails to launch", async () => {
+    const projectPath = "C:\\Projects\\fallback";
+    const windowsTerminalPath = "C:\\Users\\Test\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe";
+    const powershellPath = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+    const { bridge, spawn } = loadPreloadBridge("win32", {
+      directories: [projectPath],
+      files: [powershellPath],
+      spawnOutcomes: ["error", "spawn"],
+      where: { "wt.exe": windowsTerminalPath },
+      env: { LOCALAPPDATA: "C:\\Users\\Test\\AppData\\Local", SystemRoot: "C:\\Windows" },
+    });
+
+    await expect(
+      bridge.openTerminal({
+        projectPath,
+        terminal: { schemaVersion: 2, mode: "auto", kind: "windows-terminal", customCommand: "" },
+      }),
+    ).resolves.toMatchObject({
+      launched: true,
+      code: "launched-with-fallback",
+      resolvedKind: "powershell",
+      attempts: ["windows-terminal", "powershell"],
+    });
+    expect(spawn).toHaveBeenNthCalledWith(1, windowsTerminalPath, ["-d", projectPath], {
+      cwd: projectPath,
+      detached: true,
+      stdio: "ignore",
+    });
+    expect(spawn).toHaveBeenNthCalledWith(2, powershellPath, ["-NoExit"], {
       cwd: projectPath,
       detached: true,
       stdio: "ignore",
