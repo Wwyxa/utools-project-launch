@@ -117,10 +117,11 @@ const expandedRowHeight = (hash: string, options: GitCommitGraphLayoutOptions) =
   return Number.isFinite(height) ? Math.max(0, height) : 0;
 };
 
-const explicitNodeColorIndex = (hash: string, options: GitCommitGraphLayoutOptions) => {
-  const colorIndex = options.colorIndexByCommitHash?.[hash];
-  return typeof colorIndex === "number" && Number.isInteger(colorIndex) && colorIndex >= 0 ? colorIndex : undefined;
-};
+const validGraphColorIndex = (colorIndex: unknown) =>
+  typeof colorIndex === "number" && Number.isInteger(colorIndex) && colorIndex >= 0 ? colorIndex : undefined;
+
+const explicitNodeColorIndex = (hash: string, options: GitCommitGraphLayoutOptions) =>
+  validGraphColorIndex(options.colorIndexByCommitHash?.[hash]);
 
 const nonNegativeFinite = (value: number | undefined) =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -194,6 +195,15 @@ export const layoutGitCommitGraph = (
   const rows: GitCommitGraphRow[] = [];
   let previousOutputLanes: GitCommitGraphLane[] = [];
   let nextColorIndex = 0;
+  const reservedColorIndexes = new Set<number>();
+  for (const colorIndex of Object.values(options.colorIndexByCommitHash ?? {})) {
+    const reservedColorIndex = validGraphColorIndex(colorIndex);
+    if (reservedColorIndex !== undefined) reservedColorIndexes.add(reservedColorIndex);
+  }
+  const takeNextColorIndex = () => {
+    while (reservedColorIndexes.has(nextColorIndex)) nextColorIndex += 1;
+    return nextColorIndex++;
+  };
   let expandedHeightBeforeRow = 0;
   let height = 0;
 
@@ -201,7 +211,7 @@ export const layoutGitCommitGraph = (
     const inputLanes = previousOutputLanes.map((lane) => ({ ...lane }));
     const stashBaseHash = isGitStashCommit(commit) ? commit.stash?.baseHash || commit.parents?.[0] : undefined;
     if (stashBaseHash && visibleHashes.has(stashBaseHash) && !inputLanes.some((lane) => lane.id === stashBaseHash)) {
-      const baseColorIndex = explicitNodeColorIndex(stashBaseHash, options) ?? nextColorIndex++;
+      const baseColorIndex = explicitNodeColorIndex(stashBaseHash, options) ?? takeNextColorIndex();
       nextColorIndex = Math.max(nextColorIndex, baseColorIndex + 1);
       inputLanes.push({ id: stashBaseHash, colorIndex: baseColorIndex });
     }
@@ -209,7 +219,7 @@ export const layoutGitCommitGraph = (
     const resolvedNodeLane = nodeLane === -1 ? inputLanes.length : nodeLane;
     const preferredNodeColorIndex = explicitNodeColorIndex(commit.hash, options);
     const inputNodeColorIndex = inputLanes[resolvedNodeLane]?.colorIndex;
-    const nodeColorIndex = preferredNodeColorIndex ?? inputNodeColorIndex ?? nextColorIndex++;
+    const nodeColorIndex = preferredNodeColorIndex ?? inputNodeColorIndex ?? takeNextColorIndex();
     if (preferredNodeColorIndex !== undefined) nextColorIndex = Math.max(nextColorIndex, preferredNodeColorIndex + 1);
     const parents = commit.parents || [];
     const visibleParents: VisibleParent[] = [];
@@ -304,7 +314,7 @@ export const layoutGitCommitGraph = (
 
       const isFirstVisibleParent = parent === firstVisibleParent;
       const outputLane = outputLanes.length;
-      const colorIndex = isFirstVisibleParent ? nodeColorIndex : nextColorIndex++;
+      const colorIndex = isFirstVisibleParent ? nodeColorIndex : takeNextColorIndex();
       outputLanes.push({ id: parent.id, colorIndex });
       plannedSegments.push({
         kind: isFirstVisibleParent ? "first-parent-continuation" : "additional-parent-fan-out",

@@ -277,6 +277,16 @@ describe("layoutGitCommitGraph", () => {
     ]);
   });
 
+  it("reserves a current branch color before assigning a leading branch", () => {
+    const layout = layoutGitCommitGraph([commit("ahead", ["main"]), commit("main", ["base"]), commit("base")], {
+      colorIndexByCommitHash: { main: 0 },
+    });
+
+    expect(rowFor(layout, "ahead").nodeColorIndex).toBe(1);
+    expect(rowFor(layout, "main").nodeColorIndex).toBe(0);
+    expect(rowFor(layout, "main").segments.map((segment) => segment.colorIndex)).toEqual([1, 0]);
+  });
+
   it("uses expanded heights for later row and segment coordinates", () => {
     const layout = layoutGitCommitGraph([commit("A", ["B"]), commit("B", ["C"]), commit("C")], {
       expandedRowHeights: { A: 40, B: 24 },
