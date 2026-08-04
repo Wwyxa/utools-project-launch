@@ -11,7 +11,7 @@ type SpawnOutcome = "spawn" | "error";
 interface PreloadFixture {
   directories?: string[];
   files?: string[];
-  where?: Record<string, string>;
+  where?: Record<string, string | Buffer>;
   spawnOutcomes?: SpawnOutcome[];
   env?: Record<string, string>;
 }
@@ -19,7 +19,7 @@ interface PreloadFixture {
 const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   const nodeRequire = createRequire(import.meta.url);
   const spawnOutcomes = [...(fixture.spawnOutcomes || [])];
-  const spawn = vi.fn(() => {
+  const spawn = vi.fn((_executable: string, _args: string[], _options: { cwd: string; detached: boolean; stdio: string; env?: NodeJS.ProcessEnv }) => {
     const outcome = spawnOutcomes.shift() || "spawn";
     const child = { once: vi.fn(), unref: vi.fn() };
     child.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
@@ -41,7 +41,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     spawn,
     execFileSync: vi.fn((command: string, args: string[]) => {
       const resolved = platform === "win32" && command === "where.exe" ? fixture.where?.[args[0]] : "";
-      if (resolved) return `${resolved}\r\n`;
+      if (resolved) return Buffer.isBuffer(resolved) ? resolved : Buffer.from(`${resolved}\r\n`);
       throw new Error("not found");
     }),
   };
@@ -64,6 +64,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
       exit: () => undefined,
     },
     Buffer,
+    TextDecoder,
     console,
     setTimeout,
     clearTimeout,
@@ -142,8 +143,8 @@ describe("native project launchers", () => {
         },
       }),
     ).resolves.toMatchObject({ launched: true, code: "launched", resolvedApplicationId: "vscode" });
-    const [, commandArgs, commandOptions] = spawn.mock.calls[1];
-    expect(spawn.mock.calls[1][0]).toBe("C:\\Windows\\System32\\cmd.exe");
+    const [commandExecutable, commandArgs, commandOptions] = spawn.mock.calls[1]!;
+    expect(commandExecutable).toBe("C:\\Windows\\System32\\cmd.exe");
     expect(commandArgs).toEqual([
       "/d",
       "/v:off",
@@ -162,6 +163,24 @@ describe("native project launchers", () => {
         UTOOLS_PROJECT_LAUNCH_ARGUMENT_1: projectPath,
       },
     });
+  });
+
+  it("decodes legacy Windows where.exe paths before checking the executable", async () => {
+    const codeShim = "C:\\Users\\\u4e2d\u6587\\AppData\\Roaming\\Code\\bin\\code.cmd";
+    const legacyCodeShim = Buffer.concat([
+      Buffer.from("C:\\Users\\", "ascii"),
+      Buffer.from([0xd6, 0xd0, 0xce, 0xc4]),
+      Buffer.from("\\AppData\\Roaming\\Code\\bin\\code.cmd", "ascii"),
+      Buffer.from([0x0d, 0x0a]),
+    ]);
+    const { bridge } = loadPreloadBridge("win32", {
+      files: [codeShim],
+      where: { "code.cmd": legacyCodeShim },
+    });
+
+    const capabilities = await bridge.detectHostLaunchCapabilities();
+
+    expect(capabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
   });
 
   it("starts PowerShell in cwd without placing the project path in a command", async () => {

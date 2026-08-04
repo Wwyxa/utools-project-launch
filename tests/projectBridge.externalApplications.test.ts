@@ -11,6 +11,8 @@ import type { ExternalApplicationPreferences, Project, ProjectBridge } from "../
 const preferencesKey = "utools-project-launch.local-external-applications.v2";
 const localLegacyKey = "utools-project-launch.local-editor-settings.v1";
 const sharedLegacyKey = "utools-project-launch.editor-settings.v1";
+const terminalPreferencesV1Key = "utools-project-launch.settings.v1";
+const terminalPreferencesV2Key = "utools-project-launch.local-settings.v2";
 
 const defaults: ExternalApplicationPreferences = {
   schemaVersion: 2,
@@ -278,6 +280,19 @@ describe("browser external application preferences", () => {
 });
 
 describe("uTools preload external application preferences", () => {
+  it("persists terminal preferences across a uTools restart and migrates v1 storage", () => {
+    const dbStorage = createDbStorage();
+    const legacyPreferences = { kind: "powershell", customCommand: "" };
+    dbStorage.values.set(terminalPreferencesV1Key, legacyPreferences);
+
+    const preferences = loadPreloadBridge(createStorage().api, {}, dbStorage.api).loadTerminalPreferences();
+    expect(preferences).toEqual({ schemaVersion: 2, mode: "manual", kind: "powershell", customCommand: "" });
+    expect(dbStorage.values.get(terminalPreferencesV2Key)).toEqual(preferences);
+
+    const restartedBridge = loadPreloadBridge(createStorage().api, {}, dbStorage.api);
+    expect(restartedBridge.loadTerminalPreferences()).toEqual(preferences);
+  });
+
   it("persists across a uTools restart and migrates the renderer-local preference", () => {
     const rendererStorage = createStorage();
     const dbStorage = createDbStorage();
@@ -358,7 +373,9 @@ describe("uTools preload external application preferences", () => {
       if (event === "spawn") listener();
       return child;
     });
-    const spawn = vi.fn(() => child);
+    const spawn = vi.fn(
+      (_executable: string, _args: string[], _options: { cwd: string; detached: boolean; stdio: string; env?: NodeJS.ProcessEnv }) => child,
+    );
     const bridge = loadPreloadBridge(createStorage().api, {
       child_process: { ...nodeRequire("child_process"), spawn },
     });
@@ -376,7 +393,7 @@ describe("uTools preload external application preferences", () => {
       },
     });
     expect(builtinResult.launched).toBe(true);
-    const [builtinExecutable, builtinArgs, builtinOptions] = spawn.mock.calls[0];
+    const [builtinExecutable, builtinArgs, builtinOptions] = spawn.mock.calls[0]!;
     expect(builtinExecutable).toEqual(expect.any(String));
     expect(builtinOptions).toMatchObject({ cwd: projectPath, detached: true, stdio: "ignore" });
     if (builtinOptions.env) {

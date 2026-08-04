@@ -642,6 +642,19 @@ function normalizeAiPreferences(value) {
 
 function readTerminalPreferences() {
   try {
+    if (window.utools?.dbStorage) {
+      const v2Preferences = window.utools.dbStorage.getItem(localTerminalPreferencesV2StorageKey);
+      const storedPreferences =
+        v2Preferences !== null && v2Preferences !== undefined
+          ? v2Preferences
+          : window.utools.dbStorage.getItem(terminalPreferencesStorageKey);
+      if (storedPreferences !== null && storedPreferences !== undefined) {
+        const preferences = normalizeTerminalPreferences(storedPreferences);
+        saveTerminalPreferences(preferences);
+        return preferences;
+      }
+    }
+
     const v2 = window.localStorage?.getItem(localTerminalPreferencesV2StorageKey);
     const raw =
       v2 !== null && v2 !== undefined
@@ -663,6 +676,10 @@ function saveTerminalPreferences(preferences) {
   const normalized = normalizeTerminalPreferences(preferences);
 
   try {
+    if (window.utools?.dbStorage) {
+      window.utools.dbStorage.setItem(localTerminalPreferencesV2StorageKey, normalized);
+      return;
+    }
     window.localStorage?.setItem(localTerminalPreferencesV2StorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
@@ -1606,7 +1623,7 @@ function findWindowsExecutable(kind) {
   if (direct) return direct;
   for (const command of candidate.commands) {
     try {
-      const output = execFileSync("where.exe", [command], { encoding: "utf8", timeout: 1500 });
+      const output = createProcessOutputDecoder()(execFileSync("where.exe", [command], { encoding: "buffer", timeout: 1500 }));
       const executable = output
         .split(/\r?\n/)
         .map((item) => item.trim())
