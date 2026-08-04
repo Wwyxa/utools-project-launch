@@ -13,6 +13,8 @@ const commitDraftsByContext = new Map<string, string>();
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   CircleHelp,
   CloudDownload,
@@ -24,6 +26,7 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  FileDiff,
   Minus,
   Plus,
   MoreHorizontal,
@@ -1165,30 +1168,35 @@ watch(
           <button
             v-if="gitWorkspaceRelatedCount > 0"
             type="button"
-            class="flex h-7 min-w-0 max-w-48 shrink items-center gap-1 rounded px-1 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-            :title="repositorySectionOpen ? '收起仓库列表' : '展开仓库列表'"
-            :aria-label="repositorySectionOpen ? '收起仓库列表' : '展开仓库列表'"
+            class="flex h-7 min-w-0 max-w-56 shrink items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
+            :title="`${repositorySectionOpen ? '收起' : '展开'}关联仓库列表（${gitWorkspaceRelatedCount} 个）`"
+            :aria-label="`${repositorySectionOpen ? '收起' : '展开'}关联仓库列表（${gitWorkspaceRelatedCount} 个）`"
             :aria-expanded="repositorySectionOpen"
             @click="toggleRepositorySection"
           >
             <ChevronDown v-if="repositorySectionOpen" :size="12" class="shrink-0" />
             <ChevronRight v-else :size="12" class="shrink-0" />
-            <span
-              class="min-w-0 truncate text-[11px] font-bold text-on-surface"
-              :title="selectedRepositoryRow?.repositoryPath"
-            >
+            <FolderOpen :size="13" class="shrink-0 text-on-surface-variant" />
+            <span class="min-w-0 flex-1 truncate text-[11px] font-bold" :title="selectedRepositoryRow?.repositoryPath">
               {{ selectedRepositoryRow?.name || project.name }}
+            </span>
+            <span
+              class="flex h-4 min-w-4 shrink-0 items-center justify-center rounded bg-surface-variant px-1 font-mono text-[9px] font-bold leading-none text-on-surface-variant"
+              :title="`${gitWorkspaceRelatedCount} 个关联仓库（子模块或关联工作树）`"
+            >
+              {{ gitWorkspaceRelatedCount }}
             </span>
           </button>
           <div class="min-w-0" @click.stop>
             <button
               type="button"
               data-git-top-menu-trigger
-              class="flex max-w-48 items-center gap-1 rounded px-1.5 py-1 font-mono font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
+              class="flex max-w-48 items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 py-1 font-mono text-[11px] font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
               :title="t.git.branch"
               :aria-label="t.git.branch"
               @click="toggleBranchMenu"
             >
+              <GitBranch :size="13" class="shrink-0 text-primary" />
               <span class="min-w-0 truncate">{{ currentGitRefLabel }}</span>
               <ChevronDown :size="12" class="shrink-0 text-on-surface-variant" />
             </button>
@@ -1220,25 +1228,46 @@ watch(
           </div>
           <span
             v-if="snapshot?.isDetachedHead"
-            class="shrink-0 rounded-full border border-status-warning/30 bg-status-warning/10 px-2 py-0.5 text-[10px] font-bold text-status-warning"
+            class="shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
           >
             detached HEAD
           </span>
-          <span v-if="hasUpstream" class="text-on-surface-variant whitespace-nowrap">
-            {{ t.git.ahead }} {{ snapshot?.ahead || 0 }} · {{ t.git.behind }} {{ snapshot?.behind || 0 }}
-          </span>
+          <div
+            v-if="hasUpstream"
+            class="flex shrink-0 items-center overflow-hidden rounded border border-border-subtle bg-surface-container-low text-[10px]"
+            :title="repositoryUpstreamDetail(upstream)"
+          >
+            <span
+              :class="
+                cn(
+                  'flex items-center gap-1 px-1.5 py-1 font-mono font-bold',
+                  (snapshot?.ahead || 0) > 0 ? 'text-primary' : 'text-on-surface-variant',
+                )
+              "
+            >
+              <ArrowUp :size="11" aria-hidden="true" />
+              {{ snapshot?.ahead || 0 }}
+            </span>
+            <span
+              :class="
+                cn(
+                  'flex items-center gap-1 border-l border-border-subtle px-1.5 py-1 font-mono font-bold',
+                  (snapshot?.behind || 0) > 0 ? 'text-status-warning' : 'text-on-surface-variant',
+                )
+              "
+            >
+              <ArrowDown :size="11" aria-hidden="true" />
+              {{ snapshot?.behind || 0 }}
+            </span>
+          </div>
           <div class="min-w-0" @click.stop>
             <button
               type="button"
               data-git-top-menu-trigger
               :class="
                 cn(
-                  'flex max-w-56 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors hover:bg-surface-variant',
-                  upstream
-                    ? 'border-primary/25 bg-primary/10 text-primary'
-                    : remotes.length > 0
-                      ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
-                      : 'border-border-subtle bg-surface-container-low text-on-surface-variant',
+                  'flex max-w-56 items-center gap-1 rounded border border-border-subtle bg-surface-container-low px-2 py-1 text-[10px] font-semibold transition-colors hover:bg-surface-variant',
+                  upstream ? 'text-primary' : remotes.length > 0 ? 'text-status-warning' : 'text-on-surface-variant',
                 )
               "
               :title="remoteStatusText"
@@ -1326,7 +1355,13 @@ watch(
               </Transition>
             </Teleport>
           </div>
-          <span class="text-on-surface-variant truncate">{{ topBarStatusText }}</span>
+          <span
+            class="flex min-w-0 flex-1 items-center gap-1 border-l border-border-subtle pl-2 text-[10px] text-on-surface-variant"
+            :title="topBarStatusText"
+          >
+            <FileDiff :size="12" class="shrink-0" aria-hidden="true" />
+            <span class="min-w-0 truncate">{{ topBarStatusText }}</span>
+          </span>
           <span
             v-if="gitActionMessage"
             :class="
@@ -1397,11 +1432,11 @@ watch(
           role="button"
           :tabindex="row.selectable && !isAnyGitWriteRunning ? 0 : -1"
           :aria-disabled="!row.selectable || isAnyGitWriteRunning"
-          :aria-label="`${row.name}，${row.branchLabel}，${row.statusText}`"
+          :aria-label="`${row.name}，${row.kindLabel}，${row.branchLabel}，${row.statusText}`"
           :class="
             cn(
               'group grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-l-2 pr-1.5 transition-colors',
-              row.depth === 1 ? 'pl-7' : 'pl-2',
+              row.depth === 1 ? 'pl-3' : 'pl-2',
               row.selected ? 'border-primary bg-primary/10' : 'border-transparent',
               row.selectable && !isAnyGitWriteRunning
                 ? 'cursor-pointer hover:bg-surface-variant focus-visible:bg-surface-variant focus-visible:outline-none'
@@ -1413,14 +1448,28 @@ watch(
           @keydown.space.prevent="selectGitRepository(row)"
         >
           <div class="flex min-w-0 items-center gap-2">
+            <span
+              v-if="row.depth === 1"
+              class="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border-subtle bg-surface-container-low text-on-surface-variant"
+              title="子模块"
+            >
+              <FolderOpen :size="10" aria-hidden="true" />
+            </span>
             <div class="min-w-0 flex-1">
               <div class="flex min-w-0 items-center gap-1.5">
                 <span class="truncate text-[11px] font-semibold text-on-surface" :title="row.repositoryPath">{{
                   row.name
                 }}</span>
-                <span class="shrink-0 text-[8px] font-semibold uppercase text-on-surface-variant">{{
-                  row.kindLabel
-                }}</span>
+                <span
+                  :class="
+                    cn(
+                      'shrink-0 rounded border border-border-subtle bg-surface-container-low px-1 py-px text-[8px] font-semibold leading-none',
+                      row.target.kind === 'submodule' ? 'text-primary' : 'text-on-surface-variant',
+                    )
+                  "
+                >
+                  {{ row.kindLabel }}
+                </span>
               </div>
               <div class="flex min-w-0 items-center gap-1.5 text-[9px] text-on-surface-variant">
                 <span class="truncate font-mono">{{ row.branchLabel }}</span>
