@@ -277,6 +277,27 @@ describe("layoutGitCommitGraph", () => {
     ]);
   });
 
+  it("uses an explicit side-branch color for a merge parent", () => {
+    const layout = layoutGitCommitGraph(
+      [
+        commit("head", ["merge"]),
+        commit("merge", ["main", "side"]),
+        commit("main", ["root"]),
+        commit("side", ["root"]),
+        commit("root"),
+      ],
+      { colorIndexByCommitHash: { side: 2 } },
+    );
+
+    const mergeRow = rowFor(layout, "merge");
+    expect(mergeRow.outputLanes.map((lane) => ({ id: lane.id, colorIndex: lane.colorIndex }))).toEqual([
+      { id: "main", colorIndex: 0 },
+      { id: "side", colorIndex: 2 },
+    ]);
+    expect(mergeRow.segments.find((segment) => segment.parentIndex === 1)?.colorIndex).toBe(2);
+    expect(rowFor(layout, "side").nodeColorIndex).toBe(2);
+  });
+
   it("reserves a current branch color before assigning a leading branch", () => {
     const layout = layoutGitCommitGraph([commit("ahead", ["main"]), commit("main", ["base"]), commit("base")], {
       colorIndexByCommitHash: { main: 0 },

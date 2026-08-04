@@ -314,7 +314,9 @@ export const layoutGitCommitGraph = (
 
       const isFirstVisibleParent = parent === firstVisibleParent;
       const outputLane = outputLanes.length;
-      const colorIndex = isFirstVisibleParent ? nodeColorIndex : takeNextColorIndex();
+      const colorIndex = isFirstVisibleParent
+        ? nodeColorIndex
+        : (explicitNodeColorIndex(parent.id, options) ?? takeNextColorIndex());
       outputLanes.push({ id: parent.id, colorIndex });
       plannedSegments.push({
         kind: isFirstVisibleParent ? "first-parent-continuation" : "additional-parent-fan-out",
