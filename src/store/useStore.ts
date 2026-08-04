@@ -31,8 +31,6 @@ import type {
   CustomEnvironmentTool,
   ExternalApplication,
   ExternalApplicationPreferences,
-  HostLaunchCapabilities,
-  HostLaunchCapabilityRequest,
   EnvironmentPreferences,
   EnvironmentToolDefinition,
   EnvironmentToolKey,
@@ -1101,9 +1099,6 @@ export const useStore = defineStore("app", {
     theme: "auto" as "light" | "dark" | "auto",
     terminalPreferences: bridge.loadTerminalPreferences(),
     externalApplicationPreferences: bridge.loadExternalApplicationPreferences(),
-    hostLaunchCapabilities: null as HostLaunchCapabilities | null,
-    hostTerminalCapabilitiesRefreshing: false,
-    hostEditorCapabilitiesRefreshing: false,
     environmentPreferences: bridge.loadEnvironmentPreferences(),
     builtinEnvironmentTools: bridge.loadBuiltinEnvironmentTools() as EnvironmentToolDefinition[],
     environmentResults: [] as EnvironmentToolResult[],
@@ -1349,52 +1344,6 @@ export const useStore = defineStore("app", {
     setDefaultTerminalCustomCommand(command: string) {
       this.terminalPreferences = { ...this.terminalPreferences, kind: "custom", customCommand: command };
       bridge.saveTerminalPreferences(this.terminalPreferences);
-    },
-    async refreshHostLaunchCapabilities(scope: HostLaunchCapabilityRequest["scope"]) {
-      const terminalScope = scope === "terminals";
-      if (terminalScope ? this.hostTerminalCapabilitiesRefreshing : this.hostEditorCapabilitiesRefreshing) return;
-      if (terminalScope) this.hostTerminalCapabilitiesRefreshing = true;
-      else this.hostEditorCapabilitiesRefreshing = true;
-      this.setProjectStatusMessage(
-        "loading",
-        this.locale === "zh-CN"
-          ? `正在检测可用${terminalScope ? "终端" : "预置应用"}...`
-          : `Detecting available ${terminalScope ? "terminals" : "preset applications"}...`,
-      );
-      try {
-        const detected = await bridge.detectHostLaunchCapabilities({ scope });
-        const previous = this.hostLaunchCapabilities;
-        this.hostLaunchCapabilities = {
-          platform: detected.platform,
-          terminals: terminalScope ? detected.terminals : previous?.terminals || [],
-          editors: terminalScope ? previous?.editors || [] : detected.editors,
-          checkedAt: detected.checkedAt,
-        };
-        const availableCount = (terminalScope ? detected.terminals : detected.editors).filter(
-          (candidate) => candidate.available,
-        ).length;
-        this.setProjectStatusMessage(
-          availableCount > 0 ? "success" : "warning",
-          this.locale === "zh-CN"
-            ? availableCount > 0
-              ? `${terminalScope ? "终端" : "预置应用"}检测完成，发现 ${availableCount} 个可用项。`
-              : `未检测到可用${terminalScope ? "终端" : "预置应用"}。`
-            : availableCount > 0
-              ? `${terminalScope ? "Terminal" : "Preset application"} detection complete: ${availableCount} available.`
-              : `No available ${terminalScope ? "terminals" : "preset applications"} detected.`,
-        );
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        this.setProjectStatusMessage(
-          "error",
-          this.locale === "zh-CN"
-            ? `${terminalScope ? "终端" : "预置应用"}检测失败：${reason}`
-            : `${terminalScope ? "Terminal" : "Preset application"} detection failed: ${reason}`,
-        );
-      } finally {
-        if (terminalScope) this.hostTerminalCapabilitiesRefreshing = false;
-        else this.hostEditorCapabilitiesRefreshing = false;
-      }
     },
     persistExternalApplicationPreferences(preferences: ExternalApplicationPreferences) {
       this.externalApplicationPreferences = normalizeExternalApplicationPreferences(preferences);

@@ -45,7 +45,6 @@ import type {
   ProjectFileWriteResult,
   ProjectPathInspection,
   ProjectDetailsTabId,
-  HostLaunchCapabilities,
   TerminalPreferences,
   UiPreferences,
 } from "../types";
@@ -956,9 +955,6 @@ const fallbackBridge: ProjectBridge = {
     };
   },
   async showProjectEntryInFolder(_projectPath: string, _relativePath: string): Promise<void> {},
-  async detectHostLaunchCapabilities(_request): Promise<HostLaunchCapabilities> {
-    return { platform: "unsupported", terminals: [], editors: [], checkedAt: new Date().toISOString() };
-  },
   async readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult> {
     const name = relativePath.split(/[\\/]/).filter(Boolean).pop() || projectPath;
     return {

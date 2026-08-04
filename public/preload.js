@@ -1666,147 +1666,11 @@ function findLinuxExecutable(kind) {
   return "";
 }
 
-function execFileOutput(command, args, options) {
-  return new Promise((resolve, reject) => {
-    execFile(command, args, options, (error, stdout) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(stdout);
-    });
-  });
-}
-
-async function findMacApplicationAsync(kind) {
-  const candidate = macApplications[kind];
-  if (!candidate) return "";
-  const directPaths = [...candidate.paths, path.join(os.homedir(), "Applications", `${candidate.name}.app`)];
-  const direct = directPaths.find(directoryExists);
-  if (direct) return direct;
-  try {
-    const query = `kMDItemContentType == 'com.apple.application-bundle' && kMDItemDisplayName == '${candidate.name.replace(/'/g, "\\'")}'`;
-    const output = await execFileOutput("/usr/bin/mdfind", [query], { encoding: "utf8", timeout: 1500 });
-    return (
-      output
-        .split(/\r?\n/)
-        .map((item) => item.trim())
-        .find(directoryExists) || ""
-    );
-  } catch (error) {
-    return "";
-  }
-}
-
-async function findWindowsExecutableAsync(kind) {
-  const candidate = windowsExecutables[kind];
-  if (!candidate) return "";
-  const direct = candidate.paths().find(fileExists);
-  if (direct) return direct;
-  const results = await Promise.all(
-    candidate.commands.map(async (command) => {
-      try {
-        const output = createProcessOutputDecoder()(
-          await execFileOutput("where.exe", [command], { encoding: "buffer", windowsHide: true, timeout: 1500 }),
-        );
-        return (
-          output
-            .split(/\r?\n/)
-            .map((item) => item.trim())
-            .find((targetPath) => fileExists(targetPath) || isWindowsAppExecutionAlias(targetPath)) || ""
-        );
-      } catch (error) {
-        return "";
-      }
-    }),
-  );
-  return results.find(Boolean) || "";
-}
-
-async function findLinuxExecutableAsync(kind) {
-  const results = await Promise.all(
-    (linuxExecutables[kind] || []).map(async (command) => {
-      try {
-        const output = createProcessOutputDecoder()(
-          await execFileOutput("which", [command], { encoding: "buffer", timeout: 1500 }),
-        );
-        return (
-          output
-            .split(/\r?\n/)
-            .map((item) => item.trim())
-            .find(fileExists) || ""
-        );
-      } catch (error) {
-        return "";
-      }
-    }),
-  );
-  return results.find(Boolean) || "";
-}
-
 function getHostPlatform() {
   if (process.platform === "darwin") return "darwin";
   if (process.platform === "win32") return "win32";
   if (process.platform === "linux") return "linux";
   return "unsupported";
-}
-
-async function nativeTargetAvailableAsync(kind) {
-  if (getHostPlatform() === "darwin") return Boolean(await findMacApplicationAsync(kind));
-  if (getHostPlatform() === "win32") return Boolean(await findWindowsExecutableAsync(kind));
-  if (getHostPlatform() === "linux") return Boolean(await findLinuxExecutableAsync(kind));
-  return false;
-}
-
-async function detectHostLaunchCapabilities(request) {
-  const scope = request?.scope;
-  if (scope !== "terminals" && scope !== "editors") {
-    throw new Error("必须指定要检测的启动器类型。");
-  }
-  const platform = getHostPlatform();
-  const terminalKindsForPlatform =
-    scope === "terminals"
-      ? platform === "darwin"
-        ? ["terminal-app", "iterm2", "warp"]
-        : platform === "win32"
-          ? ["windows-terminal", "powershell", "cmd"]
-          : platform === "linux"
-            ? ["linux-terminal"]
-            : []
-      : [];
-  const editorKindsForPlatform = scope === "editors" && platform !== "unsupported" ? ["vscode", "cursor"] : [];
-  const terminalNames = {
-    "terminal-app": "Terminal",
-    iterm2: "iTerm2",
-    warp: "Warp",
-    "linux-terminal": "Terminal",
-    "windows-terminal": "Windows Terminal",
-    powershell: "PowerShell",
-    cmd: "CMD",
-  };
-  const editorNames = { vscode: "VS Code", cursor: "Cursor" };
-  const [terminals, editors] = await Promise.all([
-    Promise.all(
-      terminalKindsForPlatform.map(async (kind) => ({
-        kind,
-        name: terminalNames[kind],
-        available: await nativeTargetAvailableAsync(kind),
-      })),
-    ),
-    Promise.all(
-      editorKindsForPlatform.map(async (kind) => ({
-        kind,
-        name: editorNames[kind],
-        available: await nativeTargetAvailableAsync(kind),
-      })),
-    ),
-  ]);
-  return {
-    platform,
-    terminals,
-    editors,
-    checkedAt: new Date().toISOString(),
-  };
 }
 
 function isSupportedExternalApplicationKind(kind) {
@@ -6055,7 +5919,6 @@ window.projectBridge = {
   writeProjectFile,
   openTerminal,
   openExternalApplication,
-  detectHostLaunchCapabilities,
   runCommand,
   stopProcess,
   getProcessStatus,

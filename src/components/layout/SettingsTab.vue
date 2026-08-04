@@ -99,19 +99,8 @@ const editingBuiltinHasOverride = computed(() =>
 );
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
-const terminalOptions = computed<DefaultTerminalKind[]>(() => [
-  ...(store.hostLaunchCapabilities?.terminals.length
-    ? store.hostLaunchCapabilities.terminals.map((candidate) => candidate.kind)
-    : fallbackTerminalOptions),
-  "custom",
-]);
-const terminalAvailability = (kind: DefaultTerminalKind) =>
-  store.hostLaunchCapabilities?.terminals.find((candidate) => candidate.kind === kind)?.available;
+const terminalOptions: DefaultTerminalKind[] = [...fallbackTerminalOptions, "custom"];
 const externalApplications = computed(() => store.externalApplicationPreferences.applications);
-const externalApplicationAvailability = (application: ExternalApplication) =>
-  application.kind === "custom"
-    ? undefined
-    : store.hostLaunchCapabilities?.editors.find((candidate) => candidate.kind === application.kind)?.available;
 const editingExternalApplication = computed(() =>
   externalApplications.value.find((application) => application.id === editingExternalApplicationId.value),
 );
@@ -767,26 +756,11 @@ watch(
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
-        <div class="mb-2.5 flex flex-wrap items-center justify-between gap-3">
+        <div class="mb-2.5 flex flex-wrap items-center gap-3">
           <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             <SquareTerminal :size="15" class="shrink-0 text-primary" />
             <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultTerminal }}</h3>
-            <span class="text-[10px] leading-4 text-on-surface-variant">{{ t.settings.terminalDetectionHint }}</span>
           </div>
-          <button
-            type="button"
-            class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-all hover:bg-surface-variant active:scale-95 disabled:cursor-wait disabled:opacity-60"
-            :disabled="store.hostTerminalCapabilitiesRefreshing"
-            :aria-busy="store.hostTerminalCapabilitiesRefreshing"
-            @click="store.refreshHostLaunchCapabilities('terminals')"
-          >
-            <RefreshCw :size="12" :class="store.hostTerminalCapabilitiesRefreshing && 'animate-spin'" />
-            {{
-              store.hostTerminalCapabilitiesRefreshing
-                ? t.settings.detectingLaunchers
-                : t.settings.detectAvailableTerminals
-            }}
-          </button>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
           <div
@@ -800,9 +774,6 @@ watch(
               :class="segmentButtonClass(store.terminalPreferences.kind === option)"
             >
               {{ t.settings.terminals[option] }}
-              <span v-if="terminalAvailability(option) === false" class="ml-1 text-[9px] opacity-60">{{
-                t.settings.launcherUnavailable
-              }}</span>
             </button>
           </div>
           <div class="space-y-1.5">
@@ -850,28 +821,14 @@ watch(
               {{ externalApplicationFeedback }}
             </span>
           </div>
-          <div class="ml-auto flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-all hover:bg-surface-variant active:scale-95 disabled:cursor-wait disabled:opacity-60"
-              :disabled="store.hostEditorCapabilitiesRefreshing"
-              :aria-busy="store.hostEditorCapabilitiesRefreshing"
-              @click="store.refreshHostLaunchCapabilities('editors')"
-            >
-              <RefreshCw :size="12" :class="store.hostEditorCapabilitiesRefreshing && 'animate-spin'" />
-              {{
-                store.hostEditorCapabilitiesRefreshing ? t.settings.detectingLaunchers : t.settings.detectApplications
-              }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-              @click="openExternalApplicationDialog()"
-            >
-              <Plus :size="12" />
-              {{ t.settings.addExternalApplication }}
-            </button>
-          </div>
+          <button
+            type="button"
+            class="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+            @click="openExternalApplicationDialog()"
+          >
+            <Plus :size="12" />
+            {{ t.settings.addExternalApplication }}
+          </button>
         </div>
         <div class="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <article
@@ -909,21 +866,6 @@ watch(
                 </p>
               </div>
               <div class="flex shrink-0 items-center gap-1.5" @click.stop>
-                <span
-                  v-if="externalApplicationAvailability(application) !== undefined"
-                  class="rounded border bg-surface px-1 text-[8px] font-bold leading-3"
-                  :class="
-                    externalApplicationAvailability(application)
-                      ? 'border-status-running text-status-running'
-                      : 'border-status-warning text-status-warning'
-                  "
-                >
-                  {{
-                    externalApplicationAvailability(application)
-                      ? t.settings.launcherAvailable
-                      : t.settings.launcherUnavailable
-                  }}
-                </span>
                 <label :title="t.settings.setDefaultApplication" class="flex cursor-pointer items-center">
                   <input
                     type="radio"

@@ -88,23 +88,6 @@ export interface ExternalApplicationPreferences {
   applications: ExternalApplication[];
 }
 
-export interface HostLaunchCandidate<K extends string> {
-  kind: K;
-  name: string;
-  available: boolean;
-}
-
-export interface HostLaunchCapabilities {
-  platform: HostPlatform;
-  terminals: HostLaunchCandidate<DefaultTerminalKind>[];
-  editors: HostLaunchCandidate<Extract<ExternalApplicationKind, "vscode" | "cursor">>[];
-  checkedAt: string;
-}
-
-export interface HostLaunchCapabilityRequest {
-  scope: "terminals" | "editors";
-}
-
 export interface EnvironmentToolDefinition {
   key: EnvironmentToolKey;
   name: string;
@@ -940,7 +923,6 @@ export interface ProjectBridge {
   saveTerminalPreferences(preferences: TerminalPreferences): void;
   loadExternalApplicationPreferences(): ExternalApplicationPreferences;
   saveExternalApplicationPreferences(preferences: ExternalApplicationPreferences): void;
-  detectHostLaunchCapabilities(request: HostLaunchCapabilityRequest): Promise<HostLaunchCapabilities>;
   loadEnvironmentPreferences(): EnvironmentPreferences;
   saveEnvironmentPreferences(preferences: EnvironmentPreferences): void;
   loadBuiltinEnvironmentTools(): EnvironmentToolDefinition[];

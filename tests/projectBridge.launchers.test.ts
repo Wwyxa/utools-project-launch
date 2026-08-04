@@ -116,16 +116,11 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
 };
 
 describe("native project launchers", () => {
-  it("detects macOS apps without spawning and opens Terminal with separate arguments", async () => {
+  it("opens macOS Terminal with separate arguments", async () => {
     const projectPath = "/Projects/中文 project";
     const { bridge, spawn } = loadPreloadBridge("darwin", {
       directories: [projectPath, "/System/Applications/Utilities/Terminal.app"],
     });
-
-    const capabilities = await bridge.detectHostLaunchCapabilities({ scope: "terminals" });
-    expect(capabilities.platform).toBe("darwin");
-    expect(capabilities.terminals.find((candidate) => candidate.kind === "terminal-app")?.available).toBe(true);
-    expect(spawn).not.toHaveBeenCalled();
 
     await expect(
       bridge.openTerminal({
@@ -140,38 +135,16 @@ describe("native project launchers", () => {
     });
   });
 
-  it("detects and opens Linux terminal and editors with POSIX paths", async () => {
+  it("opens Linux terminal and editors with POSIX paths", async () => {
     const projectPath = "/home/test/中文 project";
     const terminalPath = "/usr/bin/x-terminal-emulator";
     const codePath = "/usr/bin/code";
     const cursorPath = "/usr/bin/cursor";
-    const { bridge, spawn, execFile, execFileSync } = loadPreloadBridge("linux", {
+    const { bridge, spawn } = loadPreloadBridge("linux", {
       directories: [projectPath],
       files: [terminalPath, codePath, cursorPath],
       which: { "x-terminal-emulator": terminalPath, code: codePath, cursor: cursorPath },
     });
-
-    const terminalCapabilities = await bridge.detectHostLaunchCapabilities({ scope: "terminals" });
-    expect(terminalCapabilities.platform).toBe("linux");
-    expect(terminalCapabilities.terminals.find((candidate) => candidate.kind === "linux-terminal")?.available).toBe(
-      true,
-    );
-    expect(terminalCapabilities.editors).toEqual([]);
-    expect(execFile.mock.calls.map(([, args]) => args[0])).toEqual([
-      "x-terminal-emulator",
-      "gnome-terminal",
-      "konsole",
-      "xfce4-terminal",
-      "kitty",
-      "alacritty",
-      "xterm",
-    ]);
-
-    const editorCapabilities = await bridge.detectHostLaunchCapabilities({ scope: "editors" });
-    expect(editorCapabilities.terminals).toEqual([]);
-    expect(editorCapabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
-    expect(editorCapabilities.editors.find((candidate) => candidate.kind === "cursor")?.available).toBe(true);
-    expect(execFileSync).not.toHaveBeenCalled();
 
     await expect(
       bridge.openTerminal({
@@ -209,25 +182,12 @@ describe("native project launchers", () => {
     const windowsApps = "C:\\Users\\Test\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe";
     const codeShim = "C:\\Users\\Test\\AppData\\Roaming\\Code\\bin\\code.cmd";
     const cursorShim = "C:\\Users\\Test\\AppData\\Roaming\\Cursor\\bin\\cursor.cmd";
-    const { bridge, spawn, execFile, execFileSync } = loadPreloadBridge("win32", {
+    const { bridge, spawn } = loadPreloadBridge("win32", {
       directories: [projectPath],
       files: [codeShim, cursorShim],
       where: { "wt.exe": windowsApps, "code.cmd": codeShim, "cursor.cmd": cursorShim },
       env: { LOCALAPPDATA: "C:\\Users\\Test\\AppData\\Local" },
     });
-
-    const terminalCapabilities = await bridge.detectHostLaunchCapabilities({ scope: "terminals" });
-    expect(terminalCapabilities.terminals.find((candidate) => candidate.kind === "windows-terminal")?.available).toBe(
-      true,
-    );
-    expect(terminalCapabilities.editors).toEqual([]);
-    expect(execFile.mock.calls.map(([, args]) => args[0])).toEqual(["wt.exe", "wt", "pwsh.exe", "powershell.exe"]);
-
-    const editorCapabilities = await bridge.detectHostLaunchCapabilities({ scope: "editors" });
-    expect(editorCapabilities.terminals).toEqual([]);
-    expect(editorCapabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
-    expect(editorCapabilities.editors.find((candidate) => candidate.kind === "cursor")?.available).toBe(true);
-    expect(execFileSync).not.toHaveBeenCalled();
 
     await expect(
       bridge.openTerminal({
@@ -273,24 +233,6 @@ describe("native project launchers", () => {
         UTOOLS_PROJECT_LAUNCH_ARGUMENT_1: projectPath,
       },
     });
-  });
-
-  it("decodes legacy Windows where.exe paths before checking the executable", async () => {
-    const codeShim = "C:\\Users\\\u4e2d\u6587\\AppData\\Roaming\\Code\\bin\\code.cmd";
-    const legacyCodeShim = Buffer.concat([
-      Buffer.from("C:\\Users\\", "ascii"),
-      Buffer.from([0xd6, 0xd0, 0xce, 0xc4]),
-      Buffer.from("\\AppData\\Roaming\\Code\\bin\\code.cmd", "ascii"),
-      Buffer.from([0x0d, 0x0a]),
-    ]);
-    const { bridge } = loadPreloadBridge("win32", {
-      files: [codeShim],
-      where: { "code.cmd": legacyCodeShim },
-    });
-
-    const capabilities = await bridge.detectHostLaunchCapabilities({ scope: "editors" });
-
-    expect(capabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
   });
 
   it("starts PowerShell in cwd without placing the project path in a command", async () => {
