@@ -8,6 +8,7 @@ import { getProjectBridge } from "../src/lib/projectBridge";
 import { ProjectStatus } from "../src/types";
 import type { ExternalApplicationPreferences, Project, ProjectBridge } from "../src/types";
 
+const externalApplicationPreferencesV1Key = "utools-project-launch.local-external-applications.v1";
 const preferencesKey = "utools-project-launch.local-external-applications.v2";
 const localLegacyKey = "utools-project-launch.local-editor-settings.v1";
 const sharedLegacyKey = "utools-project-launch.editor-settings.v1";
@@ -293,6 +294,20 @@ describe("uTools preload external application preferences", () => {
     expect(restartedBridge.loadTerminalPreferences()).toEqual(preferences);
   });
 
+  it("migrates renderer v2 terminal preferences before an older host preference", () => {
+    const rendererStorage = createStorage();
+    const dbStorage = createDbStorage();
+    const preferences = { schemaVersion: 2, mode: "manual", kind: "cmd", customCommand: "" };
+    rendererStorage.values.set(terminalPreferencesV2Key, JSON.stringify(preferences));
+    dbStorage.values.set(terminalPreferencesV1Key, { kind: "powershell", customCommand: "" });
+
+    expect(loadPreloadBridge(rendererStorage.api, {}, dbStorage.api).loadTerminalPreferences()).toEqual(preferences);
+    expect(dbStorage.values.get(terminalPreferencesV2Key)).toEqual(preferences);
+
+    const restartedBridge = loadPreloadBridge(createStorage().api, {}, dbStorage.api);
+    expect(restartedBridge.loadTerminalPreferences()).toEqual(preferences);
+  });
+
   it("persists across a uTools restart and migrates the renderer-local preference", () => {
     const rendererStorage = createStorage();
     const dbStorage = createDbStorage();
@@ -306,6 +321,30 @@ describe("uTools preload external application preferences", () => {
       ],
     };
     rendererStorage.values.set(preferencesKey, JSON.stringify(preferences));
+
+    expect(loadPreloadBridge(rendererStorage.api, {}, dbStorage.api).loadExternalApplicationPreferences()).toEqual(
+      preferences,
+    );
+    expect(dbStorage.values.get(preferencesKey)).toEqual(preferences);
+
+    const restartedBridge = loadPreloadBridge(createStorage().api, {}, dbStorage.api);
+    expect(restartedBridge.loadExternalApplicationPreferences()).toEqual(preferences);
+  });
+
+  it("migrates renderer v2 external application preferences before an older host preference", () => {
+    const rendererStorage = createStorage();
+    const dbStorage = createDbStorage();
+    const preferences: ExternalApplicationPreferences = {
+      schemaVersion: 2,
+      mode: "manual",
+      defaultApplicationId: "tool",
+      applications: [
+        ...defaults.applications,
+        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true, launchMode: "command" },
+      ],
+    };
+    rendererStorage.values.set(preferencesKey, JSON.stringify(preferences));
+    dbStorage.values.set(externalApplicationPreferencesV1Key, { ...defaults, mode: "manual", defaultApplicationId: "cursor" });
 
     expect(loadPreloadBridge(rendererStorage.api, {}, dbStorage.api).loadExternalApplicationPreferences()).toEqual(
       preferences,

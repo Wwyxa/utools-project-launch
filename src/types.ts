@@ -34,6 +34,7 @@ export type DefaultTerminalKind =
   | "terminal-app"
   | "iterm2"
   | "warp"
+  | "linux-terminal"
   | "windows-terminal"
   | "powershell"
   | "cmd"
@@ -41,7 +42,7 @@ export type DefaultTerminalKind =
 export type ExternalApplicationKind = "vscode" | "cursor" | "custom";
 export type LaunchSelectionMode = "auto" | "manual";
 export type ExternalApplicationLaunchMode = "native" | "command";
-export type HostPlatform = "darwin" | "win32" | "unsupported";
+export type HostPlatform = "darwin" | "linux" | "win32" | "unsupported";
 export type ProjectLaunchResultCode =
   | "launched"
   | "launched-with-fallback"

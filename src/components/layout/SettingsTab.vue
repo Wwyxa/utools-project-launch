@@ -39,11 +39,12 @@ const store = useStore();
 const t = useI18n();
 const githubRepositoryUrl = "https://github.com/Wwyxa/utools-project-launch";
 
-const fallbackTerminalOptions: DefaultTerminalKind[] = /win/i.test(
-  window.navigator.platform || window.navigator.userAgent || "",
-)
+const hostPlatform = window.navigator.platform || window.navigator.userAgent || "";
+const fallbackTerminalOptions: DefaultTerminalKind[] = /win/i.test(hostPlatform)
   ? ["windows-terminal", "powershell", "cmd", "custom"]
-  : ["terminal-app", "iterm2", "warp", "custom"];
+  : /linux/i.test(hostPlatform)
+    ? ["linux-terminal", "custom"]
+    : ["terminal-app", "iterm2", "warp", "custom"];
 const isAiModelMenuOpen = ref(false);
 const selectedAiModeId = ref("");
 const environmentDialogOpen = ref(false);

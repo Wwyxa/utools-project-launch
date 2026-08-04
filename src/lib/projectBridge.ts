@@ -78,11 +78,12 @@ const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成�
 {diffContent}`;
 
 const isWindowsPlatform = () => /win/i.test(window.navigator?.platform || window.navigator?.userAgent || "");
+const isLinuxPlatform = () => /linux/i.test(window.navigator?.platform || window.navigator?.userAgent || "");
 
 const defaultTerminalPreferences = (): TerminalPreferences => ({
   schemaVersion: 2,
   mode: "auto",
-  kind: isWindowsPlatform() ? "windows-terminal" : "terminal-app",
+  kind: isWindowsPlatform() ? "windows-terminal" : isLinuxPlatform() ? "linux-terminal" : "terminal-app",
   customCommand: "",
 });
 
@@ -91,6 +92,7 @@ const terminalKinds = new Set<DefaultTerminalKind>([
   "terminal-app",
   "iterm2",
   "warp",
+  "linux-terminal",
   "windows-terminal",
   "powershell",
   "cmd",

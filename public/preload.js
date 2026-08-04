@@ -62,6 +62,7 @@ const terminalKinds = new Set([
   "terminal-app",
   "iterm2",
   "warp",
+  "linux-terminal",
   "windows-terminal",
   "powershell",
   "cmd",
@@ -266,7 +267,7 @@ function getDefaultTerminalPreferences() {
   return {
     schemaVersion: 2,
     mode: "auto",
-    kind: process.platform === "win32" ? "windows-terminal" : "terminal-app",
+    kind: process.platform === "win32" ? "windows-terminal" : process.platform === "linux" ? "linux-terminal" : "terminal-app",
     customCommand: "",
   };
 }
@@ -644,28 +645,37 @@ function readTerminalPreferences() {
   try {
     if (window.utools?.dbStorage) {
       const v2Preferences = window.utools.dbStorage.getItem(localTerminalPreferencesV2StorageKey);
-      const storedPreferences =
-        v2Preferences !== null && v2Preferences !== undefined
-          ? v2Preferences
-          : window.utools.dbStorage.getItem(terminalPreferencesStorageKey);
-      if (storedPreferences !== null && storedPreferences !== undefined) {
-        const preferences = normalizeTerminalPreferences(storedPreferences);
+      if (v2Preferences !== null && v2Preferences !== undefined) {
+        const preferences = normalizeTerminalPreferences(v2Preferences);
         saveTerminalPreferences(preferences);
         return preferences;
       }
     }
 
     const v2 = window.localStorage?.getItem(localTerminalPreferencesV2StorageKey);
+    if (v2 !== null && v2 !== undefined) {
+      const preferences = normalizeTerminalPreferences(JSON.parse(v2));
+      saveTerminalPreferences(preferences);
+      return preferences;
+    }
+
+    if (window.utools?.dbStorage) {
+      const legacyPreferences = window.utools.dbStorage.getItem(terminalPreferencesStorageKey);
+      if (legacyPreferences !== null && legacyPreferences !== undefined) {
+        const preferences = normalizeTerminalPreferences(legacyPreferences);
+        saveTerminalPreferences(preferences);
+        return preferences;
+      }
+    }
+
     const raw =
-      v2 !== null && v2 !== undefined
-        ? v2
-        : window.localStorage?.getItem(localTerminalPreferencesStorageKey) ||
-          window.localStorage?.getItem(terminalPreferencesStorageKey);
+      window.localStorage?.getItem(localTerminalPreferencesStorageKey) ||
+      window.localStorage?.getItem(terminalPreferencesStorageKey);
     if (!raw) {
       return getDefaultTerminalPreferences();
     }
     const preferences = normalizeTerminalPreferences(JSON.parse(raw));
-    if (!v2) saveTerminalPreferences(preferences);
+    saveTerminalPreferences(preferences);
     return preferences;
   } catch (error) {
     return getDefaultTerminalPreferences();
@@ -703,20 +713,30 @@ function readExternalApplicationPreferences() {
   try {
     if (window.utools?.dbStorage) {
       const v2Preferences = window.utools.dbStorage.getItem(externalApplicationPreferencesV2StorageKey);
-      const storedPreferences =
-        v2Preferences !== null && v2Preferences !== undefined
-          ? v2Preferences
-          : window.utools.dbStorage.getItem(externalApplicationPreferencesStorageKey);
-      if (storedPreferences !== null && storedPreferences !== undefined) {
-        const preferences = normalizeExternalApplicationPreferences(storedPreferences);
+      if (v2Preferences !== null && v2Preferences !== undefined) {
+        const preferences = normalizeExternalApplicationPreferences(v2Preferences);
         saveExternalApplicationPreferences(preferences);
         return preferences;
       }
     }
 
     const v2 = window.localStorage?.getItem(externalApplicationPreferencesV2StorageKey);
-    const current =
-      v2 !== null && v2 !== undefined ? v2 : window.localStorage?.getItem(externalApplicationPreferencesStorageKey);
+    if (v2 !== null && v2 !== undefined) {
+      const preferences = normalizeExternalApplicationPreferences(JSON.parse(v2));
+      saveExternalApplicationPreferences(preferences);
+      return preferences;
+    }
+
+    if (window.utools?.dbStorage) {
+      const legacyPreferences = window.utools.dbStorage.getItem(externalApplicationPreferencesStorageKey);
+      if (legacyPreferences !== null && legacyPreferences !== undefined) {
+        const preferences = normalizeExternalApplicationPreferences(legacyPreferences);
+        saveExternalApplicationPreferences(preferences);
+        return preferences;
+      }
+    }
+
+    const current = window.localStorage?.getItem(externalApplicationPreferencesStorageKey);
     const localLegacy = window.localStorage?.getItem(localEditorPreferencesStorageKey);
     const preferences =
       typeof current === "string"
@@ -1581,6 +1601,12 @@ const windowsExecutables = {
   },
 };
 
+const linuxExecutables = {
+  "linux-terminal": ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "kitty", "alacritty", "xterm"],
+  vscode: ["code", "code-insiders"],
+  cursor: ["cursor"],
+};
+
 function fileExists(targetPath) {
   try {
     return Boolean(targetPath) && fs.statSync(targetPath).isFile();
@@ -1636,15 +1662,33 @@ function findWindowsExecutable(kind) {
   return "";
 }
 
+function findLinuxExecutable(kind) {
+  for (const command of linuxExecutables[kind] || []) {
+    try {
+      const output = createProcessOutputDecoder()(execFileSync("which", [command], { encoding: "buffer", timeout: 1500 }));
+      const executable = output
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .find(fileExists);
+      if (executable) return executable;
+    } catch (error) {
+      // Try the next common Linux launcher without exposing a shell to the user path.
+    }
+  }
+  return "";
+}
+
 function getHostPlatform() {
   if (process.platform === "darwin") return "darwin";
   if (process.platform === "win32") return "win32";
+  if (process.platform === "linux") return "linux";
   return "unsupported";
 }
 
 function nativeTargetAvailable(kind) {
   if (getHostPlatform() === "darwin") return Boolean(findMacApplication(kind));
   if (getHostPlatform() === "win32") return Boolean(findWindowsExecutable(kind));
+  if (getHostPlatform() === "linux") return Boolean(findLinuxExecutable(kind));
   return false;
 }
 
@@ -1654,9 +1698,11 @@ function detectHostLaunchCapabilities() {
     ? ["terminal-app", "iterm2", "warp"]
     : platform === "win32"
       ? ["windows-terminal", "powershell", "cmd"]
+      : platform === "linux"
+        ? ["linux-terminal"]
       : [];
   const editorKindsForPlatform = platform === "unsupported" ? [] : ["vscode", "cursor"];
-  const terminalNames = { "terminal-app": "Terminal", iterm2: "iTerm2", warp: "Warp", "windows-terminal": "Windows Terminal", powershell: "PowerShell", cmd: "CMD" };
+  const terminalNames = { "terminal-app": "Terminal", iterm2: "iTerm2", warp: "Warp", "linux-terminal": "Terminal", "windows-terminal": "Windows Terminal", powershell: "PowerShell", cmd: "CMD" };
   const editorNames = { vscode: "VS Code", cursor: "Cursor" };
   return Promise.resolve({
     platform,
@@ -1710,6 +1756,11 @@ function launchNativeTarget(kind, resolvedPath) {
     if (!appPath) return Promise.resolve(null);
     return launchDetachedProcess("/usr/bin/open", ["-a", macApplications[kind].name, resolvedPath], resolvedPath);
   }
+  if (platform === "linux") {
+    const executable = findLinuxExecutable(kind);
+    if (!executable) return Promise.resolve(null);
+    return launchDetachedProcess(executable, kind === "linux-terminal" ? [] : [resolvedPath], resolvedPath);
+  }
   if (platform !== "win32") return Promise.resolve(null);
   const executable = findWindowsExecutable(kind);
   if (!executable) return Promise.resolve(null);
@@ -1723,6 +1774,7 @@ function terminalCandidates(preferences) {
   if (preferences.mode !== "auto") return [preferences.kind];
   if (getHostPlatform() === "darwin") return ["terminal-app", "iterm2", "warp"];
   if (getHostPlatform() === "win32") return ["windows-terminal", "powershell", "cmd"];
+  if (getHostPlatform() === "linux") return ["linux-terminal"];
   return [];
 }
 

@@ -5,13 +5,14 @@ import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import type { ProjectBridge } from "../src/types";
 
-type Platform = "darwin" | "win32";
+type Platform = "darwin" | "linux" | "win32";
 type SpawnOutcome = "spawn" | "error";
 
 interface PreloadFixture {
   directories?: string[];
   files?: string[];
   where?: Record<string, string | Buffer>;
+  which?: Record<string, string | Buffer>;
   spawnOutcomes?: SpawnOutcome[];
   env?: Record<string, string>;
 }
@@ -40,7 +41,12 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     ...nodeRequire("child_process"),
     spawn,
     execFileSync: vi.fn((command: string, args: string[]) => {
-      const resolved = platform === "win32" && command === "where.exe" ? fixture.where?.[args[0]] : "";
+      const resolved =
+        platform === "win32" && command === "where.exe"
+          ? fixture.where?.[args[0]]
+          : platform === "linux" && command === "which"
+            ? fixture.which?.[args[0]]
+            : "";
       if (resolved) return Buffer.isBuffer(resolved) ? resolved : Buffer.from(`${resolved}\r\n`);
       throw new Error("not found");
     }),
@@ -53,13 +59,13 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     require: (id: string) => {
       if (id === "electron") return { shell: {} };
       if (id === "fs") return fs;
-      if (id === "path") return platform === "win32" ? nodeRequire("path").win32 : nodeRequire("path");
+      if (id === "path") return platform === "win32" ? nodeRequire("path").win32 : nodeRequire("path").posix;
       if (id === "child_process") return childProcess;
       return nodeRequire(id);
     },
     process: {
       platform,
-      env: { ComSpec: "C:\\Windows\\System32\\cmd.exe", ...fixture.env },
+      env: { ...(platform === "win32" ? { ComSpec: "C:\\Windows\\System32\\cmd.exe" } : {}), ...fixture.env },
       once: () => undefined,
       exit: () => undefined,
     },
@@ -95,6 +101,55 @@ describe("native project launchers", () => {
       }),
     ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "terminal-app" });
     expect(spawn).toHaveBeenCalledWith("/usr/bin/open", ["-a", "Terminal", projectPath], {
+      cwd: projectPath,
+      detached: true,
+      stdio: "ignore",
+    });
+  });
+
+  it("detects and opens Linux terminal and editors with POSIX paths", async () => {
+    const projectPath = "/home/test/中文 project";
+    const terminalPath = "/usr/bin/x-terminal-emulator";
+    const codePath = "/usr/bin/code";
+    const cursorPath = "/usr/bin/cursor";
+    const { bridge, spawn } = loadPreloadBridge("linux", {
+      directories: [projectPath],
+      files: [terminalPath, codePath, cursorPath],
+      which: { "x-terminal-emulator": terminalPath, code: codePath, cursor: cursorPath },
+    });
+
+    const capabilities = await bridge.detectHostLaunchCapabilities();
+    expect(capabilities.platform).toBe("linux");
+    expect(capabilities.terminals.find((candidate) => candidate.kind === "linux-terminal")?.available).toBe(true);
+    expect(capabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
+    expect(capabilities.editors.find((candidate) => candidate.kind === "cursor")?.available).toBe(true);
+
+    await expect(
+      bridge.openTerminal({
+        projectPath,
+        terminal: { schemaVersion: 2, mode: "auto", kind: "linux-terminal", customCommand: "" },
+      }),
+    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "linux-terminal" });
+    expect(spawn).toHaveBeenNthCalledWith(1, terminalPath, [], {
+      cwd: projectPath,
+      detached: true,
+      stdio: "ignore",
+    });
+
+    await expect(
+      bridge.openExternalApplication({
+        projectPath,
+        application: {
+          id: "vscode",
+          name: "VS Code",
+          kind: "vscode",
+          command: "code {path}",
+          enabled: true,
+          launchMode: "native",
+        },
+      }),
+    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedApplicationId: "vscode" });
+    expect(spawn).toHaveBeenNthCalledWith(2, codePath, [projectPath], {
       cwd: projectPath,
       detached: true,
       stdio: "ignore",
