@@ -129,7 +129,7 @@ const refreshButtonLabel = computed(() => {
 });
 const refreshButtonClass = computed(() =>
   cn(
-    "p-2 text-on-surface-variant hover:bg-surface-variant rounded-lg transition-colors shadow-sm bg-surface border border-border-subtle",
+    "p-1.5 text-on-surface-variant hover:bg-surface-variant rounded-lg transition-colors shadow-sm bg-surface border border-border-subtle",
     isRefreshingProject.value
       ? "disabled:cursor-wait disabled:opacity-70"
       : "disabled:cursor-not-allowed disabled:opacity-45",
@@ -415,34 +415,28 @@ watch(
 </script>
 
 <template>
-  <div ref="detailsRootRef" class="flex h-full flex-1 flex-col overflow-hidden p-3">
-    <div class="mb-3 flex items-center justify-between gap-3">
-      <div class="flex items-center gap-4 min-w-0">
+  <div ref="detailsRootRef" class="flex h-full flex-1 flex-col overflow-hidden px-3 py-2">
+    <div class="mb-2 flex items-center justify-between gap-2">
+      <div class="flex min-w-0 flex-1 items-center gap-3">
         <button
           type="button"
           @click="handleBack"
-          class="p-2 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
+          class="p-1.5 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
           :title="t.common.back"
           :aria-label="t.common.back"
         >
-          <ArrowLeft :size="20" />
+          <ArrowLeft :size="18" />
         </button>
         <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <h2 class="text-lg font-bold text-on-surface truncate">{{ project.name }}</h2>
-            <span
-              class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-surface-variant text-on-surface-variant"
-            >
-              {{ t.projectKinds[project.kind] }}
-            </span>
-          </div>
-          <div class="flex items-center gap-2 text-xs text-on-surface-variant mt-0.5">
-            <span class="flex items-center gap-1"> <Folder :size="12" /> {{ project.path }} </span>
+          <h2 class="truncate text-base font-bold leading-tight text-on-surface">{{ project.name }}</h2>
+          <div class="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-on-surface-variant">
+            <Folder :size="12" class="shrink-0" />
+            <span class="truncate">{{ project.path }}</span>
           </div>
         </div>
       </div>
 
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-1.5 shrink-0">
         <button
           type="button"
           @click="handleRefresh"
@@ -451,63 +445,63 @@ watch(
           :title="refreshButtonLabel"
           :aria-label="refreshButtonLabel"
         >
-          <RefreshCw :size="18" :class="isRefreshingProject && 'animate-spin'" />
+          <RefreshCw :size="16" :class="isRefreshingProject && 'animate-spin'" />
         </button>
         <button
           type="button"
           @click="handleOpenTerminal"
           :disabled="isUnavailable"
-          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
+          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm"
           :title="t.projectActions.openInTerminal"
           :aria-label="t.projectActions.openInTerminal"
         >
-          <TerminalSquare :size="18" class="group-hover:text-primary" />
+          <TerminalSquare :size="16" class="group-hover:text-primary" />
         </button>
         <ExternalApplicationLaunchButton
           :applications="store.externalApplicationPreferences.applications"
           :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
           :disabled="isUnavailable"
-          button-class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm disabled:opacity-50"
+          button-class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm disabled:opacity-50"
           icon-class="group-hover:text-primary"
-          :icon-size="18"
+          :icon-size="16"
           @launch="handleOpenEditor"
         />
         <button
           type="button"
           @click="handleOpenFolder"
           :disabled="isUnavailable"
-          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-2 rounded-lg transition-all shadow-sm"
+          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm"
           :title="t.projectDetails.openProject"
           :aria-label="t.projectDetails.openProject"
         >
-          <FolderOpen :size="18" class="group-hover:text-primary" />
+          <FolderOpen :size="16" class="group-hover:text-primary" />
         </button>
         <button
           type="button"
           @click="handleEdit"
-          class="bg-primary text-on-primary p-2 rounded-lg transition-all hover:bg-primary/90 shadow-sm"
+          class="bg-primary text-on-primary p-1.5 rounded-lg transition-all hover:bg-primary/90 shadow-sm"
           :title="t.common.edit"
           :aria-label="t.common.edit"
         >
-          <Pencil :size="18" />
+          <Pencil :size="16" />
         </button>
         <button
           type="button"
           @click="handleDuplicate"
-          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-primary hover:bg-primary/10 p-2 rounded-lg transition-all shadow-sm"
+          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-primary hover:bg-primary/10 p-1.5 rounded-lg transition-all shadow-sm"
           :title="t.projectActions.duplicateProject"
           :aria-label="t.projectActions.duplicateProject"
         >
-          <Copy :size="18" />
+          <Copy :size="16" />
         </button>
         <button
           type="button"
           @click="handleDelete"
-          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-2 rounded-lg transition-all shadow-sm"
+          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-1.5 rounded-lg transition-all shadow-sm"
           :title="t.projectActions.deleteProject"
           :aria-label="t.projectActions.deleteProject"
         >
-          <Trash2 :size="18" />
+          <Trash2 :size="16" />
         </button>
       </div>
     </div>
@@ -516,7 +510,7 @@ watch(
       :class="
         cn(
           'flex min-w-0 items-end border-b border-border-subtle',
-          activeTab === 'git' && !isGitTopInfoCollapsed ? 'mb-4' : 'mb-3',
+          activeTab === 'git' && !isGitTopInfoCollapsed ? 'mb-3' : 'mb-2',
         )
       "
     >
@@ -537,7 +531,7 @@ watch(
             @click="handleTabClick(tab.id)"
             :class="
               cn(
-                'relative touch-none select-none whitespace-nowrap pb-2 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-default',
+                'relative touch-none select-none whitespace-nowrap pb-1.5 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-default',
                 activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
                 draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
               )
@@ -576,7 +570,7 @@ watch(
         v-if="showTabOrderHint"
         role="note"
         :aria-label="t.projectDetails.reorderTabsHint"
-        class="pointer-events-none ml-2 inline-flex shrink-0 items-center gap-1 pb-2 text-[11px] font-medium text-on-surface-variant opacity-50 sm:ml-3"
+        class="pointer-events-none ml-2 inline-flex shrink-0 items-center gap-1 pb-1.5 text-[11px] font-medium text-on-surface-variant opacity-50 sm:ml-3"
       >
         <GripHorizontal :size="12" :stroke-width="1.5" />
         <span class="hidden whitespace-nowrap sm:inline">{{ t.projectDetails.reorderTabsHint }}</span>
