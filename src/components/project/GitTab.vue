@@ -554,7 +554,7 @@ const runRepositoryExternalAction = (action: "terminal" | "folder") => {
   else void store.showGitRepositoryInFolder(props.project.id, row.target);
 };
 
-const openRepositoryWithApplication = (applicationId: string, row = repositoryMenu.value?.row) => {
+const openRepositoryWithApplication = (applicationId?: string, row = repositoryMenu.value?.row) => {
   repositoryMenu.value = null;
   if (!row?.selectable) return;
   void store.openGitRepositoryInEditor(props.project.id, row.target, applicationId);

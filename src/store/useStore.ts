@@ -31,6 +31,7 @@ import type {
   CustomEnvironmentTool,
   ExternalApplication,
   ExternalApplicationPreferences,
+  HostLaunchCapabilities,
   EnvironmentPreferences,
   EnvironmentToolDefinition,
   EnvironmentToolKey,
@@ -142,6 +143,21 @@ const gitLoadMoreTokens = new Map<string, symbol>();
 const gitWorkspaceRefreshTokens = new Map<string, symbol>();
 const gitMutationVersions = new Map<string, number>();
 const gitRefMutationVersions = new Map<string, number>();
+const launchMessage = (locale: Locale, code: string, target: string) => {
+  const zh = locale === "zh-CN";
+  const labels: Record<string, string> = {
+    launched: zh ? `已打开 ${target}` : `Opened ${target}`,
+    "launched-with-fallback": zh ? `已使用备用应用打开 ${target}` : `Opened ${target} with a fallback application`,
+    "path-not-found": zh ? "项目目录不存在" : "Project directory does not exist",
+    "path-not-directory": zh ? "项目路径不是目录" : "Project path is not a directory",
+    "application-unavailable": zh ? `${target} 未安装或不可用` : `${target} is not installed or unavailable`,
+    "invalid-custom-command": zh ? "自定义启动命令无效" : "Custom launch command is invalid",
+    "preview-unsupported": zh ? "浏览器预览不支持打开本地应用" : "Browser preview cannot open local applications",
+    "all-candidates-failed": zh ? "没有可用的应用可以打开该项目" : "No available application could open this project",
+    "launch-failed": zh ? `无法启动 ${target}` : `Could not launch ${target}`,
+  };
+  return labels[code] || (zh ? `无法打开 ${target}` : `Could not open ${target}`);
+};
 const ansiControlPattern =
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
@@ -1086,6 +1102,8 @@ export const useStore = defineStore("app", {
     theme: "auto" as "light" | "dark" | "auto",
     terminalPreferences: bridge.loadTerminalPreferences(),
     externalApplicationPreferences: bridge.loadExternalApplicationPreferences(),
+    hostLaunchCapabilities: null as HostLaunchCapabilities | null,
+    hostLaunchCapabilitiesRefreshing: false,
     environmentPreferences: bridge.loadEnvironmentPreferences(),
     builtinEnvironmentTools: bridge.loadBuiltinEnvironmentTools() as EnvironmentToolDefinition[],
     environmentResults: [] as EnvironmentToolResult[],
@@ -1196,8 +1214,10 @@ export const useStore = defineStore("app", {
   actions: {
     async loadProjects() {
       this.terminalPreferences = bridge.loadTerminalPreferences();
+      this.externalApplicationPreferences = bridge.loadExternalApplicationPreferences();
       this.environmentPreferences = bridge.loadEnvironmentPreferences();
       this.aiPreferences = bridge.loadAiPreferences();
+      void this.refreshHostLaunchCapabilities();
       try {
         const storedProjects = await bridge.loadProjects();
         if (this.supportsBridge || storedProjects.length > 0) {
@@ -1324,12 +1344,24 @@ export const useStore = defineStore("app", {
       }, PROJECT_STATUS_MESSAGE_CLEAR_DELAY_MS);
     },
     setDefaultTerminal(kind: DefaultTerminalKind) {
-      this.terminalPreferences.kind = kind;
+      this.terminalPreferences = { ...this.terminalPreferences, mode: "manual", kind };
+      bridge.saveTerminalPreferences(this.terminalPreferences);
+    },
+    setAutomaticTerminal() {
+      this.terminalPreferences = { ...this.terminalPreferences, mode: "auto" };
       bridge.saveTerminalPreferences(this.terminalPreferences);
     },
     setDefaultTerminalCustomCommand(command: string) {
-      this.terminalPreferences.customCommand = command;
+      this.terminalPreferences = { ...this.terminalPreferences, mode: "manual", kind: "custom", customCommand: command };
       bridge.saveTerminalPreferences(this.terminalPreferences);
+    },
+    async refreshHostLaunchCapabilities() {
+      this.hostLaunchCapabilitiesRefreshing = true;
+      try {
+        this.hostLaunchCapabilities = await bridge.detectHostLaunchCapabilities();
+      } finally {
+        this.hostLaunchCapabilitiesRefreshing = false;
+      }
     },
     persistExternalApplicationPreferences(preferences: ExternalApplicationPreferences) {
       this.externalApplicationPreferences = normalizeExternalApplicationPreferences(preferences);
@@ -1360,6 +1392,7 @@ export const useStore = defineStore("app", {
             kind: "custom",
             command: normalizedCommand,
             enabled: true,
+            launchMode: "command",
           },
         ],
       });
@@ -1382,7 +1415,9 @@ export const useStore = defineStore("app", {
       this.persistExternalApplicationPreferences({
         ...this.externalApplicationPreferences,
         applications: this.externalApplicationPreferences.applications.map((item) =>
-          item.id === id ? { ...item, name: normalizedName, command: normalizedCommand } : item,
+          item.id === id
+            ? { ...item, name: normalizedName, command: normalizedCommand, launchMode: "command" }
+            : item,
         ),
       });
       return true;
@@ -1392,7 +1427,7 @@ export const useStore = defineStore("app", {
       if (
         !application ||
         application.enabled === enabled ||
-        (!enabled && id === this.externalApplicationPreferences.defaultApplicationId)
+        (!enabled && this.externalApplicationPreferences.mode === "manual" && id === this.externalApplicationPreferences.defaultApplicationId)
       ) {
         return false;
       }
@@ -1417,14 +1452,33 @@ export const useStore = defineStore("app", {
     },
     setDefaultExternalApplication(id: string) {
       if (
-        id === this.externalApplicationPreferences.defaultApplicationId ||
+        (id === this.externalApplicationPreferences.defaultApplicationId && this.externalApplicationPreferences.mode === "manual") ||
         !this.externalApplicationPreferences.applications.some(
           (application) => application.id === id && application.enabled,
         )
       ) {
         return false;
       }
-      this.persistExternalApplicationPreferences({ ...this.externalApplicationPreferences, defaultApplicationId: id });
+      this.persistExternalApplicationPreferences({
+        ...this.externalApplicationPreferences,
+        mode: "manual",
+        defaultApplicationId: id,
+      });
+      return true;
+    },
+    setAutomaticExternalApplication() {
+      this.persistExternalApplicationPreferences({ ...this.externalApplicationPreferences, mode: "auto" });
+    },
+    restoreExternalApplicationNativeLaunch(id: string) {
+      const application = this.externalApplicationPreferences.applications.find((item) => item.id === id);
+      if (!application || application.kind === "custom") return false;
+      const builtin = application.kind === "vscode" ? "code {path}" : "cursor {path}";
+      this.persistExternalApplicationPreferences({
+        ...this.externalApplicationPreferences,
+        applications: this.externalApplicationPreferences.applications.map((item) =>
+          item.id === id ? { ...item, command: builtin, launchMode: "native" } : item,
+        ),
+      });
       return true;
     },
     setEnvironmentToolEnabled(key: EnvironmentToolKey, enabled: boolean) {
@@ -4250,13 +4304,6 @@ export const useStore = defineStore("app", {
         return;
       }
       const terminalPreferences = { ...this.terminalPreferences };
-      if (terminalPreferences.kind === "builtin") {
-        this.addLog(
-          projectId,
-          createLogEntry("No external terminal is configured for related Git repositories.", "INFO"),
-        );
-        return;
-      }
       try {
         const result = await bridge.openTerminal({
           projectPath: context.repositoryPath,
@@ -4270,6 +4317,10 @@ export const useStore = defineStore("app", {
               : `Failed to open Git terminal (${result.kind}): ${result.message || "unknown error"}`,
             result.launched ? "INFO" : "ERROR",
           ),
+        );
+        this.setProjectStatusMessage(
+          result.launched ? (result.code === "launched-with-fallback" ? "warning" : "success") : "error",
+          launchMessage(this.locale, result.code, result.resolvedKind || result.kind),
         );
       } catch (error) {
         this.addLog(
@@ -4297,11 +4348,17 @@ export const useStore = defineStore("app", {
       );
       if (!selectedApplication) {
         this.addLog(projectId, createLogEntry("External application is unavailable.", "ERROR"));
+        this.setProjectStatusMessage("error", launchMessage(this.locale, "application-unavailable", "editor"));
         return;
       }
       const application = { ...selectedApplication } satisfies ExternalApplication;
       try {
-        const result = await bridge.openExternalApplication({ projectPath: context.repositoryPath, application });
+        const result = await bridge.openExternalApplication({
+          projectPath: context.repositoryPath,
+          application,
+          mode: applicationId ? "manual" : this.externalApplicationPreferences.mode,
+          applications: this.externalApplicationPreferences.applications,
+        });
         this.addLog(
           projectId,
           createLogEntry(
@@ -4310,6 +4367,10 @@ export const useStore = defineStore("app", {
               : `Failed to open Git repository with ${application.name}: ${result.message || "unknown error"}`,
             result.launched ? "INFO" : "ERROR",
           ),
+        );
+        this.setProjectStatusMessage(
+          result.launched ? (result.code === "launched-with-fallback" ? "warning" : "success") : "error",
+          launchMessage(this.locale, result.code, result.resolvedApplicationId || application.name),
         );
       } catch (error) {
         this.addLog(
@@ -4327,15 +4388,7 @@ export const useStore = defineStore("app", {
         return;
       }
       const terminalPreferences = { ...this.terminalPreferences };
-
-      if (terminalPreferences.kind === "builtin") {
-        this.addLog(
-          projectId,
-          createLogEntry(`No external terminal selected; external launch skipped for ${project.path}.`, "INFO"),
-        );
-        project.lastUpdated = new Date().toLocaleString();
-        return;
-      }
+      this.setProjectStatusMessage("loading", this.locale === "zh-CN" ? "正在打开终端..." : "Opening terminal...");
 
       try {
         const result = await bridge.openTerminal({
@@ -4347,6 +4400,10 @@ export const useStore = defineStore("app", {
 
         if (result.launched) {
           this.addLog(projectId, createLogEntry(`Open terminal (${result.kind}): ${result.command}`, "INFO"));
+          this.setProjectStatusMessage(
+            result.code === "launched-with-fallback" ? "warning" : "success",
+            launchMessage(this.locale, result.code, result.resolvedKind || result.kind),
+          );
           return;
         }
 
@@ -4354,6 +4411,7 @@ export const useStore = defineStore("app", {
           projectId,
           createLogEntry(`Failed to open terminal (${result.kind}): ${result.message || "unknown error"}`, "ERROR"),
         );
+        this.setProjectStatusMessage("error", launchMessage(this.locale, result.code, result.kind));
       } catch (error) {
         project.lastUpdated = new Date().toLocaleString();
         this.addLog(
@@ -4376,20 +4434,32 @@ export const useStore = defineStore("app", {
       );
       if (!selectedApplication) {
         this.addLog(projectId, createLogEntry("External application is unavailable.", "ERROR"));
+        this.setProjectStatusMessage("error", launchMessage(this.locale, "application-unavailable", "editor"));
         return;
       }
       const application = { ...selectedApplication } satisfies ExternalApplication;
       try {
-        const result = await bridge.openExternalApplication({ projectPath: project.path, application });
+        this.setProjectStatusMessage("loading", this.locale === "zh-CN" ? "正在打开编辑器..." : "Opening editor...");
+        const result = await bridge.openExternalApplication({
+          projectPath: project.path,
+          application,
+          mode: applicationId ? "manual" : this.externalApplicationPreferences.mode,
+          applications: this.externalApplicationPreferences.applications,
+        });
         project.lastUpdated = new Date().toLocaleString();
         if (result.launched) {
           this.addLog(projectId, createLogEntry(`Open with ${application.name}: ${result.command}`, "INFO"));
+          this.setProjectStatusMessage(
+            result.code === "launched-with-fallback" ? "warning" : "success",
+            launchMessage(this.locale, result.code, result.resolvedApplicationId || application.name),
+          );
           return;
         }
         this.addLog(
           projectId,
           createLogEntry(`Failed to open with ${application.name}: ${result.message || "unknown error"}`, "ERROR"),
         );
+        this.setProjectStatusMessage("error", launchMessage(this.locale, result.code, application.name));
       } catch (error) {
         project.lastUpdated = new Date().toLocaleString();
         this.addLog(

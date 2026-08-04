@@ -305,7 +305,7 @@ const handleOpenTerminal = async (event: MouseEvent) => {
   await store.openProjectInTerminal(props.project.id);
 };
 
-const handleOpenEditor = (applicationId: string) => store.openProjectInEditor(props.project.id, applicationId);
+const handleOpenEditor = (applicationId?: string) => store.openProjectInEditor(props.project.id, applicationId);
 
 const handleOpenQuickLink = async (event: MouseEvent) => {
   event.stopPropagation();

@@ -39,7 +39,11 @@ const store = useStore();
 const t = useI18n();
 const githubRepositoryUrl = "https://github.com/Wwyxa/utools-project-launch";
 
-const terminalOptions: DefaultTerminalKind[] = ["windows-terminal", "powershell", "cmd", "custom"];
+const fallbackTerminalOptions: DefaultTerminalKind[] = /win/i.test(
+  window.navigator.platform || window.navigator.userAgent || "",
+)
+  ? ["windows-terminal", "powershell", "cmd", "custom"]
+  : ["terminal-app", "iterm2", "warp", "custom"];
 const isAiModelMenuOpen = ref(false);
 const selectedAiModeId = ref("");
 const environmentDialogOpen = ref(false);
@@ -94,7 +98,17 @@ const editingBuiltinHasOverride = computed(() =>
 );
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
+const terminalOptions = computed<DefaultTerminalKind[]>(() => [
+  ...(store.hostLaunchCapabilities?.terminals.map((candidate) => candidate.kind) || fallbackTerminalOptions),
+  "custom",
+]);
+const terminalAvailability = (kind: DefaultTerminalKind) =>
+  store.hostLaunchCapabilities?.terminals.find((candidate) => candidate.kind === kind)?.available;
 const externalApplications = computed(() => store.externalApplicationPreferences.applications);
+const externalApplicationAvailability = (application: ExternalApplication) =>
+  application.kind === "custom"
+    ? undefined
+    : store.hostLaunchCapabilities?.editors.find((candidate) => candidate.kind === application.kind)?.available;
 const editingExternalApplication = computed(() =>
   externalApplications.value.find((application) => application.id === editingExternalApplicationId.value),
 );
@@ -753,19 +767,36 @@ watch(
         <div class="mb-2.5 flex items-center gap-2">
           <SquareTerminal :size="15" class="shrink-0 text-primary" />
           <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultTerminal }}</h3>
+          <button
+            type="button"
+            class="ml-auto inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 text-xs font-bold text-on-surface hover:bg-surface-variant"
+            :disabled="store.hostLaunchCapabilitiesRefreshing"
+            @click="store.refreshHostLaunchCapabilities()"
+          >
+            <RefreshCw :size="12" :class="store.hostLaunchCapabilitiesRefreshing && 'animate-spin'" />
+            {{ t.settings.redetectLaunchers }}
+          </button>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
           <div
             class="inline-flex h-fit max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
           >
             <button
+              type="button"
+              @click="store.setAutomaticTerminal()"
+              :class="segmentButtonClass(store.terminalPreferences.mode === 'auto')"
+            >
+              {{ t.settings.automaticLauncher }}
+            </button>
+            <button
               v-for="option in terminalOptions"
               :key="option"
               type="button"
               @click="store.setDefaultTerminal(option)"
-              :class="segmentButtonClass(store.terminalPreferences.kind === option)"
+              :class="segmentButtonClass(store.terminalPreferences.mode === 'manual' && store.terminalPreferences.kind === option)"
             >
               {{ t.settings.terminals[option] }}
+              <span v-if="terminalAvailability(option) === false" class="ml-1 text-[9px] opacity-60">{{ t.settings.launcherUnavailable }}</span>
             </button>
           </div>
           <div class="space-y-1.5">
@@ -778,7 +809,7 @@ watch(
               leave-to-class="max-h-0 opacity-0 -translate-y-1"
             >
               <div
-                v-if="terminalUsesCustomCommand"
+                v-if="terminalUsesCustomCommand && store.terminalPreferences.mode === 'manual'"
                 class="overflow-hidden rounded-lg border border-border-subtle bg-surface px-3 py-2.5"
               >
                 <label class="mb-2 block text-xs font-semibold uppercase text-on-surface-variant">
@@ -821,6 +852,14 @@ watch(
             <Plus :size="12" />
             {{ t.settings.addExternalApplication }}
           </button>
+          <button
+            type="button"
+            class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+            :class="store.externalApplicationPreferences.mode === 'auto' && 'border-primary/40 text-primary'"
+            @click="store.setAutomaticExternalApplication()"
+          >
+            {{ t.settings.automaticLauncher }}
+          </button>
         </div>
         <div class="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <article
@@ -846,7 +885,7 @@ watch(
                   }}
                 </span>
                 <span
-                  v-if="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                  v-if="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
                   class="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 text-[8px] font-bold leading-3 text-primary"
                 >
                   {{ t.settings.defaultApplicationBadge }}
@@ -855,6 +894,9 @@ watch(
               <p class="mt-0.5 truncate font-mono text-[9px] text-on-surface-variant" :title="application.command">
                 {{ application.command }}
               </p>
+              <p v-if="externalApplicationAvailability(application) !== undefined" class="mt-0.5 text-[9px]" :class="externalApplicationAvailability(application) ? 'text-status-running' : 'text-status-warning'">
+                {{ externalApplicationAvailability(application) ? t.settings.launcherAvailable : t.settings.launcherUnavailable }}
+              </p>
             </div>
             <div class="flex shrink-0 items-center gap-1.5" @click.stop>
               <label :title="t.settings.setDefaultApplication" class="flex cursor-pointer items-center">
@@ -862,7 +904,7 @@ watch(
                   type="radio"
                   name="default-external-application"
                   class="h-3.5 w-3.5 accent-primary"
-                  :checked="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                  :checked="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
                   :disabled="!application.enabled"
                   :aria-label="`${t.settings.setDefaultApplication}: ${application.name}`"
                   @change="setDefaultExternalApplication(application)"
@@ -873,7 +915,7 @@ watch(
                   type="checkbox"
                   class="h-3.5 w-3.5 accent-primary"
                   :checked="application.enabled"
-                  :disabled="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                  :disabled="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
                   :aria-label="`${t.settings.applicationEnabled}: ${application.name}`"
                   @change="setExternalApplicationEnabled(application, ($event.target as HTMLInputElement).checked)"
                 />
@@ -999,16 +1041,25 @@ watch(
               {{ externalApplicationFeedback }}
             </p>
             <div class="mt-3 flex items-center justify-between gap-2">
-              <button
-                v-if="editingExternalApplication?.kind === 'custom'"
-                type="button"
-                class="inline-flex h-8 items-center gap-1 rounded border border-status-error/30 px-2.5 text-xs font-bold text-status-error hover:bg-status-error/10"
-                @click="deleteExternalApplication"
-              >
-                <Trash2 :size="12" />
-                {{ t.common.delete }}
-              </button>
-              <span v-else />
+              <div>
+                <button
+                  v-if="editingExternalApplication?.kind === 'custom'"
+                  type="button"
+                  class="inline-flex h-8 items-center gap-1 rounded border border-status-error/30 px-2.5 text-xs font-bold text-status-error hover:bg-status-error/10"
+                  @click="deleteExternalApplication"
+                >
+                  <Trash2 :size="12" />
+                  {{ t.common.delete }}
+                </button>
+                <button
+                  v-else-if="editingExternalApplication && editingExternalApplication.launchMode === 'command'"
+                  type="button"
+                  class="inline-flex h-8 items-center gap-1 rounded border border-border-subtle px-2.5 text-xs font-bold text-primary hover:bg-primary/10"
+                  @click="store.restoreExternalApplicationNativeLaunch(editingExternalApplication.id); externalApplicationDialogOpen = false"
+                >
+                  {{ t.settings.restoreNativeLauncher }}
+                </button>
+              </div>
               <div class="flex gap-2">
                 <button
                   type="button"

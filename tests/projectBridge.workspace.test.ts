@@ -209,6 +209,7 @@ describe("browser Git workspace fallback", () => {
       cwd: payload.projectPath,
       applicationId: payload.application.id,
       kind: payload.application.kind,
+      code: "launched",
     }));
     const pathExists = vi.fn<ProjectBridge["pathExists"]>(async () => true);
     const testBridge: ProjectBridge = { ...getProjectBridge(), openExternalApplication, pathExists };
