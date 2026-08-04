@@ -25,5 +25,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["references"]
+  "exclude": ["dist", "references"]
 }
