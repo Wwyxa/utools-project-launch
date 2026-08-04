@@ -8,16 +8,20 @@ import { getProjectBridge } from "../src/lib/projectBridge";
 import { ProjectStatus } from "../src/types";
 import type { ExternalApplicationPreferences, Project, ProjectBridge } from "../src/types";
 
-const preferencesKey = "utools-project-launch.local-external-applications.v1";
+const externalApplicationPreferencesV1Key = "utools-project-launch.local-external-applications.v1";
+const preferencesKey = "utools-project-launch.local-external-applications.v2";
 const localLegacyKey = "utools-project-launch.local-editor-settings.v1";
 const sharedLegacyKey = "utools-project-launch.editor-settings.v1";
+const terminalPreferencesV1Key = "utools-project-launch.settings.v1";
+const terminalPreferencesV2Key = "utools-project-launch.local-settings.v2";
 
 const defaults: ExternalApplicationPreferences = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  mode: "auto",
   defaultApplicationId: "vscode",
   applications: [
-    { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true },
-    { id: "cursor", name: "Cursor", kind: "cursor", command: "cursor {path}", enabled: true },
+    { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true, launchMode: "native" },
+    { id: "cursor", name: "Cursor", kind: "cursor", command: "cursor {path}", enabled: true, launchMode: "native" },
   ],
 };
 
@@ -133,12 +137,13 @@ describe("browser external application preferences", () => {
     );
 
     expect(getProjectBridge().loadExternalApplicationPreferences()).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      mode: "manual",
       defaultApplicationId: "vscode",
       applications: [
         defaults.applications[0],
-        { ...defaults.applications[1], name: "changed", command: "bad", enabled: false },
-        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true },
+        { ...defaults.applications[1], name: "changed", command: "bad", enabled: false, launchMode: "command" },
+        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true, launchMode: "command" },
       ],
     });
   });
@@ -149,12 +154,14 @@ describe("browser external application preferences", () => {
     expect(getProjectBridge().loadExternalApplicationPreferences().defaultApplicationId).toBe("cursor");
 
     getProjectBridge().saveExternalApplicationPreferences({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      mode: "manual",
       defaultApplicationId: "missing",
       applications: defaults.applications.map((application) => ({ ...application, enabled: false })),
     });
     expect(getProjectBridge().loadExternalApplicationPreferences()).toEqual({
       ...defaults,
+      mode: "manual",
       applications: [defaults.applications[0], { ...defaults.applications[1], enabled: false }],
     });
     expect(storage.values.has(localLegacyKey)).toBe(true);
@@ -173,9 +180,10 @@ describe("browser external application preferences", () => {
   it("protects the default and keeps explicit launch selection temporary", async () => {
     const preferences: ExternalApplicationPreferences = {
       ...defaults,
+      mode: "manual",
       applications: [
         ...defaults.applications,
-        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true },
+        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true, launchMode: "command" },
       ],
     };
     const saveExternalApplicationPreferences = vi.fn<ProjectBridge["saveExternalApplicationPreferences"]>();
@@ -185,6 +193,7 @@ describe("browser external application preferences", () => {
       cwd: payload.projectPath,
       applicationId: payload.application.id,
       kind: payload.application.kind,
+      code: "launched",
     }));
     window.projectBridge = {
       ...getProjectBridge(),
@@ -227,21 +236,115 @@ describe("browser external application preferences", () => {
     expect(store.externalApplicationPreferences.defaultApplicationId).toBe("tool");
     expect(saveExternalApplicationPreferences).toHaveBeenCalledTimes(4);
   });
+
+  it("keeps the automatic candidate order when no editor is explicitly selected", async () => {
+    const openExternalApplication = vi.fn<ProjectBridge["openExternalApplication"]>(async (payload) => ({
+      launched: true,
+      command: payload.application.command,
+      cwd: payload.projectPath,
+      applicationId: payload.application.id,
+      kind: payload.application.kind,
+      code: "launched",
+    }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadExternalApplicationPreferences: () => structuredClone(defaults),
+      openExternalApplication,
+      pathExists: async () => true,
+    };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [{
+      id: "automatic-project",
+      name: "Automatic Project",
+      path: "C:\\automatic-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [],
+      env: {},
+      pathExists: true,
+    }];
+
+    await store.openProjectInEditor("automatic-project");
+
+    expect(openExternalApplication).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "auto",
+      application: expect.objectContaining({ id: "vscode" }),
+      applications: expect.arrayContaining([
+        expect.objectContaining({ id: "vscode" }),
+        expect.objectContaining({ id: "cursor" }),
+      ]),
+    }));
+  });
 });
 
 describe("uTools preload external application preferences", () => {
+  it("persists terminal preferences across a uTools restart and migrates v1 storage", () => {
+    const dbStorage = createDbStorage();
+    const legacyPreferences = { kind: "powershell", customCommand: "" };
+    dbStorage.values.set(terminalPreferencesV1Key, legacyPreferences);
+
+    const preferences = loadPreloadBridge(createStorage().api, {}, dbStorage.api).loadTerminalPreferences();
+    expect(preferences).toEqual({ schemaVersion: 2, mode: "manual", kind: "powershell", customCommand: "" });
+    expect(dbStorage.values.get(terminalPreferencesV2Key)).toEqual(preferences);
+
+    const restartedBridge = loadPreloadBridge(createStorage().api, {}, dbStorage.api);
+    expect(restartedBridge.loadTerminalPreferences()).toEqual(preferences);
+  });
+
+  it("migrates renderer v2 terminal preferences before an older host preference", () => {
+    const rendererStorage = createStorage();
+    const dbStorage = createDbStorage();
+    const preferences = { schemaVersion: 2, mode: "manual", kind: "cmd", customCommand: "" };
+    rendererStorage.values.set(terminalPreferencesV2Key, JSON.stringify(preferences));
+    dbStorage.values.set(terminalPreferencesV1Key, { kind: "powershell", customCommand: "" });
+
+    expect(loadPreloadBridge(rendererStorage.api, {}, dbStorage.api).loadTerminalPreferences()).toEqual(preferences);
+    expect(dbStorage.values.get(terminalPreferencesV2Key)).toEqual(preferences);
+
+    const restartedBridge = loadPreloadBridge(createStorage().api, {}, dbStorage.api);
+    expect(restartedBridge.loadTerminalPreferences()).toEqual(preferences);
+  });
+
   it("persists across a uTools restart and migrates the renderer-local preference", () => {
     const rendererStorage = createStorage();
     const dbStorage = createDbStorage();
     const preferences: ExternalApplicationPreferences = {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      mode: "manual",
       defaultApplicationId: "tool",
       applications: [
         ...defaults.applications,
-        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true },
+        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true, launchMode: "command" },
       ],
     };
     rendererStorage.values.set(preferencesKey, JSON.stringify(preferences));
+
+    expect(loadPreloadBridge(rendererStorage.api, {}, dbStorage.api).loadExternalApplicationPreferences()).toEqual(
+      preferences,
+    );
+    expect(dbStorage.values.get(preferencesKey)).toEqual(preferences);
+
+    const restartedBridge = loadPreloadBridge(createStorage().api, {}, dbStorage.api);
+    expect(restartedBridge.loadExternalApplicationPreferences()).toEqual(preferences);
+  });
+
+  it("migrates renderer v2 external application preferences before an older host preference", () => {
+    const rendererStorage = createStorage();
+    const dbStorage = createDbStorage();
+    const preferences: ExternalApplicationPreferences = {
+      schemaVersion: 2,
+      mode: "manual",
+      defaultApplicationId: "tool",
+      applications: [
+        ...defaults.applications,
+        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true, launchMode: "command" },
+      ],
+    };
+    rendererStorage.values.set(preferencesKey, JSON.stringify(preferences));
+    dbStorage.values.set(externalApplicationPreferencesV1Key, { ...defaults, mode: "manual", defaultApplicationId: "cursor" });
 
     expect(loadPreloadBridge(rendererStorage.api, {}, dbStorage.api).loadExternalApplicationPreferences()).toEqual(
       preferences,
@@ -256,14 +359,15 @@ describe("uTools preload external application preferences", () => {
     const storage = createStorage();
     storage.values.set(localLegacyKey, JSON.stringify({ kind: "cursor", customCommand: "" }));
     const bridge = loadPreloadBridge(storage.api);
-    expect(bridge.loadExternalApplicationPreferences()).toEqual({ ...defaults, defaultApplicationId: "cursor" });
+    expect(bridge.loadExternalApplicationPreferences()).toEqual({ ...defaults, mode: "manual", defaultApplicationId: "cursor" });
 
     bridge.saveExternalApplicationPreferences({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      mode: "manual",
       defaultApplicationId: "missing",
       applications: [],
     });
-    expect(bridge.loadExternalApplicationPreferences()).toEqual(defaults);
+    expect(bridge.loadExternalApplicationPreferences()).toEqual({ ...defaults, mode: "manual" });
   });
 
   it("does not fall through from an explicitly present empty key", () => {
@@ -290,24 +394,27 @@ describe("uTools preload external application preferences", () => {
       }),
     );
     expect(loadPreloadBridge(storage.api).loadExternalApplicationPreferences()).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      mode: "manual",
       defaultApplicationId: "tool",
       applications: [
         { ...defaults.applications[0], enabled: false },
-        { ...defaults.applications[1], name: "changed", command: "bad", enabled: false },
-        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true },
+        { ...defaults.applications[1], name: "changed", command: "bad", enabled: false, launchMode: "command" },
+        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true, launchMode: "command" },
       ],
     });
   });
 
-  it("launches editable application templates without a shell and rejects reserved id mismatches", async () => {
+  it("launches editable application templates with a resolved host launcher and rejects reserved id mismatches", async () => {
     const nodeRequire = createRequire(import.meta.url);
     const child = { once: vi.fn(), unref: vi.fn() };
     child.once.mockImplementation((event: string, listener: () => void) => {
       if (event === "spawn") listener();
       return child;
     });
-    const spawn = vi.fn(() => child);
+    const spawn = vi.fn(
+      (_executable: string, _args: string[], _options: { cwd: string; detached: boolean; stdio: string; env?: NodeJS.ProcessEnv }) => child,
+    );
     const bridge = loadPreloadBridge(createStorage().api, {
       child_process: { ...nodeRequire("child_process"), spawn },
     });
@@ -321,15 +428,19 @@ describe("uTools preload external application preferences", () => {
         kind: "vscode",
         command: 'code --reuse-window "{path}"',
         enabled: true,
+        launchMode: "command",
       },
     });
     expect(builtinResult.launched).toBe(true);
-    expect(spawn).toHaveBeenNthCalledWith(
-      1,
-      process.platform === "win32" ? "code.cmd" : "code",
-      ["--reuse-window", projectPath],
-      { cwd: projectPath, detached: true, stdio: "ignore" },
-    );
+    const [builtinExecutable, builtinArgs, builtinOptions] = spawn.mock.calls[0]!;
+    expect(builtinExecutable).toEqual(expect.any(String));
+    expect(builtinOptions).toMatchObject({ cwd: projectPath, detached: true, stdio: "ignore" });
+    if (builtinOptions.env) {
+      expect(builtinArgs).toEqual(expect.arrayContaining(["/d", "/v:off", "/s", "/c"]));
+      expect(builtinOptions.env.UTOOLS_PROJECT_LAUNCH_ARGUMENT_1).toBe(projectPath);
+    } else {
+      expect(builtinArgs).toEqual(expect.arrayContaining(["--reuse-window", projectPath]));
+    }
 
     const result = await bridge.openExternalApplication({
       projectPath,

@@ -12,6 +12,7 @@ import type {
   AiPromptModeKind,
   AiProviderKind,
   ExternalApplication,
+  ExternalApplicationLaunchMode,
   ExternalApplicationPreferences,
   ExternalApplicationKind,
   EnvironmentPreferences,
@@ -45,6 +46,8 @@ import type {
   ProjectFileWriteResult,
   ProjectPathInspection,
   ProjectDetailsTabId,
+  HostLaunchCapabilities,
+  LaunchSelectionMode,
   TerminalPreferences,
   UiPreferences,
 } from "../types";
@@ -52,9 +55,11 @@ import type {
 const fallbackStorageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const localTerminalPreferencesStorageKey = "utools-project-launch.local-settings.v1";
+const localTerminalPreferencesV2StorageKey = "utools-project-launch.local-settings.v2";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const externalApplicationPreferencesStorageKey = "utools-project-launch.local-external-applications.v1";
+const externalApplicationPreferencesV2StorageKey = "utools-project-launch.local-external-applications.v2";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
@@ -73,13 +78,26 @@ const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成�
 {diffContent}`;
 
 const isWindowsPlatform = () => /win/i.test(window.navigator?.platform || window.navigator?.userAgent || "");
+const isLinuxPlatform = () => /linux/i.test(window.navigator?.platform || window.navigator?.userAgent || "");
 
 const defaultTerminalPreferences = (): TerminalPreferences => ({
-  kind: isWindowsPlatform() ? "windows-terminal" : "builtin",
+  schemaVersion: 2,
+  mode: "auto",
+  kind: isWindowsPlatform() ? "windows-terminal" : isLinuxPlatform() ? "linux-terminal" : "terminal-app",
   customCommand: "",
 });
 
-const terminalKinds = new Set<DefaultTerminalKind>(["builtin", "windows-terminal", "powershell", "cmd", "custom"]);
+const terminalKinds = new Set<DefaultTerminalKind>([
+  "builtin",
+  "terminal-app",
+  "iterm2",
+  "warp",
+  "linux-terminal",
+  "windows-terminal",
+  "powershell",
+  "cmd",
+  "custom",
+]);
 type LegacyEditorPreferences = { kind: ExternalApplicationKind; customCommand: string };
 const editorKinds = new Set<ExternalApplicationKind>(["vscode", "cursor", "custom"]);
 const aiProviderKinds = new Set<AiProviderKind>(["utools", "openai-compatible", "anthropic-compatible"]);
@@ -109,23 +127,32 @@ const defaultEditorPreferences = (): LegacyEditorPreferences => ({
 });
 
 const builtinExternalApplications: ExternalApplication[] = [
-  { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true },
-  { id: "cursor", name: "Cursor", kind: "cursor", command: "cursor {path}", enabled: true },
+  { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true, launchMode: "native" },
+  { id: "cursor", name: "Cursor", kind: "cursor", command: "cursor {path}", enabled: true, launchMode: "native" },
 ];
 
 const defaultExternalApplicationPreferences = (): ExternalApplicationPreferences => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
+  mode: "auto",
   defaultApplicationId: "vscode",
   applications: builtinExternalApplications.map((application) => ({ ...application })),
 });
 
+const normalizeLaunchMode = (value: unknown, fallback: ExternalApplicationLaunchMode): ExternalApplicationLaunchMode =>
+  value === "native" || value === "command" ? value : fallback;
+const normalizeSelectionMode = (value: unknown, fallback: LaunchSelectionMode): LaunchSelectionMode =>
+  value === "auto" || value === "manual" ? value : fallback;
+
 export const normalizeExternalApplicationPreferences = (value: unknown): ExternalApplicationPreferences => {
   const defaults = defaultExternalApplicationPreferences();
-  if (!value || typeof value !== "object" || (value as Partial<ExternalApplicationPreferences>).schemaVersion !== 1) {
+  if (!value || typeof value !== "object") {
     return defaults;
   }
 
-  const candidate = value as Partial<ExternalApplicationPreferences>;
+  const candidate = value as Partial<Omit<ExternalApplicationPreferences, "schemaVersion">> & { schemaVersion?: unknown };
+  const isV2 = candidate.schemaVersion === 2;
+  const isV1 = candidate.schemaVersion === 1;
+  if (!isV2 && !isV1) return defaults;
   const storedApplications = Array.isArray(candidate.applications) ? candidate.applications : [];
   const builtinNames = new Set(builtinExternalApplications.map((application) => application.name.toLocaleLowerCase()));
   const usedNames = new Set<string>();
@@ -147,8 +174,12 @@ export const normalizeExternalApplicationPreferences = (value: unknown): Externa
       stored?.kind === builtin.kind && typeof stored.command === "string" && stored.command.trim()
         ? stored.command.trim()
         : builtin.command;
+    const launchMode = normalizeLaunchMode(
+      stored?.launchMode,
+      command === builtin.command ? "native" : "command",
+    );
     usedNames.add(name.toLocaleLowerCase());
-    return { ...builtin, name, command, enabled: stored?.enabled !== false };
+    return { ...builtin, name, command, enabled: stored?.enabled !== false, launchMode };
   });
   const usedIds = new Set(applications.map((application) => application.id));
 
@@ -164,7 +195,7 @@ export const normalizeExternalApplicationPreferences = (value: unknown): Externa
     }
     usedIds.add(id);
     usedNames.add(normalizedName);
-    applications.push({ id, name, kind: "custom", command, enabled: application.enabled !== false });
+    applications.push({ id, name, kind: "custom", command, enabled: application.enabled !== false, launchMode: "command" });
   }
 
   let defaultApplicationId =
@@ -176,18 +207,33 @@ export const normalizeExternalApplicationPreferences = (value: unknown): Externa
     applications[0]!.enabled = true;
     defaultApplicationId = applications[0]!.id;
   }
-  return { schemaVersion: 1, defaultApplicationId, applications };
+  const pristineV1 =
+    isV1 &&
+    candidate.defaultApplicationId === "vscode" &&
+    storedApplications.length === builtinExternalApplications.length &&
+    applications.every((application, index) => {
+      const builtin = builtinExternalApplications[index];
+      return builtin && application.name === builtin.name && application.command === builtin.command && application.enabled;
+    });
+  return {
+    schemaVersion: 2,
+    mode: normalizeSelectionMode(candidate.mode, pristineV1 ? "auto" : "manual"),
+    defaultApplicationId,
+    applications,
+  };
 };
 
 const migrateEditorPreferences = (value: unknown): ExternalApplicationPreferences => {
+  if (!value || typeof value !== "object") return defaultExternalApplicationPreferences();
   const editor = normalizeEditorPreferences(value);
   if (editor.kind === "vscode" || editor.kind === "cursor") {
-    return { ...defaultExternalApplicationPreferences(), defaultApplicationId: editor.kind };
+    return { ...defaultExternalApplicationPreferences(), mode: "manual", defaultApplicationId: editor.kind };
   }
   const command = editor.customCommand.trim();
   if (!command) return defaultExternalApplicationPreferences();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    mode: "manual",
     defaultApplicationId: "legacy-custom-editor",
     applications: [
       ...builtinExternalApplications.map((application) => ({ ...application })),
@@ -197,6 +243,7 @@ const migrateEditorPreferences = (value: unknown): ExternalApplicationPreference
         kind: "custom",
         command,
         enabled: true,
+        launchMode: "command",
       },
     ],
   };
@@ -281,9 +328,12 @@ const normalizeTerminalPreferences = (value: unknown): TerminalPreferences => {
     return defaults;
   }
 
-  const candidate = value as Partial<TerminalPreferences>;
+  const candidate = value as Partial<TerminalPreferences> & { schemaVersion?: unknown; mode?: unknown };
+  const legacyKind = isTerminalKind(candidate.kind) ? candidate.kind : defaults.kind;
   return {
-    kind: isTerminalKind(candidate.kind) ? candidate.kind : defaults.kind,
+    schemaVersion: 2,
+    mode: normalizeSelectionMode(candidate.mode, candidate.schemaVersion === 2 ? "auto" : legacyKind === "builtin" ? "auto" : "manual"),
+    kind: legacyKind === "builtin" ? defaults.kind : legacyKind,
     customCommand: typeof candidate.customCommand === "string" ? candidate.customCommand : "",
   };
 };
@@ -349,14 +399,18 @@ const normalizeAiPreferences = (value: unknown): AiPreferences => {
 
 const readStoredTerminalPreferences = (): TerminalPreferences => {
   try {
+    const v2 = window.localStorage?.getItem(localTerminalPreferencesV2StorageKey);
     const raw =
-      window.localStorage?.getItem(localTerminalPreferencesStorageKey) ||
-      window.localStorage?.getItem(terminalPreferencesStorageKey);
+      v2 !== null && v2 !== undefined
+        ? v2
+        : window.localStorage?.getItem(localTerminalPreferencesStorageKey) ||
+          window.localStorage?.getItem(terminalPreferencesStorageKey);
     if (!raw) {
       return defaultTerminalPreferences();
     }
-
-    return normalizeTerminalPreferences(JSON.parse(raw));
+    const preferences = normalizeTerminalPreferences(JSON.parse(raw));
+    if (!v2) writeStoredTerminalPreferences(preferences);
+    return preferences;
   } catch (error) {
     return defaultTerminalPreferences();
   }
@@ -366,7 +420,7 @@ const writeStoredTerminalPreferences = (preferences: TerminalPreferences) => {
   const normalized = normalizeTerminalPreferences(preferences);
 
   try {
-    window.localStorage?.setItem(localTerminalPreferencesStorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(localTerminalPreferencesV2StorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
@@ -375,7 +429,7 @@ const writeStoredTerminalPreferences = (preferences: TerminalPreferences) => {
 const writeStoredExternalApplicationPreferences = (preferences: ExternalApplicationPreferences) => {
   const normalized = normalizeExternalApplicationPreferences(preferences);
   try {
-    window.localStorage?.setItem(externalApplicationPreferencesStorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(externalApplicationPreferencesV2StorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
@@ -383,7 +437,10 @@ const writeStoredExternalApplicationPreferences = (preferences: ExternalApplicat
 
 const readStoredExternalApplicationPreferences = (): ExternalApplicationPreferences => {
   try {
-    const current = window.localStorage?.getItem(externalApplicationPreferencesStorageKey);
+    const v2 = window.localStorage?.getItem(externalApplicationPreferencesV2StorageKey);
+    const current = v2 !== null && v2 !== undefined
+      ? v2
+      : window.localStorage?.getItem(externalApplicationPreferencesStorageKey);
     const localLegacy = window.localStorage?.getItem(localEditorPreferencesStorageKey);
     const preferences =
       typeof current === "string"
@@ -934,6 +991,9 @@ const fallbackBridge: ProjectBridge = {
     };
   },
   async showProjectEntryInFolder(_projectPath: string, _relativePath: string): Promise<void> {},
+  async detectHostLaunchCapabilities(): Promise<HostLaunchCapabilities> {
+    return { platform: "unsupported", terminals: [], editors: [], checkedAt: new Date().toISOString() };
+  },
   async readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult> {
     const name = relativePath.split(/[\\/]/).filter(Boolean).pop() || projectPath;
     return {
@@ -957,6 +1017,7 @@ const fallbackBridge: ProjectBridge = {
       command: "",
       cwd: payload.projectPath,
       kind: payload.terminal.kind,
+      code: "preview-unsupported",
       message: "浏览器预览暂不支持打开外部终端。",
     };
   },
@@ -969,6 +1030,7 @@ const fallbackBridge: ProjectBridge = {
       cwd: payload.projectPath,
       applicationId: payload.application.id,
       kind: payload.application.kind,
+      code: "preview-unsupported",
       message: "浏览器预览暂不支持打开外部应用。",
     };
   },

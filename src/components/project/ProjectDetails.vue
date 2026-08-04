@@ -138,7 +138,7 @@ const refreshButtonClass = computed(() =>
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
-const handleOpenEditor = (applicationId: string) => store.openProjectInEditor(props.project.id, applicationId);
+const handleOpenEditor = (applicationId?: string) => store.openProjectInEditor(props.project.id, applicationId);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleDuplicate = () => store.openDuplicateProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);

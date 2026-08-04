@@ -17,7 +17,7 @@ const props = withDefaults(
   { disabled: false, buttonClass: "", iconClass: "", iconSize: 18 },
 );
 
-const emit = defineEmits<{ (event: "launch", applicationId: string): void }>();
+const emit = defineEmits<{ (event: "launch", applicationId?: string): void }>();
 const t = useI18n();
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const menuRef = ref<HTMLElement | null>(null);
@@ -86,7 +86,7 @@ const handleTriggerKeydown = (event: KeyboardEvent) => {
 
 const launchDefault = () => {
   if (props.disabled || !defaultApplication.value) return;
-  emit("launch", defaultApplication.value.id);
+  emit("launch");
 };
 
 const launchApplication = (applicationId: string) => {
