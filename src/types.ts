@@ -40,20 +40,16 @@ export type DefaultTerminalKind =
   | "cmd"
   | "custom";
 export type ExternalApplicationKind = "vscode" | "cursor" | "custom";
-export type LaunchSelectionMode = "auto" | "manual";
-export type ExternalApplicationLaunchMode = "native" | "command";
 export type HostPlatform = "darwin" | "linux" | "win32" | "unsupported";
 export type ProjectLaunchResultCode =
   | "launched"
-  | "launched-with-fallback"
   | "preview-unsupported"
   | "invalid-preference"
   | "invalid-custom-command"
   | "path-not-found"
   | "path-not-directory"
   | "application-unavailable"
-  | "launch-failed"
-  | "all-candidates-failed";
+  | "launch-failed";
 export type ProjectVisibility = "public" | "private";
 export type EnvironmentToolKey = "node" | "npm" | "pnpm" | "yarn" | "python" | "pip" | "go" | "git" | "docker";
 export type EnvironmentToolStatus = "available" | "missing" | "error";
@@ -74,8 +70,6 @@ export interface UiPreferences {
 }
 
 export interface TerminalPreferences {
-  schemaVersion: 2;
-  mode: LaunchSelectionMode;
   kind: DefaultTerminalKind;
   customCommand: string;
 }
@@ -86,12 +80,10 @@ export interface ExternalApplication {
   kind: ExternalApplicationKind;
   command: string;
   enabled: boolean;
-  launchMode?: ExternalApplicationLaunchMode;
 }
 
 export interface ExternalApplicationPreferences {
-  schemaVersion: 2;
-  mode: LaunchSelectionMode;
+  schemaVersion: 1;
   defaultApplicationId: string;
   applications: ExternalApplication[];
 }
@@ -107,6 +99,10 @@ export interface HostLaunchCapabilities {
   terminals: HostLaunchCandidate<DefaultTerminalKind>[];
   editors: HostLaunchCandidate<Extract<ExternalApplicationKind, "vscode" | "cursor">>[];
   checkedAt: string;
+}
+
+export interface HostLaunchCapabilityRequest {
+  scope: "terminals" | "editors";
 }
 
 export interface EnvironmentToolDefinition {
@@ -815,17 +811,12 @@ export interface ProjectBridgeTerminalLaunchResult {
   cwd: string;
   kind: DefaultTerminalKind;
   code: ProjectLaunchResultCode;
-  requestedKind?: DefaultTerminalKind;
-  resolvedKind?: DefaultTerminalKind;
-  attempts?: DefaultTerminalKind[];
   message?: string;
 }
 
 export interface ProjectBridgeExternalApplicationLaunchPayload {
   projectPath: string;
   application: ExternalApplication;
-  mode?: LaunchSelectionMode;
-  applications?: ExternalApplication[];
 }
 
 export interface ProjectBridgeExternalApplicationLaunchResult {
@@ -949,7 +940,7 @@ export interface ProjectBridge {
   saveTerminalPreferences(preferences: TerminalPreferences): void;
   loadExternalApplicationPreferences(): ExternalApplicationPreferences;
   saveExternalApplicationPreferences(preferences: ExternalApplicationPreferences): void;
-  detectHostLaunchCapabilities(): Promise<HostLaunchCapabilities>;
+  detectHostLaunchCapabilities(request: HostLaunchCapabilityRequest): Promise<HostLaunchCapabilities>;
   loadEnvironmentPreferences(): EnvironmentPreferences;
   saveEnvironmentPreferences(preferences: EnvironmentPreferences): void;
   loadBuiltinEnvironmentTools(): EnvironmentToolDefinition[];

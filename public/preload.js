@@ -40,11 +40,9 @@ const automationExitMatchedProcesses = new Set();
 const storageKey = "utools-project-launch.projects.v1";
 const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const localTerminalPreferencesStorageKey = "utools-project-launch.local-settings.v1";
-const localTerminalPreferencesV2StorageKey = "utools-project-launch.local-settings.v2";
 const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
 const externalApplicationPreferencesStorageKey = "utools-project-launch.local-external-applications.v1";
-const externalApplicationPreferencesV2StorageKey = "utools-project-launch.local-external-applications.v2";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
@@ -265,9 +263,12 @@ function expandPath(inputPath) {
 
 function getDefaultTerminalPreferences() {
   return {
-    schemaVersion: 2,
-    mode: "auto",
-    kind: process.platform === "win32" ? "windows-terminal" : process.platform === "linux" ? "linux-terminal" : "terminal-app",
+    kind:
+      process.platform === "win32"
+        ? "windows-terminal"
+        : process.platform === "linux"
+          ? "linux-terminal"
+          : "terminal-app",
     customCommand: "",
   };
 }
@@ -280,8 +281,6 @@ function normalizeTerminalPreferences(value) {
 
   const kind = terminalKinds.has(value.kind) ? value.kind : defaults.kind;
   return {
-    schemaVersion: 2,
-    mode: value.mode === "auto" || value.mode === "manual" ? value.mode : value.schemaVersion === 2 ? "auto" : kind === "builtin" ? "auto" : "manual",
     kind: kind === "builtin" ? defaults.kind : kind,
     customCommand: typeof value.customCommand === "string" ? value.customCommand : "",
   };
@@ -303,14 +302,13 @@ function normalizeEditorPreferences(value) {
 }
 
 const builtinExternalApplications = [
-  { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true, launchMode: "native" },
-  { id: "cursor", name: "Cursor", kind: "cursor", command: "cursor {path}", enabled: true, launchMode: "native" },
+  { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true },
+  { id: "cursor", name: "Cursor", kind: "cursor", command: "cursor {path}", enabled: true },
 ];
 
 function getDefaultExternalApplicationPreferences() {
   return {
-    schemaVersion: 2,
-    mode: "auto",
+    schemaVersion: 1,
     defaultApplicationId: "vscode",
     applications: builtinExternalApplications.map((application) => ({ ...application })),
   };
@@ -318,7 +316,7 @@ function getDefaultExternalApplicationPreferences() {
 
 function normalizeExternalApplicationPreferences(value) {
   const defaults = getDefaultExternalApplicationPreferences();
-  if (!value || typeof value !== "object" || (value.schemaVersion !== 1 && value.schemaVersion !== 2)) return defaults;
+  if (!value || typeof value !== "object" || value.schemaVersion !== 1) return defaults;
 
   const storedApplications = Array.isArray(value.applications) ? value.applications : [];
   const builtinNames = new Set(builtinExternalApplications.map((application) => application.name.toLocaleLowerCase()));
@@ -340,13 +338,8 @@ function normalizeExternalApplicationPreferences(value) {
       stored?.kind === builtin.kind && typeof stored.command === "string" && stored.command.trim()
         ? stored.command.trim()
         : builtin.command;
-    const launchMode = stored?.launchMode === "native" || stored?.launchMode === "command"
-      ? stored.launchMode
-      : command === builtin.command
-        ? "native"
-        : "command";
     usedNames.add(name.toLocaleLowerCase());
-    return { ...builtin, name, command, enabled: stored?.enabled !== false, launchMode };
+    return { ...builtin, name, command, enabled: stored?.enabled !== false };
   });
   const usedIds = new Set(applications.map((application) => application.id));
 
@@ -361,7 +354,7 @@ function normalizeExternalApplicationPreferences(value) {
     }
     usedIds.add(id);
     usedNames.add(normalizedName);
-    applications.push({ id, name, kind: "custom", command, enabled: stored.enabled !== false, launchMode: "command" });
+    applications.push({ id, name, kind: "custom", command, enabled: stored.enabled !== false });
   }
 
   let defaultApplicationId = typeof value.defaultApplicationId === "string" ? value.defaultApplicationId.trim() : "";
@@ -372,17 +365,8 @@ function normalizeExternalApplicationPreferences(value) {
     applications[0].enabled = true;
     defaultApplicationId = applications[0].id;
   }
-  const pristineV1 =
-    value.schemaVersion === 1 &&
-    value.defaultApplicationId === "vscode" &&
-    storedApplications.length === builtinExternalApplications.length &&
-    applications.every((application, index) => {
-      const builtin = builtinExternalApplications[index];
-      return builtin && application.name === builtin.name && application.command === builtin.command && application.enabled;
-    });
   return {
-    schemaVersion: 2,
-    mode: value.mode === "auto" || value.mode === "manual" ? value.mode : pristineV1 ? "auto" : "manual",
+    schemaVersion: 1,
     defaultApplicationId,
     applications,
   };
@@ -392,17 +376,16 @@ function migrateEditorPreferences(value) {
   if (!value || typeof value !== "object") return getDefaultExternalApplicationPreferences();
   const editor = normalizeEditorPreferences(value);
   if (editor.kind === "vscode" || editor.kind === "cursor") {
-    return { ...getDefaultExternalApplicationPreferences(), mode: "manual", defaultApplicationId: editor.kind };
+    return { ...getDefaultExternalApplicationPreferences(), defaultApplicationId: editor.kind };
   }
   const command = editor.customCommand.trim();
   if (!command) return getDefaultExternalApplicationPreferences();
   return {
-    schemaVersion: 2,
-    mode: "manual",
+    schemaVersion: 1,
     defaultApplicationId: "legacy-custom-editor",
     applications: [
       ...builtinExternalApplications.map((application) => ({ ...application })),
-      { id: "legacy-custom-editor", name: "Custom Editor", kind: "custom", command, enabled: true, launchMode: "command" },
+      { id: "legacy-custom-editor", name: "Custom Editor", kind: "custom", command, enabled: true },
     ],
   };
 }
@@ -644,17 +627,17 @@ function normalizeAiPreferences(value) {
 function readTerminalPreferences() {
   try {
     if (window.utools?.dbStorage) {
-      const v2Preferences = window.utools.dbStorage.getItem(localTerminalPreferencesV2StorageKey);
-      if (v2Preferences !== null && v2Preferences !== undefined) {
-        const preferences = normalizeTerminalPreferences(v2Preferences);
+      const storedPreferences = window.utools.dbStorage.getItem(localTerminalPreferencesStorageKey);
+      if (storedPreferences !== null && storedPreferences !== undefined) {
+        const preferences = normalizeTerminalPreferences(storedPreferences);
         saveTerminalPreferences(preferences);
         return preferences;
       }
     }
 
-    const v2 = window.localStorage?.getItem(localTerminalPreferencesV2StorageKey);
-    if (v2 !== null && v2 !== undefined) {
-      const preferences = normalizeTerminalPreferences(JSON.parse(v2));
+    const current = window.localStorage?.getItem(localTerminalPreferencesStorageKey);
+    if (current !== null && current !== undefined) {
+      const preferences = normalizeTerminalPreferences(JSON.parse(current));
       saveTerminalPreferences(preferences);
       return preferences;
     }
@@ -668,9 +651,7 @@ function readTerminalPreferences() {
       }
     }
 
-    const raw =
-      window.localStorage?.getItem(localTerminalPreferencesStorageKey) ||
-      window.localStorage?.getItem(terminalPreferencesStorageKey);
+    const raw = window.localStorage?.getItem(terminalPreferencesStorageKey);
     if (!raw) {
       return getDefaultTerminalPreferences();
     }
@@ -687,10 +668,10 @@ function saveTerminalPreferences(preferences) {
 
   try {
     if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(localTerminalPreferencesV2StorageKey, normalized);
+      window.utools.dbStorage.setItem(localTerminalPreferencesStorageKey, normalized);
       return;
     }
-    window.localStorage?.setItem(localTerminalPreferencesV2StorageKey, JSON.stringify(normalized));
+    window.localStorage?.setItem(localTerminalPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
@@ -700,13 +681,10 @@ function saveExternalApplicationPreferences(preferences) {
   const normalized = normalizeExternalApplicationPreferences(preferences);
   try {
     if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(externalApplicationPreferencesV2StorageKey, normalized);
-      window.utools.dbStorage.removeItem(externalApplicationPreferencesStorageKey);
-      window.localStorage?.removeItem(externalApplicationPreferencesStorageKey);
+      window.utools.dbStorage.setItem(externalApplicationPreferencesStorageKey, normalized);
       return;
     }
-    window.localStorage?.setItem(externalApplicationPreferencesV2StorageKey, JSON.stringify(normalized));
-    window.localStorage?.removeItem(externalApplicationPreferencesStorageKey);
+    window.localStorage?.setItem(externalApplicationPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking if host storage is unavailable.
   }
@@ -715,25 +693,9 @@ function saveExternalApplicationPreferences(preferences) {
 function readExternalApplicationPreferences() {
   try {
     if (window.utools?.dbStorage) {
-      const v2Preferences = window.utools.dbStorage.getItem(externalApplicationPreferencesV2StorageKey);
-      if (v2Preferences !== null && v2Preferences !== undefined) {
-        const preferences = normalizeExternalApplicationPreferences(v2Preferences);
-        saveExternalApplicationPreferences(preferences);
-        return preferences;
-      }
-    }
-
-    const v2 = window.localStorage?.getItem(externalApplicationPreferencesV2StorageKey);
-    if (v2 !== null && v2 !== undefined) {
-      const preferences = normalizeExternalApplicationPreferences(JSON.parse(v2));
-      saveExternalApplicationPreferences(preferences);
-      return preferences;
-    }
-
-    if (window.utools?.dbStorage) {
-      const legacyPreferences = window.utools.dbStorage.getItem(externalApplicationPreferencesStorageKey);
-      if (legacyPreferences !== null && legacyPreferences !== undefined) {
-        const preferences = normalizeExternalApplicationPreferences(legacyPreferences);
+      const storedPreferences = window.utools.dbStorage.getItem(externalApplicationPreferencesStorageKey);
+      if (storedPreferences !== null && storedPreferences !== undefined) {
+        const preferences = normalizeExternalApplicationPreferences(storedPreferences);
         saveExternalApplicationPreferences(preferences);
         return preferences;
       }
@@ -1567,7 +1529,10 @@ function launchDetachedProcess(executable, args, cwd, environment) {
 }
 
 const macApplications = {
-  "terminal-app": { name: "Terminal", paths: ["/System/Applications/Utilities/Terminal.app", "/Applications/Utilities/Terminal.app"] },
+  "terminal-app": {
+    name: "Terminal",
+    paths: ["/System/Applications/Utilities/Terminal.app", "/Applications/Utilities/Terminal.app"],
+  },
   iterm2: { name: "iTerm", paths: ["/Applications/iTerm.app"] },
   warp: { name: "Warp", paths: ["/Applications/Warp.app"] },
   vscode: { name: "Visual Studio Code", paths: ["/Applications/Visual Studio Code.app"] },
@@ -1586,7 +1551,10 @@ const windowsExecutables = {
       path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
     ],
   },
-  cmd: { commands: [], paths: () => [process.env.ComSpec || path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe")] },
+  cmd: {
+    commands: [],
+    paths: () => [process.env.ComSpec || path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe")],
+  },
   vscode: {
     commands: ["Code.exe", "code.cmd", "code"],
     paths: () => [
@@ -1605,7 +1573,15 @@ const windowsExecutables = {
 };
 
 const linuxExecutables = {
-  "linux-terminal": ["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "kitty", "alacritty", "xterm"],
+  "linux-terminal": [
+    "x-terminal-emulator",
+    "gnome-terminal",
+    "konsole",
+    "xfce4-terminal",
+    "kitty",
+    "alacritty",
+    "xterm",
+  ],
   vscode: ["code", "code-insiders"],
   cursor: ["cursor"],
 };
@@ -1639,7 +1615,12 @@ function findMacApplication(kind) {
   try {
     const query = `kMDItemContentType == 'com.apple.application-bundle' && kMDItemDisplayName == '${candidate.name.replace(/'/g, "\\'")}'`;
     const output = execFileSync("/usr/bin/mdfind", [query], { encoding: "utf8", timeout: 1500 });
-    return output.split(/\r?\n/).map((item) => item.trim()).find(directoryExists) || "";
+    return (
+      output
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .find(directoryExists) || ""
+    );
   } catch (error) {
     return "";
   }
@@ -1652,7 +1633,9 @@ function findWindowsExecutable(kind) {
   if (direct) return direct;
   for (const command of candidate.commands) {
     try {
-      const output = createProcessOutputDecoder()(execFileSync("where.exe", [command], { encoding: "buffer", timeout: 1500 }));
+      const output = createProcessOutputDecoder()(
+        execFileSync("where.exe", [command], { encoding: "buffer", timeout: 1500 }),
+      );
       const executable = output
         .split(/\r?\n/)
         .map((item) => item.trim())
@@ -1668,7 +1651,9 @@ function findWindowsExecutable(kind) {
 function findLinuxExecutable(kind) {
   for (const command of linuxExecutables[kind] || []) {
     try {
-      const output = createProcessOutputDecoder()(execFileSync("which", [command], { encoding: "buffer", timeout: 1500 }));
+      const output = createProcessOutputDecoder()(
+        execFileSync("which", [command], { encoding: "buffer", timeout: 1500 }),
+      );
       const executable = output
         .split(/\r?\n/)
         .map((item) => item.trim())
@@ -1681,6 +1666,84 @@ function findLinuxExecutable(kind) {
   return "";
 }
 
+function execFileOutput(command, args, options) {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, options, (error, stdout) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+async function findMacApplicationAsync(kind) {
+  const candidate = macApplications[kind];
+  if (!candidate) return "";
+  const directPaths = [...candidate.paths, path.join(os.homedir(), "Applications", `${candidate.name}.app`)];
+  const direct = directPaths.find(directoryExists);
+  if (direct) return direct;
+  try {
+    const query = `kMDItemContentType == 'com.apple.application-bundle' && kMDItemDisplayName == '${candidate.name.replace(/'/g, "\\'")}'`;
+    const output = await execFileOutput("/usr/bin/mdfind", [query], { encoding: "utf8", timeout: 1500 });
+    return (
+      output
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .find(directoryExists) || ""
+    );
+  } catch (error) {
+    return "";
+  }
+}
+
+async function findWindowsExecutableAsync(kind) {
+  const candidate = windowsExecutables[kind];
+  if (!candidate) return "";
+  const direct = candidate.paths().find(fileExists);
+  if (direct) return direct;
+  const results = await Promise.all(
+    candidate.commands.map(async (command) => {
+      try {
+        const output = createProcessOutputDecoder()(
+          await execFileOutput("where.exe", [command], { encoding: "buffer", windowsHide: true, timeout: 1500 }),
+        );
+        return (
+          output
+            .split(/\r?\n/)
+            .map((item) => item.trim())
+            .find((targetPath) => fileExists(targetPath) || isWindowsAppExecutionAlias(targetPath)) || ""
+        );
+      } catch (error) {
+        return "";
+      }
+    }),
+  );
+  return results.find(Boolean) || "";
+}
+
+async function findLinuxExecutableAsync(kind) {
+  const results = await Promise.all(
+    (linuxExecutables[kind] || []).map(async (command) => {
+      try {
+        const output = createProcessOutputDecoder()(
+          await execFileOutput("which", [command], { encoding: "buffer", timeout: 1500 }),
+        );
+        return (
+          output
+            .split(/\r?\n/)
+            .map((item) => item.trim())
+            .find(fileExists) || ""
+        );
+      } catch (error) {
+        return "";
+      }
+    }),
+  );
+  return results.find(Boolean) || "";
+}
+
 function getHostPlatform() {
   if (process.platform === "darwin") return "darwin";
   if (process.platform === "win32") return "win32";
@@ -1688,31 +1751,62 @@ function getHostPlatform() {
   return "unsupported";
 }
 
-function nativeTargetAvailable(kind) {
-  if (getHostPlatform() === "darwin") return Boolean(findMacApplication(kind));
-  if (getHostPlatform() === "win32") return Boolean(findWindowsExecutable(kind));
-  if (getHostPlatform() === "linux") return Boolean(findLinuxExecutable(kind));
+async function nativeTargetAvailableAsync(kind) {
+  if (getHostPlatform() === "darwin") return Boolean(await findMacApplicationAsync(kind));
+  if (getHostPlatform() === "win32") return Boolean(await findWindowsExecutableAsync(kind));
+  if (getHostPlatform() === "linux") return Boolean(await findLinuxExecutableAsync(kind));
   return false;
 }
 
-function detectHostLaunchCapabilities() {
+async function detectHostLaunchCapabilities(request) {
+  const scope = request?.scope;
+  if (scope !== "terminals" && scope !== "editors") {
+    throw new Error("必须指定要检测的启动器类型。");
+  }
   const platform = getHostPlatform();
-  const terminalKindsForPlatform = platform === "darwin"
-    ? ["terminal-app", "iterm2", "warp"]
-    : platform === "win32"
-      ? ["windows-terminal", "powershell", "cmd"]
-      : platform === "linux"
-        ? ["linux-terminal"]
+  const terminalKindsForPlatform =
+    scope === "terminals"
+      ? platform === "darwin"
+        ? ["terminal-app", "iterm2", "warp"]
+        : platform === "win32"
+          ? ["windows-terminal", "powershell", "cmd"]
+          : platform === "linux"
+            ? ["linux-terminal"]
+            : []
       : [];
-  const editorKindsForPlatform = platform === "unsupported" ? [] : ["vscode", "cursor"];
-  const terminalNames = { "terminal-app": "Terminal", iterm2: "iTerm2", warp: "Warp", "linux-terminal": "Terminal", "windows-terminal": "Windows Terminal", powershell: "PowerShell", cmd: "CMD" };
+  const editorKindsForPlatform = scope === "editors" && platform !== "unsupported" ? ["vscode", "cursor"] : [];
+  const terminalNames = {
+    "terminal-app": "Terminal",
+    iterm2: "iTerm2",
+    warp: "Warp",
+    "linux-terminal": "Terminal",
+    "windows-terminal": "Windows Terminal",
+    powershell: "PowerShell",
+    cmd: "CMD",
+  };
   const editorNames = { vscode: "VS Code", cursor: "Cursor" };
-  return Promise.resolve({
+  const [terminals, editors] = await Promise.all([
+    Promise.all(
+      terminalKindsForPlatform.map(async (kind) => ({
+        kind,
+        name: terminalNames[kind],
+        available: await nativeTargetAvailableAsync(kind),
+      })),
+    ),
+    Promise.all(
+      editorKindsForPlatform.map(async (kind) => ({
+        kind,
+        name: editorNames[kind],
+        available: await nativeTargetAvailableAsync(kind),
+      })),
+    ),
+  ]);
+  return {
     platform,
-    terminals: terminalKindsForPlatform.map((kind) => ({ kind, name: terminalNames[kind], available: nativeTargetAvailable(kind) })),
-    editors: editorKindsForPlatform.map((kind) => ({ kind, name: editorNames[kind], available: nativeTargetAvailable(kind) })),
+    terminals,
+    editors,
     checkedAt: new Date().toISOString(),
-  });
+  };
 }
 
 function isSupportedExternalApplicationKind(kind) {
@@ -1729,7 +1823,8 @@ function isWindowsApplicationCommand(kind, executable) {
 
 function launchCommandExecutable(executable, args, cwd) {
   if (getHostPlatform() === "win32" && /\.(?:cmd|bat)$/i.test(executable)) {
-    const commandInterpreter = process.env.ComSpec || path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe");
+    const commandInterpreter =
+      process.env.ComSpec || path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe");
     const commandVariable = "UTOOLS_PROJECT_LAUNCH_COMMAND";
     const argumentPrefix = "UTOOLS_PROJECT_LAUNCH_ARGUMENT_";
     const environment = { ...process.env, [commandVariable]: executable };
@@ -1739,16 +1834,25 @@ function launchCommandExecutable(executable, args, cwd) {
       environment[argumentVariable] = argument;
       commandParts.push(`"%${argumentVariable}%"`);
     }
-    return launchDetachedProcess(commandInterpreter, ["/d", "/v:off", "/s", "/c", commandParts.join(" ")], cwd, environment);
+    return launchDetachedProcess(
+      commandInterpreter,
+      ["/d", "/v:off", "/s", "/c", commandParts.join(" ")],
+      cwd,
+      environment,
+    );
   }
   return launchDetachedProcess(executable, args, cwd);
 }
 
 function launchCustomCommand(command, resolvedPath, kind) {
-  const commandTokens = splitCommandLine(command).map((token) => token.replace(/\{path\}|\{projectPath\}/g, () => resolvedPath));
+  const commandTokens = splitCommandLine(command).map((token) =>
+    token.replace(/\{path\}|\{projectPath\}/g, () => resolvedPath),
+  );
   const [executable, ...args] = commandTokens;
   if (!executable) return Promise.resolve(null);
-  const resolvedExecutable = isWindowsApplicationCommand(kind, executable) ? findWindowsExecutable(kind) || executable : executable;
+  const resolvedExecutable = isWindowsApplicationCommand(kind, executable)
+    ? findWindowsExecutable(kind) || executable
+    : executable;
   return launchCommandExecutable(resolvedExecutable, args, resolvedPath);
 }
 
@@ -1773,35 +1877,29 @@ function launchNativeTarget(kind, resolvedPath) {
   return launchDetachedProcess(executable, [resolvedPath], resolvedPath);
 }
 
-function terminalCandidates(preferences) {
-  if (preferences.mode !== "auto") return [preferences.kind];
-  if (getHostPlatform() === "darwin") return ["terminal-app", "iterm2", "warp"];
-  if (getHostPlatform() === "win32") return ["windows-terminal", "powershell", "cmd"];
-  if (getHostPlatform() === "linux") return ["linux-terminal"];
-  return [];
-}
-
 async function openTerminal(payload) {
   const resolvedPath = expandPath(typeof payload?.projectPath === "string" ? payload.projectPath : "");
   const terminal = normalizeTerminalPreferences(payload?.terminal);
   const directoryStatus = getDirectoryStatus(resolvedPath);
-  const requestedKind = terminal.kind;
-  if (!directoryStatus.exists) return { launched: false, command: "", cwd: resolvedPath, kind: requestedKind, requestedKind, code: "path-not-found" };
-  if (!directoryStatus.isDirectory) return { launched: false, command: "", cwd: resolvedPath, kind: requestedKind, requestedKind, code: "path-not-directory" };
-  if (getHostPlatform() === "unsupported") return { launched: false, command: "", cwd: resolvedPath, kind: requestedKind, requestedKind, code: "preview-unsupported" };
+  const kind = terminal.kind;
+  if (!directoryStatus.exists) return { launched: false, command: "", cwd: resolvedPath, kind, code: "path-not-found" };
+  if (!directoryStatus.isDirectory)
+    return { launched: false, command: "", cwd: resolvedPath, kind, code: "path-not-directory" };
+  if (getHostPlatform() === "unsupported")
+    return { launched: false, command: "", cwd: resolvedPath, kind, code: "preview-unsupported" };
   if (terminal.kind === "custom") {
-    if (!terminal.customCommand.trim()) return { launched: false, command: "", cwd: resolvedPath, kind: requestedKind, requestedKind, code: "invalid-custom-command" };
+    if (!terminal.customCommand.trim())
+      return { launched: false, command: "", cwd: resolvedPath, kind, code: "invalid-custom-command" };
     const result = await launchCustomCommand(terminal.customCommand.trim(), resolvedPath);
-    return { ...(result || { launched: false, command: terminal.customCommand, cwd: resolvedPath }), kind: requestedKind, requestedKind, resolvedKind: requestedKind, attempts: [requestedKind], code: result?.launched ? "launched" : "launch-failed" };
+    return {
+      ...(result || { launched: false, command: terminal.customCommand, cwd: resolvedPath }),
+      kind,
+      code: result?.launched ? "launched" : "launch-failed",
+    };
   }
-  const attempts = [];
-  for (const kind of terminalCandidates(terminal)) {
-    attempts.push(kind);
-    const result = await launchNativeTarget(kind, resolvedPath);
-    if (result?.launched) return { ...result, kind, requestedKind, resolvedKind: kind, attempts, code: attempts.length > 1 ? "launched-with-fallback" : "launched" };
-    if (terminal.mode === "manual") break;
-  }
-  return { launched: false, command: "", cwd: resolvedPath, kind: requestedKind, requestedKind, attempts, code: attempts.length > 1 ? "all-candidates-failed" : "application-unavailable" };
+  const result = await launchNativeTarget(kind, resolvedPath);
+  if (result?.launched) return { ...result, kind, code: "launched" };
+  return { launched: false, command: "", cwd: resolvedPath, kind, code: "application-unavailable" };
 }
 
 async function openExternalApplication(payload) {
@@ -1809,39 +1907,83 @@ async function openExternalApplication(payload) {
   const application = payload?.application;
   const applicationId = typeof application?.id === "string" ? application.id.trim() : "";
   const directoryStatus = getDirectoryStatus(resolvedPath);
-  const mode = payload?.mode === "auto" ? "auto" : "manual";
-  const suppliedApplications = Array.isArray(payload?.applications) ? payload.applications : [application];
-  const enabledApplications = suppliedApplications.filter((item) => item && item.enabled && isSupportedExternalApplicationKind(item.kind));
-  const candidates = mode === "auto"
-    ? ["vscode", "cursor"].map((id) => enabledApplications.find((item) => item.id === id)).filter(Boolean)
-    : [application];
   const requestedKind = isSupportedExternalApplicationKind(application?.kind) ? application.kind : "vscode";
   if (
     !applicationId ||
     !application?.name ||
     !application?.enabled ||
     !isSupportedExternalApplicationKind(application?.kind) ||
-    (application.kind === "custom" && builtinExternalApplications.some((builtin) => builtin.id === applicationId))
+    (application.kind === "custom"
+      ? builtinExternalApplications.some((builtin) => builtin.id === applicationId)
+      : applicationId !== application.kind)
   ) {
-    return { launched: false, command: "", cwd: resolvedPath, applicationId, kind: requestedKind, requestedApplicationId: applicationId, code: "invalid-preference" };
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      applicationId,
+      kind: requestedKind,
+      requestedApplicationId: applicationId,
+      code: "invalid-preference",
+    };
   }
-  if (!directoryStatus.exists) return { launched: false, command: "", cwd: resolvedPath, applicationId, kind: requestedKind, requestedApplicationId: applicationId, code: "path-not-found" };
-  if (!directoryStatus.isDirectory) return { launched: false, command: "", cwd: resolvedPath, applicationId, kind: requestedKind, requestedApplicationId: applicationId, code: "path-not-directory" };
-  if (getHostPlatform() === "unsupported") return { launched: false, command: "", cwd: resolvedPath, applicationId, kind: requestedKind, requestedApplicationId: applicationId, code: "preview-unsupported" };
-  const attempts = [];
-  for (const candidate of candidates) {
-    if (!candidate || !candidate.id || !candidate.name || !isSupportedExternalApplicationKind(candidate.kind)) continue;
-    attempts.push(candidate.id);
-    const useNative = candidate.kind !== "custom" && candidate.launchMode !== "command";
-    const result = useNative
-      ? await launchNativeTarget(candidate.kind, resolvedPath)
-      : await launchCustomCommand(candidate.command || "", resolvedPath, candidate.kind);
-    if (result?.launched) {
-      return { ...result, applicationId: candidate.id, kind: candidate.kind, requestedApplicationId: applicationId, resolvedApplicationId: candidate.id, attempts, code: attempts.length > 1 ? "launched-with-fallback" : "launched" };
-    }
-    if (mode === "manual") break;
+  if (!directoryStatus.exists)
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      applicationId,
+      kind: requestedKind,
+      requestedApplicationId: applicationId,
+      code: "path-not-found",
+    };
+  if (!directoryStatus.isDirectory)
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      applicationId,
+      kind: requestedKind,
+      requestedApplicationId: applicationId,
+      code: "path-not-directory",
+    };
+  if (getHostPlatform() === "unsupported")
+    return {
+      launched: false,
+      command: "",
+      cwd: resolvedPath,
+      applicationId,
+      kind: requestedKind,
+      requestedApplicationId: applicationId,
+      code: "preview-unsupported",
+    };
+  const attempts = [applicationId];
+  const builtin = builtinExternalApplications.find((candidate) => candidate.id === applicationId);
+  const useNative = application.kind !== "custom" && application.command === builtin?.command;
+  const result = useNative
+    ? await launchNativeTarget(application.kind, resolvedPath)
+    : await launchCustomCommand(application.command || "", resolvedPath, application.kind);
+  if (result?.launched) {
+    return {
+      ...result,
+      applicationId,
+      kind: application.kind,
+      requestedApplicationId: applicationId,
+      resolvedApplicationId: applicationId,
+      attempts,
+      code: "launched",
+    };
   }
-  return { launched: false, command: "", cwd: resolvedPath, applicationId, kind: requestedKind, requestedApplicationId: applicationId, attempts, code: attempts.length > 1 ? "all-candidates-failed" : application?.launchMode === "command" && !application?.command?.trim() ? "invalid-custom-command" : "application-unavailable" };
+  return {
+    launched: false,
+    command: "",
+    cwd: resolvedPath,
+    applicationId,
+    kind: requestedKind,
+    requestedApplicationId: applicationId,
+    attempts,
+    code: !useNative && !application?.command?.trim() ? "invalid-custom-command" : "application-unavailable",
+  };
 }
 
 function emit(detail) {

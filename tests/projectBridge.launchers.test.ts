@@ -20,15 +20,21 @@ interface PreloadFixture {
 const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   const nodeRequire = createRequire(import.meta.url);
   const spawnOutcomes = [...(fixture.spawnOutcomes || [])];
-  const spawn = vi.fn((_executable: string, _args: string[], _options: { cwd: string; detached: boolean; stdio: string; env?: NodeJS.ProcessEnv }) => {
-    const outcome = spawnOutcomes.shift() || "spawn";
-    const child = { once: vi.fn(), unref: vi.fn() };
-    child.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
-      if (event === outcome) listener(event === "error" ? new Error("launch failed") : undefined);
+  const spawn = vi.fn(
+    (
+      _executable: string,
+      _args: string[],
+      _options: { cwd: string; detached: boolean; stdio: string; env?: NodeJS.ProcessEnv },
+    ) => {
+      const outcome = spawnOutcomes.shift() || "spawn";
+      const child = { once: vi.fn(), unref: vi.fn() };
+      child.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
+        if (event === outcome) listener(event === "error" ? new Error("launch failed") : undefined);
+        return child;
+      });
       return child;
-    });
-    return child;
-  });
+    },
+  );
   const fs = {
     ...nodeRequire("fs"),
     statSync: (target: string) => {
@@ -37,19 +43,46 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
       throw new Error("not found");
     },
   };
+  const lookupResult = (command: string, args: string[]) =>
+    platform === "win32" && command === "where.exe"
+      ? fixture.where?.[args[0]!]
+      : platform === "linux" && command === "which"
+        ? fixture.which?.[args[0]!]
+        : undefined;
+  const execFileSync = vi.fn((command: string, args: string[]) => {
+    const resolved = lookupResult(command, args);
+    if (resolved) return Buffer.isBuffer(resolved) ? resolved : Buffer.from(`${resolved}\r\n`);
+    throw new Error("not found");
+  });
+  const execFile = vi.fn(
+    (
+      command: string,
+      args: string[],
+      options: { encoding?: string },
+      callback: (error: Error | null, stdout: string | Buffer) => void,
+    ) => {
+      const resolved = lookupResult(command, args);
+      queueMicrotask(() => {
+        if (!resolved) {
+          callback(new Error("not found"), options.encoding === "utf8" ? "" : Buffer.alloc(0));
+          return;
+        }
+        callback(
+          null,
+          Buffer.isBuffer(resolved)
+            ? resolved
+            : options.encoding === "utf8"
+              ? `${resolved}\r\n`
+              : Buffer.from(`${resolved}\r\n`),
+        );
+      });
+    },
+  );
   const childProcess = {
     ...nodeRequire("child_process"),
     spawn,
-    execFileSync: vi.fn((command: string, args: string[]) => {
-      const resolved =
-        platform === "win32" && command === "where.exe"
-          ? fixture.where?.[args[0]]
-          : platform === "linux" && command === "which"
-            ? fixture.which?.[args[0]]
-            : "";
-      if (resolved) return Buffer.isBuffer(resolved) ? resolved : Buffer.from(`${resolved}\r\n`);
-      throw new Error("not found");
-    }),
+    execFile,
+    execFileSync,
   };
   const sandboxWindow: { projectBridge?: ProjectBridge; localStorage: object; utools: { dbStorage: object } } = {
     localStorage: { getItem: () => null, setItem: () => undefined },
@@ -79,7 +112,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   createContext(sandbox);
   runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
   if (!sandboxWindow.projectBridge) throw new Error("The real preload did not register projectBridge.");
-  return { bridge: sandboxWindow.projectBridge, spawn };
+  return { bridge: sandboxWindow.projectBridge, spawn, execFile, execFileSync };
 };
 
 describe("native project launchers", () => {
@@ -89,7 +122,7 @@ describe("native project launchers", () => {
       directories: [projectPath, "/System/Applications/Utilities/Terminal.app"],
     });
 
-    const capabilities = await bridge.detectHostLaunchCapabilities();
+    const capabilities = await bridge.detectHostLaunchCapabilities({ scope: "terminals" });
     expect(capabilities.platform).toBe("darwin");
     expect(capabilities.terminals.find((candidate) => candidate.kind === "terminal-app")?.available).toBe(true);
     expect(spawn).not.toHaveBeenCalled();
@@ -97,9 +130,9 @@ describe("native project launchers", () => {
     await expect(
       bridge.openTerminal({
         projectPath,
-        terminal: { schemaVersion: 2, mode: "auto", kind: "terminal-app", customCommand: "" },
+        terminal: { kind: "terminal-app", customCommand: "" },
       }),
-    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "terminal-app" });
+    ).resolves.toMatchObject({ launched: true, code: "launched", kind: "terminal-app" });
     expect(spawn).toHaveBeenCalledWith("/usr/bin/open", ["-a", "Terminal", projectPath], {
       cwd: projectPath,
       detached: true,
@@ -112,24 +145,40 @@ describe("native project launchers", () => {
     const terminalPath = "/usr/bin/x-terminal-emulator";
     const codePath = "/usr/bin/code";
     const cursorPath = "/usr/bin/cursor";
-    const { bridge, spawn } = loadPreloadBridge("linux", {
+    const { bridge, spawn, execFile, execFileSync } = loadPreloadBridge("linux", {
       directories: [projectPath],
       files: [terminalPath, codePath, cursorPath],
       which: { "x-terminal-emulator": terminalPath, code: codePath, cursor: cursorPath },
     });
 
-    const capabilities = await bridge.detectHostLaunchCapabilities();
-    expect(capabilities.platform).toBe("linux");
-    expect(capabilities.terminals.find((candidate) => candidate.kind === "linux-terminal")?.available).toBe(true);
-    expect(capabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
-    expect(capabilities.editors.find((candidate) => candidate.kind === "cursor")?.available).toBe(true);
+    const terminalCapabilities = await bridge.detectHostLaunchCapabilities({ scope: "terminals" });
+    expect(terminalCapabilities.platform).toBe("linux");
+    expect(terminalCapabilities.terminals.find((candidate) => candidate.kind === "linux-terminal")?.available).toBe(
+      true,
+    );
+    expect(terminalCapabilities.editors).toEqual([]);
+    expect(execFile.mock.calls.map(([, args]) => args[0])).toEqual([
+      "x-terminal-emulator",
+      "gnome-terminal",
+      "konsole",
+      "xfce4-terminal",
+      "kitty",
+      "alacritty",
+      "xterm",
+    ]);
+
+    const editorCapabilities = await bridge.detectHostLaunchCapabilities({ scope: "editors" });
+    expect(editorCapabilities.terminals).toEqual([]);
+    expect(editorCapabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
+    expect(editorCapabilities.editors.find((candidate) => candidate.kind === "cursor")?.available).toBe(true);
+    expect(execFileSync).not.toHaveBeenCalled();
 
     await expect(
       bridge.openTerminal({
         projectPath,
-        terminal: { schemaVersion: 2, mode: "auto", kind: "linux-terminal", customCommand: "" },
+        terminal: { kind: "linux-terminal", customCommand: "" },
       }),
-    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "linux-terminal" });
+    ).resolves.toMatchObject({ launched: true, code: "launched", kind: "linux-terminal" });
     expect(spawn).toHaveBeenNthCalledWith(1, terminalPath, [], {
       cwd: projectPath,
       detached: true,
@@ -145,7 +194,6 @@ describe("native project launchers", () => {
           kind: "vscode",
           command: "code {path}",
           enabled: true,
-          launchMode: "native",
         },
       }),
     ).resolves.toMatchObject({ launched: true, code: "launched", resolvedApplicationId: "vscode" });
@@ -161,24 +209,32 @@ describe("native project launchers", () => {
     const windowsApps = "C:\\Users\\Test\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe";
     const codeShim = "C:\\Users\\Test\\AppData\\Roaming\\Code\\bin\\code.cmd";
     const cursorShim = "C:\\Users\\Test\\AppData\\Roaming\\Cursor\\bin\\cursor.cmd";
-    const { bridge, spawn } = loadPreloadBridge("win32", {
+    const { bridge, spawn, execFile, execFileSync } = loadPreloadBridge("win32", {
       directories: [projectPath],
       files: [codeShim, cursorShim],
       where: { "wt.exe": windowsApps, "code.cmd": codeShim, "cursor.cmd": cursorShim },
       env: { LOCALAPPDATA: "C:\\Users\\Test\\AppData\\Local" },
     });
 
-    const capabilities = await bridge.detectHostLaunchCapabilities();
-    expect(capabilities.terminals.find((candidate) => candidate.kind === "windows-terminal")?.available).toBe(true);
-    expect(capabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
-    expect(capabilities.editors.find((candidate) => candidate.kind === "cursor")?.available).toBe(true);
+    const terminalCapabilities = await bridge.detectHostLaunchCapabilities({ scope: "terminals" });
+    expect(terminalCapabilities.terminals.find((candidate) => candidate.kind === "windows-terminal")?.available).toBe(
+      true,
+    );
+    expect(terminalCapabilities.editors).toEqual([]);
+    expect(execFile.mock.calls.map(([, args]) => args[0])).toEqual(["wt.exe", "wt", "pwsh.exe", "powershell.exe"]);
+
+    const editorCapabilities = await bridge.detectHostLaunchCapabilities({ scope: "editors" });
+    expect(editorCapabilities.terminals).toEqual([]);
+    expect(editorCapabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
+    expect(editorCapabilities.editors.find((candidate) => candidate.kind === "cursor")?.available).toBe(true);
+    expect(execFileSync).not.toHaveBeenCalled();
 
     await expect(
       bridge.openTerminal({
         projectPath,
-        terminal: { schemaVersion: 2, mode: "manual", kind: "windows-terminal", customCommand: "" },
+        terminal: { kind: "windows-terminal", customCommand: "" },
       }),
-    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "windows-terminal" });
+    ).resolves.toMatchObject({ launched: true, code: "launched", kind: "windows-terminal" });
     expect(spawn).toHaveBeenNthCalledWith(1, windowsApps, ["-d", projectPath], {
       cwd: projectPath,
       detached: true,
@@ -194,7 +250,6 @@ describe("native project launchers", () => {
           kind: "vscode",
           command: 'code --reuse-window "{path}"',
           enabled: true,
-          launchMode: "command",
         },
       }),
     ).resolves.toMatchObject({ launched: true, code: "launched", resolvedApplicationId: "vscode" });
@@ -233,7 +288,7 @@ describe("native project launchers", () => {
       where: { "code.cmd": legacyCodeShim },
     });
 
-    const capabilities = await bridge.detectHostLaunchCapabilities();
+    const capabilities = await bridge.detectHostLaunchCapabilities({ scope: "editors" });
 
     expect(capabilities.editors.find((candidate) => candidate.kind === "vscode")?.available).toBe(true);
   });
@@ -250,9 +305,9 @@ describe("native project launchers", () => {
     await expect(
       bridge.openTerminal({
         projectPath,
-        terminal: { schemaVersion: 2, mode: "manual", kind: "powershell", customCommand: "" },
+        terminal: { kind: "powershell", customCommand: "" },
       }),
-    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedKind: "powershell" });
+    ).resolves.toMatchObject({ launched: true, code: "launched", kind: "powershell" });
     expect(spawn).toHaveBeenCalledWith(powershellPath, ["-NoExit"], {
       cwd: projectPath,
       detached: true,
@@ -260,7 +315,7 @@ describe("native project launchers", () => {
     });
   });
 
-  it("falls back to PowerShell when Windows Terminal fails to launch", async () => {
+  it("does not open another terminal when the selected Windows Terminal fails", async () => {
     const projectPath = "C:\\Projects\\fallback";
     const windowsTerminalPath = "C:\\Users\\Test\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe";
     const powershellPath = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
@@ -275,23 +330,43 @@ describe("native project launchers", () => {
     await expect(
       bridge.openTerminal({
         projectPath,
-        terminal: { schemaVersion: 2, mode: "auto", kind: "windows-terminal", customCommand: "" },
+        terminal: { kind: "windows-terminal", customCommand: "" },
       }),
     ).resolves.toMatchObject({
-      launched: true,
-      code: "launched-with-fallback",
-      resolvedKind: "powershell",
-      attempts: ["windows-terminal", "powershell"],
+      launched: false,
+      code: "application-unavailable",
+      kind: "windows-terminal",
     });
-    expect(spawn).toHaveBeenNthCalledWith(1, windowsTerminalPath, ["-d", projectPath], {
+    expect(spawn).toHaveBeenCalledOnce();
+    expect(spawn).toHaveBeenCalledWith(windowsTerminalPath, ["-d", projectPath], {
       cwd: projectPath,
       detached: true,
       stdio: "ignore",
     });
-    expect(spawn).toHaveBeenNthCalledWith(2, powershellPath, ["-NoExit"], {
-      cwd: projectPath,
-      detached: true,
-      stdio: "ignore",
+  });
+
+  it("does not open another editor when the selected VS Code launcher fails", async () => {
+    const projectPath = "C:\\Projects\\editor-fallback";
+    const codeShim = "C:\\Users\\Test\\AppData\\Roaming\\Code\\bin\\code.cmd";
+    const cursorShim = "C:\\Users\\Test\\AppData\\Roaming\\Cursor\\bin\\cursor.cmd";
+    const { bridge, spawn } = loadPreloadBridge("win32", {
+      directories: [projectPath],
+      files: [codeShim, cursorShim],
+      spawnOutcomes: ["error", "spawn"],
+      where: { "code.cmd": codeShim, "cursor.cmd": cursorShim },
     });
+
+    await expect(
+      bridge.openExternalApplication({
+        projectPath,
+        application: { id: "vscode", name: "VS Code", kind: "vscode", command: "code {path}", enabled: true },
+      }),
+    ).resolves.toMatchObject({
+      launched: false,
+      code: "application-unavailable",
+      applicationId: "vscode",
+    });
+    expect(spawn).toHaveBeenCalledOnce();
+    expect(spawn.mock.calls[0]?.[0]).toBe(codeShim);
   });
 });

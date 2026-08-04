@@ -637,11 +637,14 @@ Persist and validate the stop reason instead of inferring intent from a platform
 ### 3. Contracts
 
 - Load the collection once when Pinia is created. Components never access local storage or preload persistence directly.
+- The released V1 collection is canonical. In uTools, the host-owned V1 value wins; otherwise a renderer-local V1 collection is normalized and promoted into `dbStorage` before returning it.
 - VS Code and Cursor have fixed ids and kinds but editable, persisted names and command templates. They cannot be deleted; missing, empty, duplicate, or kind-mismatched stored metadata falls back to the built-in definition.
 - Application names are unique and non-empty, and every command template is non-empty. Custom ids are also unique and non-empty. Exactly one default id resolves to an enabled application.
 - Disabling or deleting the current default is rejected. Boundary normalization selects the first enabled application, or enables VS Code when none remain.
-- When the new key is absent, migrate the legacy local editor key first, then the legacy shared editor key. A valid custom command becomes one enabled custom default; malformed legacy data becomes complete defaults.
-- Future saves write only the new device-local key. Legacy keys remain unchanged, and external applications never enter project import/export data.
+- When the canonical V1 collection is absent, migrate the legacy local editor key first, then the legacy shared editor key. A valid custom command becomes one enabled custom default; malformed legacy data becomes complete defaults.
+- Future saves rewrite only the canonical V1 collection. Legacy editor keys remain unchanged, and external applications never enter project import/export data.
+- V1 persists no launcher-mode field. A built-in application whose command equals its built-in template uses the native host launcher; an edited built-in command and every custom application use the command launcher. Derive this at the preload boundary instead of storing a second mode switch.
+- At the preload boundary, a built-in application must retain its fixed `id === kind`; reject an impersonating or mismatched payload before any process is spawned.
 - No launch id means the current default. An explicit enabled id is one-time selection and must not mutate preferences.
 - Settings and launch components call Store actions. Failed launches append project logs instead of throwing into components.
 
@@ -649,6 +652,8 @@ Persist and validate the stop reason instead of inferring intent from a platform
 
 - New key has unsupported schema or damaged JSON -> persist and return complete defaults; do not merge legacy data into an explicitly present invalid document.
 - Stored built-in has matching id/kind plus a unique non-empty name and command -> preserve the edited metadata; otherwise restore the affected fields from the built-in definition while preserving a valid enabled flag.
+- Built-in command equals its default template -> use the native launcher; a non-default command -> use the command launcher without changing the selected application.
+- Built-in id/kind mismatch or a custom application claiming a built-in id -> return `invalid-preference` without spawning a launcher.
 - Duplicate ids/names or empty custom fields -> discard the invalid custom entry.
 - Default id is missing or disabled -> choose the first enabled item; no enabled item -> enable and select VS Code.
 - Disable/delete default or set disabled item as default -> return `false` without persistence.
@@ -666,7 +671,7 @@ Persist and validate the stop reason instead of inferring intent from a platform
 
 ### 6. Tests Required
 
-- `npx vitest run src/lib/projectBridge.externalApplications.test.ts` must cover browser/preload defaults, local/shared migration, malformed data, editable built-in round trips and launch arguments, duplicate filtering, default repair, Store default protection, and explicit/default launch selection.
+- `npx vitest run tests/projectBridge.externalApplications.test.ts` must cover browser/preload defaults, published V1 host/renderer priority, complete uTools-restart persistence, local/shared editor migration, malformed data, editable built-in round trips and launch arguments, duplicate filtering, default repair, Store default protection, explicit/default launch selection, rejection of mismatched built-in identities, and the absence of a persisted launcher-mode field.
 - `npx vitest run src/lib/projectBridge.workspace.test.ts` must assert the resolved Git repository path and selected application payload.
 - Run `npm run validate:process-results`, `npm run lint`, `node --check public/preload.js`, and `npm run build` after changing the collection or bridge contract.
 - Browser smoke: add/edit/delete/toggle/default controls, both locales, narrow card layout, right-click and keyboard menus, Escape, and viewport clamping.
@@ -687,6 +692,80 @@ await store.openProjectInEditor(project.id, applicationId);
 ```
 
 One-time launch selection must flow through the Store without changing the persisted default.
+
+## Scenario: Manual Host Launcher Detection
+
+### 1. Scope / Trigger
+
+- Trigger: Settings reports whether native terminals and preset editors are available without adding process lookup work to plugin startup.
+- This requires code-spec depth because one manual action crosses Vue, Pinia, `ProjectBridge`, preload filesystem checks, and child-process lookup.
+
+### 2. Signatures
+
+- `HostLaunchCapabilityRequest = { scope: "terminals" | "editors" }`.
+- `ProjectBridge.detectHostLaunchCapabilities(request): Promise<HostLaunchCapabilities>` returns candidates only for the requested scope and an empty array for the other scope.
+- Store action: `refreshHostLaunchCapabilities(scope: HostLaunchCapabilityRequest["scope"]): Promise<void>`.
+- Store progress fields: `hostTerminalCapabilitiesRefreshing` and `hostEditorCapabilitiesRefreshing`.
+
+### 3. Contracts
+
+- `loadProjects()` and Store initialization must never call `detectHostLaunchCapabilities`. Detection starts only from the matching Settings header button.
+- Terminal and editor detection are separate manual actions. A scoped result replaces only its own candidate list and preserves the previously detected list for the other scope.
+- Preload detection uses asynchronous `execFile` lookup and may run independent candidates concurrently. It must not call `execFileSync`, `spawnSync`, or another blocking process API.
+- Actual terminal/editor launch remains independent from Settings detection. Unknown capability state must not disable launch controls or remove selected launcher choices. A failed selected terminal or editor must return a typed failure without trying another user-visible launcher.
+- Terminal preferences retain the released V1 shape `{ kind, customCommand }`. In uTools, `dbStorage` under the V1 key is canonical; a released renderer-local V1 preference is promoted there, while the older shared V1 key remains a fallback only when the canonical value is absent.
+- Ignore a repeated click while the same scope is running. The other scope may run independently.
+- Each action sets the shared top-right status to loading before delegation, then success, warning, or error after settlement. Its own button is disabled, exposes `aria-busy`, and shows a spinning refresh icon while pending.
+
+### 4. Validation & Error Matrix
+
+- Missing or unsupported `request.scope` at the preload boundary -> reject before starting a lookup process.
+- Supported platform with a missing candidate -> return that candidate with `available: false`; do not reject the complete scope.
+- Unsupported host platform -> return empty requested candidates; Store publishes a warning instead of failing startup.
+- Same-scope second click while pending -> no second bridge call.
+- Terminal detection after editor detection, or the reverse -> preserve the settled result from the other scope.
+- Browser fallback -> return an unsupported/empty scoped result and keep Settings usable.
+
+### 5. Good/Base/Bad Cases
+
+- Good: plugin cold-start loads projects without any `where`, `which`, or `mdfind` process; the user later clicks Detect Terminals and sees immediate progress while async lookups run.
+- Good: editor detection marks VS Code available and Cursor unavailable without changing terminal choices or selected-launcher behavior.
+- Base: before any manual detection, platform terminal options and all configured applications remain selectable with no availability badge.
+- Bad: calling an async Store action with `void` during startup while its preload function performs `execFileSync`; synchronous work still blocks before the Promise is returned.
+- Bad: returning an empty unrequested list and assigning the whole response directly, which erases the other scope's previous result.
+
+### 6. Tests Required
+
+- `npx vitest run tests/projectBridge.launchers.test.ts` must assert scoped results, zero `execFileSync` calls during detection, native selected-launcher behavior, and no cross-target retry after a launch failure.
+- `npx vitest run tests/useStore.hostLaunchCapabilities.test.ts` must assert `loadProjects()` makes zero detection calls, repeated pending clicks are deduplicated, progress state is scope-specific, and results merge across scopes.
+- Run `npm run lint`, `node --check public/preload.js`, and `npm run build` after changing the request, Store state, preload lookup, or Settings controls.
+- Browser smoke: both Settings headers expose their own button; loading text, disabled state, icon spin, global message, and narrow-width wrapping remain visible.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+void this.refreshHostLaunchCapabilities();
+```
+
+```js
+return Promise.resolve(detectWithExecFileSync());
+```
+
+Wrapping synchronous process lookup in a Promise does not defer or unblock it.
+
+#### Correct
+
+```ts
+await store.refreshHostLaunchCapabilities("terminals");
+```
+
+```js
+const output = await execFileOutput("where.exe", [command], { timeout: 1500 });
+```
+
+Require a user-selected scope and keep every process lookup asynchronous.
 
 ## Scenario: Environment Tool Detection Bridge
 

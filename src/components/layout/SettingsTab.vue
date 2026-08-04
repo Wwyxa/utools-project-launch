@@ -41,10 +41,10 @@ const githubRepositoryUrl = "https://github.com/Wwyxa/utools-project-launch";
 
 const hostPlatform = window.navigator.platform || window.navigator.userAgent || "";
 const fallbackTerminalOptions: DefaultTerminalKind[] = /win/i.test(hostPlatform)
-  ? ["windows-terminal", "powershell", "cmd", "custom"]
+  ? ["windows-terminal", "powershell", "cmd"]
   : /linux/i.test(hostPlatform)
-    ? ["linux-terminal", "custom"]
-    : ["terminal-app", "iterm2", "warp", "custom"];
+    ? ["linux-terminal"]
+    : ["terminal-app", "iterm2", "warp"];
 const isAiModelMenuOpen = ref(false);
 const selectedAiModeId = ref("");
 const environmentDialogOpen = ref(false);
@@ -100,7 +100,9 @@ const editingBuiltinHasOverride = computed(() =>
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
 const terminalOptions = computed<DefaultTerminalKind[]>(() => [
-  ...(store.hostLaunchCapabilities?.terminals.map((candidate) => candidate.kind) || fallbackTerminalOptions),
+  ...(store.hostLaunchCapabilities?.terminals.length
+    ? store.hostLaunchCapabilities.terminals.map((candidate) => candidate.kind)
+    : fallbackTerminalOptions),
   "custom",
 ]);
 const terminalAvailability = (kind: DefaultTerminalKind) =>
@@ -765,17 +767,25 @@ watch(
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
-        <div class="mb-2.5 flex items-center gap-2">
-          <SquareTerminal :size="15" class="shrink-0 text-primary" />
-          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultTerminal }}</h3>
+        <div class="mb-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <SquareTerminal :size="15" class="shrink-0 text-primary" />
+            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultTerminal }}</h3>
+            <span class="text-[10px] leading-4 text-on-surface-variant">{{ t.settings.terminalDetectionHint }}</span>
+          </div>
           <button
             type="button"
-            class="ml-auto inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 text-xs font-bold text-on-surface hover:bg-surface-variant"
-            :disabled="store.hostLaunchCapabilitiesRefreshing"
-            @click="store.refreshHostLaunchCapabilities()"
+            class="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-all hover:bg-surface-variant active:scale-95 disabled:cursor-wait disabled:opacity-60"
+            :disabled="store.hostTerminalCapabilitiesRefreshing"
+            :aria-busy="store.hostTerminalCapabilitiesRefreshing"
+            @click="store.refreshHostLaunchCapabilities('terminals')"
           >
-            <RefreshCw :size="12" :class="store.hostLaunchCapabilitiesRefreshing && 'animate-spin'" />
-            {{ t.settings.redetectLaunchers }}
+            <RefreshCw :size="12" :class="store.hostTerminalCapabilitiesRefreshing && 'animate-spin'" />
+            {{
+              store.hostTerminalCapabilitiesRefreshing
+                ? t.settings.detectingLaunchers
+                : t.settings.detectAvailableTerminals
+            }}
           </button>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
@@ -783,21 +793,16 @@ watch(
             class="inline-flex h-fit max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
           >
             <button
-              type="button"
-              @click="store.setAutomaticTerminal()"
-              :class="segmentButtonClass(store.terminalPreferences.mode === 'auto')"
-            >
-              {{ t.settings.automaticLauncher }}
-            </button>
-            <button
               v-for="option in terminalOptions"
               :key="option"
               type="button"
               @click="store.setDefaultTerminal(option)"
-              :class="segmentButtonClass(store.terminalPreferences.mode === 'manual' && store.terminalPreferences.kind === option)"
+              :class="segmentButtonClass(store.terminalPreferences.kind === option)"
             >
               {{ t.settings.terminals[option] }}
-              <span v-if="terminalAvailability(option) === false" class="ml-1 text-[9px] opacity-60">{{ t.settings.launcherUnavailable }}</span>
+              <span v-if="terminalAvailability(option) === false" class="ml-1 text-[9px] opacity-60">{{
+                t.settings.launcherUnavailable
+              }}</span>
             </button>
           </div>
           <div class="space-y-1.5">
@@ -810,7 +815,7 @@ watch(
               leave-to-class="max-h-0 opacity-0 -translate-y-1"
             >
               <div
-                v-if="terminalUsesCustomCommand && store.terminalPreferences.mode === 'manual'"
+                v-if="terminalUsesCustomCommand"
                 class="overflow-hidden rounded-lg border border-border-subtle bg-surface px-3 py-2.5"
               >
                 <label class="mb-2 block text-xs font-semibold uppercase text-on-surface-variant">
@@ -848,11 +853,15 @@ watch(
           <div class="ml-auto flex shrink-0 items-center gap-2">
             <button
               type="button"
-              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-              :class="store.externalApplicationPreferences.mode === 'auto' && 'border-primary/40 text-primary'"
-              @click="store.setAutomaticExternalApplication()"
+              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-all hover:bg-surface-variant active:scale-95 disabled:cursor-wait disabled:opacity-60"
+              :disabled="store.hostEditorCapabilitiesRefreshing"
+              :aria-busy="store.hostEditorCapabilitiesRefreshing"
+              @click="store.refreshHostLaunchCapabilities('editors')"
             >
-              {{ t.settings.automaticLauncher }}
+              <RefreshCw :size="12" :class="store.hostEditorCapabilitiesRefreshing && 'animate-spin'" />
+              {{
+                store.hostEditorCapabilitiesRefreshing ? t.settings.detectingLaunchers : t.settings.detectApplications
+              }}
             </button>
             <button
               type="button"
@@ -889,7 +898,7 @@ watch(
                     }}
                   </span>
                   <span
-                    v-if="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
+                    v-if="application.id === store.externalApplicationPreferences.defaultApplicationId"
                     class="shrink-0 rounded border border-primary/30 bg-primary/10 px-1 text-[8px] font-bold leading-3 text-primary"
                   >
                     {{ t.settings.defaultApplicationBadge }}
@@ -903,16 +912,24 @@ watch(
                 <span
                   v-if="externalApplicationAvailability(application) !== undefined"
                   class="rounded border bg-surface px-1 text-[8px] font-bold leading-3"
-                  :class="externalApplicationAvailability(application) ? 'border-status-running text-status-running' : 'border-status-warning text-status-warning'"
+                  :class="
+                    externalApplicationAvailability(application)
+                      ? 'border-status-running text-status-running'
+                      : 'border-status-warning text-status-warning'
+                  "
                 >
-                  {{ externalApplicationAvailability(application) ? t.settings.launcherAvailable : t.settings.launcherUnavailable }}
+                  {{
+                    externalApplicationAvailability(application)
+                      ? t.settings.launcherAvailable
+                      : t.settings.launcherUnavailable
+                  }}
                 </span>
                 <label :title="t.settings.setDefaultApplication" class="flex cursor-pointer items-center">
                   <input
                     type="radio"
                     name="default-external-application"
                     class="h-3.5 w-3.5 accent-primary"
-                    :checked="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
+                    :checked="application.id === store.externalApplicationPreferences.defaultApplicationId"
                     :disabled="!application.enabled"
                     :aria-label="`${t.settings.setDefaultApplication}: ${application.name}`"
                     @change="setDefaultExternalApplication(application)"
@@ -923,7 +940,7 @@ watch(
                     type="checkbox"
                     class="h-3.5 w-3.5 accent-primary"
                     :checked="application.enabled"
-                    :disabled="store.externalApplicationPreferences.mode === 'manual' && application.id === store.externalApplicationPreferences.defaultApplicationId"
+                    :disabled="application.id === store.externalApplicationPreferences.defaultApplicationId"
                     :aria-label="`${t.settings.applicationEnabled}: ${application.name}`"
                     @change="setExternalApplicationEnabled(application, ($event.target as HTMLInputElement).checked)"
                   />
@@ -1061,10 +1078,18 @@ watch(
                   {{ t.common.delete }}
                 </button>
                 <button
-                  v-else-if="editingExternalApplication && editingExternalApplication.launchMode === 'command'"
+                  v-else-if="
+                    editingExternalApplication &&
+                    editingExternalApplication.kind !== 'custom' &&
+                    editingExternalApplication.command !==
+                      (editingExternalApplication.kind === 'vscode' ? 'code {path}' : 'cursor {path}')
+                  "
                   type="button"
                   class="inline-flex h-8 items-center gap-1 rounded border border-border-subtle px-2.5 text-xs font-bold text-primary hover:bg-primary/10"
-                  @click="store.restoreExternalApplicationNativeLaunch(editingExternalApplication.id); externalApplicationDialogOpen = false"
+                  @click="
+                    store.restoreExternalApplicationNativeLaunch(editingExternalApplication.id);
+                    externalApplicationDialogOpen = false;
+                  "
                 >
                   {{ t.settings.restoreNativeLauncher }}
                 </button>
