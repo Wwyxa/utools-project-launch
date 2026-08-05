@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Defines Git remote, lightweight write, and selected repository target contracts."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Defines GitTab top-panel ownership and compact menu/dialog patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines Store ownership, bridge delegation, write coordination, and snapshot refresh behavior."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Defines frontend checks and compact layout quality requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Guides init/publish flow across component, Store, bridge, and preload."}

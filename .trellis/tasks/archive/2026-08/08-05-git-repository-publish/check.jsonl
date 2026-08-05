@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check remote execution safety, typed bridge parity, target authorization, and ref refresh."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Check GitTab ownership, compact controls, menus, dialogs, and accessibility."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check initialization cache reset and publish write coordination."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check type/build/layout requirements and browser fallback behavior."}
