@@ -110,7 +110,13 @@ type CommitTooltipContent = {
   authorInitials: string;
   authorAvatarClass: string;
 };
-type CommitContextMenuState = { commit: ProjectGitCommitSummary; x: number; y: number };
+type CommitContextMenuState = {
+  commit: ProjectGitCommitSummary;
+  x: number;
+  y: number;
+  opensUpward: boolean;
+  maxHeight: number;
+};
 type CommitBranchRef = { kind: "local" | "remote"; name: string; current: boolean };
 type CommitSubmenuContent = { kind: "branch"; branch: CommitBranchRef } | { kind: "tags"; tags: string[] };
 type CommitSubmenuState = CommitSubmenuContent & { left: number; top: number; parent: HTMLElement };
@@ -476,6 +482,9 @@ const toggleCommitFileViewMode = () => {
 };
 
 const graphRowPaddingX = 4;
+const commitContextMenuViewportInset = 8;
+const commitContextMenuMaxWidth = 208;
+const commitContextMenuMaxHeight = 240;
 const graphWindowOverscan = 256;
 const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
 const rowPitch = rowHeight + rowGap;
@@ -1522,9 +1531,11 @@ const submitRefDialog = async () => {
 
 const clampMenu = (element: HTMLElement, left: number, top: number) => {
   const rect = element.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
   return {
-    left: Math.max(8, Math.min(left, window.innerWidth - rect.width - 8)),
-    top: Math.max(8, Math.min(top, window.innerHeight - rect.height - 8)),
+    left: Math.max(8, Math.min(left, viewportWidth - rect.width - 8)),
+    top: Math.max(8, Math.min(top, viewportHeight - rect.height - 8)),
   };
 };
 const commitMenuItems = (element: HTMLElement | null) =>
@@ -1563,19 +1574,41 @@ const openCommitContextMenu = async (event: MouseEvent, commit: ProjectGitCommit
     document.activeElement instanceof HTMLElement && document.activeElement !== document.body
       ? document.activeElement
       : eventTarget || row;
+  const x = event.clientX || rect.left + graphRowPaddingX;
+  const y = event.clientY || rect.bottom;
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const opensUpward = y + commitContextMenuMaxHeight + commitContextMenuViewportInset > viewportHeight;
+  const maxHeight = Math.max(
+    0,
+    Math.min(commitContextMenuMaxHeight, (opensUpward ? y : viewportHeight - y) - commitContextMenuViewportInset - 2),
+  );
+  const positionMenu = () => {
+    const menu = commitContextMenuRef.value;
+    const current = commitContextMenu.value;
+    if (!menu || !current) return false;
+    const menuWidth = menu.getBoundingClientRect().width || commitContextMenuMaxWidth;
+    commitContextMenu.value = {
+      ...current,
+      x: Math.max(
+        commitContextMenuViewportInset,
+        Math.min(x, viewportWidth - menuWidth - commitContextMenuViewportInset),
+      ),
+    };
+    return true;
+  };
   commitContextMenu.value = {
     commit,
-    x: event.clientX || rect.left + graphRowPaddingX,
-    y: event.clientY || rect.bottom,
+    x,
+    y,
+    opensUpward,
+    maxHeight,
   };
   await nextTick();
-  if (commitContextMenuRef.value && commitContextMenu.value) {
-    commitContextMenu.value = {
-      ...commitContextMenu.value,
-      ...clampMenu(commitContextMenuRef.value, commitContextMenu.value.x, commitContextMenu.value.y),
-    };
-    commitMenuItems(commitContextMenuRef.value)[0]?.focus();
-  }
+  if (!positionMenu()) return;
+  commitMenuItems(commitContextMenuRef.value)[0]?.focus();
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  positionMenu();
 };
 const closeCommitContextMenu = (restoreFocus = true) => {
   const opener = commitMenuOpener.value;
@@ -2494,10 +2527,18 @@ onBeforeUnmount(() => {
       data-commit-context-menu
       class="fixed z-[75] w-fit min-w-[7.85rem] max-w-[13rem] rounded-md border border-outline-variant/70 bg-surface-container-lowest shadow-2xl"
       role="menu"
-      :style="{ left: `${commitContextMenu.x}px`, top: `${commitContextMenu.y}px` }"
+      :style="{
+        left: `${commitContextMenu.x}px`,
+        top: `${commitContextMenu.y}px`,
+        transform: commitContextMenu.opensUpward ? 'translateY(-100%)' : undefined,
+      }"
       @click.stop
     >
-      <div v-overlay-scrollbar class="themed-scrollbar max-h-60 overflow-y-auto p-0.5">
+      <div
+        v-overlay-scrollbar
+        class="themed-scrollbar max-h-60 overflow-y-auto p-0.5"
+        :style="{ maxHeight: `${commitContextMenu.maxHeight}px` }"
+      >
         <button
           type="button"
           role="menuitem"
