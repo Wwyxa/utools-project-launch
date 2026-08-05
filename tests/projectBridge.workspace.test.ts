@@ -1020,6 +1020,180 @@ describe("browser Git workspace fallback", () => {
     expect(project.git?.statusText).toBe(`detached HEAD @ ${headHash} · 1 个文件变更`);
   });
 
+  it("initializes only the main project path and refreshes Git state", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const initializeGitRepository = vi.fn<ProjectBridge["initializeGitRepository"]>(async () => ({
+      ok: true,
+      message: "initialized",
+    }));
+    const pathExists = vi.fn<ProjectBridge["pathExists"]>(async () => true);
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async () => gitSnapshot(mainPath, "initialized"));
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(async () =>
+      workspaceSnapshot(mainPath, "2026-08-05T00:00:00.000Z"),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      initializeGitRepository,
+      pathExists,
+      readGitSnapshot,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-init", mainPath);
+    project.git = gitSnapshot(mainPath, "stale");
+    store.projects = [project];
+    store.gitWorkspaces[project.id] = workspaceSnapshot("C:\\stale", "2026-08-04T00:00:00.000Z");
+
+    await expect(store.initializeGitRepository(project.id)).resolves.toEqual({ ok: true, message: "initialized" });
+
+    expect(pathExists).toHaveBeenCalledWith(mainPath);
+    expect(initializeGitRepository).toHaveBeenCalledWith(mainPath);
+    expect(readGitWorkspaceSnapshot).toHaveBeenCalledWith(mainPath);
+    expect(readGitSnapshot).toHaveBeenCalledWith(mainPath, { limit: 80, skip: 0 });
+    expect(project.git?.repositoryPath).toBe(mainPath);
+    expect(store.gitWorkspaces[project.id]?.repositoryPath).toBe(mainPath);
+    expect(store.gitWritesInProgress[project.id]).toBe(0);
+  });
+
+  it("serializes concurrent initialization and skips the request after the first refresh", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const firstInitialization = createDeferred<{ ok: true; message: string }>();
+    const initializeGitRepository = vi.fn<ProjectBridge["initializeGitRepository"]>(() => firstInitialization.promise);
+    const pathExists = vi.fn<ProjectBridge["pathExists"]>(async () => true);
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async () => gitSnapshot(mainPath, "initialized"));
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(async () =>
+      workspaceSnapshot(mainPath, "2026-08-05T00:00:00.000Z"),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      initializeGitRepository,
+      pathExists,
+      readGitSnapshot,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-init-queue", mainPath);
+    store.projects = [project];
+
+    const first = store.initializeGitRepository(project.id);
+    await Promise.resolve();
+    await Promise.resolve();
+    const second = store.initializeGitRepository(project.id);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(initializeGitRepository).toHaveBeenCalledOnce();
+
+    firstInitialization.resolve({ ok: true, message: "initialized" });
+
+    await expect(first).resolves.toEqual({ ok: true, message: "initialized" });
+    await expect(second).resolves.toBeNull();
+    expect(initializeGitRepository).toHaveBeenCalledOnce();
+    expect(store.gitWritesInProgress[project.id]).toBe(0);
+  });
+
+  it("keeps cached Git state when initialization fails", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const initializeGitRepository = vi.fn<ProjectBridge["initializeGitRepository"]>(async () => ({
+      ok: false,
+      message: "git init failed",
+    }));
+    const pathExists = vi.fn<ProjectBridge["pathExists"]>(async () => true);
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>();
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>();
+    window.projectBridge = {
+      ...getProjectBridge(),
+      initializeGitRepository,
+      pathExists,
+      readGitSnapshot,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-init-failure", mainPath);
+    project.git = gitSnapshot(mainPath, "stale");
+    const cachedWorkspace = workspaceSnapshot(mainPath, "2026-08-04T00:00:00.000Z");
+    store.projects = [project];
+    store.gitWorkspaces[project.id] = cachedWorkspace;
+
+    await expect(store.initializeGitRepository(project.id)).resolves.toEqual({ ok: false, message: "git init failed" });
+
+    expect(project.git?.branch).toBe("stale");
+    expect(store.gitWorkspaces[project.id]).toEqual(cachedWorkspace);
+    expect(readGitSnapshot).not.toHaveBeenCalled();
+    expect(readGitWorkspaceSnapshot).not.toHaveBeenCalled();
+    expect(store.gitWritesInProgress[project.id]).toBe(0);
+  });
+
+  it("retries a status refresh that began before Git initialization", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const staleStatus = createDeferred<ProjectGitSnapshot>();
+    const initializeGitRepository = vi.fn<ProjectBridge["initializeGitRepository"]>(async () => ({
+      ok: true,
+      message: "initialized",
+    }));
+    const pathExists = vi.fn<ProjectBridge["pathExists"]>(async () => true);
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async () => gitSnapshot(mainPath, "initialized"));
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(async () =>
+      workspaceSnapshot(mainPath, "2026-08-05T00:00:00.000Z"),
+    );
+    const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>();
+    readGitStatusSnapshot
+      .mockReturnValueOnce(staleStatus.promise)
+      .mockResolvedValueOnce(gitSnapshot(mainPath, "post-init-status"));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      initializeGitRepository,
+      pathExists,
+      readGitSnapshot,
+      readGitWorkspaceSnapshot,
+      readGitStatusSnapshot,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-init-status-race", mainPath);
+    project.git = gitSnapshot(mainPath, "pre-init");
+    store.projects = [project];
+
+    const staleRefresh = store.refreshGitStatusSnapshot(project.id);
+    await store.initializeGitRepository(project.id);
+    staleStatus.resolve({ ...gitSnapshot("", "main"), statusText: "未检测到 Git 仓库" });
+    await staleRefresh;
+
+    expect(readGitStatusSnapshot).toHaveBeenCalledTimes(2);
+    expect(project.git?.branch).toBe("post-init-status");
+    expect(project.git?.statusText).toBe("post-init-status");
+  });
+
   it("routes writes to the exact authorized repository and keeps main checkout isolated", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },
@@ -1037,12 +1211,18 @@ describe("browser Git workspace fallback", () => {
     const success = { ok: true, message: "ok" };
     const stageGitFile = vi.fn<ProjectBridge["stageGitFile"]>(async () => success);
     const commitGitStaged = vi.fn<ProjectBridge["commitGitStaged"]>(async () => success);
+    const amendGitCommit = vi.fn<ProjectBridge["amendGitCommit"]>(async () => success);
+    const undoResult = { ok: true, message: "undone", commitMessage: "restore this draft" };
+    const undoLastGitCommit = vi.fn<ProjectBridge["undoLastGitCommit"]>(async () => undoResult);
+    const cherryPickGitCommit = vi.fn<ProjectBridge["cherryPickGitCommit"]>(async () => success);
+    const revertGitCommit = vi.fn<ProjectBridge["revertGitCommit"]>(async () => success);
     const checkoutGitCommit = vi.fn<ProjectBridge["checkoutGitCommit"]>(async () => success);
     const createGitBranch = vi.fn<ProjectBridge["createGitBranch"]>(async () => success);
     const createGitTag = vi.fn<ProjectBridge["createGitTag"]>(async () => success);
     const renameGitBranch = vi.fn<ProjectBridge["renameGitBranch"]>(async () => success);
     const deleteGitBranch = vi.fn<ProjectBridge["deleteGitBranch"]>(async () => success);
     const checkoutGitRemoteBranch = vi.fn<ProjectBridge["checkoutGitRemoteBranch"]>(async () => success);
+    const publishGitBranch = vi.fn<ProjectBridge["publishGitBranch"]>(async () => success);
     const addGitRemote = vi.fn<ProjectBridge["addGitRemote"]>(async () => success);
     const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>(async (repositoryPath) =>
       gitSnapshot(repositoryPath, repositoryPath),
@@ -1055,12 +1235,17 @@ describe("browser Git workspace fallback", () => {
       ...getProjectBridge(),
       stageGitFile,
       commitGitStaged,
+      amendGitCommit,
+      undoLastGitCommit,
+      cherryPickGitCommit,
+      revertGitCommit,
       checkoutGitCommit,
       createGitBranch,
       createGitTag,
       renameGitBranch,
       deleteGitBranch,
       checkoutGitRemoteBranch,
+      publishGitBranch,
       addGitRemote,
       readGitStatusSnapshot,
       readGitSnapshot,
@@ -1079,10 +1264,15 @@ describe("browser Git workspace fallback", () => {
 
     await store.stageGitFile(project.id, "worktree.txt", worktreeTarget);
     await store.commitGitStaged(project.id, "submodule commit", submoduleTarget);
+    await store.amendGitCommit(project.id, "main amend");
+    await store.amendGitCommit(project.id, "worktree amend", worktreeTarget);
+    await store.cherryPickGitCommit(project.id, "f".repeat(40), worktreeTarget);
+    await store.revertGitCommit(project.id, "g".repeat(40), submoduleTarget);
     await store.checkoutGitCommit(project.id, "d".repeat(40), {}, { kind: "main" });
     await store.addGitRemote(project.id, "fork", "../fork.git", worktreeTarget);
     await store.checkoutGitCommit(project.id, "e".repeat(40), {}, worktreeTarget);
     await store.addGitRemote(project.id, "mirror", "../mirror.git", submoduleTarget);
+    await store.publishGitBranch(project.id, "mirror", worktreeTarget);
     await store.createGitBranch(project.id, "feature", "a".repeat(40), { checkout: true }, worktreeTarget);
     await store.createGitTag(
       project.id,
@@ -1094,14 +1284,25 @@ describe("browser Git workspace fallback", () => {
     await store.renameGitBranch(project.id, "feature", "renamed", worktreeTarget);
     await store.deleteGitBranch(project.id, "renamed", { force: true }, submoduleTarget);
     await store.checkoutGitRemoteBranch(project.id, "origin/feature", { force: true }, worktreeTarget);
+    const worktreeContext = store.resolveGitRepositoryContext(project.id, worktreeTarget)!;
+    store.gitRepositorySnapshots[worktreeContext.contextKey] = gitSnapshot(worktreePath, "stale-worktree");
+    const undo = await store.undoLastGitCommit(project.id, { allowMerge: true }, submoduleTarget);
 
     expect(stageGitFile).toHaveBeenCalledWith(worktreePath, "worktree.txt");
     expect(commitGitStaged).toHaveBeenCalledWith(submodulePath, "submodule commit");
+    expect(amendGitCommit).toHaveBeenCalledWith(mainPath, "main amend");
+    expect(amendGitCommit).toHaveBeenCalledWith(worktreePath, "worktree amend");
+    expect(undoLastGitCommit).toHaveBeenCalledWith(submodulePath, { allowMerge: true });
+    expect(cherryPickGitCommit).toHaveBeenCalledWith(worktreePath, "f".repeat(40));
+    expect(revertGitCommit).toHaveBeenCalledWith(submodulePath, "g".repeat(40));
+    expect(undo).toEqual(undoResult);
+    expect(store.gitSnapshotForRepository(project.id, worktreeTarget)).toBeNull();
     expect(checkoutGitCommit.mock.calls[0]?.[0]).toBe(mainPath);
     expect(checkoutGitCommit.mock.calls[0]?.[2]?.preferredBranch).toBe("main");
     expect(checkoutGitCommit.mock.calls[1]?.[0]).toBe(worktreePath);
     expect(addGitRemote).toHaveBeenCalledWith(worktreePath, "fork", "../fork.git");
     expect(addGitRemote).toHaveBeenCalledWith(submodulePath, "mirror", "../mirror.git");
+    expect(publishGitBranch).toHaveBeenCalledWith(worktreePath, "mirror");
     expect(createGitBranch).toHaveBeenCalledWith(worktreePath, "feature", "a".repeat(40), { checkout: true });
     expect(createGitTag).toHaveBeenCalledWith(submodulePath, "v1", "b".repeat(40), {
       annotated: true,
@@ -1110,7 +1311,7 @@ describe("browser Git workspace fallback", () => {
     expect(renameGitBranch).toHaveBeenCalledWith(worktreePath, "feature", "renamed");
     expect(deleteGitBranch).toHaveBeenCalledWith(submodulePath, "renamed", { force: true });
     expect(checkoutGitRemoteBranch).toHaveBeenCalledWith(worktreePath, "origin/feature", { force: true });
-    expect(readGitWorkspaceSnapshot).toHaveBeenCalledTimes(11);
+    expect(readGitWorkspaceSnapshot).toHaveBeenCalledTimes(17);
     expect(store.gitWritesInProgress[project.id]).toBe(0);
   });
 
@@ -1122,24 +1323,34 @@ describe("browser Git workspace fallback", () => {
     });
     const stageGitFile = vi.fn<ProjectBridge["stageGitFile"]>();
     const commitGitStaged = vi.fn<ProjectBridge["commitGitStaged"]>();
+    const amendGitCommit = vi.fn<ProjectBridge["amendGitCommit"]>();
+    const undoLastGitCommit = vi.fn<ProjectBridge["undoLastGitCommit"]>();
+    const cherryPickGitCommit = vi.fn<ProjectBridge["cherryPickGitCommit"]>();
+    const revertGitCommit = vi.fn<ProjectBridge["revertGitCommit"]>();
     const checkoutGitCommit = vi.fn<ProjectBridge["checkoutGitCommit"]>();
     const createGitBranch = vi.fn<ProjectBridge["createGitBranch"]>();
     const createGitTag = vi.fn<ProjectBridge["createGitTag"]>();
     const renameGitBranch = vi.fn<ProjectBridge["renameGitBranch"]>();
     const deleteGitBranch = vi.fn<ProjectBridge["deleteGitBranch"]>();
     const checkoutGitRemoteBranch = vi.fn<ProjectBridge["checkoutGitRemoteBranch"]>();
+    const publishGitBranch = vi.fn<ProjectBridge["publishGitBranch"]>();
     const addGitRemote = vi.fn<ProjectBridge["addGitRemote"]>();
     const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>();
     window.projectBridge = {
       ...getProjectBridge(),
       stageGitFile,
       commitGitStaged,
+      amendGitCommit,
+      undoLastGitCommit,
+      cherryPickGitCommit,
+      revertGitCommit,
       checkoutGitCommit,
       createGitBranch,
       createGitTag,
       renameGitBranch,
       deleteGitBranch,
       checkoutGitRemoteBranch,
+      publishGitBranch,
       addGitRemote,
       readGitWorkspaceSnapshot,
     };
@@ -1190,6 +1401,10 @@ describe("browser Git workspace fallback", () => {
       store.stageGitFile("project-stale-write", "file.txt", { kind: "submodule", path: uninitializedPath }),
     ).resolves.toBeNull();
     await expect(store.commitGitStaged("project-stale-write", "message", staleTarget)).resolves.toBeNull();
+    await expect(store.amendGitCommit("project-stale-write", "message", staleTarget)).resolves.toBeNull();
+    await expect(store.undoLastGitCommit("project-stale-write", {}, staleTarget)).resolves.toBeNull();
+    await expect(store.cherryPickGitCommit("project-stale-write", "e".repeat(40), staleTarget)).resolves.toBeNull();
+    await expect(store.revertGitCommit("project-stale-write", "e".repeat(40), staleTarget)).resolves.toBeNull();
     await expect(store.checkoutGitCommit("project-stale-write", "e".repeat(40), {}, staleTarget)).resolves.toBeNull();
     await expect(
       store.createGitBranch("project-stale-write", "feature", "e".repeat(40), {}, staleTarget),
@@ -1200,6 +1415,7 @@ describe("browser Git workspace fallback", () => {
     await expect(
       store.checkoutGitRemoteBranch("project-stale-write", "origin/feature", {}, staleTarget),
     ).resolves.toBeNull();
+    await expect(store.publishGitBranch("project-stale-write", "origin", staleTarget)).resolves.toBeNull();
     await expect(store.addGitRemote("project-stale-write", "fork", "../fork.git", staleTarget)).resolves.toBeNull();
 
     store.gitWorkspaces["project-stale-write"] = {
@@ -1220,13 +1436,122 @@ describe("browser Git workspace fallback", () => {
 
     expect(stageGitFile).not.toHaveBeenCalled();
     expect(commitGitStaged).not.toHaveBeenCalled();
+    expect(amendGitCommit).not.toHaveBeenCalled();
+    expect(undoLastGitCommit).not.toHaveBeenCalled();
+    expect(cherryPickGitCommit).not.toHaveBeenCalled();
+    expect(revertGitCommit).not.toHaveBeenCalled();
     expect(checkoutGitCommit).not.toHaveBeenCalled();
     expect(createGitBranch).not.toHaveBeenCalled();
     expect(createGitTag).not.toHaveBeenCalled();
     expect(renameGitBranch).not.toHaveBeenCalled();
     expect(deleteGitBranch).not.toHaveBeenCalled();
     expect(checkoutGitRemoteBranch).not.toHaveBeenCalled();
+    expect(publishGitBranch).not.toHaveBeenCalled();
     expect(addGitRemote).not.toHaveBeenCalled();
     expect(readGitWorkspaceSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("fully refreshes the authorized repository after failed history actions", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const failure = { ok: false, message: "conflict recovered" };
+    const cherryPickGitCommit = vi.fn<ProjectBridge["cherryPickGitCommit"]>(async () => failure);
+    const revertGitCommit = vi.fn<ProjectBridge["revertGitCommit"]>(async () => failure);
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async (repositoryPath) =>
+      gitSnapshot(repositoryPath, "refreshed"),
+    );
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(async () =>
+      workspaceSnapshot(mainPath, "2026-08-05T00:00:00.000Z"),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      cherryPickGitCommit,
+      revertGitCommit,
+      readGitSnapshot,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-history-action-failure", mainPath);
+    store.projects = [project];
+
+    await expect(store.cherryPickGitCommit(project.id, "a".repeat(40))).resolves.toEqual(failure);
+    await expect(store.revertGitCommit(project.id, "b".repeat(40))).resolves.toEqual(failure);
+
+    expect(cherryPickGitCommit).toHaveBeenCalledWith(mainPath, "a".repeat(40));
+    expect(revertGitCommit).toHaveBeenCalledWith(mainPath, "b".repeat(40));
+    expect(readGitSnapshot).toHaveBeenCalledTimes(2);
+    expect(readGitWorkspaceSnapshot).toHaveBeenCalledTimes(2);
+    expect(store.gitWritesInProgress[project.id]).toBe(0);
+  });
+
+  it("serializes history actions for one repository target and rechecks queued targets", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const worktreePath = "C:\\project-worktree";
+    let currentWorkspace: ProjectGitWorkspaceSnapshot = {
+      ...workspaceSnapshot(mainPath, "2026-08-05T00:00:00.000Z"),
+      worktrees: { state: "ready", failure: null, entries: [healthyWorktree(worktreePath)] },
+    };
+    const firstWrite = createDeferred<{ ok: true; message: string }>();
+    const workspaceRefresh = createDeferred<ProjectGitWorkspaceSnapshot>();
+    const cherryPickGitCommit = vi.fn<ProjectBridge["cherryPickGitCommit"]>(() => firstWrite.promise);
+    const revertGitCommit = vi.fn<ProjectBridge["revertGitCommit"]>(async () => ({ ok: true, message: "reverted" }));
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async (repositoryPath) =>
+      gitSnapshot(repositoryPath, "refreshed"),
+    );
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(() => workspaceRefresh.promise);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      cherryPickGitCommit,
+      revertGitCommit,
+      readGitSnapshot,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-history-action-queue", mainPath);
+    const target = { kind: "worktree", path: worktreePath } as const;
+    store.projects = [project];
+    store.gitWorkspaces[project.id] = currentWorkspace;
+
+    const first = store.cherryPickGitCommit(project.id, "a".repeat(40), target);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(cherryPickGitCommit).toHaveBeenCalledWith(worktreePath, "a".repeat(40));
+
+    const queued = store.revertGitCommit(project.id, "b".repeat(40), target);
+    await Promise.resolve();
+    expect(revertGitCommit).not.toHaveBeenCalled();
+
+    firstWrite.resolve({ ok: true, message: "picked" });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(readGitWorkspaceSnapshot).toHaveBeenCalledOnce();
+    expect(revertGitCommit).not.toHaveBeenCalled();
+
+    currentWorkspace = {
+      ...currentWorkspace,
+      worktrees: { state: "ready", failure: null, entries: [] },
+    };
+    store.gitWorkspaces[project.id] = currentWorkspace;
+    workspaceRefresh.resolve(currentWorkspace);
+
+    await expect(first).resolves.toEqual({ ok: true, message: "picked" });
+    await expect(queued).resolves.toBeNull();
+    expect(revertGitCommit).not.toHaveBeenCalled();
+    expect(store.gitWritesInProgress[project.id]).toBe(0);
   });
 });

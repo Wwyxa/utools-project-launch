@@ -4,6 +4,7 @@ import {
   CheckSquare,
   Folder,
   FolderOpen,
+  GitBranch,
   GitCommitHorizontal,
   GripHorizontal,
   Copy,
@@ -622,6 +623,17 @@ watch(
                   <GitCommitHorizontal :size="12" />
                   <span class="truncate">{{ project.git?.statusText || t.git.noRepo }}</span>
                 </span>
+                <button
+                  v-if="!hasGitSnapshot && !isUnavailable && !isRefreshingProject"
+                  type="button"
+                  class="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
+                  title="前往 Git 标签页初始化仓库"
+                  aria-label="前往 Git 标签页初始化仓库"
+                  @click="activeTab = 'git'"
+                >
+                  <GitBranch :size="12" />
+                  <span>初始化 Git 仓库</span>
+                </button>
               </div>
               <p class="text-sm leading-6 text-on-surface-variant">
                 {{ project.description || t.projectDetails.noScripts }}

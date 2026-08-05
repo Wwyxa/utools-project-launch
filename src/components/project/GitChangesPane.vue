@@ -8,9 +8,12 @@ import {
   ChevronRight,
   FileSearch,
   Minus,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Undo,
   WandSparkles,
+  X,
 } from "lucide-vue-next";
 import {
   AI_COMMIT_MESSAGE_MODE_ID,
@@ -39,6 +42,7 @@ type WorktreeDiffScope = Exclude<ProjectGitDiffScope, "combined">;
 type FileReviewSelection = { path: string; scope: WorktreeDiffScope };
 type ActiveGitFileAction = { action: GitFileActionName; path: string };
 type AppActionDialog = {
+  tone?: "danger" | "warning";
   title: string;
   message: string;
   detail?: string;
@@ -91,6 +95,14 @@ const commitMessageAiResult = ref(createAiReasoningStreamState());
 const commitMessageAiState = ref<AiState>("idle");
 const confirmationDialog = ref<AppActionDialog | null>(null);
 const isConfirmationRunning = ref(false);
+const isAmendMode = ref(false);
+const preAmendDraft = ref<string | null>(null);
+const amendOriginalMessage = ref("");
+const amendCommitMessage = ref("");
+const moreMenuOpen = ref(false);
+const moreMenuPosition = ref({ left: 8, top: 8 });
+const moreMenuRef = ref<HTMLElement | null>(null);
+const moreMenuOpener = ref<HTMLElement | null>(null);
 const stashDialogOpen = ref(false);
 const stashMessage = ref("");
 const stashIncludeUntracked = ref(false);
@@ -105,6 +117,26 @@ const activeRepositoryContext = computed(() =>
 );
 const snapshot = computed(() => store.gitSnapshotForRepository(props.projectId, props.repositoryTarget));
 const files = computed(() => snapshot.value?.files || []);
+const headCommit = computed(
+  () =>
+    snapshot.value?.commits?.find((commit) => commit.refNames?.some((ref) => ref.kind === "head" && ref.head)) ??
+    snapshot.value?.commits?.find((commit) =>
+      (commit.refs || "").split(",").some((ref) => ref.trim() === "HEAD" || /^HEAD ->\s+\S+$/.test(ref.trim())),
+    ) ??
+    null,
+);
+const headCommitMessage = computed(() => (headCommit.value?.body || headCommit.value?.message || "").trim());
+const headActionBlockedMessage = computed(() => {
+  if (props.disabled) return "当前仓库不可用，无法执行 Git 操作。";
+  if (isChangesWriteBusy.value) return "正在执行 Git 操作。";
+  if (!activeRepositoryContext.value || !snapshot.value?.repositoryPath) return "未检测到 Git 仓库。";
+  if (snapshot.value.isDetachedHead) return "当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。";
+  if (!(snapshot.value.branches || []).some((branch) => branch.current)) {
+    return "当前 HEAD 未指向本地分支，请使用外部 Git 工具处理。";
+  }
+  if (!headCommit.value) return "当前分支没有可操作的提交。";
+  return "";
+});
 const canStageFile = (file: ProjectGitFileChange) => file.unstaged || (!file.staged && file.unstaged !== false);
 const canUnstageFile = (file: ProjectGitFileChange) => Boolean(file.staged);
 const stageableFiles = computed(() => files.value.filter(canStageFile));
@@ -126,9 +158,31 @@ const visibleWorktreeItems = computed(() =>
 const isChangesWriteBusy = computed(() => Boolean(activeGitAction.value) || activeGitFileActions.value.length > 0);
 const isStashDialogBusy = computed(() => activeGitAction.value === "stash");
 const canCreateStash = computed(() => !props.disabled && !isChangesWriteBusy.value && files.value.length > 0);
-const canCommitStaged = computed(
-  () => !props.disabled && !isChangesWriteBusy.value && hasStagedChanges.value && Boolean(props.commitMessage.trim()),
+const composerCommitMessage = computed(() => (isAmendMode.value ? amendCommitMessage.value : props.commitMessage));
+const amendMessageChanged = computed(() => composerCommitMessage.value.trim() !== amendOriginalMessage.value);
+const canCommitStaged = computed(() => {
+  if (props.disabled || isChangesWriteBusy.value || !composerCommitMessage.value.trim()) return false;
+  if (!isAmendMode.value) return hasStagedChanges.value;
+  return !headActionBlockedMessage.value && (hasStagedChanges.value || amendMessageChanged.value);
+});
+const canStartAmend = computed(() => !isAmendMode.value && !headActionBlockedMessage.value);
+const canUndoLastCommit = computed(() => !headActionBlockedMessage.value);
+const isCommitActionActive = computed(() => activeGitAction.value === "commit" || activeGitAction.value === "amend");
+const amendActionTitle = computed(() =>
+  headActionBlockedMessage.value
+    ? headActionBlockedMessage.value
+    : isAmendMode.value
+      ? "当前已处于修订上次提交模式"
+      : "修订上次提交",
 );
+const undoLastCommitTitle = computed(() => headActionBlockedMessage.value || "撤销上次提交");
+const commitActionTitle = computed(() => {
+  if (isCommitActionActive.value) return isAmendMode.value ? "正在修订上次提交" : "正在提交 staged 变更";
+  if (!isAmendMode.value) return hasStagedChanges.value ? "提交 staged 变更" : "没有 staged 变更可提交";
+  if (headActionBlockedMessage.value) return headActionBlockedMessage.value;
+  if (!composerCommitMessage.value.trim()) return "请先填写 commit message";
+  return hasStagedChanges.value || amendMessageChanged.value ? "修订上次提交" : "修改提交信息或暂存变更后才能修订";
+});
 const commitMessageAiMode = computed(
   () =>
     store.aiPreferences.modes.find((mode) => mode.id === AI_COMMIT_MESSAGE_MODE_ID) ||
@@ -162,6 +216,88 @@ const waitForVisualFeedback = async () => {
   await nextTick();
   await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 };
+
+const moreMenuStyle = computed(() => ({
+  left: `${moreMenuPosition.value.left}px`,
+  top: `${moreMenuPosition.value.top}px`,
+}));
+
+const moreMenuItems = () =>
+  moreMenuRef.value
+    ? Array.from(moreMenuRef.value.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
+        (item) => !(item instanceof HTMLButtonElement && item.disabled),
+      )
+    : [];
+
+const closeMoreMenu = (restoreFocus = true) => {
+  const opener = moreMenuOpener.value;
+  moreMenuOpen.value = false;
+  moreMenuOpener.value = null;
+  if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
+};
+
+const openMoreMenu = async (trigger: HTMLElement) => {
+  moreMenuOpener.value = trigger;
+  moreMenuOpen.value = true;
+  await nextTick();
+  const menu = moreMenuRef.value;
+  const triggerRect = trigger.getBoundingClientRect();
+  const menuRect = menu?.getBoundingClientRect();
+  const menuWidth = menuRect?.width || 112;
+  const menuHeight = menuRect?.height || 80;
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const left = Math.max(8, Math.min(triggerRect.right - menuWidth, viewportWidth - menuWidth - 8));
+  const belowTop = triggerRect.bottom + 6;
+  const top = belowTop + menuHeight <= viewportHeight - 8 ? belowTop : Math.max(8, triggerRect.top - menuHeight - 6);
+  moreMenuPosition.value = { left, top };
+  moreMenuItems()[0]?.focus();
+};
+
+const toggleMoreMenu = (event: MouseEvent) => {
+  const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  if (!trigger) return;
+  if (moreMenuOpen.value) {
+    closeMoreMenu();
+    return;
+  }
+  void openMoreMenu(trigger);
+};
+
+const handleMoreMenuKeydown = (event: KeyboardEvent) => {
+  const current = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[role="menuitem"]') : null;
+  const items = moreMenuItems();
+  if (!current || items.length === 0) return;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeMoreMenu();
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const index = Math.max(0, items.indexOf(current));
+    items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    return;
+  }
+  if (event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+  }
+};
+
+const handleMoreMenuPointerDown = (event: PointerEvent) => {
+  const target = event.target;
+  if (
+    target instanceof Element &&
+    target.closest("[data-git-changes-more-menu], [data-git-changes-more-menu-trigger]")
+  ) {
+    return;
+  }
+  closeMoreMenu(false);
+};
+
+const handleMoreMenuViewportChange = () => closeMoreMenu(false);
 
 const gitFileActionLoadingMessage = (action: GitFileActionName) => {
   if (action === "stage") return "正在暂存文件...";
@@ -400,6 +536,39 @@ const closeConfirmationDialog = () => {
   if (!isConfirmationRunning.value) confirmationDialog.value = null;
 };
 
+const setComposerCommitMessage = (message: string) => {
+  if (isAmendMode.value) {
+    amendCommitMessage.value = message;
+    return;
+  }
+  emit("update:commitMessage", message);
+};
+
+const leaveAmendMode = (restoreDraft: boolean) => {
+  const draft = preAmendDraft.value;
+  isAmendMode.value = false;
+  preAmendDraft.value = null;
+  amendOriginalMessage.value = "";
+  amendCommitMessage.value = "";
+  if (restoreDraft && draft !== null && props.commitMessage !== draft) emit("update:commitMessage", draft);
+};
+
+const startAmendMode = () => {
+  if (!canStartAmend.value) return;
+  const message = headCommitMessage.value;
+  closeMoreMenu(false);
+  preAmendDraft.value = props.commitMessage;
+  amendOriginalMessage.value = message;
+  amendCommitMessage.value = message;
+  isAmendMode.value = true;
+  scheduleCommitMessageTextareaResize();
+};
+
+const cancelAmendMode = () => {
+  leaveAmendMode(true);
+  closeMoreMenu(false);
+};
+
 const closeStashDialog = (restoreFocus = true, force = false) => {
   if (isStashDialogBusy.value && !force) return;
   stashDialogOpen.value = false;
@@ -462,7 +631,119 @@ const confirmRiskyAction = async () => {
   }
 };
 
+const executeAmendLastCommit = async () => {
+  const originContext = activeRepositoryContext.value;
+  if (!originContext || !isAmendMode.value || !canCommitStaged.value) return;
+  const originContextKey = originContext.contextKey;
+  const originGeneration = repositoryContextGeneration.value;
+  const isOriginVisible = () =>
+    repositoryContextGeneration.value === originGeneration &&
+    activeRepositoryContext.value?.contextKey === originContextKey;
+
+  activeGitAction.value = "amend";
+  reportFeedback("loading", "正在修订上次提交...");
+  await waitForVisualFeedback();
+  try {
+    const result = await store.amendGitCommit(
+      props.projectId,
+      composerCommitMessage.value.trim(),
+      originContext.target,
+    );
+    if (!isOriginVisible()) return;
+    if (!result) {
+      reportFeedback("warning", "当前项目不可用，无法修订上次提交。");
+      return;
+    }
+    reportFeedback(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      leaveAmendMode(false);
+      emit("update:commitMessage", "");
+      emit("committed");
+    }
+  } catch (error) {
+    if (isOriginVisible()) reportFeedback("error", error instanceof Error ? error.message : "修订上次提交失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestAmendLastCommit = () => {
+  if (!isAmendMode.value || !canCommitStaged.value) return;
+  confirmationDialog.value = {
+    tone: "warning",
+    title: "修订上次提交",
+    message: "此操作会重写当前 HEAD 提交。确认后，提交信息和 staged 变更会合并到上次提交。",
+    detail: headCommit.value?.message || "",
+    confirmLabel: "修订提交",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: executeAmendLastCommit,
+  };
+};
+
+const executeUndoLastCommit = async (allowMerge = false) => {
+  const originContext = activeRepositoryContext.value;
+  if (!originContext || !canUndoLastCommit.value) return;
+  const originContextKey = originContext.contextKey;
+  const originGeneration = repositoryContextGeneration.value;
+  const isOriginVisible = () =>
+    repositoryContextGeneration.value === originGeneration &&
+    activeRepositoryContext.value?.contextKey === originContextKey;
+
+  activeGitAction.value = "undo-last-commit";
+  reportFeedback("loading", "正在撤销上次提交...");
+  await waitForVisualFeedback();
+  try {
+    const result = await store.undoLastGitCommit(props.projectId, { allowMerge }, originContext.target);
+    if (!isOriginVisible()) return;
+    if (!result) {
+      reportFeedback("warning", "当前项目不可用，无法撤销上次提交。");
+      return;
+    }
+    if (!result.ok && result.blockReason === "merge-commit" && !allowMerge) {
+      if (!props.open) return;
+      confirmationDialog.value = {
+        tone: "danger",
+        title: "按第一父提交撤销 merge commit",
+        message: "上次提交是 merge commit。继续会按第一父提交移除该提交，并保留文件改动。",
+        detail: headCommit.value?.message || "",
+        confirmLabel: "按第一父提交撤销",
+        cancelLabel: t.value.common.cancel,
+        onConfirm: () => executeUndoLastCommit(true),
+      };
+      return;
+    }
+    reportFeedback(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      leaveAmendMode(false);
+      if (typeof result.commitMessage === "string") emit("update:commitMessage", result.commitMessage);
+      emit("committed");
+    }
+  } catch (error) {
+    if (isOriginVisible()) reportFeedback("error", error instanceof Error ? error.message : "撤销上次提交失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestUndoLastCommit = () => {
+  if (!canUndoLastCommit.value) return;
+  closeMoreMenu(false);
+  confirmationDialog.value = {
+    tone: "danger",
+    title: "撤销上次提交",
+    message: "此操作将恢复上个提交的暂存和提交信息，不创建反向提交",
+    detail: headCommit.value?.message || "",
+    confirmLabel: "撤销",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeUndoLastCommit(),
+  };
+};
+
 const handleCommitStaged = async () => {
+  if (isAmendMode.value) {
+    requestAmendLastCommit();
+    return;
+  }
   if (props.disabled || activeGitAction.value || activeGitFileActions.value.length > 0) return;
   const message = props.commitMessage.trim();
   if (!message) {
@@ -571,7 +852,7 @@ const generateCommitMessage = async () => {
         if (isOriginVisible()) {
           commitMessageAiResult.value = originResult;
           const generated = aiReasoningCopyText(originResult);
-          if (generated) emit("update:commitMessage", generated);
+          if (generated) setComposerCommitMessage(generated);
         }
       },
       onDone: (result) => {
@@ -584,7 +865,7 @@ const generateCommitMessage = async () => {
           if (isOriginVisible()) {
             commitMessageAiResult.value = originResult;
             commitMessageAiState.value = "success";
-            emit("update:commitMessage", generated);
+            setComposerCommitMessage(generated);
             reportFeedback("success", "已填入提交信息。");
           }
           return;
@@ -612,7 +893,7 @@ const toggleGroup = (scope: WorktreeDiffScope) => {
 };
 
 const handleCommitMessageInput = (event: Event) => {
-  emit("update:commitMessage", (event.target as HTMLTextAreaElement).value);
+  setComposerCommitMessage((event.target as HTMLTextAreaElement).value);
   resizeCommitMessageTextarea();
 };
 
@@ -625,7 +906,13 @@ const requestOpenFile = (file: ProjectGitFileChange) => {
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (event.detail.handled || !stashDialogOpen.value || isStashDialogBusy.value) return;
+  if (event.detail.handled) return;
+  if (moreMenuOpen.value) {
+    closeMoreMenu();
+    event.detail.handle();
+    return;
+  }
+  if (!stashDialogOpen.value || isStashDialogBusy.value) return;
   closeStashDialog();
   event.detail.handle();
 };
@@ -633,6 +920,9 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
 let stopAppEscapeListener = () => {};
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+  window.addEventListener("pointerdown", handleMoreMenuPointerDown);
+  window.addEventListener("resize", handleMoreMenuViewportChange);
+  window.addEventListener("scroll", handleMoreMenuViewportChange, true);
 });
 
 watch(isChangesWriteBusy, (busy) => emit("busy-change", busy), { immediate: true });
@@ -641,6 +931,8 @@ watch(
   () => activeRepositoryContext.value?.contextKey,
   () => {
     repositoryContextGeneration.value += 1;
+    closeMoreMenu(false);
+    leaveAmendMode(false);
     confirmationDialog.value = null;
     closeStashDialog(false, true);
     commitMessageAiResult.value = createAiReasoningStreamState();
@@ -657,10 +949,26 @@ watch(
   },
 );
 
-watch([() => props.commitMessage, () => props.open], scheduleCommitMessageTextareaResize, { immediate: true });
+watch(
+  () => props.open,
+  (open) => {
+    if (!open) {
+      closeMoreMenu(false);
+      confirmationDialog.value = null;
+      leaveAmendMode(true);
+    }
+  },
+);
+
+watch([() => composerCommitMessage.value, () => props.open], scheduleCommitMessageTextareaResize, { immediate: true });
 
 onBeforeUnmount(() => {
+  closeMoreMenu(false);
+  leaveAmendMode(false);
   stopAppEscapeListener();
+  window.removeEventListener("pointerdown", handleMoreMenuPointerDown);
+  window.removeEventListener("resize", handleMoreMenuViewportChange);
+  window.removeEventListener("scroll", handleMoreMenuViewportChange, true);
   repositoryContextGeneration.value += 1;
   emit("busy-change", false);
 });
@@ -708,18 +1016,84 @@ onBeforeUnmount(() => {
           </button>
           <button
             type="button"
+            data-git-changes-more-menu-trigger
+            class="git-section-action"
+            :disabled="disabled"
+            :aria-expanded="moreMenuOpen"
+            aria-haspopup="menu"
+            :title="disabled ? '当前仓库不可用，无法执行 Git 操作' : '更多 Git 操作'"
+            :aria-label="disabled ? '当前仓库不可用，无法执行 Git 操作' : '更多 Git 操作'"
+            @click="toggleMoreMenu"
+          >
+            <MoreHorizontal :size="13" />
+          </button>
+          <button
+            type="button"
             :class="cn('git-section-action', canCommitStaged && 'toolbar-primary-button')"
             :disabled="!canCommitStaged"
-            :aria-busy="activeGitAction === 'commit'"
-            :title="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
-            :aria-label="activeGitAction === 'commit' ? '正在提交 staged 变更' : '提交 staged 变更'"
+            :aria-busy="isCommitActionActive"
+            :title="commitActionTitle"
+            :aria-label="commitActionTitle"
             @click="handleCommitStaged"
           >
-            <Check :size="13" :class="activeGitAction === 'commit' ? 'animate-pulse' : ''" :stroke-width="2.5" />
+            <Check :size="13" :class="isCommitActionActive ? 'animate-pulse' : ''" :stroke-width="2.5" />
           </button>
         </div>
       </Teleport>
     </div>
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="moreMenuOpen"
+          ref="moreMenuRef"
+          data-git-changes-more-menu
+          class="fixed z-[90] w-max max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-2xl"
+          :style="moreMenuStyle"
+          role="menu"
+          @click.stop
+          @keydown="handleMoreMenuKeydown"
+        >
+          <button
+            v-if="!isAmendMode"
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
+            :disabled="!canStartAmend"
+            :title="amendActionTitle"
+            :aria-label="amendActionTitle"
+            @click="startAmendMode"
+          >
+            <Pencil :size="13" />
+            <span>修订上次提交</span>
+          </button>
+          <button
+            v-else
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
+            title="恢复进入修订模式前的提交草稿"
+            aria-label="取消修订上次提交"
+            @click="cancelAmendMode"
+          >
+            <X :size="13" />
+            <span>取消修订模式</span>
+          </button>
+          <div class="my-1 border-t border-border-subtle" />
+          <button
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact text-status-error hover:bg-status-error/10 hover:text-status-error"
+            :disabled="!canUndoLastCommit"
+            :title="undoLastCommitTitle"
+            :aria-label="undoLastCommitTitle"
+            @click="requestUndoLastCommit"
+          >
+            <Undo :size="13" />
+            <span>撤销上次提交</span>
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
     <div
       v-show="open"
       ref="filesScrollRef"
@@ -733,9 +1107,25 @@ onBeforeUnmount(() => {
       @wheel="handlePanelWheel"
     >
       <div class="shrink-0 border-b border-border-subtle bg-surface px-2 py-1.5">
+        <div
+          v-if="isAmendMode"
+          class="mb-1 flex h-6 items-center gap-1.5 rounded border border-status-warning/30 bg-status-warning/10 px-1.5 text-[10px] font-bold text-status-warning"
+        >
+          <Pencil :size="12" />
+          <span class="min-w-0 flex-1 truncate">修订上次提交</span>
+          <button
+            type="button"
+            class="git-row-action"
+            title="取消修订上次提交"
+            aria-label="取消修订上次提交"
+            @click="cancelAmendMode"
+          >
+            <X :size="12" />
+          </button>
+        </div>
         <textarea
           ref="commitMessageTextareaRef"
-          :value="commitMessage"
+          :value="composerCommitMessage"
           rows="1"
           class="ui-field git-commit-message-input themed-scrollbar w-full min-w-0 shrink-0 resize-none overflow-hidden"
           placeholder="输入 commit message..."
@@ -927,6 +1317,7 @@ onBeforeUnmount(() => {
 
     <ProjectActionDialog
       :open="Boolean(confirmationDialog)"
+      :tone="confirmationDialog?.tone || 'danger'"
       :title="confirmationDialog?.title || ''"
       :message="confirmationDialog?.message || ''"
       :detail="confirmationDialog?.detail"
@@ -943,7 +1334,7 @@ onBeforeUnmount(() => {
         <div
           v-if="stashDialogOpen"
           class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
-          @click.self="closeStashDialog"
+          @click.self="() => closeStashDialog()"
         >
           <form
             class="w-[min(24rem,92vw)] overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
@@ -982,7 +1373,7 @@ onBeforeUnmount(() => {
                   type="button"
                   class="git-dialog-secondary"
                   :disabled="isStashDialogBusy"
-                  @click="closeStashDialog"
+                  @click="() => closeStashDialog()"
                 >
                   {{ t.common.cancel }}
                 </button>

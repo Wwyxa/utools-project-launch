@@ -542,6 +542,72 @@ execFile(
 
 Use async execution with disabled interactive prompts and a timeout so remote Git failures return to the UI safely.
 
+## Scenario: Git Repository Initialization And First Publish Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: a project directory without a Git repository needs native initialization, or the selected repository's current local branch needs its first upstream publication.
+- The path crosses `GitTab.vue`, Pinia, `ProjectBridge`, the browser fallback, and `public/preload.js`; initialization and publication have different authorization boundaries.
+
+### 2. Signatures
+
+- `ProjectBridge.initializeGitRepository(projectPath: string): Promise<ProjectGitActionResult>`.
+- `ProjectBridge.publishGitBranch(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>`.
+- Store actions: `initializeGitRepository(projectId)` and `publishGitBranch(projectId, remoteName, target)`.
+- A successful publish result includes the selected `remote` and current `branch`.
+
+### 3. Contracts
+
+- `GitTab.vue` owns the compact initialization command, remote selection, confirmation, and feedback. It never calls the bridge directly.
+- Initialization is limited to the main project directory. The Store verifies the project path and rechecks it after the bridge call, reuses the project write lock, clears Git coordination/workspace/snapshot state only on success, then forces main workspace and snapshot reads. It does not call `runAuthorizedGitWrite`, because a missing Git workspace cannot authorize a repository target.
+- Preload validates that the initialization path is a directory and runs `git -C <projectPath> init` without passing a branch name, so native Git configuration such as `init.defaultBranch` remains authoritative.
+- Publish still uses `runAuthorizedGitWrite` with `{ refresh: "full", refs: true, refreshOnFailure: true }`. Preload validates a Git root, the normalized selected remote name, remote existence, a symbolic local `HEAD`, and missing upstream before executing `git push --set-upstream <remote> HEAD:<branch>`.
+- Publication uses the existing asynchronous remote helper with `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=Never`, and its timeout. No arbitrary refspec, alternate remote branch name, force flag, or generic Git command API is exposed.
+- Browser fallback implements both methods with typed unavailable results.
+
+### 4. Validation & Error Matrix
+
+- Missing or non-directory project path -> initialization returns a clear failure without invoking Git.
+- `git init` failure -> return the first Git error and retain current Git state.
+- Missing Git root, invalid/missing remote, detached `HEAD`, no symbolic local branch, or existing upstream -> publication returns a clear failure before push.
+- Authentication failure or remote timeout -> return the existing remote error/timeout result and refresh the authorized snapshot.
+- A project path changed while initialization is in flight -> discard the stale result rather than refreshing or reporting success for the replacement project.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a non-Git main project initializes, clears stale no-repository state, and refreshes into a live Git snapshot.
+- Good: a branch without upstream publishes to the selected `mirror` remote, tracks `mirror/<branch>`, and never writes to an unselected `origin` remote.
+- Base: one configured remote opens one confirmation; multiple remotes require a selection from the existing compact remote menu.
+- Bad: calling upstream-only `runGitRemoteResult` for first publication, because it rejects before `push --set-upstream` can run.
+- Bad: exposing a free-form refspec or running remote Git through a blocking process call.
+
+### 6. Tests Required
+
+- `node --check public/preload.js` after changing initialization or publication execution.
+- `npm run validate:git-commits` must initialize a real temporary directory, publish to a selected local bare remote, assert the upstream, assert the unselected remote has no branch, and reject repeat publication.
+- `npx vitest run tests/projectBridge.workspace.test.ts` must assert main-path initialization, target-aware publication, refreshes, and stale-target rejection.
+- Run `npm run type-check` and `npm run build` after changing bridge, Store, or GitTab contracts.
+- Manual uTools smoke: one remote confirmation, multi-remote selection, detached/no-remote states, authentication failure, and a narrow top panel.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+return runGitRemoteResult(projectPath, (upstream) => ["push", "--set-upstream", upstream.remote]);
+```
+
+This requires an upstream before the first publication and leaves the remote branch uncontrolled.
+
+#### Correct
+
+```js
+const branch = await runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]);
+return runGitRemoteCommandResult(repositoryPath, ["push", "--set-upstream", remoteName, `HEAD:${branch.trim()}`]);
+```
+
+Validate the repository state in preload, use the selected remote as an argv token, and keep the fixed refspec scoped to the current local branch.
+
 ## Scenario: External Application Launch Bridge Boundary
 
 ### 1. Scope / Trigger
@@ -708,6 +774,7 @@ External JSON must pass through runtime validation before store merge.
 - Preload reads `refs/stash` through `git reflog` in newest-first order and derives the canonical action selector as `stash@{<entry index>}`. Do not use `%gD` as the numeric selector source while `--date=iso-strict` is active: Git emits a timestamp selector instead.
 - Every reflog entry becomes one synthetic history commit immediately before its visible `baseHash`, with `parents: [baseHash]`. The index and optional untracked-file helper commits stay out of the visible history while `untrackedFilesHash` remains available in metadata.
 - A stash at the top of a filtered history must preseed a visible base lane when no lane for that base exists. Its node therefore occupies a side lane; the base/mainline must not be replaced by the first stash node.
+- A synthetic stash can occupy `commits[0]` when its base is the current HEAD. Actions that operate on HEAD must select the structured `{ kind: "head", head: true }` ref, with an exact legacy `HEAD` fallback, rather than assuming the first history row is HEAD.
 - Components select Apply, Pop, and Drop targets from `commit.stash.selector` first. Structured and legacy stash refs are presentation fallbacks only.
 - History expansion, tooltip fallback, right-side file preview, and AI diff context pass `commit.stash` to the detail readers. Ordinary commits omit it and retain the generic commit reader path.
 - For a stash detail reader, compare `baseHash` to the stash hash for tracked files. When `untrackedFilesHash` is non-null, append that root tree's `diff-tree --root` files and patches, and label its added files `UNTRACKED`.
@@ -719,6 +786,7 @@ External JSON must pass through runtime validation before store merge.
 - Two stashes sharing one base -> expose `stash@{0}` and `stash@{1}` in stack order, each with the same `baseHash`.
 - A stash created with `--include-untracked` -> preserve a non-null `untrackedFilesHash` but display no `index on ...` or `untracked files on ...` helper rows.
 - A stash containing staged, tracked working-tree, and untracked changes -> file details include all three categories; the untracked entry has `status: "UNTRACKED"` and its single-file patch is non-empty.
+- A stash whose base is HEAD -> history may begin with `stash@{0}`, but the structured HEAD ref remains attached to the real HEAD commit.
 - A stash detail reader invoked without metadata -> do not infer a stash from generic merge parents; keep the normal commit reader path so unrelated merge commits retain their established behavior.
 - A filtered-out stash base -> do not synthesize a dangling base lane outside the visible graph window.
 - An invalid or stale selector -> preload returns the existing typed failure without invoking a stash mutation.
@@ -782,3 +850,144 @@ readGitFileChanges(
 ```
 
 Use the first-parent range for tracked changes and the root-tree range for the optional untracked payload.
+
+## Scenario: Git HEAD Correction And Undo Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: a user amends the attached branch's current commit or removes that commit with VS Code-style Undo Last Commit.
+- The flow crosses `GitChangesPane.vue`, `GitTab.vue`'s repository-scoped draft, Pinia, `ProjectBridge`, browser fallback, and `public/preload.js`.
+
+### 2. Signatures
+
+- `ProjectBridge.amendGitCommit(projectPath: string, message: string): Promise<ProjectGitActionResult>`.
+- `ProjectBridge.undoLastGitCommit(projectPath: string, options?: { allowMerge?: boolean }): Promise<ProjectGitActionResult>`.
+- `ProjectGitActionBlockReason` includes `"merge-commit"`; `ProjectGitActionResult.commitMessage?` returns the full removed commit message after a successful undo.
+- Store actions mirror the bridge with `projectId` and `ProjectGitRepositoryTarget` arguments.
+
+### 3. Contracts
+
+- Preload validates that `HEAD` is attached to `refs/heads/<branch>` before either mutation. A detached or non-local symbolic ref is rejected before Git writes.
+- Amend reads the complete HEAD message and staged diff. It runs `git commit --amend -m <message>` only when the normalized message changed or staged content exists; otherwise it returns a regular no-op failure.
+- Undo is not revert: a normal commit uses `git reset --soft HEAD~`, retaining the removed commit's changes in the index and returning its complete message.
+- A merge commit returns `blockReason: "merge-commit"` unless `options.allowMerge === true`. Renderer must obtain this blocker first, then request a separate first-parent confirmation; truthy runtime values must not bypass it.
+- For a root commit, preload deletes the captured `HEAD`, only runs `git rm --cached -r -f -- .` when the index contains entries, and attempts to restore the captured HEAD/index on a partial failure. It never removes working-tree files.
+- Store routes both writes through `runAuthorizedGitWrite` with full refresh and ref invalidation; undo also refreshes after failure because root recovery or reset failure can leave observable state changed.
+- `GitChangesPane` keeps amend's temporary message and pre-amend draft locally. `GitTab` remains the only owner of the context-keyed commit draft; successful undo emits `commitMessage`, while cancel, failure, repository replacement, panel close, and unmount preserve or restore the correct draft.
+- Synthetic stash commits can precede the actual HEAD row. Any HEAD operation selects the structured `{ kind: "head", head: true }` ref, with an exact legacy `HEAD` fallback, rather than using `commits[0]`.
+
+### 4. Validation & Error Matrix
+
+- Detached HEAD, missing HEAD, or a non-local symbolic ref -> return a clear failure and do not mutate history.
+- Unchanged message with no staged diff -> amend returns a no-op failure.
+- Ordinary commit -> undo moves HEAD to its parent and leaves the removed patch staged.
+- Merge commit without literal `allowMerge === true` -> return `merge-commit`; second confirmation may retry with `true`.
+- Empty root index -> delete HEAD without running an unnecessary index removal that would fail.
+- Root unstage failure -> restore the captured HEAD/index where possible and return the original plus recovery error truthfully.
+- Stash shown before HEAD -> amend prefill still uses the real HEAD message.
+- Target becomes stale before Store dispatch -> bridge is not called; late results do not overwrite the new repository context.
+
+### 5. Good/Base/Bad Cases
+
+- Good: changing only the message of HEAD creates one replacement commit and leaves no staged files.
+- Good: undoing a regular HEAD restores the complete multi-line message to the active repository draft while retaining the patch staged.
+- Good: undoing a root commit retains every file as unstaged or untracked work on an unborn branch.
+- Base: an amend mode is cancelled, restoring the draft that existed before the mode opened.
+- Bad: treating Undo Last Commit as `git revert`, which creates an inverse commit instead of reopening the staged change.
+- Bad: assuming the first rendered history item is HEAD, because a synthetic stash can precede it.
+
+### 6. Tests Required
+
+- `npm run validate:git-commits` must cover multi-line/message-only amend, staged-content amend, no-op rejection, normal/merge/root undo, empty-root undo, strict merge confirmation, root recovery, detached rejection, and a leading stash before HEAD.
+- `npx vitest run tests/projectBridge.workspace.test.ts` must cover exact target routing, stale-target rejection, full/ref refresh, and returned undo draft message.
+- Run `node --check public/preload.js`, `npm run type-check`, and `npm run build` after changing the bridge, Store, or composer.
+- Manual uTools smoke: compact More-menu keyboard navigation, cancel/failure/success amend flows, merge second confirmation, root feedback, and repository-switch draft isolation.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const headMessage = snapshot.value?.commits[0]?.message || "";
+if (options.allowMerge) runUndo();
+```
+
+This can amend a synthetic stash message and allows untyped truthy values to skip the merge safeguard.
+
+#### Correct
+
+```ts
+const head = commits.find((commit) => commit.refNames?.some((ref) => ref.kind === "head" && ref.head));
+const allowMerge = options.allowMerge === true;
+```
+
+Select HEAD from structured refs and require an explicit boolean confirmation before rewriting a merge commit.
+
+## Scenario: Git History Cherry-Pick And Revert Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: a user applies or reverts one history commit through `GitCommitHistory.vue`.
+- The path crosses the context menu, Pinia, `ProjectBridge`, browser fallback, and `public/preload.js`; it is a fixed single-commit action, not a conflict resolver.
+
+### 2. Signatures
+
+- `ProjectBridge.cherryPickGitCommit(projectPath: string, commitHash: string): Promise<ProjectGitActionResult>`.
+- `ProjectBridge.revertGitCommit(projectPath: string, commitHash: string): Promise<ProjectGitActionResult>`.
+- Store actions mirror the bridge with `projectId` and `ProjectGitRepositoryTarget` arguments.
+- Conflict and abort outcomes remain ordinary `ProjectGitActionResult` failures; do not add a recovery-specific blocker state.
+
+### 3. Contracts
+
+- Preload accepts only a full native object id (40 or 64 hexadecimal characters) that resolves exactly to an ordinary commit. It checks the current stash list before parent-count classification because a stash is a synthetic multi-parent commit, not a merge target.
+- Both actions require `HEAD` attached to `refs/heads/<branch>` and an empty successful `git status --porcelain`; a status-command failure is an ordinary no-write failure, never evidence of a clean worktree. Cherry-pick also rejects the current `HEAD` target. Pre-existing cherry-pick, revert, merge, rebase, sequencer, bisect, or index-lock state blocks the action before any mutation.
+- The history menu treats a snapshot as locally attached only when `branches` contains a `current` local branch. `isDetachedHead === false` alone is insufficient because `HEAD` can symbolically point at `refs/remotes/...`.
+- After a failed command, resolve only the matching operation ref (`CHERRY_PICK_HEAD` or `REVERT_HEAD`). Run the matching `--abort` only when that ref resolves to the requested full target hash. Never abort a pre-existing or different-target operation, and never run reset, clean, continue, or skip.
+- Abort success and failure return normal failed results. Success reports restoration plus the original Git error; abort failure retains both the original and abort errors without claiming the repository is clean.
+- Store routes both writes through `runAuthorizedGitWrite` with `{ refresh: "full", refs: true, refreshOnFailure: true }`. Its lock is keyed by repository `contextKey`, holds through refresh, and reauthorizes queued targets before invoking the bridge.
+- The history menu acts on its context-menu commit only, not the AI multi-selection. It uses a semantic confirmation with short hash and title. Its fixed warning tells users to configure an external application in Settings and open the repository from the existing menu; it does not launch an application or open Settings.
+
+### 4. Validation & Error Matrix
+
+- Abbreviated, missing, non-commit, stash, merge, detached, non-local-branch, dirty-index, or dirty-worktree targets -> ordinary failure before the write command.
+- `git status --porcelain` fails -> return its status error and do not invoke `cherry-pick` or `revert`.
+- Current `HEAD` cherry-pick -> ordinary failure without a new commit.
+- Existing operation -> ordinary failure without aborting or changing that operation.
+- Matching conflict -> matching abort only, followed by an ordinary failure that reports restoration and the original error.
+- Missing or mismatched post-command operation ref -> return the original command failure without aborting.
+- Abort failure -> return the original and abort errors, then fully refresh the repository and refs.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a full ordinary commit cherry-picks or reverts on a clean attached branch, then history, refs, and worktree refresh.
+- Good: a real conflict restores `HEAD`, index, and worktree after a matching abort.
+- Base: browser preview returns its typed unavailable result.
+- Bad: classifying a stash as a merge before checking `refs/stash`, or aborting solely because a same-named operation ref exists.
+
+### 6. Tests Required
+
+- `npm run validate:git-commits` must use real temporary repositories for successful cherry-pick/revert, full-hash/current-HEAD/stash/merge/detached/non-local-symbolic-HEAD/dirty rejection, a simulated status-probe failure that starts neither history write, conflict restoration of `HEAD`/index/worktree, preserved original and abort errors, and a mismatched operation ref that does not abort.
+- `npx vitest run tests/projectBridge.workspace.test.ts` must assert target routing, stale-target rejection, full/ref refresh after failures, and same-target write serialization through refresh with queued-target reauthorization.
+- Run `node --check public/preload.js`, `npm run type-check`, and `npm run build` after changing this boundary.
+- Manual uTools smoke must cover menu keyboard navigation, confirmation cancellation, warning-only external-tool guidance, and narrow-window focus/Escape cleanup.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+if (parents.length > 1) return mergeCommitFailure;
+if (gitHistoryActionRefExists(repositoryPath, actionHead)) runGitResult(repositoryPath, [action, "--abort"]);
+```
+
+This misclassifies synthetic stashes and can abort a same-named operation that was not started by this request.
+
+#### Correct
+
+```js
+if (stashHashes.has(targetHash)) return stashFailure;
+const actionHeadResult = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", actionHead]);
+if (actionHeadResult.stdout.trim() === targetHash) runGitResult(repositoryPath, [action, "--abort"]);
+```
+
+Classify a current stash first and require the matching operation ref to name the requested commit before automatic recovery.

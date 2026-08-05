@@ -847,6 +847,18 @@ const fallbackBridge: ProjectBridge = {
   async commitGitStaged(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法提交 staged 变更。");
   },
+  async amendGitCommit(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法修订上次提交。");
+  },
+  async undoLastGitCommit(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法撤销上次提交。");
+  },
+  async cherryPickGitCommit(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法 Cherry-pick 提交。");
+  },
+  async revertGitCommit(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法 Revert 提交。");
+  },
   async createGitStash(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法创建 Git stash。");
   },
@@ -899,6 +911,12 @@ const fallbackBridge: ProjectBridge = {
   },
   async pushGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法执行 Git push。");
+  },
+  async initializeGitRepository(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法初始化 Git 仓库。");
+  },
+  async publishGitBranch(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法发布当前 Git 分支。");
   },
   async addGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法添加 Git remote。");

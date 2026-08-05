@@ -397,7 +397,7 @@ export interface ProjectGitBaseSummary {
   ref: string;
 }
 
-export type ProjectGitActionBlockReason = "dirty-worktree" | "unmerged-branch";
+export type ProjectGitActionBlockReason = "dirty-worktree" | "unmerged-branch" | "merge-commit";
 
 export interface ProjectGitActionResult {
   ok: boolean;
@@ -409,6 +409,7 @@ export interface ProjectGitActionResult {
   branch?: string;
   remote?: string;
   commitHash?: string;
+  commitMessage?: string;
   isDetachedHead?: boolean;
 }
 
@@ -992,6 +993,10 @@ export interface ProjectBridge {
     options?: ProjectGitBulkFileActionOptions,
   ): Promise<ProjectGitActionResult>;
   commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>;
+  amendGitCommit(projectPath: string, message: string): Promise<ProjectGitActionResult>;
+  undoLastGitCommit(projectPath: string, options?: { allowMerge?: boolean }): Promise<ProjectGitActionResult>;
+  cherryPickGitCommit(projectPath: string, commitHash: string): Promise<ProjectGitActionResult>;
+  revertGitCommit(projectPath: string, commitHash: string): Promise<ProjectGitActionResult>;
   createGitStash(
     projectPath: string,
     message?: string,
@@ -1037,6 +1042,8 @@ export interface ProjectBridge {
   fetchGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   pullGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   pushGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
+  initializeGitRepository(projectPath: string): Promise<ProjectGitActionResult>;
+  publishGitBranch(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   addGitRemote(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
   setGitRemoteUrl(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
   removeGitRemote(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;

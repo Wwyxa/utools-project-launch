@@ -116,7 +116,9 @@ type CommitSubmenuContent = { kind: "branch"; branch: CommitBranchRef } | { kind
 type CommitSubmenuState = CommitSubmenuContent & { left: number; top: number; parent: HTMLElement };
 type RefDialogMode = "create-branch" | "rename-branch" | "create-tag";
 type RefDialogState = { mode: RefDialogMode; commit: ProjectGitCommitSummary; sourceBranch?: string };
+type GitHistoryAction = "cherry-pick" | "revert";
 type AppActionDialog = {
+  tone?: "danger" | "warning";
   title: string;
   message: string;
   detail?: string;
@@ -793,6 +795,18 @@ const commitHashMatches = (left?: string, right?: string) =>
 const isCommitDetachedHead = (commit: ProjectGitCommitSummary) =>
   Boolean(snapshot.value?.isDetachedHead && commitHashMatches(commit.hash, snapshot.value.headHash));
 const canCheckoutDetachedCommit = (commit: ProjectGitCommitSummary) => !isCommitDetachedHead(commit);
+const hasAttachedLocalGitHead = () => snapshot.value?.branches?.some((branch) => branch.current) === true;
+const gitHistoryActionUnavailableReason = (action: GitHistoryAction, commit: ProjectGitCommitSummary) => {
+  if (isGitStashCommit(commit)) return "stash 提交不能用于 Cherry-pick 或 Revert";
+  if ((commit.parents?.length || 0) > 1) return "合并提交暂不支持 Cherry-pick 或 Revert";
+  if (snapshot.value?.isDetachedHead) return "当前 HEAD 处于 detached 状态";
+  if (!hasAttachedLocalGitHead()) return "当前 HEAD 未指向本地分支";
+  if (snapshot.value?.files.length) return "当前工作区存在未提交变更";
+  if (action === "cherry-pick" && commitHashMatches(commit.hash, snapshot.value?.headHash)) {
+    return "当前 HEAD 不能 Cherry-pick 到自身";
+  }
+  return "";
+};
 const detachedCheckoutTitle = (commit: ProjectGitCommitSummary) =>
   isCommitDetachedHead(commit) ? "当前已处于该分离 HEAD 提交" : "切换到此提交，并进入分离 HEAD 状态";
 const isRemoteRef = (name: string) =>
@@ -1252,6 +1266,48 @@ const checkoutCommit = async (commit: ProjectGitCommitSummary, force = false) =>
   }
   report(result.ok ? "success" : "error", result.message);
   if (result.ok) clearCommitSelection();
+};
+const gitHistoryActionFailureGuidance =
+  "操作未完成。你可以使用专业 Git 工具检查或重试；也可以先在设置中配置外部应用，直接通过插件打开外部 Git 工具。";
+const showGitHistoryActionFailure = (action: GitHistoryAction, result: ProjectGitActionResult) => {
+  requestConfirmation({
+    tone: "warning",
+    title: action === "cherry-pick" ? "Cherry-pick 未完成" : "Revert 未完成",
+    message: gitHistoryActionFailureGuidance,
+    detail: result.message,
+    confirmLabel: "关闭",
+    onConfirm: () => undefined,
+  });
+};
+const requestGitHistoryAction = (action: GitHistoryAction, commit: ProjectGitCommitSummary) => {
+  if (isInteractionDisabled.value || gitHistoryActionUnavailableReason(action, commit)) return;
+  closeCommitContextMenu(false);
+  const commitLabel = `${shortCommitHash(commit.hash)} · ${commit.message || "（无标题）"}`;
+  requestConfirmation({
+    tone: "warning",
+    title: action === "cherry-pick" ? "Cherry-pick" : "Revert",
+    message:
+      action === "cherry-pick"
+        ? `将 ${commitLabel} 应用到当前分支，并创建一个新提交。`
+        : `将创建一个新的反向提交以回退 ${commitLabel} 的影响。`,
+    detail: commitLabel,
+    confirmLabel: action === "cherry-pick" ? "Cherry-pick" : "Revert",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: async () => {
+      const result = await runAction(`${action}:${commit.hash}`, () =>
+        action === "cherry-pick"
+          ? store.cherryPickGitCommit(props.projectId, commit.hash, props.repositoryTarget)
+          : store.revertGitCommit(props.projectId, commit.hash, props.repositoryTarget),
+      );
+      if (!result) return;
+      if (!result.ok) {
+        showGitHistoryActionFailure(action, result);
+        return;
+      }
+      report("success", result.message);
+      clearCommitSelection();
+    },
+  });
 };
 const checkoutRemoteBranch = async (branchName: string, force = false) => {
   if (isInteractionDisabled.value) return;
@@ -2452,6 +2508,35 @@ onBeforeUnmount(() => {
         >
           <Tag :size="12" />新建标签
         </button>
+        <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
+        <button
+          type="button"
+          role="menuitem"
+          class="git-history-menu-item"
+          :disabled="
+            isInteractionDisabled || Boolean(gitHistoryActionUnavailableReason('cherry-pick', commitContextMenu.commit))
+          "
+          :title="
+            gitHistoryActionUnavailableReason('cherry-pick', commitContextMenu.commit) || '将该提交应用到当前分支'
+          "
+          @click="requestGitHistoryAction('cherry-pick', commitContextMenu.commit)"
+          @keydown="handleCommitMenuKeydown($event, 'main')"
+        >
+          <GitCommitHorizontal :size="12" />Cherry-pick
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="git-history-menu-item"
+          :disabled="
+            isInteractionDisabled || Boolean(gitHistoryActionUnavailableReason('revert', commitContextMenu.commit))
+          "
+          :title="gitHistoryActionUnavailableReason('revert', commitContextMenu.commit) || '创建反向提交以回退该提交'"
+          @click="requestGitHistoryAction('revert', commitContextMenu.commit)"
+          @keydown="handleCommitMenuKeydown($event, 'main')"
+        >
+          <Undo :size="12" />Revert
+        </button>
         <template v-if="commitStashRef(commitContextMenu.commit)">
           <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
           <button
@@ -2735,7 +2820,7 @@ onBeforeUnmount(() => {
   >
   <ProjectActionDialog
     :open="Boolean(confirmationDialog)"
-    tone="danger"
+    :tone="confirmationDialog?.tone || 'danger'"
     :title="confirmationDialog?.title || ''"
     :message="confirmationDialog?.message || ''"
     :detail="confirmationDialog?.detail"

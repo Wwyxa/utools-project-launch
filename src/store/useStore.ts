@@ -17,7 +17,7 @@ import {
   validateCustomEnvironmentToolInput,
   type CustomEnvironmentToolInput,
 } from "../lib/environmentTools";
-import { resolveProjectGitRepositoryContext } from "../lib/gitRepositoryTarget";
+import { createGitRepositoryContextKey, resolveProjectGitRepositoryContext } from "../lib/gitRepositoryTarget";
 import { deriveProjectStatus, mergeScriptRuntimeState } from "../lib/projectRuntimeState";
 import { DEFAULT_AI_PROMPT_MODES, ProjectStatus } from "../types";
 import type {
@@ -136,12 +136,31 @@ const gitStatusRefreshPromises = new Map<string, Promise<void>>();
 const gitWorkingTreeRefreshPromises = new Map<string, Promise<void>>();
 const gitLoadMorePromises = new Map<string, Promise<void>>();
 const gitWorkspaceRefreshPromises = new Map<string, Promise<void>>();
+const gitWriteLocks = new Map<string, Promise<void>>();
 const gitSnapshotRefreshTokens = new Map<string, symbol>();
 const gitWorkingTreeRefreshTokens = new Map<string, symbol>();
 const gitLoadMoreTokens = new Map<string, symbol>();
 const gitWorkspaceRefreshTokens = new Map<string, symbol>();
 const gitMutationVersions = new Map<string, number>();
 const gitRefMutationVersions = new Map<string, number>();
+const queueGitWriteLock = (contextKey: string) => {
+  const previousWrite = gitWriteLocks.get(contextKey) || Promise.resolve();
+  let release: () => void = () => {};
+  const currentWrite = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queuedWrite = previousWrite.catch(() => undefined).then(() => currentWrite);
+  gitWriteLocks.set(contextKey, queuedWrite);
+  return {
+    waitForPrevious: previousWrite.catch(() => undefined),
+    release: () => {
+      release();
+      if (gitWriteLocks.get(contextKey) === queuedWrite) {
+        gitWriteLocks.delete(contextKey);
+      }
+    },
+  };
+};
 const launchMessage = (locale: Locale, code: string, target: string) => {
   const zh = locale === "zh-CN";
   const labels: Record<string, string> = {
@@ -2870,17 +2889,88 @@ export const useStore = defineStore("app", {
         ? result
         : null;
     },
+    async initializeGitRepository(projectId: string): Promise<ProjectGitActionResult | null> {
+      const initialProject = this.projects.find((item) => item.id === projectId);
+      if (!initialProject || initialProject.pathExists === false) return null;
+
+      const projectPath = initialProject.path;
+      const initialGitSnapshot = initialProject.git;
+      const writeLock = queueGitWriteLock(createGitRepositoryContextKey(projectId, { kind: "main" }, projectPath));
+      await writeLock.waitForPrevious;
+      const project = this.projects.find((item) => item.id === projectId);
+      if (
+        !project ||
+        project.path !== projectPath ||
+        project.pathExists === false ||
+        project.git !== initialGitSnapshot
+      ) {
+        writeLock.release();
+        return null;
+      }
+      let projectPathExists = false;
+      try {
+        projectPathExists = await bridge.pathExists(projectPath);
+      } catch (error) {
+        writeLock.release();
+        throw error;
+      }
+      if (!projectPathExists || this.projects.find((item) => item.id === projectId)?.path !== projectPath) {
+        writeLock.release();
+        return null;
+      }
+
+      this.gitWritesInProgress[projectId] = (this.gitWritesInProgress[projectId] || 0) + 1;
+      try {
+        const result = await bridge.initializeGitRepository(projectPath);
+        if (this.projects.find((item) => item.id === projectId)?.path !== projectPath) return null;
+        if (!result.ok) return result;
+
+        clearGitRepositoryCoordination(projectId);
+        bumpGitRefMutationVersion(projectId);
+        clearGitRepositoryRecord(this.gitRepositorySnapshots, projectId);
+        clearGitRepositoryRecord(this.gitRepositoryRefreshing, projectId);
+        clearGitRepositoryRecord(this.gitRepositoryStatusRefreshing, projectId);
+        clearGitRepositoryRecord(this.gitRepositoryLoadingMore, projectId);
+        gitWorkspaceRefreshPromises.delete(projectId);
+        gitWorkspaceRefreshTokens.delete(projectId);
+        delete this.gitWorkspaces[projectId];
+        delete this.gitWorkspaceRefreshing[projectId];
+        delete this.stagedFiles[projectId];
+
+        const currentProject = this.projects.find((item) => item.id === projectId);
+        if (currentProject) {
+          currentProject.git = undefined;
+          currentProject.gitLatestCommitAt = "";
+        }
+
+        await Promise.all([
+          this.refreshGitWorkspace(projectId, { force: true }),
+          this.refreshGitSnapshot(projectId, { force: true }, { kind: "main" }),
+        ]);
+        return result;
+      } finally {
+        this.gitWritesInProgress[projectId] = Math.max(0, (this.gitWritesInProgress[projectId] || 1) - 1);
+        writeLock.release();
+      }
+    },
     async runAuthorizedGitWrite(
       projectId: string,
       target: ProjectGitRepositoryTarget,
       action: (context: ProjectGitRepositoryContext) => Promise<ProjectGitActionResult>,
       options: { refresh: "working-tree" | "status" | "full"; refs?: boolean; refreshOnFailure?: boolean },
     ): Promise<ProjectGitActionResult | null> {
-      const context = this.resolveGitRepositoryContext(projectId, target);
-      if (!context) return null;
+      const initialContext = this.resolveGitRepositoryContext(projectId, target);
+      if (!initialContext) return null;
 
-      this.gitWritesInProgress[projectId] = (this.gitWritesInProgress[projectId] || 0) + 1;
+      const writeLock = queueGitWriteLock(initialContext.contextKey);
+      await writeLock.waitForPrevious;
+      let writeStarted = false;
       try {
+        const context = this.resolveGitRepositoryContext(projectId, target);
+        if (!context || context.contextKey !== initialContext.contextKey) return null;
+
+        writeStarted = true;
+        this.gitWritesInProgress[projectId] = (this.gitWritesInProgress[projectId] || 0) + 1;
         const result = await action(context);
         const changed = result.ok || (result.count || 0) > 0 || options.refreshOnFailure === true;
         if (!changed) return result;
@@ -2914,7 +3004,10 @@ export const useStore = defineStore("app", {
         await Promise.all(refreshes);
         return result;
       } finally {
-        this.gitWritesInProgress[projectId] = Math.max(0, (this.gitWritesInProgress[projectId] || 1) - 1);
+        if (writeStarted) {
+          this.gitWritesInProgress[projectId] = Math.max(0, (this.gitWritesInProgress[projectId] || 1) - 1);
+        }
+        writeLock.release();
       }
     },
     async stageGitFile(
@@ -3002,6 +3095,54 @@ export const useStore = defineStore("app", {
         target,
         (context) => bridge.commitGitStaged(context.repositoryPath, message),
         { refresh: "full", refs: true },
+      );
+    },
+    async amendGitCommit(
+      projectId: string,
+      message: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.amendGitCommit(context.repositoryPath, message),
+        { refresh: "full", refs: true },
+      );
+    },
+    async undoLastGitCommit(
+      projectId: string,
+      options: { allowMerge?: boolean } = {},
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.undoLastGitCommit(context.repositoryPath, options),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
+    },
+    async cherryPickGitCommit(
+      projectId: string,
+      commitHash: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.cherryPickGitCommit(context.repositoryPath, commitHash),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
+    },
+    async revertGitCommit(
+      projectId: string,
+      commitHash: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.revertGitCommit(context.repositoryPath, commitHash),
+        { refresh: "full", refs: true, refreshOnFailure: true },
       );
     },
     async createGitStash(
@@ -3191,6 +3332,18 @@ export const useStore = defineStore("app", {
         refs: true,
         refreshOnFailure: true,
       });
+    },
+    async publishGitBranch(
+      projectId: string,
+      remoteName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.publishGitBranch(context.repositoryPath, remoteName),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
     },
     async addGitRemote(
       projectId: string,

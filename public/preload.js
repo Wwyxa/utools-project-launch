@@ -1930,7 +1930,7 @@ function runGitResult(startPath, args) {
     windowsHide: true,
   });
   return {
-    status: typeof result.status === "number" ? result.status : result.error ? 1 : 0,
+    status: typeof result.status === "number" ? result.status : 1,
     stdout: String(result.stdout || ""),
     stderr: String(result.stderr || result.error?.message || ""),
   };
@@ -3276,9 +3276,13 @@ function allGitActionPaths(repositoryPath, filterStatus) {
   return { actionPaths: Array.from(actionPaths), displayPaths: Array.from(new Set(displayPaths)) };
 }
 
+function readGitWorktreeStatus(repositoryPath) {
+  return runGitResult(repositoryPath, ["status", "--porcelain"]);
+}
+
 function hasUncommittedGitChanges(repositoryPath) {
-  const status = runGit(repositoryPath, ["status", "--porcelain"]);
-  return Boolean(status && status.trim());
+  const status = readGitWorktreeStatus(repositoryPath);
+  return status.status !== 0 || Boolean(status.stdout.trim());
 }
 
 function fileExistsInHead(repositoryPath, relativePath) {
@@ -3517,6 +3521,30 @@ function discardGitFiles(projectPath, relativePaths, options = {}) {
   };
 }
 
+function readAttachedGitHead(repositoryPath) {
+  const headRef = (runGit(repositoryPath, ["symbolic-ref", "-q", "HEAD"]) || "").trim();
+  if (!headRef) {
+    return { ok: false, message: "当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。" };
+  }
+
+  const localBranchPrefix = "refs/heads/";
+  if (!headRef.startsWith(localBranchPrefix) || headRef.length === localBranchPrefix.length) {
+    return { ok: false, message: "当前 HEAD 未指向本地分支，请使用外部 Git 工具处理。" };
+  }
+
+  const commitHash = (runGit(repositoryPath, ["rev-parse", "--verify", "HEAD^{commit}"]) || "").trim();
+  if (!commitHash) {
+    return { ok: false, message: "当前分支没有可操作的提交。" };
+  }
+
+  return {
+    ok: true,
+    branch: headRef.slice(localBranchPrefix.length),
+    commitHash,
+    commitMessage: (runGit(repositoryPath, ["log", "-1", "--format=%B", "HEAD"]) || "").trim(),
+  };
+}
+
 function commitGitStaged(projectPath, message) {
   const repositoryPath = findGitRoot(projectPath);
   const commitMessage = typeof message === "string" ? message.trim() : "";
@@ -3539,6 +3567,126 @@ function commitGitStaged(projectPath, message) {
 
   const commitHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || "").trim();
   return { ok: true, commitHash, message: commitHash ? `提交成功：${commitHash}` : "提交成功。" };
+}
+
+function amendGitCommit(projectPath, message) {
+  const repositoryPath = findGitRoot(projectPath);
+  const commitMessage = typeof message === "string" ? message.trim() : "";
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (!commitMessage) {
+    return { ok: false, message: "请先填写 commit message。" };
+  }
+
+  const head = readAttachedGitHead(repositoryPath);
+  if (!head.ok) return head;
+
+  const stagedDiff = runGitResult(repositoryPath, ["diff", "--cached", "--quiet"]);
+  if (stagedDiff.status > 1) {
+    return { ok: false, message: firstGitError(stagedDiff, "无法读取 staged 变更。") };
+  }
+  if (stagedDiff.status === 0 && commitMessage === head.commitMessage) {
+    return { ok: false, message: "提交信息未变化且没有 staged 变更，无需修订。" };
+  }
+
+  const result = runGitResult(repositoryPath, ["commit", "--amend", "-m", commitMessage]);
+  if (result.status !== 0) {
+    return { ok: false, message: firstGitError(result, "修订上次提交失败。") };
+  }
+
+  return {
+    ok: true,
+    branch: head.branch,
+    commitHash: (runGit(repositoryPath, ["rev-parse", "HEAD"]) || head.commitHash).trim(),
+    message: "已修订上次提交。",
+  };
+}
+
+function restoreRootGitHead(repositoryPath, commitHash) {
+  const restoreHead = runGitResult(repositoryPath, ["update-ref", "HEAD", commitHash]);
+  if (restoreHead.status !== 0) {
+    return { ok: false, message: firstGitError(restoreHead, "无法恢复 HEAD。") };
+  }
+
+  const restoreIndex = runGitResult(repositoryPath, ["read-tree", "HEAD"]);
+  return restoreIndex.status === 0
+    ? { ok: true }
+    : { ok: false, message: firstGitError(restoreIndex, "无法恢复暂存区。") };
+}
+
+function undoLastGitCommit(projectPath, options = {}) {
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  const head = readAttachedGitHead(repositoryPath);
+  if (!head.ok) return head;
+
+  const parentLine = (runGit(repositoryPath, ["rev-list", "--parents", "-n", "1", "HEAD"]) || "").trim();
+  const parentParts = parentLine.split(/\s+/).filter(Boolean);
+  if (parentParts[0] !== head.commitHash) {
+    return { ok: false, message: "无法读取上次提交的父提交。" };
+  }
+  const parents = parentParts.slice(1);
+  const isMergeCommit = parents.length > 1;
+  if (isMergeCommit && options?.allowMerge !== true) {
+    return {
+      ok: false,
+      blockReason: "merge-commit",
+      commitHash: head.commitHash,
+      message: "上次提交是 merge commit，需要再次确认后按第一父提交撤销。",
+    };
+  }
+
+  if (parents.length > 0) {
+    const reset = runGitResult(repositoryPath, ["reset", "--soft", "HEAD~"]);
+    if (reset.status !== 0) {
+      return { ok: false, message: firstGitError(reset, "撤销上次提交失败。") };
+    }
+    return {
+      ok: true,
+      branch: head.branch,
+      commitHash: head.commitHash,
+      commitMessage: head.commitMessage,
+      message: isMergeCommit
+        ? "已按第一父提交撤销上次 merge 提交，改动保留在 staged 状态。"
+        : "已撤销上次提交，改动保留在 staged 状态。",
+    };
+  }
+
+  const cachedFiles = runGitResult(repositoryPath, ["ls-files", "--cached", "-z"]);
+  if (cachedFiles.status !== 0) {
+    return { ok: false, message: firstGitError(cachedFiles, "无法读取 root commit 的暂存区。") };
+  }
+
+  const deleteHead = runGitResult(repositoryPath, ["update-ref", "-d", "HEAD", head.commitHash]);
+  if (deleteHead.status !== 0) {
+    return { ok: false, message: firstGitError(deleteHead, "无法移除 root commit。") };
+  }
+
+  const unstage = cachedFiles.stdout
+    ? runGitResult(repositoryPath, ["rm", "--cached", "-r", "-f", "--", "."])
+    : { status: 0 };
+  if (unstage.status !== 0) {
+    const recovery = restoreRootGitHead(repositoryPath, head.commitHash);
+    const failure = firstGitError(unstage, "无法取消暂存 root commit 的文件。");
+    return {
+      ok: false,
+      message: recovery.ok
+        ? `${failure} 已恢复 HEAD 和暂存区。`
+        : `${failure} 恢复 HEAD 或暂存区失败：${recovery.message}`,
+    };
+  }
+
+  return {
+    ok: true,
+    branch: head.branch,
+    commitHash: head.commitHash,
+    commitMessage: head.commitMessage,
+    message: "已撤销上次提交，文件保留在工作区且已取消暂存。",
+  };
 }
 
 function normalizeGitStashRef(value) {
@@ -3757,6 +3905,159 @@ function validateGitCommit(repositoryPath, commitHash) {
   return targetHash && runGitResult(repositoryPath, ["cat-file", "-e", `${targetHash}^{commit}`]).status === 0
     ? targetHash
     : "";
+}
+
+function gitHistoryActionStatePathExists(repositoryPath, statePath) {
+  const result = runGitResult(repositoryPath, ["rev-parse", "--git-path", statePath]);
+  const resolvedPath = result.status === 0 ? result.stdout.trim() : "";
+  return Boolean(resolvedPath && fs.existsSync(path.resolve(repositoryPath, resolvedPath)));
+}
+
+function gitHistoryActionRefExists(repositoryPath, refName) {
+  return runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", refName]).status === 0;
+}
+
+function gitHistoryActionInProgressMessage(repositoryPath, action) {
+  const matchingRef = action === "cherry-pick" ? "CHERRY_PICK_HEAD" : "REVERT_HEAD";
+  const matchingLabel = action === "cherry-pick" ? "Cherry-pick" : "Revert";
+  if (
+    gitHistoryActionRefExists(repositoryPath, matchingRef) ||
+    gitHistoryActionStatePathExists(repositoryPath, matchingRef)
+  ) {
+    return `仓库已有未完成的 ${matchingLabel} 操作，请先使用专业 Git 工具处理。`;
+  }
+
+  const otherRefs = ["CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_HEAD", "REBASE_HEAD"].filter(
+    (refName) => refName !== matchingRef,
+  );
+  if (
+    otherRefs.some(
+      (refName) =>
+        gitHistoryActionRefExists(repositoryPath, refName) || gitHistoryActionStatePathExists(repositoryPath, refName),
+    ) ||
+    ["rebase-apply", "rebase-merge", "sequencer", "BISECT_LOG", "index.lock"].some((statePath) =>
+      gitHistoryActionStatePathExists(repositoryPath, statePath),
+    )
+  ) {
+    return "检测到其他未完成的 Git 操作，请先使用专业 Git 工具处理。";
+  }
+
+  return "";
+}
+
+function validateGitHistoryActionCommit(repositoryPath, commitHash) {
+  const requestedHash = normalizeGitRefName(commitHash);
+  if (!/^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(requestedHash)) {
+    return { targetHash: "", message: "请选择完整的提交 hash。" };
+  }
+
+  const resolved = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", `${requestedHash}^{commit}`]);
+  const targetHash = resolved.stdout.trim();
+  if (resolved.status !== 0 || targetHash.toLowerCase() !== requestedHash.toLowerCase()) {
+    return { targetHash: "", message: "目标提交不存在或不是有效 commit。" };
+  }
+
+  const stashesResult = runGitResult(repositoryPath, ["stash", "list", "--format=%H"]);
+  if (stashesResult.status !== 0) {
+    return { targetHash, message: firstGitError(stashesResult, "无法检查 stash 提交。") };
+  }
+  if (stashesResult.stdout.split(/\r?\n/).some((stashHash) => stashHash.trim() === targetHash)) {
+    return { targetHash, message: "stash 提交不能用于 Cherry-pick 或 Revert。" };
+  }
+
+  const parentsResult = runGitResult(repositoryPath, ["rev-list", "--parents", "-n", "1", targetHash]);
+  if (parentsResult.status !== 0) {
+    return { targetHash, message: firstGitError(parentsResult, "无法读取目标提交。") };
+  }
+  const parents = parentsResult.stdout.trim().split(/\s+/).slice(1).filter(Boolean);
+  if (parents.length > 1) {
+    return { targetHash, blockReason: "merge-commit", message: "合并提交暂不支持 Cherry-pick 或 Revert。" };
+  }
+
+  return { targetHash };
+}
+
+function runGitHistoryAction(projectPath, action, commitHash) {
+  const repositoryPath = findGitRoot(projectPath);
+  const actionLabel = action === "cherry-pick" ? "Cherry-pick" : "Revert";
+  const actionHead = action === "cherry-pick" ? "CHERRY_PICK_HEAD" : "REVERT_HEAD";
+  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+
+  const target = validateGitHistoryActionCommit(repositoryPath, commitHash);
+  if (!target.targetHash) return { ok: false, message: target.message };
+  if (target.message)
+    return { ok: false, commitHash: target.targetHash, blockReason: target.blockReason, message: target.message };
+
+  const head = readAttachedGitHead(repositoryPath);
+  if (!head.ok) return { ...head, commitHash: target.targetHash };
+  const operationMessage = gitHistoryActionInProgressMessage(repositoryPath, action);
+  if (operationMessage) return { ok: false, commitHash: target.targetHash, message: operationMessage };
+  const worktreeStatus = readGitWorktreeStatus(repositoryPath);
+  if (worktreeStatus.status !== 0) {
+    return {
+      ok: false,
+      commitHash: target.targetHash,
+      message: `无法检查工作区状态：${firstGitError(worktreeStatus, "Git status 失败。")}`,
+    };
+  }
+  if (worktreeStatus.stdout.trim()) {
+    return {
+      ok: false,
+      blockReason: "dirty-worktree",
+      commitHash: target.targetHash,
+      message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再执行。",
+    };
+  }
+  if (action === "cherry-pick" && target.targetHash === head.commitHash) {
+    return { ok: false, commitHash: target.targetHash, message: "当前 HEAD 不能 Cherry-pick 到自身。" };
+  }
+
+  const result = runGitResult(
+    repositoryPath,
+    action === "cherry-pick" ? ["cherry-pick", target.targetHash] : ["revert", "--no-edit", target.targetHash],
+  );
+  if (result.status === 0) {
+    return {
+      ok: true,
+      commitHash: target.targetHash,
+      message:
+        action === "cherry-pick"
+          ? `已将提交 ${target.targetHash.slice(0, 7)} 应用到当前分支。`
+          : `已创建撤销提交以回退 ${target.targetHash.slice(0, 7)}。`,
+    };
+  }
+
+  const operationError = firstGitError(result, `${actionLabel} 失败。`);
+  const actionHeadResult = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", actionHead]);
+  if (
+    actionHeadResult.status !== 0 ||
+    actionHeadResult.stdout.trim().toLowerCase() !== target.targetHash.toLowerCase()
+  ) {
+    return { ok: false, commitHash: target.targetHash, message: operationError };
+  }
+
+  const abort = runGitResult(repositoryPath, [action, "--abort"]);
+  if (abort.status === 0) {
+    return {
+      ok: false,
+      commitHash: target.targetHash,
+      message: `${actionLabel} 发生冲突，已自动中止操作，仓库已恢复。原始错误：${operationError}`,
+    };
+  }
+
+  return {
+    ok: false,
+    commitHash: target.targetHash,
+    message: `${actionLabel} 发生冲突，自动中止失败。原始错误：${operationError} 自动中止错误：${firstGitError(abort, `${actionLabel} 自动中止失败。`)}`,
+  };
+}
+
+function cherryPickGitCommit(projectPath, commitHash) {
+  return runGitHistoryAction(projectPath, "cherry-pick", commitHash);
+}
+
+function revertGitCommit(projectPath, commitHash) {
+  return runGitHistoryAction(projectPath, "revert", commitHash);
 }
 
 function createGitBranch(projectPath, branchName, commitHash, options = {}) {
@@ -5180,6 +5481,63 @@ function pushGitRemote(projectPath) {
   );
 }
 
+function initializeGitRepository(projectPath) {
+  const projectDirectory = typeof projectPath === "string" ? projectPath.trim() : "";
+  if (!projectDirectory) {
+    return { ok: false, message: "项目目录不可用，无法初始化 Git 仓库。" };
+  }
+
+  try {
+    if (!fs.statSync(expandPath(projectDirectory)).isDirectory()) {
+      return { ok: false, message: "项目目录不可用，无法初始化 Git 仓库。" };
+    }
+  } catch {
+    return { ok: false, message: "项目目录不可用，无法初始化 Git 仓库。" };
+  }
+
+  const result = runGitResult(projectDirectory, ["init"]);
+  return result.status === 0
+    ? { ok: true, message: "已初始化 Git 仓库。" }
+    : { ok: false, message: firstGitError(result, "初始化 Git 仓库失败。") };
+}
+
+async function publishGitBranch(projectPath, remoteName) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const name = normalizeGitRemoteName(remoteName);
+  const nameError = validateGitRemoteName(name);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (nameError) {
+    return { ok: false, message: nameError };
+  }
+
+  const remotes = await readGitRemotesAsync(repositoryPath);
+  if (!remotes.some((remote) => remote.name === name)) {
+    return { ok: false, remote: name, message: `未找到 remote：${name}。` };
+  }
+
+  const headRef = String((await runGitAsync(repositoryPath, ["symbolic-ref", "-q", "HEAD"])) || "").trim();
+  if (!headRef) {
+    return { ok: false, remote: name, message: "当前 HEAD 处于 detached 状态，无法发布当前分支。" };
+  }
+  const localBranchPrefix = "refs/heads/";
+  if (!headRef.startsWith(localBranchPrefix) || headRef.length === localBranchPrefix.length) {
+    return { ok: false, remote: name, message: "当前 HEAD 未指向本地分支，无法发布当前分支。" };
+  }
+  const branch = headRef.slice(localBranchPrefix.length);
+
+  const upstream = await readGitUpstreamAsync(repositoryPath);
+  if (upstream) {
+    return { ok: false, remote: name, branch, message: `当前分支已设置 upstream：${upstream.ref}。` };
+  }
+
+  const result = await runGitRemoteCommandResult(repositoryPath, ["push", "--set-upstream", name, `HEAD:${branch}`]);
+  return result.status === 0
+    ? { ok: true, remote: name, branch, message: `已发布 ${branch} 到 ${name}/${branch} 并设置 upstream。` }
+    : { ok: false, remote: name, branch, message: firstGitError(result, "发布当前分支失败。") };
+}
+
 async function addGitRemote(projectPath, remoteName, remoteUrl) {
   const repositoryPath = await findGitRootAsync(projectPath);
   const name = normalizeGitRemoteName(remoteName);
@@ -5898,6 +6256,10 @@ window.projectBridge = {
   unstageGitFiles,
   discardGitFiles,
   commitGitStaged,
+  amendGitCommit,
+  undoLastGitCommit,
+  cherryPickGitCommit,
+  revertGitCommit,
   createGitStash,
   applyGitStash,
   popGitStash,
@@ -5913,6 +6275,8 @@ window.projectBridge = {
   fetchGitRemote,
   pullGitRemote,
   pushGitRemote,
+  initializeGitRepository,
+  publishGitBranch,
   addGitRemote,
   setGitRemoteUrl,
   removeGitRemote,

@@ -206,6 +206,7 @@ const topBarStatusText = computed(() => {
 const remotes = computed(() => snapshot.value?.remotes || []);
 const upstream = computed(() => snapshot.value?.upstream || null);
 const hasUpstream = computed(() => Boolean(upstream.value));
+const currentLocalBranch = computed(() => snapshot.value?.branches?.find((branch) => branch.current)?.name || "");
 const upstreamLabel = computed(() => upstream.value?.ref || "未设置 upstream");
 const remoteStatusText = computed(() => {
   if (upstream.value) {
@@ -217,6 +218,25 @@ const remoteStatusText = computed(() => {
   return "未配置 remote";
 });
 const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWriteRunning.value);
+const canInitializeGitRepository = computed(
+  () =>
+    activeRepositoryTarget.value.kind === "main" &&
+    !snapshot.value?.repositoryPath &&
+    !gitWorkspaceSnapshot.value?.repositoryPath &&
+    props.project.pathExists !== false &&
+    !store.gitRefreshing[props.project.id] &&
+    !store.gitWorkspaceRefreshing[props.project.id] &&
+    !isAnyGitWriteRunning.value,
+);
+const canPublishGitBranch = computed(
+  () =>
+    Boolean(snapshot.value?.repositoryPath) &&
+    !snapshot.value?.isDetachedHead &&
+    Boolean(currentLocalBranch.value) &&
+    remotes.value.length > 0 &&
+    !hasUpstream.value &&
+    !isAnyGitWriteRunning.value,
+);
 const isGitSnapshotRefreshing = computed(() => {
   const context = activeRepositoryContext.value;
   if (!context || context.target.kind === "main") return Boolean(store.gitRefreshing[props.project.id]);
@@ -593,6 +613,38 @@ const remoteActionTitle = (action: GitRemoteActionName) => {
   return `${remoteActionLabel(action)} ${upstreamLabel.value}`;
 };
 
+const publishGitBranchTitle = () => {
+  if (hasUpstream.value) return remoteActionTitle("push");
+  if (!snapshot.value?.repositoryPath) return "未检测到 Git 仓库，无法发布当前分支";
+  if (snapshot.value.isDetachedHead) return "当前 HEAD 处于 detached 状态，无法发布当前分支";
+  if (!currentLocalBranch.value) return "当前 HEAD 未指向本地分支，无法发布当前分支";
+  if (remotes.value.length === 0) return "当前仓库未配置 remote，无法发布当前分支";
+  return remotes.value.length === 1
+    ? `发布 ${currentLocalBranch.value} 到 ${remotes.value[0].name}`
+    : "选择 remote 后发布当前分支";
+};
+
+const executeInitializeGitRepository = async () => {
+  if (!canInitializeGitRepository.value) return;
+
+  activeGitAction.value = "initialize";
+  setGitActionResult("loading", "正在初始化 Git 仓库...");
+  await waitForVisualFeedback();
+  try {
+    const result = await store.initializeGitRepository(props.project.id);
+    if (!result) {
+      setGitActionResult("warning", "当前项目目录不可用，无法初始化 Git 仓库。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) clearCommitSelection();
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "初始化 Git 仓库失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
 const executeGitRemoteAction = async (action: GitRemoteActionName) => {
   if (isAnyGitWriteRunning.value) return;
   isRemoteMenuOpen.value = false;
@@ -624,6 +676,57 @@ const executeGitRemoteAction = async (action: GitRemoteActionName) => {
   } finally {
     activeGitAction.value = "";
   }
+};
+
+const executePublishGitBranch = async (remoteName: string) => {
+  if (!canPublishGitBranch.value || !remoteName) return;
+
+  isRemoteMenuOpen.value = false;
+  activeGitAction.value = `remote:publish:${remoteName}`;
+  setGitActionResult("loading", `正在发布 ${currentLocalBranch.value} 到 ${remoteName}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.publishGitBranch(props.project.id, remoteName, activeRepositoryTarget.value);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法发布 Git 分支。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) clearCommitSelection();
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "发布当前分支失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestPublishGitBranch = (remote: ProjectGitRemoteSummary) => {
+  const branch = currentLocalBranch.value;
+  if (!canPublishGitBranch.value || !branch) return;
+
+  isRemoteMenuOpen.value = false;
+  confirmationDialog.value = {
+    kind: "warning",
+    title: "发布当前分支",
+    message: `将 ${branch} 发布到 ${remote.name}/${branch} 并设置 upstream。`,
+    detail: remote.pushUrl || remote.fetchUrl,
+    confirmLabel: "发布分支",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executePublishGitBranch(remote.name),
+  };
+};
+
+const handlePushAction = (event: MouseEvent) => {
+  if (hasUpstream.value) {
+    void executeGitRemoteAction("push");
+    return;
+  }
+  if (!canPublishGitBranch.value) return;
+  if (remotes.value.length === 1) {
+    requestPublishGitBranch(remotes.value[0]);
+    return;
+  }
+  toggleRemoteMenu(event);
 };
 
 const openAddRemoteDialog = () => {
@@ -1233,6 +1336,19 @@ watch(
               </Transition>
             </Teleport>
           </div>
+          <button
+            v-if="canInitializeGitRepository"
+            type="button"
+            class="flex h-7 shrink-0 items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 text-[10px] font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-60"
+            :disabled="isAnyGitWriteRunning"
+            :aria-busy="activeGitAction === 'initialize'"
+            title="初始化 Git 仓库"
+            aria-label="初始化 Git 仓库"
+            @click="executeInitializeGitRepository"
+          >
+            <GitBranch :size="13" class="shrink-0 text-primary" />
+            <span>初始化 Git 仓库</span>
+          </button>
           <span
             v-if="snapshot?.isDetachedHead"
             class="shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
@@ -1320,6 +1436,18 @@ watch(
                         </p>
                       </div>
                       <div class="flex shrink-0 items-center gap-px">
+                        <button
+                          v-if="canPublishGitBranch"
+                          type="button"
+                          class="git-section-action"
+                          :disabled="isAnyGitWriteRunning"
+                          :aria-busy="activeGitAction === `remote:publish:${remote.name}`"
+                          :title="`发布当前分支到 ${remote.name}`"
+                          :aria-label="`发布当前分支到 ${remote.name}`"
+                          @click="requestPublishGitBranch(remote)"
+                        >
+                          <CloudUpload :size="12" />
+                        </button>
                         <button
                           type="button"
                           class="git-section-action"
@@ -1418,13 +1546,20 @@ watch(
           <button
             type="button"
             class="git-top-action"
-            :disabled="!canRunRemoteOperation"
-            :aria-busy="activeGitAction === 'remote:push'"
-            :title="remoteActionTitle('push')"
-            :aria-label="remoteActionTitle('push')"
-            @click="executeGitRemoteAction('push')"
+            :disabled="!canRunRemoteOperation && !canPublishGitBranch"
+            :aria-busy="activeGitAction === 'remote:push' || activeGitAction.startsWith('remote:publish:')"
+            :title="publishGitBranchTitle()"
+            :aria-label="publishGitBranchTitle()"
+            @click="handlePushAction"
           >
-            <CloudUpload :size="14" :class="activeGitAction === 'remote:push' ? 'animate-pulse' : ''" />
+            <CloudUpload
+              :size="14"
+              :class="
+                activeGitAction === 'remote:push' || activeGitAction.startsWith('remote:publish:')
+                  ? 'animate-pulse'
+                  : ''
+              "
+            />
           </button>
         </div>
       </div>
