@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Defines typed Git bridge, blocker, repository-target, remote, and write-action contracts."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Defines GitTab, GitChangesPane, GitCommitHistory, dialog, menu, and accessibility ownership."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines Pinia/ProjectBridge boundaries, repository-scoped state, and refresh behavior."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Defines frontend validation and compact-host regression requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Required for the component-store-bridge-preload Git data flow."}
+{"file":".trellis/tasks/08-05-git-last-commit-correction/research/vscode-undo-last-commit.md","reason":"Records the exact VS Code Undo Last Commit behavior."}
+{"file":".trellis/tasks/08-05-git-history-actions/research/conflict-recovery-and-external-handoff.md","reason":"Records the selected automatic abort and external tool guidance contract."}
