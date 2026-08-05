@@ -34,6 +34,8 @@ const gitCommitAvatarRequestTimeoutMs = 3500;
 const gitWorkspaceWorkerLimit = 4;
 const gitWorkspaceEntryTimeoutMs = 30000;
 const gitWorkspaceStderrLimit = 16 * 1024;
+const gitEnvironmentBootstrapTimeoutMs = 2500;
+const gitEnvironmentMarker = "__UTOOLS_PROJECT_LAUNCH_GIT_ENV_BEGIN__";
 const launchedProcessIds = new Set();
 const userStoppedProcesses = new Set();
 const automationExitMatchedProcesses = new Set();
@@ -223,6 +225,8 @@ const textFileExtensions = new Set([
 const textFileNamePatterns = [/^\.env(?:\..+)?$/i, /^dockerfile$/i, /^makefile$/i, /^procfile$/i];
 const imageFileExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"]);
 
+let gitExecutionEnvironment = null;
+
 function createLegacyWindowsDecoder() {
   if (process.platform !== "win32") {
     return null;
@@ -247,6 +251,164 @@ function createProcessOutputDecoder() {
 
     return legacyWindowsDecoder.decode(chunk, { stream: true });
   };
+}
+
+function commandOutputText(output) {
+  if (Buffer.isBuffer(output)) {
+    const decode = createProcessOutputDecoder();
+    return decode(output) + decode();
+  }
+  return String(output || "");
+}
+
+function environmentValue(environment, name) {
+  const normalizedName = String(name || "").toLocaleLowerCase();
+  const key = Object.keys(environment || {}).find((candidate) => candidate.toLocaleLowerCase() === normalizedName);
+  return key ? String(environment[key] || "") : "";
+}
+
+function setEnvironmentValue(environment, name, value) {
+  const normalizedName = String(name || "").toLocaleLowerCase();
+  Object.keys(environment).forEach((candidate) => {
+    if (candidate.toLocaleLowerCase() === normalizedName && candidate !== name) {
+      delete environment[candidate];
+    }
+  });
+  environment[name] = String(value || "");
+}
+
+function mergePathEntries(values, delimiter, caseInsensitive = false) {
+  const entries = [];
+  const seen = new Set();
+  values.forEach((value) => {
+    String(value || "")
+      .split(delimiter)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .forEach((entry) => {
+        const key = caseInsensitive ? entry.toLocaleLowerCase() : entry;
+        if (seen.has(key)) return;
+        seen.add(key);
+        entries.push(entry);
+      });
+  });
+  return entries.join(delimiter);
+}
+
+function parseNullDelimitedEnvironment(output) {
+  const values = {};
+  const buffer = Buffer.isBuffer(output) ? output : Buffer.from(String(output || ""));
+  const entries = buffer.toString("utf8").split("\0");
+  const markerIndex = entries.lastIndexOf(gitEnvironmentMarker);
+  if (markerIndex < 0) return values;
+  entries
+    .slice(markerIndex + 1)
+    .forEach((entry) => {
+      const separator = entry.indexOf("=");
+      if (separator <= 0) return;
+      const name = entry.slice(0, separator);
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return;
+      values[name] = entry.slice(separator + 1);
+    });
+  return values;
+}
+
+function expandWindowsEnvironmentVariables(value, environment) {
+  let expanded = String(value || "");
+  for (let index = 0; index < 4; index += 1) {
+    const next = expanded.replace(/%([^%]+)%/g, (match, name) => environmentValue(environment, name) || match);
+    if (next === expanded) break;
+    expanded = next;
+  }
+  return expanded;
+}
+
+function readWindowsRegistryEnvironment(registryPath) {
+  try {
+    const output = execFileSync("reg.exe", ["query", registryPath], {
+      encoding: "buffer",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: gitEnvironmentBootstrapTimeoutMs,
+      windowsHide: true,
+    });
+    const values = {};
+    commandOutputText(output)
+      .split(/\r?\n/)
+      .forEach((line) => {
+        const match = /^\s*(.*?)\s+REG_(?:SZ|EXPAND_SZ)\s+(.*)$/i.exec(line);
+        if (!match) return;
+        const name = match[1].trim();
+        if (!name) return;
+        values[name] = match[2].trim();
+      });
+    return values;
+  } catch (error) {
+    return {};
+  }
+}
+
+function resolvePosixGitExecutionEnvironment(baseEnvironment) {
+  const configuredShell = String(process.env.SHELL || "").trim();
+  const fallbackShell = process.platform === "darwin" ? "/bin/zsh" : "/bin/sh";
+  const shellPath = configuredShell.startsWith("/") ? configuredShell : fallbackShell;
+  const shellName = path.basename(shellPath);
+  try {
+    const output = execFileSync(
+      shellPath,
+      [shellName === "sh" ? "-lc" : "-ilc", `printf '\\000${gitEnvironmentMarker}\\000'; env -0`],
+      {
+        encoding: "buffer",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: gitEnvironmentBootstrapTimeoutMs,
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+      },
+    );
+    const shellEnvironment = parseNullDelimitedEnvironment(output);
+    const environment = { ...baseEnvironment, ...shellEnvironment };
+    const mergedPath = mergePathEntries([shellEnvironment.PATH, environmentValue(baseEnvironment, "PATH")], ":");
+    if (mergedPath) setEnvironmentValue(environment, "PATH", mergedPath);
+    return environment;
+  } catch (error) {
+    return baseEnvironment;
+  }
+}
+
+function resolveWindowsGitExecutionEnvironment(baseEnvironment) {
+  const machineEnvironment = readWindowsRegistryEnvironment(
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+  );
+  const userEnvironment = readWindowsRegistryEnvironment("HKCU\\Environment");
+  const environment = { ...baseEnvironment };
+  [machineEnvironment, userEnvironment].forEach((source) => {
+    Object.entries(source).forEach(([name, value]) => {
+      if (name.toLocaleLowerCase() === "path") return;
+      setEnvironmentValue(environment, name, expandWindowsEnvironmentVariables(value, environment));
+    });
+  });
+  const mergedPath = mergePathEntries(
+    [
+      expandWindowsEnvironmentVariables(environmentValue(userEnvironment, "Path"), environment),
+      environmentValue(baseEnvironment, "Path"),
+      expandWindowsEnvironmentVariables(environmentValue(machineEnvironment, "Path"), environment),
+    ],
+    ";",
+    true,
+  );
+  if (mergedPath) setEnvironmentValue(environment, "PATH", mergedPath);
+  return environment;
+}
+
+function resolveGitExecutionEnvironment() {
+  if (gitExecutionEnvironment) return gitExecutionEnvironment;
+  // GUI hosts do not reliably inherit the developer shell's PATH. Resolve once
+  // and keep Git itself as a direct child process so its arguments stay isolated.
+  const baseEnvironment = { ...process.env };
+  gitExecutionEnvironment =
+    process.platform === "win32"
+      ? resolveWindowsGitExecutionEnvironment(baseEnvironment)
+      : resolvePosixGitExecutionEnvironment(baseEnvironment);
+  return gitExecutionEnvironment;
 }
 
 function expandPath(inputPath) {
@@ -1865,6 +2027,7 @@ function findGitRoot(startPath) {
     const output = execFileSync("git", ["-C", resolvedPath, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      env: resolveGitExecutionEnvironment(),
     });
     return output.trim();
   } catch (error) {
@@ -1879,7 +2042,7 @@ function findGitRootAsync(startPath) {
     execFile(
       "git",
       ["-C", resolvedPath, "rev-parse", "--show-toplevel"],
-      { encoding: "utf8", windowsHide: true },
+      { encoding: "utf8", env: resolveGitExecutionEnvironment(), windowsHide: true },
       (error, stdout) => {
         resolve(error ? null : String(stdout || "").trim());
       },
@@ -1894,6 +2057,7 @@ function runGit(startPath, args) {
     return execFileSync("git", ["-C", resolvedPath, ...args], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      env: resolveGitExecutionEnvironment(),
     });
   } catch (error) {
     return null;
@@ -1904,9 +2068,14 @@ function runGitAsync(startPath, args) {
   const resolvedPath = expandPath(startPath);
 
   return new Promise((resolve) => {
-    execFile("git", ["-C", resolvedPath, ...args], { encoding: "utf8", windowsHide: true }, (error, stdout) => {
-      resolve(error ? null : String(stdout || ""));
-    });
+    execFile(
+      "git",
+      ["-C", resolvedPath, ...args],
+      { encoding: "utf8", env: resolveGitExecutionEnvironment(), windowsHide: true },
+      (error, stdout) => {
+        resolve(error ? null : String(stdout || ""));
+      },
+    );
   });
 }
 
@@ -1917,6 +2086,7 @@ function runGitDiff(startPath, args) {
     return execFileSync("git", ["-C", resolvedPath, ...args], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      env: resolveGitExecutionEnvironment(),
     });
   } catch (error) {
     return error?.stdout ? String(error.stdout) : null;
@@ -1927,6 +2097,7 @@ function runGitResult(startPath, args) {
   const resolvedPath = expandPath(startPath);
   const result = spawnSync("git", ["-C", resolvedPath, ...args], {
     encoding: "utf8",
+    env: resolveGitExecutionEnvironment(),
     windowsHide: true,
   });
   return {
@@ -1945,7 +2116,7 @@ function runGitRemoteCommandResult(startPath, args) {
       ["-C", resolvedPath, ...args],
       {
         encoding: "utf8",
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
+        env: { ...resolveGitExecutionEnvironment(), GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
         timeout: 120000,
         windowsHide: true,
       },
@@ -1983,7 +2154,7 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
     let settled = false;
     let spawnError = null;
     const child = spawn(executable, commandArgs, {
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      env: { ...resolveGitExecutionEnvironment(), GIT_OPTIONAL_LOCKS: "0" },
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
