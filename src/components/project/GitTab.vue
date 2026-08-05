@@ -127,6 +127,8 @@ const isRemoteDialogOpen = ref(false);
 const remoteDialogMode = ref<RemoteDialogMode>("add");
 const remoteFormName = ref("");
 const remoteFormUrl = ref("");
+const isPublishBranchDialogOpen = ref(false);
+const publishRemoteName = ref("");
 const gitActionMessage = ref("");
 const gitActionState = ref<GitActionState>("idle");
 const activeGitAction = ref("");
@@ -207,6 +209,14 @@ const remotes = computed(() => snapshot.value?.remotes || []);
 const upstream = computed(() => snapshot.value?.upstream || null);
 const hasUpstream = computed(() => Boolean(upstream.value));
 const upstreamLabel = computed(() => upstream.value?.ref || "未设置 upstream");
+const canPublishBranch = computed(
+  () =>
+    !hasUpstream.value &&
+    !snapshot.value?.isDetachedHead &&
+    Boolean(snapshot.value?.headHash) &&
+    Boolean(snapshot.value?.branch) &&
+    remotes.value.length > 0,
+);
 const remoteStatusText = computed(() => {
   if (upstream.value) {
     return upstream.value.ref;
@@ -217,6 +227,7 @@ const remoteStatusText = computed(() => {
   return "未配置 remote";
 });
 const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWriteRunning.value);
+const canPushBranch = computed(() => (hasUpstream.value || canPublishBranch.value) && !isAnyGitWriteRunning.value);
 const isGitSnapshotRefreshing = computed(() => {
   const context = activeRepositoryContext.value;
   if (!context || context.target.kind === "main") return Boolean(store.gitRefreshing[props.project.id]);
@@ -484,6 +495,12 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
     return;
   }
 
+  if (isPublishBranchDialogOpen.value) {
+    closePublishBranchDialog();
+    event.detail.handle();
+    return;
+  }
+
   if (hasFloatingControlsOpen()) {
     closeFloatingControls();
     event.detail.handle();
@@ -495,6 +512,7 @@ const clearRepositoryBoundState = (projectId = props.project.id) => {
   diffRequestGeneration += 1;
   closeFloatingControls();
   isRemoteDialogOpen.value = false;
+  isPublishBranchDialogOpen.value = false;
   isAiDialogOpen.value = false;
   isDiffViewerExpanded.value = false;
   confirmationDialog.value = null;
@@ -589,13 +607,69 @@ const remoteActionLoadingMessage = (action: GitRemoteActionName) => {
 };
 
 const remoteActionTitle = (action: GitRemoteActionName) => {
-  if (!hasUpstream.value) return "当前分支未设置 upstream，无法执行远程操作";
+  if (action === "push" && canPublishBranch.value) return "发布当前分支并设置 upstream";
+  if (!hasUpstream.value) {
+    if (action === "push" && snapshot.value?.isDetachedHead) return "detached HEAD 无法发布分支";
+    if (action === "push" && !snapshot.value?.headHash) return "当前分支尚无提交，无法发布";
+    if (action === "push" && remotes.value.length === 0) return "未配置 remote，无法发布分支";
+    return "当前分支未设置 upstream，无法执行远程操作";
+  }
   return `${remoteActionLabel(action)} ${upstreamLabel.value}`;
+};
+
+const defaultPublishRemote = () => remotes.value.find((remote) => remote.name === "origin")?.name || remotes.value[0]?.name || "";
+
+const openPublishBranchDialog = () => {
+  if (!canPublishBranch.value) {
+    setGitActionResult("warning", remoteActionTitle("push"));
+    return;
+  }
+  isRemoteMenuOpen.value = false;
+  publishRemoteName.value = defaultPublishRemote();
+  isPublishBranchDialogOpen.value = true;
+};
+
+const closePublishBranchDialog = () => {
+  if (isAnyGitWriteRunning.value) return;
+  isPublishBranchDialogOpen.value = false;
+};
+
+const submitPublishBranch = async () => {
+  if (isAnyGitWriteRunning.value) return;
+  const remoteName = publishRemoteName.value;
+  if (!remotes.value.some((remote) => remote.name === remoteName)) {
+    setGitActionResult("warning", "请选择可用的 Git remote。");
+    return;
+  }
+
+  activeGitAction.value = `remote:publish:${remoteName}`;
+  setGitActionResult("loading", `正在发布 ${currentGitRefLabel.value} 到 ${remoteName}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.publishGitBranch(props.project.id, remoteName, activeRepositoryTarget.value);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法发布 Git 分支。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) {
+      isPublishBranchDialogOpen.value = false;
+      clearCommitSelection();
+    }
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "发布 Git 分支失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
 };
 
 const executeGitRemoteAction = async (action: GitRemoteActionName) => {
   if (isAnyGitWriteRunning.value) return;
   isRemoteMenuOpen.value = false;
+  if (action === "push" && !hasUpstream.value) {
+    openPublishBranchDialog();
+    return;
+  }
   if (!hasUpstream.value) {
     setGitActionResult("warning", "当前分支未设置 upstream，无法执行远程操作。");
     return;
@@ -1418,13 +1492,16 @@ watch(
           <button
             type="button"
             class="git-top-action"
-            :disabled="!canRunRemoteOperation"
-            :aria-busy="activeGitAction === 'remote:push'"
+            :disabled="!canPushBranch"
+            :aria-busy="activeGitAction.startsWith('remote:push') || activeGitAction.startsWith('remote:publish')"
             :title="remoteActionTitle('push')"
             :aria-label="remoteActionTitle('push')"
             @click="executeGitRemoteAction('push')"
           >
-            <CloudUpload :size="14" :class="activeGitAction === 'remote:push' ? 'animate-pulse' : ''" />
+            <CloudUpload
+              :size="14"
+              :class="activeGitAction.startsWith('remote:push') || activeGitAction.startsWith('remote:publish') ? 'animate-pulse' : ''"
+            />
           </button>
         </div>
       </div>
@@ -1804,6 +1881,97 @@ watch(
         </Teleport>
       </div>
     </div>
+
+    <Transition name="scale">
+      <div
+        v-if="isPublishBranchDialogOpen"
+        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        @click.self="closePublishBranchDialog"
+      >
+        <div
+          class="w-[min(28rem,94vw)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="publish-git-branch-title"
+          @click.stop
+        >
+          <div class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4">
+            <div class="min-w-0">
+              <h3 id="publish-git-branch-title" class="text-sm font-bold text-on-surface">发布本地分支</h3>
+              <p class="truncate text-[10px] font-medium text-on-surface-variant">选择首次推送的 Git remote</p>
+            </div>
+            <button
+              type="button"
+              class="git-top-action"
+              :disabled="isAnyGitWriteRunning"
+              :aria-busy="isAnyGitWriteRunning"
+              :title="t.common.close"
+              :aria-label="t.common.close"
+              @click="closePublishBranchDialog"
+            >
+              <X :size="14" />
+            </button>
+          </div>
+          <div class="space-y-3 p-4">
+            <div class="rounded border border-border-subtle bg-surface-container-low px-3 py-2">
+              <div class="text-[10px] font-bold uppercase text-on-surface-variant">Branch</div>
+              <div class="mt-1 truncate font-mono text-xs font-bold text-on-surface">
+                {{ currentGitRefLabel }} -> {{ publishRemoteName || "remote" }}/{{ currentGitRefLabel }}
+              </div>
+            </div>
+            <fieldset class="space-y-1.5">
+              <legend class="text-xs font-bold text-on-surface">推送到</legend>
+              <label
+                v-for="remote in remotes"
+                :key="remote.name"
+                :class="
+                  cn(
+                    'flex min-w-0 cursor-pointer items-center gap-2 rounded border px-3 py-2 transition-colors',
+                    publishRemoteName === remote.name
+                      ? 'border-primary bg-primary/10 text-on-surface'
+                      : 'border-border-subtle bg-surface-container-low hover:bg-surface-variant',
+                  )
+                "
+              >
+                <input
+                  v-model="publishRemoteName"
+                  type="radio"
+                  name="publish-git-remote"
+                  :value="remote.name"
+                  :disabled="isAnyGitWriteRunning"
+                  class="h-3.5 w-3.5 shrink-0 accent-primary"
+                />
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate font-mono text-xs font-bold">{{ remote.name }}</span>
+                  <span class="block truncate font-mono text-[10px] text-on-surface-variant">
+                    {{ remote.pushUrl || remote.fetchUrl }}
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                class="git-dialog-secondary"
+                :disabled="isAnyGitWriteRunning"
+                @click="closePublishBranchDialog"
+              >
+                {{ t.common.cancel }}
+              </button>
+              <button
+                type="button"
+                class="git-dialog-primary"
+                :disabled="isAnyGitWriteRunning || !publishRemoteName"
+                @click="submitPublishBranch"
+              >
+                <CloudUpload :size="13" />
+                发布并设置 upstream
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <Transition name="scale">
       <div

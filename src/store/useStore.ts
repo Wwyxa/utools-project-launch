@@ -3192,6 +3192,18 @@ export const useStore = defineStore("app", {
         refreshOnFailure: true,
       });
     },
+    async publishGitBranch(
+      projectId: string,
+      remoteName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.publishGitBranch(context.repositoryPath, remoteName),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
+    },
     async addGitRemote(
       projectId: string,
       remoteName: string,

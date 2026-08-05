@@ -5180,6 +5180,48 @@ function pushGitRemote(projectPath) {
   );
 }
 
+async function publishGitBranch(projectPath, remoteName) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const remote = normalizeGitRemoteName(remoteName);
+  const remoteError = validateGitRemoteName(remote);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+  if (remoteError) {
+    return { ok: false, message: remoteError };
+  }
+
+  const [branchOutput, headOutput, remotes, upstream] = await Promise.all([
+    runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
+    runGitAsync(repositoryPath, ["rev-parse", "--verify", "HEAD"]),
+    readGitRemotesAsync(repositoryPath),
+    readGitUpstreamAsync(repositoryPath),
+  ]);
+  const branch = String(branchOutput || "").trim();
+  if (!String(headOutput || "").trim() || !branch) {
+    return { ok: false, message: "当前不是可发布的本地分支。" };
+  }
+  if (upstream) {
+    return { ok: false, remote: upstream.remote, branch, message: "当前分支已设置 upstream，请直接执行 Push。" };
+  }
+  if (!remotes.some((candidate) => candidate.name === remote)) {
+    return { ok: false, remote, branch, message: `未找到名为 ${remote} 的 Git remote。` };
+  }
+  if (runGitResult(repositoryPath, ["check-ref-format", `refs/heads/${branch}`]).status !== 0) {
+    return { ok: false, remote, branch, message: "当前分支名称不符合 Git 规则。" };
+  }
+
+  const result = await runGitRemoteCommandResult(repositoryPath, [
+    "push",
+    "--set-upstream",
+    remote,
+    `HEAD:refs/heads/${branch}`,
+  ]);
+  return result.status === 0
+    ? { ok: true, remote, branch, message: `已发布 ${branch} 到 ${remote}/${branch} 并设置 upstream。` }
+    : { ok: false, remote, branch, message: firstGitError(result, "发布 Git 分支失败。") };
+}
+
 async function addGitRemote(projectPath, remoteName, remoteUrl) {
   const repositoryPath = await findGitRootAsync(projectPath);
   const name = normalizeGitRemoteName(remoteName);
@@ -5913,6 +5955,7 @@ window.projectBridge = {
   fetchGitRemote,
   pullGitRemote,
   pushGitRemote,
+  publishGitBranch,
   addGitRemote,
   setGitRemoteUrl,
   removeGitRemote,

@@ -900,6 +900,9 @@ const fallbackBridge: ProjectBridge = {
   async pushGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法执行 Git push。");
   },
+  async publishGitBranch(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法发布 Git 分支。");
+  },
   async addGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法添加 Git remote。");
   },

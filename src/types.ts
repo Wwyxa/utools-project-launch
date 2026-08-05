@@ -1037,6 +1037,7 @@ export interface ProjectBridge {
   fetchGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   pullGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   pushGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
+  publishGitBranch(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   addGitRemote(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
   setGitRemoteUrl(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
   removeGitRemote(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;

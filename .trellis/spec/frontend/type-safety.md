@@ -478,14 +478,14 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - `ProjectGitRemoteSummary = { name: string; fetchUrl: string; pushUrl: string }`.
 - `ProjectGitUpstreamSummary = { remote: string; branch: string; ref: string; ahead: number; behind: number }`.
 - `ProjectGitSnapshot` and `ProjectGitStatusSnapshot` include `remotes: ProjectGitRemoteSummary[]` and `upstream: ProjectGitUpstreamSummary | null`.
-- Bridge methods: `fetchGitRemote(projectPath)`, `pullGitRemote(projectPath)`, `pushGitRemote(projectPath)`, `addGitRemote(projectPath, remoteName, remoteUrl)`, `setGitRemoteUrl(projectPath, remoteName, remoteUrl)`, `removeGitRemote(projectPath, remoteName)`.
+- Bridge methods: `fetchGitRemote(projectPath)`, `pullGitRemote(projectPath)`, `pushGitRemote(projectPath)`, `publishGitBranch(projectPath, remoteName)`, `addGitRemote(projectPath, remoteName, remoteUrl)`, `setGitRemoteUrl(projectPath, remoteName, remoteUrl)`, `removeGitRemote(projectPath, remoteName)`.
 - Store actions mirror the bridge methods with `projectId` replacing `projectPath`.
 
 ### 3. Contracts
 
 - Remote status belongs in the existing Git snapshot contract, not in duplicated component-local remote state.
 - Browser fallback snapshots must explicitly return `remotes: []` and `upstream: null` so consumers can distinguish "no remote" from a missing field.
-- Fetch, pull, and push operate only on the current branch upstream. Do not add force push, rebase pull, or `push -u` without a new requirement and updated spec.
+- Fetch and pull operate only on the current branch upstream. Push uses that upstream when it exists. A local branch without an upstream may be published through `publishGitBranch`: select a configured remote, push the current branch to the same remote branch name with `--set-upstream`, then refresh the snapshot. Do not add force push, rebase pull, or arbitrary remote branch names.
 - Preload validates remote names and URLs before invoking Git. Remote names are non-empty, cannot start with `-`, and only contain letters, digits, `.`, `_`, and `-`. Remote URLs are non-empty and cannot contain control characters.
 - Remote network commands must use async process execution with a timeout and `GIT_TERMINAL_PROMPT=0` / `GCM_INTERACTIVE=Never`; do not run them through blocking `spawnSync` or commands that can wait forever for credentials.
 - Store remote mutations refresh the full Git snapshot after every result, including failures, because `pull` can fetch before merge failure and remote refs may still change.
@@ -494,7 +494,8 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 ### 4. Validation & Error Matrix
 
 - Missing Git repository -> return `{ ok: false, message: "未检测到 Git 仓库。" }`.
-- Missing upstream for fetch/pull/push -> return a clear failure and keep buttons disabled in the UI.
+- Missing upstream for fetch/pull -> return a clear failure and keep buttons disabled in the UI. Push may instead enter the explicit `publishGitBranch` flow when publishing is available.
+- Missing upstream for `publishGitBranch` -> allow only a non-detached branch with at least one commit and a configured selected remote; reject missing, invalid, or stale remote names before running the network command.
 - Empty or invalid remote name -> return the validation message before running Git.
 - Empty or control-character remote URL -> return the validation message before running Git.
 - Remote command timeout -> return a timeout message and refresh the Git snapshot afterward.
@@ -504,7 +505,7 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 ### 5. Good/Base/Bad Cases
 
 - Good: a repository with `origin/main` upstream shows one compact upstream chip, enables fetch/pull/push, and refreshes ahead/behind after each operation.
-- Good: a repository with remotes but no current upstream shows the remote list but disables fetch/pull/push with a clear tooltip.
+- Good: a repository with remotes but no current upstream disables fetch/pull, while Push opens a compact publish dialog that preselects `origin` and lets the user choose another configured remote.
 - Base: browser preview has no real Git bridge; snapshots still include empty remote fields and remote actions return unsupported messages.
 - Bad: adding a separate component-local remote list that can drift from `ProjectGitSnapshot.remotes`.
 - Bad: running `git pull` with `spawnSync`; a credential prompt can freeze the uTools preload process.
@@ -513,11 +514,12 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 ### 6. Tests Required
 
 - `node --check public/preload.js` after changing preload remote command helpers.
+- `npm run validate:git-remotes` must use temporary bare remotes to assert origin publishing, an alternate selected remote, upstream configuration, rejected targets, detached HEAD, and unborn branches.
 - `npm run lint` after changing shared Git remote types, bridge methods, store actions, or GitTab calls.
 - `npm run build` after changing GitTab remote UI or shared snapshot fields.
-- Manual smoke test in browser preview: GitTab top panel shows no-remote state, disabled fetch/pull/push, and the add remote dialog opens.
+- Manual smoke test in browser preview: GitTab top panel shows no-remote state with disabled fetch/pull/push, and the add remote dialog opens.
 - Manual smoke test in uTools with a real repository: fetch/pull/push update status feedback and refresh ahead/behind.
-- Manual smoke test in uTools with no upstream: remote operations remain disabled or return a clear warning.
+- Manual smoke test in uTools with no upstream: fetch/pull remain disabled, while Push opens the publish dialog only for a committed local branch with at least one configured remote.
 
 ### 7. Wrong vs Correct
 
