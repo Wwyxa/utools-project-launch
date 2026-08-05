@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check typed blockers/results, active target routing, and full ref refresh."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Check More menu, amend mode, dialog safety, keyboard behavior, and draft ownership."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check Store-only bridge access and repository-context cleanup."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check type/build/layout regression gates."}
+{"file":".trellis/tasks/08-05-git-last-commit-correction/research/vscode-undo-last-commit.md","reason":"Verify normal, merge, and root undo behavior against local VS Code evidence."}

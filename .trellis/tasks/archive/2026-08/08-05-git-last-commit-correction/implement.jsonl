@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Defines Git write, blocker, commit metadata, and selected target contracts."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Defines GitChangesPane ownership, compact menu/dialog, and repository draft behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines repository-scoped drafts, Store writes, refresh, and stale-context handling."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Defines frontend checks and compact control quality requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Guides message and recovery data across preload, bridge, Store, and component."}
+{"file":".trellis/tasks/08-05-git-last-commit-correction/research/vscode-undo-last-commit.md","reason":"Provides the exact normal, merge, and root commit undo semantics to implement."}
