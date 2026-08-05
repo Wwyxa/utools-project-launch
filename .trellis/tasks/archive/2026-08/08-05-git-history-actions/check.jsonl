@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check structured blocker use, target authorization, and failure refresh behavior."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Check commit menu grouping, dialog keyboard behavior, and warning presentation."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check Store-only bridge/launch calls and repository-context isolation."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check required type/build/layout regressions."}
+{"file":".trellis/tasks/08-05-git-history-actions/research/conflict-recovery-and-external-handoff.md","reason":"Verify conflict abort and ordinary failure reporting match the selected product contract."}

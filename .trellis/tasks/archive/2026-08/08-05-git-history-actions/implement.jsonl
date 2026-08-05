@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Defines structured Git blockers, commit refs, write actions, and repository target contracts."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Defines nested commit menus, ProjectActionDialog use, and GitCommitHistory ownership."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines Store write coordination and repository context behavior."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Defines UI/build/type and floating-control checks."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Guides failure and refresh data across preload, bridge, Store, and UI."}
+{"file":".trellis/tasks/08-05-git-history-actions/research/conflict-recovery-and-external-handoff.md","reason":"Defines automatic abort, ordinary failure reporting, and external tool guidance behavior."}
