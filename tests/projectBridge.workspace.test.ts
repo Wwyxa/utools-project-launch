@@ -82,6 +82,7 @@ const gitSnapshot = (repositoryPath: string, branch: string, hash = "c".repeat(4
   behind: 0,
   files: [],
   commits: [{ hash, message: branch, author: "Tester", date: "2026-07-19T10:00:00.000Z" }],
+  commitCount: 1,
   branches: [],
   remotes: [],
   upstream: null,
@@ -446,6 +447,7 @@ describe("browser Git workspace fallback", () => {
     expect(store.gitRepositoryLoadingMore[contextKey]).toBe(false);
     stalePage.resolve({
       commits: [gitSnapshot(projectPath, "stale-page", "b".repeat(40)).commits[0]],
+      commitCount: 1,
       hasMoreCommits: false,
       repositoryPath: projectPath,
       lastRefreshedAt: "2026-08-02T00:00:00.000Z",
@@ -482,6 +484,7 @@ describe("browser Git workspace fallback", () => {
     const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(() => pendingSnapshot.promise);
     const readGitCommits = vi.fn<ProjectBridge["readGitCommits"]>(async () => ({
       commits: [freshPage],
+      commitCount: 1,
       hasMoreCommits: false,
       repositoryPath: projectPath,
       lastRefreshedAt: "2026-08-02T00:00:00.000Z",

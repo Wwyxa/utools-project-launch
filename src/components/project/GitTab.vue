@@ -159,6 +159,13 @@ const activeRepositoryContext = computed(() =>
 );
 const snapshot = computed(() => store.gitSnapshotForRepository(props.project.id, activeRepositoryTarget.value));
 const files = computed(() => snapshot.value?.files || []);
+const activeRepositoryChangeCount = computed(() => files.value.length);
+const activeRepositoryCommitCount = computed(() => snapshot.value?.commitCount ?? 0);
+const gitTabBadgeStyle = (count: number) => {
+  if (count <= 0) return undefined;
+  const badgeWidth = Math.max(12, String(count).length * 5 + 4);
+  return { paddingRight: `${badgeWidth + 6}px` };
+};
 const worktreeSelection = ref<FileReviewSelection | null>(null);
 const worktreeDiff = ref<ProjectGitFileDiffResult | null>(null);
 const isLoadingWorktreeDiff = ref(false);
@@ -1605,15 +1612,24 @@ watch(
               aria-controls="git-changes-panel"
               :aria-selected="leftContext === 'changes'"
               :tabindex="leftContext === 'changes' ? 0 : -1"
+              :aria-label="activeRepositoryChangeCount > 0 ? `更改（${activeRepositoryChangeCount} 项）` : '更改'"
+              :style="gitTabBadgeStyle(activeRepositoryChangeCount)"
               :class="
                 cn(
-                  'h-5 rounded px-1.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none',
+                  'relative h-5 rounded px-1.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none',
                   leftContext === 'changes' && 'bg-surface text-on-surface shadow-sm',
                 )
               "
               @click="setLeftContext('changes')"
             >
               更改
+              <span
+                v-if="activeRepositoryChangeCount > 0"
+                aria-hidden="true"
+                class="absolute right-0.5 top-0.5 z-10 inline-flex h-3 min-w-3 items-center justify-center whitespace-nowrap rounded-full bg-primary px-0.5 font-mono text-[8px] font-bold leading-none text-on-primary shadow-sm"
+              >
+                {{ activeRepositoryChangeCount }}
+              </span>
             </button>
             <button
               id="git-history-tab"
@@ -1623,15 +1639,24 @@ watch(
               aria-controls="git-commit-history-panel"
               :aria-selected="leftContext === 'history'"
               :tabindex="leftContext === 'history' ? 0 : -1"
+              :aria-label="activeRepositoryCommitCount > 0 ? `提交（${activeRepositoryCommitCount} 个提交）` : '提交'"
+              :style="gitTabBadgeStyle(activeRepositoryCommitCount)"
               :class="
                 cn(
-                  'h-5 rounded px-1.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none',
+                  'relative h-5 rounded px-1.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none',
                   leftContext === 'history' && 'bg-surface text-on-surface shadow-sm',
                 )
               "
               @click="setLeftContext('history')"
             >
-              提交树
+              提交
+              <span
+                v-if="activeRepositoryCommitCount > 0"
+                aria-hidden="true"
+                class="absolute right-0.5 top-0.5 z-10 inline-flex h-3 min-w-3 items-center justify-center whitespace-nowrap rounded-full border border-border-subtle bg-surface px-0.5 font-mono text-[8px] font-bold leading-none text-on-surface-variant shadow-sm"
+              >
+                {{ activeRepositoryCommitCount }}
+              </span>
             </button>
           </div>
           <span

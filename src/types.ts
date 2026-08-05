@@ -471,6 +471,7 @@ export interface ProjectGitSnapshot {
   behind: number;
   files: ProjectGitFileChange[];
   commits: ProjectGitCommitSummary[];
+  commitCount: number;
   branches?: ProjectGitBranchSummary[];
   remotes?: ProjectGitRemoteSummary[];
   upstream?: ProjectGitUpstreamSummary | null;
@@ -500,6 +501,7 @@ export interface ProjectGitStatusSnapshot {
 
 export interface ProjectGitCommitPage {
   commits: ProjectGitCommitSummary[];
+  commitCount: number;
   hasMoreCommits?: boolean;
   nextCommitSkip?: number;
   repositoryPath: string;

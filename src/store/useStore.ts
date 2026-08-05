@@ -655,6 +655,9 @@ function resolveScriptCwd(projectPath: string, scriptCwd: string | undefined): s
 const normalizeGitCommitSkip = (value: unknown, fallback: number) =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
 
+const normalizeGitCommitCount = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+
 function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): ProjectGitSnapshot | null {
   if (!snapshot) {
     return null;
@@ -670,6 +673,7 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
     behind: snapshot.behind || 0,
     files: snapshot.files || [],
     commits,
+    commitCount: normalizeGitCommitCount(snapshot.commitCount, 0),
     branches: snapshot.branches || [],
     remotes: snapshot.remotes || [],
     upstream: snapshot.upstream || null,
@@ -694,6 +698,7 @@ function mergeGitStatusSnapshot(
     behind: statusSnapshot.behind || 0,
     files: statusSnapshot.files || [],
     commits: currentSnapshot?.commits || [],
+    commitCount: currentSnapshot?.commitCount ?? 0,
     branches: statusSnapshot.branches || currentSnapshot?.branches || [],
     remotes: statusSnapshot.remotes || currentSnapshot?.remotes || [],
     upstream: statusSnapshot.upstream || null,
@@ -731,6 +736,7 @@ function mergeGitCommitPage(currentSnapshot: ProjectGitSnapshot, commitPage: Pro
   return {
     ...currentSnapshot,
     commits: [...currentSnapshot.commits, ...(commitPage.commits || [])],
+    commitCount: normalizeGitCommitCount(commitPage.commitCount, currentSnapshot.commitCount),
     hasMoreCommits: commitPage.hasMoreCommits || false,
     nextCommitSkip: normalizeGitCommitSkip(
       commitPage.nextCommitSkip,
@@ -748,6 +754,7 @@ function replaceGitCommitPage(
   return {
     ...currentSnapshot,
     commits: commitPage.commits || [],
+    commitCount: normalizeGitCommitCount(commitPage.commitCount, currentSnapshot.commitCount),
     hasMoreCommits: commitPage.hasMoreCommits || false,
     nextCommitSkip: normalizeGitCommitSkip(
       commitPage.nextCommitSkip,
@@ -977,6 +984,7 @@ const demoProjects: Project[] = [
           message: "chore(task): archive 00-bootstrap-guidelines",
         },
       ],
+      commitCount: 2,
       repositoryPath: "~/projects/ai-portfolio",
       lastRefreshedAt: new Date().toISOString(),
       statusText: "2 files modified",
@@ -1017,6 +1025,7 @@ const demoProjects: Project[] = [
       behind: 0,
       files: [],
       commits: [],
+      commitCount: 0,
       repositoryPath: "~/projects/data-scraper",
       lastRefreshedAt: new Date().toISOString(),
       statusText: "工作区干净",
@@ -1057,6 +1066,7 @@ const demoProjects: Project[] = [
       behind: 2,
       files: [{ path: "cmd/server/main.go", additions: 6, deletions: 3, status: "MODIFIED" }],
       commits: [{ hash: "f7f4ce7", author: "wyxa", date: "2026-05-16", message: "init" }],
+      commitCount: 1,
       repositoryPath: "~/projects/finance-app",
       lastRefreshedAt: new Date().toISOString(),
       statusText: "1 file modified",

@@ -752,7 +752,7 @@ onBeforeUnmount(() => {
         <div class="git-subsection-bar">
           <button
             type="button"
-            class="flex min-w-0 flex-1 items-center gap-1.5 pl-1 text-left text-[10px] font-semibold transition-colors hover:text-on-surface"
+            class="flex min-w-0 flex-1 items-center gap-2 pl-1.5 text-left text-[11px] font-semibold transition-colors hover:text-on-surface"
             :aria-expanded="group.open"
             @click="toggleGroup(group.scope)"
           >
@@ -799,7 +799,18 @@ onBeforeUnmount(() => {
               <Undo :size="12" :class="isBulkGitActionActive('discard') ? 'animate-pulse' : ''" />
             </button>
           </div>
-          <span class="shrink-0 font-mono text-[9px]">{{ group.files.length }}</span>
+          <span
+            :class="
+              cn(
+                'mr-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md border px-1 font-mono text-[10px] font-semibold leading-none tabular-nums',
+                group.scope === 'staged'
+                  ? 'border-status-running/40 bg-status-running/10 text-status-running'
+                  : 'border-primary/40 bg-primary/10 text-primary',
+              )
+            "
+          >
+            {{ group.files.length }}
+          </span>
         </div>
         <div v-if="group.open">
           <div
@@ -975,11 +986,7 @@ onBeforeUnmount(() => {
                 >
                   {{ t.common.cancel }}
                 </button>
-                <button
-                  type="submit"
-                  class="git-dialog-primary"
-                  :disabled="isStashDialogBusy"
-                >
+                <button type="submit" class="git-dialog-primary" :disabled="isStashDialogBusy">
                   <Archive :size="13" :class="isStashDialogBusy ? 'animate-pulse' : ''" />
                   {{ isStashDialogBusy ? t.git.stashSaving : t.git.stashSave }}
                 </button>

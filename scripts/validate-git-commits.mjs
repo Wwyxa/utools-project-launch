@@ -64,6 +64,7 @@ try {
   const unbornSnapshot = await bridge.readGitSnapshot(unbornRoot, { limit: 20 });
   assert.equal(path.resolve(unbornSnapshot.repositoryPath), path.resolve(unbornRoot));
   assert.equal(unbornSnapshot.commits.length, 0);
+  assert.equal(unbornSnapshot.commitCount, 0);
   assert.equal(
     unbornSnapshot.files.some((file) => file.path === "untracked.txt"),
     true,
@@ -93,6 +94,9 @@ try {
 
   const page = await bridge.readGitCommits(projectRoot, { limit: 20 });
   assert.equal(page.commits.length, 2);
+  assert.equal(page.commitCount, 2);
+  const snapshot = await bridge.readGitSnapshot(projectRoot, { limit: 20 });
+  assert.equal(snapshot.commitCount, 2);
 
   const [latestCommit, rootCommit] = page.commits;
   assert.match(latestCommit.hash, /^[0-9a-f]{40,64}$/);

@@ -546,6 +546,7 @@ const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   behind: 0,
   files: [],
   commits: [],
+  commitCount: 0,
   branches: [],
   remotes: [],
   upstream: null,
@@ -590,6 +591,7 @@ const emptyGitCommitPage = (): ProjectBridgeGitCommitPage => {
   const snapshot = emptyGitSnapshot();
   return {
     commits: snapshot.commits,
+    commitCount: snapshot.commitCount,
     hasMoreCommits: snapshot.hasMoreCommits,
     nextCommitSkip: snapshot.nextCommitSkip,
     repositoryPath: snapshot.repositoryPath,

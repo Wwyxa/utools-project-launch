@@ -5390,6 +5390,7 @@ async function readGitCommits(projectPath, options = {}) {
   if (!repositoryPath) {
     return {
       commits: [],
+      commitCount: 0,
       hasMoreCommits: false,
       nextCommitSkip: 0,
       repositoryPath: "",
@@ -5399,7 +5400,7 @@ async function readGitCommits(projectPath, options = {}) {
 
   const stashes = await readGitStashes(repositoryPath);
   const stashBaseHashes = [...new Set(stashes.map((stash) => stash.baseHash))];
-  const [commitOutput, refsByCommit] = await Promise.all([
+  const [commitOutput, refsByCommit, commitCountOutput] = await Promise.all([
     runGitAsync(repositoryPath, [
       "log",
       "--topo-order",
@@ -5417,7 +5418,11 @@ async function readGitCommits(projectPath, options = {}) {
       "--",
     ]),
     readGitCommitRefs(repositoryPath, stashes),
+    runGitAsync(repositoryPath, ["rev-list", "--count", "HEAD"]),
   ]);
+  const commitCountText = (commitCountOutput || "").trim();
+  const parsedCommitCount = /^\d+$/.test(commitCountText) ? Number(commitCountText) : 0;
+  const commitCount = Number.isSafeInteger(parsedCommitCount) && parsedCommitCount >= 0 ? parsedCommitCount : 0;
 
   const commits = [];
   if (commitOutput) {
@@ -5484,6 +5489,7 @@ async function readGitCommits(projectPath, options = {}) {
 
   return {
     commits: insertGitStashes(commits, stashes, refsByCommit),
+    commitCount,
     hasMoreCommits,
     nextCommitSkip,
     repositoryPath,
@@ -5499,6 +5505,7 @@ async function readGitSnapshot(projectPath, options = {}) {
   return {
     ...statusSnapshot,
     commits: commitPage.commits,
+    commitCount: commitPage.commitCount,
     hasMoreCommits: commitPage.hasMoreCommits,
     nextCommitSkip: commitPage.nextCommitSkip,
     repositoryPath: statusSnapshot.repositoryPath || commitPage.repositoryPath,
