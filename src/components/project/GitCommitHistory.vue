@@ -71,7 +71,7 @@ import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
-import ProjectActionDialog from "./ProjectActionDialog.vue";
+import ActionDialog from "../ActionDialog.vue";
 
 defineOptions({ inheritAttrs: false });
 
@@ -119,6 +119,7 @@ type RefDialogState = { mode: RefDialogMode; commit: ProjectGitCommitSummary; so
 type GitHistoryAction = "cherry-pick" | "revert";
 type AppActionDialog = {
   tone?: "danger" | "warning";
+  icon?: "alert" | "trash" | "undo";
   title: string;
   message: string;
   detail?: string;
@@ -1256,6 +1257,7 @@ const checkoutCommit = async (commit: ProjectGitCommitSummary, force = false) =>
   if (!result) return;
   if (!result.ok && !force && result.blockReason === "dirty-worktree") {
     requestConfirmation({
+      icon: "trash",
       title: "强制切换到提交",
       message: `当前工作区存在未提交变更。继续切换到 ${commit.hash} 会丢弃这些本地变更。`,
       confirmLabel: "强制切换",
@@ -1285,6 +1287,7 @@ const requestGitHistoryAction = (action: GitHistoryAction, commit: ProjectGitCom
   const commitLabel = `${shortCommitHash(commit.hash)} · ${commit.message || "（无标题）"}`;
   requestConfirmation({
     tone: "warning",
+    icon: action === "revert" ? "undo" : "alert",
     title: action === "cherry-pick" ? "Cherry-pick" : "Revert",
     message:
       action === "cherry-pick"
@@ -1318,6 +1321,7 @@ const checkoutRemoteBranch = async (branchName: string, force = false) => {
   if (!result) return;
   if (!result.ok && !force && result.blockReason === "dirty-worktree") {
     requestConfirmation({
+      icon: "trash",
       title: "强制检出远程分支",
       message: `当前工作区存在未提交变更。继续检出 ${branchName} 会丢弃这些本地变更。`,
       confirmLabel: "强制检出",
@@ -1337,6 +1341,7 @@ const checkoutLocalBranch = async (branchName: string) => {
   if (!result) return;
   if (!result.ok && result.blockReason === "dirty-worktree") {
     requestConfirmation({
+      icon: "trash",
       title: "强制切换分支",
       message: `当前工作区存在未提交变更。强制切换到 ${branchName} 会丢弃这些本地变更。`,
       confirmLabel: "强制切换",
@@ -1359,6 +1364,7 @@ const deleteBranch = async (branchName: string, force = false) => {
   if (!result) return;
   if (!result.ok && !force && result.blockReason === "unmerged-branch") {
     requestConfirmation({
+      icon: "trash",
       title: "强制删除未合并分支",
       message: `分支 ${branchName} 包含尚未合并的提交。`,
       confirmLabel: "强制删除",
@@ -1391,6 +1397,7 @@ const requestDeleteBranch = (branch: CommitBranchRef) => {
   if (branch.kind !== "local" || branch.current || isInteractionDisabled.value) return;
   closeCommitContextMenu();
   requestConfirmation({
+    icon: "trash",
     title: "删除本地分支",
     message: `先使用 Git 安全删除分支 ${branch.name}。未合并分支不会被删除。`,
     confirmLabel: "安全删除",
@@ -1402,6 +1409,7 @@ const requestDeleteTag = (tagName: string) => {
   if (isInteractionDisabled.value) return;
   closeCommitContextMenu();
   requestConfirmation({
+    icon: "trash",
     title: "删除标签",
     message: `将删除标签 ${tagName}。此操作不会删除提交，但可能影响依赖该标签的发布或引用。`,
     confirmLabel: "删除标签",
@@ -1414,6 +1422,7 @@ const requestDropStash = (commit: ProjectGitCommitSummary) => {
   if (!stashRef || isInteractionDisabled.value) return;
   closeCommitContextMenu();
   requestConfirmation({
+    icon: "trash",
     title: t.value.git.stashDropTitle,
     message: t.value.git.stashDropMessage,
     detail: stashRef,
@@ -1485,6 +1494,7 @@ const submitRefDialog = async () => {
     refDialogCheckout.value
   ) {
     requestConfirmation({
+      icon: "trash",
       title: "创建并强制切换分支",
       message: `当前工作区存在未提交变更。继续创建并切换到 ${name} 会丢弃这些本地变更。`,
       confirmLabel: "创建并强制切换",
@@ -2818,9 +2828,10 @@ onBeforeUnmount(() => {
       </div></Transition
     ></Teleport
   >
-  <ProjectActionDialog
+  <ActionDialog
     :open="Boolean(confirmationDialog)"
     :tone="confirmationDialog?.tone || 'danger'"
+    :icon="confirmationDialog?.icon || 'alert'"
     :title="confirmationDialog?.title || ''"
     :message="confirmationDialog?.message || ''"
     :detail="confirmationDialog?.detail"

@@ -93,7 +93,7 @@ const messages = {
       openQuickLink: "打开快捷链接",
       duplicateProject: "复制并编辑项目",
       deleteProject: "删除项目",
-      deleteConfirm: "确定删除项目“{name}”吗？这只会移除启动器中的项目配置，不会删除磁盘目录。",
+      deleteConfirm: "确定删除项目“{name}”吗？\n这只会移除启动器中的项目配置，不会删除磁盘目录。",
       moreRunning: "另有 {count} 个命令运行中",
     },
     scripts: {

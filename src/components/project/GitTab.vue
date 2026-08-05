@@ -50,7 +50,7 @@ import { useI18n } from "../../lib/i18n";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import { gitRepositoryTargetsEqual } from "../../lib/gitRepositoryTarget";
-import ProjectActionDialog from "./ProjectActionDialog.vue";
+import ActionDialog from "../ActionDialog.vue";
 import GitDiffViewer from "./GitDiffViewer.vue";
 import GitChangesPane from "./GitChangesPane.vue";
 import GitCommitHistory from "./GitCommitHistory.vue";
@@ -68,6 +68,7 @@ type GitLeftContext = "changes" | "history";
 type AppDialogKind = "danger" | "warning";
 type AppActionDialog = {
   kind?: AppDialogKind;
+  icon?: "alert" | "trash" | "undo";
   title: string;
   message: string;
   detail?: string;
@@ -820,6 +821,7 @@ const requestRemoveRemote = (remote: ProjectGitRemoteSummary) => {
   if (isAnyGitWriteRunning.value) return;
   confirmationDialog.value = {
     kind: "danger",
+    icon: "trash",
     title: "删除 Git remote",
     message: `此操作会从当前仓库删除 remote：${remote.name}。`,
     detail: remote.fetchUrl || remote.pushUrl,
@@ -938,6 +940,7 @@ const executeSwitchBranch = async (branchName: string, options: { force?: boolea
 const requestForceSwitchBranch = (branchName: string) => {
   confirmationDialog.value = {
     kind: "danger",
+    icon: "trash",
     title: "强制切换分支",
     message: `当前工作区存在未提交变更。强制切换到 ${branchName} 会丢弃这些本地变更。`,
     detail: formatGitFileLines(files.value, ""),
@@ -2027,9 +2030,10 @@ watch(
       @feedback="setGitActionResult"
     />
 
-    <ProjectActionDialog
+    <ActionDialog
       :open="Boolean(confirmationDialog)"
       :tone="confirmationDialog?.kind || 'danger'"
+      :icon="confirmationDialog?.icon || 'alert'"
       :title="confirmationDialog?.title || ''"
       :message="confirmationDialog?.message || ''"
       :detail="confirmationDialog?.detail"

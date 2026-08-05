@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { CircleAlert, Undo } from "lucide-vue-next";
-import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
-import { cn } from "../../lib/utils";
-import { useI18n } from "../../lib/i18n";
+import { CircleAlert, Trash2, Undo } from "lucide-vue-next";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../lib/escape";
+import { cn } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 
 const props = withDefaults(
   defineProps<{
     open: boolean;
     tone?: "danger" | "warning";
+    icon?: "alert" | "trash" | "undo";
     title: string;
     message: string;
     detail?: string;
@@ -20,6 +21,7 @@ const props = withDefaults(
   }>(),
   {
     tone: "danger",
+    icon: "alert",
     detail: "",
     secondaryLabel: "",
     cancelLabel: "",
@@ -83,7 +85,7 @@ watch(
           class="w-[min(24rem,92vw)] overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="project-action-dialog-title"
+          aria-labelledby="action-dialog-title"
           @click.stop
         >
           <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
@@ -98,10 +100,11 @@ watch(
                   )
                 "
               >
-                <CircleAlert v-if="tone === 'warning'" :size="16" />
+                <CircleAlert v-if="icon === 'alert'" :size="16" />
+                <Trash2 v-else-if="icon === 'trash'" :size="16" />
                 <Undo v-else :size="16" />
               </div>
-              <h3 id="project-action-dialog-title" class="min-w-0 text-sm font-bold text-on-surface">{{ title }}</h3>
+              <h3 id="action-dialog-title" class="min-w-0 text-sm font-bold text-on-surface">{{ title }}</h3>
             </div>
           </div>
           <div class="px-4 py-3">
@@ -145,7 +148,8 @@ watch(
                 :disabled="busy"
                 @click="emit('primary')"
               >
-                <Undo v-if="tone === 'danger'" :size="13" />
+                <Trash2 v-if="icon === 'trash'" :size="13" />
+                <Undo v-else-if="icon === 'undo'" :size="13" />
                 {{ busy ? busyLabel || primaryLabel : primaryLabel }}
               </button>
             </div>

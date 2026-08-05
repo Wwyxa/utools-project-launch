@@ -39,7 +39,7 @@ import { classifyProjectMarkdownImageSource } from "../../lib/projectMarkdown";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import FileTreeNode, { type InlineTreeEdit, type TreeNode } from "./FileTreeNode.vue";
-import ProjectActionDialog from "./ProjectActionDialog.vue";
+import ActionDialog from "../ActionDialog.vue";
 
 type SearchMatch = { start: number; end: number };
 type MarkdownAssetState = { status: "loading" | "failed" | "ready"; dataUrl?: string };
@@ -1926,9 +1926,10 @@ watch(filterQuery, (query) => {
     </Transition>
   </Teleport>
 
-  <ProjectActionDialog
+  <ActionDialog
     :open="Boolean(actionDialog)"
     :tone="actionDialog === 'delete' ? 'danger' : 'warning'"
+    :icon="actionDialog === 'delete' ? 'trash' : 'alert'"
     :title="actionDialogTitle"
     :message="actionDialogMessage"
     :detail="actionDialog === 'delete' ? deleteTarget?.relativePath : selectedRelativePath"

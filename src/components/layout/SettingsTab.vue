@@ -27,6 +27,7 @@ import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import ActionDialog from "../ActionDialog.vue";
 import { getProjectBridge } from "../../lib/projectBridge";
 import {
   formatEnvironmentArguments,
@@ -163,11 +164,6 @@ const selectAiModel = (model: string) => {
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (externalApplicationDialogOpen.value) {
     externalApplicationDialogOpen.value = false;
-    event.detail.handle();
-    return;
-  }
-  if (pendingDeleteCustomEnvironmentId.value) {
-    pendingDeleteCustomEnvironmentId.value = null;
     event.detail.handle();
     return;
   }
@@ -1172,40 +1168,16 @@ watch(
       </Transition>
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="pendingDeleteCustomEnvironmentId"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3"
-          role="alertdialog"
-          aria-modal="true"
-          :aria-label="t.settings.deleteCustomEnvironment"
-          @click.self="pendingDeleteCustomEnvironmentId = null"
-        >
-          <div class="w-full max-w-sm rounded-lg border border-border-subtle bg-surface p-3 shadow-xl">
-            <h3 class="text-sm font-bold text-on-surface">{{ t.settings.deleteCustomEnvironment }}</h3>
-            <p class="mt-1 text-xs leading-5 text-on-surface-variant">
-              {{ t.settings.deleteCustomEnvironmentConfirm }}
-            </p>
-            <div class="mt-3 flex justify-end gap-2">
-              <button
-                type="button"
-                class="h-8 rounded border border-border-subtle px-3 text-xs font-bold text-on-surface"
-                @click="pendingDeleteCustomEnvironmentId = null"
-              >
-                {{ t.common.cancel }}
-              </button>
-              <button
-                type="button"
-                class="h-8 rounded bg-error px-3 text-xs font-bold text-on-error"
-                @click="confirmDeleteCustomEnvironment"
-              >
-                {{ t.common.delete }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <ActionDialog
+      :open="Boolean(pendingDeleteCustomEnvironmentId)"
+      tone="danger"
+      icon="trash"
+      :title="t.settings.deleteCustomEnvironment"
+      :message="t.settings.deleteCustomEnvironmentConfirm"
+      :primary-label="t.common.delete"
+      :cancel-label="t.common.cancel"
+      @cancel="pendingDeleteCustomEnvironmentId = null"
+      @primary="confirmDeleteCustomEnvironment"
+    />
   </div>
 </template>

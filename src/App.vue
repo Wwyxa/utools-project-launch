@@ -4,6 +4,7 @@ import { type ProjectStatusMessageState, useStore } from "./store/useStore";
 import Dashboard from "./components/dashboard/Dashboard.vue";
 import ProjectDetails from "./components/project/ProjectDetails.vue";
 import ProjectFormModal from "./components/project/ProjectFormModal.vue";
+import ActionDialog from "./components/ActionDialog.vue";
 import SettingsTab from "./components/layout/SettingsTab.vue";
 import EnvironmentTab from "./components/environment/EnvironmentTab.vue";
 import { useI18n } from "./lib/i18n";
@@ -248,43 +249,22 @@ onUnmounted(() => {
       </Transition>
     </Teleport>
     <ProjectFormModal />
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="store.pendingDeleteProject"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-          @click.self="store.cancelDeleteProject"
-        >
-          <div class="w-full max-w-sm rounded-xl border border-border-subtle bg-surface p-5 shadow-2xl">
-            <h2 class="text-base font-bold text-on-surface">{{ store.pendingDeleteProject.name }}</h2>
-            <p class="mt-2 text-sm text-on-surface-variant">
-              {{ store.pendingDeleteProject ? store.pendingDeleteProject.path : "" }}
-            </p>
-            <p class="mt-4 text-sm text-on-surface-variant">
-              {{
-                store.pendingDeleteProject
-                  ? storeMessages.projectActions.deleteConfirm.replace("{name}", store.pendingDeleteProject.name)
-                  : ""
-              }}
-            </p>
-            <div class="mt-5 flex justify-end gap-2">
-              <button
-                @click="store.cancelDeleteProject"
-                class="rounded-lg border border-border-subtle bg-surface px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-variant"
-              >
-                {{ storeMessages.common.cancel }}
-              </button>
-              <button
-                @click="store.confirmDeleteProject"
-                class="rounded-lg bg-error px-4 py-2 text-sm font-bold text-on-error hover:bg-error/90"
-              >
-                {{ storeMessages.common.delete }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <ActionDialog
+      :open="Boolean(store.pendingDeleteProject)"
+      tone="danger"
+      icon="trash"
+      :title="storeMessages.projectActions.deleteProject"
+      :message="
+        store.pendingDeleteProject
+          ? storeMessages.projectActions.deleteConfirm.replace('{name}', store.pendingDeleteProject.name)
+          : ''
+      "
+      :detail="store.pendingDeleteProject?.path || ''"
+      :primary-label="storeMessages.common.delete"
+      :cancel-label="storeMessages.common.cancel"
+      @cancel="store.cancelDeleteProject"
+      @primary="store.confirmDeleteProject"
+    />
   </div>
 </template>
 

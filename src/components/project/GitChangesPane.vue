@@ -33,7 +33,7 @@ import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import ProjectActionDialog from "./ProjectActionDialog.vue";
+import ActionDialog from "../ActionDialog.vue";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitFeedbackState = Exclude<AiState, "idle">;
@@ -43,6 +43,7 @@ type FileReviewSelection = { path: string; scope: WorktreeDiffScope };
 type ActiveGitFileAction = { action: GitFileActionName; path: string };
 type AppActionDialog = {
   tone?: "danger" | "warning";
+  icon?: "alert" | "trash" | "undo";
   title: string;
   message: string;
   detail?: string;
@@ -491,6 +492,7 @@ const requestDiscardGitFile = (file: ProjectGitFileChange, scope: WorktreeDiffSc
   const nextItem = currentIndex >= 0 ? visibleWorktreeItems.value[currentIndex + 1] : undefined;
   const discardSuccessor = nextItem?.scope === scope ? { path: nextItem.file.path, scope } : null;
   confirmationDialog.value = {
+    icon: "trash",
     title: "丢弃文件变更",
     message: "此操作会还原该文件在工作区与暂存区中的本地变更。",
     detail: gitFileDisplayPath(file),
@@ -510,6 +512,7 @@ const requestDiscardAllGitFiles = () => {
     return;
   }
   confirmationDialog.value = {
+    icon: "trash",
     title: "丢弃全部文件变更",
     message: `此操作会还原 ${discardableFiles.value.length} 个 changed 文件在工作区与暂存区中的本地变更。`,
     detail: discardableFiles.value.map(gitFileDisplayPath).join("\n"),
@@ -703,6 +706,7 @@ const executeUndoLastCommit = async (allowMerge = false) => {
       if (!props.open) return;
       confirmationDialog.value = {
         tone: "danger",
+        icon: "undo",
         title: "按第一父提交撤销 merge commit",
         message: "上次提交是 merge commit。继续会按第一父提交移除该提交，并保留文件改动。",
         detail: headCommit.value?.message || "",
@@ -730,6 +734,7 @@ const requestUndoLastCommit = () => {
   closeMoreMenu(false);
   confirmationDialog.value = {
     tone: "danger",
+    icon: "undo",
     title: "撤销上次提交",
     message: "此操作将恢复上个提交的暂存和提交信息，不创建反向提交",
     detail: headCommit.value?.message || "",
@@ -1315,9 +1320,10 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <ProjectActionDialog
+    <ActionDialog
       :open="Boolean(confirmationDialog)"
       :tone="confirmationDialog?.tone || 'danger'"
+      :icon="confirmationDialog?.icon || 'alert'"
       :title="confirmationDialog?.title || ''"
       :message="confirmationDialog?.message || ''"
       :detail="confirmationDialog?.detail"
