@@ -174,6 +174,11 @@ const launchMessage = (locale: Locale, code: string, target: string) => {
   };
   return labels[code] || (zh ? `无法打开 ${target}` : `Could not open ${target}`);
 };
+const resolvedExternalApplicationName = (
+  applications: readonly ExternalApplication[],
+  applicationId: string | undefined,
+  fallbackName: string,
+) => applications.find((application) => application.id === applicationId)?.name || fallbackName;
 const ansiControlPattern =
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
@@ -4506,7 +4511,15 @@ export const useStore = defineStore("app", {
         );
         this.setProjectStatusMessage(
           result.launched ? "success" : "error",
-          launchMessage(this.locale, result.code, result.resolvedApplicationId || application.name),
+          launchMessage(
+            this.locale,
+            result.code,
+            resolvedExternalApplicationName(
+              this.externalApplicationPreferences.applications,
+              result.resolvedApplicationId,
+              application.name,
+            ),
+          ),
         );
       } catch (error) {
         this.addLog(
@@ -4582,7 +4595,15 @@ export const useStore = defineStore("app", {
           this.addLog(projectId, createLogEntry(`Open with ${application.name}: ${result.command}`, "INFO"));
           this.setProjectStatusMessage(
             "success",
-            launchMessage(this.locale, result.code, result.resolvedApplicationId || application.name),
+            launchMessage(
+              this.locale,
+              result.code,
+              resolvedExternalApplicationName(
+                this.externalApplicationPreferences.applications,
+                result.resolvedApplicationId,
+                application.name,
+              ),
+            ),
           );
           return;
         }

@@ -192,7 +192,13 @@ describe("browser external application preferences", () => {
       ...defaults,
       applications: [
         ...defaults.applications,
-        { id: "tool", name: "Tool", kind: "custom", command: "tool {path}", enabled: true },
+        {
+          id: "custom_20260806",
+          name: "Custom Editor",
+          kind: "custom",
+          command: "tool {path}",
+          enabled: true,
+        },
       ],
     };
     const saveExternalApplicationPreferences = vi.fn<ProjectBridge["saveExternalApplicationPreferences"]>();
@@ -201,6 +207,7 @@ describe("browser external application preferences", () => {
       command: payload.application.command,
       cwd: payload.projectPath,
       applicationId: payload.application.id,
+      resolvedApplicationId: payload.application.id,
       kind: payload.application.kind,
       code: "launched",
     }));
@@ -230,19 +237,21 @@ describe("browser external application preferences", () => {
     expect(store.updateExternalApplication("vscode", "Visual Studio Code", 'code --reuse-window "{path}"')).toBe(true);
     expect(store.setExternalApplicationEnabled("vscode", false)).toBe(false);
     expect(store.deleteExternalApplication("vscode")).toBe(false);
-    expect(store.setDefaultExternalApplication("tool")).toBe(true);
+    expect(store.setDefaultExternalApplication("custom_20260806")).toBe(true);
     expect(store.setExternalApplicationEnabled("vscode", false)).toBe(true);
-    expect(store.deleteExternalApplication("tool")).toBe(false);
+    expect(store.deleteExternalApplication("custom_20260806")).toBe(false);
 
     await store.openProjectInEditor(project.id);
-    expect(openExternalApplication.mock.calls.at(-1)?.[0].application.id).toBe("tool");
-    expect(store.externalApplicationPreferences.defaultApplicationId).toBe("tool");
+    expect(openExternalApplication.mock.calls.at(-1)?.[0].application.id).toBe("custom_20260806");
+    expect(store.projectStatusMessage).toContain("Custom Editor");
+    expect(store.projectStatusMessage).not.toContain("custom_20260806");
+    expect(store.externalApplicationPreferences.defaultApplicationId).toBe("custom_20260806");
 
     expect(store.setExternalApplicationEnabled("vscode", true)).toBe(true);
     await store.openProjectInEditor(project.id, "vscode");
     expect(openExternalApplication.mock.calls.at(-1)?.[0].application.id).toBe("vscode");
     expect(openExternalApplication.mock.calls.at(-1)?.[0].application.command).toBe('code --reuse-window "{path}"');
-    expect(store.externalApplicationPreferences.defaultApplicationId).toBe("tool");
+    expect(store.externalApplicationPreferences.defaultApplicationId).toBe("custom_20260806");
     expect(saveExternalApplicationPreferences).toHaveBeenCalledTimes(4);
   });
 
