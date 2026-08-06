@@ -392,6 +392,8 @@ const messages = {
       visibility: "显示范围",
       visibilityPrivate: "本机",
       visibilityPublic: "公共",
+      visibilityHint:
+        "选择本机项目会生成设备 ID 文件存储在用户目录。\n请不要删除或移动，否则可能造成本机项目无法显示。",
       env: "环境变量",
       scripts: "启动命令",
       scriptName: "名称",
@@ -809,6 +811,7 @@ const messages = {
       visibility: "Visibility",
       visibilityPrivate: "This Device",
       visibilityPublic: "Public",
+      visibilityHint: "This-device projects create one ID file that is stored locally.",
       env: "Environment Variables",
       scripts: "Launch Commands",
       scriptName: "Name",

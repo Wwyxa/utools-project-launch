@@ -334,7 +334,18 @@ const handleScriptDrop = (targetScriptId: string) => {
               </label>
               <div class="flex flex-wrap items-end gap-4 md:col-span-6">
                 <div class="space-y-1.5">
-                  <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.visibility }}</span>
+                  <span class="flex items-center text-xs font-bold uppercase text-on-surface-variant">
+                    {{ t.modal.visibility }}
+                    <span
+                      class="ml-1 inline-flex text-on-surface-variant transition-colors hover:text-primary focus:text-primary focus:outline-none"
+                      role="img"
+                      tabindex="0"
+                      :title="t.modal.visibilityHint"
+                      :aria-label="t.modal.visibilityHint"
+                    >
+                      <CircleHelp :size="13" :stroke-width="1.8" aria-hidden="true" />
+                    </span>
+                  </span>
                   <div class="flex w-fit rounded-lg border border-border-subtle bg-surface-container-low p-1">
                     <button
                       type="button"
