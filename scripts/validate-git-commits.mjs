@@ -436,6 +436,12 @@ try {
   runGitAt(publishProjectRoot, "commit", "-m", "publish commit");
   execFileSync("git", ["init", "--bare", publishOriginRoot], { encoding: "utf8" });
   execFileSync("git", ["init", "--bare", publishMirrorRoot], { encoding: "utf8" });
+  runGitAt(unbornRoot, "remote", "add", "origin", publishOriginRoot);
+  const unbornBranch = runGitAt(unbornRoot, "symbolic-ref", "--short", "HEAD").trim();
+  const unbornPublish = await bridge.publishGitBranch(unbornRoot, "origin");
+  assert.equal(unbornPublish.ok, false);
+  assert.equal(unbornPublish.message, "当前分支尚无提交，无法发布。");
+  assert.throws(() => runGitAt(unbornRoot, "config", "--get", `branch.${unbornBranch}.remote`));
   runGitAt(publishProjectRoot, "remote", "add", "origin", publishOriginRoot);
   runGitAt(publishProjectRoot, "remote", "add", "mirror", publishMirrorRoot);
   const publishBranch = runGitAt(publishProjectRoot, "branch", "--show-current").trim();

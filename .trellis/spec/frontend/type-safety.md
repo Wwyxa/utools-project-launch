@@ -561,7 +561,7 @@ Use async execution with disabled interactive prompts and a timeout so remote Gi
 - `GitTab.vue` owns the compact initialization command, remote selection, confirmation, and feedback. It never calls the bridge directly.
 - Initialization is limited to the main project directory. The Store verifies the project path and rechecks it after the bridge call, reuses the project write lock, clears Git coordination/workspace/snapshot state only on success, then forces main workspace and snapshot reads. It does not call `runAuthorizedGitWrite`, because a missing Git workspace cannot authorize a repository target.
 - Preload validates that the initialization path is a directory and runs `git -C <projectPath> init` without passing a branch name, so native Git configuration such as `init.defaultBranch` remains authoritative.
-- Publish still uses `runAuthorizedGitWrite` with `{ refresh: "full", refs: true, refreshOnFailure: true }`. Preload validates a Git root, the normalized selected remote name, remote existence, a symbolic local `HEAD`, and missing upstream before executing `git push --set-upstream <remote> HEAD:<branch>`.
+- Publish still uses `runAuthorizedGitWrite` with `{ refresh: "full", refs: true, refreshOnFailure: true }`. Preload validates a Git root, the normalized selected remote name, remote existence, a symbolic local `HEAD`, a commit at `HEAD`, and missing upstream before executing `git push --set-upstream <remote> HEAD:<branch>`.
 - Publication uses the existing asynchronous remote helper with `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=Never`, and its timeout. No arbitrary refspec, alternate remote branch name, force flag, or generic Git command API is exposed.
 - Browser fallback implements both methods with typed unavailable results.
 
@@ -569,7 +569,7 @@ Use async execution with disabled interactive prompts and a timeout so remote Gi
 
 - Missing or non-directory project path -> initialization returns a clear failure without invoking Git.
 - `git init` failure -> return the first Git error and retain current Git state.
-- Missing Git root, invalid/missing remote, detached `HEAD`, no symbolic local branch, or existing upstream -> publication returns a clear failure before push.
+- Missing Git root, invalid/missing remote, detached `HEAD`, no symbolic local branch, no commit at `HEAD`, or existing upstream -> publication returns a clear failure before push.
 - Authentication failure or remote timeout -> return the existing remote error/timeout result and refresh the authorized snapshot.
 - A project path changed while initialization is in flight -> discard the stale result rather than refreshing or reporting success for the replacement project.
 
@@ -584,7 +584,7 @@ Use async execution with disabled interactive prompts and a timeout so remote Gi
 ### 6. Tests Required
 
 - `node --check public/preload.js` after changing initialization or publication execution.
-- `npm run validate:git-commits` must initialize a real temporary directory, publish to a selected local bare remote, assert the upstream, assert the unselected remote has no branch, and reject repeat publication.
+- `npm run validate:git-commits` must initialize a real temporary directory, publish to a selected local bare remote, assert the upstream, assert the unselected remote has no branch, reject repeat publication, and reject a zero-commit local branch before adding upstream.
 - `npx vitest run tests/projectBridge.workspace.test.ts` must assert main-path initialization, target-aware publication, refreshes, and stale-target rejection.
 - Run `npm run type-check` and `npm run build` after changing bridge, Store, or GitTab contracts.
 - Manual uTools smoke: one remote confirmation, multi-remote selection, detached/no-remote states, authentication failure, and a narrow top panel.
@@ -603,6 +603,8 @@ This requires an upstream before the first publication and leaves the remote bra
 
 ```js
 const branch = await runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]);
+const headCommit = String((await runGitAsync(repositoryPath, ["rev-parse", "--verify", "HEAD^{commit}"])) || "").trim();
+if (!headCommit) return { ok: false, message: "当前分支尚无提交，无法发布。" };
 return runGitRemoteCommandResult(repositoryPath, ["push", "--set-upstream", remoteName, `HEAD:${branch.trim()}`]);
 ```
 

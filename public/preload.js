@@ -5698,6 +5698,13 @@ async function publishGitBranch(projectPath, remoteName) {
   }
   const branch = headRef.slice(localBranchPrefix.length);
 
+  const headCommit = String(
+    (await runGitAsync(repositoryPath, ["rev-parse", "--verify", "HEAD^{commit}"])) || "",
+  ).trim();
+  if (!headCommit) {
+    return { ok: false, remote: name, branch, message: "当前分支尚无提交，无法发布。" };
+  }
+
   const upstream = await readGitUpstreamAsync(repositoryPath);
   if (upstream) {
     return { ok: false, remote: name, branch, message: `当前分支已设置 upstream：${upstream.ref}。` };
