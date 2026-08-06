@@ -476,17 +476,22 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 ### 2. Signatures
 
 - `ProjectGitRemoteSummary = { name: string; fetchUrl: string; pushUrl: string }`.
+- `ProjectGitRemoteBranchSummary = { remote: string; branch: string; ref: string }`; `ref` is the local remote-tracking ref presentation such as `origin/feature/login`.
 - `ProjectGitUpstreamSummary = { remote: string; branch: string; ref: string; ahead: number; behind: number }`.
-- `ProjectGitSnapshot` and `ProjectGitStatusSnapshot` include `remotes: ProjectGitRemoteSummary[]` and `upstream: ProjectGitUpstreamSummary | null`.
-- Bridge methods: `fetchGitRemote(projectPath)`, `pullGitRemote(projectPath)`, `pushGitRemote(projectPath)`, `addGitRemote(projectPath, remoteName, remoteUrl)`, `setGitRemoteUrl(projectPath, remoteName, remoteUrl)`, `removeGitRemote(projectPath, remoteName)`.
-- Store actions mirror the bridge methods with `projectId` replacing `projectPath`.
+- `ProjectGitSnapshot` and `ProjectGitStatusSnapshot` include `remotes: ProjectGitRemoteSummary[]`, `remoteBranches: ProjectGitRemoteBranchSummary[]`, and `upstream: ProjectGitUpstreamSummary | null`.
+- Bridge methods: `fetchGitRemote(projectPath)`, `fetchGitRemoteByName(projectPath, remoteName)`, `pullGitRemote(projectPath)`, `pushGitRemote(projectPath)`, `addGitRemote(projectPath, remoteName, remoteUrl)`, `setGitRemoteUrl(projectPath, remoteName, remoteUrl)`, `removeGitRemote(projectPath, remoteName)`, and `deleteGitRemoteBranch(projectPath, remoteName, branchName)`.
+- Store actions mirror the bridge methods with `projectId` replacing `projectPath` and preserve repository-target authorization.
 
 ### 3. Contracts
 
 - Remote status belongs in the existing Git snapshot contract, not in duplicated component-local remote state.
-- Browser fallback snapshots must explicitly return `remotes: []` and `upstream: null` so consumers can distinguish "no remote" from a missing field.
+- `remoteBranches` is read from locally fetched `refs/remotes/<remote>/<branch>` refs. It is an explicitly labeled local snapshot of fetched tracking refs, not a live server-side branch listing; symbolic `<remote>/HEAD` is excluded.
+- Browser fallback snapshots must explicitly return `remotes: []`, `remoteBranches: []`, and `upstream: null` so consumers can distinguish "no remote" from a missing field.
 - Fetch, pull, and push operate only on the current branch upstream. Do not add force push, rebase pull, or `push -u` without a new requirement and updated spec.
+- Named remote refresh is a separate operation: validate the configured remote, run async `git fetch --prune <remote>`, and refresh the full snapshot even when Git reports failure because refs may have changed before a network or authentication error.
+- Server-side branch deletion is separate from removing a remote configuration or deleting a local tracking ref: validate the branch as a `refs/heads` name, run async `git push --delete <remote> refs/heads/<branch>`, and preserve the local branch. The UI confirmation must state that local branches are not deleted; when the deleted ref is the current upstream, warn that a later push may recreate it.
 - Preload validates remote names and URLs before invoking Git. Remote names are non-empty, cannot start with `-`, and only contain letters, digits, `.`, `_`, and `-`. Remote URLs are non-empty and cannot contain control characters.
+- Named remote operations validate remote existence before invoking Git and reject the symbolic `HEAD` branch instead of treating it as a server branch.
 - Remote network commands must use async process execution with a timeout and `GIT_TERMINAL_PROMPT=0` / `GCM_INTERACTIVE=Never`; do not run them through blocking `spawnSync` or commands that can wait forever for credentials.
 - Store remote mutations refresh the full Git snapshot after every result, including failures, because `pull` can fetch before merge failure and remote refs may still change.
 - GitTab keeps remote controls in the existing top Git status panel; use a compact popover for remote list management instead of adding a separate full-width remote panel.
@@ -495,7 +500,9 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 
 - Missing Git repository -> return `{ ok: false, message: "未检测到 Git 仓库。" }`.
 - Missing upstream for fetch/pull/push -> return a clear failure and keep buttons disabled in the UI.
+- Missing or unknown named remote -> return a clear failure before fetch or delete.
 - Empty or invalid remote name -> return the validation message before running Git.
+- Empty, invalid, or `HEAD` branch name -> return a validation message before push deletion.
 - Empty or control-character remote URL -> return the validation message before running Git.
 - Remote command timeout -> return a timeout message and refresh the Git snapshot afterward.
 - Git authentication failure with prompts disabled -> return the Git error text to the UI without blocking the plugin.
@@ -505,8 +512,10 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 
 - Good: a repository with `origin/main` upstream shows one compact upstream chip, enables fetch/pull/push, and refreshes ahead/behind after each operation.
 - Good: a repository with remotes but no current upstream shows the remote list but disables fetch/pull/push with a clear tooltip.
+- Good: the popover groups fetched tracking refs by configured remote, offers per-remote prune refresh, and distinguishes checkout from server-side deletion.
 - Base: browser preview has no real Git bridge; snapshots still include empty remote fields and remote actions return unsupported messages.
 - Bad: adding a separate component-local remote list that can drift from `ProjectGitSnapshot.remotes`.
+- Bad: presenting `refs/remotes/*` as the server's complete live branch list, or using `git remote remove` when the user requested deletion of one server branch.
 - Bad: running `git pull` with `spawnSync`; a credential prompt can freeze the uTools preload process.
 - Bad: refreshing only on successful remote operations; failed `pull` may still update fetched refs and leave UI stale.
 
@@ -515,6 +524,8 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - `node --check public/preload.js` after changing preload remote command helpers.
 - `npm run lint` after changing shared Git remote types, bridge methods, store actions, or GitTab calls.
 - `npm run build` after changing GitTab remote UI or shared snapshot fields.
+- `npm run validate:git-commits` must assert named remote fetch, `remoteBranches` population, `<remote>/HEAD` exclusion, server-side branch deletion, protected `HEAD` rejection, and post-delete refresh.
+- `npx vitest run tests/projectBridge.workspace.test.ts` must assert target routing and stale-target rejection for named remote refresh and deletion.
 - Manual smoke test in browser preview: GitTab top panel shows no-remote state, disabled fetch/pull/push, and the add remote dialog opens.
 - Manual smoke test in uTools with a real repository: fetch/pull/push update status feedback and refresh ahead/behind.
 - Manual smoke test in uTools with no upstream: remote operations remain disabled or return a clear warning.
@@ -541,6 +552,22 @@ execFile(
 ```
 
 Use async execution with disabled interactive prompts and a timeout so remote Git failures return to the UI safely.
+
+#### Wrong
+
+```ts
+const remoteBranches = remotes.map((remote) => remote.name);
+```
+
+This exposes only remote configuration names and cannot represent fetched branches or server-side branch actions.
+
+#### Correct
+
+```ts
+const remoteBranches = snapshot.remoteBranches.filter((branch) => branch.remote === remote.name);
+```
+
+Keep remote configuration, fetched remote-tracking refs, and the current branch's upstream as separate typed concepts.
 
 ## Scenario: Git Repository Initialization And First Publish Boundary
 

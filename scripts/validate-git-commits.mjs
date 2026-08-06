@@ -460,6 +460,43 @@ try {
   assert.throws(() => runGitAt(publishOriginRoot, "show-ref", "--verify", "--quiet", `refs/heads/${publishBranch}`));
   assert.equal((await bridge.publishGitBranch(publishProjectRoot, "mirror")).ok, false);
 
+  const remoteDeleteBranch = "feature/remote-delete";
+  runGitAt(publishProjectRoot, "switch", "-c", remoteDeleteBranch);
+  fs.writeFileSync(path.join(publishProjectRoot, "remote-delete.txt"), "remote delete\n");
+  runGitAt(publishProjectRoot, "add", "--", "remote-delete.txt");
+  runGitAt(publishProjectRoot, "commit", "-m", "remote delete branch");
+  runGitAt(publishProjectRoot, "push", "mirror", `HEAD:${remoteDeleteBranch}`);
+  runGitAt(publishProjectRoot, "switch", publishBranch);
+
+  const fetchedNamedRemote = await bridge.fetchGitRemoteByName(publishProjectRoot, "mirror");
+  assert.equal(fetchedNamedRemote.ok, true);
+  runGitAt(publishProjectRoot, "update-ref", "refs/remotes/mirror/HEAD", publishBranch);
+  const remoteBranchSnapshot = await bridge.readGitStatusSnapshot(publishProjectRoot);
+  assert.equal(
+    remoteBranchSnapshot.remoteBranches?.some((branch) => branch.ref === `mirror/${remoteDeleteBranch}`),
+    true,
+  );
+  assert.equal(
+    remoteBranchSnapshot.remoteBranches?.some((branch) => branch.ref === "mirror/HEAD"),
+    false,
+  );
+  const headDelete = await bridge.deleteGitRemoteBranch(publishProjectRoot, "mirror", "HEAD");
+  assert.equal(headDelete.ok, false);
+  assert.equal(headDelete.message, "不能删除 remote 的 HEAD 符号引用。");
+
+  const deletedRemoteBranch = await bridge.deleteGitRemoteBranch(publishProjectRoot, "mirror", remoteDeleteBranch);
+  assert.equal(deletedRemoteBranch.ok, true);
+  assert.equal(deletedRemoteBranch.remote, "mirror");
+  assert.equal(deletedRemoteBranch.branch, remoteDeleteBranch);
+  assert.throws(() =>
+    runGitAt(publishMirrorRoot, "show-ref", "--verify", "--quiet", `refs/heads/${remoteDeleteBranch}`),
+  );
+  const afterRemoteDeleteSnapshot = await bridge.readGitStatusSnapshot(publishProjectRoot);
+  assert.equal(
+    afterRemoteDeleteSnapshot.remoteBranches?.some((branch) => branch.ref === `mirror/${remoteDeleteBranch}`),
+    false,
+  );
+
   runGitAt(publishProjectRoot, "branch", "--unset-upstream");
   runGitAt(publishProjectRoot, "fetch", "mirror");
   runGitAt(publishProjectRoot, "symbolic-ref", "HEAD", `refs/remotes/mirror/${publishBranch}`);

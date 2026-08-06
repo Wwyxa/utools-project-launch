@@ -20,7 +20,10 @@ import {
   CloudDownload,
   CloudUpload,
   ClipboardCopy,
+  RefreshCw,
+  Search,
   SlidersHorizontal,
+  Trash2,
   GitBranch,
   GitPullRequestArrow,
   X,
@@ -41,6 +44,7 @@ import {
   type ProjectGitFileChange,
   type ProjectGitFileDiffOptions,
   type ProjectGitFileDiffResult,
+  type ProjectGitRemoteBranchSummary,
   type ProjectGitRemoteSummary,
   type ProjectGitRepositoryTarget,
 } from "../../types";
@@ -124,6 +128,7 @@ const isBranchMenuOpen = ref(false);
 const isRemoteMenuOpen = ref(false);
 const branchMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const remoteMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
+const remoteBranchQuery = ref("");
 const isRemoteDialogOpen = ref(false);
 const remoteDialogMode = ref<RemoteDialogMode>("add");
 const remoteFormName = ref("");
@@ -205,6 +210,19 @@ const topBarStatusText = computed(() => {
   return statusText.startsWith(detachedHeadPrefix) ? statusText.slice(detachedHeadPrefix.length) : statusText;
 });
 const remotes = computed(() => snapshot.value?.remotes || []);
+const remoteBranches = computed(() => snapshot.value?.remoteBranches || []);
+const filteredRemoteBranches = computed(() => {
+  const query = remoteBranchQuery.value.trim().toLocaleLowerCase();
+  if (!query) return remoteBranches.value;
+  return remoteBranches.value.filter((branch) => branch.ref.toLocaleLowerCase().includes(query));
+});
+const remoteBranchGroups = computed(() =>
+  remotes.value.map((remote) => ({
+    remote,
+    branches: filteredRemoteBranches.value.filter((branch) => branch.remote === remote.name),
+  })),
+);
+const localBranchNames = computed(() => new Set((snapshot.value?.branches || []).map((branch) => branch.name)));
 const upstream = computed(() => snapshot.value?.upstream || null);
 const hasUpstream = computed(() => Boolean(upstream.value));
 const currentLocalBranch = computed(() => snapshot.value?.branches?.find((branch) => branch.current)?.name || "");
@@ -214,7 +232,7 @@ const remoteStatusText = computed(() => {
     return upstream.value.ref;
   }
   if (remotes.value.length > 0) {
-    return "此分支暂无 remote";
+    return "此分支未设置 upstream";
   }
   return "未配置 remote";
 });
@@ -573,6 +591,7 @@ const toggleRemoteMenu = (event: MouseEvent) => {
   const shouldOpen = !isRemoteMenuOpen.value;
   closeFloatingControls();
   if (!shouldOpen) return;
+  remoteBranchQuery.value = "";
   remoteMenuPosition.value = positionFloatingMenu(event.currentTarget as HTMLElement, 288, 320);
   isRemoteMenuOpen.value = shouldOpen;
 };
@@ -677,6 +696,117 @@ const executeGitRemoteAction = async (action: GitRemoteActionName) => {
   } finally {
     activeGitAction.value = "";
   }
+};
+
+const executeFetchGitRemoteByName = async (remoteName: string) => {
+  if (isAnyGitWriteRunning.value || !remoteName) return;
+
+  activeGitAction.value = `remote:fetch:${remoteName}`;
+  setGitActionResult("loading", `正在刷新 ${remoteName} 的远端分支...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.fetchGitRemoteByName(props.project.id, remoteName, activeRepositoryTarget.value);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法刷新 remote 分支。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) clearCommitSelection();
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "刷新 remote 分支失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const executeCheckoutRemoteBranch = async (remoteRef: string, force = false) => {
+  if (isAnyGitWriteRunning.value || !remoteRef) return;
+
+  isRemoteMenuOpen.value = false;
+  activeGitAction.value = `remote:checkout:${remoteRef}`;
+  setGitActionResult("loading", force ? `正在强制检出 ${remoteRef}...` : `正在检出 ${remoteRef}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.checkoutGitRemoteBranch(
+      props.project.id,
+      remoteRef,
+      { force },
+      activeRepositoryTarget.value,
+    );
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法检出远程分支。");
+      return;
+    }
+    if (!result.ok && !force && result.blockReason === "dirty-worktree") {
+      setGitActionResult("idle", "");
+      confirmationDialog.value = {
+        kind: "danger",
+        icon: "trash",
+        title: "强制检出远程分支",
+        message: `当前工作区存在未提交变更。继续检出 ${remoteRef} 会丢弃这些本地变更。`,
+        detail: remoteRef,
+        confirmLabel: "强制检出",
+        cancelLabel: t.value.common.cancel,
+        onConfirm: () => executeCheckoutRemoteBranch(remoteRef, true),
+      };
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) clearCommitSelection();
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "检出远程分支失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestCheckoutRemoteBranch = (branch: ProjectGitRemoteBranchSummary) => {
+  if (isAnyGitWriteRunning.value || localBranchNames.value.has(branch.branch)) return;
+  void executeCheckoutRemoteBranch(branch.ref);
+};
+
+const executeDeleteGitRemoteBranch = async (remoteName: string, branchName: string) => {
+  if (isAnyGitWriteRunning.value || !remoteName || !branchName) return;
+
+  isRemoteMenuOpen.value = false;
+  activeGitAction.value = `remote:delete-branch:${remoteName}/${branchName}`;
+  setGitActionResult("loading", `正在从 ${remoteName} 删除远端分支 ${branchName}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = await store.deleteGitRemoteBranch(
+      props.project.id,
+      remoteName,
+      branchName,
+      activeRepositoryTarget.value,
+    );
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法删除远端分支。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) clearCommitSelection();
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "删除远端分支失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const requestDeleteGitRemoteBranch = (remote: ProjectGitRemoteSummary, branch: ProjectGitRemoteBranchSummary) => {
+  if (isAnyGitWriteRunning.value) return;
+
+  const trackingWarning =
+    upstream.value?.ref === branch.ref ? "当前分支正在跟踪此远端分支；下次推送可能会重新创建它。" : "";
+  confirmationDialog.value = {
+    kind: "danger",
+    icon: "trash",
+    title: "删除远端分支",
+    message: `将从 ${remote.name} 删除远端分支 ${branch.branch}。不会删除本地分支，此操作会影响远端仓库中的其他协作者。`,
+    detail: [remote.pushUrl || remote.fetchUrl, trackingWarning].filter(Boolean).join("\n"),
+    confirmLabel: "删除远端分支",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeDeleteGitRemoteBranch(remote.name, branch.branch),
+  };
 };
 
 const executePublishGitBranch = async (remoteName: string) => {
@@ -1477,6 +1607,113 @@ watch(
                     </div>
                   </div>
                   <div v-else class="px-2 py-2 text-[11px] text-on-surface-variant">暂无 remote</div>
+                  <div v-if="remotes.length > 0" class="border-t border-border-subtle">
+                    <div class="flex items-center justify-between gap-2 px-2 py-1.5">
+                      <span class="text-[10px] font-bold uppercase text-on-surface-variant">远端分支（已获取）</span>
+                      <span class="font-mono text-[10px] text-on-surface-variant">{{ remoteBranches.length }}</span>
+                    </div>
+                    <label class="relative mx-2 mb-1.5 flex items-center">
+                      <Search
+                        :size="12"
+                        class="pointer-events-none absolute left-2 text-on-surface-variant"
+                        aria-hidden="true"
+                      />
+                      <input
+                        v-model="remoteBranchQuery"
+                        type="search"
+                        class="h-7 w-full rounded border border-border-subtle bg-surface-container-low py-1 pl-7 pr-2 font-mono text-[10px] text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary"
+                        placeholder="筛选远端分支"
+                        aria-label="筛选远端分支"
+                      />
+                    </label>
+                    <div
+                      v-overlay-scrollbar
+                      class="themed-scrollbar max-h-64 overflow-y-auto border-t border-border-subtle py-1"
+                    >
+                      <section
+                        v-for="group in remoteBranchGroups"
+                        :key="group.remote.name"
+                        class="border-b border-border-subtle last:border-b-0"
+                      >
+                        <div class="flex min-w-0 items-center gap-1.5 px-2 py-1 text-[10px] text-on-surface-variant">
+                          <span class="min-w-0 flex-1 truncate font-mono font-bold text-on-surface">{{
+                            group.remote.name
+                          }}</span>
+                          <span class="shrink-0 font-mono">{{ group.branches.length }}</span>
+                          <button
+                            type="button"
+                            class="git-section-action"
+                            :disabled="isAnyGitWriteRunning"
+                            :aria-busy="activeGitAction === `remote:fetch:${group.remote.name}`"
+                            :title="`刷新 ${group.remote.name} 的远端分支`"
+                            :aria-label="`刷新 ${group.remote.name} 的远端分支`"
+                            @click="executeFetchGitRemoteByName(group.remote.name)"
+                          >
+                            <RefreshCw
+                              :size="12"
+                              :class="activeGitAction === `remote:fetch:${group.remote.name}` ? 'animate-spin' : ''"
+                            />
+                          </button>
+                        </div>
+                        <div v-if="group.branches.length > 0" class="py-0.5">
+                          <div
+                            v-for="branch in group.branches"
+                            :key="branch.ref"
+                            class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2 py-1 hover:bg-surface-variant"
+                          >
+                            <div class="flex min-w-0 items-center gap-1.5">
+                              <GitBranch :size="11" class="shrink-0 text-on-surface-variant" aria-hidden="true" />
+                              <span
+                                class="min-w-0 flex-1 truncate font-mono text-[10px] text-on-surface"
+                                :title="branch.ref"
+                                >{{ branch.branch }}</span
+                              >
+                              <span
+                                v-if="upstream?.ref === branch.ref"
+                                class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1 py-px text-[8px] font-bold text-primary"
+                              >
+                                upstream
+                              </span>
+                              <span
+                                v-else-if="localBranchNames.has(branch.branch)"
+                                class="shrink-0 text-[8px] font-bold text-on-surface-variant"
+                              >
+                                本地已存在
+                              </span>
+                            </div>
+                            <div class="flex shrink-0 items-center gap-px">
+                              <button
+                                v-if="!localBranchNames.has(branch.branch)"
+                                type="button"
+                                class="git-section-action"
+                                :disabled="isAnyGitWriteRunning"
+                                :aria-busy="activeGitAction === `remote:checkout:${branch.ref}`"
+                                :title="`检出 ${branch.ref} 为 tracking 分支`"
+                                :aria-label="`检出 ${branch.ref} 为 tracking 分支`"
+                                @click="requestCheckoutRemoteBranch(branch)"
+                              >
+                                <CloudDownload :size="12" />
+                              </button>
+                              <button
+                                type="button"
+                                class="git-section-action git-action-danger"
+                                :disabled="isAnyGitWriteRunning"
+                                :aria-busy="activeGitAction === `remote:delete-branch:${branch.ref}`"
+                                :title="`删除 ${branch.ref} 的远端分支`"
+                                :aria-label="`删除 ${branch.ref} 的远端分支`"
+                                @click="requestDeleteGitRemoteBranch(group.remote, branch)"
+                              >
+                                <Trash2 :size="12" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div v-else class="px-2 py-1.5 text-[10px] text-on-surface-variant">
+                          {{ remoteBranchQuery ? "无匹配分支" : "尚未获取远端分支" }}
+                        </div>
+                      </section>
+                    </div>
+                  </div>
                   <div class="border-t border-border-subtle p-1">
                     <button
                       type="button"

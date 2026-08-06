@@ -301,15 +301,13 @@ function parseNullDelimitedEnvironment(output) {
   const entries = buffer.toString("utf8").split("\0");
   const markerIndex = entries.lastIndexOf(gitEnvironmentMarker);
   if (markerIndex < 0) return values;
-  entries
-    .slice(markerIndex + 1)
-    .forEach((entry) => {
-      const separator = entry.indexOf("=");
-      if (separator <= 0) return;
-      const name = entry.slice(0, separator);
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return;
-      values[name] = entry.slice(separator + 1);
-    });
+  entries.slice(markerIndex + 1).forEach((entry) => {
+    const separator = entry.indexOf("=");
+    if (separator <= 0) return;
+    const name = entry.slice(0, separator);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return;
+    values[name] = entry.slice(separator + 1);
+  });
   return values;
 }
 
@@ -3048,6 +3046,46 @@ async function readGitRemotesAsync(repositoryPath) {
   }));
 }
 
+async function readGitRemoteBranchesAsync(repositoryPath, remotes) {
+  const fieldSeparator = "\x1f";
+  const output = await runGitAsync(repositoryPath, [
+    "for-each-ref",
+    `--format=%(refname)${fieldSeparator}%(objectname)`,
+    "refs/remotes",
+  ]);
+  if (!output) {
+    return [];
+  }
+
+  const remoteNames = new Set(remotes.map((remote) => remote.name));
+  return String(output)
+    .split(/\r?\n/)
+    .map((line) => {
+      const [fullName] = line.split(fieldSeparator);
+      const normalizedName = String(fullName || "").trim();
+      const prefix = "refs/remotes/";
+      if (!normalizedName.startsWith(prefix)) {
+        return null;
+      }
+
+      const relativeName = normalizedName.slice(prefix.length);
+      const separatorIndex = relativeName.indexOf("/");
+      if (separatorIndex <= 0) {
+        return null;
+      }
+
+      const remote = relativeName.slice(0, separatorIndex);
+      const branch = relativeName.slice(separatorIndex + 1);
+      if (!remoteNames.has(remote) || !branch || branch === "HEAD") {
+        return null;
+      }
+
+      return { remote, branch, ref: `${remote}/${branch}` };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.ref.localeCompare(right.ref));
+}
+
 async function readGitUpstreamAsync(repositoryPath) {
   const ref = String(
     (await runGitAsync(repositoryPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])) || "",
@@ -3331,6 +3369,25 @@ async function resolveGitRemoteOperation(projectPath) {
   }
 
   return { ok: true, repositoryPath, upstream };
+}
+
+async function resolveNamedGitRemoteOperation(projectPath, remoteName) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const name = normalizeGitRemoteName(remoteName);
+  const nameError = validateGitRemoteName(name);
+  if (!repositoryPath) {
+    return { ok: false, remote: name, message: "未检测到 Git 仓库。" };
+  }
+  if (nameError) {
+    return { ok: false, remote: name, message: nameError };
+  }
+
+  const remotes = await readGitRemotesAsync(repositoryPath);
+  if (!remotes.some((remote) => remote.name === name)) {
+    return { ok: false, remote: name, message: `未找到 remote：${name}。` };
+  }
+
+  return { ok: true, repositoryPath, remote: name };
 }
 
 async function runGitRemoteResult(projectPath, args, successMessage) {
@@ -5580,6 +5637,7 @@ async function readGitStatusSnapshot(projectPath) {
       files: [],
       branches: [],
       remotes: [],
+      remoteBranches: [],
       upstream: null,
       base: null,
       repositoryPath: "",
@@ -5610,6 +5668,7 @@ async function readGitStatusSnapshot(projectPath) {
   const ahead = upstream?.ahead ?? (aheadMatch ? Number(aheadMatch[1]) : 0);
   const behind = upstream?.behind ?? (behindMatch ? Number(behindMatch[1]) : 0);
   const base = await readGitBranchBaseAsync(repositoryPath, symbolicBranch, remotes, upstream);
+  const remoteBranches = await readGitRemoteBranchesAsync(repositoryPath, remotes);
 
   return {
     branch,
@@ -5620,6 +5679,7 @@ async function readGitStatusSnapshot(projectPath) {
     files: workingTree.files,
     branches,
     remotes,
+    remoteBranches,
     upstream,
     base,
     repositoryPath,
@@ -5634,6 +5694,26 @@ function fetchGitRemote(projectPath) {
     (upstream) => ["fetch", "--prune", upstream.remote],
     (upstream) => `已从 ${upstream.remote} 获取远程更新。`,
   );
+}
+
+async function fetchGitRemoteByName(projectPath, remoteName) {
+  const remoteContext = await resolveNamedGitRemoteOperation(projectPath, remoteName);
+  if (!remoteContext.ok) {
+    return { ok: false, remote: remoteContext.remote, message: remoteContext.message };
+  }
+
+  const result = await runGitRemoteCommandResult(remoteContext.repositoryPath, [
+    "fetch",
+    "--prune",
+    remoteContext.remote,
+  ]);
+  return result.status === 0
+    ? { ok: true, remote: remoteContext.remote, message: `已从 ${remoteContext.remote} 获取远程更新。` }
+    : {
+        ok: false,
+        remote: remoteContext.remote,
+        message: firstGitError(result, "刷新 remote 分支失败。"),
+      };
 }
 
 function pullGitRemote(projectPath) {
@@ -5775,6 +5855,42 @@ async function removeGitRemote(projectPath, remoteName) {
   return result.status === 0
     ? { ok: true, remote: name, message: `已删除 remote：${name}。` }
     : { ok: false, remote: name, message: firstGitError(result, "删除 remote 失败。") };
+}
+
+async function deleteGitRemoteBranch(projectPath, remoteName, branchName) {
+  const remoteContext = await resolveNamedGitRemoteOperation(projectPath, remoteName);
+  if (!remoteContext.ok) {
+    return { ok: false, remote: remoteContext.remote, message: remoteContext.message };
+  }
+
+  const branch = normalizeGitRefName(branchName);
+  const branchError = validateGitRefName(remoteContext.repositoryPath, "refs/heads", branch, "请填写远端分支名称。");
+  if (branchError) {
+    return { ok: false, remote: remoteContext.remote, branch, message: branchError };
+  }
+  if (branch === "HEAD") {
+    return { ok: false, remote: remoteContext.remote, branch, message: "不能删除 remote 的 HEAD 符号引用。" };
+  }
+
+  const result = await runGitRemoteCommandResult(remoteContext.repositoryPath, [
+    "push",
+    "--delete",
+    remoteContext.remote,
+    `refs/heads/${branch}`,
+  ]);
+  return result.status === 0
+    ? {
+        ok: true,
+        remote: remoteContext.remote,
+        branch,
+        message: `已从 ${remoteContext.remote} 删除远端分支 ${branch}。`,
+      }
+    : {
+        ok: false,
+        remote: remoteContext.remote,
+        branch,
+        message: firstGitError(result, "删除远端分支失败。"),
+      };
 }
 
 async function readGitStashes(repositoryPath) {
@@ -6451,6 +6567,7 @@ window.projectBridge = {
   deleteGitBranch,
   checkoutGitRemoteBranch,
   fetchGitRemote,
+  fetchGitRemoteByName,
   pullGitRemote,
   pushGitRemote,
   initializeGitRepository,
@@ -6458,6 +6575,7 @@ window.projectBridge = {
   addGitRemote,
   setGitRemoteUrl,
   removeGitRemote,
+  deleteGitRemoteBranch,
   listProjectFiles,
   searchProjectFiles,
   createProjectEntry,

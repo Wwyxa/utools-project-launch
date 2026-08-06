@@ -700,6 +700,7 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
     commitCount: normalizeGitCommitCount(snapshot.commitCount, 0),
     branches: snapshot.branches || [],
     remotes: snapshot.remotes || [],
+    remoteBranches: snapshot.remoteBranches || [],
     upstream: snapshot.upstream || null,
     base: snapshot.base || null,
     hasMoreCommits: snapshot.hasMoreCommits || false,
@@ -725,6 +726,7 @@ function mergeGitStatusSnapshot(
     commitCount: currentSnapshot?.commitCount ?? 0,
     branches: statusSnapshot.branches || currentSnapshot?.branches || [],
     remotes: statusSnapshot.remotes || currentSnapshot?.remotes || [],
+    remoteBranches: statusSnapshot.remoteBranches || currentSnapshot?.remoteBranches || [],
     upstream: statusSnapshot.upstream || null,
     base: statusSnapshot.base || null,
     hasMoreCommits: currentSnapshot?.hasMoreCommits || false,
@@ -3318,6 +3320,18 @@ export const useStore = defineStore("app", {
         refreshOnFailure: true,
       });
     },
+    async fetchGitRemoteByName(
+      projectId: string,
+      remoteName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.fetchGitRemoteByName(context.repositoryPath, remoteName),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
+    },
     async pullGitRemote(
       projectId: string,
       target: ProjectGitRepositoryTarget = { kind: "main" },
@@ -3385,6 +3399,19 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.removeGitRemote(context.repositoryPath, remoteName),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
+    },
+    async deleteGitRemoteBranch(
+      projectId: string,
+      remoteName: string,
+      branchName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.deleteGitRemoteBranch(context.repositoryPath, remoteName, branchName),
         { refresh: "full", refs: true, refreshOnFailure: true },
       );
     },

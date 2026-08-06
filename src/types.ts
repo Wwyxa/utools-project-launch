@@ -383,6 +383,12 @@ export interface ProjectGitRemoteSummary {
   pushUrl: string;
 }
 
+export interface ProjectGitRemoteBranchSummary {
+  remote: string;
+  branch: string;
+  ref: string;
+}
+
 export interface ProjectGitUpstreamSummary {
   remote: string;
   branch: string;
@@ -475,6 +481,7 @@ export interface ProjectGitSnapshot {
   commitCount: number;
   branches?: ProjectGitBranchSummary[];
   remotes?: ProjectGitRemoteSummary[];
+  remoteBranches?: ProjectGitRemoteBranchSummary[];
   upstream?: ProjectGitUpstreamSummary | null;
   base?: ProjectGitBaseSummary | null;
   hasMoreCommits?: boolean;
@@ -493,6 +500,7 @@ export interface ProjectGitStatusSnapshot {
   files: ProjectGitFileChange[];
   branches?: ProjectGitBranchSummary[];
   remotes?: ProjectGitRemoteSummary[];
+  remoteBranches?: ProjectGitRemoteBranchSummary[];
   upstream?: ProjectGitUpstreamSummary | null;
   base?: ProjectGitBaseSummary | null;
   repositoryPath: string;
@@ -1040,6 +1048,7 @@ export interface ProjectBridge {
     options?: { force?: boolean },
   ): Promise<ProjectGitActionResult>;
   fetchGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
+  fetchGitRemoteByName(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   pullGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   pushGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   initializeGitRepository(projectPath: string): Promise<ProjectGitActionResult>;
@@ -1047,6 +1056,7 @@ export interface ProjectBridge {
   addGitRemote(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
   setGitRemoteUrl(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;
   removeGitRemote(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
+  deleteGitRemoteBranch(projectPath: string, remoteName: string, branchName: string): Promise<ProjectGitActionResult>;
   listProjectFiles(projectPath: string, relativePath?: string): Promise<ProjectFileListResult>;
   searchProjectFiles(
     projectPath: string,

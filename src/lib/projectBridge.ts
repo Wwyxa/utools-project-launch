@@ -549,6 +549,7 @@ const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   commitCount: 0,
   branches: [],
   remotes: [],
+  remoteBranches: [],
   upstream: null,
   base: null,
   hasMoreCommits: false,
@@ -569,6 +570,7 @@ const emptyGitStatusSnapshot = (): ProjectBridgeGitStatusSnapshot => {
     files: snapshot.files,
     branches: snapshot.branches,
     remotes: snapshot.remotes,
+    remoteBranches: snapshot.remoteBranches,
     upstream: snapshot.upstream,
     base: snapshot.base,
     repositoryPath: snapshot.repositoryPath,
@@ -906,6 +908,9 @@ const fallbackBridge: ProjectBridge = {
   async fetchGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法执行 Git fetch。");
   },
+  async fetchGitRemoteByName(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法刷新指定 remote 的分支。");
+  },
   async pullGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法执行 Git pull。");
   },
@@ -926,6 +931,9 @@ const fallbackBridge: ProjectBridge = {
   },
   async removeGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法删除 Git remote。");
+  },
+  async deleteGitRemoteBranch(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法删除远端 Git 分支。");
   },
   async listProjectFiles(projectPath: string, relativePath = ""): Promise<ProjectFileListResult> {
     return { rootPath: projectPath, relativePath, entries: [] };
