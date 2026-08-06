@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   findGitDiffChangeBlocks,
+  findGitDiffBlockInlineRanges,
   findGitDiffInlineRanges,
   markGitDiffInlineRanges,
   parseGitDiff,
   toGitDiffSideBySideRows,
 } from "../src/lib/gitDiff";
+import { highlightCode } from "../src/lib/markdown";
 
 describe("parseGitDiff", () => {
   it("tracks line numbers through context, deletion and addition rows", () => {
@@ -203,6 +205,153 @@ describe("parseGitDiff", () => {
 });
 
 describe("inline Git diff ranges", () => {
+  it("keeps whitespace-only changes when one side is empty", () => {
+    expect(findGitDiffInlineRanges("    ", "")).toEqual({
+      oldRanges: [{ start: 0, end: 4 }],
+      newRanges: [],
+    });
+    expect(findGitDiffInlineRanges("", "\t  ")).toEqual({
+      oldRanges: [],
+      newRanges: [{ start: 0, end: 3 }],
+    });
+  });
+
+  it("isolates inserted or deleted indentation on paired lines", () => {
+    expect(findGitDiffInlineRanges("  value", "    value")).toEqual({
+      oldRanges: [],
+      newRanges: [{ start: 2, end: 4 }],
+    });
+    expect(findGitDiffInlineRanges("    value", "  value")).toEqual({
+      oldRanges: [{ start: 2, end: 4 }],
+      newRanges: [],
+    });
+  });
+
+  it("isolates spaces inserted within a line and tab-to-space replacements", () => {
+    expect(findGitDiffInlineRanges("value = 1", "value  = 1")).toEqual({
+      oldRanges: [],
+      newRanges: [{ start: 6, end: 7 }],
+    });
+    expect(findGitDiffInlineRanges("\tvalue", "  value")).toEqual({
+      oldRanges: [{ start: 0, end: 1 }],
+      newRanges: [{ start: 0, end: 2 }],
+    });
+  });
+
+  it("keeps the first positional pair when formatting changes line counts", () => {
+    const oldContent = "showRegionLabels: {";
+    const newContent = "showRegionLabels: { type: Boolean, default: true },";
+    const rows = toGitDiffSideBySideRows([
+      { id: "old-0", kind: "deletion", content: oldContent, oldLineNumber: 43, newLineNumber: null },
+      { id: "old-1", kind: "deletion", content: "  type: Boolean,", oldLineNumber: 44, newLineNumber: null },
+      { id: "new-0", kind: "addition", content: newContent, oldLineNumber: null, newLineNumber: 43 },
+    ]);
+
+    expect(rows[0]?.oldRow?.content).toBe(oldContent);
+    expect(rows[0]?.newRow?.content).toBe(newContent);
+    expect(findGitDiffInlineRanges(oldContent, newContent)).toEqual({
+      oldRanges: [],
+      newRanges: [{ start: oldContent.length, end: newContent.length }],
+    });
+  });
+
+  it("maps line compression without highlighting shared code tokens", () => {
+    const oldRows = [
+      { id: "old-0", content: "showRegionLabels: {" },
+      { id: "old-1", content: "  type: Boolean," },
+      { id: "old-2", content: "  default: true," },
+      { id: "old-3", content: "}," },
+    ];
+    const newRows = [{ id: "new-0", content: "showRegionLabels: { type: Boolean, default: true }," }];
+    const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
+
+    expect(ranges).not.toBeNull();
+    const oldChangedText = oldRows
+      .map((row) =>
+        (ranges?.get(row.id) || [])
+          .filter((range) => range.start < range.end)
+          .map((range) => row.content.slice(range.start, range.end))
+          .join(""),
+      )
+      .join("");
+    const newChangedText = (ranges?.get("new-0") || [])
+      .filter((range) => range.start < range.end)
+      .map((range) => newRows[0].content.slice(range.start, range.end))
+      .join("");
+
+    expect(oldChangedText.replace(/[\s,]/gu, "")).toBe("");
+    expect(newChangedText.replace(/[\s,]/gu, "")).toBe("");
+    expect(newChangedText).toContain(" ");
+    expect(ranges?.get("old-0")).toContainEqual({ start: oldRows[0].content.length, end: oldRows[0].content.length });
+    expect(ranges?.get("old-2")).toContainEqual({ start: oldRows[2].content.length, end: oldRows[2].content.length });
+
+    expect(ranges?.get("old-2")).toContainEqual({
+      start: oldRows[2].content.length - 1,
+      end: oldRows[2].content.length,
+    });
+
+    expect(oldChangedText).toContain(",");
+    expect(`${oldChangedText}${newChangedText}`).not.toMatch(/type|Boolean|default|true/u);
+  });
+
+  it("renders the deleted trailing comma from a compressed block", () => {
+    const oldRows = [
+      { id: "old-0", content: "showRegionLabels: {" },
+      { id: "old-1", content: "  type: Boolean," },
+      { id: "old-2", content: "  default: true," },
+      { id: "old-3", content: "}," },
+    ];
+    const newRows = [{ id: "new-0", content: "showRegionLabels: { type: Boolean, default: true }," }];
+    const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
+    const markedHtml = markGitDiffInlineRanges(
+      highlightCode(oldRows[2].content, "typescript"),
+      ranges?.get("old-2") || [],
+      "deletion",
+    );
+
+    expect(markedHtml).toContain('<mark class="diff-inline-deletion">,</mark>');
+  });
+
+  it("maps line expansion without highlighting shared code tokens", () => {
+    const oldRows = [{ id: "old-0", content: "showRegionLabels: { type: Boolean, default: true }," }];
+    const newRows = [
+      { id: "new-0", content: "showRegionLabels: {" },
+      { id: "new-1", content: "  type: Boolean," },
+      { id: "new-2", content: "  default: true," },
+      { id: "new-3", content: "}," },
+    ];
+    const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
+    const changedText = [...oldRows, ...newRows]
+      .flatMap((row) =>
+        (ranges?.get(row.id) || [])
+          .filter((range) => range.start < range.end)
+          .map((range) => row.content.slice(range.start, range.end)),
+      )
+      .join("");
+
+    expect(changedText).toContain(",");
+    expect(changedText).not.toMatch(/type|Boolean|default|true/u);
+    expect(ranges?.get("new-0")).toContainEqual({ start: newRows[0].content.length, end: newRows[0].content.length });
+    expect(ranges?.get("new-2")).toContainEqual({ start: newRows[2].content.length, end: newRows[2].content.length });
+  });
+
+  it("keeps real text replacements highlighted inside a changed block", () => {
+    const oldRows = [{ id: "old-0", content: "type: Boolean," }];
+    const newRows = [{ id: "new-0", content: "type: String," }];
+    const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
+
+    expect(ranges?.get("old-0")?.map((range) => oldRows[0].content.slice(range.start, range.end))).toContain("Boolean");
+    expect(ranges?.get("new-0")?.map((range) => newRows[0].content.slice(range.start, range.end))).toContain("String");
+  });
+
+  it("keeps ordinary punctuation changes highlighted", () => {
+    const oldRows = [{ id: "old-0", content: "items: [a, b]" }];
+    const newRows = [{ id: "new-0", content: "items: [a b]" }];
+    const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
+
+    expect(ranges?.get("old-0")?.map((range) => oldRows[0].content.slice(range.start, range.end))).toContain(",");
+  });
+
   it("marks only the changed character and word ranges in a reliable replacement", () => {
     expect(findGitDiffInlineRanges("const oldValue = 1;", "const newValue = 2;")).toEqual({
       oldRanges: [
@@ -221,6 +370,18 @@ describe("inline Git diff ranges", () => {
       oldRanges: [],
       newRanges: [{ start: 7, end: 8 }],
     });
+  });
+
+  it("keeps changed spaces and tabs as source text inside inline highlights", () => {
+    expect(markGitDiffInlineRanges("\t  value", [{ start: 0, end: 3 }], "addition")).toBe(
+      '<mark class="diff-inline-addition">\t  </mark>value',
+    );
+  });
+
+  it("renders an empty line-break range without inserting a whitespace glyph", () => {
+    expect(markGitDiffInlineRanges("value", [{ start: 5, end: 5 }], "deletion")).toBe(
+      'value<mark class="diff-inline-deletion diff-inline-empty" aria-hidden="true"></mark>',
+    );
   });
 
   it("skips long or fragmented replacements that cannot be highlighted conservatively", () => {

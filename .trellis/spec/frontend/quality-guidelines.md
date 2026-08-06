@@ -46,7 +46,8 @@ Minimum checks for frontend changes today:
 
 - run `npm run lint`
 - run `npm run build`
-- for inline Git diff highlights, test a paired line with an insertion or deletion on only one side; the unchanged side must not suppress the other side's mark
+- for inline Git diff highlights, test a paired line with an insertion or deletion on only one side; the unchanged side must not suppress the other side's mark. Also cover indentation-only pairs and whitespace-only lines where one side is empty; changed spaces/tabs must receive character-level background highlights without replacing the source characters with visible glyphs.
+- for unequal Git diff blocks, compute inline ranges across the complete old/new block before rendering rows. Formatting-only compression or expansion must leave shared code tokens such as `type`, `Boolean`, `default`, and `true` outside non-empty character ranges; only changed spaces, tabs, indentation, and line-break boundaries may receive whitespace-only marks. Real token replacements must remain highlighted.
 - for Git diff hunk navigation, test three hunk headers that fit in one scrollport; next/previous must progress `1/3 -> 2/3 -> 3/3 -> 2/3` even when `scrollTop` remains unchanged. In a scrollable full-file diff, also verify that the final change block remains active at the bottom when it cannot align with the scrollport top. In unified and side-by-side layouts, calculate the target from the block and scroll-container rectangles; do not use `offsetTop` across a toolbar or Teleport boundary.
 - keep the active Git diff block navigation-owned; scroll events and parent scroll-position synchronization must not recompute it, so its block-border highlighting survives manual scrolling.
 - manually inspect the dashboard and project detail flows for layout overflow, broken tab switching, and clipped terminal output
@@ -56,6 +57,16 @@ Minimum checks for frontend changes today:
 If a test runner is added later, prefer focused component or store tests around the project shell and store mutations first.
 
 ---
+
+### Common Mistake: Coloring The Whole Changed Line As An Inline Difference
+
+**Symptom**: A formatting-only diff makes unchanged code tokens look like inserted or deleted text.
+
+**Cause**: Rows are paired by position, or the row-level addition/deletion foreground is mistaken for a character-level range.
+
+**Fix**: Map the complete changed block first, render only precise whitespace/line-break ranges as saturated marks, and keep the row-level addition/deletion treatment to a light background. Preserve the original spaces and tabs in the source text.
+
+**Prevention**: Assert both the model ranges and rendered DOM for a 4-to-1 and 1-to-4 formatting change in unified and side-by-side views; assert that real text replacements still produce marks.
 
 ## Code Review Checklist
 

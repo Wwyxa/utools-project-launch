@@ -12,8 +12,8 @@ import {
   WrapText,
 } from "lucide-vue-next";
 import {
+  findGitDiffBlockInlineRanges,
   findGitDiffChangeBlocks,
-  findGitDiffInlineRanges,
   markGitDiffInlineRanges,
   parseGitDiff,
   toGitDiffSideBySideRows,
@@ -100,15 +100,21 @@ const highlightedCodeByRowId = computed(() => {
 });
 const inlineHighlightsByRowId = computed(() => {
   const highlights = new Map<string, InlineRowHighlight>();
-  sideBySideRows.value.forEach((row) => {
-    if (!row.isReliablePair || row.oldRow?.kind !== "deletion" || row.newRow?.kind !== "addition") {
-      return;
-    }
+  changeBlocks.value.forEach((block) => {
+    const changedRows = parsedDiff.value.rows.slice(block.startRowIndex, block.endRowIndex + 1);
+    const oldRows = changedRows.filter((row) => row.kind === "deletion");
+    const newRows = changedRows.filter((row) => row.kind === "addition");
+    const rangesByRowId = findGitDiffBlockInlineRanges(oldRows, newRows);
+    if (!rangesByRowId) return;
 
-    const ranges = findGitDiffInlineRanges(row.oldRow.content, row.newRow.content);
-    if (!ranges) return;
-    highlights.set(row.oldRow.id, { kind: "deletion", ranges: ranges.oldRanges });
-    highlights.set(row.newRow.id, { kind: "addition", ranges: ranges.newRanges });
+    oldRows.forEach((row) => {
+      const ranges = rangesByRowId.get(row.id);
+      if (ranges?.length) highlights.set(row.id, { kind: "deletion", ranges });
+    });
+    newRows.forEach((row) => {
+      const ranges = rangesByRowId.get(row.id);
+      if (ranges?.length) highlights.set(row.id, { kind: "addition", ranges });
+    });
   });
   return highlights;
 });
@@ -152,8 +158,8 @@ const sideLineNumberLabel = (row: GitDiffRow | null, side: "old" | "new") => {
 const rowClass = (row: GitDiffRow) =>
   cn(
     "grid grid-cols-[3.5rem_minmax(0,1fr)] font-mono text-xs leading-5",
-    row.kind === "addition" && "bg-[var(--syntax-addition-bg)] text-[var(--syntax-addition-fg)]",
-    row.kind === "deletion" && "bg-[var(--syntax-deletion-bg)] text-[var(--syntax-deletion-fg)]",
+    row.kind === "addition" && "bg-[var(--syntax-addition-bg)]",
+    row.kind === "deletion" && "bg-[var(--syntax-deletion-bg)]",
     row.kind === "hunk" && "bg-primary/10 text-primary",
     row.kind === "meta" && "bg-[var(--code-preview-gutter-bg)] text-on-surface-variant",
     row.kind === "context" && "text-on-surface",
@@ -203,8 +209,8 @@ const sideLineNumberClass = (row: GitDiffRow | null, side: "old" | "new") =>
 const sideContentClass = (row: GitDiffRow | null) =>
   cn(
     "min-w-0 px-3",
-    row?.kind === "addition" && "bg-[var(--syntax-addition-bg)] text-[var(--syntax-addition-fg)]",
-    row?.kind === "deletion" && "bg-[var(--syntax-deletion-bg)] text-[var(--syntax-deletion-fg)]",
+    row?.kind === "addition" && "bg-[var(--syntax-addition-bg)]",
+    row?.kind === "deletion" && "bg-[var(--syntax-deletion-bg)]",
     row?.kind === "context" && "text-on-surface",
     "whitespace-pre",
   );
@@ -396,8 +402,8 @@ watch([() => props.diff, () => props.loading], async () => {
                 : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
             )
           "
-          :title="ignoreWhitespace ? '显示空白符变更' : '忽略空白符变更'"
-          :aria-label="ignoreWhitespace ? '显示空白符变更' : '忽略空白符变更'"
+          :title="ignoreWhitespace ? '显示空白量和空白行变更' : '忽略空白量和空白行变更'"
+          :aria-label="ignoreWhitespace ? '显示空白量和空白行变更' : '忽略空白量和空白行变更'"
           :aria-pressed="ignoreWhitespace"
           :disabled="loading"
           @click="toggleIgnoreWhitespace"

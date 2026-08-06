@@ -1406,6 +1406,25 @@
   -webkit-box-decoration-break: clone;
 }
 
+.diff-inline-empty {
+  display: inline-block;
+  position: relative;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
+  pointer-events: none;
+}
+
+.diff-inline-empty::after {
+  content: "";
+  position: absolute;
+  top: 0.12em;
+  left: 0;
+  width: 0.45ch;
+  height: 0.76em;
+  background: inherit;
+}
+
 .diff-inline-addition {
   background: var(--diff-inline-addition-bg);
   color: var(--diff-inline-addition-fg);

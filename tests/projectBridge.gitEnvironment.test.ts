@@ -53,7 +53,8 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   const childProcess = { ...nodeRequire("child_process"), execFileSync, spawnSync };
   const sandboxWindow: { projectBridge?: ProjectBridge } = {};
   const sandbox = {
-    require: (id: string) => (id === "electron" ? { shell: {} } : id === "child_process" ? childProcess : nodeRequire(id)),
+    require: (id: string) =>
+      id === "electron" ? { shell: {} } : id === "child_process" ? childProcess : nodeRequire(id),
     process: { platform, env: fixture.env, once: () => undefined, exit: () => undefined },
     Buffer,
     TextDecoder,
@@ -154,5 +155,28 @@ describe("Git execution environment", () => {
     const [, , options] = spawnSync.mock.calls[0]!;
     expect(options?.env).toMatchObject({ PNPM_HOME: "/Users/test/Library/pnpm" });
     expect(options?.env?.PATH).toBe("/Users/test/Library/pnpm:/usr/bin:/bin");
+  });
+
+  it("passes whitespace-ignore options to worktree and commit diffs", () => {
+    const { bridge, execFileSync, projectPath } = loadPreloadBridge("darwin", {
+      env: { SHELL: "/bin/zsh", PATH: "/usr/bin:/bin" },
+    });
+
+    bridge.readGitFileDiff(projectPath, "file.ts", { ignoreWhitespace: true });
+    bridge.readGitCommitFileDiff(projectPath, "abc1234", "file.ts", undefined, { ignoreWhitespace: true });
+
+    const gitDiffCalls = execFileSync.mock.calls
+      .filter(
+        ([command, args]) =>
+          command === "git" &&
+          (args.includes("diff") || args.includes("show")) &&
+          args.includes("--ignore-space-change"),
+      )
+      .map(([, args]) => args);
+
+    expect(gitDiffCalls).toHaveLength(3);
+    gitDiffCalls.forEach((args) => {
+      expect(args).toEqual(expect.arrayContaining(["--ignore-space-change", "--ignore-blank-lines", "--", "file.ts"]));
+    });
   });
 });
