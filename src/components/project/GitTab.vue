@@ -857,6 +857,7 @@ const handlePushAction = (event: MouseEvent) => {
     requestPublishGitBranch(remotes.value[0]);
     return;
   }
+  event.stopPropagation();
   toggleRemoteMenu(event);
 };
 
