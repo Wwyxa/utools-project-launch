@@ -175,6 +175,7 @@ const commitDatePickerPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const showCommitFilters = ref(false);
 const commitKeyword = ref("");
 const commitAuthor = ref("");
+const commitHash = ref("");
 const commitSince = ref("");
 const commitUntil = ref("");
 const openDatePickerKind = ref<DatePickerKind | null>(null);
@@ -233,14 +234,24 @@ const localWriteRunning = computed(
 );
 const isInteractionDisabled = computed(() => props.disabled || localWriteRunning.value);
 const hasCommitFilters = computed(() =>
-  Boolean(commitKeyword.value.trim() || commitAuthor.value.trim() || commitSince.value || commitUntil.value),
+  Boolean(
+    commitKeyword.value.trim() ||
+    commitAuthor.value.trim() ||
+    commitHash.value.trim() ||
+    commitSince.value ||
+    commitUntil.value,
+  ),
 );
 const commitSearchInput = computed({
-  get: () => `${commitKeyword.value}${commitAuthor.value ? ` / ${commitAuthor.value}` : ""}`,
+  get: () =>
+    `${commitKeyword.value}${commitAuthor.value || commitHash.value ? ` / ${commitAuthor.value}` : ""}${
+      commitHash.value ? ` / ${commitHash.value}` : ""
+    }`,
   set: (value: string) => {
-    const separatorIndex = value.indexOf("/");
-    commitKeyword.value = (separatorIndex < 0 ? value : value.slice(0, separatorIndex)).trim();
-    commitAuthor.value = separatorIndex < 0 ? "" : value.slice(separatorIndex + 1).trim();
+    const [keyword = "", author = "", hash = ""] = value.split("/", 3);
+    commitKeyword.value = keyword.trim();
+    commitAuthor.value = author.trim();
+    commitHash.value = hash.trim();
   },
 });
 const weekDayLabels = ["日", "一", "二", "三", "四", "五", "六"];
@@ -325,6 +336,7 @@ const clearDatePickerValue = () => {
 const commits = computed(() => {
   const keyword = commitKeyword.value.trim().toLocaleLowerCase();
   const author = commitAuthor.value.trim().toLocaleLowerCase();
+  const hash = commitHash.value.trim().toLocaleLowerCase();
   const since = commitSince.value ? new Date(`${commitSince.value}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
   const until = commitUntil.value ? new Date(`${commitUntil.value}T23:59:59.999`).getTime() : Number.POSITIVE_INFINITY;
   return collapseGitStashAuxiliaryCommits(snapshot.value?.commits || []).filter((commit) => {
@@ -333,6 +345,7 @@ const commits = computed(() => {
     return (
       (!keyword || searchable.includes(keyword)) &&
       (!author || commit.author.toLocaleLowerCase().includes(author)) &&
+      (!hash || commit.hash.toLocaleLowerCase().startsWith(hash)) &&
       (!Number.isFinite(commitDate) || (commitDate >= since && commitDate <= until))
     );
   });
@@ -349,6 +362,7 @@ const commitFileViewModeLabel = computed(() =>
 const clearCommitFilters = () => {
   commitKeyword.value = "";
   commitAuthor.value = "";
+  commitHash.value = "";
   commitSince.value = "";
   commitUntil.value = "";
   openDatePickerKind.value = null;
@@ -1973,9 +1987,9 @@ onBeforeUnmount(() => {
                 v-model="commitSearchInput"
                 type="text"
                 class="ui-field ui-field-compact min-w-0 flex-1"
-                :placeholder="`${t.git.keyword} / ${t.git.author}`"
-                :title="`${t.git.keyword} / ${t.git.author}`"
-                :aria-label="`${t.git.keyword} / ${t.git.author}`"
+                :placeholder="`${t.git.keyword} / ${t.git.author} / ${t.git.hash}`"
+                :title="`${t.git.keyword} / ${t.git.author} / ${t.git.hash}`"
+                :aria-label="`${t.git.keyword} / ${t.git.author} / ${t.git.hash}`"
               />
               <button
                 v-if="hasCommitFilters"
@@ -2249,7 +2263,8 @@ onBeforeUnmount(() => {
                       <div
                         class="dark-readable-meta mt-0 flex min-w-0 items-center gap-1 text-[9px] font-medium leading-3 text-on-surface-variant/75"
                       >
-                        <span class="min-w-0 truncate">{{ row.commit.author }}</span
+                        <span class="shrink-0">{{ shortCommitHash(row.commit.hash) }}</span
+                        ><span aria-hidden="true">·</span><span class="min-w-0 truncate">{{ row.commit.author }}</span
                         ><span v-if="formatCommitTime(row.commit.date).text" aria-hidden="true">·</span
                         ><span v-if="formatCommitTime(row.commit.date).text" class="shrink-0">{{
                           formatCommitTime(row.commit.date).text
