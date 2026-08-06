@@ -20,6 +20,7 @@ import {
   Folder,
   GitBranch,
   GitCommitHorizontal,
+  Github,
   List,
   ListChecks,
   ListTree,
@@ -66,9 +67,11 @@ import {
   presentGitCommitRefs,
   type GitCommitRefPresentationMember,
 } from "../../lib/gitCommitRefs";
+import { getGitHubCommitUrl } from "../../lib/gitHubCommitUrl";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useI18n } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
+import { getProjectBridge } from "../../lib/projectBridge";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import ActionDialog from "../ActionDialog.vue";
@@ -1084,6 +1087,17 @@ const commitTooltipRefs = computed(() => {
   const commit = commitTooltip.value?.commit;
   return commit ? refPresentations(commit) : [];
 });
+
+const commitGitHubUrl = computed(() => {
+  const commit = commitTooltip.value?.commit;
+  return commit ? getGitHubCommitUrl(snapshot.value?.remotes || [], commit.hash) : undefined;
+});
+
+const openCommitOnGitHub = async () => {
+  const url = commitGitHubUrl.value;
+  if (url) await getProjectBridge().openPath(url);
+};
+
 const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
   const repositoryContext = context.value;
   if (
@@ -2501,6 +2515,18 @@ onBeforeUnmount(() => {
                 >{{ commitTooltipSummaryForActiveCommit.deletions }} 行 (-)</span
               ></template
             >
+            <template v-if="commitGitHubUrl">
+              <span aria-hidden="true" class="h-3 w-px shrink-0 bg-border-subtle" />
+              <button
+                type="button"
+                class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+                title="在 GitHub 中打开此提交"
+                aria-label="在 GitHub 中打开此提交"
+                @click.stop="openCommitOnGitHub"
+              >
+                <Github :size="14" />
+              </button>
+            </template>
           </div>
           <div v-if="commitTooltipRefs.length" class="mt-2 flex flex-wrap gap-1">
             <span
