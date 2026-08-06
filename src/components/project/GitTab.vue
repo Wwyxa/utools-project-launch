@@ -39,6 +39,7 @@ import {
 } from "lucide-vue-next";
 import {
   Project,
+  type ProjectGitSnapshot,
   type ProjectGitActionResult,
   type ProjectGitDiffScope,
   type ProjectGitFileChange,
@@ -273,6 +274,50 @@ const gitWorkspaceRelatedCount = computed(() => {
     gitWorkspaceSnapshot.value?.worktrees.entries.filter((entry) => entry.kind === "linked").length || 0;
   return linkedWorktrees + (gitWorkspaceSnapshot.value?.submodules.entries.length || 0);
 });
+const gitInteractionRefreshActiveIntervalMs = 2_000;
+const gitInteractionRefreshNormalIntervalMs = 3_000;
+const gitInteractionRefreshIdleIntervalMs = 5_000;
+const gitInteractionRefreshActiveWindowMs = 4_000;
+const gitInteractionRefreshNormalWindowMs = 12_000;
+const gitInteractionRefreshHotWindowMs = 10_000;
+const gitResumeRefreshDedupIntervalMs = 1_000;
+let lastGitInteractionRefreshAt = 0;
+let lastGitInteractionActivityAt = 0;
+let lastGitResumeRefreshAt = 0;
+let lastGitSnapshotChangeAt = 0;
+let wasDocumentVisible = true;
+let gitTabUnmounted = false;
+let gitInteractionRefreshTimer: number | undefined;
+
+const gitSnapshotRefreshSignature = (currentSnapshot: ProjectGitSnapshot | null) => {
+  if (!currentSnapshot) return "";
+
+  const commitSignature = currentSnapshot.commits.map((commit) => commit.hash).join("|");
+  const fileSignature = currentSnapshot.files
+    .map((file) =>
+      [
+        file.path,
+        file.originalPath || "",
+        file.status,
+        file.staged ? "1" : "0",
+        file.unstaged ? "1" : "0",
+        file.additions,
+        file.deletions,
+      ].join(":\\u0000"),
+    )
+    .join("|");
+
+  return [
+    currentSnapshot.branch,
+    currentSnapshot.headHash || "",
+    currentSnapshot.isDetachedHead ? "1" : "0",
+    currentSnapshot.ahead,
+    currentSnapshot.behind,
+    currentSnapshot.commitCount,
+    commitSignature,
+    fileSignature,
+  ].join(":\\u0001");
+};
 
 const repositoryDisplayName = (repositoryPath: string, fallback: string) => {
   const normalized = repositoryPath.replace(/[\\/]+$/, "");
@@ -481,7 +526,110 @@ const refreshActiveRepository = async () => {
   }
 };
 
+const isGitHistoryLoadingMore = computed(() => {
+  const context = activeRepositoryContext.value;
+  return Boolean(context && store.gitRepositoryLoadingMore[context.contextKey]);
+});
+
 const isRefreshRunning = () => isGitRefreshing.value || isGitWorkspaceRefreshing.value;
+
+type GitSnapshotRefreshTrigger = "interaction" | "resume";
+
+const gitInteractionRefreshIntervalFor = (trigger: GitSnapshotRefreshTrigger, now: number) => {
+  if (trigger === "resume") return gitInteractionRefreshActiveIntervalMs;
+
+  const timeSinceSnapshotChangeMs =
+    lastGitSnapshotChangeAt > 0 ? Math.max(0, now - lastGitSnapshotChangeAt) : Number.POSITIVE_INFINITY;
+  if (timeSinceSnapshotChangeMs <= gitInteractionRefreshHotWindowMs) {
+    return gitInteractionRefreshActiveIntervalMs;
+  }
+
+  const timeSinceActivityMs =
+    lastGitInteractionActivityAt > 0 ? Math.max(0, now - lastGitInteractionActivityAt) : Number.POSITIVE_INFINITY;
+  if (timeSinceActivityMs <= gitInteractionRefreshActiveWindowMs) {
+    return gitInteractionRefreshActiveIntervalMs;
+  }
+  if (timeSinceActivityMs <= gitInteractionRefreshNormalWindowMs) {
+    return gitInteractionRefreshNormalIntervalMs;
+  }
+  return gitInteractionRefreshIdleIntervalMs;
+};
+
+const refreshGitSnapshotOnInteraction = (trigger: GitSnapshotRefreshTrigger = "interaction") => {
+  if (gitTabUnmounted || isAnyGitWriteRunning.value || isRefreshRunning() || isGitHistoryLoadingMore.value)
+    return false;
+
+  const now = Date.now();
+  if (trigger === "resume" && now - lastGitResumeRefreshAt < gitResumeRefreshDedupIntervalMs) return false;
+  const refreshIntervalMs = gitInteractionRefreshIntervalFor(trigger, now);
+  lastGitInteractionActivityAt = now;
+  if (trigger === "interaction" && now - lastGitInteractionRefreshAt < refreshIntervalMs) {
+    return false;
+  }
+
+  const previousSignature = gitSnapshotRefreshSignature(snapshot.value);
+  lastGitInteractionRefreshAt = now;
+  if (trigger === "resume") lastGitResumeRefreshAt = now;
+  const originGeneration = repositoryContextGeneration.value;
+
+  void store
+    .refreshGitSnapshotForInteraction(props.project.id, activeRepositoryTarget.value)
+    .then(() => {
+      if (gitTabUnmounted || repositoryContextGeneration.value !== originGeneration) return;
+      const nextSignature = gitSnapshotRefreshSignature(snapshot.value);
+      const snapshotChanged = !previousSignature || !nextSignature || previousSignature !== nextSignature;
+      if (snapshotChanged) lastGitSnapshotChangeAt = Date.now();
+    })
+    .catch((error) => {
+      if (gitTabUnmounted || repositoryContextGeneration.value !== originGeneration) return;
+      setGitActionResult("error", error instanceof Error ? error.message : "刷新 Git 仓库失败。");
+    });
+  return true;
+};
+
+const isGitTabRefreshExemptTarget = (target: EventTarget | null) => {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      "button, a, input, textarea, select, option, label, summary, [role='button'], [role='tab'], [role='menuitem'], [role='option'], [role='checkbox'], [role='switch'], [role='slider'], [role='textbox'], [role='combobox'], [role='treeitem'], [role='separator'], [contenteditable], [data-git-refresh-exempt]",
+    ),
+  );
+};
+
+const handleGitTabInteraction = (event: MouseEvent) => {
+  if (isGitTabRefreshExemptTarget(event.target)) return;
+  if (gitInteractionRefreshTimer !== undefined) return;
+  const originProjectId = props.project.id;
+  const originGeneration = repositoryContextGeneration.value;
+  gitInteractionRefreshTimer = window.setTimeout(() => {
+    gitInteractionRefreshTimer = undefined;
+    if (
+      gitTabUnmounted ||
+      props.project.id !== originProjectId ||
+      repositoryContextGeneration.value !== originGeneration
+    ) {
+      return;
+    }
+    refreshGitSnapshotOnInteraction();
+  }, 0);
+};
+
+const handleGitWindowFocus = () => {
+  if (document.visibilityState !== "visible") return;
+  refreshGitSnapshotOnInteraction("resume");
+};
+
+const handleGitVisibilityChange = () => {
+  const isVisible = document.visibilityState === "visible";
+  if (!isVisible) {
+    wasDocumentVisible = false;
+    return;
+  }
+  if (!wasDocumentVisible) {
+    wasDocumentVisible = true;
+    refreshGitSnapshotOnInteraction("resume");
+  }
+};
 
 defineExpose({ refreshActiveRepository, isRefreshRunning, isTopInfoCollapsed, toggleTopInfo });
 
@@ -565,6 +713,7 @@ const selectGitRepository = (row: GitRepositoryRow) => {
   if (currentContext) commitDraftsByContext.set(currentContext.contextKey, commitMessage.value);
   clearRepositoryBoundState();
   activeRepositoryTarget.value = nextContext.target;
+  lastGitInteractionRefreshAt = 0;
   rememberedGitRepositoryTargets.set(props.project.id, nextContext.target);
   restoreChangesSectionOpen(props.project.id, nextContext.target);
   commitMessage.value = commitDraftsByContext.get(nextContext.contextKey) || "";
@@ -1310,17 +1459,25 @@ const restoreProjectRepositoryState = (projectId: string) => {
 };
 
 onBeforeUnmount(() => {
+  gitTabUnmounted = true;
   const context = activeRepositoryContext.value;
   if (context) commitDraftsByContext.set(context.contextKey, commitMessage.value);
   window.clearTimeout(copiedTimer.value);
+  window.clearTimeout(gitInteractionRefreshTimer);
+  gitInteractionRefreshTimer = undefined;
   window.removeEventListener("pointerdown", handleWindowPointerDown);
+  window.removeEventListener("focus", handleGitWindowFocus);
+  document.removeEventListener("visibilitychange", handleGitVisibilityChange);
   window.removeEventListener("resize", handleFloatingViewportChange);
   window.removeEventListener("scroll", handleFloatingViewportChange, true);
   stopAppEscapeListener();
 });
 
 onMounted(() => {
+  wasDocumentVisible = document.visibilityState === "visible";
   window.addEventListener("pointerdown", handleWindowPointerDown);
+  window.addEventListener("focus", handleGitWindowFocus);
+  document.addEventListener("visibilitychange", handleGitVisibilityChange);
   window.addEventListener("resize", handleFloatingViewportChange);
   window.addEventListener("scroll", handleFloatingViewportChange, true);
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
@@ -1330,11 +1487,23 @@ onMounted(() => {
 watch(
   () => props.project.id,
   (projectId, previousProjectId) => {
+    lastGitInteractionRefreshAt = 0;
+    lastGitInteractionActivityAt = 0;
+    lastGitResumeRefreshAt = 0;
+    lastGitSnapshotChangeAt = 0;
     const previousContext = store.resolveGitRepositoryContext(previousProjectId, activeRepositoryTarget.value);
     if (previousContext) commitDraftsByContext.set(previousContext.contextKey, commitMessage.value);
     clearRepositoryBoundState(previousProjectId);
     restoreProjectRepositoryState(projectId);
   },
+);
+
+watch(
+  isGitSnapshotRefreshing,
+  (refreshing) => {
+    if (refreshing) lastGitInteractionRefreshAt = Date.now();
+  },
+  { immediate: true },
 );
 
 watch(
@@ -1393,7 +1562,11 @@ watch(
 </script>
 
 <template>
-  <div class="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden" @click="closeFloatingControls">
+  <div
+    class="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden"
+    @click.capture="handleGitTabInteraction"
+    @click="closeFloatingControls"
+  >
     <section
       id="git-top-info-panel"
       :aria-hidden="isTopInfoCollapsed"
@@ -1431,7 +1604,7 @@ watch(
               {{ gitWorkspaceRelatedCount }}
             </span>
           </button>
-          <div class="min-w-0" @click.stop>
+          <div class="min-w-0" data-git-refresh-exempt @click.stop>
             <button
               type="button"
               data-git-top-menu-trigger
@@ -1517,7 +1690,7 @@ watch(
               {{ snapshot?.behind || 0 }}
             </span>
           </div>
-          <div class="min-w-0" @click.stop>
+          <div class="min-w-0" data-git-refresh-exempt @click.stop>
             <button
               type="button"
               data-git-top-menu-trigger
@@ -1873,7 +2046,7 @@ watch(
               </div>
             </div>
           </div>
-          <div class="flex shrink-0 items-center gap-px" @click.stop>
+          <div class="flex shrink-0 items-center gap-px" data-git-refresh-exempt @click.stop>
             <ExternalApplicationLaunchButton
               v-if="row.selected && row.selectable"
               :applications="store.externalApplicationPreferences.applications"

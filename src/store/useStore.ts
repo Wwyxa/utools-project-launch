@@ -711,11 +711,74 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
   };
 }
 
+function gitHistorySnapshotSignature(
+  snapshot: ProjectGitSnapshot | null | undefined,
+  commits = snapshot?.commits || [],
+): string {
+  if (!snapshot) return "";
+
+  return JSON.stringify({
+    branch: snapshot.branch || "",
+    headHash: snapshot.headHash || "",
+    isDetachedHead: Boolean(snapshot.isDetachedHead),
+    ahead: snapshot.ahead || 0,
+    behind: snapshot.behind || 0,
+    commitCount: snapshot.commitCount || 0,
+    commits: commits.map((commit) => ({
+      hash: commit.hash,
+      refs: commit.refs || "",
+      refNames: (commit.refNames || []).map((ref) => [ref.kind, ref.name, Boolean(ref.head)]),
+    })),
+    branches: (snapshot.branches || []).map((branch) => [branch.name, Boolean(branch.current)]),
+    remotes: (snapshot.remotes || []).map((remote) => [remote.name, remote.fetchUrl, remote.pushUrl]),
+    remoteBranches: (snapshot.remoteBranches || []).map((branch) => [branch.remote, branch.branch, branch.ref]),
+    upstream: snapshot.upstream
+      ? [
+          snapshot.upstream.remote,
+          snapshot.upstream.branch,
+          snapshot.upstream.ref,
+          snapshot.upstream.ahead,
+          snapshot.upstream.behind,
+        ]
+      : null,
+    base: snapshot.base ? [snapshot.base.remote, snapshot.base.branch, snapshot.base.ref] : null,
+  });
+}
+
+function gitHistoryPageMatches(currentSnapshot: ProjectGitSnapshot, nextSnapshot: ProjectGitSnapshot): boolean {
+  const currentCommits = currentSnapshot.commits || [];
+  const nextCommits = nextSnapshot.commits || [];
+  if (currentSnapshot.commitCount !== nextSnapshot.commitCount || nextCommits.length > currentCommits.length) {
+    return false;
+  }
+
+  return (
+    gitHistorySnapshotSignature(currentSnapshot, currentCommits.slice(0, nextCommits.length)) ===
+    gitHistorySnapshotSignature(nextSnapshot, nextCommits)
+  );
+}
+
+function mergeGitSnapshotPreservingHistory(
+  currentSnapshot: ProjectGitSnapshot | null | undefined,
+  nextSnapshot: ProjectGitSnapshot | null,
+): ProjectGitSnapshot | null {
+  if (!currentSnapshot || !nextSnapshot) return nextSnapshot;
+  if (!gitHistoryPageMatches(currentSnapshot, nextSnapshot)) {
+    return nextSnapshot;
+  }
+
+  currentSnapshot.files = nextSnapshot.files;
+  currentSnapshot.repositoryPath = nextSnapshot.repositoryPath;
+  currentSnapshot.lastRefreshedAt = nextSnapshot.lastRefreshedAt;
+  currentSnapshot.statusText = nextSnapshot.statusText;
+  return currentSnapshot;
+}
+
 function mergeGitStatusSnapshot(
   currentSnapshot: ProjectGitSnapshot | null | undefined,
   statusSnapshot: ProjectGitStatusSnapshot,
 ): ProjectGitSnapshot {
-  return {
+  const nextSnapshot: ProjectGitSnapshot = {
     branch: statusSnapshot.branch || currentSnapshot?.branch || "main",
     headHash: statusSnapshot.headHash || "",
     isDetachedHead: Boolean(statusSnapshot.isDetachedHead),
@@ -735,6 +798,33 @@ function mergeGitStatusSnapshot(
     lastRefreshedAt: statusSnapshot.lastRefreshedAt || new Date().toISOString(),
     statusText: statusSnapshot.statusText || currentSnapshot?.statusText || "OK",
   };
+  if (!currentSnapshot) return nextSnapshot;
+
+  if (gitHistorySnapshotSignature(currentSnapshot) === gitHistorySnapshotSignature(nextSnapshot)) {
+    currentSnapshot.files = nextSnapshot.files;
+    currentSnapshot.repositoryPath = nextSnapshot.repositoryPath;
+    currentSnapshot.lastRefreshedAt = nextSnapshot.lastRefreshedAt;
+    currentSnapshot.statusText = nextSnapshot.statusText;
+    return currentSnapshot;
+  }
+
+  Object.assign(currentSnapshot, {
+    branch: nextSnapshot.branch,
+    headHash: nextSnapshot.headHash,
+    isDetachedHead: nextSnapshot.isDetachedHead,
+    ahead: nextSnapshot.ahead,
+    behind: nextSnapshot.behind,
+    files: nextSnapshot.files,
+    branches: nextSnapshot.branches,
+    remotes: nextSnapshot.remotes,
+    remoteBranches: nextSnapshot.remoteBranches,
+    upstream: nextSnapshot.upstream,
+    base: nextSnapshot.base,
+    repositoryPath: nextSnapshot.repositoryPath,
+    lastRefreshedAt: nextSnapshot.lastRefreshedAt,
+    statusText: nextSnapshot.statusText,
+  });
+  return currentSnapshot;
 }
 
 function mergeGitWorkingTreeSnapshot(
@@ -749,13 +839,11 @@ function mergeGitWorkingTreeSnapshot(
       ? `detached HEAD @ ${currentSnapshot.headHash} · `
       : "";
 
-  return {
-    ...currentSnapshot,
-    files: workingTreeSnapshot.files,
-    repositoryPath: workingTreeSnapshot.repositoryPath || currentSnapshot.repositoryPath || "",
-    lastRefreshedAt: workingTreeSnapshot.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
-    statusText: `${detachedHeadPrefix}${statusText}`,
-  };
+  currentSnapshot.files = workingTreeSnapshot.files;
+  currentSnapshot.repositoryPath = workingTreeSnapshot.repositoryPath || currentSnapshot.repositoryPath || "";
+  currentSnapshot.lastRefreshedAt = workingTreeSnapshot.lastRefreshedAt || currentSnapshot.lastRefreshedAt;
+  currentSnapshot.statusText = `${detachedHeadPrefix}${statusText}`;
+  return currentSnapshot;
 }
 
 function mergeGitCommitPage(currentSnapshot: ProjectGitSnapshot, commitPage: ProjectGitCommitPage): ProjectGitSnapshot {
@@ -2543,7 +2631,7 @@ export const useStore = defineStore("app", {
           }
 
           const normalizedSnapshot = normalizeGitSnapshot(snapshot);
-          assignSnapshot(normalizedSnapshot);
+          assignSnapshot(mergeGitSnapshotPreservingHistory(currentSnapshot, normalizedSnapshot));
           if (context.target.kind === "main" && project.git) {
             project.gitLatestCommitAt = project.git.commits[0]?.date || project.gitLatestCommitAt || "";
             this.stagedFiles[projectId] = project.git.files;
@@ -2723,6 +2811,16 @@ export const useStore = defineStore("app", {
       })();
       gitStatusRefreshPromises.set(context.contextKey, refreshPromise);
       return refreshPromise;
+    },
+    async refreshGitSnapshotForInteraction(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }) {
+      const currentSnapshot = this.gitSnapshotForRepository(projectId, target);
+      const previousHistorySignature = gitHistorySnapshotSignature(currentSnapshot);
+      await this.refreshGitStatusSnapshot(projectId, target);
+
+      const nextSnapshot = this.gitSnapshotForRepository(projectId, target);
+      if (!currentSnapshot || !nextSnapshot || gitHistorySnapshotSignature(nextSnapshot) !== previousHistorySignature) {
+        await this.refreshGitSnapshot(projectId, {}, target);
+      }
     },
     async loadMoreGitCommits(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }): Promise<void> {
       const context = this.resolveGitRepositoryContext(projectId, target);
