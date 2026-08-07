@@ -130,6 +130,7 @@ const isRemoteMenuOpen = ref(false);
 const branchMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const remoteMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const branchMenuRef = ref<HTMLElement | null>(null);
+const remoteMenuRef = ref<HTMLElement | null>(null);
 const remoteBranchQuery = ref("");
 const isRemoteDialogOpen = ref(false);
 const remoteDialogMode = ref<RemoteDialogMode>("add");
@@ -747,13 +748,21 @@ const toggleBranchMenu = async (event: MouseEvent) => {
   );
 };
 
-const toggleRemoteMenu = (event: MouseEvent) => {
+const toggleRemoteMenu = async (event: MouseEvent) => {
   const shouldOpen = !isRemoteMenuOpen.value;
   closeFloatingControls();
   if (!shouldOpen) return;
+  const trigger = event.currentTarget as HTMLElement;
   remoteBranchQuery.value = "";
-  remoteMenuPosition.value = positionFloatingMenu(event.currentTarget as HTMLElement, 288, 320);
+  remoteMenuPosition.value = positionFloatingMenu(trigger, 320, 320);
   isRemoteMenuOpen.value = shouldOpen;
+  await nextTick();
+  if (!remoteMenuRef.value) return;
+  remoteMenuPosition.value = positionFloatingMenu(
+    trigger,
+    remoteMenuRef.value.offsetWidth,
+    remoteMenuRef.value.offsetHeight,
+  );
 };
 
 const runRepositoryExternalAction = (action: "terminal" | "folder") => {
@@ -1723,194 +1732,213 @@ watch(
               <Transition name="fade">
                 <div
                   v-if="isRemoteMenuOpen"
+                  ref="remoteMenuRef"
                   data-git-top-menu
-                  class="themed-scrollbar fixed z-[80] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border-subtle bg-surface-container-lowest text-xs shadow-2xl"
+                  class="fixed z-[80] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest text-xs shadow-2xl"
                   :style="floatingMenuStyle(remoteMenuPosition)"
                   role="menu"
                   @click.stop
                 >
-                  <div class="border-b border-border-subtle px-2 py-1.5">
-                    <div class="truncate text-[10px] font-bold uppercase text-on-surface-variant">Remote</div>
-                  </div>
-                  <div v-if="remotes.length > 0" class="themed-scrollbar max-h-52 overflow-y-auto py-1">
-                    <div
-                      v-for="remote in remotes"
-                      :key="remote.name"
-                      class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2 py-1.5 hover:bg-surface-variant"
-                    >
-                      <div class="min-w-0">
-                        <div class="flex min-w-0 items-center gap-1.5">
-                          <span class="truncate font-mono text-[11px] font-bold text-on-surface">{{
-                            remote.name
-                          }}</span>
-                          <span
-                            v-if="upstream?.remote === remote.name"
-                            class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1.5 py-px text-[9px] font-bold text-primary"
-                          >
-                            upstream
-                          </span>
-                        </div>
-                        <p class="truncate font-mono text-[10px] text-on-surface-variant" :title="remote.fetchUrl">
-                          {{ remote.fetchUrl || remote.pushUrl }}
-                        </p>
-                      </div>
-                      <div class="flex shrink-0 items-center gap-px">
-                        <button
-                          v-if="canPublishGitBranch"
-                          type="button"
-                          class="git-section-action"
-                          :disabled="isAnyGitWriteRunning"
-                          :aria-busy="activeGitAction === `remote:publish:${remote.name}`"
-                          :title="`发布当前分支到 ${remote.name}`"
-                          :aria-label="`发布当前分支到 ${remote.name}`"
-                          @click="requestPublishGitBranch(remote)"
-                        >
-                          <CloudUpload :size="12" />
-                        </button>
-                        <button
-                          type="button"
-                          class="git-section-action"
-                          :disabled="isAnyGitWriteRunning"
-                          :aria-busy="isAnyGitWriteRunning"
-                          :title="`编辑 ${remote.name} URL`"
-                          :aria-label="`编辑 ${remote.name} URL`"
-                          @click="openEditRemoteDialog(remote)"
-                        >
-                          <SlidersHorizontal :size="12" />
-                        </button>
-                        <button
-                          type="button"
-                          class="git-section-action git-action-danger"
-                          :disabled="isAnyGitWriteRunning"
-                          :aria-busy="isAnyGitWriteRunning"
-                          :title="`删除 ${remote.name}`"
-                          :aria-label="`删除 ${remote.name}`"
-                          @click="requestRemoveRemote(remote)"
-                        >
-                          <X :size="12" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-else class="px-2 py-2 text-[11px] text-on-surface-variant">暂无 remote</div>
-                  <div v-if="remotes.length > 0" class="border-t border-border-subtle">
-                    <div class="flex items-center justify-between gap-2 px-2 py-1.5">
-                      <span class="text-[10px] font-bold uppercase text-on-surface-variant">远端分支（已获取）</span>
-                      <span class="font-mono text-[10px] text-on-surface-variant">{{ remoteBranches.length }}</span>
-                    </div>
-                    <label class="relative mx-2 mb-1.5 flex items-center">
-                      <Search
-                        :size="12"
-                        class="pointer-events-none absolute left-2 text-on-surface-variant"
-                        aria-hidden="true"
-                      />
-                      <input
-                        v-model="remoteBranchQuery"
-                        type="search"
-                        class="h-7 w-full rounded border border-border-subtle bg-surface-container-low py-1 pl-7 pr-2 font-mono text-[10px] text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary"
-                        placeholder="筛选远端分支"
-                        aria-label="筛选远端分支"
-                      />
-                    </label>
-                    <div
-                      v-overlay-scrollbar
-                      class="themed-scrollbar max-h-64 overflow-y-auto border-t border-border-subtle py-1"
-                    >
-                      <section
-                        v-for="group in remoteBranchGroups"
-                        :key="group.remote.name"
-                        class="border-b border-border-subtle last:border-b-0"
+                  <div v-overlay-scrollbar class="themed-scrollbar max-h-[calc(100vh-1rem)] overflow-y-auto">
+                    <div class="flex items-center justify-between gap-2 border-b border-border-subtle px-2.5 py-1.5">
+                      <span class="truncate text-[10px] font-bold uppercase text-on-surface-variant">Remote</span>
+                      <span class="shrink-0 font-mono text-[10px] text-on-surface-variant"
+                        >{{ remotes.length }} 个</span
                       >
-                        <div class="flex min-w-0 items-center gap-1.5 px-2 py-1 text-[10px] text-on-surface-variant">
-                          <span class="min-w-0 flex-1 truncate font-mono font-bold text-on-surface">{{
-                            group.remote.name
-                          }}</span>
-                          <span class="shrink-0 font-mono">{{ group.branches.length }}</span>
-                          <button
-                            type="button"
-                            class="git-section-action"
-                            :disabled="isAnyGitWriteRunning"
-                            :aria-busy="activeGitAction === `remote:fetch:${group.remote.name}`"
-                            :title="`刷新 ${group.remote.name} 的远端分支`"
-                            :aria-label="`刷新 ${group.remote.name} 的远端分支`"
-                            @click="executeFetchGitRemoteByName(group.remote.name)"
-                          >
-                            <RefreshCw
-                              :size="12"
-                              :class="activeGitAction === `remote:fetch:${group.remote.name}` ? 'animate-spin' : ''"
-                            />
-                          </button>
-                        </div>
-                        <div v-if="group.branches.length > 0" class="py-0.5">
-                          <div
-                            v-for="branch in group.branches"
-                            :key="branch.ref"
-                            class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2 py-1 hover:bg-surface-variant"
-                          >
+                    </div>
+                    <div v-if="remotes.length > 0" class="border-b border-border-subtle">
+                      <div v-overlay-scrollbar class="themed-scrollbar max-h-36 overflow-y-auto py-0.5">
+                        <div
+                          v-for="remote in remotes"
+                          :key="remote.name"
+                          class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 hover:bg-surface-variant"
+                        >
+                          <div class="min-w-0">
                             <div class="flex min-w-0 items-center gap-1.5">
-                              <GitBranch :size="11" class="shrink-0 text-on-surface-variant" aria-hidden="true" />
+                              <span class="truncate font-mono text-[11px] font-bold text-on-surface">{{
+                                remote.name
+                              }}</span>
                               <span
-                                class="min-w-0 flex-1 truncate font-mono text-[10px] text-on-surface"
-                                :title="branch.ref"
-                                >{{ branch.branch }}</span
-                              >
-                              <span
-                                v-if="upstream?.ref === branch.ref"
-                                class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1 py-px text-[8px] font-bold text-primary"
+                                v-if="upstream?.remote === remote.name"
+                                class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1.5 py-px text-[9px] font-bold text-primary"
                               >
                                 upstream
                               </span>
-                              <span
-                                v-else-if="localBranchNames.has(branch.branch)"
-                                class="shrink-0 text-[8px] font-bold text-on-surface-variant"
-                              >
-                                本地已存在
-                              </span>
                             </div>
-                            <div class="flex shrink-0 items-center gap-px">
-                              <button
-                                v-if="!localBranchNames.has(branch.branch)"
-                                type="button"
-                                class="git-section-action"
-                                :disabled="isAnyGitWriteRunning"
-                                :aria-busy="activeGitAction === `remote:checkout:${branch.ref}`"
-                                :title="`检出 ${branch.ref} 为 tracking 分支`"
-                                :aria-label="`检出 ${branch.ref} 为 tracking 分支`"
-                                @click="requestCheckoutRemoteBranch(branch)"
-                              >
-                                <CloudDownload :size="12" />
-                              </button>
-                              <button
-                                type="button"
-                                class="git-section-action git-action-danger"
-                                :disabled="isAnyGitWriteRunning"
-                                :aria-busy="activeGitAction === `remote:delete-branch:${branch.ref}`"
-                                :title="`删除 ${branch.ref} 的远端分支`"
-                                :aria-label="`删除 ${branch.ref} 的远端分支`"
-                                @click="requestDeleteGitRemoteBranch(group.remote, branch)"
-                              >
-                                <Trash2 :size="12" />
-                              </button>
-                            </div>
+                            <p
+                              class="truncate font-mono text-[10px] text-on-surface-variant"
+                              :title="remote.fetchUrl || remote.pushUrl"
+                            >
+                              {{ remote.fetchUrl || remote.pushUrl }}
+                            </p>
+                          </div>
+                          <div
+                            class="flex shrink-0 items-center gap-px"
+                            role="group"
+                            :aria-label="`${remote.name} remote 管理操作`"
+                          >
+                            <button
+                              v-if="canPublishGitBranch"
+                              type="button"
+                              class="git-section-action"
+                              :disabled="isAnyGitWriteRunning"
+                              :aria-busy="activeGitAction === `remote:publish:${remote.name}`"
+                              :title="`发布当前分支到 ${remote.name}`"
+                              :aria-label="`发布当前分支到 ${remote.name}`"
+                              @click="requestPublishGitBranch(remote)"
+                            >
+                              <CloudUpload :size="12" />
+                            </button>
+                            <button
+                              type="button"
+                              class="git-section-action"
+                              :disabled="isAnyGitWriteRunning"
+                              :aria-busy="isAnyGitWriteRunning"
+                              :title="`编辑 ${remote.name} URL`"
+                              :aria-label="`编辑 ${remote.name} URL`"
+                              @click="openEditRemoteDialog(remote)"
+                            >
+                              <SlidersHorizontal :size="12" />
+                            </button>
+                            <button
+                              type="button"
+                              class="git-section-action git-action-danger"
+                              :disabled="isAnyGitWriteRunning"
+                              :aria-busy="isAnyGitWriteRunning"
+                              :title="`删除 ${remote.name}`"
+                              :aria-label="`删除 ${remote.name}`"
+                              @click="requestRemoveRemote(remote)"
+                            >
+                              <X :size="12" />
+                            </button>
                           </div>
                         </div>
-                        <div v-else class="px-2 py-1.5 text-[10px] text-on-surface-variant">
-                          {{ remoteBranchQuery ? "无匹配分支" : "尚未获取远端分支" }}
-                        </div>
-                      </section>
+                      </div>
                     </div>
-                  </div>
-                  <div class="border-t border-border-subtle p-1">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="mode-menu-item"
-                      :disabled="isAnyGitWriteRunning"
-                      @click="openAddRemoteDialog"
-                    >
-                      <span>添加 Git remote</span>
-                      <Plus :size="13" />
-                    </button>
+                    <div v-else class="border-b border-border-subtle px-2.5 py-3 text-[11px] text-on-surface-variant">
+                      暂无 remote
+                    </div>
+                    <div v-if="remotes.length > 0" class="border-b border-border-subtle">
+                      <div class="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                        <span class="text-[10px] font-bold uppercase text-on-surface-variant">远端分支</span>
+                        <span class="font-mono text-[10px] text-on-surface-variant">{{ remoteBranches.length }}</span>
+                      </div>
+                      <label class="relative mx-2.5 mb-1.5 flex items-center">
+                        <Search
+                          :size="12"
+                          class="pointer-events-none absolute left-2 text-on-surface-variant"
+                          aria-hidden="true"
+                        />
+                        <input
+                          v-model="remoteBranchQuery"
+                          type="search"
+                          class="h-7 w-full rounded border border-border-subtle bg-surface-container-low py-1 pl-7 pr-2 font-mono text-[10px] text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary"
+                          placeholder="筛选远端分支"
+                          aria-label="筛选远端分支"
+                        />
+                      </label>
+                      <div
+                        v-overlay-scrollbar
+                        class="themed-scrollbar max-h-48 overflow-y-auto border-t border-border-subtle py-0.5"
+                      >
+                        <section
+                          v-for="group in remoteBranchGroups"
+                          :key="group.remote.name"
+                          class="border-b border-border-subtle last:border-b-0"
+                        >
+                          <div
+                            class="flex min-w-0 items-center gap-1.5 px-2.5 py-1 text-[10px] text-on-surface-variant"
+                          >
+                            <span class="min-w-0 flex-1 truncate font-mono font-bold text-on-surface">{{
+                              group.remote.name
+                            }}</span>
+                            <span class="shrink-0 font-mono">{{ group.branches.length }}</span>
+                            <button
+                              type="button"
+                              class="git-section-action"
+                              :disabled="isAnyGitWriteRunning"
+                              :aria-busy="activeGitAction === `remote:fetch:${group.remote.name}`"
+                              :title="`刷新 ${group.remote.name} 的远端分支`"
+                              :aria-label="`刷新 ${group.remote.name} 的远端分支`"
+                              @click="executeFetchGitRemoteByName(group.remote.name)"
+                            >
+                              <RefreshCw
+                                :size="12"
+                                :class="activeGitAction === `remote:fetch:${group.remote.name}` ? 'animate-spin' : ''"
+                              />
+                            </button>
+                          </div>
+                          <div v-if="group.branches.length > 0" class="py-0.5">
+                            <div
+                              v-for="branch in group.branches"
+                              :key="branch.ref"
+                              class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1 hover:bg-surface-variant"
+                            >
+                              <div class="flex min-w-0 items-center gap-1.5">
+                                <GitBranch :size="11" class="shrink-0 text-on-surface-variant" aria-hidden="true" />
+                                <span
+                                  class="min-w-0 flex-1 truncate font-mono text-[10px] text-on-surface"
+                                  :title="branch.ref"
+                                  >{{ branch.branch }}</span
+                                >
+                                <span
+                                  v-if="upstream?.ref === branch.ref"
+                                  class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1 py-px text-[8px] font-bold text-primary"
+                                >
+                                  upstream
+                                </span>
+                                <span
+                                  v-else-if="localBranchNames.has(branch.branch)"
+                                  class="shrink-0 text-[8px] font-bold text-on-surface-variant"
+                                >
+                                  本地已存在
+                                </span>
+                              </div>
+                              <div class="flex shrink-0 items-center gap-px">
+                                <button
+                                  v-if="!localBranchNames.has(branch.branch)"
+                                  type="button"
+                                  class="git-section-action"
+                                  :disabled="isAnyGitWriteRunning"
+                                  :aria-busy="activeGitAction === `remote:checkout:${branch.ref}`"
+                                  :title="`检出 ${branch.ref} 为 tracking 分支`"
+                                  :aria-label="`检出 ${branch.ref} 为 tracking 分支`"
+                                  @click="requestCheckoutRemoteBranch(branch)"
+                                >
+                                  <CloudDownload :size="12" />
+                                </button>
+                                <button
+                                  type="button"
+                                  class="git-section-action git-action-danger"
+                                  :disabled="isAnyGitWriteRunning"
+                                  :aria-busy="activeGitAction === `remote:delete-branch:${branch.ref}`"
+                                  :title="`删除 ${branch.ref} 的远端分支`"
+                                  :aria-label="`删除 ${branch.ref} 的远端分支`"
+                                  @click="requestDeleteGitRemoteBranch(group.remote, branch)"
+                                >
+                                  <Trash2 :size="12" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div v-else class="px-2.5 py-1.5 text-[10px] text-on-surface-variant">
+                            {{ remoteBranchQuery ? "无匹配分支" : "尚未获取远端分支" }}
+                          </div>
+                        </section>
+                      </div>
+                    </div>
+                    <div class="border-t border-border-subtle p-1">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="mode-menu-item"
+                        :disabled="isAnyGitWriteRunning"
+                        @click="openAddRemoteDialog"
+                      >
+                        <span>添加 Git remote</span>
+                        <Plus :size="13" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </Transition>
