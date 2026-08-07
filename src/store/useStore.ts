@@ -2812,14 +2812,42 @@ export const useStore = defineStore("app", {
       gitStatusRefreshPromises.set(context.contextKey, refreshPromise);
       return refreshPromise;
     },
-    async refreshGitSnapshotForInteraction(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }) {
+    async refreshGitSnapshotForInteraction(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+      options: { maxAgeMs?: number; limit?: number } = {},
+    ) {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return;
+
+      const existingSnapshotRefresh = gitSnapshotRefreshPromises.get(context.contextKey);
+      if (existingSnapshotRefresh) return existingSnapshotRefresh;
+
       const currentSnapshot = this.gitSnapshotForRepository(projectId, target);
+      const refreshedAt = Date.parse(currentSnapshot?.lastRefreshedAt || "");
+      const snapshotAgeMs = Date.now() - refreshedAt;
+      if (
+        currentSnapshot &&
+        typeof options.maxAgeMs === "number" &&
+        options.maxAgeMs > 0 &&
+        Number.isFinite(refreshedAt) &&
+        snapshotAgeMs >= 0 &&
+        snapshotAgeMs < options.maxAgeMs
+      ) {
+        return;
+      }
+
+      if (!currentSnapshot) {
+        await this.refreshGitSnapshot(projectId, { limit: options.limit }, target);
+        return;
+      }
+
       const previousHistorySignature = gitHistorySnapshotSignature(currentSnapshot);
       await this.refreshGitStatusSnapshot(projectId, target);
 
       const nextSnapshot = this.gitSnapshotForRepository(projectId, target);
-      if (!currentSnapshot || !nextSnapshot || gitHistorySnapshotSignature(nextSnapshot) !== previousHistorySignature) {
-        await this.refreshGitSnapshot(projectId, {}, target);
+      if (!nextSnapshot || gitHistorySnapshotSignature(nextSnapshot) !== previousHistorySignature) {
+        await this.refreshGitSnapshot(projectId, { limit: options.limit }, target);
       }
     },
     async loadMoreGitCommits(projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }): Promise<void> {

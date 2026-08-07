@@ -426,6 +426,66 @@ describe("browser Git workspace fallback", () => {
     expect(readGitSnapshot).toHaveBeenCalledTimes(4);
   });
 
+  it("uses status-first interaction refreshes for stale snapshots and preserves the requested page limit", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const projectPath = "C:\\project";
+    const initialSnapshot = {
+      ...gitSnapshot(projectPath, "main", "a".repeat(40)),
+      lastRefreshedAt: new Date().toISOString(),
+    };
+    const unchangedStatus = {
+      ...gitSnapshot(projectPath, "main", "a".repeat(40)),
+      lastRefreshedAt: new Date().toISOString(),
+    };
+    const changedStatus = {
+      ...gitSnapshot(projectPath, "main", "b".repeat(40)),
+      lastRefreshedAt: new Date().toISOString(),
+    };
+    const refreshedSnapshot = gitSnapshot(projectPath, "main", "b".repeat(40));
+    const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>();
+    readGitStatusSnapshot.mockResolvedValueOnce(unchangedStatus).mockResolvedValueOnce(changedStatus);
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>(async () => refreshedSnapshot);
+    window.projectBridge = { ...getProjectBridge(), readGitSnapshot, readGitStatusSnapshot };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-interaction-refresh", projectPath);
+    project.git = initialSnapshot;
+    store.projects = [project];
+
+    await store.refreshGitSnapshotForInteraction(project.id, { kind: "main" }, { maxAgeMs: 15_000, limit: 20 });
+    expect(readGitStatusSnapshot).not.toHaveBeenCalled();
+    expect(readGitSnapshot).not.toHaveBeenCalled();
+
+    project.git = {
+      ...project.git,
+      lastRefreshedAt: new Date(Date.now() - 15_001).toISOString(),
+    };
+    await store.refreshGitSnapshotForInteraction(project.id, { kind: "main" }, { maxAgeMs: 15_000, limit: 20 });
+    expect(readGitStatusSnapshot).toHaveBeenCalledTimes(1);
+    expect(readGitSnapshot).not.toHaveBeenCalled();
+
+    project.git = {
+      ...project.git,
+      lastRefreshedAt: new Date(Date.now() - 15_001).toISOString(),
+    };
+    await store.refreshGitSnapshotForInteraction(project.id, { kind: "main" }, { maxAgeMs: 15_000, limit: 20 });
+    expect(readGitStatusSnapshot).toHaveBeenCalledTimes(2);
+    expect(readGitSnapshot).toHaveBeenCalledTimes(1);
+    expect(readGitSnapshot).toHaveBeenLastCalledWith(projectPath, { limit: 20, skip: 0 });
+
+    project.git = null;
+    await store.refreshGitSnapshotForInteraction(project.id, { kind: "main" }, { maxAgeMs: 15_000, limit: 20 });
+    expect(readGitStatusSnapshot).toHaveBeenCalledTimes(2);
+    expect(readGitSnapshot).toHaveBeenCalledTimes(2);
+    expect(readGitSnapshot).toHaveBeenLastCalledWith(projectPath, { limit: 20, skip: 0 });
+  });
+
   it("updates remote tracking branches during status refresh, including an empty prune result", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },

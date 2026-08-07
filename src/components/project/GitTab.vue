@@ -631,7 +631,9 @@ const handleGitVisibilityChange = () => {
   }
 };
 
-defineExpose({ refreshActiveRepository, isRefreshRunning, isTopInfoCollapsed, toggleTopInfo });
+const refreshForTabActivation = () => refreshGitSnapshotOnInteraction("resume");
+
+defineExpose({ refreshActiveRepository, refreshForTabActivation, isRefreshRunning, isTopInfoCollapsed, toggleTopInfo });
 
 const repositoryPath = computed(
   () => snapshot.value?.repositoryPath || activeRepositoryContext.value?.repositoryPath || props.project.path,

@@ -35,6 +35,7 @@ const tabPressMoveTolerance = 8;
 const gitToggleIdleDelayMs = 3_000;
 const gitInitialRefreshCacheMaxAgeMs = 15_000;
 const gitInitialCommitLimit = 20;
+const gitInitialTabActivationDedupIntervalMs = 2_000;
 
 const props = defineProps<{
   project: Project;
@@ -44,6 +45,7 @@ const store = useStore();
 const t = useI18n();
 type GitTabExpose = {
   refreshActiveRepository: () => Promise<void>;
+  refreshForTabActivation: () => boolean;
   isRefreshRunning: () => boolean;
   isTopInfoCollapsed: boolean;
   toggleTopInfo: () => void;
@@ -71,6 +73,9 @@ let suppressNextTabClick = false;
 let suppressTabClickTimer: number | null = null;
 let previousBodyUserSelect = "";
 let gitToggleIdleTimer: number | null = null;
+let initialGitRefreshProjectId: string | null = null;
+let skipInitialGitTabActivation = false;
+let initialGitTabActivationDedupUntil = 0;
 
 const tabLabels = computed<Record<TabId, string>>(() => ({
   info: t.value.projectDetails.overview,
@@ -359,14 +364,49 @@ const handleFileOpenCanceled = (relativePath: string) => {
 };
 
 const scheduleInitialGitRefresh = () => {
-  if (isUnavailable.value || store.gitRefreshing[props.project.id] || store.gitStatusRefreshing[props.project.id]) {
-    return;
-  }
+  const projectId = props.project.id;
+  if (isUnavailable.value || initialGitRefreshProjectId === projectId) return;
+
+  initialGitRefreshProjectId = projectId;
+  skipInitialGitTabActivation = true;
+  initialGitTabActivationDedupUntil = Date.now() + gitInitialTabActivationDedupIntervalMs;
   void nextTick(() => {
-    void store.refreshGitSnapshot(props.project.id, {
-      maxAgeMs: gitInitialRefreshCacheMaxAgeMs,
-      limit: gitInitialCommitLimit,
-    });
+    if (initialGitRefreshProjectId !== projectId) return;
+    if (props.project.id !== projectId || isUnavailable.value) {
+      initialGitRefreshProjectId = null;
+      return;
+    }
+
+    void store
+      .refreshGitSnapshotForInteraction(
+        projectId,
+        { kind: "main" },
+        {
+          maxAgeMs: gitInitialRefreshCacheMaxAgeMs,
+          limit: gitInitialCommitLimit,
+        },
+      )
+      .finally(() => {
+        if (initialGitRefreshProjectId === projectId) initialGitRefreshProjectId = null;
+      });
+  });
+};
+
+const refreshGitForTabActivation = () => {
+  const projectId = props.project.id;
+  void nextTick(() => {
+    if (props.project.id !== projectId || activeTab.value !== "git") {
+      return;
+    }
+    if (
+      initialGitRefreshProjectId === projectId ||
+      (skipInitialGitTabActivation && Date.now() < initialGitTabActivationDedupUntil)
+    ) {
+      skipInitialGitTabActivation = false;
+      return;
+    }
+    skipInitialGitTabActivation = false;
+    gitTabRef.value?.refreshForTabActivation();
   });
 };
 
@@ -379,6 +419,9 @@ onMounted(() => {
 onUnmounted(() => {
   stopTabPointerInteraction();
   clearGitToggleIdleTimer();
+  initialGitRefreshProjectId = null;
+  skipInitialGitTabActivation = false;
+  initialGitTabActivationDedupUntil = 0;
   if (suppressTabClickTimer !== null) window.clearTimeout(suppressTabClickTimer);
   if (store.selectedProjectId !== props.project.id) {
     clearGitAiAnalysisSessionsForProject(props.project.id);
@@ -390,6 +433,9 @@ watch(
   () => props.project.id,
   (projectId, previousProjectId) => {
     clearGitAiAnalysisSessionsForProject(previousProjectId);
+    if (initialGitRefreshProjectId === previousProjectId) initialGitRefreshProjectId = null;
+    skipInitialGitTabActivation = false;
+    initialGitTabActivationDedupUntil = 0;
     scheduleInitialGitRefresh();
     focusActiveTab();
   },
@@ -397,9 +443,10 @@ watch(
 
 watch(
   activeTab,
-  () => {
+  (tabId) => {
     clearGitToggleIdleTimer();
-    isGitToggleIdle.value = activeTab.value === "git";
+    isGitToggleIdle.value = tabId === "git";
+    if (tabId === "git") refreshGitForTabActivation();
   },
   { immediate: true },
 );
