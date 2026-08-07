@@ -97,7 +97,7 @@ function createBridge({ docs = [], legacyProjects = [], localDeviceId = "device-
   };
   sandbox.globalThis = sandbox;
 
-vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
+  vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
 
   return { bridge: sandbox.window.projectBridge, docsById };
 }
@@ -117,6 +117,13 @@ const privateDocProject = {
   kind: "node",
   scripts: [{ id: "private-script", name: "dev", command: "npm run dev", status: "IDLE" }],
   env: {},
+  relatedProjects: [
+    { projectId: "frontend", bidirectional: true },
+    { projectId: "frontend", bidirectional: false },
+    { projectId: "api", bidirectional: false },
+    { projectId: "docs", bidirectional: true },
+    { projectId: "overflow", bidirectional: false },
+  ],
   automationTasks: [
     {
       id: "automation-1",
@@ -187,6 +194,16 @@ assert.equal(loadedLegacyProject.kind, "custom", "legacy projects without kind s
 assert.ok(loadedPrivateProject, "private docs from other devices should remain in shared storage results");
 assert.equal(loadedPrivateProject.visibility, "private");
 assert.equal(loadedPrivateProject.ownerDeviceId, "other-device");
+assert.deepEqual(
+  clone(loadedPrivateProject.relatedProjects),
+  [
+    { projectId: "frontend", bidirectional: true },
+    { projectId: "api", bidirectional: false },
+    { projectId: "docs", bidirectional: true },
+    { projectId: "overflow", bidirectional: false },
+  ],
+  "related projects should be normalized when reading project documents",
+);
 assert.equal(loadedPrivateProject.automationTasks.length, 1, "automation tasks should survive project doc loading");
 assert.equal(
   loadedPrivateProject.automationTasks[0].history.length,
@@ -226,6 +243,16 @@ assert.equal(
   savedPrivateDoc.project.automationTasks[0].missedGraceMinutes,
   5,
   "automation missed grace should persist through project doc writes",
+);
+assert.deepEqual(
+  clone(savedPrivateDoc.project.relatedProjects),
+  [
+    { projectId: "frontend", bidirectional: true },
+    { projectId: "api", bidirectional: false },
+    { projectId: "docs", bidirectional: true },
+    { projectId: "overflow", bidirectional: false },
+  ],
+  "related projects should persist through project document writes",
 );
 
 const persistedDeviceDir = fs.mkdtempSync(path.join(os.tmpdir(), "utools-project-launch-device-"));

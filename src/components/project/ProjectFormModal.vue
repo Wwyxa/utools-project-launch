@@ -11,6 +11,7 @@ import {
   FolderOpen,
   GripVertical,
   CircleHelp,
+  Network,
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -19,8 +20,10 @@ import type {
   ProjectBridgeScriptCandidate,
   ProjectIconKey,
   ProjectKind,
+  Project,
   ProjectScriptDiscoverySource,
 } from "../../types";
+import { PROJECT_MAX_RELATED_PROJECTS } from "../../types";
 import ProjectIcon from "./ProjectIcon.vue";
 
 const store = useStore();
@@ -43,6 +46,37 @@ const discoveryCandidates = ref<ProjectBridgeScriptCandidate[]>([]);
 const selectedDiscoveryKeys = ref<string[]>([]);
 const selectedDiscoverySources = ref<ProjectScriptDiscoverySource[]>(["package-json", "makefile"]);
 const discoveryScanned = ref(false);
+const relatedProjectMenuOpen = ref(false);
+const relatedProjectSearch = ref("");
+
+const relatedProjectOptions = computed(() => {
+  const query = relatedProjectSearch.value.trim().toLowerCase();
+  return store.visibleProjects.filter((project) => {
+    if (project.id === form.value.id) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    return `${project.name} ${project.path}`.toLowerCase().includes(query);
+  });
+});
+const selectedRelatedProjects = computed<Project[]>(() => {
+  const projectsById = new Map(store.projects.map((project) => [project.id, project]));
+  return form.value.relatedProjects
+    .map((relation) => projectsById.get(relation.projectId))
+    .filter((project): project is Project => Boolean(project));
+});
+const incomingRelatedProjects = computed(() => {
+  if (!form.value.id) {
+    return [];
+  }
+  return store.visibleProjects.filter(
+    (project) =>
+      project.id !== form.value.id &&
+      project.relatedProjects?.some((relation) => relation.projectId === form.value.id && relation.bidirectional),
+  );
+});
 
 const discoveryKey = (candidate: ProjectBridgeScriptCandidate) =>
   `${candidate.source}\u0000${candidate.cwd || "."}\u0000${candidate.command}`;
@@ -53,6 +87,8 @@ const requiresExplicitImport = (candidate: ProjectBridgeScriptCandidate) =>
 const closeMenus = () => {
   groupMenuOpen.value = false;
   cwdMenuScriptId.value = null;
+  relatedProjectMenuOpen.value = false;
+  relatedProjectSearch.value = "";
 };
 
 const openScriptDiscovery = () => {
@@ -89,12 +125,54 @@ const selectScriptCwd = (scriptId: string, cwd: string) => {
 
 const toggleGroupMenu = () => {
   cwdMenuScriptId.value = null;
+  relatedProjectMenuOpen.value = false;
   groupMenuOpen.value = !groupMenuOpen.value;
 };
 
 const toggleCwdMenu = (scriptId: string) => {
   groupMenuOpen.value = false;
+  relatedProjectMenuOpen.value = false;
   cwdMenuScriptId.value = cwdMenuScriptId.value === scriptId ? null : scriptId;
+};
+
+const toggleRelatedProjectMenu = () => {
+  groupMenuOpen.value = false;
+  cwdMenuScriptId.value = null;
+  relatedProjectMenuOpen.value = !relatedProjectMenuOpen.value;
+  if (!relatedProjectMenuOpen.value) {
+    relatedProjectSearch.value = "";
+  }
+};
+
+const isRelatedProjectSelected = (projectId: string) =>
+  form.value.relatedProjects.some((relation) => relation.projectId === projectId);
+
+const toggleRelatedProject = (projectId: string) => {
+  const existingIndex = form.value.relatedProjects.findIndex((relation) => relation.projectId === projectId);
+  if (existingIndex >= 0) {
+    store.updateProjectForm({
+      relatedProjects: form.value.relatedProjects.filter((relation) => relation.projectId !== projectId),
+    });
+    return;
+  }
+
+  if (form.value.relatedProjects.length >= PROJECT_MAX_RELATED_PROJECTS) {
+    return;
+  }
+
+  store.updateProjectForm({
+    relatedProjects: [
+      ...form.value.relatedProjects,
+      { projectId, bidirectional: form.value.relatedProjectsBidirectional },
+    ],
+  });
+};
+
+const setRelatedProjectsBidirectional = (bidirectional: boolean) => {
+  store.updateProjectForm({
+    relatedProjectsBidirectional: bidirectional,
+    relatedProjects: form.value.relatedProjects.map((relation) => ({ ...relation, bidirectional })),
+  });
 };
 
 watch(
@@ -107,6 +185,7 @@ watch(
       selectedDiscoveryKeys.value = [];
       selectedDiscoverySources.value = ["package-json", "makefile"];
       discoveryScanned.value = false;
+      relatedProjectSearch.value = "";
     }
   },
 );
@@ -433,6 +512,115 @@ const handleScriptDrop = (targetScriptId: string) => {
                   class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
                 />
               </label>
+            </section>
+
+            <section class="space-y-2">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex min-w-0 items-center gap-3">
+                  <h3 class="text-sm font-bold text-on-surface">{{ t.modal.relatedProjects }}</h3>
+                  <p class="truncate text-xs text-on-surface-variant">{{ t.modal.relatedProjectsHint }}</p>
+                </div>
+                <span class="shrink-0 text-xs font-semibold text-on-surface-variant">
+                  {{ form.relatedProjects.length }}/{{ PROJECT_MAX_RELATED_PROJECTS }}
+                </span>
+              </div>
+              <div class="relative" @click.stop>
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-left text-sm text-on-surface transition-colors hover:border-primary/40 hover:bg-surface-container"
+                  :aria-expanded="relatedProjectMenuOpen"
+                  @click="toggleRelatedProjectMenu"
+                >
+                  <Network :size="16" class="shrink-0 text-primary" />
+                  <span class="min-w-0 flex-1 truncate">
+                    {{
+                      selectedRelatedProjects.length
+                        ? selectedRelatedProjects.map((project) => project.name).join("、")
+                        : t.modal.relatedProjectsPlaceholder
+                    }}
+                  </span>
+                  <ChevronDown
+                    :size="16"
+                    :class="
+                      cn(
+                        'shrink-0 text-on-surface-variant transition-transform',
+                        relatedProjectMenuOpen && 'rotate-180',
+                      )
+                    "
+                  />
+                </button>
+                <div
+                  v-if="relatedProjectMenuOpen"
+                  class="mode-menu-popover"
+                  style="min-width: 100%; max-width: min(28rem, calc(100vw - 3rem))"
+                >
+                  <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto p-1">
+                    <div class="sticky top-0 z-10 bg-surface-container-low p-1">
+                      <input
+                        v-model="relatedProjectSearch"
+                        type="search"
+                        :placeholder="t.modal.relatedProjectsSearchPlaceholder"
+                        class="w-full rounded-md border border-border-subtle bg-surface px-2.5 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <button
+                      v-for="project in relatedProjectOptions"
+                      :key="project.id"
+                      type="button"
+                      :disabled="
+                        !isRelatedProjectSelected(project.id) &&
+                        form.relatedProjects.length >= PROJECT_MAX_RELATED_PROJECTS
+                      "
+                      :class="
+                        cn(
+                          'grid min-h-10 w-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-xs text-on-surface transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45',
+                          isRelatedProjectSelected(project.id) && 'bg-primary/10 text-primary',
+                        )
+                      "
+                      @click="toggleRelatedProject(project.id)"
+                    >
+                      <span class="min-w-0 truncate font-semibold">{{ project.name }}</span>
+                      <span class="min-w-0 truncate text-[11px] text-on-surface-variant">{{ project.path }}</span>
+                      <Check v-if="isRelatedProjectSelected(project.id)" :size="14" class="shrink-0" />
+                    </button>
+                    <p v-if="relatedProjectOptions.length === 0" class="px-2 py-3 text-xs text-on-surface-variant">
+                      {{ t.modal.relatedProjectsNoResults }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedRelatedProjects.length > 0" class="flex flex-wrap gap-1.5">
+                <span
+                  v-for="project in selectedRelatedProjects"
+                  :key="project.id"
+                  class="inline-flex max-w-full items-center gap-1 rounded-md border border-border-subtle bg-surface-container-low px-2 py-1 text-xs text-on-surface"
+                >
+                  <span class="truncate">{{ project.name }}</span>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-sm p-0.5 text-on-surface-variant hover:bg-surface hover:text-status-error"
+                    :title="`${t.modal.removeRelatedProject}: ${project.name}`"
+                    :aria-label="`${t.modal.removeRelatedProject}: ${project.name}`"
+                    @click="toggleRelatedProject(project.id)"
+                  >
+                    <X :size="12" />
+                  </button>
+                </span>
+              </div>
+              <label class="inline-flex cursor-pointer items-center gap-2 text-xs text-on-surface">
+                <input
+                  type="checkbox"
+                  :checked="form.relatedProjectsBidirectional"
+                  class="accent-primary"
+                  @change="setRelatedProjectsBidirectional(($event.target as HTMLInputElement).checked)"
+                />
+                <span>{{ t.modal.relatedProjectsBidirectional }}</span>
+              </label>
+              <p v-if="incomingRelatedProjects.length > 0" class="text-xs text-on-surface-variant">
+                {{ t.modal.relatedProjectsIncomingHint }}：{{
+                  incomingRelatedProjects.map((project) => project.name).join("、")
+                }}
+              </p>
             </section>
 
             <section class="space-y-2">

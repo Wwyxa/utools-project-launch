@@ -4543,6 +4543,21 @@ function normalizeProjectGroup(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeProjectRelations(value) {
+  const relations = Array.isArray(value) ? value : [];
+  const seenProjectIds = new Set();
+  return relations.reduce((normalizedRelations, relation) => {
+    if (!relation || typeof relation !== "object") return normalizedRelations;
+    const projectId = typeof relation.projectId === "string" ? relation.projectId.trim() : "";
+    if (!projectId || seenProjectIds.has(projectId) || normalizedRelations.length >= 5) {
+      return normalizedRelations;
+    }
+    seenProjectIds.add(projectId);
+    normalizedRelations.push({ projectId, bidirectional: relation.bidirectional === true });
+    return normalizedRelations;
+  }, []);
+}
+
 function isExternalUrl(value) {
   return /^(?:https?:)?\/\//i.test(value) || /^(?:mailto|utools):/i.test(value);
 }
@@ -4574,6 +4589,7 @@ function toStoredProject(project, index = 0) {
     cardStyle: project.cardStyle || "default",
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
+    relatedProjects: normalizeProjectRelations(project.relatedProjects),
     status: "STOPPED",
     description: project.description || "",
     lastUpdated: project.lastUpdated || "",

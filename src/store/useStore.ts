@@ -18,8 +18,9 @@ import {
   type CustomEnvironmentToolInput,
 } from "../lib/environmentTools";
 import { createGitRepositoryContextKey, resolveProjectGitRepositoryContext } from "../lib/gitRepositoryTarget";
+import { normalizeProjectRelations, resolveProjectRelatedProjectIds } from "../lib/projectRelations";
 import { deriveProjectStatus, mergeScriptRuntimeState } from "../lib/projectRuntimeState";
-import { DEFAULT_AI_PROMPT_MODES, ProjectStatus } from "../types";
+import { DEFAULT_AI_PROMPT_MODES, PROJECT_MAX_RELATED_PROJECTS, ProjectStatus } from "../types";
 import type {
   AiPreferences,
   AiAnalyzeResult,
@@ -622,6 +623,7 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
     cardStyle: project.cardStyle || "default",
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
+    relatedProjects: normalizeProjectRelations(project.relatedProjects),
     description: project.description || "",
     status: persistedStatus,
     lastUpdated: project.lastUpdated || "",
@@ -900,6 +902,7 @@ function formFromProject(project: Project): ProjectFormValue {
   const projectType = typeof project.type === "string" && project.type.trim() ? project.type : "Custom";
   const projectEnv = normalizeProjectEnv(project.env);
   const projectScripts = normalizeProjectScripts(project.id, project.scripts);
+  const relatedProjects = normalizeProjectRelations(project.relatedProjects);
 
   return {
     id: project.id,
@@ -913,6 +916,9 @@ function formFromProject(project: Project): ProjectFormValue {
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     description: project.description || "",
+    relatedProjects,
+    relatedProjectsBidirectional:
+      relatedProjects.length > 0 && relatedProjects.every((relation) => relation.bidirectional),
     memo: project.memo || "",
     envEntries: Object.entries(projectEnv).map(([key, value]) => ({
       id: `${project.id}-${key}`,
@@ -973,6 +979,7 @@ function hydrateProject(project: Project): Project {
     status: normalizeProjectStatus(project.status),
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
+    relatedProjects: normalizeProjectRelations(project.relatedProjects),
     env: normalizeProjectEnv(project.env),
     description: project.description || "",
     memo: project.memo || "",
@@ -1201,6 +1208,8 @@ function createBlankProjectForm(): ProjectFormValue {
     quickLink: "",
     group: "",
     description: "",
+    relatedProjects: [],
+    relatedProjectsBidirectional: false,
     memo: "",
     envEntries: [],
     scripts: [
@@ -1325,6 +1334,15 @@ export const useStore = defineStore("app", {
       state.projects.filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists === false),
     selectedProject: (state): Project | undefined =>
       state.projects.find((project) => project.id === state.selectedProjectId),
+    relatedProjectsFor:
+      (state) =>
+      (projectId: string): Project[] => {
+        const projectsById = new Map(state.projects.map((project) => [project.id, project]));
+        return resolveProjectRelatedProjectIds(projectId, state.projects)
+          .map((relatedProjectId) => projectsById.get(relatedProjectId))
+          .filter((project): project is Project => Boolean(project && isProjectVisibleOnCurrentDevice(project)))
+          .slice(0, PROJECT_MAX_RELATED_PROJECTS);
+      },
     pendingDeleteProject: (state): Project | undefined =>
       state.projects.find((project) => project.id === state.pendingDeleteProjectId),
     currentMessages: (state) => (state.locale === "zh-CN" ? "zh-CN" : "en-US"),
@@ -2235,6 +2253,10 @@ export const useStore = defineStore("app", {
       const existingProject = this.projects.find((item) => item.id === projectId);
       const pathExists = await bridge.pathExists(payload.path);
       const scripts = pathExists ? mergeScriptRuntimeState(formScripts, existingProject?.scripts || []) : formScripts;
+      const relatedProjects = normalizeProjectRelations(payload.relatedProjects).filter(
+        (relation) =>
+          relation.projectId !== projectId && this.projects.some((project) => project.id === relation.projectId),
+      );
       const project: Project = hydrateProject({
         id: projectId,
         name: payload.name.trim(),
@@ -2249,6 +2271,7 @@ export const useStore = defineStore("app", {
         quickLink: payload.quickLink.trim(),
         group: normalizeProjectGroup(payload.group),
         description: payload.description,
+        relatedProjects,
         status:
           this.projectFormMode === "edit"
             ? pathExists
@@ -2311,6 +2334,11 @@ export const useStore = defineStore("app", {
       }
 
       this.projects.splice(existingIndex, 1);
+      this.projects.forEach((project) => {
+        if (project.relatedProjects?.some((relation) => relation.projectId === projectId)) {
+          project.relatedProjects = project.relatedProjects.filter((relation) => relation.projectId !== projectId);
+        }
+      });
       delete this.logs[projectId];
       delete this.scriptLogs[projectId];
       delete this.stagedFiles[projectId];

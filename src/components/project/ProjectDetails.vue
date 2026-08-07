@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   ChevronDown,
   RefreshCw,
+  Network,
   TerminalSquare,
   Trash2,
 } from "lucide-vue-next";
@@ -19,6 +20,8 @@ import { PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION, Project, ProjectStatus 
 import type { ProjectDetailsTabId } from "../../types";
 import { cn } from "../../lib/utils";
 import { formatRelativeTime } from "../../lib/time";
+import { addAppEscapeRequestListener } from "../../lib/escape";
+import type { AppEscapeRequestEvent } from "../../lib/escape";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import ScriptsTab from "./ScriptsTab.vue";
@@ -60,6 +63,8 @@ const gitTabRef = ref<GitTabExpose | null>(null);
 const isGitTopInfoCollapsed = computed(() => gitTabRef.value?.isTopInfoCollapsed ?? false);
 const isGitToggleIdle = ref(false);
 const isManualRefreshRunning = ref(false);
+const relatedProjectsOpen = ref(false);
+const relatedProjects = computed(() => store.relatedProjectsFor(props.project.id));
 const showTabOrderHint = computed(
   () => store.uiPreferences.coachMarks.projectDetailsTabReorder < PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION,
 );
@@ -76,6 +81,7 @@ let gitToggleIdleTimer: number | null = null;
 let initialGitRefreshProjectId: string | null = null;
 let skipInitialGitTabActivation = false;
 let initialGitTabActivationDedupUntil = 0;
+let stopRelatedProjectsEscapeListener: (() => void) | null = null;
 
 const tabLabels = computed<Record<TabId, string>>(() => ({
   info: t.value.projectDetails.overview,
@@ -169,6 +175,17 @@ const handleRefresh = async () => {
 };
 const handleDelete = () => {
   store.requestDeleteProject(props.project.id);
+};
+const handleRelatedProjectSelect = (projectId: string) => {
+  relatedProjectsOpen.value = false;
+  store.setSelectedProject(projectId);
+};
+const handleRelatedProjectsEscape = (event: AppEscapeRequestEvent) => {
+  if (!relatedProjectsOpen.value) {
+    return;
+  }
+  relatedProjectsOpen.value = false;
+  event.detail.handle();
 };
 const clearGitToggleIdleTimer = () => {
   if (gitToggleIdleTimer !== null) {
@@ -413,6 +430,7 @@ const refreshGitForTabActivation = () => {
 onMounted(() => {
   scheduleInitialGitRefresh();
   focusActiveTab();
+  stopRelatedProjectsEscapeListener = addAppEscapeRequestListener(handleRelatedProjectsEscape);
   window.addEventListener("keydown", handleDetailKeydown);
 });
 
@@ -422,6 +440,8 @@ onUnmounted(() => {
   initialGitRefreshProjectId = null;
   skipInitialGitTabActivation = false;
   initialGitTabActivationDedupUntil = 0;
+  stopRelatedProjectsEscapeListener?.();
+  stopRelatedProjectsEscapeListener = null;
   if (suppressTabClickTimer !== null) window.clearTimeout(suppressTabClickTimer);
   if (store.selectedProjectId !== props.project.id) {
     clearGitAiAnalysisSessionsForProject(props.project.id);
@@ -436,6 +456,7 @@ watch(
     if (initialGitRefreshProjectId === previousProjectId) initialGitRefreshProjectId = null;
     skipInitialGitTabActivation = false;
     initialGitTabActivationDedupUntil = 0;
+    relatedProjectsOpen.value = false;
     scheduleInitialGitRefresh();
     focusActiveTab();
   },
@@ -463,8 +484,12 @@ watch(
 </script>
 
 <template>
-  <div ref="detailsRootRef" class="flex h-full flex-1 flex-col overflow-hidden px-3 py-2">
-    <div class="mb-2 flex items-center justify-between gap-2">
+  <div
+    ref="detailsRootRef"
+    class="flex h-full flex-1 flex-col overflow-hidden px-3 py-2"
+    @click="relatedProjectsOpen = false"
+  >
+    <div class="mb-2 flex min-w-0 items-center gap-2">
       <div class="flex min-w-0 flex-1 items-center gap-3">
         <button
           type="button"
@@ -482,9 +507,47 @@ watch(
             <span class="truncate">{{ project.path }}</span>
           </div>
         </div>
+        <div v-if="relatedProjects.length > 0" class="relative shrink-0 self-center" @click.stop>
+          <button
+            type="button"
+            class="group rounded-md p-1 text-primary/80 transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            :title="t.projectDetails.relatedProjects"
+            :aria-label="t.projectDetails.relatedProjects"
+            :aria-expanded="relatedProjectsOpen"
+            @click="relatedProjectsOpen = !relatedProjectsOpen"
+          >
+            <Network :size="17" class="transition-colors" />
+          </button>
+          <div
+            v-if="relatedProjectsOpen"
+            class="absolute left-0 top-full z-40 mt-2 w-72 overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
+          >
+            <div
+              class="border-b border-border-subtle bg-surface-container-low px-3 py-2 text-xs font-semibold text-on-surface"
+            >
+              {{ t.projectDetails.relatedProjects }}
+            </div>
+            <div class="p-1">
+              <button
+                v-for="relatedProject in relatedProjects"
+                :key="relatedProject.id"
+                type="button"
+                class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface-container"
+                :title="relatedProject.path"
+                @click="handleRelatedProjectSelect(relatedProject.id)"
+              >
+                <Folder :size="15" class="shrink-0 text-primary" />
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-sm font-semibold text-on-surface">{{ relatedProject.name }}</span>
+                  <span class="block truncate text-[11px] text-on-surface-variant">{{ relatedProject.path }}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="flex items-center gap-1.5 shrink-0">
+      <div class="flex shrink-0 items-center gap-1.5">
         <button
           type="button"
           @click="handleRefresh"

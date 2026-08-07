@@ -57,6 +57,7 @@ export type AiProviderKind = "utools" | "openai-compatible" | "anthropic-compati
 export type AiPromptModeKind = "git-analysis" | "commit-message";
 export const PROJECT_DETAILS_TAB_IDS = ["info", "scripts", "automation", "files", "git", "memo"] as const;
 export const PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION = 1;
+export const PROJECT_MAX_RELATED_PROJECTS = 5;
 export type ProjectDetailsTabId = (typeof PROJECT_DETAILS_TAB_IDS)[number];
 
 export interface UiPreferences {
@@ -656,6 +657,11 @@ export interface ProjectEnvironmentEntry {
   value: string;
 }
 
+export interface ProjectRelation {
+  projectId: string;
+  bidirectional: boolean;
+}
+
 export interface ProjectFormValue {
   id: string | null;
   name: string;
@@ -668,6 +674,8 @@ export interface ProjectFormValue {
   quickLink: string;
   group: string;
   description: string;
+  relatedProjects: ProjectRelation[];
+  relatedProjectsBidirectional: boolean;
   memo: string;
   envEntries: ProjectEnvironmentEntry[];
   scripts: ProjectScriptFormValue[];
@@ -700,6 +708,7 @@ export interface Project {
   createdAt?: string;
   updatedAt?: string;
   gitLatestCommitAt?: string;
+  relatedProjects?: ProjectRelation[];
 }
 
 export interface ProjectConfigFile {
