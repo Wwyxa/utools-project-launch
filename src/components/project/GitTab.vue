@@ -129,6 +129,7 @@ const isBranchMenuOpen = ref(false);
 const isRemoteMenuOpen = ref(false);
 const branchMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const remoteMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
+const branchMenuRef = ref<HTMLElement | null>(null);
 const remoteBranchQuery = ref("");
 const isRemoteDialogOpen = ref(false);
 const remoteDialogMode = ref<RemoteDialogMode>("add");
@@ -730,12 +731,20 @@ const openRepositoryMenu = (event: MouseEvent, row: GitRepositoryRow) => {
   repositoryMenu.value = { row, x: event.clientX, y: event.clientY };
 };
 
-const toggleBranchMenu = (event: MouseEvent) => {
+const toggleBranchMenu = async (event: MouseEvent) => {
   const shouldOpen = !isBranchMenuOpen.value;
   closeFloatingControls();
   if (!shouldOpen) return;
-  branchMenuPosition.value = positionFloatingMenu(event.currentTarget as HTMLElement, 176, 256);
+  const trigger = event.currentTarget as HTMLElement;
+  branchMenuPosition.value = positionFloatingMenu(trigger, 176, 256);
   isBranchMenuOpen.value = true;
+  await nextTick();
+  if (!branchMenuRef.value) return;
+  branchMenuPosition.value = positionFloatingMenu(
+    trigger,
+    branchMenuRef.value.offsetWidth,
+    branchMenuRef.value.offsetHeight,
+  );
 };
 
 const toggleRemoteMenu = (event: MouseEvent) => {
@@ -1610,7 +1619,7 @@ watch(
             <button
               type="button"
               data-git-top-menu-trigger
-              class="flex max-w-48 items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 py-1 font-mono text-[11px] font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
+              class="flex min-w-0 max-w-full items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 py-1 font-mono text-[11px] font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
               :title="t.git.branch"
               :aria-label="t.git.branch"
               @click="toggleBranchMenu"
@@ -1623,8 +1632,9 @@ watch(
               <Transition name="fade">
                 <div
                   v-if="isBranchMenuOpen"
+                  ref="branchMenuRef"
                   data-git-top-menu
-                  class="themed-scrollbar fixed z-[80] max-h-64 w-44 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-2xl"
+                  class="themed-scrollbar fixed z-[80] max-h-64 w-max max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-2xl"
                   :style="floatingMenuStyle(branchMenuPosition, 'min(16rem, calc(100vh - 1rem))')"
                   role="menu"
                   @click.stop
