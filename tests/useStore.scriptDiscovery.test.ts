@@ -60,7 +60,8 @@ describe("project form script discovery", () => {
       type: "Node.js",
       kind: "node",
       icon: "node",
-      cardStyle: "default",
+      cardStyle: "tiny",
+      tinyCardButtonCount: 0,
       quickLink: "http://localhost:3000",
       group: "Services",
       description: "Source project",
@@ -91,6 +92,8 @@ describe("project form script discovery", () => {
       path: source.path,
       quickLink: source.quickLink,
       group: source.group,
+      cardStyle: source.cardStyle,
+      tinyCardButtonCount: 0,
       description: source.description,
       memo: source.memo,
       envEntries: [expect.objectContaining({ key: "API_PORT", value: "3000" })],
@@ -104,6 +107,8 @@ describe("project form script discovery", () => {
         id: expect.not.stringMatching(/^source-project$/),
         name: "API - Copy",
         env: { API_PORT: "3000" },
+        cardStyle: "tiny",
+        tinyCardButtonCount: 0,
       }),
     );
     expect(copiedProject?.scripts[0]?.id).not.toBe(source.scripts[0]?.id);

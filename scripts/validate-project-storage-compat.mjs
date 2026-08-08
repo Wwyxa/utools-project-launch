@@ -115,6 +115,8 @@ const privateDocProject = {
   ownerDeviceId: "other-device",
   type: "Node.js",
   kind: "node",
+  cardStyle: "tiny",
+  tinyCardButtonCount: 0,
   scripts: [{ id: "private-script", name: "dev", command: "npm run dev", status: "IDLE" }],
   env: {},
   relatedProjects: [
@@ -191,9 +193,11 @@ assert.deepEqual(
 assert.deepEqual(clone(loadedLegacyProject.env), {}, "legacy projects without env should normalize to an empty object");
 assert.equal(loadedLegacyProject.type, "Custom", "legacy projects without type should keep a safe custom type");
 assert.equal(loadedLegacyProject.kind, "custom", "legacy projects without kind should keep a safe custom kind");
+assert.equal(loadedLegacyProject.tinyCardButtonCount, 1, "legacy projects should keep one tiny card button by default");
 assert.ok(loadedPrivateProject, "private docs from other devices should remain in shared storage results");
 assert.equal(loadedPrivateProject.visibility, "private");
 assert.equal(loadedPrivateProject.ownerDeviceId, "other-device");
+assert.equal(loadedPrivateProject.tinyCardButtonCount, 0, "zero tiny card buttons should survive storage reads");
 assert.deepEqual(
   clone(loadedPrivateProject.relatedProjects),
   [
@@ -229,6 +233,7 @@ assert.ok(docsById.has(`${projectDocPrefix}${legacyProject.id}`), "legacy-only p
 
 bridge.saveProjects([loadedPrivateProject]);
 const savedPrivateDoc = docsById.get(`${projectDocPrefix}${privateDocProject.id}`);
+assert.equal(savedPrivateDoc.project.tinyCardButtonCount, 0, "zero tiny card buttons should survive storage writes");
 assert.equal(
   savedPrivateDoc.project.automationTasks[0].exitConfigs[0].matchText,
   "done",
@@ -253,6 +258,13 @@ assert.deepEqual(
     { projectId: "overflow", bidirectional: false },
   ],
   "related projects should persist through project document writes",
+);
+
+bridge.saveProjects([{ ...loadedPrivateProject, tinyCardButtonCount: 9 }]);
+assert.equal(
+  docsById.get(`${projectDocPrefix}${privateDocProject.id}`).project.tinyCardButtonCount,
+  3,
+  "tiny card button counts should be capped at three before storage",
 );
 
 const persistedDeviceDir = fs.mkdtempSync(path.join(os.tmpdir(), "utools-project-launch-device-"));

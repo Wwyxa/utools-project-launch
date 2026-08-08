@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import {
   Check,
   ChevronDown,
+  ChevronUp,
   X,
   Plus,
   Trash2,
@@ -23,7 +24,11 @@ import type {
   Project,
   ProjectScriptDiscoverySource,
 } from "../../types";
-import { PROJECT_MAX_RELATED_PROJECTS } from "../../types";
+import {
+  PROJECT_MAX_RELATED_PROJECTS,
+  PROJECT_TINY_CARD_BUTTON_COUNT_MAX,
+  PROJECT_TINY_CARD_BUTTON_COUNT_MIN,
+} from "../../types";
 import ProjectIcon from "./ProjectIcon.vue";
 
 const store = useStore();
@@ -229,6 +234,24 @@ const updateIcon = (icon: (typeof projectIcons)[number]) => {
 
 const handlePathBlur = () => {
   void store.inspectCurrentProjectPath();
+};
+
+const setTinyCardButtonCount = (value: number) => {
+  store.updateProjectForm({
+    tinyCardButtonCount: Math.min(
+      PROJECT_TINY_CARD_BUTTON_COUNT_MAX,
+      Math.max(PROJECT_TINY_CARD_BUTTON_COUNT_MIN, Math.floor(value)),
+    ),
+  });
+};
+
+const updateTinyCardButtonCount = (event: Event) => {
+  const value = (event.target as HTMLInputElement).valueAsNumber;
+  if (Number.isFinite(value)) setTinyCardButtonCount(value);
+};
+
+const adjustTinyCardButtonCount = (offset: number) => {
+  setTinyCardButtonCount(form.value.tinyCardButtonCount + offset);
 };
 
 const handleSubmit = async () => {
@@ -469,35 +492,89 @@ const handleScriptDrop = (targetScriptId: string) => {
                       <CircleHelp :size="13" :stroke-width="1.8" aria-hidden="true" />
                     </span>
                   </span>
-                  <div class="flex w-fit rounded-lg border border-border-subtle bg-surface-container-low p-1">
-                    <button
-                      type="button"
-                      @click="store.updateProjectForm({ cardStyle: 'default' })"
+                  <div class="flex items-center gap-2">
+                    <div
+                      class="flex h-[2.125rem] w-fit items-center rounded-lg border border-border-subtle bg-surface-container-low p-1"
+                    >
+                      <button
+                        type="button"
+                        @click="store.updateProjectForm({ cardStyle: 'default' })"
+                        :class="
+                          cn(
+                            'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                            form.cardStyle === 'default'
+                              ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                              : 'text-on-surface-variant hover:bg-surface-container',
+                          )
+                        "
+                      >
+                        {{ t.modal.cardStyleDefault }}
+                      </button>
+                      <button
+                        type="button"
+                        @click="store.updateProjectForm({ cardStyle: 'tiny' })"
+                        :class="
+                          cn(
+                            'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                            form.cardStyle === 'tiny'
+                              ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                              : 'text-on-surface-variant hover:bg-surface-container',
+                          )
+                        "
+                      >
+                        {{ t.modal.cardStyleTiny }}
+                      </button>
+                    </div>
+                    <div
                       :class="
                         cn(
-                          'rounded-md px-3 py-1 text-xs font-bold transition-colors',
-                          form.cardStyle === 'default'
-                            ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
-                            : 'text-on-surface-variant hover:bg-surface-container',
+                          'flex h-[2.125rem] w-16 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low transition-colors hover:bg-surface-container focus-within:border-primary focus-within:ring-1 focus-within:ring-primary',
+                          form.cardStyle !== 'tiny' && 'invisible pointer-events-none',
                         )
                       "
                     >
-                      {{ t.modal.cardStyleDefault }}
-                    </button>
-                    <button
-                      type="button"
-                      @click="store.updateProjectForm({ cardStyle: 'tiny' })"
-                      :class="
-                        cn(
-                          'rounded-md px-3 py-1 text-xs font-bold transition-colors',
-                          form.cardStyle === 'tiny'
-                            ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
-                            : 'text-on-surface-variant hover:bg-surface-container',
-                        )
-                      "
-                    >
-                      {{ t.modal.cardStyleTiny }}
-                    </button>
+                      <input
+                        type="number"
+                        :value="form.tinyCardButtonCount"
+                        :min="PROJECT_TINY_CARD_BUTTON_COUNT_MIN"
+                        :max="PROJECT_TINY_CARD_BUTTON_COUNT_MAX"
+                        :disabled="form.cardStyle !== 'tiny'"
+                        :aria-hidden="form.cardStyle !== 'tiny'"
+                        :tabindex="form.cardStyle === 'tiny' ? 0 : -1"
+                        step="1"
+                        inputmode="numeric"
+                        class="min-w-0 flex-1 appearance-none bg-transparent px-1 text-center text-xs font-bold text-on-surface outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none"
+                        :title="t.modal.tinyCardButtonCount"
+                        :aria-label="t.modal.tinyCardButtonCount"
+                        @input="updateTinyCardButtonCount"
+                      />
+                      <div class="flex w-5 shrink-0 flex-col border-l border-border-subtle bg-surface">
+                        <button
+                          type="button"
+                          class="flex min-h-0 flex-1 items-center justify-center border-b border-border-subtle text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary disabled:cursor-default disabled:opacity-30"
+                          :disabled="
+                            form.cardStyle !== 'tiny' || form.tinyCardButtonCount >= PROJECT_TINY_CARD_BUTTON_COUNT_MAX
+                          "
+                          :title="`${t.modal.tinyCardButtonCount}: +1`"
+                          :aria-label="`${t.modal.tinyCardButtonCount}: +1`"
+                          @click="adjustTinyCardButtonCount(1)"
+                        >
+                          <ChevronUp :size="9" :stroke-width="2.5" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          class="flex min-h-0 flex-1 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary disabled:cursor-default disabled:opacity-30"
+                          :disabled="
+                            form.cardStyle !== 'tiny' || form.tinyCardButtonCount <= PROJECT_TINY_CARD_BUTTON_COUNT_MIN
+                          "
+                          :title="`${t.modal.tinyCardButtonCount}: -1`"
+                          :aria-label="`${t.modal.tinyCardButtonCount}: -1`"
+                          @click="adjustTinyCardButtonCount(-1)"
+                        >
+                          <ChevronDown :size="9" :stroke-width="2.5" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

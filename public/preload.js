@@ -4611,6 +4611,9 @@ function toStoredProject(project, index = 0) {
     kind: project.kind || "custom",
     icon: project.icon || "custom",
     cardStyle: project.cardStyle || "default",
+    tinyCardButtonCount: Number.isFinite(project.tinyCardButtonCount)
+      ? Math.min(3, Math.max(0, Math.floor(project.tinyCardButtonCount)))
+      : 1,
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     relatedProjects: normalizeProjectRelations(project.relatedProjects),

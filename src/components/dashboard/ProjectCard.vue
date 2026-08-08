@@ -13,7 +13,13 @@ import {
   GripVertical,
   Link2,
 } from "lucide-vue-next";
-import { Project, ProjectStatus, ProjectIconKey } from "../../types";
+import {
+  PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT,
+  PROJECT_TINY_CARD_BUTTON_COUNT_MAX,
+  Project,
+  ProjectStatus,
+  ProjectIconKey,
+} from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -84,6 +90,7 @@ const emit = defineEmits<{
 
 const store = useStore();
 const t = useI18n();
+const tinyToolbarAlignRight = ref(false);
 const moreScriptsOpen = ref(false);
 const moreScriptsRef = ref<HTMLElement | null>(null);
 const scriptRowRef = ref<HTMLElement | null>(null);
@@ -106,13 +113,6 @@ const cardStatusLabel = computed(() => {
 });
 const isTiny = computed(() => props.project.cardStyle === "tiny");
 const isUnavailable = computed(() => props.project.pathExists === false);
-const tinyRunTarget = computed(() => {
-  const running = props.project.scripts.find((s) => s.status === "RUNNING");
-  if (running) return running;
-  const stopping = props.project.scripts.find((s) => s.status === "STOPPING");
-  if (stopping) return stopping;
-  return props.project.scripts[0] || null;
-});
 const quickLink = computed(() => props.project.quickLink?.trim() || "");
 const displayGroupLabel = computed(() => props.groupLabel?.trim() || props.project.group?.trim() || "");
 const activeScripts = computed(() =>
@@ -121,6 +121,11 @@ const activeScripts = computed(() =>
 const prioritizedScripts = computed(() => {
   const activeIds = new Set(activeScripts.value.map((script) => script.id));
   return [...activeScripts.value, ...props.project.scripts.filter((script) => !activeIds.has(script.id))];
+});
+const tinyVisibleScripts = computed(() => {
+  const configuredCount = props.project.tinyCardButtonCount ?? PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT;
+  const buttonCount = Math.min(PROJECT_TINY_CARD_BUTTON_COUNT_MAX, Math.max(0, Math.floor(configuredCount)));
+  return prioritizedScripts.value.slice(0, buttonCount);
 });
 const visibleScripts = computed(() => prioritizedScripts.value.slice(0, visibleScriptLimit.value));
 
@@ -448,16 +453,23 @@ const handleDelete = (event: MouseEvent) => {
   event.stopPropagation();
   store.requestDeleteProject(props.project.id);
 };
+
+const updateTinyToolbarAlignment = (event: Event) => {
+  const cardRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  tinyToolbarAlignRight.value = cardRect.left + cardRect.width / 2 > window.innerWidth / 2;
+};
 </script>
 
 <template>
   <div v-if="isTiny" class="group relative flex items-center">
     <div
       @click="handleCardSelect"
+      @pointerenter="updateTinyToolbarAlignment"
+      @focusin="updateTinyToolbarAlignment"
       :class="
         cn(
           'relative border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
-          'flex shrink-0 min-w-[6rem] max-w-[14rem] after:absolute after:inset-x-0 after:top-full after:h-8',
+          'flex shrink-0 min-w-[4rem] max-w-[16rem] after:absolute after:inset-x-0 after:top-full after:h-8',
           isRunning &&
             'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
           isDragging && 'opacity-55 scale-[0.99]',
@@ -499,36 +511,36 @@ const handleDelete = (event: MouseEvent) => {
           :size="14"
           class="shrink-0 text-on-surface-variant/55 dark:text-on-surface-variant"
         />
-        <button
-          v-else-if="tinyRunTarget"
-          type="button"
-          @click.stop="handleScriptToggle($event, tinyRunTarget.id, tinyRunTarget.status)"
-          :disabled="isUnavailable || tinyRunTarget.status === 'STOPPING'"
-          :class="
-            cn(
-              'inline-flex shrink-0 items-center justify-center h-6 w-6 rounded transition-colors',
-              tinyRunTarget.status === 'RUNNING'
-                ? 'text-status-running hover:bg-status-running/10'
-                : tinyRunTarget.status === 'STOPPING'
-                  ? 'text-status-warning cursor-wait'
-                  : 'text-on-surface-variant/60 dark:text-on-surface-variant hover:text-status-running hover:bg-on-surface/5 dark:hover:bg-surface-container-high',
-            )
-          "
-          :title="tinyRunTarget.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript"
-          :aria-label="tinyRunTarget.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript"
-        >
-          <Square
-            v-if="tinyRunTarget.status === 'RUNNING' || tinyRunTarget.status === 'STOPPING'"
-            :size="13"
-            fill="currentColor"
-          />
-          <Play v-else :size="13" fill="currentColor" />
-        </button>
+        <template v-else>
+          <button
+            v-for="script in tinyVisibleScripts"
+            :key="script.id"
+            type="button"
+            @click.stop="handleScriptToggle($event, script.id, script.status)"
+            :disabled="isUnavailable || script.status === 'STOPPING'"
+            :class="
+              cn(
+                'inline-flex shrink-0 items-center justify-center h-6 w-6 rounded transition-colors',
+                script.status === 'RUNNING'
+                  ? 'text-status-running hover:bg-status-running/10'
+                  : script.status === 'STOPPING'
+                    ? 'text-status-warning cursor-wait'
+                    : 'text-on-surface-variant/60 dark:text-on-surface-variant hover:text-status-running hover:bg-on-surface/5 dark:hover:bg-surface-container-high',
+              )
+            "
+            :title="`${script.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript}: ${script.name}`"
+            :aria-label="`${script.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript}: ${script.name}`"
+          >
+            <Square v-if="script.status === 'RUNNING' || script.status === 'STOPPING'" :size="13" fill="currentColor" />
+            <Play v-else :size="13" fill="currentColor" />
+          </button>
+        </template>
       </div>
       <div
         :class="
           cn(
-            'absolute top-[calc(100%+0.25rem)] right-0 z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 dark:border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
+            'absolute top-[calc(100%+0.25rem)] z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 dark:border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
+            tinyToolbarAlignRight ? 'right-0' : 'left-0',
             'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
           )
         "

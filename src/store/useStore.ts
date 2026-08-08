@@ -20,7 +20,14 @@ import {
 import { createGitRepositoryContextKey, resolveProjectGitRepositoryContext } from "../lib/gitRepositoryTarget";
 import { normalizeProjectRelations, resolveProjectRelatedProjectIds } from "../lib/projectRelations";
 import { deriveProjectStatus, mergeScriptRuntimeState } from "../lib/projectRuntimeState";
-import { DEFAULT_AI_PROMPT_MODES, PROJECT_MAX_RELATED_PROJECTS, ProjectStatus } from "../types";
+import {
+  DEFAULT_AI_PROMPT_MODES,
+  PROJECT_MAX_RELATED_PROJECTS,
+  PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT,
+  PROJECT_TINY_CARD_BUTTON_COUNT_MAX,
+  PROJECT_TINY_CARD_BUTTON_COUNT_MIN,
+  ProjectStatus,
+} from "../types";
 import type {
   AiPreferences,
   AiAnalyzeResult,
@@ -87,6 +94,11 @@ import type {
 } from "../types";
 
 const bridge = getProjectBridge();
+
+const normalizeTinyCardButtonCount = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? Math.min(PROJECT_TINY_CARD_BUTTON_COUNT_MAX, Math.max(PROJECT_TINY_CARD_BUTTON_COUNT_MIN, Math.floor(value)))
+    : PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT;
 
 type AiAnalysisState = "idle" | "loading" | "success" | "warning" | "error";
 export type ProjectStatusMessageState = "idle" | "loading" | "success" | "warning" | "error";
@@ -631,6 +643,7 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
     kind: projectKind,
     icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
     cardStyle: project.cardStyle || "default",
+    tinyCardButtonCount: normalizeTinyCardButtonCount(project.tinyCardButtonCount),
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     relatedProjects: normalizeProjectRelations(project.relatedProjects),
@@ -923,6 +936,7 @@ function formFromProject(project: Project): ProjectFormValue {
     kind: projectKind,
     icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
     cardStyle: project.cardStyle || "default",
+    tinyCardButtonCount: normalizeTinyCardButtonCount(project.tinyCardButtonCount),
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     description: project.description || "",
@@ -986,6 +1000,8 @@ function hydrateProject(project: Project): Project {
     visibility: normalizeProjectVisibility(project.visibility),
     ownerDeviceId: project.ownerDeviceId || currentDeviceId,
     icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
+    cardStyle: project.cardStyle || "default",
+    tinyCardButtonCount: normalizeTinyCardButtonCount(project.tinyCardButtonCount),
     status: normalizeProjectStatus(project.status),
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
@@ -1215,6 +1231,7 @@ function createBlankProjectForm(): ProjectFormValue {
     kind: "node",
     icon: "node",
     cardStyle: "default",
+    tinyCardButtonCount: PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT,
     quickLink: "",
     group: "",
     description: "",
@@ -2297,6 +2314,7 @@ export const useStore = defineStore("app", {
         kind: payload.kind,
         icon: payload.icon,
         cardStyle: payload.cardStyle,
+        tinyCardButtonCount: normalizeTinyCardButtonCount(payload.tinyCardButtonCount),
         quickLink: payload.quickLink.trim(),
         group: normalizeProjectGroup(payload.group),
         description: payload.description,

@@ -8,6 +8,9 @@ export enum ProjectStatus {
 export type Locale = "zh-CN" | "en-US";
 
 export type ProjectCardStyle = "default" | "tiny";
+export const PROJECT_TINY_CARD_BUTTON_COUNT_MIN = 0;
+export const PROJECT_TINY_CARD_BUTTON_COUNT_MAX = 3;
+export const PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT = 1;
 
 export type ProjectKind = "node" | "python" | "go" | "executable" | "custom";
 
@@ -671,6 +674,7 @@ export interface ProjectFormValue {
   kind: ProjectKind;
   icon: ProjectIconKey;
   cardStyle: ProjectCardStyle;
+  tinyCardButtonCount: number;
   quickLink: string;
   group: string;
   description: string;
@@ -691,6 +695,7 @@ export interface Project {
   kind: ProjectKind;
   icon?: ProjectIconKey;
   cardStyle?: ProjectCardStyle;
+  tinyCardButtonCount?: number;
   quickLink?: string;
   group?: string;
   status: ProjectStatus;
