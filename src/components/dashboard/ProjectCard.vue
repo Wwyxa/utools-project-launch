@@ -22,6 +22,54 @@ import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../l
 import ProjectIcon from "../project/ProjectIcon.vue";
 import ExternalApplicationLaunchButton from "../project/ExternalApplicationLaunchButton.vue";
 
+const PROJECT_CARD_WIDTH_MEASUREMENT_SAMPLE_LIMIT = 64;
+let projectCardWidthMeasurementSampleCount = 0;
+let projectCardWidthMeasurementTotalDurationMs = 0;
+let projectCardWidthMeasurementMaxDurationMs = 0;
+let projectCardWidthMeasurementFlushFrame: number | null = null;
+let projectCardWidthMeasurementReported = false;
+
+const resetProjectCardWidthMeasurement = () => {
+  projectCardWidthMeasurementSampleCount = 0;
+  projectCardWidthMeasurementTotalDurationMs = 0;
+  projectCardWidthMeasurementMaxDurationMs = 0;
+};
+
+const flushProjectCardWidthMeasurement = () => {
+  projectCardWidthMeasurementFlushFrame = null;
+  const mark = window.__utoolsProjectLaunchStartupTiming?.mark;
+  if (!mark || projectCardWidthMeasurementSampleCount === 0) {
+    resetProjectCardWidthMeasurement();
+    return;
+  }
+
+  mark("project-card-width-measurement-aggregate", {
+    sampleCount: projectCardWidthMeasurementSampleCount,
+    sampleLimit: PROJECT_CARD_WIDTH_MEASUREMENT_SAMPLE_LIMIT,
+    sampleLimitReached: projectCardWidthMeasurementSampleCount === PROJECT_CARD_WIDTH_MEASUREMENT_SAMPLE_LIMIT ? 1 : 0,
+    durationMs: Math.round(projectCardWidthMeasurementTotalDurationMs * 100) / 100,
+    maxDurationMs: Math.round(projectCardWidthMeasurementMaxDurationMs * 100) / 100,
+  });
+  projectCardWidthMeasurementReported = true;
+  resetProjectCardWidthMeasurement();
+};
+
+const recordProjectCardWidthMeasurement = (durationMs: number) => {
+  if (
+    projectCardWidthMeasurementReported ||
+    projectCardWidthMeasurementSampleCount >= PROJECT_CARD_WIDTH_MEASUREMENT_SAMPLE_LIMIT
+  ) {
+    return;
+  }
+
+  projectCardWidthMeasurementSampleCount += 1;
+  projectCardWidthMeasurementTotalDurationMs += durationMs;
+  projectCardWidthMeasurementMaxDurationMs = Math.max(projectCardWidthMeasurementMaxDurationMs, durationMs);
+  if (projectCardWidthMeasurementFlushFrame === null) {
+    projectCardWidthMeasurementFlushFrame = window.requestAnimationFrame(flushProjectCardWidthMeasurement);
+  }
+};
+
 const props = defineProps<{
   project: Project;
   isSorting?: boolean;
@@ -46,6 +94,7 @@ const maxVisibleScriptButtons = 3;
 const scriptButtonGapFallback = 6;
 let scriptRowResizeObserver: ResizeObserver | null = null;
 let visibleScriptMeasureFrame: number | null = null;
+let initialWidthMeasurementRecorded = false;
 
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
@@ -144,7 +193,16 @@ const scheduleVisibleScriptMeasure = async () => {
   }
   visibleScriptMeasureFrame = window.requestAnimationFrame(() => {
     visibleScriptMeasureFrame = null;
+    const shouldRecordInitialMeasurement =
+      !initialWidthMeasurementRecorded &&
+      !projectCardWidthMeasurementReported &&
+      Boolean(window.__utoolsProjectLaunchStartupTiming?.mark);
+    const measurementStartedAt = shouldRecordInitialMeasurement ? performance.now() : 0;
     updateVisibleScriptLimit();
+    if (shouldRecordInitialMeasurement) {
+      initialWidthMeasurementRecorded = true;
+      recordProjectCardWidthMeasurement(performance.now() - measurementStartedAt);
+    }
   });
 };
 

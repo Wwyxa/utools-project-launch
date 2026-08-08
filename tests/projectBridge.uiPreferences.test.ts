@@ -5,7 +5,13 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { getProjectBridge } from "../src/lib/projectBridge";
-import type { ProjectBridge, ProjectDetailsTabId, UiPreferences } from "../src/types";
+import {
+  ProjectStatus,
+  type Project,
+  type ProjectBridge,
+  type ProjectDetailsTabId,
+  type UiPreferences,
+} from "../src/types";
 
 const uiPreferencesKey = "utools-project-launch.ui-preferences.v1";
 const legacyTabOrderKey = "utools-project-launch.project-details-tab-order.v1";
@@ -170,6 +176,174 @@ describe("browser UI preferences fallback", () => {
     store.acknowledgeProjectDetailsTabReorderHint(1);
     expect(store.uiPreferences.coachMarks.projectDetailsTabReorder).toBe(1);
     expect(saveUiPreferences).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("store startup timing", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      navigator: { platform: "", userAgent: "vitest" },
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+      setTimeout,
+      clearTimeout,
+      projectBridge: undefined,
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("marks project loading subphases only when timing is enabled", async () => {
+    const mark = vi.fn<(phase: string) => void>();
+    window.__utoolsProjectLaunchStartupTiming = { preloadStartedAtEpochMs: 0, mark };
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    await store.loadProjects();
+
+    expect(mark.mock.calls.map(([phase]) => phase)).toEqual([
+      "projects-load-preferences-start",
+      "projects-load-preferences-complete",
+      "projects-load-storage-hydration-start",
+      "projects-load-storage-hydration-complete",
+      "projects-load-state-setup-start",
+      "projects-load-state-setup-complete",
+      "projects-load-path-availability-start",
+      "projects-load-path-availability-complete",
+      "projects-load-runtime-reconciliation-start",
+      "projects-load-runtime-reconciliation-complete",
+      "projects-load-automation-plan-recomputation-start",
+      "projects-load-automation-plan-recomputation-complete",
+    ]);
+
+    mark.mockClear();
+    window.__utoolsProjectLaunchStartupTiming = undefined;
+    await store.loadProjects();
+
+    expect(mark).not.toHaveBeenCalled();
+  });
+
+  it("keeps caught storage errors and immediate completion without animation frames", async () => {
+    const loadProjects = vi.fn<ProjectBridge["loadProjects"]>(async () => {
+      throw new Error("storage unavailable");
+    });
+    window.projectBridge = { ...getProjectBridge(), loadProjects };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const initialProjectIds = store.projects.map((project) => project.id);
+
+    await expect(store.loadProjects()).resolves.toBeUndefined();
+
+    expect(loadProjects).toHaveBeenCalledTimes(1);
+    expect(store.projectsLoaded).toBe(true);
+    expect(store.projects.map((project) => project.id)).toEqual(initialProjectIds);
+  });
+
+  it("waits for two animation frames before deferred work and load completion", async () => {
+    let nextFrameCallbacks: FrameRequestCallback[] = [];
+    let frameTimestamp = 0;
+    let paintedFrameCount = 0;
+    const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      nextFrameCallbacks.push(callback);
+      return nextFrameCallbacks.length;
+    });
+    const advanceFrame = async () => {
+      const frameCallbacks = nextFrameCallbacks;
+      nextFrameCallbacks = [];
+      frameTimestamp += 16;
+      frameCallbacks.forEach((callback) => callback(frameTimestamp));
+      await Promise.resolve();
+      paintedFrameCount += 1;
+    };
+    const mark = vi.fn<(phase: string) => void>();
+    const project: Project = {
+      id: "startup-project",
+      name: "Startup project",
+      path: "/workspace/startup-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [],
+      env: {},
+      memo: "Hydrated memo",
+    };
+    let resolvePathExists: (exists: boolean) => void = () => undefined;
+    const pathExistsResult = new Promise<boolean>((resolve) => {
+      resolvePathExists = resolve;
+    });
+    let pathAvailabilityStartedAfterPaint = false;
+    const pathExists = vi.fn(() => {
+      pathAvailabilityStartedAfterPaint = paintedFrameCount > 0;
+      return pathExistsResult;
+    });
+    window.requestAnimationFrame = requestAnimationFrame;
+    window.__utoolsProjectLaunchStartupTiming = { preloadStartedAtEpochMs: 0, mark };
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => [project]),
+      pathExists,
+      saveProjects: vi.fn(async () => undefined),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    let loadCompleted = false;
+    const loadPromise = store.loadProjects().then(() => {
+      loadCompleted = true;
+    });
+
+    await Promise.resolve();
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    expect(pathExists).not.toHaveBeenCalled();
+    expect(store.projectsLoaded).toBe(true);
+    expect(store.projects[0]?.name).toBe(project.name);
+    expect(store.memoContent[project.id]).toBe(project.memo);
+    expect(loadCompleted).toBe(false);
+
+    await advanceFrame();
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(2);
+    expect(pathExists).not.toHaveBeenCalled();
+    expect(loadCompleted).toBe(false);
+
+    await advanceFrame();
+    expect(pathExists).toHaveBeenCalledTimes(1);
+    expect(pathAvailabilityStartedAfterPaint).toBe(true);
+    expect(loadCompleted).toBe(false);
+
+    resolvePathExists(true);
+    await loadPromise;
+
+    expect(loadCompleted).toBe(true);
+    expect(store.projects[0]?.pathExists).toBe(true);
+    expect(mark.mock.calls.map(([phase]) => phase)).toEqual([
+      "projects-load-preferences-start",
+      "projects-load-preferences-complete",
+      "projects-load-storage-hydration-start",
+      "projects-load-storage-hydration-complete",
+      "projects-load-state-setup-start",
+      "projects-load-state-setup-complete",
+      "projects-load-path-availability-start",
+      "projects-load-path-availability-complete",
+      "projects-load-runtime-reconciliation-start",
+      "projects-load-runtime-reconciliation-complete",
+      "projects-load-automation-plan-recomputation-start",
+      "projects-load-automation-plan-recomputation-complete",
+    ]);
   });
 });
 

@@ -28,6 +28,7 @@ import type { TodoItem } from "../../types";
 const store = useStore();
 const t = useI18n();
 const PROJECT_STATUS_FEEDBACK_MIN_DURATION_MS = 200;
+let initialDashboardProjectCardsMounted = false;
 
 const searchQuery = ref("");
 const isSearchExpanded = ref(false);
@@ -53,6 +54,23 @@ const draggingProjectId = ref<string | null>(null);
 const selectedProjectGroupKey = ref("all");
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
 let stopAppEscapeListener = () => {};
+const projectCardsMounted = ref(false);
+const isReturningToMountedDashboard = initialDashboardProjectCardsMounted;
+let projectCardMountFrame: number | null = null;
+let projectCardMountAfterPaintFrame: number | null = null;
+let projectCardMountGeneration = 0;
+
+const cancelProjectCardMount = () => {
+  projectCardMountGeneration += 1;
+  if (projectCardMountFrame !== null) {
+    window.cancelAnimationFrame(projectCardMountFrame);
+    projectCardMountFrame = null;
+  }
+  if (projectCardMountAfterPaintFrame !== null) {
+    window.cancelAnimationFrame(projectCardMountAfterPaintFrame);
+    projectCardMountAfterPaintFrame = null;
+  }
+};
 
 interface ProjectGroupFilter {
   key: string;
@@ -155,6 +173,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  cancelProjectCardMount();
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
   document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
   window.removeEventListener("resize", positionTodoProjectMenu);
@@ -220,6 +239,77 @@ const visibleProjectIds = computed(() => projects.value.map((project) => project
 const hasProjectGroupFilters = computed(() => projectGroupFilters.value.length > 1);
 const hasSortableProjects = computed(() => projects.value.length > 0);
 const hasSearchQuery = computed(() => normalizedSearchQuery.value.length > 0);
+let dashboardVisibleProjectsDomUpdateMarked = false;
+
+const markVisibleProjectsDomUpdate = async (generation: number) => {
+  if (generation !== projectCardMountGeneration || !store.projectsLoaded || !projectCardsMounted.value) {
+    return;
+  }
+
+  await nextTick();
+  if (
+    generation !== projectCardMountGeneration ||
+    !store.projectsLoaded ||
+    !projectCardsMounted.value ||
+    dashboardVisibleProjectsDomUpdateMarked
+  ) {
+    return;
+  }
+
+  initialDashboardProjectCardsMounted = true;
+  const mark = window.__utoolsProjectLaunchStartupTiming?.mark;
+  if (!mark || dashboardVisibleProjectsDomUpdateMarked) {
+    return;
+  }
+
+  dashboardVisibleProjectsDomUpdateMarked = true;
+  mark("dashboard-visible-projects-dom-update-complete", {
+    visibleProjectCount: visibleProjectIds.value.length,
+  });
+};
+
+const scheduleProjectCardMount = async () => {
+  cancelProjectCardMount();
+  const generation = projectCardMountGeneration;
+  projectCardsMounted.value = false;
+  await nextTick();
+  if (generation !== projectCardMountGeneration || !store.projectsLoaded) {
+    return;
+  }
+
+  projectCardMountFrame = window.requestAnimationFrame(() => {
+    projectCardMountFrame = null;
+    projectCardMountAfterPaintFrame = window.requestAnimationFrame(() => {
+      projectCardMountAfterPaintFrame = null;
+      if (generation !== projectCardMountGeneration || !store.projectsLoaded) {
+        return;
+      }
+
+      projectCardsMounted.value = true;
+      void markVisibleProjectsDomUpdate(generation);
+    });
+  });
+};
+
+watch(
+  () => store.projectsLoaded,
+  (projectsLoaded) => {
+    if (!projectsLoaded) {
+      cancelProjectCardMount();
+      projectCardsMounted.value = false;
+      return;
+    }
+
+    if (isReturningToMountedDashboard) {
+      projectCardsMounted.value = true;
+      return;
+    }
+
+    void scheduleProjectCardMount();
+  },
+  { immediate: true },
+);
+
 const hasFilteredOutProjects = computed(
   () =>
     hasSearchQuery.value &&
@@ -1181,9 +1271,43 @@ const handleProjectDragEnd = () => {
       </p>
       <!-- Tiny cards: compact grid row -->
       <div v-if="hasTinyProjects" class="pb-1" :class="{ 'mb-2': hasRegularProjects }">
-        <div class="flex flex-wrap gap-3">
-          <ProjectCard
+        <div class="flex flex-wrap gap-3" :aria-busy="!projectCardsMounted ? 'true' : undefined">
+          <template v-if="projectCardsMounted">
+            <ProjectCard
+              v-for="project in tinyProjects"
+              :key="project.id"
+              :project="project"
+              :is-sorting="isSortingProjects"
+              :is-dragging="draggingProjectId === project.id"
+              :show-group-badge="showProjectGroupBadge"
+              :group-label="projectGroupName(project) || t.dashboard.ungroupedProjects"
+              :draggable="isSortingProjects"
+              @dragstart="handleProjectDragStart($event, project.id)"
+              @dragover="handleProjectDragOver"
+              @drop="handleProjectDrop($event, project.id, visibleProjectIds)"
+              @dragend="handleProjectDragEnd"
+              @select="store.setSelectedProject"
+            />
+          </template>
+          <div
+            v-else
             v-for="project in tinyProjects"
+            :key="project.id"
+            class="skeleton h-[38px] w-32 min-w-[6rem] max-w-[14rem] rounded-lg"
+          />
+        </div>
+      </div>
+
+      <!-- Regular cards: grid layout -->
+      <div
+        v-if="hasRegularProjects"
+        class="grid gap-3 pb-5"
+        style="grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr))"
+        :aria-busy="!projectCardsMounted ? 'true' : undefined"
+      >
+        <template v-if="projectCardsMounted">
+          <ProjectCard
+            v-for="project in regularProjects"
             :key="project.id"
             :project="project"
             :is-sorting="isSortingProjects"
@@ -1197,30 +1321,8 @@ const handleProjectDragEnd = () => {
             @dragend="handleProjectDragEnd"
             @select="store.setSelectedProject"
           />
-        </div>
-      </div>
-
-      <!-- Regular cards: grid layout -->
-      <div
-        v-if="hasRegularProjects"
-        class="grid gap-3 pb-5"
-        style="grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr))"
-      >
-        <ProjectCard
-          v-for="project in regularProjects"
-          :key="project.id"
-          :project="project"
-          :is-sorting="isSortingProjects"
-          :is-dragging="draggingProjectId === project.id"
-          :show-group-badge="showProjectGroupBadge"
-          :group-label="projectGroupName(project) || t.dashboard.ungroupedProjects"
-          :draggable="isSortingProjects"
-          @dragstart="handleProjectDragStart($event, project.id)"
-          @dragover="handleProjectDragOver"
-          @drop="handleProjectDrop($event, project.id, visibleProjectIds)"
-          @dragend="handleProjectDragEnd"
-          @select="store.setSelectedProject"
-        />
+        </template>
+        <div v-else v-for="project in regularProjects" :key="project.id" class="skeleton min-h-36 rounded-lg" />
       </div>
     </div>
 
@@ -1255,15 +1357,19 @@ const handleProjectDragEnd = () => {
       <div
         class="grid gap-2.5 border-t border-border-subtle p-3"
         style="grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr))"
+        :aria-busy="!projectCardsMounted ? 'true' : undefined"
       >
-        <ProjectCard
-          v-for="project in unavailableProjects"
-          :key="project.id"
-          :project="project"
-          :is-sorting="false"
-          :draggable="false"
-          @select="store.openEditProjectForm"
-        />
+        <template v-if="projectCardsMounted">
+          <ProjectCard
+            v-for="project in unavailableProjects"
+            :key="project.id"
+            :project="project"
+            :is-sorting="false"
+            :draggable="false"
+            @select="store.openEditProjectForm"
+          />
+        </template>
+        <div v-else v-for="project in unavailableProjects" :key="project.id" class="skeleton min-h-36 rounded-lg" />
       </div>
     </details>
   </div>

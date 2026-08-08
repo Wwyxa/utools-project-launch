@@ -1,3 +1,27 @@
+const startupTimingEnabled =
+  process.env?.UTOOLS_PROJECT_LAUNCH_STARTUP_TIMING === "1" && typeof process.hrtime === "function";
+const startupTimingStartedAt = startupTimingEnabled ? process.hrtime() : null;
+const startupTimingStartedAtEpochMs = startupTimingEnabled ? Date.now() : null;
+
+function recordStartupTiming(phase) {
+  if (!startupTimingEnabled || !startupTimingStartedAt) return;
+
+  const [seconds, nanoseconds] = process.hrtime(startupTimingStartedAt);
+  console.info(
+    "[utools-project-launch:startup]",
+    JSON.stringify({
+      phase,
+      epochMs: Date.now(),
+      preloadElapsedMs: Math.round((seconds * 1000 + nanoseconds / 1000000) * 100) / 100,
+    }),
+  );
+}
+
+if (startupTimingEnabled) {
+  window.__utoolsProjectLaunchStartupTiming = { preloadStartedAtEpochMs: startupTimingStartedAtEpochMs };
+  recordStartupTiming("preload-evaluation-start");
+}
+
 // uTools loads this file with CommonJS require(). public/package.json is copied
 // to dist/ to keep this `.js` preload in a local CommonJS package scope.
 // Use legacy Node builtin names: older uTools Electron versions do not resolve
@@ -6611,3 +6635,5 @@ window.projectBridge = {
   openPath,
   showItemInFolder: (targetPath) => shell.showItemInFolder(expandPath(targetPath)),
 };
+
+recordStartupTiming("preload-bridge-ready");

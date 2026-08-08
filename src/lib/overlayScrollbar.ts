@@ -9,6 +9,21 @@ const instances = new WeakMap<HTMLElement, OverlayScrollbarsInstance>();
 
 OverlayScrollbars.plugin(ClickScrollPlugin);
 
+const withOverlayScrollbarTiming = <Result>(phase: "mount" | "update", operation: () => Result): Result => {
+  const mark = window.__utoolsProjectLaunchStartupTiming?.mark;
+  if (!mark) {
+    return operation();
+  }
+
+  const startedAt = performance.now();
+  mark(`overlay-scrollbar-${phase}-start`);
+  const result = operation();
+  mark(`overlay-scrollbar-${phase}-complete`, {
+    durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+  });
+  return result;
+};
+
 export function getOverlayScrollbarScrollElements(element: HTMLElement | null) {
   if (!element) {
     return null;
@@ -28,19 +43,24 @@ export const overlayScrollbar: Directive<HTMLElement> = {
   mounted(element) {
     instances.set(
       element,
-      OverlayScrollbars(element, {
-        scrollbars: {
-          theme: "os-theme-utools",
-          autoHide: "leave",
-          autoHideDelay: 400,
-          autoHideSuspend: true,
-          clickScroll: true,
-        },
-      }),
+      withOverlayScrollbarTiming("mount", () =>
+        OverlayScrollbars(element, {
+          scrollbars: {
+            theme: "os-theme-utools",
+            autoHide: "leave",
+            autoHideDelay: 400,
+            autoHideSuspend: true,
+            clickScroll: true,
+          },
+        }),
+      ),
     );
   },
   updated(element) {
-    instances.get(element)?.update();
+    const instance = instances.get(element);
+    if (instance) {
+      withOverlayScrollbarTiming("update", () => instance.update());
+    }
   },
   unmounted(element) {
     instances.get(element)?.destroy();

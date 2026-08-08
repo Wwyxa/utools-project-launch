@@ -3,6 +3,10 @@ import type { ProjectBridge } from "./types";
 declare global {
   interface Window {
     projectBridge?: ProjectBridge;
+    __utoolsProjectLaunchStartupTiming?: {
+      preloadStartedAtEpochMs: number;
+      mark?: (phase: string, measurements?: Record<string, number>) => void;
+    };
     utools?: {
       isDarkColors(): boolean;
       onPluginEnter(callback: (action?: unknown) => void): void;

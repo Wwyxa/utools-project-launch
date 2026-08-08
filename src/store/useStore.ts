@@ -119,6 +119,16 @@ const PROJECT_STATUS_MESSAGE_CLEAR_DELAY_MS = 2200;
 const AUTOMATION_HISTORY_LIMIT = 20;
 const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
+const waitForInitialPaint = (): Promise<void> => {
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  });
+};
 const projectKinds = new Set<ProjectKind>(["node", "python", "go", "executable", "custom"]);
 const projectScriptStatuses = new Set<ProjectScript["status"]>(["IDLE", "RUNNING", "STOPPING", "ERROR", "STOPPED"]);
 const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>([
@@ -1350,10 +1360,15 @@ export const useStore = defineStore("app", {
 
   actions: {
     async loadProjects() {
+      const markStartupPhase = window.__utoolsProjectLaunchStartupTiming?.mark;
+      markStartupPhase?.("projects-load-preferences-start");
       this.terminalPreferences = bridge.loadTerminalPreferences();
       this.externalApplicationPreferences = bridge.loadExternalApplicationPreferences();
       this.environmentPreferences = bridge.loadEnvironmentPreferences();
       this.aiPreferences = bridge.loadAiPreferences();
+      markStartupPhase?.("projects-load-preferences-complete");
+
+      markStartupPhase?.("projects-load-storage-hydration-start");
       try {
         const storedProjects = await bridge.loadProjects();
         if (this.supportsBridge || storedProjects.length > 0) {
@@ -1367,9 +1382,11 @@ export const useStore = defineStore("app", {
       } catch (error) {
         this.projectStorageMessage = "项目配置读取失败，已保留当前会话数据";
       }
+      markStartupPhase?.("projects-load-storage-hydration-complete");
 
       this.projectsLoaded = true;
-      await this.refreshProjectAvailability();
+
+      markStartupPhase?.("projects-load-state-setup-start");
       this.projects.forEach((project) => {
         this.memoContent[project.id] = project.memo || this.memoContent[project.id] || "";
         this.todos[project.id] = project.todos || this.todos[project.id] || [];
@@ -1377,8 +1394,20 @@ export const useStore = defineStore("app", {
         this.scriptLogs[project.id] = this.scriptLogs[project.id] || {};
         this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
       });
+      markStartupPhase?.("projects-load-state-setup-complete");
+
+      await waitForInitialPaint();
+      markStartupPhase?.("projects-load-path-availability-start");
+      await this.refreshProjectAvailability();
+      markStartupPhase?.("projects-load-path-availability-complete");
+
+      markStartupPhase?.("projects-load-runtime-reconciliation-start");
       await this.reconcileRuntimeProcessState();
+      markStartupPhase?.("projects-load-runtime-reconciliation-complete");
+
+      markStartupPhase?.("projects-load-automation-plan-recomputation-start");
       this.recomputeAutomationPlans();
+      markStartupPhase?.("projects-load-automation-plan-recomputation-complete");
     },
     async persistProjects() {
       try {

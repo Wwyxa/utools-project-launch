@@ -56,6 +56,24 @@ const globalProjectStatusBorderClass = computed(() => {
   return "border-primary/30";
 });
 let pluginOutHookRegistered = false;
+let startupProjectLoadId = 0;
+
+const loadProjectsWithStartupTiming = () => {
+  const startupTiming = window.__utoolsProjectLaunchStartupTiming;
+  if (!startupTiming?.mark) {
+    return store.loadProjects();
+  }
+
+  const loadId = ++startupProjectLoadId;
+  const startedAt = performance.now();
+  startupTiming.mark("projects-load-start", { loadId });
+  return store.loadProjects().finally(() => {
+    startupTiming.mark?.("projects-load-complete", {
+      loadId,
+      durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    });
+  });
+};
 
 const extractPluginSearchText = (action: unknown): string => {
   if (!action || typeof action !== "object") {
@@ -70,7 +88,7 @@ const extractPluginSearchText = (action: unknown): string => {
 const handlePluginEnter = async (action?: unknown) => {
   const searchText = extractPluginSearchText(action);
   if (!store.projectsLoaded) {
-    await store.loadProjects();
+    await loadProjectsWithStartupTiming();
   }
   void store.reconcileRuntimeProcessState();
   if (searchText) {
@@ -165,7 +183,7 @@ watch(theme, updateTheme);
 
 onMounted(() => {
   updateTheme();
-  void store.loadProjects();
+  void loadProjectsWithStartupTiming();
   window.utools?.onPluginEnter?.((action) => {
     updateTheme();
     void handlePluginEnter(action);
