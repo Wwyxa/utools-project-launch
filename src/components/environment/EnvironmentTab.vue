@@ -1,5 +1,11 @@
+<script lang="ts">
+type EnvironmentColumnWidths = [number, number, number];
+
+let rememberedEnvironmentColumnWidths: EnvironmentColumnWidths | null = null;
+</script>
+
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowLeft, CheckCircle2, CircleAlert, CircleHelp, RefreshCw, Settings } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -8,6 +14,127 @@ import type { EnvironmentToolResult } from "../../types";
 
 const store = useStore();
 const t = useI18n();
+
+type ResizableColumnIndex = 0 | 1;
+
+const defaultColumnWidths: EnvironmentColumnWidths = [112, 256, 320];
+const minimumColumnWidths: EnvironmentColumnWidths = [80, 128, 160];
+const columnWidths = ref<EnvironmentColumnWidths>(
+  rememberedEnvironmentColumnWidths ? [...rememberedEnvironmentColumnWidths] : [...defaultColumnWidths],
+);
+const hasCustomColumnWidths = ref(rememberedEnvironmentColumnWidths !== null);
+const activeResizeIndex = ref<ResizableColumnIndex | null>(null);
+const toolHeaderRef = ref<HTMLElement | null>(null);
+const versionHeaderRef = ref<HTMLElement | null>(null);
+const pathHeaderRef = ref<HTMLElement | null>(null);
+const headerRefs = [toolHeaderRef, versionHeaderRef, pathHeaderRef];
+let activePointerId: number | null = null;
+let activeSeparator: HTMLElement | null = null;
+let resizeStartX = 0;
+let resizeStartWidths: EnvironmentColumnWidths = [...defaultColumnWidths];
+let previousUserSelect = "";
+let previousCursor = "";
+
+const desktopGridTemplate = computed(() =>
+  hasCustomColumnWidths.value
+    ? `${columnWidths.value[0]}px ${columnWidths.value[1]}px minmax(${columnWidths.value[2]}px, 1fr) max-content`
+    : "minmax(7rem, 0.7fr) minmax(16rem, 1.35fr) minmax(10rem, 1.7fr) max-content",
+);
+
+const measureColumnWidths = (): EnvironmentColumnWidths =>
+  headerRefs.map(
+    (headerRef, index) => headerRef.value?.getBoundingClientRect().width || columnWidths.value[index],
+  ) as EnvironmentColumnWidths;
+
+const setColumnPairWidths = (
+  columnIndex: ResizableColumnIndex,
+  startWidths: EnvironmentColumnWidths,
+  requestedDelta: number,
+) => {
+  const nextWidths = [...startWidths] as EnvironmentColumnWidths;
+  const nextColumnIndex = columnIndex + 1;
+  const delta = Math.min(
+    startWidths[nextColumnIndex] - minimumColumnWidths[nextColumnIndex],
+    Math.max(minimumColumnWidths[columnIndex] - startWidths[columnIndex], requestedDelta),
+  );
+  nextWidths[columnIndex] += delta;
+  nextWidths[nextColumnIndex] -= delta;
+  columnWidths.value = nextWidths;
+  rememberedEnvironmentColumnWidths = [...nextWidths];
+  hasCustomColumnWidths.value = true;
+};
+
+const restoreDocumentInteraction = () => {
+  document.body.style.userSelect = previousUserSelect;
+  document.body.style.cursor = previousCursor;
+};
+
+const stopColumnResize = (event?: PointerEvent) => {
+  if (event && activePointerId !== event.pointerId) return;
+  if (activeResizeIndex.value === null) return;
+
+  const pointerId = activePointerId;
+  const separator = activeSeparator;
+  activePointerId = null;
+  activeSeparator = null;
+  activeResizeIndex.value = null;
+  window.removeEventListener("pointermove", handleColumnPointerMove);
+  window.removeEventListener("pointerup", stopColumnResize);
+  window.removeEventListener("pointercancel", stopColumnResize);
+  window.removeEventListener("blur", handleWindowBlur);
+  separator?.removeEventListener("lostpointercapture", stopColumnResize);
+  try {
+    if (pointerId !== null && separator?.hasPointerCapture(pointerId)) separator.releasePointerCapture(pointerId);
+  } finally {
+    restoreDocumentInteraction();
+  }
+};
+
+const handleWindowBlur = () => stopColumnResize();
+
+const handleColumnPointerMove = (event: PointerEvent) => {
+  if (activeResizeIndex.value === null || event.pointerId !== activePointerId) return;
+  setColumnPairWidths(activeResizeIndex.value, resizeStartWidths, event.clientX - resizeStartX);
+};
+
+const startColumnResize = (event: PointerEvent, columnIndex: ResizableColumnIndex) => {
+  if (!event.isPrimary || event.button !== 0 || activeResizeIndex.value !== null) return;
+
+  const separator = event.currentTarget as HTMLElement;
+  try {
+    separator.setPointerCapture(event.pointerId);
+  } catch {
+    return;
+  }
+
+  resizeStartX = event.clientX;
+  resizeStartWidths = measureColumnWidths();
+  columnWidths.value = [...resizeStartWidths];
+  hasCustomColumnWidths.value = true;
+  activePointerId = event.pointerId;
+  activeSeparator = separator;
+  activeResizeIndex.value = columnIndex;
+  previousUserSelect = document.body.style.userSelect;
+  previousCursor = document.body.style.cursor;
+  document.body.style.userSelect = "none";
+  document.body.style.cursor = "col-resize";
+  window.addEventListener("pointermove", handleColumnPointerMove);
+  window.addEventListener("pointerup", stopColumnResize);
+  window.addEventListener("pointercancel", stopColumnResize);
+  window.addEventListener("blur", handleWindowBlur);
+  separator.addEventListener("lostpointercapture", stopColumnResize);
+  event.preventDefault();
+};
+
+const handleColumnResizeKeydown = (event: KeyboardEvent, columnIndex: ResizableColumnIndex) => {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  const direction = event.key === "ArrowLeft" ? -1 : 1;
+  setColumnPairWidths(columnIndex, measureColumnWidths(), direction * 16);
+  event.preventDefault();
+};
+
+const columnMaximumWidth = (columnIndex: ResizableColumnIndex) =>
+  columnWidths.value[columnIndex] + columnWidths.value[columnIndex + 1] - minimumColumnWidths[columnIndex + 1];
 
 const enabledKeys = computed(() => new Set(store.environmentPreferences.enabledToolKeys));
 const enabledDefinitions = computed(() => [
@@ -27,7 +154,7 @@ const isRefreshing = (key: string) => store.environmentRefreshingKeys[key] === t
 
 const statusClass = (key: string, result?: EnvironmentToolResult) =>
   cn(
-    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold",
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-bold",
     !result && "border-border-subtle bg-surface-container-low text-on-surface-variant",
     isRefreshing(key) && "border-primary/30 bg-primary/10 text-primary",
     !isRefreshing(key) &&
@@ -47,6 +174,13 @@ const statusText = (key: string, result?: EnvironmentToolResult) => {
   return t.value.environment.error;
 };
 
+const statusColumnText = computed(() =>
+  enabledDefinitions.value.reduce((longest, tool) => {
+    const current = statusText(tool.key, resultByKey.value.get(tool.key));
+    return current.length > longest.length ? current : longest;
+  }, ""),
+);
+
 watch(
   () => [
     enabledDefinitions.value.map((tool) => tool.key).join("|"),
@@ -60,6 +194,8 @@ watch(
   },
   { immediate: true },
 );
+
+onBeforeUnmount(() => stopColumnResize());
 </script>
 
 <template>
@@ -112,19 +248,74 @@ watch(
       >
         {{ t.environment.empty }}
       </div>
-      <div v-else>
+      <div v-else :style="{ '--environment-grid-columns': desktopGridTemplate }">
         <div
-          class="hidden grid-cols-[minmax(7rem,0.7fr)_minmax(16rem,1.35fr)_minmax(10rem,1.7fr)_auto] items-center gap-3 border-b border-border-subtle px-2 pb-1.5 text-[10px] font-bold text-on-surface-variant md:grid"
+          class="environment-grid hidden items-center gap-3 border-b border-border-subtle px-2 pb-1.5 text-[10px] font-bold text-on-surface-variant md:grid"
         >
-          <span>{{ t.environment.tool }}</span>
-          <span>{{ t.environment.version }}</span>
-          <span>{{ t.environment.path }}</span>
-          <span class="sr-only">{{ t.common.status }}</span>
+          <span ref="toolHeaderRef" class="relative min-w-0">
+            {{ t.environment.tool }}
+            <button
+              type="button"
+              role="separator"
+              aria-orientation="vertical"
+              :aria-label="`${t.environment.tool} / ${t.environment.version}`"
+              :aria-valuemin="minimumColumnWidths[0]"
+              :aria-valuemax="Math.round(columnMaximumWidth(0))"
+              :aria-valuenow="Math.round(columnWidths[0])"
+              class="group/column-resize absolute -right-3 top-1/2 z-10 h-6 w-3 -translate-y-1/2 cursor-col-resize touch-none border-0 bg-transparent p-0 outline-none"
+              @pointerdown="startColumnResize($event, 0)"
+              @keydown="handleColumnResizeKeydown($event, 0)"
+            >
+              <span
+                :class="
+                  cn(
+                    'absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-border-subtle transition-colors group-hover/column-resize:bg-primary group-focus/column-resize:bg-primary',
+                    activeResizeIndex === 0 && 'bg-primary',
+                  )
+                "
+              />
+            </button>
+          </span>
+          <span ref="versionHeaderRef" class="relative min-w-0">
+            {{ t.environment.version }}
+            <button
+              type="button"
+              role="separator"
+              aria-orientation="vertical"
+              :aria-label="`${t.environment.version} / ${t.environment.path}`"
+              :aria-valuemin="minimumColumnWidths[1]"
+              :aria-valuemax="Math.round(columnMaximumWidth(1))"
+              :aria-valuenow="Math.round(columnWidths[1])"
+              class="group/column-resize absolute -right-3 top-1/2 z-10 h-6 w-3 -translate-y-1/2 cursor-col-resize touch-none border-0 bg-transparent p-0 outline-none"
+              @pointerdown="startColumnResize($event, 1)"
+              @keydown="handleColumnResizeKeydown($event, 1)"
+            >
+              <span
+                :class="
+                  cn(
+                    'absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-border-subtle transition-colors group-hover/column-resize:bg-primary group-focus/column-resize:bg-primary',
+                    activeResizeIndex === 1 && 'bg-primary',
+                  )
+                "
+              />
+            </button>
+          </span>
+          <span ref="pathHeaderRef" class="min-w-0">{{ t.environment.path }}</span>
+          <span class="min-w-0">
+            <span class="sr-only">{{ t.common.status }}</span>
+            <span
+              class="invisible inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-bold"
+              aria-hidden="true"
+            >
+              <span class="h-3 w-3 shrink-0" />
+              {{ statusColumnText }}
+            </span>
+          </span>
         </div>
         <article
           v-for="tool in enabledDefinitions"
           :key="tool.key"
-          class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-border-subtle px-2 py-2.5 transition-colors last:border-b-0 hover:bg-surface-container-low md:grid-cols-[minmax(7rem,0.7fr)_minmax(16rem,1.35fr)_minmax(10rem,1.7fr)_auto] md:gap-3"
+          class="environment-grid grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-border-subtle px-2 py-2.5 transition-colors last:border-b-0 hover:bg-surface-container-low md:gap-3"
         >
           <div class="min-w-0">
             <h3 class="truncate text-sm font-bold text-on-surface" :title="tool.name">{{ tool.name }}</h3>
@@ -171,3 +362,11 @@ watch(
     </section>
   </div>
 </template>
+
+<style scoped>
+@media (min-width: 48rem) {
+  .environment-grid {
+    grid-template-columns: var(--environment-grid-columns);
+  }
+}
+</style>
