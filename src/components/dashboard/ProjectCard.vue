@@ -596,6 +596,15 @@ const updateTinyToolbarAlignment = (event: Event) => {
         </button>
         <button
           v-if="!isSorting"
+          @click.stop="handleDuplicate"
+          class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+          :title="t.projectActions.duplicateProject"
+          :aria-label="t.projectActions.duplicateProject"
+        >
+          <Copy :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
           @click.stop="handleDelete"
           class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-status-error rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
           :title="t.projectActions.deleteProject"
