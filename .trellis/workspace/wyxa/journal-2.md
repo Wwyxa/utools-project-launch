@@ -270,3 +270,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 70: 优化插件冷启动首帧
+
+**Date**: 2026-08-08
+**Task**: 优化插件冷启动首帧
+**Branch**: `master`
+
+### Summary
+
+添加可选启动阶段计时，将路径检查和自动化计划重算移至首帧后，并让 Dashboard 先显示壳层和骨架再挂载项目卡片；三次冷启动首帧中位数为 221 ms。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e845f7a` | (see git log) |
+
+### Status
+
+[OK] **Completed**
