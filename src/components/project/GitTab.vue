@@ -167,6 +167,12 @@ const activeRepositoryContext = computed(() =>
   store.resolveGitRepositoryContext(props.project.id, activeRepositoryTarget.value),
 );
 const snapshot = computed(() => store.gitSnapshotForRepository(props.project.id, activeRepositoryTarget.value));
+const activeGitReadFailure = computed(() => {
+  const context = activeRepositoryContext.value;
+  if (!context) return null;
+  const failures = store.gitRepositoryReadFailures[context.contextKey];
+  return failures?.history || failures?.status || failures?.repository || null;
+});
 const files = computed(() => snapshot.value?.files || []);
 const activeRepositoryChangeCount = computed(() => files.value.length);
 const activeRepositoryCommitCount = computed(() => snapshot.value?.commitCount ?? 0);
@@ -205,6 +211,7 @@ const currentGitRefLabel = computed(() => {
 });
 const selectedCommitHashes = ref<string[]>([]);
 const topBarStatusText = computed(() => {
+  if (activeGitReadFailure.value) return activeGitReadFailure.value.message;
   const statusText = snapshot.value?.statusText || t.value.git.noRepo;
   const headHash = snapshot.value?.headHash;
   if (!snapshot.value?.isDetachedHead || !headHash) return statusText;
@@ -243,6 +250,7 @@ const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWrite
 const canInitializeGitRepository = computed(
   () =>
     activeRepositoryTarget.value.kind === "main" &&
+    (!activeGitReadFailure.value || activeGitReadFailure.value.code === "not-a-repository") &&
     !snapshot.value?.repositoryPath &&
     !gitWorkspaceSnapshot.value?.repositoryPath &&
     props.project.pathExists !== false &&

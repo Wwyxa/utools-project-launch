@@ -20,6 +20,7 @@ import type {
   EnvironmentToolKey,
   ProjectBridge,
   ProjectBridgeGitCommitPage,
+  ProjectBridgeGitWorkingTreeSnapshot,
   ProjectBridgeGitWorkspaceSnapshot,
   ProjectConfigFile,
   ProjectGitFileChange,
@@ -37,6 +38,7 @@ import type {
   ProjectBridgeExternalApplicationLaunchResult,
   ProjectBridgeRunResult,
   ProjectBridgeStopProcessOptions,
+  ProjectGitReadResult,
   ProjectFileListResult,
   ProjectFileMutationKind,
   ProjectFileMutationResult,
@@ -780,17 +782,99 @@ const fallbackBridge: ProjectBridge = {
   async readGitSnapshot(): Promise<ProjectBridgeGitSnapshot> {
     return emptyGitSnapshot();
   },
+  async readGitSnapshotResult(
+    projectPath: string,
+    options?: { limit?: number; skip?: number },
+  ): Promise<ProjectGitReadResult<ProjectBridgeGitSnapshot>> {
+    try {
+      const value = window.projectBridge?.readGitSnapshot
+        ? await window.projectBridge.readGitSnapshot(projectPath, options)
+        : emptyGitSnapshot();
+      return { ok: true, value };
+    } catch (error) {
+      return {
+        ok: false,
+        value: null,
+        failure: {
+          code: "command-failed",
+          operation: "history",
+          message: error instanceof Error ? error.message : "读取 Git 提交历史失败。",
+        },
+      };
+    }
+  },
   async readGitWorkspaceSnapshot(): Promise<ProjectBridgeGitWorkspaceSnapshot> {
     return unavailableGitWorkspaceSnapshot();
   },
   async readGitStatusSnapshot(): Promise<ProjectBridgeGitStatusSnapshot> {
     return emptyGitStatusSnapshot();
   },
+  async readGitStatusSnapshotResult(
+    projectPath: string,
+  ): Promise<ProjectGitReadResult<ProjectBridgeGitStatusSnapshot>> {
+    try {
+      const value = window.projectBridge?.readGitStatusSnapshot
+        ? await window.projectBridge.readGitStatusSnapshot(projectPath)
+        : emptyGitStatusSnapshot();
+      return { ok: true, value };
+    } catch (error) {
+      return {
+        ok: false,
+        value: null,
+        failure: {
+          code: "command-failed",
+          operation: "status",
+          message: error instanceof Error ? error.message : "读取 Git 状态失败。",
+        },
+      };
+    }
+  },
   async readGitWorkingTreeSnapshot() {
     return emptyGitWorkingTreeSnapshot();
   },
+  async readGitWorkingTreeSnapshotResult(
+    projectPath: string,
+  ): Promise<ProjectGitReadResult<ProjectBridgeGitWorkingTreeSnapshot>> {
+    try {
+      const value = window.projectBridge?.readGitWorkingTreeSnapshot
+        ? await window.projectBridge.readGitWorkingTreeSnapshot(projectPath)
+        : emptyGitWorkingTreeSnapshot();
+      return { ok: true, value };
+    } catch (error) {
+      return {
+        ok: false,
+        value: null,
+        failure: {
+          code: "command-failed",
+          operation: "status",
+          message: error instanceof Error ? error.message : "读取 Git 工作区失败。",
+        },
+      };
+    }
+  },
   async readGitCommits(): Promise<ProjectBridgeGitCommitPage> {
     return emptyGitCommitPage();
+  },
+  async readGitCommitsResult(
+    projectPath: string,
+    options?: { limit?: number; skip?: number },
+  ): Promise<ProjectGitReadResult<ProjectBridgeGitCommitPage>> {
+    try {
+      const value = window.projectBridge?.readGitCommits
+        ? await window.projectBridge.readGitCommits(projectPath, options)
+        : emptyGitCommitPage();
+      return { ok: true, value };
+    } catch (error) {
+      return {
+        ok: false,
+        value: null,
+        failure: {
+          code: "command-failed",
+          operation: "history",
+          message: error instanceof Error ? error.message : "读取 Git 提交历史失败。",
+        },
+      };
+    }
   },
   async readGitFileDiff(projectPath: string, relativePath: string, options?: ProjectGitFileDiffOptions) {
     const scope = options?.scope === "staged" || options?.scope === "unstaged" ? options.scope : "combined";

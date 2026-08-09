@@ -2072,6 +2072,100 @@ function findGitRootAsync(startPath) {
   });
 }
 
+function createGitReadFailure(operation, result, fallback) {
+  const detail = String(result.stderr || result.stdout || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const normalizedDetail = String(result.stderr || result.stdout || "").toLowerCase();
+  const normalizedErrorCode = String(result.errorCode || "").toLowerCase();
+  const code =
+    normalizedErrorCode === "enoent" ||
+    normalizedDetail.includes("enoent") ||
+    normalizedDetail.includes("not recognized as an internal or external command")
+      ? "git-unavailable"
+      : normalizedDetail.includes("not a git repository") ||
+          normalizedDetail.includes("does not appear to be a git repository")
+        ? "not-a-repository"
+        : "command-failed";
+
+  return {
+    code,
+    operation,
+    message:
+      code === "git-unavailable"
+        ? "未找到 Git 可执行文件，请检查 Git 安装或 PATH。"
+        : code === "not-a-repository"
+          ? "未检测到 Git 仓库。"
+          : `${fallback}${detail ? `：${detail}` : ""}`,
+    ...(typeof result.exitCode === "number" ? { exitCode: result.exitCode } : {}),
+  };
+}
+
+async function findGitRootAsyncResult(startPath) {
+  const result = await runGitAsyncResult(startPath, ["rev-parse", "--show-toplevel"]);
+  if (!result.ok) {
+    return { ok: false, failure: createGitReadFailure("repository", result, "无法定位 Git 仓库") };
+  }
+
+  const repositoryPath = result.stdout.trim();
+  if (!repositoryPath) {
+    return {
+      ok: false,
+      failure: {
+        code: "invalid-output",
+        operation: "repository",
+        message: "Git 未返回有效的仓库路径。",
+        exitCode: result.exitCode,
+      },
+    };
+  }
+
+  return { ok: true, repositoryPath };
+}
+
+function createEmptyGitStatusSnapshot(repositoryPath, now, statusText) {
+  return {
+    branch: "main",
+    headHash: "",
+    isDetachedHead: false,
+    ahead: 0,
+    behind: 0,
+    files: [],
+    branches: [],
+    remotes: [],
+    remoteBranches: [],
+    upstream: null,
+    base: null,
+    repositoryPath,
+    lastRefreshedAt: now,
+    statusText,
+  };
+}
+
+function createEmptyGitCommitPage(repositoryPath, now) {
+  return {
+    commits: [],
+    commitCount: 0,
+    hasMoreCommits: false,
+    nextCommitSkip: 0,
+    repositoryPath,
+    lastRefreshedAt: now,
+  };
+}
+
+function combineGitSnapshot(statusSnapshot, commitPage) {
+  return {
+    ...statusSnapshot,
+    commits: commitPage.commits,
+    commitCount: commitPage.commitCount,
+    hasMoreCommits: commitPage.hasMoreCommits,
+    nextCommitSkip: commitPage.nextCommitSkip,
+    repositoryPath: statusSnapshot.repositoryPath || commitPage.repositoryPath,
+    lastRefreshedAt: statusSnapshot.lastRefreshedAt || commitPage.lastRefreshedAt,
+  };
+}
+
 function runGit(startPath, args) {
   const resolvedPath = expandPath(startPath);
 
@@ -2096,6 +2190,27 @@ function runGitAsync(startPath, args) {
       { encoding: "utf8", env: resolveGitExecutionEnvironment(), windowsHide: true },
       (error, stdout) => {
         resolve(error ? null : String(stdout || ""));
+      },
+    );
+  });
+}
+
+function runGitAsyncResult(startPath, args) {
+  const resolvedPath = expandPath(startPath);
+
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      ["-C", resolvedPath, ...args],
+      { encoding: "utf8", env: resolveGitExecutionEnvironment(), windowsHide: true },
+      (error, stdout, stderr) => {
+        resolve({
+          ok: !error,
+          stdout: String(stdout || ""),
+          stderr: String(stderr || error?.message || ""),
+          exitCode: error ? (typeof error.code === "number" ? error.code : 1) : 0,
+          errorCode: error?.code,
+        });
       },
     );
   });
@@ -2920,13 +3035,21 @@ function collectNumstat(startPath, args) {
 }
 
 async function collectNumstatAsync(startPath, args) {
-  const output = await runGitAsync(startPath, args);
-  if (!output) {
-    return new Map();
+  const result = await collectNumstatAsyncResult(startPath, args);
+  return result.ok ? result.value : new Map();
+}
+
+async function collectNumstatAsyncResult(startPath, args) {
+  const outputResult = await runGitAsyncResult(startPath, args);
+  if (!outputResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("status", outputResult, "读取 Git 文件统计失败"),
+    };
   }
 
   const result = new Map();
-  output.split(/\r?\n/).forEach((line) => {
+  outputResult.stdout.split(/\r?\n/).forEach((line) => {
     if (!line.trim()) {
       return;
     }
@@ -2939,7 +3062,7 @@ async function collectNumstatAsync(startPath, args) {
     });
   });
 
-  return result;
+  return { ok: true, value: result };
 }
 
 function parseGitStatusRecord(statusCode, filePath, originalPath = "") {
@@ -2990,12 +3113,20 @@ function readGitStatusEntries(repositoryPath) {
 }
 
 async function readGitStatusEntriesAsync(repositoryPath) {
-  const statusOutput = await runGitAsync(repositoryPath, ["status", "--porcelain=v1", "-z"]);
-  if (!statusOutput) {
-    return [];
+  const result = await readGitStatusEntriesAsyncResult(repositoryPath);
+  return result.ok ? result.value : [];
+}
+
+async function readGitStatusEntriesAsyncResult(repositoryPath) {
+  const statusResult = await runGitAsyncResult(repositoryPath, ["status", "--porcelain=v1", "-z"]);
+  if (!statusResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("status", statusResult, "读取 Git 文件状态失败"),
+    };
   }
 
-  const records = statusOutput.split("\0").filter(Boolean);
+  const records = statusResult.stdout.split("\0").filter(Boolean);
   const entries = [];
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index];
@@ -3007,7 +3138,7 @@ async function readGitStatusEntriesAsync(repositoryPath) {
       entries.push(entry);
     }
   }
-  return entries;
+  return { ok: true, value: entries };
 }
 
 function readGitBranches(repositoryPath) {
@@ -3027,12 +3158,20 @@ function readGitBranches(repositoryPath) {
 }
 
 async function readGitBranchesAsync(repositoryPath) {
-  const output = await runGitAsync(repositoryPath, ["branch", "--format=%(refname:short)%09%(HEAD)"]);
-  if (!output) {
-    return [];
+  const result = await readGitBranchesAsyncResult(repositoryPath);
+  return result.ok ? result.value : [];
+}
+
+async function readGitBranchesAsyncResult(repositoryPath) {
+  const outputResult = await runGitAsyncResult(repositoryPath, ["branch", "--format=%(refname:short)%09%(HEAD)"]);
+  if (!outputResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("status", outputResult, "读取 Git 分支失败"),
+    };
   }
 
-  return output
+  const branches = outputResult.stdout
     .split(/\r?\n/)
     .map((line) => {
       const [name, marker] = line.split("\t");
@@ -3040,16 +3179,25 @@ async function readGitBranchesAsync(repositoryPath) {
       return branchName ? { name: branchName, current: String(marker || "").trim() === "*" } : null;
     })
     .filter(Boolean);
+  return { ok: true, value: branches };
 }
 
 async function readGitRemotesAsync(repositoryPath) {
-  const output = await runGitAsync(repositoryPath, ["remote", "-v"]);
-  if (!output) {
-    return [];
+  const result = await readGitRemotesAsyncResult(repositoryPath);
+  return result.ok ? result.value : [];
+}
+
+async function readGitRemotesAsyncResult(repositoryPath) {
+  const outputResult = await runGitAsyncResult(repositoryPath, ["remote", "-v"]);
+  if (!outputResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("status", outputResult, "读取 Git remote 失败"),
+    };
   }
 
   const remotes = new Map();
-  output.split(/\r?\n/).forEach((line) => {
+  outputResult.stdout.split(/\r?\n/).forEach((line) => {
     const match = line.match(/^(\S+)\s+(.+)\s+\((fetch|push)\)$/);
     if (!match) {
       return;
@@ -3064,25 +3212,34 @@ async function readGitRemotesAsync(repositoryPath) {
     remotes.set(name, current);
   });
 
-  return Array.from(remotes.values()).map((remote) => ({
+  const values = Array.from(remotes.values()).map((remote) => ({
     ...remote,
     pushUrl: remote.pushUrl || remote.fetchUrl,
   }));
+  return { ok: true, value: values };
 }
 
 async function readGitRemoteBranchesAsync(repositoryPath, remotes) {
+  const result = await readGitRemoteBranchesAsyncResult(repositoryPath, remotes);
+  return result.ok ? result.value : [];
+}
+
+async function readGitRemoteBranchesAsyncResult(repositoryPath, remotes) {
   const fieldSeparator = "\x1f";
-  const output = await runGitAsync(repositoryPath, [
+  const outputResult = await runGitAsyncResult(repositoryPath, [
     "for-each-ref",
     `--format=%(refname)${fieldSeparator}%(objectname)`,
     "refs/remotes",
   ]);
-  if (!output) {
-    return [];
+  if (!outputResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("status", outputResult, "读取 Git 远端分支失败"),
+    };
   }
 
   const remoteNames = new Set(remotes.map((remote) => remote.name));
-  return String(output)
+  const branches = outputResult.stdout
     .split(/\r?\n/)
     .map((line) => {
       const [fullName] = line.split(fieldSeparator);
@@ -3108,31 +3265,67 @@ async function readGitRemoteBranchesAsync(repositoryPath, remotes) {
     })
     .filter(Boolean)
     .sort((left, right) => left.ref.localeCompare(right.ref));
+  return { ok: true, value: branches };
 }
 
 async function readGitUpstreamAsync(repositoryPath) {
-  const ref = String(
-    (await runGitAsync(repositoryPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])) || "",
-  ).trim();
+  const branchResult = await runGitAsyncResult(repositoryPath, ["branch", "--show-current"]);
+  if (!branchResult.ok) return null;
+  const result = await readGitUpstreamAsyncResult(repositoryPath, branchResult.stdout.trim());
+  return result.ok ? result.value : null;
+}
+
+async function readGitUpstreamAsyncResult(repositoryPath, branch) {
+  if (!branch) return { ok: true, value: null };
+  const refResult = await runGitAsyncResult(repositoryPath, [
+    "for-each-ref",
+    "--format=%(upstream:short)",
+    `refs/heads/${branch}`,
+  ]);
+  if (!refResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("status", refResult, "读取 Git upstream 失败"),
+    };
+  }
+  const ref = refResult.stdout.trim().split(/\r?\n/)[0] || "";
   if (!ref || !ref.includes("/")) {
-    return null;
+    return { ok: true, value: null };
   }
 
   const [remote, ...branchParts] = ref.split("/");
-  const branch = branchParts.join("/");
-  if (!remote || !branch) {
-    return null;
+  const upstreamBranch = branchParts.join("/");
+  if (!remote || !upstreamBranch) {
+    return { ok: true, value: null };
   }
 
-  const counts = String(
-    (await runGitAsync(repositoryPath, ["rev-list", "--left-right", "--count", "HEAD...@{u}"])) || "",
-  )
-    .trim()
-    .split(/\s+/);
-  const ahead = Number(counts[0]) || 0;
-  const behind = Number(counts[1]) || 0;
+  const countsResult = await runGitAsyncResult(repositoryPath, [
+    "rev-list",
+    "--left-right",
+    "--count",
+    `HEAD...${ref}`,
+  ]);
+  if (!countsResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("status", countsResult, "读取 Git ahead/behind 失败"),
+    };
+  }
+  const counts = countsResult.stdout.trim().split(/\s+/);
+  if (counts.length !== 2 || counts.some((value) => !/^\d+$/.test(value))) {
+    return {
+      ok: false,
+      failure: {
+        code: "invalid-output",
+        operation: "status",
+        message: "Git 返回了无效的 ahead/behind 状态。",
+      },
+    };
+  }
+  const ahead = Number(counts[0]);
+  const behind = Number(counts[1]);
 
-  return { remote, branch, ref, ahead, behind };
+  return { ok: true, value: { remote, branch: upstreamBranch, ref, ahead, behind } };
 }
 
 function parseGitRemoteBranchRef(ref, remotes) {
@@ -5638,97 +5831,145 @@ function parseGitWorkingTreeFiles(repositoryPath, statusEntries, numstatOutput, 
 }
 
 async function readGitWorkingTreeData(repositoryPath) {
-  const [statusEntries, numstatOutput, cachedNumstatOutput] = await Promise.all([
-    readGitStatusEntriesAsync(repositoryPath),
-    collectNumstatAsync(repositoryPath, ["diff", "--numstat"]),
-    collectNumstatAsync(repositoryPath, ["diff", "--cached", "--numstat"]),
-  ]);
-  return parseGitWorkingTreeFiles(repositoryPath, statusEntries, numstatOutput, cachedNumstatOutput);
+  const result = await readGitWorkingTreeDataResult(repositoryPath);
+  return result.ok ? result.value : { files: [], changeCount: 0 };
 }
 
-async function readGitWorkingTreeSnapshot(projectPath) {
-  const repositoryPath = await findGitRootAsync(projectPath);
-  const now = new Date().toISOString();
-
-  if (!repositoryPath) {
-    return {
-      files: [],
-      repositoryPath: "",
-      lastRefreshedAt: now,
-      statusText: "未检测到 Git 仓库",
-    };
-  }
-
-  const workingTree = await readGitWorkingTreeData(repositoryPath);
+async function readGitWorkingTreeDataResult(repositoryPath) {
+  const [statusResult, numstatResult, cachedNumstatResult] = await Promise.all([
+    readGitStatusEntriesAsyncResult(repositoryPath),
+    collectNumstatAsyncResult(repositoryPath, ["diff", "--numstat"]),
+    collectNumstatAsyncResult(repositoryPath, ["diff", "--cached", "--numstat"]),
+  ]);
+  const failedResult = [statusResult, numstatResult, cachedNumstatResult].find((result) => !result.ok);
+  if (failedResult && !failedResult.ok) return failedResult;
   return {
-    files: workingTree.files,
-    repositoryPath,
-    lastRefreshedAt: now,
-    statusText: workingTree.changeCount === 0 ? "工作区干净" : `${workingTree.changeCount} 个文件变更`,
+    ok: true,
+    value: parseGitWorkingTreeFiles(repositoryPath, statusResult.value, numstatResult.value, cachedNumstatResult.value),
   };
 }
 
-async function readGitStatusSnapshot(projectPath) {
-  const repositoryPath = await findGitRootAsync(projectPath);
+async function readGitWorkingTreeSnapshotResult(projectPath) {
   const now = new Date().toISOString();
+  const rootResult = await findGitRootAsyncResult(projectPath);
 
-  if (!repositoryPath) {
+  if (!rootResult.ok) {
     return {
-      branch: "main",
-      ahead: 0,
-      behind: 0,
-      files: [],
-      branches: [],
-      remotes: [],
-      remoteBranches: [],
-      upstream: null,
-      base: null,
-      repositoryPath: "",
-      lastRefreshedAt: now,
-      statusText: "未检测到 Git 仓库",
+      ok: false,
+      value: null,
+      failure: rootResult.failure,
     };
   }
 
-  const [branchOutput, symbolicBranchOutput, headHashOutput, workingTree, branches, remotes, upstream] =
+  const repositoryPath = rootResult.repositoryPath;
+  const workingTreeResult = await readGitWorkingTreeDataResult(repositoryPath);
+  if (!workingTreeResult.ok) return { ...workingTreeResult, value: null };
+  const workingTree = workingTreeResult.value;
+  return {
+    ok: true,
+    value: {
+      files: workingTree.files,
+      repositoryPath,
+      lastRefreshedAt: now,
+      statusText: workingTree.changeCount === 0 ? "工作区干净" : `${workingTree.changeCount} 个文件变更`,
+    },
+  };
+}
+
+async function readGitWorkingTreeSnapshot(projectPath) {
+  const result = await readGitWorkingTreeSnapshotResult(projectPath);
+  return result.ok
+    ? result.value
+    : {
+        files: [],
+        repositoryPath: "",
+        lastRefreshedAt: new Date().toISOString(),
+        statusText: result.failure.message,
+      };
+}
+
+async function readGitStatusSnapshotResult(projectPath) {
+  const now = new Date().toISOString();
+  const rootResult = await findGitRootAsyncResult(projectPath);
+
+  if (!rootResult.ok) {
+    return {
+      ok: false,
+      value: createEmptyGitStatusSnapshot(
+        "",
+        now,
+        rootResult.failure.code === "git-unavailable" ? rootResult.failure.message : "未检测到 Git 仓库",
+      ),
+      failure: rootResult.failure,
+    };
+  }
+
+  const repositoryPath = rootResult.repositoryPath;
+  const [branchOutput, symbolicBranchOutput, headHashOutput, workingTreeResult, branchesResult, remotesResult] =
     await Promise.all([
-      runGitAsync(repositoryPath, ["status", "--short", "--branch"]),
+      runGitAsyncResult(repositoryPath, ["status", "--short", "--branch"]),
       runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
       runGitAsync(repositoryPath, ["rev-parse", "--short", "HEAD"]),
-      readGitWorkingTreeData(repositoryPath),
-      readGitBranchesAsync(repositoryPath),
-      readGitRemotesAsync(repositoryPath),
-      readGitUpstreamAsync(repositoryPath),
+      readGitWorkingTreeDataResult(repositoryPath),
+      readGitBranchesAsyncResult(repositoryPath),
+      readGitRemotesAsyncResult(repositoryPath),
     ]);
+  if (!branchOutput.ok) {
+    return {
+      ok: false,
+      value: null,
+      failure: createGitReadFailure("status", branchOutput, "读取 Git 状态失败"),
+    };
+  }
+  const failedResult = [workingTreeResult, branchesResult, remotesResult].find((result) => !result.ok);
+  if (failedResult && !failedResult.ok) return { ...failedResult, value: null };
+
   const symbolicBranch = String(symbolicBranchOutput || "").trim();
   const headHash = String(headHashOutput || "").trim();
   const isDetachedHead = !symbolicBranch && Boolean(headHash);
-  const branchLine = branchOutput ? String(branchOutput).split(/\r?\n/)[0] : "";
+  const branchLine = branchOutput.stdout ? branchOutput.stdout.split(/\r?\n/)[0] : "";
   const branchMatch = branchLine.match(/^##\s+([^\.\s]+)(?:\.\.\.(?:[^\s]+))?(?:\s+\[(.+)\])?/);
   const branch = symbolicBranch || (isDetachedHead ? "HEAD" : branchMatch?.[1] || "main");
   const upstreamInfo = branchMatch?.[2] || "";
   const aheadMatch = upstreamInfo.match(/ahead\s+(\d+)/);
   const behindMatch = upstreamInfo.match(/behind\s+(\d+)/);
+  const upstreamResult = await readGitUpstreamAsyncResult(repositoryPath, symbolicBranch);
+  if (!upstreamResult.ok) return { ...upstreamResult, value: null };
+  const workingTree = workingTreeResult.value;
+  const branches = branchesResult.value;
+  const remotes = remotesResult.value;
+  const upstream = upstreamResult.value;
   const ahead = upstream?.ahead ?? (aheadMatch ? Number(aheadMatch[1]) : 0);
   const behind = upstream?.behind ?? (behindMatch ? Number(behindMatch[1]) : 0);
   const base = await readGitBranchBaseAsync(repositoryPath, symbolicBranch, remotes, upstream);
-  const remoteBranches = await readGitRemoteBranchesAsync(repositoryPath, remotes);
+  const remoteBranchesResult = await readGitRemoteBranchesAsyncResult(repositoryPath, remotes);
+  if (!remoteBranchesResult.ok) return { ...remoteBranchesResult, value: null };
+  const remoteBranches = remoteBranchesResult.value;
 
   return {
-    branch,
-    headHash,
-    isDetachedHead,
-    ahead,
-    behind,
-    files: workingTree.files,
-    branches,
-    remotes,
-    remoteBranches,
-    upstream,
-    base,
-    repositoryPath,
-    lastRefreshedAt: now,
-    statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${workingTree.changeCount === 0 ? "工作区干净" : `${workingTree.changeCount} 个文件变更`}`,
+    ok: true,
+    value: {
+      branch,
+      headHash,
+      isDetachedHead,
+      ahead,
+      behind,
+      files: workingTree.files,
+      branches,
+      remotes,
+      remoteBranches,
+      upstream,
+      base,
+      repositoryPath,
+      lastRefreshedAt: now,
+      statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${workingTree.changeCount === 0 ? "工作区干净" : `${workingTree.changeCount} 个文件变更`}`,
+    },
   };
+}
+
+async function readGitStatusSnapshot(projectPath) {
+  const result = await readGitStatusSnapshotResult(projectPath);
+  return result.value || createEmptyGitStatusSnapshot("", new Date().toISOString(), result.failure.message);
 }
 
 function fetchGitRemote(projectPath) {
@@ -5937,41 +6178,54 @@ async function deleteGitRemoteBranch(projectPath, remoteName, branchName) {
 }
 
 async function readGitStashes(repositoryPath) {
+  const result = await readGitStashesResult(repositoryPath);
+  return result.ok ? result.value : [];
+}
+
+async function readGitStashesResult(repositoryPath) {
   const fieldSeparator = "\x1f";
-  const stashOutput = await runGitAsync(repositoryPath, [
-    "reflog",
+  const stashResult = await runGitAsyncResult(repositoryPath, [
+    "stash",
+    "list",
     `--format=%H${fieldSeparator}%P${fieldSeparator}%an${fieldSeparator}%ad${fieldSeparator}%s`,
     "--date=iso-strict",
-    "refs/stash",
-    "--",
   ]);
+  if (!stashResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("history", stashResult, "读取 Git stash 失败"),
+    };
+  }
   const stashes = [];
 
-  String(stashOutput || "")
-    .split(/\r?\n/)
-    .forEach((line, index) => {
-      const [hash, parentText, author, date, message] = line.split(fieldSeparator);
-      const parents = parentText ? parentText.split(" ").filter(Boolean) : [];
-      const baseHash = parents[0];
-      if (!hash || !baseHash) return;
-      stashes.push({
-        hash,
-        baseHash,
-        selector: `stash@{${index}}`,
-        untrackedFilesHash: parents.length === 3 ? parents[2] || null : null,
-        author: author || "",
-        date: date || "",
-        message: message || "",
-      });
+  stashResult.stdout.split(/\r?\n/).forEach((line, index) => {
+    const [hash, parentText, author, date, message] = line.split(fieldSeparator);
+    const parents = parentText ? parentText.split(" ").filter(Boolean) : [];
+    const baseHash = parents[0];
+    if (!hash || !baseHash) return;
+    stashes.push({
+      hash,
+      baseHash,
+      selector: `stash@{${index}}`,
+      untrackedFilesHash: parents.length === 3 ? parents[2] || null : null,
+      author: author || "",
+      date: date || "",
+      message: message || "",
     });
+  });
 
-  return stashes;
+  return { ok: true, value: stashes };
 }
 
 async function readGitCommitRefs(repositoryPath, stashes = []) {
+  const result = await readGitCommitRefsResult(repositoryPath, stashes);
+  return result.ok ? result.value : new Map();
+}
+
+async function readGitCommitRefsResult(repositoryPath, stashes = []) {
   const fieldSeparator = "\x1f";
-  const [refOutput, symbolicHead, headHash] = await Promise.all([
-    runGitAsync(repositoryPath, [
+  const [refResult, symbolicHead, headHash] = await Promise.all([
+    runGitAsyncResult(repositoryPath, [
       "for-each-ref",
       `--format=%(objectname)${fieldSeparator}%(*objectname)${fieldSeparator}%(refname)`,
       "refs/heads",
@@ -5981,6 +6235,12 @@ async function readGitCommitRefs(repositoryPath, stashes = []) {
     runGitAsync(repositoryPath, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
     runGitAsync(repositoryPath, ["rev-parse", "HEAD"]),
   ]);
+  if (!refResult.ok) {
+    return {
+      ok: false,
+      failure: createGitReadFailure("history", refResult, "读取 Git 提交引用失败"),
+    };
+  }
   const refsByCommit = new Map();
   const currentBranch = String(symbolicHead || "").trim();
 
@@ -5991,20 +6251,18 @@ async function readGitCommitRefs(repositoryPath, stashes = []) {
     refsByCommit.set(commitHash, refs);
   };
 
-  String(refOutput || "")
-    .split(/\r?\n/)
-    .forEach((line) => {
-      const [objectHash, peeledHash, fullName] = line.split(fieldSeparator);
-      if (!fullName) return;
-      if (fullName.startsWith("refs/heads/")) {
-        const name = fullName.slice("refs/heads/".length);
-        addRef(objectHash, { kind: "local", name, head: name === currentBranch || undefined });
-      } else if (fullName.startsWith("refs/remotes/")) {
-        addRef(objectHash, { kind: "remote", name: fullName.slice("refs/remotes/".length) });
-      } else if (fullName.startsWith("refs/tags/")) {
-        addRef(peeledHash || objectHash, { kind: "tag", name: fullName.slice("refs/tags/".length) });
-      }
-    });
+  refResult.stdout.split(/\r?\n/).forEach((line) => {
+    const [objectHash, peeledHash, fullName] = line.split(fieldSeparator);
+    if (!fullName) return;
+    if (fullName.startsWith("refs/heads/")) {
+      const name = fullName.slice("refs/heads/".length);
+      addRef(objectHash, { kind: "local", name, head: name === currentBranch || undefined });
+    } else if (fullName.startsWith("refs/remotes/")) {
+      addRef(objectHash, { kind: "remote", name: fullName.slice("refs/remotes/".length) });
+    } else if (fullName.startsWith("refs/tags/")) {
+      addRef(peeledHash || objectHash, { kind: "tag", name: fullName.slice("refs/tags/".length) });
+    }
+  });
 
   stashes.forEach((stash) => addRef(stash.hash, { kind: "stash", name: stash.selector }));
 
@@ -6016,7 +6274,7 @@ async function readGitCommitRefs(repositoryPath, stashes = []) {
       head: true,
     });
   }
-  return refsByCommit;
+  return { ok: true, value: refsByCommit };
 }
 
 function insertGitStashes(commits, stashes, refsByCommit) {
@@ -6076,27 +6334,28 @@ function insertGitStashes(commits, stashes, refsByCommit) {
   return displayedCommits;
 }
 
-async function readGitCommits(projectPath, options = {}) {
-  const repositoryPath = await findGitRootAsync(projectPath);
+async function readGitCommitsResult(projectPath, options = {}) {
   const now = new Date().toISOString();
   const limit = Math.min(100, Math.max(20, Number(options.limit) || 80));
   const skip = Math.max(0, Number(options.skip) || 0);
+  const rootResult = await findGitRootAsyncResult(projectPath);
 
-  if (!repositoryPath) {
+  if (!rootResult.ok) {
     return {
-      commits: [],
-      commitCount: 0,
-      hasMoreCommits: false,
-      nextCommitSkip: 0,
-      repositoryPath: "",
-      lastRefreshedAt: now,
+      ok: false,
+      value: createEmptyGitCommitPage("", now),
+      failure: rootResult.failure,
     };
   }
 
-  const stashes = await readGitStashes(repositoryPath);
+  const repositoryPath = rootResult.repositoryPath;
+  const stashesResult = await readGitStashesResult(repositoryPath);
+  if (!stashesResult.ok) return { ...stashesResult, value: null };
+  const stashes = stashesResult.value;
   const stashBaseHashes = [...new Set(stashes.map((stash) => stash.baseHash))];
-  const [commitOutput, refsByCommit, commitCountOutput] = await Promise.all([
-    runGitAsync(repositoryPath, [
+  const [headStatusResult, commitOutputResult, refsResult, commitCountResult] = await Promise.all([
+    runGitAsyncResult(repositoryPath, ["status", "--short", "--branch"]),
+    runGitAsyncResult(repositoryPath, [
       "log",
       "--topo-order",
       "--decorate=short",
@@ -6112,15 +6371,73 @@ async function readGitCommits(projectPath, options = {}) {
       ...stashBaseHashes,
       "--",
     ]),
-    readGitCommitRefs(repositoryPath, stashes),
-    runGitAsync(repositoryPath, ["rev-list", "--count", "HEAD"]),
+    readGitCommitRefsResult(repositoryPath, stashes),
+    runGitAsyncResult(repositoryPath, ["rev-list", "--count", "HEAD"]),
   ]);
-  const commitCountText = (commitCountOutput || "").trim();
-  const parsedCommitCount = /^\d+$/.test(commitCountText) ? Number(commitCountText) : 0;
-  const commitCount = Number.isSafeInteger(parsedCommitCount) && parsedCommitCount >= 0 ? parsedCommitCount : 0;
+
+  const isUnbornRepository =
+    headStatusResult.ok && /^##\s+No commits yet(?:\s|$)/i.test(headStatusResult.stdout.split(/\r?\n/)[0] || "");
+  const isExpectedEmptyHistoryFailure = (result) =>
+    !result.ok &&
+    /does not have any commits yet|ambiguous argument ['"]?HEAD|bad revision ['"]?HEAD|unknown revision/i.test(
+      result.stderr || "",
+    );
+  const isExpectedEmptyHistoryOutput = (result, expectedOutput) =>
+    result.ok ? result.stdout.trim() === expectedOutput : isExpectedEmptyHistoryFailure(result);
+  if (!refsResult.ok) return { ...refsResult, value: null };
+  if (
+    isUnbornRepository &&
+    isExpectedEmptyHistoryOutput(commitOutputResult, "") &&
+    isExpectedEmptyHistoryOutput(commitCountResult, "0")
+  ) {
+    return { ok: true, value: createEmptyGitCommitPage(repositoryPath, now) };
+  }
+
+  if (!commitOutputResult.ok) {
+    return {
+      ok: false,
+      value: null,
+      failure: createGitReadFailure("history", commitOutputResult, "读取 Git 提交历史失败"),
+    };
+  }
+  if (!commitCountResult.ok) {
+    return {
+      ok: false,
+      value: null,
+      failure: createGitReadFailure("history", commitCountResult, "读取 Git 提交数量失败"),
+    };
+  }
+  const refsByCommit = refsResult.value;
+
+  const commitCountText = commitCountResult.stdout.trim();
+  if (!/^\d+$/.test(commitCountText)) {
+    return {
+      ok: false,
+      value: null,
+      failure: {
+        code: "invalid-output",
+        operation: "history",
+        message: "Git 返回了无效的提交数量。",
+      },
+    };
+  }
+  const parsedCommitCount = Number(commitCountText);
+  if (!Number.isSafeInteger(parsedCommitCount) || parsedCommitCount < 0) {
+    return {
+      ok: false,
+      value: null,
+      failure: {
+        code: "invalid-output",
+        operation: "history",
+        message: "Git 返回的提交数量超出可处理范围。",
+      },
+    };
+  }
+  const commitCount = parsedCommitCount;
 
   const commits = [];
-  if (commitOutput) {
+  const commitOutput = commitOutputResult.stdout;
+  if (commitOutput.trim()) {
     commitOutput.split(gitCommitRecordSeparator).forEach((record) => {
       const normalizedRecord = record.trimEnd();
       const shortStatSeparatorIndex = normalizedRecord.indexOf(gitCommitShortStatSeparator);
@@ -6176,6 +6493,18 @@ async function readGitCommits(projectPath, options = {}) {
     });
   }
 
+  if (commitCount > 0 && commits.length === 0) {
+    return {
+      ok: false,
+      value: null,
+      failure: {
+        code: "invalid-output",
+        operation: "history",
+        message: "Git 提交历史输出无效，未找到可解析的提交。",
+      },
+    };
+  }
+
   const hasMoreCommits = commits.length > limit;
   if (hasMoreCommits) {
     commits.length = limit;
@@ -6183,29 +6512,53 @@ async function readGitCommits(projectPath, options = {}) {
   const nextCommitSkip = skip + commits.length;
 
   return {
-    commits: insertGitStashes(commits, stashes, refsByCommit),
-    commitCount,
-    hasMoreCommits,
-    nextCommitSkip,
-    repositoryPath,
-    lastRefreshedAt: now,
+    ok: true,
+    value: {
+      commits: insertGitStashes(commits, stashes, refsByCommit),
+      commitCount,
+      hasMoreCommits,
+      nextCommitSkip,
+      repositoryPath,
+      lastRefreshedAt: now,
+    },
   };
 }
 
-async function readGitSnapshot(projectPath, options = {}) {
-  const [statusSnapshot, commitPage] = await Promise.all([
-    readGitStatusSnapshot(projectPath),
-    readGitCommits(projectPath, options),
+async function readGitCommits(projectPath, options = {}) {
+  const result = await readGitCommitsResult(projectPath, options);
+  return result.value || createEmptyGitCommitPage("", new Date().toISOString());
+}
+
+async function readGitSnapshotResult(projectPath, options = {}) {
+  const [statusResult, commitResult] = await Promise.all([
+    readGitStatusSnapshotResult(projectPath),
+    readGitCommitsResult(projectPath, options),
   ]);
-  return {
-    ...statusSnapshot,
-    commits: commitPage.commits,
-    commitCount: commitPage.commitCount,
-    hasMoreCommits: commitPage.hasMoreCommits,
-    nextCommitSkip: commitPage.nextCommitSkip,
-    repositoryPath: statusSnapshot.repositoryPath || commitPage.repositoryPath,
-    lastRefreshedAt: statusSnapshot.lastRefreshedAt,
-  };
+  if (statusResult.ok && commitResult.ok) {
+    return { ok: true, value: combineGitSnapshot(statusResult.value, commitResult.value) };
+  }
+
+  const failure = !statusResult.ok ? statusResult.failure : commitResult.failure;
+  const emptyRepositoryValue =
+    !statusResult.ok &&
+    statusResult.value &&
+    !statusResult.value.repositoryPath &&
+    !commitResult.ok &&
+    commitResult.value &&
+    !commitResult.value.repositoryPath
+      ? combineGitSnapshot(statusResult.value, commitResult.value)
+      : null;
+  return { ok: false, value: emptyRepositoryValue, failure };
+}
+
+async function readGitSnapshot(projectPath, options = {}) {
+  const result = await readGitSnapshotResult(projectPath, options);
+  return (
+    result.value || {
+      ...createEmptyGitStatusSnapshot("", new Date().toISOString(), result.failure.message),
+      ...createEmptyGitCommitPage("", new Date().toISOString()),
+    }
+  );
 }
 
 function runCommand(payload) {
@@ -6577,10 +6930,14 @@ window.projectBridge = {
   readPackageScripts,
   listProjectSubdirectories,
   readGitSnapshot,
+  readGitSnapshotResult,
   readGitWorkspaceSnapshot,
   readGitStatusSnapshot,
+  readGitStatusSnapshotResult,
   readGitWorkingTreeSnapshot,
+  readGitWorkingTreeSnapshotResult,
   readGitCommits,
+  readGitCommitsResult,
   readGitFileDiff,
   readGitCommitFileDiff,
   readGitCommitFiles,

@@ -1273,8 +1273,12 @@ Validate both lexical and canonical boundaries, and reject direct link mutation 
 ### 2. Signatures
 
 - `ProjectBridge.readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>`
+- `ProjectBridge.readGitSnapshotResult(...): Promise<ProjectGitReadResult<ProjectBridgeGitSnapshot>>`
 - `ProjectBridge.readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>`
+- `ProjectBridge.readGitStatusSnapshotResult(...): Promise<ProjectGitReadResult<ProjectBridgeGitStatusSnapshot>>`
+- `ProjectBridge.readGitWorkingTreeSnapshotResult(...): Promise<ProjectGitReadResult<ProjectBridgeGitWorkingTreeSnapshot>>`
 - `ProjectBridge.readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>`
+- `ProjectBridge.readGitCommitsResult(...): Promise<ProjectGitReadResult<ProjectBridgeGitCommitPage>>`
 - `loadMoreGitCommits(projectId: string): Promise<void>`
 
 ### 3. Contracts
@@ -1284,6 +1288,15 @@ Validate both lexical and canonical boundaries, and reject direct link mutation 
 - Loading more commits must call `readGitCommits(project.path, { limit: 80, skip: project.git.commits.length })`, then append only the returned commits in the store.
 - Loading more commits must not overwrite the current `files`, `branches`, `branch`, `headHash`, or `isDetachedHead` fields. Those fields belong to status refresh.
 - Git write actions that only affect the index or worktree, such as stage and unstage, should refresh through `readGitStatusSnapshot` instead of rereading commit history.
+- Store refresh actions consume the typed result methods. A transient command failure preserves the previous complete
+  snapshot, while `not-a-repository` from full, status, working-tree, or pagination reads clears stale commits, files,
+  remotes, and latest-commit metadata so repository initialization is available again.
+- Editing an existing project's path invalidates its main and related Git snapshots, staged files, workspace inventory,
+  read failures, loading flags, and in-flight request coordination before the replacement project is stored.
+- Status-only and working-tree refreshes require an existing complete history snapshot. They may update status/files
+  after success, but must not materialize a snapshot with an unloaded empty `commits` array.
+- Check request tokens, repository context, and ref-mutation versions before writing either success or failure state.
+  A cancelled pagination request or superseded forced refresh must not leave a stale error banner.
 - The preload bridge should request `limit + 1` commits from `git log` to derive `hasMoreCommits`, then trim the returned page to `limit`.
 - The Git history viewport uses a fixed-height bottom sentinel observed with `IntersectionObserver` (`root` is the graph scrollport; bottom `rootMargin` is about `120px`) instead of a manual load-more button. One false-to-true intersection may request one page only; an already intersecting sentinel must not recursively chase filtered history to the repository end.
 - The sentinel stays mounted at a stable height and shows only an in-place spinner while loading. Commit rows retain stable hash keys and append below the existing list so scroll position and graph coordinates do not jump.
@@ -1292,6 +1305,10 @@ Validate both lexical and canonical boundaries, and reject direct link mutation 
 ### 4. Validation & Error Matrix
 
 - Missing Git repository -> return an empty snapshot with `hasMoreCommits: false`.
+- Missing Git repository after a previous successful read -> clear the stale Store snapshot and retain the typed
+  `not-a-repository` failure for user-facing status.
+- Working-tree or auxiliary status command failure -> preserve the previous files/refs/remotes and expose the typed
+  failure; do not report a clean repository.
 - Invalid `limit` or `skip` -> clamp to a safe bounded page in preload.
 - Loading more with no existing snapshot -> no-op.
 - Sentinel remains intersecting after a filtered append -> do not immediately request another page; wait for a new false-to-true intersection.
@@ -1311,6 +1328,10 @@ Validate both lexical and canonical boundaries, and reject direct link mutation 
 ### 6. Tests Required
 
 - `npm run lint` should verify the bridge option signature across types, fallback bridge, store, and components.
+- `npx vitest run tests/projectBridge.workspace.test.ts` must cover status-only initialization, transient failure
+  preservation, authoritative repository removal, cancelled/forced request races, and working-tree recovery.
+- `npm run validate:git-commits` must cover valid unborn history plus injected failures for log/count, porcelain,
+  numstat, branches, remotes, upstream counts, remote refs, stashes, and commit refs.
 - `npm run build` should verify the Git tab compiles with the pagination UI.
 - Browser smoke should verify one page per new sentinel intersection, stable scroll position/spinner height, and observer cleanup after collapsing or switching repositories.
 

@@ -106,8 +106,9 @@ const statusLabel = computed(() => {
   return t.value.common.stopped;
 });
 const isUnavailable = computed(() => props.project.pathExists === false);
-const hasGitSnapshot = computed(() => Boolean(props.project.git?.repositoryPath));
-const latestCommit = computed(() => props.project.git?.commits?.[0]);
+const gitSnapshot = computed(() => store.gitSnapshotForRepository(props.project.id));
+const hasGitSnapshot = computed(() => Boolean(gitSnapshot.value?.repositoryPath));
+const latestCommit = computed(() => gitSnapshot.value?.commits?.[0]);
 const projectTodos = computed(() => store.todos[props.project.id] || props.project.todos || []);
 const memoContent = computed(() => store.memoContent[props.project.id] || props.project.memo || "");
 const openTodoCount = computed(() => projectTodos.value.filter((todo) => !todo.completed).length);

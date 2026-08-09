@@ -55,8 +55,22 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 
 - process stderr -> append a `LogEntry` with `type: "ERROR"`
 - process close with non-zero code -> set script status to `ERROR` and project status to `ProjectStatus.ERROR`
-- Git unavailable / not a repository -> return an empty `ProjectGitSnapshot` with a user-facing `statusText`
+- Legacy Git snapshot methods may return an empty snapshot for compatibility, but Store-facing reads use typed
+  `ProjectGitReadResult<T>` methods so unavailable Git, a missing repository, command failure, invalid output, and a
+  valid unborn repository remain distinguishable.
 - package script parsing failure -> return an empty script list and preserve manually configured commands
+
+### Convention: Git snapshot read failures
+
+- `readGitSnapshotResult`, `readGitStatusSnapshotResult`, `readGitWorkingTreeSnapshotResult`, and
+  `readGitCommitsResult` return `{ ok: true, value }` only when every required Git command for that payload succeeds.
+- A valid unborn repository is a successful empty history. Both the log and commit-count results must independently
+  match the expected no-HEAD state; one expected error must never hide another command's real failure.
+- Working-tree status, numstat, branches, remotes, upstream counts, remote branches, stashes, and commit refs are part
+  of the owning snapshot contract. Do not convert a failed auxiliary command into an empty array that can overwrite
+  previously valid state.
+- Legacy bridge methods keep their existing empty fallback for browser/preload compatibility. Components and the
+  Pinia Store must consume the typed result methods when failure versus empty affects state.
 
 ### Convention: Host command environment parity
 

@@ -474,6 +474,21 @@ export interface ProjectGitCommitSummary {
   readonly shortStats?: ProjectGitCommitShortStats;
 }
 
+export type ProjectGitReadFailureCode = "git-unavailable" | "not-a-repository" | "command-failed" | "invalid-output";
+
+export type ProjectGitReadOperation = "repository" | "status" | "history";
+
+export interface ProjectGitReadFailure {
+  code: ProjectGitReadFailureCode;
+  operation: ProjectGitReadOperation;
+  message: string;
+  exitCode?: number;
+}
+
+export type ProjectGitReadResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; value: T | null; failure: ProjectGitReadFailure };
+
 export interface ProjectGitSnapshot {
   branch: string;
   headHash?: string;
@@ -977,10 +992,22 @@ export interface ProjectBridge {
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;
   listProjectSubdirectories(projectPath: string): Promise<string[]>;
   readGitSnapshot(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitSnapshot>;
+  readGitSnapshotResult(
+    projectPath: string,
+    options?: { limit?: number; skip?: number },
+  ): Promise<ProjectGitReadResult<ProjectBridgeGitSnapshot>>;
   readGitWorkspaceSnapshot(projectPath: string): Promise<ProjectBridgeGitWorkspaceSnapshot>;
   readGitStatusSnapshot(projectPath: string): Promise<ProjectBridgeGitStatusSnapshot>;
+  readGitStatusSnapshotResult(projectPath: string): Promise<ProjectGitReadResult<ProjectBridgeGitStatusSnapshot>>;
   readGitWorkingTreeSnapshot(projectPath: string): Promise<ProjectBridgeGitWorkingTreeSnapshot>;
+  readGitWorkingTreeSnapshotResult(
+    projectPath: string,
+  ): Promise<ProjectGitReadResult<ProjectBridgeGitWorkingTreeSnapshot>>;
   readGitCommits(projectPath: string, options?: { limit?: number; skip?: number }): Promise<ProjectBridgeGitCommitPage>;
+  readGitCommitsResult(
+    projectPath: string,
+    options?: { limit?: number; skip?: number },
+  ): Promise<ProjectGitReadResult<ProjectBridgeGitCommitPage>>;
   readGitFileDiff(
     projectPath: string,
     relativePath: string,

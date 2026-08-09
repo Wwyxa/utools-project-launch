@@ -420,6 +420,8 @@ try {
   fs.mkdirSync(uninitializedRoot, { recursive: true });
   const initialized = await bridge.initializeGitRepository(uninitializedRoot);
   assert.equal(initialized.ok, true);
+  const initializedSnapshotResult = await bridge.readGitSnapshotResult(uninitializedRoot, { limit: 20 });
+  assert.equal(initializedSnapshotResult.ok, true, JSON.stringify(initializedSnapshotResult));
   const initializedSnapshot = await bridge.readGitSnapshot(uninitializedRoot, { limit: 20 });
   assert.equal(path.resolve(initializedSnapshot.repositoryPath), path.resolve(uninitializedRoot));
   assert.equal((await bridge.initializeGitRepository(path.join(fixtureRoot, "missing"))).ok, false);
@@ -524,6 +526,228 @@ try {
     unbornSnapshot.files.some((file) => file.path === "untracked.txt"),
     true,
   );
+  const unbornSnapshotResult = await bridge.readGitSnapshotResult(unbornRoot, { limit: 20 });
+  assert.equal(unbornSnapshotResult.ok, true);
+  if (unbornSnapshotResult.ok) {
+    assert.equal(unbornSnapshotResult.value.commits.length, 0);
+    assert.equal(unbornSnapshotResult.value.commitCount, 0);
+  }
+
+  const nonRepositoryResult = await bridge.readGitSnapshotResult(fixtureRoot, { limit: 20 });
+  assert.equal(nonRepositoryResult.ok, false);
+  if (!nonRepositoryResult.ok) {
+    assert.equal(nonRepositoryResult.failure.code, "not-a-repository");
+    assert.equal(nonRepositoryResult.failure.operation, "repository");
+    assert.equal(nonRepositoryResult.value?.commits.length, 0);
+  }
+
+  const historyFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      if (command === "git" && args.includes("log")) {
+        const error = new Error("simulated git log failure");
+        error.code = 1;
+        callback(error, "", "simulated git log failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const historyFailureResult = await historyFailureBridge.readGitSnapshotResult(projectRoot, { limit: 20 });
+  assert.equal(historyFailureResult.ok, false);
+  if (!historyFailureResult.ok) {
+    assert.equal(historyFailureResult.failure.code, "command-failed");
+    assert.equal(historyFailureResult.failure.operation, "history");
+    assert.equal(historyFailureResult.value, null);
+  }
+
+  const gitReadStatusFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      if (command === "git" && args.includes("--porcelain=v1")) {
+        const error = new Error("simulated porcelain failure");
+        error.code = 1;
+        callback(error, "", "simulated porcelain failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const statusFailureResult = await gitReadStatusFailureBridge.readGitStatusSnapshotResult(projectRoot);
+  const workingTreeFailureResult = await gitReadStatusFailureBridge.readGitWorkingTreeSnapshotResult(projectRoot);
+  assert.equal(statusFailureResult.ok, false);
+  assert.equal(workingTreeFailureResult.ok, false);
+  if (!statusFailureResult.ok) assert.equal(statusFailureResult.failure.operation, "status");
+  if (!workingTreeFailureResult.ok) assert.equal(workingTreeFailureResult.failure.operation, "status");
+
+  const numstatFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      if (command === "git" && args.includes("--numstat")) {
+        const error = new Error("simulated numstat failure");
+        error.code = 1;
+        callback(error, "", "simulated numstat failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const numstatFailureResult = await numstatFailureBridge.readGitWorkingTreeSnapshotResult(projectRoot);
+  assert.equal(numstatFailureResult.ok, false);
+  if (!numstatFailureResult.ok) assert.equal(numstatFailureResult.failure.operation, "status");
+
+  const branchFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      const gitArgs = args.slice(2);
+      if (command === "git" && gitArgs[0] === "branch" && gitArgs.some((arg) => arg.startsWith("--format="))) {
+        const error = new Error("simulated branch failure");
+        error.code = 1;
+        callback(error, "", "simulated branch failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const branchFailureResult = await branchFailureBridge.readGitStatusSnapshotResult(projectRoot);
+  assert.equal(branchFailureResult.ok, false);
+  if (!branchFailureResult.ok) assert.equal(branchFailureResult.failure.operation, "status");
+
+  const remoteFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      if (command === "git" && args.includes("remote") && args.includes("-v")) {
+        const error = new Error("simulated remote failure");
+        error.code = 1;
+        callback(error, "", "simulated remote failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const remoteFailureResult = await remoteFailureBridge.readGitStatusSnapshotResult(projectRoot);
+  assert.equal(remoteFailureResult.ok, false);
+  if (!remoteFailureResult.ok) assert.equal(remoteFailureResult.failure.operation, "status");
+
+  const remoteRefsFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      const gitArgs = args.slice(2);
+      if (command === "git" && gitArgs[0] === "for-each-ref" && gitArgs.includes("refs/remotes")) {
+        const error = new Error("simulated remote refs failure");
+        error.code = 1;
+        callback(error, "", "simulated remote refs failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const remoteRefsFailureResult = await remoteRefsFailureBridge.readGitStatusSnapshotResult(projectRoot);
+  assert.equal(remoteRefsFailureResult.ok, false);
+  if (!remoteRefsFailureResult.ok) assert.equal(remoteRefsFailureResult.failure.operation, "status");
+
+  runGitAt(publishProjectRoot, "switch", publishBranch);
+  runGitAt(publishProjectRoot, "branch", "--set-upstream-to", `mirror/${publishBranch}`, publishBranch);
+  const upstreamFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      const gitArgs = args.slice(2);
+      if (command === "git" && gitArgs[0] === "rev-list" && gitArgs.includes("--left-right")) {
+        const error = new Error("simulated upstream failure");
+        error.code = 1;
+        callback(error, "", "simulated upstream failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const upstreamFailureResult = await upstreamFailureBridge.readGitStatusSnapshotResult(publishProjectRoot);
+  assert.equal(upstreamFailureResult.ok, false);
+  if (!upstreamFailureResult.ok) assert.equal(upstreamFailureResult.failure.operation, "status");
+
+  const stashFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      const gitArgs = args.slice(2);
+      if (command === "git" && gitArgs[0] === "stash" && gitArgs[1] === "list") {
+        const error = new Error("simulated stash failure");
+        error.code = 1;
+        callback(error, "", "simulated stash failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const stashFailureResult = await stashFailureBridge.readGitSnapshotResult(projectRoot, { limit: 20 });
+  assert.equal(stashFailureResult.ok, false);
+  if (!stashFailureResult.ok) {
+    assert.equal(stashFailureResult.failure.operation, "history");
+    assert.equal(stashFailureResult.value, null);
+  }
+
+  const commitRefsFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      const gitArgs = args.slice(2);
+      if (command === "git" && gitArgs[0] === "for-each-ref" && gitArgs.includes("refs/tags")) {
+        const error = new Error("simulated commit refs failure");
+        error.code = 1;
+        callback(error, "", "simulated commit refs failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const commitRefsFailureResult = await commitRefsFailureBridge.readGitSnapshotResult(projectRoot, { limit: 20 });
+  assert.equal(commitRefsFailureResult.ok, false);
+  if (!commitRefsFailureResult.ok) {
+    assert.equal(commitRefsFailureResult.failure.operation, "history");
+    assert.equal(commitRefsFailureResult.value, null);
+  }
+  const unbornCommitRefsFailureResult = await commitRefsFailureBridge.readGitSnapshotResult(unbornRoot, { limit: 20 });
+  assert.equal(unbornCommitRefsFailureResult.ok, false);
+  if (!unbornCommitRefsFailureResult.ok) {
+    assert.equal(unbornCommitRefsFailureResult.failure.operation, "history");
+    assert.equal(unbornCommitRefsFailureResult.value, null);
+  }
+
+  const unbornMixedFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      if (command === "git" && args.includes("rev-list") && args.includes("--count")) {
+        const error = new Error("simulated commit count failure");
+        error.code = 1;
+        callback(error, "", "simulated commit count failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const unbornMixedFailureResult = await unbornMixedFailureBridge.readGitSnapshotResult(unbornRoot, { limit: 20 });
+  assert.equal(unbornMixedFailureResult.ok, false);
+  if (!unbornMixedFailureResult.ok) {
+    assert.equal(unbornMixedFailureResult.failure.operation, "history");
+    assert.equal(unbornMixedFailureResult.value, null);
+  }
+
+  const unbornLogFailureBridge = createPreloadBridge({
+    ...realChildProcess,
+    execFile(command, args, options, callback) {
+      if (command === "git" && args.includes("log")) {
+        const error = new Error("simulated unborn log failure");
+        error.code = 1;
+        callback(error, "", "simulated unborn log failure");
+        return;
+      }
+      return realChildProcess.execFile(command, args, options, callback);
+    },
+  });
+  const unbornLogFailureResult = await unbornLogFailureBridge.readGitSnapshotResult(unbornRoot, { limit: 20 });
+  assert.equal(unbornLogFailureResult.ok, false);
+  if (!unbornLogFailureResult.ok) {
+    assert.equal(unbornLogFailureResult.failure.operation, "history");
+    assert.equal(unbornLogFailureResult.value, null);
+  }
 
   fs.appendFileSync(path.join(projectRoot, "history.txt"), "staged working-tree change\n");
   runGit("add", "--", "history.txt");

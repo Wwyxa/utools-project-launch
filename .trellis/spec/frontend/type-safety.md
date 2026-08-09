@@ -70,6 +70,18 @@ Use inferred literals and shared interfaces first. Reach for type guards only wh
 
 Preload bridge contracts should be represented in `src/types.ts` and consumed through `src/lib/projectBridge.ts`, not duplicated in components.
 
+### Convention: Typed Git read results
+
+- Use `ProjectGitReadResult<T>` at the preload-to-Store boundary whenever an empty value is valid domain data.
+- `ok: true` means the payload is complete enough to merge. `ok: false` carries a structured failure code and
+  operation; its optional compatibility value must not be treated as a successful snapshot.
+- Runtime snapshot guards must require a real `commits` array and a non-negative safe-integer `commitCount` before a
+  value can become the Store's complete history snapshot.
+- `git-unavailable`, `command-failed`, and `invalid-output` preserve the previous complete snapshot. The authoritative
+  `not-a-repository` state clears that repository's snapshot and latest-commit metadata.
+- Components read failures from Store state. They do not inspect Git stderr text or infer failure kinds from empty
+  arrays.
+
 ## Scenario: Import/Export JSON Boundary
 
 ## Scenario: Git Commit Metadata and Tooltip Boundary
