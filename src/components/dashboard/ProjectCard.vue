@@ -106,10 +106,11 @@ let initialWidthMeasurementRecorded = false;
 const isRunning = computed(() => props.project.status === ProjectStatus.RUNNING);
 const isError = computed(() => props.project.status === ProjectStatus.ERROR);
 const isWarning = computed(() => props.project.status === ProjectStatus.WARNING);
+const hasCardStatus = computed(() => isRunning.value || isError.value || isWarning.value);
 const cardStatusLabel = computed(() => {
   if (isRunning.value) return t.value.common.running;
   if (isError.value) return t.value.common.error;
-  return t.value.common.warning;
+  return isWarning.value ? t.value.common.warning : "";
 });
 const isTiny = computed(() => props.project.cardStyle === "tiny");
 const isUnavailable = computed(() => props.project.pathExists === false);
@@ -469,7 +470,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
       :class="
         cn(
           'relative border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
-          'flex shrink-0 min-w-[4rem] max-w-[16rem] after:absolute after:inset-x-0 after:top-full after:h-8',
+          'flex shrink-0 min-w-[4rem] max-w-[20rem] after:absolute after:inset-x-0 after:top-full after:h-8',
           isRunning &&
             'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
           isDragging && 'opacity-55 scale-[0.99]',
@@ -491,11 +492,11 @@ const updateTinyToolbarAlignment = (event: Event) => {
           {{ project.name }}
         </h3>
         <span
-          v-if="isRunning || isError || isWarning"
-          class="inline-flex shrink-0 items-center"
-          role="status"
-          :title="cardStatusLabel"
-          :aria-label="cardStatusLabel"
+          :class="cn('inline-flex shrink-0 items-center', !hasCardStatus && 'invisible')"
+          :role="hasCardStatus ? 'status' : undefined"
+          :title="hasCardStatus ? cardStatusLabel : undefined"
+          :aria-label="hasCardStatus ? cardStatusLabel : undefined"
+          :aria-hidden="hasCardStatus ? undefined : 'true'"
         >
           <span
             :class="
