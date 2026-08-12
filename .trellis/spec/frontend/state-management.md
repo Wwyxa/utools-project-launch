@@ -111,7 +111,7 @@ Do not move purely visual state into the store if a component can manage it loca
 - Saving an unchanged order or an already-acknowledged Coach Mark version is a no-op and must not issue another storage write.
 - Browser preview stores the normalized document as JSON in `localStorage`; uTools preload stores the same logical document in `dbStorage`.
 - When the new key is absent, migrate the legacy array. A normalized non-default legacy order acknowledges Coach Mark version `1`; the default order keeps version `0`.
-- Keep the legacy order key synchronized for one compatibility period so rollback to the previous application version preserves the latest order.
+- Remove the legacy order key after reading an existing new document or successfully writing the migrated document. Do not keep both keys synchronized.
 
 ### 4. Validation & Error Matrix
 
@@ -135,7 +135,7 @@ Do not move purely visual state into the store if a component can manage it loca
 
 ### 6. Tests Required
 
-- `npx vitest run src/lib/projectBridge.uiPreferences.test.ts` must cover browser and real-preload defaults, new-key priority, legacy default/non-default migration, malformed values, normalization, round-trip writes, legacy-key synchronization, and Store write de-duplication.
+- `npx vitest run tests/projectBridge.uiPreferences.test.ts` must cover browser and real-preload defaults, new-key priority, legacy default/non-default migration and cleanup, malformed values, normalization, round-trip writes, and Store write de-duplication.
 - `npm run validate:process-results` after changing `ProjectBridge`, because hand-written bridge fixtures must implement the new UI preference methods before Store initialization.
 - `npm run lint` and `npm run build` after changing types, Store actions, or project-detail hint rendering.
 - `node --check public/preload.js` after changing preload UI preference normalization or storage.

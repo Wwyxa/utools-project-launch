@@ -17,13 +17,19 @@ const uiPreferencesKey = "utools-project-launch.ui-preferences.v1";
 const legacyTabOrderKey = "utools-project-launch.project-details-tab-order.v1";
 const defaultTabOrder: ProjectDetailsTabId[] = ["info", "scripts", "automation", "files", "git", "memo"];
 
-const loadPreloadBridge = (storage: Map<string, unknown>) => {
+const loadPreloadBridge = (
+  storage: Map<string, unknown>,
+  removeItem: (key: string) => void = (key) => {
+    storage.delete(key);
+  },
+) => {
   const nodeRequire = createRequire(import.meta.url);
   const sandboxWindow: { projectBridge?: ProjectBridge; utools: { dbStorage: object } } = {
     utools: {
       dbStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: unknown) => storage.set(key, value),
+        removeItem,
       },
     },
   };
@@ -52,6 +58,7 @@ describe("browser UI preferences fallback", () => {
       localStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
       },
       setTimeout,
       clearTimeout,
@@ -84,6 +91,7 @@ describe("browser UI preferences fallback", () => {
     expect(preferences.projectDetails.tabOrder).toEqual(legacyOrder);
     expect(preferences.coachMarks.projectDetailsTabReorder).toBe(expectedVersion);
     expect(JSON.parse(storage.get(uiPreferencesKey)!)).toEqual(preferences);
+    expect(storage.has(legacyTabOrderKey)).toBe(false);
   });
 
   it("normalizes duplicate and unknown tabs and an invalid coach mark version", () => {
@@ -135,7 +143,27 @@ describe("browser UI preferences fallback", () => {
     ]);
   });
 
-  it("round-trips normalized preferences and keeps the legacy order synchronized", () => {
+  it("keeps readable current preferences when legacy cleanup fails", () => {
+    storage.set(
+      uiPreferencesKey,
+      JSON.stringify({
+        schemaVersion: 1,
+        projectDetails: { tabOrder: ["memo", "info"] },
+        coachMarks: { projectDetailsTabReorder: 1 },
+      }),
+    );
+    window.localStorage.removeItem = vi.fn(() => {
+      throw new Error("storage unavailable");
+    });
+
+    expect(getProjectBridge().loadUiPreferences()).toEqual({
+      schemaVersion: 1,
+      projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"] },
+      coachMarks: { projectDetailsTabReorder: 1 },
+    });
+  });
+
+  it("round-trips normalized preferences and removes the legacy order", () => {
     getProjectBridge().saveUiPreferences({
       schemaVersion: 1,
       projectDetails: { tabOrder: ["git", "git", "memo"] },
@@ -145,7 +173,7 @@ describe("browser UI preferences fallback", () => {
     const preferences = getProjectBridge().loadUiPreferences();
     expect(preferences.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
     expect(preferences.coachMarks.projectDetailsTabReorder).toBe(2);
-    expect(JSON.parse(storage.get(legacyTabOrderKey)!)).toEqual(preferences.projectDetails.tabOrder);
+    expect(storage.has(legacyTabOrderKey)).toBe(false);
   });
 
   it("loads once and persists only effective store changes", async () => {
@@ -188,6 +216,7 @@ describe("store startup timing", () => {
       localStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
       },
       setTimeout,
       clearTimeout,
@@ -360,9 +389,10 @@ describe("uTools preload UI preferences", () => {
     expect(preferences.projectDetails.tabOrder).toEqual(legacyOrder);
     expect(preferences.coachMarks.projectDetailsTabReorder).toBe(expectedVersion);
     expect(storage.get(uiPreferencesKey)).toEqual(preferences);
+    expect(storage.has(legacyTabOrderKey)).toBe(false);
   });
 
-  it("prefers and normalizes the new configuration, then synchronizes both keys on save", () => {
+  it("prefers and normalizes the new configuration, then removes the legacy key", () => {
     const storage = new Map<string, unknown>([
       [
         uiPreferencesKey,
@@ -384,6 +414,7 @@ describe("uTools preload UI preferences", () => {
       "files",
       "git",
     ]);
+    expect(storage.has(legacyTabOrderKey)).toBe(false);
 
     bridge.saveUiPreferences({
       schemaVersion: 1,
@@ -392,7 +423,7 @@ describe("uTools preload UI preferences", () => {
     });
     const saved = storage.get(uiPreferencesKey) as UiPreferences;
     expect(saved.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
-    expect(storage.get(legacyTabOrderKey)).toEqual(saved.projectDetails.tabOrder);
+    expect(storage.has(legacyTabOrderKey)).toBe(false);
   });
 
   it("uses defaults instead of legacy data when the new configuration is invalid", () => {
@@ -406,5 +437,19 @@ describe("uTools preload UI preferences", () => {
       projectDetails: { tabOrder: defaultTabOrder },
       coachMarks: { projectDetailsTabReorder: 0 },
     });
+  });
+
+  it("keeps readable current preferences when legacy cleanup fails", () => {
+    const preferences: UiPreferences = {
+      schemaVersion: 1,
+      projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"] },
+      coachMarks: { projectDetailsTabReorder: 1 },
+    };
+    const storage = new Map<string, unknown>([[uiPreferencesKey, preferences]]);
+    const bridge = loadPreloadBridge(storage, () => {
+      throw new Error("storage unavailable");
+    });
+
+    expect(bridge.loadUiPreferences()).toEqual(preferences);
   });
 });

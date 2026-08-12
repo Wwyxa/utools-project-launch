@@ -939,11 +939,11 @@ function saveUiPreferences(preferences) {
   try {
     if (window.utools?.dbStorage) {
       window.utools.dbStorage.setItem(uiPreferencesStorageKey, normalized);
-      window.utools.dbStorage.setItem(projectDetailsTabOrderStorageKey, normalized.projectDetails.tabOrder);
+      window.utools.dbStorage.removeItem(projectDetailsTabOrderStorageKey);
       return;
     }
     window.localStorage?.setItem(uiPreferencesStorageKey, JSON.stringify(normalized));
-    window.localStorage?.setItem(projectDetailsTabOrderStorageKey, JSON.stringify(normalized.projectDetails.tabOrder));
+    window.localStorage?.removeItem(projectDetailsTabOrderStorageKey);
   } catch (error) {
     // Keep UI preference updates non-blocking when host storage is temporarily unavailable.
   }
@@ -954,7 +954,13 @@ function readUiPreferences() {
     if (window.utools?.dbStorage) {
       const storedPreferences = window.utools.dbStorage.getItem(uiPreferencesStorageKey);
       if (storedPreferences !== null && storedPreferences !== undefined) {
-        return normalizeUiPreferences(storedPreferences);
+        const preferences = normalizeUiPreferences(storedPreferences);
+        try {
+          window.utools.dbStorage.removeItem(projectDetailsTabOrderStorageKey);
+        } catch (error) {
+          // Legacy cleanup must not invalidate readable current preferences.
+        }
+        return preferences;
       }
       const legacyValue = window.utools.dbStorage.getItem(projectDetailsTabOrderStorageKey);
       const tabOrder = normalizeProjectDetailsTabOrder(legacyValue);
@@ -971,7 +977,15 @@ function readUiPreferences() {
     }
 
     const raw = window.localStorage?.getItem(uiPreferencesStorageKey);
-    if (raw !== null && raw !== undefined) return normalizeUiPreferences(JSON.parse(raw));
+    if (raw !== null && raw !== undefined) {
+      const preferences = normalizeUiPreferences(JSON.parse(raw));
+      try {
+        window.localStorage?.removeItem(projectDetailsTabOrderStorageKey);
+      } catch (error) {
+        // Legacy cleanup must not invalidate readable current preferences.
+      }
+      return preferences;
+    }
     const legacyRaw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
     const legacyValue = legacyRaw ? JSON.parse(legacyRaw) : null;
     const tabOrder = normalizeProjectDetailsTabOrder(legacyValue);

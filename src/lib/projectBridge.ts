@@ -461,7 +461,7 @@ const writeStoredUiPreferences = (preferences: UiPreferences) => {
   const normalized = normalizeUiPreferences(preferences);
   try {
     window.localStorage?.setItem(uiPreferencesStorageKey, JSON.stringify(normalized));
-    window.localStorage?.setItem(projectDetailsTabOrderStorageKey, JSON.stringify(normalized.projectDetails.tabOrder));
+    window.localStorage?.removeItem(projectDetailsTabOrderStorageKey);
   } catch {
     // Keep UI preference updates non-blocking when browser storage is unavailable.
   }
@@ -470,7 +470,15 @@ const writeStoredUiPreferences = (preferences: UiPreferences) => {
 const readStoredUiPreferences = (): UiPreferences => {
   try {
     const raw = window.localStorage?.getItem(uiPreferencesStorageKey);
-    if (raw !== null && raw !== undefined) return normalizeUiPreferences(JSON.parse(raw));
+    if (raw !== null && raw !== undefined) {
+      const preferences = normalizeUiPreferences(JSON.parse(raw));
+      try {
+        window.localStorage?.removeItem(projectDetailsTabOrderStorageKey);
+      } catch {
+        // Legacy cleanup must not invalidate readable current preferences.
+      }
+      return preferences;
+    }
 
     const legacyRaw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
     const legacyValue = legacyRaw ? JSON.parse(legacyRaw) : null;
