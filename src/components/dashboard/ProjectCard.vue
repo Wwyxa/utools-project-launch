@@ -12,6 +12,7 @@ import {
   ChevronDown,
   GripVertical,
   Link2,
+  FileDiff,
 } from "lucide-vue-next";
 import {
   PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT,
@@ -312,6 +313,10 @@ const cardTimeMeta = computed(() => {
   }
   return { symbol: "•", title: "", value: "--" };
 });
+const gitChangedFileCount = computed(() => props.project.git?.files.length ?? store.stagedFiles[props.project.id]?.length ?? 0);
+const gitChangedFileLabel = computed(() =>
+  t.value.git.changedFiles.replace("{count}", String(gitChangedFileCount.value)),
+);
 const lowSignalCardErrorPatterns = [
   /^exited with code (?:\d+|unknown)$/i,
   /\ba complete log of this run can be found in:/i,
@@ -400,6 +405,8 @@ const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: s
 const handleDocumentPointerDown = (event: PointerEvent) => {
   if (!moreScriptsRef.value?.contains(event.target as Node)) {
     moreScriptsOpen.value = false;
+  }
+  if (!moreScriptsOpen.value) {
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     document.removeEventListener("keydown", handleDocumentKeyDown);
   }
@@ -834,9 +841,9 @@ const updateTinyToolbarAlignment = (event: Event) => {
       </div>
 
       <div
-        class="mt-auto grid min-h-7 grid-cols-[minmax(0,1fr)_8rem] items-center gap-2 overflow-hidden border-t border-border-subtle pt-2"
+        class="mt-auto flex min-h-7 items-center border-t border-border-subtle pt-2"
       >
-        <div class="min-w-0 text-[11px] text-on-surface-variant">
+        <div class="flex min-w-0 items-center gap-2 text-[11px] text-on-surface-variant">
           <span
             v-if="isError"
             class="flex min-w-0 items-center gap-1 truncate text-status-error"
@@ -847,20 +854,29 @@ const updateTinyToolbarAlignment = (event: Event) => {
           </span>
           <span
             v-else
-            class="flex min-w-0 items-center gap-1 truncate"
+            class="flex min-w-0 max-w-28 items-center gap-1 truncate"
             :title="cardTimeMeta.title || cardTimeMeta.value"
           >
             <span class="shrink-0 text-[11px] text-on-surface-variant/85">{{ cardTimeMeta.symbol }}</span>
             <span class="truncate">{{ cardTimeMeta.value }}</span>
           </span>
+          <span
+            v-if="gitChangedFileCount > 0"
+            class="inline-flex shrink-0 items-center gap-1 font-medium text-status-warning"
+            :title="gitChangedFileLabel"
+            :aria-label="gitChangedFileLabel"
+          >
+            <FileDiff :size="12" aria-hidden="true" />
+            <span>{{ gitChangedFileCount }}</span>
+          </span>
         </div>
         <div
           :class="
             cn(
-              'flex w-[8rem] shrink-0 items-center justify-end gap-0.5 transition-all',
+              'ml-auto flex w-[8.125rem] shrink-0 items-center justify-end gap-0.5 transition-all',
               isSorting
                 ? 'opacity-100'
-                : 'opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:pointer-events-auto',
+                : 'pointer-events-none opacity-0 translate-y-1 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0',
             )
           "
           @click.stop
@@ -868,54 +884,54 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <template v-if="isSorting" />
           <template v-else>
             <button
-              @click.stop="handleOpenTerminal"
-              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-status-running rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+              @click="handleOpenTerminal"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-status-running dark:text-on-surface-variant dark:hover:bg-surface-container-high"
               :disabled="isUnavailable"
               :title="t.projectActions.openInTerminal"
               :aria-label="t.projectActions.openInTerminal"
             >
-              <TerminalSquare :size="15" />
+              <TerminalSquare :size="14" />
             </button>
             <ExternalApplicationLaunchButton
               :applications="store.externalApplicationPreferences.applications"
               :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
               :disabled="isUnavailable"
-              button-class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors disabled:opacity-50"
-              :icon-size="15"
+              button-class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary dark:text-on-surface-variant dark:hover:bg-surface-container-high disabled:opacity-50"
+              :icon-size="14"
               @launch="handleOpenEditor"
             />
             <button
-              @click.stop="handleOpenFolder"
-              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-on-surface rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+              @click="handleOpenFolder"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-on-surface dark:text-on-surface-variant dark:hover:bg-surface-container-high"
               :disabled="isUnavailable"
               :title="t.common.openFolder"
               :aria-label="t.common.openFolder"
             >
-              <FolderOpen :size="15" />
+              <FolderOpen :size="14" />
             </button>
             <button
-              @click.stop="handleEdit"
-              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+              @click="handleEdit"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary dark:text-on-surface-variant dark:hover:bg-surface-container-high"
               :title="t.common.edit"
               :aria-label="t.common.edit"
             >
-              <Pencil :size="15" />
+              <Pencil :size="14" />
             </button>
             <button
-              @click.stop="handleDuplicate"
-              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+              @click="handleDuplicate"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary dark:text-on-surface-variant dark:hover:bg-surface-container-high"
               :title="t.projectActions.duplicateProject"
               :aria-label="t.projectActions.duplicateProject"
             >
-              <Copy :size="15" />
+              <Copy :size="14" />
             </button>
             <button
-              @click.stop="handleDelete"
-              class="p-1 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-status-error rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+              @click="handleDelete"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-status-error dark:text-on-surface-variant dark:hover:bg-surface-container-high"
               :title="t.projectActions.deleteProject"
               :aria-label="t.projectActions.deleteProject"
             >
-              <Trash2 :size="15" />
+              <Trash2 :size="14" />
             </button>
           </template>
         </div>

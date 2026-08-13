@@ -1493,6 +1493,8 @@ export const useStore = defineStore("app", {
       await this.refreshProjectAvailability();
       markStartupPhase?.("projects-load-path-availability-complete");
 
+      void this.refreshDashboardGitChangeCounts();
+
       markStartupPhase?.("projects-load-runtime-reconciliation-start");
       await this.reconcileRuntimeProcessState();
       markStartupPhase?.("projects-load-runtime-reconciliation-complete");
@@ -2545,10 +2547,13 @@ export const useStore = defineStore("app", {
     },
     async refreshProjects() {
       await this.refreshProjectAvailability();
+      await this.refreshDashboardGitChangeCounts();
+    },
+    async refreshDashboardGitChangeCounts() {
       await Promise.all(
         this.projects
           .filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false)
-          .map((project) => this.refreshGitStatusSnapshot(project.id)),
+          .map((project) => this.refreshGitWorkingTreeSnapshot(project.id)),
       );
     },
     async moveProject(projectId: string, direction: "top" | "up" | "down", scopeProjectIds?: string[]) {
