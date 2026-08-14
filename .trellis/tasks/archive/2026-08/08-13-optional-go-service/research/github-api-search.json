@@ -1,0 +1,181 @@
+{
+  "ok": true,
+  "error_type": "",
+  "error": "",
+  "session_id": "01fd9ee64740",
+  "query": "Official GitHub REST API releases assets browser_download_url digest sha256 site:docs.github.com/rest/releases",
+  "platform": "",
+  "model": "grok-4.20-multi-agent-xhigh",
+  "primary_api_mode": "chat-completions",
+  "content": "**The official GitHub REST API documentation** for releases (restricted to `site:docs.github.com/rest/releases`) is located at:\n\n- https://docs.github.com/en/rest/releases/releases\n- https://docs.github.com/en/rest/releases/assets\n\n### Key Details from the Docs\n\n**1. Release Asset Object Structure**\n\nWhen you call endpoints such as:\n- `GET /repos/{owner}/{repo}/releases/{release_id}`\n- `GET /repos/{owner}/{repo}/releases/assets/{asset_id}`\n- `GET /repos/{owner}/{repo}/releases/{release_id}/assets`\n\nThe response includes an `assets` array (or a single asset object). Each **Release Asset** contains a `browser_download_url` field.\n\n**Standard fields** (current as of 2026, based on the `2022-11-28` API version and later updates):\n\n```json\n{\n  \"url\": \"https://api.github.com/repos/octocat/Hello-World/releases/assets/1\",\n  \"browser_download_url\": \"https://github.com/octocat/Hello-World/releases/download/v1.0.0/example.zip\",\n  \"id\": 1,\n  \"node_id\": \"MDEyOlJlbGVhc2VBc3NldDE=\",\n  \"name\": \"example.zip\",\n  \"label\": \"short description\",\n  \"state\": \"uploaded\",\n  \"content_type\": \"application/zip\",\n  \"size\": 1024,\n  \"download_count\": 42,\n  \"created_at\": \"2013-02-27T19:35:32Z\",\n  \"updated_at\": \"2013-02-27T19:35:32Z\",\n  \"uploader\": { ... }\n}\n```\n\n**`browser_download_url`** is the direct, publicly accessible download link (points to GitHub’s CDN).  \n- Use it with an `Authorization` header (or `?access_token=...`) for private repositories.  \n- The API also supports `Accept: application/octet-stream` when fetching the binary content via the API endpoint itself.\n\n**2. Digest / SHA256 Support**\n\nThe standard Release Asset object **does not contain** a top-level `digest`, `sha256`, `checksum`, or similar integrity field in the core `/rest/releases` documentation.\n\nCommon patterns documented or recommended in the releases section:\n- Maintainers typically upload a **separate asset** (e.g. `example.zip.sha256`, `SHA256SUMS`, or `checksums.txt`) containing the hash.\n- You compute the SHA256 yourself after downloading from `browser_download_url`.\n- For cryptographically verifiable builds, GitHub encourages **Artifact Attestations** / SLSA provenance (these live under the separate Attestations API, not the core Releases/Assets endpoints). Attestations can contain the SHA256 digest of the exact artifact.\n\nNo native `digest: { \"sha256\": \"...\" }` field appears in the canonical Release Asset schema on the `/rest/releases` pages.\n\n### Most Relevant Official Pages\n- [List releases for a repository](https://docs.github.com/en/rest/releases/releases#list-releases-for-a-repository) — shows full response including `assets[]`\n- [Get a release asset](https://docs.github.com/en/rest/releases/assets#get-a-release-asset)\n- [List release assets](https://docs.github.com/en/rest/releases/assets#list-release-assets)\n\n**Recommendation (from docs):** Always verify downloads. The safest current approach is either:\n1. Download the companion `.sha256` / `SHA256SUMS` asset.\n2. Use GitHub Attestations for provenance + digest verification.\n\nIf you need the exact current JSON schema, a code example for downloading + verifying, or information on the Attestations API, provide more context.",
+  "sources": [
+    {
+      "url": "https://docs.github.com/rest/releases/assets#get-a-release-asset",
+      "provider": "tavily",
+      "title": "REST API endpoints for release assets - GitHub Docs",
+      "description": "Response for successful upload\n\n`Status: 201`\n\n`{ \"url\": \" \"browser_download_url\": \" \"id\": 1, \"node_id\": \"MDEyOlJlbGVhc2VBc3NldDE=\", \"name\": \"example.zip\", \"label\": \"short description\", \"state\": \"uploaded\", \"content_type\": \"application/zip\", \"size\": 1024, \"digest\": \"sha256:2151b604e3429bff440b9fbc03eb3617bc2603cda96c95b9bb05277f9ddba255\", \"download_count\": 42, \"created_at\": \"2013-02-27T19:35:32Z\", \"updated_at\": \"2013-02-27T19:35:32Z\", \"uploader\": { \"login\": \"octocat\", \"id\": 1, \"node_id\": \"MDQ6VXNlcjE=\", \"avatar_url\": \" \"gravatar_id\": \"\", \"url\": \" \"html_url\": \" \"followers_url\": \" \"following_url\": \" \"gists_url\": \" \"starred_url\": \" \"subscriptions_url\": \" \"organizations_url\": \" \"repos_url\": \" \"events_url\": \" \"received_events_url\": \" \"type\": \"User\", \"site_admin\": false } }` [...] Response\n\n`Status: 200`\n\n`[ { \"url\": \" \"browser_download_url\": \" \"id\": 1, \"node_id\": \"MDEyOlJlbGVhc2VBc3NldDE=\", \"name\": \"example.zip\", \"label\": \"short description\", \"state\": \"uploaded\", \"content_type\": \"application/zip\", \"size\": 1024, \"digest\": \"sha256:2151b604e3429bff440b9fbc03eb3617bc2603cda96c95b9bb05277f9ddba255\", \"download_count\": 42, \"created_at\": \"2013-02-27T19:35:32Z\", \"updated_at\": \"2013-02-27T19:35:32Z\", \"uploader\": { \"login\": \"octocat\", \"id\": 1, \"node_id\": \"MDQ6VXNlcjE=\", \"avatar_url\": \" \"gravatar_id\": \"\", \"url\": \" \"html_url\": \" \"followers_url\": \" \"following_url\": \" \"gists_url\": \" \"starred_url\": \" \"subscriptions_url\": \" \"organizations_url\": \" \"repos_url\": \" \"events_url\": \" \"received_events_url\": \" \"type\": \"User\", \"site_admin\": false } } ]`\n\n## Upload a release asset [...] Response\n\n`Status: 200`\n\n`{ \"url\": \" \"browser_download_url\": \" \"id\": 1, \"node_id\": \"MDEyOlJlbGVhc2VBc3NldDE=\", \"name\": \"example.zip\", \"label\": \"short description\", \"state\": \"uploaded\", \"content_type\": \"application/zip\", \"size\": 1024, \"digest\": \"sha256:2151b604e3429bff440b9fbc03eb3617bc2603cda96c95b9bb05277f9ddba255\", \"download_count\": 42, \"created_at\": \"2013-02-27T19:35:32Z\", \"updated_at\": \"2013-02-27T19:35:32Z\", \"uploader\": { \"login\": \"octocat\", \"id\": 1, \"node_id\": \"MDQ6VXNlcjE=\", \"avatar_url\": \" \"gravatar_id\": \"\", \"url\": \" \"html_url\": \" \"followers_url\": \" \"following_url\": \" \"gists_url\": \" \"starred_url\": \" \"subscriptions_url\": \" \"organizations_url\": \" \"repos_url\": \" \"events_url\": \" \"received_events_url\": \" \"type\": \"User\", \"site_admin\": false } }`\n\n## Update a release asset"
+    }
+  ],
+  "sources_count": 1,
+  "primary_sources": [],
+  "primary_sources_count": 0,
+  "extra_sources": [
+    {
+      "url": "https://docs.github.com/rest/releases/assets#get-a-release-asset",
+      "provider": "tavily",
+      "title": "REST API endpoints for release assets - GitHub Docs",
+      "description": "Response for successful upload\n\n`Status: 201`\n\n`{ \"url\": \" \"browser_download_url\": \" \"id\": 1, \"node_id\": \"MDEyOlJlbGVhc2VBc3NldDE=\", \"name\": \"example.zip\", \"label\": \"short description\", \"state\": \"uploaded\", \"content_type\": \"application/zip\", \"size\": 1024, \"digest\": \"sha256:2151b604e3429bff440b9fbc03eb3617bc2603cda96c95b9bb05277f9ddba255\", \"download_count\": 42, \"created_at\": \"2013-02-27T19:35:32Z\", \"updated_at\": \"2013-02-27T19:35:32Z\", \"uploader\": { \"login\": \"octocat\", \"id\": 1, \"node_id\": \"MDQ6VXNlcjE=\", \"avatar_url\": \" \"gravatar_id\": \"\", \"url\": \" \"html_url\": \" \"followers_url\": \" \"following_url\": \" \"gists_url\": \" \"starred_url\": \" \"subscriptions_url\": \" \"organizations_url\": \" \"repos_url\": \" \"events_url\": \" \"received_events_url\": \" \"type\": \"User\", \"site_admin\": false } }` [...] Response\n\n`Status: 200`\n\n`[ { \"url\": \" \"browser_download_url\": \" \"id\": 1, \"node_id\": \"MDEyOlJlbGVhc2VBc3NldDE=\", \"name\": \"example.zip\", \"label\": \"short description\", \"state\": \"uploaded\", \"content_type\": \"application/zip\", \"size\": 1024, \"digest\": \"sha256:2151b604e3429bff440b9fbc03eb3617bc2603cda96c95b9bb05277f9ddba255\", \"download_count\": 42, \"created_at\": \"2013-02-27T19:35:32Z\", \"updated_at\": \"2013-02-27T19:35:32Z\", \"uploader\": { \"login\": \"octocat\", \"id\": 1, \"node_id\": \"MDQ6VXNlcjE=\", \"avatar_url\": \" \"gravatar_id\": \"\", \"url\": \" \"html_url\": \" \"followers_url\": \" \"following_url\": \" \"gists_url\": \" \"starred_url\": \" \"subscriptions_url\": \" \"organizations_url\": \" \"repos_url\": \" \"events_url\": \" \"received_events_url\": \" \"type\": \"User\", \"site_admin\": false } } ]`\n\n## Upload a release asset [...] Response\n\n`Status: 200`\n\n`{ \"url\": \" \"browser_download_url\": \" \"id\": 1, \"node_id\": \"MDEyOlJlbGVhc2VBc3NldDE=\", \"name\": \"example.zip\", \"label\": \"short description\", \"state\": \"uploaded\", \"content_type\": \"application/zip\", \"size\": 1024, \"digest\": \"sha256:2151b604e3429bff440b9fbc03eb3617bc2603cda96c95b9bb05277f9ddba255\", \"download_count\": 42, \"created_at\": \"2013-02-27T19:35:32Z\", \"updated_at\": \"2013-02-27T19:35:32Z\", \"uploader\": { \"login\": \"octocat\", \"id\": 1, \"node_id\": \"MDQ6VXNlcjE=\", \"avatar_url\": \" \"gravatar_id\": \"\", \"url\": \" \"html_url\": \" \"followers_url\": \" \"following_url\": \" \"gists_url\": \" \"starred_url\": \" \"subscriptions_url\": \" \"organizations_url\": \" \"repos_url\": \" \"events_url\": \" \"received_events_url\": \" \"type\": \"User\", \"site_admin\": false } }`\n\n## Update a release asset"
+    }
+  ],
+  "extra_sources_count": 1,
+  "source_warning": "extra_sources are retrieved in parallel and are not automatically used to verify generated content; use fetch on key URLs for claim-level evidence.",
+  "routing_decision": {
+    "docs_intent": true,
+    "zh_current_intent": false,
+    "web_current_intent": false,
+    "fetch_intent": false,
+    "supplemental_paths": [
+      "docs_search",
+      "web_search",
+      "vertical_search"
+    ],
+    "intent_router_mode": "hybrid",
+    "required_capabilities": [
+      "docs_search",
+      "web_search",
+      "vertical_search"
+    ],
+    "intent_signals": {
+      "docs_api_intent": true,
+      "current_or_locale_intent": false,
+      "known_url": false,
+      "vertical_intent": true,
+      "strict_validation": true,
+      "rule_scores": {
+        "docs_search": 0.82,
+        "web_search": 0.72,
+        "vertical_search": 0.72
+      },
+      "urls": []
+    },
+    "confidence": 0.82,
+    "router_engines_used": [
+      "rules"
+    ],
+    "degraded": true,
+    "degraded_reason": "embeddings not configured; classifier not configured",
+    "reasons": [
+      "rules matched docs/API/library terms",
+      "strict validation requires source reinforcement",
+      "rules matched vertical-domain terms"
+    ],
+    "validation_level": "strict",
+    "fallback_mode": "auto",
+    "providers": "openai-compatible",
+    "main_search_chain": [
+      "openai-compatible"
+    ],
+    "openai_compatible_stream": true,
+    "openai_compatible_models": [
+      "grok-4.20-multi-agent-xhigh"
+    ],
+    "openai_compatible_model_fallback_enabled": false
+  },
+  "providers_used": [
+    "OpenAI-compatible",
+    "tavily"
+  ],
+  "provider_attempts": [
+    {
+      "capability": "main_search",
+      "provider": "OpenAI-compatible",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 54182.18,
+      "result_count": 1,
+      "transport": "stream",
+      "model": "grok-4.20-multi-agent-xhigh",
+      "breaker_state": {
+        "state": "closed",
+        "consecutive_failures": 0
+      }
+    },
+    {
+      "capability": "web_search",
+      "provider": "tavily",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 15951.7,
+      "result_count": 1
+    }
+  ],
+  "fallback_used": false,
+  "transport_fallback_used": false,
+  "model_fallback_used": false,
+  "validation_level": "strict",
+  "minimum_profile_ok": true,
+  "capability_status": {
+    "main_search": {
+      "configured": [
+        "openai-compatible"
+      ],
+      "fallback_chain": [
+        "xai-responses",
+        "openai-compatible"
+      ],
+      "ok": true
+    },
+    "web_search": {
+      "configured": [
+        "tavily"
+      ],
+      "fallback_chain": [
+        "zhipu",
+        "zhipu-mcp",
+        "tavily",
+        "firecrawl"
+      ],
+      "ok": true
+    },
+    "docs_search": {
+      "configured": [
+        "context7"
+      ],
+      "fallback_chain": [
+        "context7",
+        "exa"
+      ],
+      "ok": true
+    },
+    "web_fetch": {
+      "configured": [
+        "tavily"
+      ],
+      "fallback_chain": [
+        "tavily",
+        "jina",
+        "zhipu-mcp-reader",
+        "firecrawl"
+      ],
+      "ok": true
+    },
+    "vertical_search": {
+      "configured": [],
+      "fallback_chain": [
+        "anysearch"
+      ],
+      "experimental": true,
+      "explicit_only": [
+        "sciverse"
+      ],
+      "route_enabled": {
+        "anysearch": true,
+        "sciverse": false
+      },
+      "ok": false
+    }
+  },
+  "elapsed_ms": 70143.4
+}

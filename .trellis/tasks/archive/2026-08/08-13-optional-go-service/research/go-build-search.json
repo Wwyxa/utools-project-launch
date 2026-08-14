@@ -1,0 +1,177 @@
+{
+  "ok": true,
+  "error_type": "",
+  "error": "",
+  "session_id": "7746be68b6fd",
+  "query": "Official Go documentation GOOS GOARCH cross compilation CGO_ENABLED trimpath linker flags site:go.dev",
+  "platform": "",
+  "model": "grok-4.20-multi-agent-xhigh",
+  "primary_api_mode": "chat-completions",
+  "content": "**Official Go Documentation Summary (go.dev)**\n\nThe core official reference covering **GOOS**, **GOARCH**, **cross-compilation**, **CGO_ENABLED**, **-trimpath**, and **linker flags (-ldflags)** is:\n\n- **https://pkg.go.dev/cmd/go** (especially `#hdr-Environment_variables` and `#hdr-Compile_packages_and_dependencies`)\n- Supporting page: **https://go.dev/doc/install/source#environment**\n\n### 1. Environment Variables (GOOS, GOARCH, CGO_ENABLED)\n\nFrom **pkg.go.dev/cmd/go#hdr-Environment_variables** and **go.dev/doc/install/source#environment**:\n\n- `GOOS` and `GOARCH` specify the **target operating system and architecture** for cross-compilation.\n- You set them as environment variables before running `go build`, `go test`, etc.\n- Go supports easy cross-compilation for **pure Go code**. The full list of supported pairs is available via `go tool dist list` or documented in the source page.\n\n**Common example**:\n```bash\nGOOS=linux GOARCH=amd64 go build\n```\n\n**CGO_ENABLED**:\n- `CGO_ENABLED=0`: Disables cgo. **This is the standard recommendation for cross-compilation** because it produces a pure-Go static binary without needing a cross C toolchain.\n- `CGO_ENABLED=1`: Enables cgo (default when a C toolchain is available). For cross-compilation with cgo, you must also set appropriate `CC`/`CXX` cross-compilers (e.g., `x86_64-linux-gnu-gcc`).\n\n**Official guidance**: Most cross-compilation scenarios use `CGO_ENABLED=0` unless C dependencies are required.\n\n### 2. Build Flags: -trimpath\n\nFrom **pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies** (the build flags section):\n\n> `-trimpath`\n> Remove all file system paths from the resulting executable. Instead of recording absolute file system paths, the recorded file names will begin with the module path or import path (for std library code). This makes builds more reproducible and is recommended for release builds.\n\n**Usage**:\n```bash\ngo build -trimpath\n```\n\nIt is widely recommended in combination with cross-compilation for security, reproducibility, and smaller binaries.\n\n### 3. Linker Flags (-ldflags)\n\nAlso documented in **pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies** and **pkg.go.dev/cmd/link**:\n\nUse `-ldflags` to pass options to the Go linker (`cmd/link`).\n\n**Most common flags for production/cross builds**:\n- `-s`: Omit the symbol table.\n- `-w`: Omit DWARF debugging information.\n- `-buildid=`: Clear build ID (often paired with `-trimpath` for reproducibility).\n- `-extldflags=-static`: (When using CGO) request static linking.\n- `-X importpath.var=value`: Set the value of a string variable at link time.\n\n**Typical production cross-compile command** (combining everything):\n```bash\nCGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \\\n  -trimpath \\\n  -ldflags=\"-s -w -buildid=\" \\\n  ./...\n```\n\n### 4. Additional Official References\n\n- **Full build reference**: https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies\n- **Linker documentation**: https://pkg.go.dev/cmd/link\n- **Supported platforms & environment**: https://go.dev/doc/install/source#environment\n- **CGO specifics**: https://go.dev/cmd/cgo\n- Local help commands (equivalent content): `go help environment`, `go help build`, `go tool link -h`\n\n### Best Practices (from official patterns)\n\n1. Use `CGO_ENABLED=0` for most cross builds.\n2. Always include `-trimpath` for release binaries.\n3. Use `-ldflags=\"-s -w\"` to reduce binary size.\n4. For maximum reproducibility, also clear build IDs and use Go modules.\n\nThese patterns are consistently documented across Go releases (including Go 1.21+ and later versions as of 2026).\n\n**Primary source**: https://pkg.go.dev/cmd/go\n\nThis page (and the linked sections) directly addresses every term in your query. For the absolute latest text, visit the links above, as minor wording updates occur with new Go releases.",
+  "sources": [
+    {
+      "url": "https://pkg.go.dev/github.com/mjl-/gobuild",
+      "provider": "tavily",
+      "title": "gobuild command - github.com/mjl-/gobuild - Go Packages",
+      "description": "To build, gobuild executes:\n\n```\nGO111MODULE=on GOPROXY= \\ CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch GOTOOLCHAIN=$goversion \\ GO19CONCURRENTCOMPILATION=0 \\ $goversion install -x -v -trimpath -ldflags=-buildid= -- $module/$package@$version \n```\n\nFor the stripped variant, -ldflags=\"-buildid= -s\" is used.\n\n#### Why gobuild ¶\n\nGet binaries for any module without having a Go toolchain installed: Useful when working on a machine that's not yours, or for your colleagues or friends who don't have a Go compiler installed.\n\nSimplify your software release process: You no longer need to cross compile for many architectures and upload binaries to a release page. You never forget a GOOS/GOARCH target. Just link to the build URL for your module and binaries will be created on demand."
+    }
+  ],
+  "sources_count": 1,
+  "primary_sources": [],
+  "primary_sources_count": 0,
+  "extra_sources": [
+    {
+      "url": "https://pkg.go.dev/github.com/mjl-/gobuild",
+      "provider": "tavily",
+      "title": "gobuild command - github.com/mjl-/gobuild - Go Packages",
+      "description": "To build, gobuild executes:\n\n```\nGO111MODULE=on GOPROXY= \\ CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch GOTOOLCHAIN=$goversion \\ GO19CONCURRENTCOMPILATION=0 \\ $goversion install -x -v -trimpath -ldflags=-buildid= -- $module/$package@$version \n```\n\nFor the stripped variant, -ldflags=\"-buildid= -s\" is used.\n\n#### Why gobuild ¶\n\nGet binaries for any module without having a Go toolchain installed: Useful when working on a machine that's not yours, or for your colleagues or friends who don't have a Go compiler installed.\n\nSimplify your software release process: You no longer need to cross compile for many architectures and upload binaries to a release page. You never forget a GOOS/GOARCH target. Just link to the build URL for your module and binaries will be created on demand."
+    }
+  ],
+  "extra_sources_count": 1,
+  "source_warning": "extra_sources are retrieved in parallel and are not automatically used to verify generated content; use fetch on key URLs for claim-level evidence.",
+  "routing_decision": {
+    "docs_intent": true,
+    "zh_current_intent": false,
+    "web_current_intent": false,
+    "fetch_intent": false,
+    "supplemental_paths": [
+      "docs_search",
+      "web_search"
+    ],
+    "intent_router_mode": "hybrid",
+    "required_capabilities": [
+      "docs_search",
+      "web_search"
+    ],
+    "intent_signals": {
+      "docs_api_intent": true,
+      "current_or_locale_intent": false,
+      "known_url": false,
+      "vertical_intent": false,
+      "strict_validation": true,
+      "rule_scores": {
+        "docs_search": 0.82,
+        "web_search": 0.72
+      },
+      "urls": []
+    },
+    "confidence": 0.82,
+    "router_engines_used": [
+      "rules"
+    ],
+    "degraded": true,
+    "degraded_reason": "embeddings not configured; classifier not configured",
+    "reasons": [
+      "rules matched docs/API/library terms",
+      "strict validation requires source reinforcement"
+    ],
+    "validation_level": "strict",
+    "fallback_mode": "auto",
+    "providers": "openai-compatible",
+    "main_search_chain": [
+      "openai-compatible"
+    ],
+    "openai_compatible_stream": true,
+    "openai_compatible_models": [
+      "grok-4.20-multi-agent-xhigh"
+    ],
+    "openai_compatible_model_fallback_enabled": false
+  },
+  "providers_used": [
+    "OpenAI-compatible",
+    "tavily"
+  ],
+  "provider_attempts": [
+    {
+      "capability": "main_search",
+      "provider": "OpenAI-compatible",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 38554.57,
+      "result_count": 1,
+      "transport": "stream",
+      "model": "grok-4.20-multi-agent-xhigh",
+      "breaker_state": {
+        "state": "closed",
+        "consecutive_failures": 0
+      }
+    },
+    {
+      "capability": "web_search",
+      "provider": "tavily",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 6904.19,
+      "result_count": 1
+    }
+  ],
+  "fallback_used": false,
+  "transport_fallback_used": false,
+  "model_fallback_used": false,
+  "validation_level": "strict",
+  "minimum_profile_ok": true,
+  "capability_status": {
+    "main_search": {
+      "configured": [
+        "openai-compatible"
+      ],
+      "fallback_chain": [
+        "xai-responses",
+        "openai-compatible"
+      ],
+      "ok": true
+    },
+    "web_search": {
+      "configured": [
+        "tavily"
+      ],
+      "fallback_chain": [
+        "zhipu",
+        "zhipu-mcp",
+        "tavily",
+        "firecrawl"
+      ],
+      "ok": true
+    },
+    "docs_search": {
+      "configured": [
+        "context7"
+      ],
+      "fallback_chain": [
+        "context7",
+        "exa"
+      ],
+      "ok": true
+    },
+    "web_fetch": {
+      "configured": [
+        "tavily"
+      ],
+      "fallback_chain": [
+        "tavily",
+        "jina",
+        "zhipu-mcp-reader",
+        "firecrawl"
+      ],
+      "ok": true
+    },
+    "vertical_search": {
+      "configured": [],
+      "fallback_chain": [
+        "anysearch"
+      ],
+      "experimental": true,
+      "explicit_only": [
+        "sciverse"
+      ],
+      "route_enabled": {
+        "anysearch": true,
+        "sciverse": false
+      },
+      "ok": false
+    }
+  },
+  "elapsed_ms": 45464.76
+}
