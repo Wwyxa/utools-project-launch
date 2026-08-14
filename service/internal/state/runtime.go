@@ -670,6 +670,14 @@ func (store *Store) appendRunLogLocked(event Event) error {
 }
 
 func (store *Store) trimTotalLogsLocked() error {
+	return store.trimTotalLogsToLimitLocked(MaxTotalLogBytes)
+}
+
+func (store *Store) trimTotalLogsToLimitLocked(maxTotalLogBytes int64) error {
+	if maxTotalLogBytes < 0 {
+		return errors.New("total run log limit must not be negative")
+	}
+
 	entries, err := os.ReadDir(store.logDirectoryPath())
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -717,7 +725,7 @@ func (store *Store) trimTotalLogsLocked() error {
 	})
 
 	for index := range files {
-		if totalSize <= MaxTotalLogBytes {
+		if totalSize <= maxTotalLogBytes {
 			break
 		}
 		file := files[index]
@@ -729,9 +737,9 @@ func (store *Store) trimTotalLogsLocked() error {
 			continue
 		}
 
-		targetSize := file.size / 2
-		if targetSize < 1024 {
-			targetSize = 1024
+		targetSize := file.size - (totalSize - maxTotalLogBytes)
+		if targetSize < 0 {
+			targetSize = 0
 		}
 		if err := truncateFileTail(file.path, targetSize); err != nil {
 			return err
@@ -741,6 +749,9 @@ func (store *Store) trimTotalLogsLocked() error {
 			return fmt.Errorf("read truncated run log metadata: %w", err)
 		}
 		totalSize -= file.size - updatedInfo.Size()
+	}
+	if totalSize > maxTotalLogBytes {
+		return fmt.Errorf("retained run logs remain above total limit: %d > %d", totalSize, maxTotalLogBytes)
 	}
 
 	return nil
@@ -877,13 +888,17 @@ func truncateFileTail(filePath string, limit int64) error {
 	if err != nil {
 		return fmt.Errorf("open oversized run log: %w", err)
 	}
-	defer file.Close()
 	if _, err := file.Seek(info.Size()-limit, io.SeekStart); err != nil {
+		_ = file.Close()
 		return fmt.Errorf("seek oversized run log: %w", err)
 	}
 	tail, err := io.ReadAll(file)
 	if err != nil {
+		_ = file.Close()
 		return fmt.Errorf("read oversized run log: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close oversized run log: %w", err)
 	}
 	if newlineIndex := strings.IndexByte(string(tail), '\n'); newlineIndex >= 0 && newlineIndex+1 < len(tail) {
 		tail = tail[newlineIndex+1:]

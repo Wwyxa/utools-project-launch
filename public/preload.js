@@ -1145,6 +1145,10 @@ function projectLaunchServiceDiscoveryPath() {
   return path.join(projectLaunchServiceDirectoryPath(), "discovery.json");
 }
 
+function projectLaunchServiceInstallMetadataPath() {
+  return path.join(projectLaunchServiceDirectoryPath(), "install.json");
+}
+
 function projectLaunchServiceTokenPath() {
   return path.join(projectLaunchServiceDirectoryPath(), "token");
 }
@@ -1307,20 +1311,91 @@ function projectLaunchServiceChecksum(checksumContents, assetName) {
   return match[1].toLowerCase();
 }
 
+function projectLaunchServiceInstallVerificationError(message) {
+  const error = new Error(message);
+  error.code = "unverified-install";
+  return error;
+}
+
+function projectLaunchServiceInstallMetadata(expectedHash) {
+  const target = projectLaunchServiceTarget();
+  if (!target.supported || !/^[0-9a-f]{64}$/i.test(expectedHash)) {
+    throw projectLaunchServiceInstallVerificationError("项目启动服务安装元数据无效。");
+  }
+  return {
+    schemaVersion: 1,
+    assetName: target.assetName,
+    sha256: expectedHash.toLowerCase(),
+  };
+}
+
+function readProjectLaunchServiceInstallMetadata() {
+  const directoryPath = projectLaunchServiceDirectoryPath();
+  const metadataPath = projectLaunchServiceInstallMetadataPath();
+  if (!isPathWithin(directoryPath, metadataPath)) {
+    throw projectLaunchServiceInstallVerificationError("项目启动服务安装元数据路径无效。");
+  }
+
+  let metadata;
+  try {
+    metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+  } catch (error) {
+    throw projectLaunchServiceInstallVerificationError(
+      "项目启动服务缺少可信安装记录。请重新下载或手动验证后再启用。",
+    );
+  }
+
+  const target = projectLaunchServiceTarget();
+  if (
+    !metadata ||
+    metadata.schemaVersion !== 1 ||
+    metadata.assetName !== target.assetName ||
+    typeof metadata.sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/i.test(metadata.sha256)
+  ) {
+    throw projectLaunchServiceInstallVerificationError("项目启动服务安装记录无效。请重新下载或手动验证后再启用。");
+  }
+  return metadata;
+}
+
+function verifyProjectLaunchServiceInstalledExecutable() {
+  const metadata = readProjectLaunchServiceInstallMetadata();
+  let contents;
+  try {
+    contents = fs.readFileSync(projectLaunchServiceExecutablePath());
+  } catch (error) {
+    throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请重新下载或手动验证后再启用。");
+  }
+  const actualHash = crypto.createHash("sha256").update(contents).digest("hex");
+  if (actualHash !== metadata.sha256) {
+    throw projectLaunchServiceInstallVerificationError(
+      "项目启动服务文件已变更，无法自动启动。请重新下载或手动验证后再启用。",
+    );
+  }
+}
+
 function installProjectLaunchServiceExecutable(contents, expectedHash) {
   const directoryPath = projectLaunchServiceDirectoryPath();
   const downloadsPath = path.join(directoryPath, "downloads");
   const executablePath = projectLaunchServiceExecutablePath();
+  const installMetadataPath = projectLaunchServiceInstallMetadataPath();
   const backupPath = path.join(directoryPath, "update.backup");
   const partialPath = path.join(downloadsPath, `${path.basename(executablePath)}.partial`);
-  if (!isPathWithin(directoryPath, downloadsPath) || !isPathWithin(directoryPath, executablePath)) {
+  const metadataPartialPath = `${installMetadataPath}.partial`;
+  if (
+    !isPathWithin(directoryPath, downloadsPath) ||
+    !isPathWithin(directoryPath, executablePath) ||
+    !isPathWithin(directoryPath, installMetadataPath) ||
+    !isPathWithin(directoryPath, metadataPartialPath)
+  ) {
     throw new Error("项目启动服务安装路径无效。");
   }
 
-  fs.mkdirSync(downloadsPath, { recursive: true });
-  fs.writeFileSync(partialPath, contents, { mode: process.platform === "win32" ? 0o700 : 0o755 });
   let backupCreated = false;
+  let executableInstalled = false;
   try {
+    fs.mkdirSync(downloadsPath, { recursive: true });
+    fs.writeFileSync(partialPath, contents, { mode: process.platform === "win32" ? 0o700 : 0o755 });
     const actualHash = crypto.createHash("sha256").update(contents).digest("hex");
     if (actualHash !== expectedHash) {
       const error = new Error("项目启动服务校验失败，文件未安装。");
@@ -1332,6 +1407,7 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
       error.code = "asset-too-large";
       throw error;
     }
+    const installMetadata = projectLaunchServiceInstallMetadata(expectedHash);
 
     try {
       fs.unlinkSync(backupPath);
@@ -1345,24 +1421,41 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
       if (error?.code !== "ENOENT") throw error;
     }
     fs.renameSync(partialPath, executablePath);
+    executableInstalled = true;
+    const installedHash = crypto.createHash("sha256").update(fs.readFileSync(executablePath)).digest("hex");
+    if (installedHash !== installMetadata.sha256) {
+      const error = new Error("项目启动服务校验失败，文件未安装。");
+      error.code = "checksum-mismatch";
+      throw error;
+    }
     if (process.platform !== "win32") {
       fs.chmodSync(executablePath, 0o755);
     }
+    fs.writeFileSync(metadataPartialPath, `${JSON.stringify(installMetadata)}\n`, { mode: 0o600 });
+    fs.renameSync(metadataPartialPath, installMetadataPath);
     if (backupCreated) {
       fs.unlinkSync(backupPath);
     }
   } catch (error) {
-    try {
-      fs.unlinkSync(partialPath);
-    } catch (cleanupError) {
-      if (cleanupError?.code !== "ENOENT") console.warn("[utools-project-launch] failed to clean service partial file");
-    }
+    [partialPath, metadataPartialPath].forEach((candidatePath) => {
+      try {
+        fs.unlinkSync(candidatePath);
+      } catch (cleanupError) {
+        if (cleanupError?.code !== "ENOENT") console.warn("[utools-project-launch] failed to clean service partial file");
+      }
+    });
     if (backupCreated) {
       try {
-        fs.unlinkSync(executablePath);
+        if (executableInstalled) fs.unlinkSync(executablePath);
         fs.renameSync(backupPath, executablePath);
       } catch (restoreError) {
         console.warn("[utools-project-launch] failed to restore service executable backup");
+      }
+    } else if (executableInstalled) {
+      try {
+        fs.unlinkSync(executablePath);
+      } catch (cleanupError) {
+        if (cleanupError?.code !== "ENOENT") console.warn("[utools-project-launch] failed to remove unverified service executable");
       }
     }
     throw error;
@@ -1758,6 +1851,14 @@ function projectLaunchServiceEventToBridgeEvent(event) {
   };
 }
 
+function projectLaunchServiceAutomationSnapshot(automation) {
+  const revision = Number(automation?.revision);
+  return {
+    revision: Number.isSafeInteger(revision) && revision >= 0 ? revision : 0,
+    ...(Array.isArray(automation?.executions) ? { executions: automation.executions } : {}),
+  };
+}
+
 async function readProjectLaunchServiceStatus(options = {}) {
   const status = projectLaunchServiceBaseStatus();
   if (!status.installed) {
@@ -1789,11 +1890,12 @@ async function readProjectLaunchServiceStatus(options = {}) {
     status.serviceVersion = health.serviceVersion;
     status.activeRunCount = serviceRunCount(state.runs);
     if (options.includeState === true) {
+      const automation = projectLaunchServiceAutomationSnapshot(state.automation);
       status.runs = Array.isArray(state.runs) ? state.runs : [];
       status.latestCursor = state.latestCursor || 0;
       status.earliestCursor = state.earliestCursor || 0;
-      status.automationRevision = Number(state.automation?.revision) || 0;
-      status.automation = state.automation || { revision: 0 };
+      status.automationRevision = automation.revision;
+      status.automation = automation;
     }
     return status;
   } catch (error) {
@@ -1836,7 +1938,7 @@ function waitForProjectLaunchService() {
   });
 }
 
-async function startProjectLaunchService() {
+async function startProjectLaunchService(options = {}) {
   const initial = projectLaunchServiceBaseStatus();
   try {
     initial.installed = fs.statSync(initial.executablePath).isFile();
@@ -1844,6 +1946,14 @@ async function startProjectLaunchService() {
     return initial;
   }
   if (!initial.installed) return initial;
+
+  if (options.requireVerifiedInstall === true) {
+    try {
+      verifyProjectLaunchServiceInstalledExecutable();
+    } catch (error) {
+      return serviceStatusWithError(initial, error);
+    }
+  }
 
   const current = await readProjectLaunchServiceStatus();
   if (current.state === "healthy" && current.running) return current;
@@ -1910,7 +2020,7 @@ async function reconcileProjectLaunchService() {
 
   let status = await readProjectLaunchServiceStatus();
   if (status.state !== "healthy" || !status.running) {
-    status = await startProjectLaunchService();
+    status = await startProjectLaunchService({ requireVerifiedInstall: true });
   }
   if (status.state !== "healthy" || !status.running) return status;
 
@@ -1918,6 +2028,7 @@ async function reconcileProjectLaunchService() {
     const connection = await projectLaunchServiceConnection();
     const state = await requestProjectLaunchServiceState(connection);
     const batch = await requestProjectLaunchServiceEvents(connection, projectLaunchServiceEventCursor);
+    const automation = projectLaunchServiceAutomationSnapshot(state.automation);
     advanceProjectLaunchServiceEventCursor(batch);
     status = {
       ...status,
@@ -1927,8 +2038,8 @@ async function reconcileProjectLaunchService() {
       earliestCursor: batch.earliestCursor || state.earliestCursor || 0,
       events: Array.isArray(batch.events) ? batch.events : [],
       eventsTruncated: batch.truncated === true,
-      automationRevision: Number(state.automation?.revision) || 0,
-      automation: state.automation || { revision: 0 },
+      automationRevision: automation.revision,
+      automation,
     };
     scheduleProjectLaunchServiceEventPoll(batch.hasMore === true ? 0 : projectLaunchServiceEventPollIntervalMs);
     return status;

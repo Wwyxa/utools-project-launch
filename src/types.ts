@@ -197,7 +197,6 @@ export interface ProjectLaunchServiceAutomationExecution {
 
 export interface ProjectLaunchServiceAutomationState {
   revision: number;
-  config?: ProjectLaunchServiceAutomationConfig;
   executions?: ProjectLaunchServiceAutomationExecution[];
 }
 

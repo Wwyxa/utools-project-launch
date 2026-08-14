@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -242,5 +243,58 @@ func TestEventsAfterPageAdvancesCursorWithinResponseBudget(t *testing.T) {
 	nextPage := store.EventsAfterPage(page.NextCursor, maxBytes)
 	if len(nextPage.Events) == 0 || nextPage.Events[0].Cursor <= page.NextCursor {
 		t.Fatalf("next event page = %#v, want later retained events", nextPage)
+	}
+}
+
+func TestTrimTotalLogsConvergesAfterEvictingCompletedLogs(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+
+	const (
+		activeOne = "11111111111111111111111111111111"
+		activeTwo = "22222222222222222222222222222222"
+		completed = "33333333333333333333333333333333"
+		logLimit  = int64(1)
+	)
+	store.data.Runs = []Run{
+		{ID: activeOne, Status: RunStatusRunning},
+		{ID: activeTwo, Status: RunStatusStopping},
+		{ID: completed, Status: RunStatusExited},
+	}
+	if err := os.MkdirAll(store.logDirectoryPath(), 0o700); err != nil {
+		t.Fatalf("create log directory: %v", err)
+	}
+	for _, runID := range []string{activeOne, activeTwo, completed} {
+		if err := os.WriteFile(filepath.Join(store.logDirectoryPath(), runID+".log"), []byte(strings.Repeat("x", 60)), 0o600); err != nil {
+			t.Fatalf("write %s log: %v", runID, err)
+		}
+	}
+
+	store.mutex.Lock()
+	err = store.trimTotalLogsToLimitLocked(logLimit)
+	store.mutex.Unlock()
+	if err != nil {
+		t.Fatalf("trim logs: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(store.logDirectoryPath(), completed+".log")); !os.IsNotExist(err) {
+		t.Fatalf("completed log still exists, err=%v", err)
+	}
+
+	entries, err := os.ReadDir(store.logDirectoryPath())
+	if err != nil {
+		t.Fatalf("read log directory: %v", err)
+	}
+	var totalSize int64
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			t.Fatalf("read %s metadata: %v", entry.Name(), err)
+		}
+		totalSize += info.Size()
+	}
+	if totalSize > logLimit {
+		t.Fatalf("total log size = %d, want at most %d", totalSize, logLimit)
 	}
 }

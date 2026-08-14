@@ -1701,6 +1701,8 @@ export const useStore = defineStore("app", {
             project.scripts.forEach((script) => {
               script.status = "IDLE";
               script.pid = undefined;
+              script.runId = undefined;
+              script.runtimeOwner = undefined;
             });
           }
         }),

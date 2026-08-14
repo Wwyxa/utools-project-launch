@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { createPinia, setActivePinia } from "pinia";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -27,6 +29,7 @@ const loadPreloadBridge = (
     storage.delete(key);
   },
   environment: NodeJS.ProcessEnv = {},
+  moduleOverrides: Record<string, unknown> = {},
 ) => {
   const nodeRequire = createRequire(import.meta.url);
   const sandboxWindow: { projectBridge?: ProjectBridge; utools: { dbStorage: object } } = {
@@ -39,7 +42,7 @@ const loadPreloadBridge = (
     },
   };
   const sandbox = {
-    require: (id: string) => (id === "electron" ? { shell: {} } : nodeRequire(id)),
+    require: (id: string) => (id === "electron" ? { shell: {} } : moduleOverrides[id] ?? nodeRequire(id)),
     process: {
       platform: process.platform,
       arch: process.arch,
@@ -51,6 +54,7 @@ const loadPreloadBridge = (
     },
     Buffer,
     console,
+    URL,
     setTimeout,
     clearTimeout,
     window: sandboxWindow,
@@ -59,6 +63,62 @@ const loadPreloadBridge = (
   runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
   if (!sandboxWindow.projectBridge) throw new Error("The real preload did not register projectBridge.");
   return sandboxWindow.projectBridge;
+};
+
+const projectLaunchServiceAssetName = () => {
+  const platform = process.platform === "win32" ? "windows" : process.platform;
+  const architecture = process.arch === "x64" ? "amd64" : process.arch;
+  return `project-launch-service-${platform}-${architecture}${platform === "windows" ? ".exe" : ""}`;
+};
+
+const projectLaunchServiceExecutableName = () => `project-launch-service${process.platform === "win32" ? ".exe" : ""}`;
+
+const createProjectLaunchServiceDownloadHttps = (binaryContents: Buffer) => {
+  const assetName = projectLaunchServiceAssetName();
+  const checksum = createHash("sha256").update(binaryContents).digest("hex");
+  const checksumContents = Buffer.from(`${checksum}  ${assetName}\n`);
+  const releaseContents = Buffer.from(
+    JSON.stringify({
+      assets: [
+        {
+          name: assetName,
+          size: binaryContents.length,
+          browser_download_url: `https://github.com/Wwyxa/utools-project-launch/releases/download/v1/${assetName}`,
+        },
+        {
+          name: "checksums.txt",
+          size: checksumContents.length,
+          browser_download_url: "https://github.com/Wwyxa/utools-project-launch/releases/download/v1/checksums.txt",
+        },
+      ],
+    }),
+  );
+  const responses = [releaseContents, checksumContents, binaryContents];
+
+  return {
+    get: vi.fn((_options: unknown, callback: (response: EventEmitter) => void) => {
+      const contents = responses.shift();
+      if (!contents) throw new Error("unexpected service download request");
+      const request = new EventEmitter() as EventEmitter & { destroy: (error?: Error) => void };
+      request.destroy = (error) => {
+        if (error) queueMicrotask(() => request.emit("error", error));
+      };
+      queueMicrotask(() => {
+        const response = new EventEmitter() as EventEmitter & {
+          statusCode: number;
+          headers: Record<string, string>;
+          resume: () => void;
+        };
+        response.statusCode = 200;
+        response.headers = { "content-length": String(contents.length) };
+        response.resume = () => undefined;
+        callback(response);
+        response.emit("data", contents);
+        response.emit("end");
+      });
+      return request;
+    }),
+  };
 };
 
 describe("browser UI preferences fallback", () => {
@@ -791,6 +851,145 @@ describe("browser UI preferences fallback", () => {
         plannedAt: "2026-08-14T00:00:00.000Z",
       }),
     );
+  });
+
+  it("clears all script runtime identity when a project path becomes unavailable", async () => {
+    window.projectBridge = {
+      ...getProjectBridge(),
+      pathExists: async () => false,
+    };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "missing-project",
+        name: "Missing project",
+        path: "/workspace/missing-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "missing-script",
+            name: "dev",
+            command: "npm run dev",
+            status: "RUNNING",
+            pid: 4242,
+            runId: "1234567890abcdef1234567890abcdef",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    await store.refreshProjectAvailability();
+
+    const project = store.projects[0]!;
+    const script = project.scripts[0]!;
+    expect(project.status).toBe(ProjectStatus.WARNING);
+    expect(script.status).toBe("IDLE");
+    expect(script.pid).toBeUndefined();
+    expect(script.runId).toBeUndefined();
+    expect(script.runtimeOwner).toBeUndefined();
+  });
+});
+
+describe("Project Launch Service preload installation", () => {
+  const binaryContents = Buffer.from("verified-project-launch-service");
+
+  const createBridge = (serviceRoot: string, moduleOverrides: Record<string, unknown> = {}) =>
+    loadPreloadBridge(
+      new Map(),
+      undefined,
+      { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+      moduleOverrides,
+    );
+
+  it("persists verified metadata and blocks automatic startup after executable replacement", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const https = createProjectLaunchServiceDownloadHttps(binaryContents);
+    const spawn = vi.fn(() => Object.assign(new EventEmitter(), { unref: vi.fn() }));
+    try {
+      const bridge = createBridge(serviceRoot, { https, child_process: { spawn } });
+
+      const installed = await bridge.downloadProjectLaunchService();
+      const metadataPath = join(installed.directoryPath, "install.json");
+      expect(JSON.parse(readFileSync(metadataPath, "utf8"))).toEqual({
+        schemaVersion: 1,
+        assetName: installed.expectedAssetName,
+        sha256: createHash("sha256").update(binaryContents).digest("hex"),
+      });
+      if (process.platform !== "win32") {
+        expect(statSync(metadataPath).mode & 0o077).toBe(0);
+      }
+
+      writeFileSync(installed.executablePath, "replaced executable");
+      bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
+      const reconciled = await bridge.reconcileProjectLaunchService();
+
+      expect(reconciled).toMatchObject({ state: "unavailable", installed: true, running: false });
+      expect(reconciled.message).toContain("文件已变更");
+      expect(spawn).not.toHaveBeenCalled();
+      expect(https.get).toHaveBeenCalledTimes(3);
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans a partial file when service download directory creation fails", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const downloadsPath = join(serviceRoot, "service", "downloads");
+    const partialPath = join(downloadsPath, `${projectLaunchServiceExecutableName()}.partial`);
+    const nativeFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
+    const fs = {
+      ...nativeFs,
+      mkdirSync: (directoryPath: string, options?: Parameters<typeof mkdirSync>[1]) => {
+        if (directoryPath === downloadsPath) {
+          mkdirSync(directoryPath, { recursive: true });
+          writeFileSync(partialPath, "stale partial");
+          throw new Error("download directory failure");
+        }
+        return mkdirSync(directoryPath, options);
+      },
+    };
+    try {
+      const bridge = createBridge(serviceRoot, { https: createProjectLaunchServiceDownloadHttps(binaryContents), fs });
+
+      await expect(bridge.downloadProjectLaunchService()).rejects.toThrow("download directory failure");
+      expect(existsSync(partialPath)).toBe(false);
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans a partial file when service executable writing fails", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const partialPath = join(serviceRoot, "service", "downloads", `${projectLaunchServiceExecutableName()}.partial`);
+    const nativeFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
+    const fs = {
+      ...nativeFs,
+      writeFileSync: (
+        filePath: string,
+        contents: Parameters<typeof writeFileSync>[1],
+        options?: Parameters<typeof writeFileSync>[2],
+      ) => {
+        if (filePath === partialPath) {
+          writeFileSync(filePath, contents, options);
+          throw new Error("service executable write failure");
+        }
+        return writeFileSync(filePath, contents, options);
+      },
+    };
+    try {
+      const bridge = createBridge(serviceRoot, { https: createProjectLaunchServiceDownloadHttps(binaryContents), fs });
+
+      await expect(bridge.downloadProjectLaunchService()).rejects.toThrow("service executable write failure");
+      expect(existsSync(partialPath)).toBe(false);
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
   });
 });
 
