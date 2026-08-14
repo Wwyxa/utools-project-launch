@@ -313,7 +313,9 @@ const cardTimeMeta = computed(() => {
   }
   return { symbol: "•", title: "", value: "--" };
 });
-const gitChangedFileCount = computed(() => props.project.git?.files.length ?? store.stagedFiles[props.project.id]?.length ?? 0);
+const gitChangedFileCount = computed(
+  () => props.project.git?.files.length ?? store.stagedFiles[props.project.id]?.length ?? 0,
+);
 const gitChangedFileLabel = computed(() =>
   t.value.git.changedFiles.replace("{count}", String(gitChangedFileCount.value)),
 );
@@ -391,15 +393,15 @@ const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: s
   }
   if (status === "RUNNING") {
     await store.stopScript(props.project.id, scriptId);
-    moreScriptsOpen.value = false;
+    closeMoreScripts();
     return;
   }
   if (status === "STOPPING") {
-    moreScriptsOpen.value = false;
+    closeMoreScripts();
     return;
   }
   await store.launchScript(props.project.id, scriptId);
-  moreScriptsOpen.value = false;
+  closeMoreScripts();
 };
 
 const handleDocumentPointerDown = (event: PointerEvent) => {
@@ -840,9 +842,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
         </span>
       </div>
 
-      <div
-        class="mt-auto flex min-h-7 items-center border-t border-border-subtle pt-2"
-      >
+      <div class="mt-auto flex min-h-7 items-center border-t border-border-subtle pt-2">
         <div class="flex min-w-0 items-center gap-2 text-[11px] text-on-surface-variant">
           <span
             v-if="isError"
