@@ -87,6 +87,9 @@ import type {
   ProjectIconKey,
   ProjectKind,
   ProjectDetailsTabId,
+  ProjectLaunchServicePreferences,
+  ProjectLaunchServiceAutomationConfig,
+  ProjectLaunchServiceStatus,
   ProjectVisibility,
   ProjectScript,
   ProjectBridgeScriptCandidate,
@@ -156,6 +159,9 @@ let projectConfigMessageClearTimer: number | null = null;
 let projectStatusMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
 let runtimeReconciliationPromise: Promise<void> | null = null;
+let projectLaunchServiceAutomationRevision = 0;
+let projectLaunchServiceAutomationSyncPromise: Promise<void> | null = null;
+let projectLaunchServiceOwnershipHandoff = false;
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
 const gitStatusRefreshPromises = new Map<string, Promise<void>>();
 const gitWorkingTreeRefreshPromises = new Map<string, Promise<void>>();
@@ -462,6 +468,9 @@ function normalizeProjectScripts(projectId: string, value: unknown): ProjectScri
       pid: typeof candidate.pid === "number" ? candidate.pid : undefined,
       note: typeof candidate.note === "string" ? candidate.note : "",
       source,
+      runId: typeof candidate.runId === "string" && candidate.runId.trim() ? candidate.runId : undefined,
+      runtimeOwner:
+        candidate.runtimeOwner === "service" ? "service" : candidate.runtimeOwner === "preload" ? "preload" : undefined,
     });
 
     return normalizedScripts;
@@ -763,6 +772,50 @@ function resolveScriptCwd(projectPath: string, scriptCwd: string | undefined): s
   }
 
   return `${projectPath.replace(/[\\/]$/, "")}/${cwd}`;
+}
+
+function buildProjectLaunchServiceAutomationConfig(
+  projects: Project[],
+  revision: number,
+): ProjectLaunchServiceAutomationConfig {
+  return {
+    schemaVersion: 1,
+    revision,
+    projects: projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      path: project.path,
+      env: { ...project.env },
+      scripts: project.scripts.map((script) => ({
+        id: script.id,
+        name: script.name,
+        command: script.command,
+        cwd: resolveScriptCwd(project.path, script.cwd),
+      })),
+      automationTasks: normalizeAutomationTasks(project.id, project.automationTasks).map((task) => ({
+        id: task.id,
+        name: task.name,
+        enabled: task.enabled,
+        scriptIds: [...task.scriptIds],
+        missedPolicy: task.missedPolicy,
+        missedGraceMinutes: task.missedGraceMinutes,
+        maxScriptRuntimeMinutes: task.maxScriptRuntimeMinutes,
+        inputConfigs: task.inputConfigs.map((config) => ({
+          scriptId: config.scriptId,
+          steps: config.steps.map((step) => ({ ...step })),
+        })),
+        exitConfigs: task.exitConfigs.map((config) => ({ ...config })),
+        dailyPlans: task.dailyPlans.map((plan) => ({
+          date: plan.date,
+          entries: plan.entries.map((entry) => ({
+            id: entry.id,
+            plannedAt: new Date(entry.plannedAt).toISOString(),
+            status: entry.status,
+          })),
+        })),
+      })),
+    })),
+  };
 }
 
 const normalizeGitCommitSkip = (value: unknown, fallback: number) =>
@@ -1095,9 +1148,13 @@ function hydrateProject(project: Project): Project {
   };
 }
 
-function createLogEntry(message: string, type: LogEntry["type"]): LogEntry {
+function createLogEntry(message: string, type: LogEntry["type"], eventTimestamp?: string): LogEntry {
+  const eventTime = eventTimestamp ? new Date(eventTimestamp) : null;
   return {
-    timestamp: new Date().toLocaleTimeString(),
+    timestamp:
+      eventTime && !Number.isNaN(eventTime.getTime())
+        ? eventTime.toLocaleTimeString()
+        : new Date().toLocaleTimeString(),
     message,
     type,
   };
@@ -1334,6 +1391,8 @@ export const useStore = defineStore("app", {
     terminalPreferences: bridge.loadTerminalPreferences(),
     externalApplicationPreferences: bridge.loadExternalApplicationPreferences(),
     environmentPreferences: bridge.loadEnvironmentPreferences(),
+    projectLaunchServicePreferences: bridge.loadProjectLaunchServicePreferences() as ProjectLaunchServicePreferences,
+    projectLaunchServiceStatus: null as ProjectLaunchServiceStatus | null,
     builtinEnvironmentTools: bridge.loadBuiltinEnvironmentTools() as EnvironmentToolDefinition[],
     environmentResults: [] as EnvironmentToolResult[],
     environmentChecked: false,
@@ -1457,6 +1516,7 @@ export const useStore = defineStore("app", {
       this.terminalPreferences = bridge.loadTerminalPreferences();
       this.externalApplicationPreferences = bridge.loadExternalApplicationPreferences();
       this.environmentPreferences = bridge.loadEnvironmentPreferences();
+      this.projectLaunchServicePreferences = bridge.loadProjectLaunchServicePreferences();
       this.aiPreferences = bridge.loadAiPreferences();
       markStartupPhase?.("projects-load-preferences-complete");
 
@@ -1493,6 +1553,11 @@ export const useStore = defineStore("app", {
       await this.refreshProjectAvailability();
       markStartupPhase?.("projects-load-path-availability-complete");
 
+      this.projectLaunchServiceStatus = this.projectLaunchServicePreferences.enabled
+        ? await bridge.reconcileProjectLaunchService()
+        : await bridge.getProjectLaunchServiceStatus();
+      this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
+
       markStartupPhase?.("projects-load-runtime-reconciliation-start");
       await this.reconcileRuntimeProcessState();
       markStartupPhase?.("projects-load-runtime-reconciliation-complete");
@@ -1501,7 +1566,109 @@ export const useStore = defineStore("app", {
       this.recomputeAutomationPlans();
       markStartupPhase?.("projects-load-automation-plan-recomputation-complete");
     },
-    async persistProjects() {
+    reconcileProjectLaunchServiceRuntime(status: ProjectLaunchServiceStatus | null) {
+      if (!this.projectLaunchServicePreferences.enabled || status?.state !== "healthy" || !status.running) {
+        return;
+      }
+
+      const eventTypes = new Set<ProjectBridgeEvent["type"]>(["started", "stdout", "stderr", "stdin", "exit", "error"]);
+      for (const event of status.events || []) {
+        if (!eventTypes.has(event.type)) {
+          continue;
+        }
+        this.handleBridgeEvent({
+          ...event,
+          pid: Number.isInteger(event.pid) ? event.pid : 0,
+          runtimeOwner: "service",
+        });
+      }
+
+      const latestRuns = new Map<string, NonNullable<ProjectLaunchServiceStatus["runs"]>[number]>();
+      for (const run of status.runs || []) {
+        if (!run.projectId || !run.scriptId || !run.id) {
+          continue;
+        }
+        const key = `${run.projectId}\u0000${run.scriptId}`;
+        const previous = latestRuns.get(key);
+        if (!previous || new Date(run.startedAt).getTime() >= new Date(previous.startedAt).getTime()) {
+          latestRuns.set(key, run);
+        }
+      }
+
+      for (const run of latestRuns.values()) {
+        const project = this.projects.find((item) => item.id === run.projectId);
+        const script = project?.scripts.find((item) => item.id === run.scriptId);
+        if (!project || !script) {
+          continue;
+        }
+
+        if (run.status === "starting" || run.status === "running" || run.status === "stopping") {
+          script.status = run.status === "stopping" ? "STOPPING" : "RUNNING";
+          script.pid = Number.isInteger(run.pid) && run.pid > 0 ? run.pid : undefined;
+          script.runId = run.id;
+          script.runtimeOwner = "service";
+        } else {
+          script.status =
+            run.status === "failed" || run.status === "lost" ? "ERROR" : run.status === "stopped" ? "STOPPED" : "IDLE";
+          script.pid = undefined;
+          script.runId = undefined;
+          script.runtimeOwner = undefined;
+        }
+        project.status = deriveProjectStatus(project);
+        project.lastUpdated = new Date().toLocaleString();
+      }
+
+      for (const execution of status.automation?.executions || []) {
+        if (!execution.id || !execution.projectId || !execution.taskId || !execution.planEntryId) {
+          continue;
+        }
+        const project = this.projects.find((item) => item.id === execution.projectId);
+        const task = project?.automationTasks?.find((item) => item.id === execution.taskId);
+        const entry = task?.dailyPlans
+          .flatMap((plan) => plan.entries)
+          .find((item) => item.id === execution.planEntryId);
+        if (!project || !task || !entry) {
+          continue;
+        }
+
+        entry.status = execution.status;
+        entry.runId = execution.id;
+        entry.reason = execution.reason || undefined;
+        if (execution.status === "running") {
+          this.automationActiveProjectRuns[project.id] = execution.id;
+          task.updatedAt = execution.startedAt || task.updatedAt;
+          continue;
+        }
+
+        if (this.automationActiveProjectRuns[project.id] === execution.id) {
+          delete this.automationActiveProjectRuns[project.id];
+        }
+        const historyEntry: ProjectAutomationHistoryEntry = {
+          id: execution.id,
+          taskId: task.id,
+          taskName: task.name,
+          projectId: project.id,
+          projectName: project.name,
+          plannedAt: entry.plannedAt,
+          startedAt: execution.startedAt,
+          endedAt: execution.endedAt,
+          status: execution.status,
+          reason: execution.reason || undefined,
+          scriptResults: execution.scriptResults.map((result) => ({
+            ...result,
+            scriptName: project.scripts.find((script) => script.id === result.scriptId)?.name || result.scriptId,
+          })),
+        };
+        const existingHistoryIndex = task.history.findIndex((item) => item.id === historyEntry.id);
+        task.history = normalizeAutomationHistory(
+          existingHistoryIndex === -1
+            ? [historyEntry, ...task.history]
+            : task.history.map((item, index) => (index === existingHistoryIndex ? historyEntry : item)),
+        );
+        task.updatedAt = execution.endedAt || execution.startedAt || task.updatedAt;
+      }
+    },
+    async persistProjects(synchronizeProjectLaunchService = true) {
       try {
         const persistedProjects = this.projects.map((project, index) => {
           const persistedProject = toPersistedProject(project, index);
@@ -1512,6 +1679,9 @@ export const useStore = defineStore("app", {
         this.projectStorageMessage = "";
       } catch (error) {
         this.projectStorageMessage = "项目配置保存失败，请稍后重试";
+      }
+      if (synchronizeProjectLaunchService && this.projectLaunchServicePreferences.enabled) {
+        void this.queueProjectLaunchServiceAutomationSync();
       }
     },
     async refreshProjectAvailability() {
@@ -1541,6 +1711,179 @@ export const useStore = defineStore("app", {
     },
     setTheme(theme: "light" | "dark" | "auto") {
       this.theme = theme;
+    },
+    async refreshProjectLaunchServiceStatus() {
+      this.projectLaunchServiceStatus = this.projectLaunchServicePreferences.enabled
+        ? await bridge.reconcileProjectLaunchService()
+        : await bridge.getProjectLaunchServiceStatus();
+      if (this.projectLaunchServicePreferences.enabled) {
+        this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
+        await this.reconcileRuntimeProcessState();
+      }
+      return this.projectLaunchServiceStatus;
+    },
+    async downloadProjectLaunchService() {
+      this.projectLaunchServiceStatus = {
+        ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+        state: "starting",
+        message: "正在下载项目启动服务。",
+      };
+      try {
+        this.projectLaunchServiceStatus = await bridge.downloadProjectLaunchService();
+      } catch (error) {
+        this.projectLaunchServiceStatus = {
+          ...this.projectLaunchServiceStatus,
+          state: "unavailable",
+          message: error instanceof Error ? error.message : "项目启动服务下载失败。",
+        };
+      }
+      return this.projectLaunchServiceStatus;
+    },
+    async openProjectLaunchServiceDirectory() {
+      await bridge.openProjectLaunchServiceDirectory();
+    },
+    async openProjectLaunchServiceReleases() {
+      await bridge.openProjectLaunchServiceReleases();
+    },
+    async synchronizeProjectLaunchServiceAutomation() {
+      const status = await bridge.reconcileProjectLaunchService();
+      this.projectLaunchServiceStatus = status;
+      if (status.state !== "healthy" || !status.running) {
+        throw new Error(status.message || "项目启动服务不可用，无法同步自动化配置。");
+      }
+
+      const revision = Math.max(projectLaunchServiceAutomationRevision, status.automationRevision || 0) + 1;
+      const result = await bridge.syncProjectLaunchServiceAutomation(
+        buildProjectLaunchServiceAutomationConfig(this.projects, revision),
+      );
+      if (!result.accepted || result.revision !== revision) {
+        throw new Error(result.message || "项目启动服务没有确认自动化配置。");
+      }
+
+      projectLaunchServiceAutomationRevision = result.revision;
+      this.projectLaunchServiceStatus = {
+        ...status,
+        automationRevision: result.revision,
+      };
+      return result;
+    },
+    queueProjectLaunchServiceAutomationSync() {
+      if (!this.projectLaunchServicePreferences.enabled) {
+        return Promise.resolve();
+      }
+
+      const previous = projectLaunchServiceAutomationSyncPromise || Promise.resolve();
+      const queued = previous
+        .catch(() => undefined)
+        .then(async () => {
+          if (!this.projectLaunchServicePreferences.enabled) {
+            return;
+          }
+          try {
+            await this.synchronizeProjectLaunchServiceAutomation();
+          } catch (error) {
+            this.projectLaunchServiceStatus = {
+              ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+              state: "unavailable",
+              message: error instanceof Error ? error.message : "项目启动服务自动化配置同步失败。",
+            };
+          }
+        });
+      projectLaunchServiceAutomationSyncPromise = queued;
+      void queued.finally(() => {
+        if (projectLaunchServiceAutomationSyncPromise === queued) {
+          projectLaunchServiceAutomationSyncPromise = null;
+        }
+      });
+      return queued;
+    },
+    async synchronizeProjectLaunchServiceAutomationForUserAction() {
+      await (projectLaunchServiceAutomationSyncPromise || Promise.resolve());
+      try {
+        await this.synchronizeProjectLaunchServiceAutomation();
+        return true;
+      } catch (error) {
+        this.projectLaunchServiceStatus = {
+          ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+          state: "unavailable",
+          message: error instanceof Error ? error.message : "项目启动服务自动化配置同步失败。",
+        };
+        return false;
+      }
+    },
+    async setProjectLaunchServiceEnabled(enabled: boolean) {
+      if (enabled && projectLaunchServiceOwnershipHandoff) {
+        return this.projectLaunchServiceStatus;
+      }
+      if (enabled === this.projectLaunchServicePreferences.enabled) {
+        if (enabled) {
+          try {
+            await this.synchronizeProjectLaunchServiceAutomation();
+          } catch (error) {
+            this.projectLaunchServiceStatus = {
+              ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+              state: "unavailable",
+              message: error instanceof Error ? error.message : "项目启动服务自动化配置同步失败。",
+            };
+          }
+        }
+        return this.projectLaunchServiceStatus;
+      }
+
+      const activeScripts = this.projects.flatMap((project) =>
+        project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
+      );
+      if (activeScripts.length > 0) {
+        this.projectLaunchServiceStatus = {
+          ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+          state: "unavailable",
+          message: enabled
+            ? "请先停止当前脚本，再启用项目启动服务。"
+            : "请先停止项目启动服务管理的脚本，再关闭服务模式。",
+        };
+        return this.projectLaunchServiceStatus;
+      }
+
+      if (enabled) {
+        projectLaunchServiceOwnershipHandoff = true;
+        clearAutomationSchedulerTimer();
+        this.automationNextTimerAt = "";
+        try {
+          const started = await bridge.startProjectLaunchService();
+          this.projectLaunchServiceStatus = started;
+          if (started.state !== "healthy" || !started.running) {
+            throw new Error(started.message || "项目启动服务不可用，无法启用服务模式。");
+          }
+          await this.synchronizeProjectLaunchServiceAutomation();
+          this.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+          bridge.saveProjectLaunchServicePreferences(this.projectLaunchServicePreferences);
+        } catch (error) {
+          this.projectLaunchServiceStatus = {
+            ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+            state: "unavailable",
+            message: error instanceof Error ? error.message : "项目启动服务自动化配置同步失败。",
+          };
+        } finally {
+          projectLaunchServiceOwnershipHandoff = false;
+          this.scheduleAutomationTimer();
+        }
+        return this.projectLaunchServiceStatus;
+      }
+
+      const stopped = await bridge.stopProjectLaunchService();
+      if (stopped.running) {
+        this.projectLaunchServiceStatus = {
+          ...stopped,
+          state: "unavailable",
+          message: stopped.message || "项目启动服务仍有活动进程，无法关闭。",
+        };
+        return this.projectLaunchServiceStatus;
+      }
+      this.projectLaunchServicePreferences = { schemaVersion: 1, enabled: false };
+      bridge.saveProjectLaunchServicePreferences(this.projectLaunchServicePreferences);
+      this.projectLaunchServiceStatus = await bridge.getProjectLaunchServiceStatus();
+      this.scheduleAutomationTimer();
+      return this.projectLaunchServiceStatus;
     },
     setProjectDetailsTabOrder(order: ProjectDetailsTabId[]) {
       const nextPreferences = normalizeUiPreferences({
@@ -3950,6 +4293,10 @@ export const useStore = defineStore("app", {
     },
     scheduleAutomationTimer() {
       clearAutomationSchedulerTimer();
+      if (projectLaunchServiceOwnershipHandoff || this.projectLaunchServicePreferences.enabled) {
+        this.automationNextTimerAt = "";
+        return;
+      }
       const now = new Date();
       const today = dateKey(now);
       const upcoming: Array<{ projectId: string; taskId: string; entry: ProjectAutomationPlanEntry }> = [];
@@ -4141,7 +4488,15 @@ export const useStore = defineStore("app", {
         const statuses = await Promise.all(
           runningScripts.map(async ({ project, script, pid }) => {
             try {
-              return { project, script, pid, status: await bridge.getProcessStatus(pid) };
+              return {
+                project,
+                script,
+                pid,
+                status: await bridge.getProcessStatus(pid, {
+                  runId: script.runId,
+                  runtimeOwner: script.runtimeOwner,
+                }),
+              };
             } catch (error) {
               return { project, script, pid, status: { active: true } };
             }
@@ -4199,6 +4554,11 @@ export const useStore = defineStore("app", {
       return sharedPromise;
     },
     async runDueAutomationPlans() {
+      if (projectLaunchServiceOwnershipHandoff || this.projectLaunchServicePreferences.enabled) {
+        clearAutomationSchedulerTimer();
+        this.automationNextTimerAt = "";
+        return;
+      }
       this.markMissedAutomationPlans();
       const nowTime = Date.now();
       const dueEntries: Array<{ project: Project; task: ProjectAutomationTask; entry: ProjectAutomationPlanEntry }> =
@@ -4230,6 +4590,9 @@ export const useStore = defineStore("app", {
       void this.persistProjects();
     },
     recomputeAutomationPlans(projectId?: string) {
+      if (projectLaunchServiceOwnershipHandoff) {
+        return;
+      }
       const today = dateKey();
       this.projects
         .filter((project) => !projectId || project.id === projectId)
@@ -4244,6 +4607,10 @@ export const useStore = defineStore("app", {
             };
           });
         });
+      if (this.projectLaunchServicePreferences.enabled) {
+        void this.persistProjects();
+        return;
+      }
       this.markMissedAutomationPlans();
       void this.runDueAutomationPlans();
     },
@@ -4422,6 +4789,13 @@ export const useStore = defineStore("app", {
       if (!project || !task || !entry || entry.status !== "pending") {
         return;
       }
+      if (projectLaunchServiceOwnershipHandoff) {
+        return;
+      }
+      if (this.projectLaunchServicePreferences.enabled) {
+        void this.persistProjects();
+        return;
+      }
       const runId = createAutomationRunId();
       entry.status = "running";
       entry.runId = runId;
@@ -4522,7 +4896,7 @@ export const useStore = defineStore("app", {
       this.scheduleAutomationTimer();
       void this.persistProjects();
     },
-    runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string) {
+    async runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const task = project?.automationTasks?.find((item) => item.id === taskId);
       const entry = task?.dailyPlans
@@ -4533,6 +4907,7 @@ export const useStore = defineStore("app", {
         !project ||
         !task ||
         !entry ||
+        projectLaunchServiceOwnershipHandoff ||
         entry.status !== "pending" ||
         !Number.isFinite(plannedAtTime) ||
         plannedAtTime <= Date.now() ||
@@ -4542,19 +4917,54 @@ export const useStore = defineStore("app", {
         return false;
       }
 
+      if (this.projectLaunchServicePreferences.enabled) {
+        const status = await bridge.reconcileProjectLaunchService();
+        this.projectLaunchServiceStatus = status;
+        if (status.state !== "healthy" || !status.running) {
+          return false;
+        }
+        const previousPlannedAt = entry.plannedAt;
+        const previousReason = entry.reason;
+        entry.plannedAt = new Date().toISOString();
+        entry.reason = "手动提前执行。";
+        if (!(await this.synchronizeProjectLaunchServiceAutomationForUserAction())) {
+          entry.plannedAt = previousPlannedAt;
+          entry.reason = previousReason;
+          return false;
+        }
+        void this.persistProjects(false);
+        return true;
+      }
+
       void this.runAutomationTask(projectId, taskId, entryId);
       return true;
     },
-    runAutomationTaskNow(projectId: string, taskId: string) {
+    async runAutomationTaskNow(projectId: string, taskId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const task = project?.automationTasks?.find((item) => item.id === taskId);
-      if (!project || !task || task.scriptIds.length === 0 || this.automationActiveProjectRuns[projectId]) {
+      if (
+        projectLaunchServiceOwnershipHandoff ||
+        !project ||
+        !task ||
+        task.scriptIds.length === 0 ||
+        this.automationActiveProjectRuns[projectId]
+      ) {
         return false;
+      }
+
+      const serviceEnabled = this.projectLaunchServicePreferences.enabled;
+      if (serviceEnabled) {
+        const status = await bridge.reconcileProjectLaunchService();
+        this.projectLaunchServiceStatus = status;
+        if (status.state !== "healthy" || !status.running) {
+          return false;
+        }
       }
 
       const now = new Date();
       const today = dateKey(now);
       let todayPlan = task.dailyPlans.find((plan) => plan.date === today);
+      const createdTodayPlan = !todayPlan;
       if (!todayPlan) {
         todayPlan = generateAutomationDailyPlan(task.id, task.schedule, today);
         task.dailyPlans = [todayPlan, ...task.dailyPlans].slice(0, 7);
@@ -4570,6 +4980,17 @@ export const useStore = defineStore("app", {
       todayPlan.entries = [...todayPlan.entries, manualEntry].sort(
         (left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime(),
       );
+      if (serviceEnabled) {
+        if (!(await this.synchronizeProjectLaunchServiceAutomationForUserAction())) {
+          todayPlan.entries = todayPlan.entries.filter((entry) => entry.id !== manualEntry.id);
+          if (createdTodayPlan) {
+            task.dailyPlans = task.dailyPlans.filter((plan) => plan !== todayPlan);
+          }
+          return false;
+        }
+        void this.persistProjects(false);
+        return true;
+      }
       void this.runAutomationTask(projectId, taskId, manualEntry.id);
       return true;
     },
@@ -4833,6 +5254,8 @@ export const useStore = defineStore("app", {
 
         if (script.status === "RUNNING") {
           script.pid = result.pid;
+          script.runId = result.runId;
+          script.runtimeOwner = result.runtimeOwner;
           project.status = deriveProjectStatus(project);
           project.lastUpdated = new Date().toLocaleString();
         }
@@ -4883,7 +5306,17 @@ export const useStore = defineStore("app", {
       void this.persistProjects();
 
       if (pid) {
-        scheduleProcessStop(pid, stopOptions);
+        const runId = stopOptions?.runId || script.runId;
+        const runtimeOwner = stopOptions?.runtimeOwner || script.runtimeOwner;
+        if (stopOptions || runId !== undefined || runtimeOwner !== undefined) {
+          scheduleProcessStop(pid, {
+            ...stopOptions,
+            ...(runId === undefined ? {} : { runId }),
+            ...(runtimeOwner === undefined ? {} : { runtimeOwner }),
+          });
+        } else {
+          scheduleProcessStop(pid);
+        }
       } else {
         this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "SUCCESS"), scriptId);
       }
@@ -4922,7 +5355,10 @@ export const useStore = defineStore("app", {
         return { sent: false, message: "当前选中的脚本不可输入。" };
       }
 
-      const result = await bridge.sendProcessInput(script.pid, line);
+      const result = await bridge.sendProcessInput(script.pid, line, {
+        runId: script.runId,
+        runtimeOwner: script.runtimeOwner,
+      });
       if (!result.sent) {
         this.addLog(projectId, createLogEntry(result.message || "输入发送失败。", "WARN"), scriptId);
       }
@@ -5310,11 +5746,15 @@ export const useStore = defineStore("app", {
       }
       const project = this.projects.find((item) => item.id === event.projectId);
       const script = project?.scripts.find((item) => item.id === event.scriptId);
+      const createBridgeLogEntry = (message: string, type: LogEntry["type"]) =>
+        createLogEntry(message, type, event.timestamp);
 
       if (event.type === "started") {
         if (script) {
           script.status = "RUNNING";
           script.pid = event.pid;
+          script.runId = event.runId;
+          script.runtimeOwner = event.runtimeOwner;
         }
         if (project) {
           project.status = deriveProjectStatus(project);
@@ -5327,7 +5767,7 @@ export const useStore = defineStore("app", {
         ]
           .filter(Boolean)
           .join(" · ");
-        this.addLog(event.projectId, createLogEntry(launchContext, "SUCCESS"), event.scriptId);
+        this.addLog(event.projectId, createBridgeLogEntry(launchContext, "SUCCESS"), event.scriptId);
       }
 
       if (event.type === "stdout" || event.type === "stderr") {
@@ -5335,14 +5775,14 @@ export const useStore = defineStore("app", {
         normalizeLogLines(event.message || "").forEach((line) => {
           this.addLog(
             event.projectId,
-            createLogEntry(line, classifyProcessOutputLine(line, outputSource)),
+            createBridgeLogEntry(line, classifyProcessOutputLine(line, outputSource)),
             event.scriptId,
           );
         });
       }
 
       if (event.type === "stdin") {
-        this.addLog(event.projectId, createLogEntry(`> ${event.message || ""}`, "INFO"), event.scriptId);
+        this.addLog(event.projectId, createBridgeLogEntry(`> ${event.message || ""}`, "INFO"), event.scriptId);
       }
 
       if (event.type === "exit") {
@@ -5351,6 +5791,8 @@ export const useStore = defineStore("app", {
         if (script) {
           script.status = isStopped ? "STOPPED" : isSuccess ? "IDLE" : "ERROR";
           script.pid = undefined;
+          script.runId = undefined;
+          script.runtimeOwner = undefined;
         }
         if (project) {
           project.status = deriveProjectStatus(project);
@@ -5358,7 +5800,7 @@ export const useStore = defineStore("app", {
         }
         this.addLog(
           event.projectId,
-          createLogEntry(
+          createBridgeLogEntry(
             isStopped ? "stopped" : `exited with code ${event.code ?? "unknown"}`,
             isSuccess || isStopped ? "SUCCESS" : "ERROR",
           ),
@@ -5370,6 +5812,8 @@ export const useStore = defineStore("app", {
         if (script) {
           script.status = "ERROR";
           script.pid = undefined;
+          script.runId = undefined;
+          script.runtimeOwner = undefined;
         }
         if (project) {
           project.status = deriveProjectStatus(project);
@@ -5377,7 +5821,7 @@ export const useStore = defineStore("app", {
         }
         this.addLog(
           event.projectId,
-          createLogEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"),
+          createBridgeLogEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"),
           event.scriptId,
         );
       }

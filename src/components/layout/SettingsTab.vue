@@ -141,6 +141,28 @@ const aiConfigReady = computed(() => {
     store.aiPreferences.baseUrl.trim() && store.aiPreferences.model.trim() && store.aiPreferences.apiKey.trim(),
   );
 });
+const projectLaunchServiceStatus = computed(() => store.projectLaunchServiceStatus);
+const projectLaunchServiceBusy = computed(() => projectLaunchServiceStatus.value?.state === "starting");
+const projectLaunchServiceStatusLabel = computed(() => {
+  const state = projectLaunchServiceStatus.value?.state;
+  if (state === "installed") return t.value.settings.projectLaunchServiceInstalled;
+  if (state === "starting") return t.value.settings.projectLaunchServiceStarting;
+  if (state === "healthy") return t.value.settings.projectLaunchServiceHealthy;
+  if (state === "incompatible") return t.value.settings.projectLaunchServiceIncompatible;
+  if (state === "unavailable" && !projectLaunchServiceStatus.value?.expectedAssetName) {
+    return t.value.settings.projectLaunchServiceUnsupported;
+  }
+  if (state === "unavailable") return t.value.settings.projectLaunchServiceUnavailable;
+  return t.value.settings.projectLaunchServiceNotInstalled;
+});
+const projectLaunchServiceStatusClass = computed(() => {
+  const state = projectLaunchServiceStatus.value?.state;
+  if (state === "healthy") return "border-status-running/30 bg-status-running/10 text-status-running";
+  if (state === "incompatible" || state === "unavailable")
+    return "border-status-error/30 bg-status-error/10 text-status-error";
+  if (state === "starting") return "border-primary/30 bg-primary/10 text-primary";
+  return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+});
 const segmentButtonClass = (active: boolean) =>
   cn(
     "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all",
@@ -183,6 +205,19 @@ const handleTestAi = async () => {
 
 const handleOpenGithubRepository = async () => {
   await getProjectBridge().openPath(githubRepositoryUrl);
+};
+
+const handleDownloadProjectLaunchService = async () => {
+  await store.downloadProjectLaunchService();
+};
+
+const handleRecheckProjectLaunchService = async () => {
+  await store.refreshProjectLaunchServiceStatus();
+};
+
+const handleToggleProjectLaunchService = async (event: Event) => {
+  const enabled = (event.target as HTMLInputElement).checked;
+  await store.setProjectLaunchServiceEnabled(enabled);
 };
 
 const handleAddAiMode = () => {
@@ -436,6 +471,116 @@ watch(
             </div>
           </div>
         </div>
+      </section>
+
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-2">
+            <SquareTerminal :size="15" class="shrink-0 text-primary" />
+            <div class="min-w-0">
+              <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectLaunchService }}</h3>
+              <p class="mt-0.5 text-xs leading-5 text-on-surface-variant">{{ t.settings.projectLaunchServiceHint }}</p>
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <span :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', projectLaunchServiceStatusClass)">
+              {{ projectLaunchServiceStatusLabel }}
+            </span>
+            <label class="inline-flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
+              <span>{{
+                store.projectLaunchServicePreferences.enabled
+                  ? t.settings.projectLaunchServiceDisable
+                  : t.settings.projectLaunchServiceEnable
+              }}</span>
+              <input
+                type="checkbox"
+                role="switch"
+                class="h-4 w-4 accent-primary"
+                :checked="store.projectLaunchServicePreferences.enabled"
+                :disabled="projectLaunchServiceBusy"
+                :aria-label="t.settings.projectLaunchServiceEnable"
+                @change="handleToggleProjectLaunchService"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.8fr)]">
+          <dl class="grid gap-x-3 gap-y-1.5 text-xs sm:grid-cols-[8rem_minmax(0,1fr)]">
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServicePlatform }}</dt>
+            <dd class="min-w-0 break-words font-mono text-on-surface">
+              {{ projectLaunchServiceStatus?.platform || "-" }} / {{ projectLaunchServiceStatus?.architecture || "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceVersion }}</dt>
+            <dd class="min-w-0 break-all font-mono text-on-surface-variant">
+              {{ projectLaunchServiceStatus?.serviceVersion || "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceProtocol }}</dt>
+            <dd class="min-w-0 break-words font-mono text-on-surface-variant">
+              {{ projectLaunchServiceStatus?.protocolVersion ? `v${projectLaunchServiceStatus.protocolVersion}` : "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceAsset }}</dt>
+            <dd class="min-w-0 break-all font-mono text-on-surface-variant">
+              {{ projectLaunchServiceStatus?.expectedAssetName || "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceExecutable }}</dt>
+            <dd class="min-w-0 break-all font-mono text-on-surface-variant">
+              {{ projectLaunchServiceStatus?.executablePath || "-" }}
+            </dd>
+          </dl>
+
+          <div class="flex flex-wrap content-start gap-1.5">
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-primary px-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+              :disabled="projectLaunchServiceBusy || !projectLaunchServiceStatus?.expectedAssetName"
+              @click="handleDownloadProjectLaunchService"
+            >
+              <Download :size="13" :class="projectLaunchServiceBusy ? 'animate-spin' : ''" />
+              {{
+                projectLaunchServiceBusy
+                  ? t.settings.projectLaunchServiceDownloading
+                  : t.settings.projectLaunchServiceDownload
+              }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-55"
+              :disabled="projectLaunchServiceBusy"
+              @click="handleRecheckProjectLaunchService"
+            >
+              <RefreshCw :size="13" />
+              {{ t.settings.projectLaunchServiceRecheck }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              @click="store.openProjectLaunchServiceDirectory"
+            >
+              <FolderCog :size="13" />
+              {{ t.settings.projectLaunchServiceOpenDirectory }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              @click="store.openProjectLaunchServiceReleases"
+            >
+              <Github :size="13" />
+              {{ t.settings.projectLaunchServiceOpenReleases }}
+            </button>
+          </div>
+        </div>
+
+        <p v-if="projectLaunchServiceStatus?.message" class="mt-2 text-xs leading-5 text-on-surface-variant">
+          {{ projectLaunchServiceStatus.message }}
+        </p>
+        <p v-if="projectLaunchServiceStatus?.eventsTruncated" class="mt-1 text-xs leading-5 text-status-warning">
+          {{ t.settings.projectLaunchServiceLogsTruncated }}
+        </p>
+        <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ t.settings.projectLaunchServiceManualHint }}</p>
+        <p v-if="store.projectLaunchServicePreferences.enabled" class="mt-1 text-xs leading-5 text-status-warning">
+          {{ t.settings.projectLaunchServiceEnabledHint }}
+        </p>
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">

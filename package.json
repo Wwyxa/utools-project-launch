@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "vite --port=3421 --host=0.0.0.0",
     "build": "vite build",
+    "go:fmt": "go -C service fmt ./...",
+    "go:vet": "go -C service vet ./...",
+    "go:test": "go -C service test ./...",
+    "go:build": "node -e \"require('node:fs').mkdirSync('service/bin', { recursive: true })\" && go -C service build -trimpath -buildvcs=false -ldflags=\"-s -w\" -o bin ./cmd/project-launch-service",
     "test:git-diff": "vitest run tests/gitDiff.test.ts",
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",

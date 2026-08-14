@@ -1,20 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { getProjectBridge } from "../src/lib/projectBridge";
+import { dateKey } from "../src/lib/automationScheduler";
 import {
   ProjectStatus,
   type Project,
   type ProjectBridge,
   type ProjectDetailsTabId,
+  type ProjectLaunchServiceStatus,
   type UiPreferences,
 } from "../src/types";
 
 const uiPreferencesKey = "utools-project-launch.ui-preferences.v1";
 const legacyTabOrderKey = "utools-project-launch.project-details-tab-order.v1";
+const projectLaunchServicePreferencesKey = "utools-project-launch.project-launch-service.v1";
 const defaultTabOrder: ProjectDetailsTabId[] = ["info", "scripts", "automation", "files", "git", "memo"];
 
 const loadPreloadBridge = (
@@ -22,6 +26,7 @@ const loadPreloadBridge = (
   removeItem: (key: string) => void = (key) => {
     storage.delete(key);
   },
+  environment: NodeJS.ProcessEnv = {},
 ) => {
   const nodeRequire = createRequire(import.meta.url);
   const sandboxWindow: { projectBridge?: ProjectBridge; utools: { dbStorage: object } } = {
@@ -35,7 +40,15 @@ const loadPreloadBridge = (
   };
   const sandbox = {
     require: (id: string) => (id === "electron" ? { shell: {} } : nodeRequire(id)),
-    process: { platform: process.platform, env: process.env, once: () => undefined, exit: () => undefined },
+    process: {
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+      env: { ...process.env, ...environment },
+      kill: process.kill.bind(process),
+      once: () => undefined,
+      exit: () => undefined,
+    },
     Buffer,
     console,
     setTimeout,
@@ -176,6 +189,31 @@ describe("browser UI preferences fallback", () => {
     expect(storage.has(legacyTabOrderKey)).toBe(false);
   });
 
+  it("keeps Project Launch Service disabled by default and normalizes stored preferences", () => {
+    expect(getProjectBridge().loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
+
+    storage.set(projectLaunchServicePreferencesKey, JSON.stringify({ schemaVersion: 1, enabled: true }));
+    expect(getProjectBridge().loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: true });
+
+    storage.set(projectLaunchServicePreferencesKey, JSON.stringify({ schemaVersion: 2, enabled: true }));
+    expect(getProjectBridge().loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
+  });
+
+  it("fails closed instead of simulating a preload launch when service mode is enabled", async () => {
+    getProjectBridge().saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
+
+    await expect(
+      getProjectBridge().runCommand({
+        projectId: "project",
+        scriptId: "script",
+        command: "echo browser-preview",
+        cwd: "/workspace/project",
+        env: {},
+        label: "Project / Script",
+      }),
+    ).rejects.toThrow("项目启动服务在浏览器预览中不可用");
+  });
+
   it("loads once and persists only effective store changes", async () => {
     const initialPreferences: UiPreferences = {
       schemaVersion: 1,
@@ -204,6 +242,555 @@ describe("browser UI preferences fallback", () => {
     store.acknowledgeProjectDetailsTabReorderHint(1);
     expect(store.uiPreferences.coachMarks.projectDetailsTabReorder).toBe(1);
     expect(saveUiPreferences).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps renderer ownership when Project Launch Service rejects automation handoff", async () => {
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
+      async (config) => ({
+        accepted: false,
+        revision: config.revision,
+        message: "service rejected automation configuration",
+      }),
+    );
+    const healthyStatus = {
+      state: "healthy" as const,
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 0,
+    };
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
+      saveProjectLaunchServicePreferences,
+      getProjectLaunchServiceStatus: async () => healthyStatus,
+      startProjectLaunchService: async () => healthyStatus,
+      reconcileProjectLaunchService: async () => healthyStatus,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    await store.setProjectLaunchServiceEnabled(true);
+
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
+      expect.objectContaining({ schemaVersion: 1, revision: 1 }),
+    );
+    expect(store.projectLaunchServicePreferences.enabled).toBe(false);
+    expect(saveProjectLaunchServicePreferences).not.toHaveBeenCalled();
+    expect(store.projectLaunchServiceStatus).toMatchObject({
+      state: "unavailable",
+      message: "service rejected automation configuration",
+    });
+  });
+
+  it("starts Project Launch Service before synchronizing the first enabled handoff", async () => {
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const startProjectLaunchService = vi.fn<ProjectBridge["startProjectLaunchService"]>();
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>();
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>();
+    const healthyStatus = {
+      state: "healthy" as const,
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 0,
+    };
+    startProjectLaunchService.mockResolvedValue(healthyStatus);
+    reconcileProjectLaunchService.mockResolvedValue(healthyStatus);
+    syncProjectLaunchServiceAutomation.mockImplementation(async (config) => ({
+      accepted: true,
+      revision: config.revision,
+    }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
+      saveProjectLaunchServicePreferences,
+      startProjectLaunchService,
+      reconcileProjectLaunchService,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    await store.setProjectLaunchServiceEnabled(true);
+
+    expect(startProjectLaunchService).toHaveBeenCalledTimes(1);
+    expect(startProjectLaunchService.mock.invocationCallOrder[0]).toBeLessThan(
+      reconcileProjectLaunchService.mock.invocationCallOrder[0]!,
+    );
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
+      expect.objectContaining({ schemaVersion: 1, revision: 1 }),
+    );
+    expect(store.projectLaunchServicePreferences.enabled).toBe(true);
+    expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
+  });
+
+  it("pauses renderer automation until Project Launch Service accepts the ownership handoff", async () => {
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 0,
+    };
+    let acceptHandoff: (result: { accepted: boolean; revision: number }) => void = () => undefined;
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
+      () =>
+        new Promise((resolve) => {
+          acceptHandoff = resolve;
+        }),
+    );
+    const runCommand = vi.fn<ProjectBridge["runCommand"]>(async () => ({
+      pid: 99,
+      startedAt: new Date().toISOString(),
+      command: "echo renderer-run",
+      cwd: "/workspace/handoff-project",
+    }));
+    const dueAt = new Date(Date.now() - 1_000).toISOString();
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
+      startProjectLaunchService: async () => healthyStatus,
+      reconcileProjectLaunchService: async () => healthyStatus,
+      syncProjectLaunchServiceAutomation,
+      runCommand,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "handoff-project",
+        name: "Handoff project",
+        path: "/workspace/handoff-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "handoff-script", name: "dev", command: "echo renderer-run", status: "IDLE" }],
+        automationTasks: [
+          {
+            id: "handoff-task",
+            name: "Handoff task",
+            enabled: true,
+            scriptIds: ["handoff-script"],
+            schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+            missedPolicy: "grace-run",
+            missedGraceMinutes: 5,
+            notifyEnabled: false,
+            maxScriptRuntimeMinutes: 30,
+            inputConfigs: [],
+            exitConfigs: [],
+            dailyPlans: [{ date: dateKey(), entries: [{ id: "handoff-entry", plannedAt: dueAt, status: "pending" }] }],
+            history: [],
+            createdAt: "2026-08-13T00:00:00.000Z",
+            updatedAt: "2026-08-13T00:00:00.000Z",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    const enabling = store.setProjectLaunchServiceEnabled(true);
+    await vi.waitFor(() => expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(1));
+
+    await store.runDueAutomationPlans();
+    expect(runCommand).not.toHaveBeenCalled();
+
+    acceptHandoff({ accepted: true, revision: 1 });
+    await enabling;
+    expect(store.projectLaunchServicePreferences.enabled).toBe(true);
+  });
+
+  it("synchronizes enabled automation changes with Project Launch Service", async () => {
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 0,
+    };
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
+      async (config) => ({ accepted: true, revision: config.revision }),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      getProjectLaunchServiceStatus: async () => healthyStatus,
+      reconcileProjectLaunchService: async () => healthyStatus,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "service-project",
+        name: "Service project",
+        path: "/workspace/service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "service-script", name: "dev", command: "npm run dev", status: "IDLE" }],
+        automationTasks: [],
+        env: {},
+      },
+    ];
+
+    expect(
+      store.createAutomationTask("service-project", {
+        name: "Service task",
+        scriptIds: ["service-script"],
+      }).ok,
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          schemaVersion: 1,
+          revision: 1,
+          projects: [
+            expect.objectContaining({
+              id: "service-project",
+              automationTasks: [expect.objectContaining({ id: expect.any(String) })],
+            }),
+          ],
+        }),
+      );
+    });
+  });
+
+  it("blocks manual automation while the enabled Project Launch Service is unavailable", async () => {
+    const unavailableStatus: ProjectLaunchServiceStatus = {
+      state: "unavailable",
+      installed: true,
+      running: false,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      message: "Project Launch Service is unavailable.",
+    };
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>(
+      async () => unavailableStatus,
+    );
+    const futureAt = new Date(Date.now() + 60_000).toISOString();
+    const project: Project = {
+      id: "unavailable-service-project",
+      name: "Unavailable service project",
+      path: "/workspace/unavailable-service-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [{ id: "unavailable-service-script", name: "dev", command: "npm run dev", status: "IDLE" }],
+      automationTasks: [
+        {
+          id: "unavailable-service-task",
+          name: "Unavailable service task",
+          enabled: true,
+          scriptIds: ["unavailable-service-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
+          missedGraceMinutes: 5,
+          notifyEnabled: false,
+          maxScriptRuntimeMinutes: 30,
+          inputConfigs: [],
+          exitConfigs: [],
+          dailyPlans: [
+            { date: dateKey(), entries: [{ id: "unavailable-service-entry", plannedAt: futureAt, status: "pending" }] },
+          ],
+          history: [],
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
+        },
+      ],
+      env: {},
+    };
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      reconcileProjectLaunchService,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [project];
+
+    await expect(store.runAutomationTaskNow(project.id, "unavailable-service-task")).resolves.toBe(false);
+    await expect(
+      store.runAutomationPlanEntryEarly(project.id, "unavailable-service-task", "unavailable-service-entry"),
+    ).resolves.toBe(false);
+
+    const task = store.projects[0]?.automationTasks?.[0];
+    expect(reconcileProjectLaunchService).toHaveBeenCalledTimes(2);
+    expect(task?.dailyPlans).toEqual([
+      {
+        date: dateKey(),
+        entries: [{ id: "unavailable-service-entry", plannedAt: futureAt, status: "pending" }],
+      },
+    ]);
+  });
+
+  it("waits for Project Launch Service automation acknowledgement before reporting a manual run", async () => {
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+    };
+    const futureAt = new Date(Date.now() + 60_000).toISOString();
+    const project: Project = {
+      id: "rejected-service-project",
+      name: "Rejected service project",
+      path: "/workspace/rejected-service-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [{ id: "rejected-service-script", name: "dev", command: "npm run dev", status: "IDLE" }],
+      automationTasks: [
+        {
+          id: "rejected-service-task",
+          name: "Rejected service task",
+          enabled: true,
+          scriptIds: ["rejected-service-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
+          missedGraceMinutes: 5,
+          notifyEnabled: false,
+          maxScriptRuntimeMinutes: 30,
+          inputConfigs: [],
+          exitConfigs: [],
+          dailyPlans: [
+            { date: dateKey(), entries: [{ id: "rejected-service-entry", plannedAt: futureAt, status: "pending" }] },
+          ],
+          history: [],
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
+        },
+      ],
+      env: {},
+    };
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
+      async (config) => ({
+        accepted: false,
+        revision: config.revision,
+        message: "service rejected manual automation",
+      }),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      reconcileProjectLaunchService: async () => healthyStatus,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [project];
+
+    await expect(store.runAutomationTaskNow(project.id, "rejected-service-task")).resolves.toBe(false);
+    await expect(
+      store.runAutomationPlanEntryEarly(project.id, "rejected-service-task", "rejected-service-entry"),
+    ).resolves.toBe(false);
+
+    const entry = store.projects[0]?.automationTasks?.[0]?.dailyPlans[0]?.entries[0];
+    expect(entry).toEqual({ id: "rejected-service-entry", plannedAt: futureAt, status: "pending" });
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(2);
+    expect(store.projectLaunchServiceStatus).toMatchObject({
+      state: "unavailable",
+      message: "service rejected manual automation",
+    });
+  });
+
+  it("restores service-owned script state and retained output after plugin reconnect", async () => {
+    const project: Project = {
+      id: "reconnected-project",
+      name: "Reconnected project",
+      path: "/workspace/reconnected-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [{ id: "reconnected-script", name: "dev", command: "npm run dev", status: "IDLE" }],
+      automationTasks: [
+        {
+          id: "reconnected-task",
+          name: "Reconnected task",
+          enabled: true,
+          scriptIds: ["reconnected-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
+          missedGraceMinutes: 5,
+          notifyEnabled: false,
+          maxScriptRuntimeMinutes: 30,
+          inputConfigs: [],
+          exitConfigs: [],
+          dailyPlans: [
+            {
+              date: "2026-08-14",
+              entries: [
+                {
+                  id: "reconnected-entry",
+                  plannedAt: "2026-08-14T00:00:00.000Z",
+                  status: "pending",
+                },
+              ],
+            },
+          ],
+          history: [],
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
+        },
+      ],
+      env: {},
+    };
+    const status: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "linux",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-linux-amd64",
+      directoryPath: "/service",
+      executablePath: "/service/project-launch-service",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [
+        {
+          id: "1234567890abcdef1234567890abcdef",
+          projectId: project.id,
+          scriptId: "reconnected-script",
+          label: "Reconnected project / dev",
+          command: "npm run dev",
+          cwd: project.path,
+          pid: 4242,
+          status: "running",
+          startedAt: "2026-08-14T00:00:00.000Z",
+        },
+      ],
+      events: [
+        {
+          cursor: 3,
+          timestamp: "2026-08-14T00:00:01.000Z",
+          type: "stdout",
+          runId: "1234567890abcdef1234567890abcdef",
+          projectId: project.id,
+          scriptId: "reconnected-script",
+          pid: 4242,
+          message: "service output survived reconnect",
+        },
+      ],
+      eventsTruncated: true,
+      automationRevision: 4,
+      automation: {
+        revision: 4,
+        executions: [
+          {
+            id: "reconnected-automation-run",
+            projectId: project.id,
+            taskId: "reconnected-task",
+            planEntryId: "reconnected-entry",
+            status: "completed",
+            currentScriptIndex: 1,
+            startedAt: "2026-08-14T00:00:00.000Z",
+            endedAt: "2026-08-14T00:00:02.000Z",
+            scriptResults: [
+              {
+                scriptId: "reconnected-script",
+                status: "completed",
+                startedAt: "2026-08-14T00:00:00.000Z",
+                endedAt: "2026-08-14T00:00:02.000Z",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>(async () => status);
+    const getProjectLaunchServiceStatus = vi.fn<ProjectBridge["getProjectLaunchServiceStatus"]>(async () => ({
+      ...status,
+      runs: [],
+      events: [],
+      automation: { revision: 0 },
+    }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      loadProjects: async () => [project],
+      pathExists: async () => true,
+      reconcileProjectLaunchService,
+      getProjectLaunchServiceStatus,
+      getProcessStatus: async () => ({ active: true }),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    await store.loadProjects();
+    await store.refreshProjectLaunchServiceStatus();
+
+    const script = store.projects[0]?.scripts[0];
+    expect(script).toMatchObject({
+      status: "RUNNING",
+      pid: 4242,
+      runId: "1234567890abcdef1234567890abcdef",
+      runtimeOwner: "service",
+    });
+    expect(store.projects[0]?.status).toBe(ProjectStatus.RUNNING);
+    expect(reconcileProjectLaunchService).toHaveBeenCalled();
+    expect(getProjectLaunchServiceStatus).not.toHaveBeenCalled();
+    expect(store.projectLaunchServiceStatus?.eventsTruncated).toBe(true);
+    expect(store.scriptLogs[project.id]?.["reconnected-script"]).toContainEqual(
+      expect.objectContaining({
+        message: "service output survived reconnect",
+        timestamp: new Date("2026-08-14T00:00:01.000Z").toLocaleTimeString(),
+      }),
+    );
+    const task = store.projects[0]?.automationTasks?.find((item) => item.id === "reconnected-task");
+    const entry = task?.dailyPlans.flatMap((plan) => plan.entries).find((item) => item.id === "reconnected-entry");
+    expect(entry).toMatchObject({ status: "completed", runId: "reconnected-automation-run" });
+    expect(task?.history).toContainEqual(
+      expect.objectContaining({
+        id: "reconnected-automation-run",
+        status: "completed",
+        plannedAt: "2026-08-14T00:00:00.000Z",
+      }),
+    );
   });
 });
 
@@ -451,5 +1038,50 @@ describe("uTools preload UI preferences", () => {
     });
 
     expect(bridge.loadUiPreferences()).toEqual(preferences);
+  });
+
+  it("persists Project Launch Service preferences separately from project data", () => {
+    const storage = new Map<string, unknown>();
+    const bridge = loadPreloadBridge(storage);
+
+    expect(bridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
+
+    bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
+    expect(storage.get(projectLaunchServicePreferencesKey)).toEqual({ schemaVersion: 1, enabled: true });
+  });
+
+  it("removes stale service discovery when a live PID has a different process identity", async () => {
+    const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const serviceDirectory = join(applicationDirectory, "service");
+    const executableName = `project-launch-service${process.platform === "win32" ? ".exe" : ""}`;
+    const discoveryPath = join(serviceDirectory, "discovery.json");
+
+    try {
+      mkdirSync(serviceDirectory, { recursive: true });
+      writeFileSync(join(serviceDirectory, executableName), "");
+      writeFileSync(join(serviceDirectory, "token"), `${"a".repeat(64)}\n`);
+      writeFileSync(
+        discoveryPath,
+        JSON.stringify({
+          protocolVersion: 1,
+          serviceVersion: "test",
+          instanceId: "stale-instance",
+          pid: process.pid,
+          processIdentity: "reused-pid-identity",
+          startedAt: new Date().toISOString(),
+          host: "127.0.0.1",
+          port: 1,
+          tokenPath: join(serviceDirectory, "token"),
+        }),
+      );
+
+      await loadPreloadBridge(new Map(), undefined, {
+        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+      }).getProjectLaunchServiceStatus();
+
+      expect(existsSync(discoveryPath)).toBe(false);
+    } finally {
+      rmSync(applicationDirectory, { recursive: true, force: true });
+    }
   });
 });
