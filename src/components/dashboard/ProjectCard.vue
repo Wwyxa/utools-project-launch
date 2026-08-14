@@ -479,7 +479,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
       :class="
         cn(
           'relative border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
-          'flex shrink-0 min-w-[4rem] max-w-[20rem] after:absolute after:inset-x-0 after:top-full after:h-8',
+          'flex shrink-0 min-w-[4rem] max-w-[20rem] hover:after:absolute hover:after:inset-x-0 hover:after:top-full hover:after:h-8',
           isRunning &&
             'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
           isDragging && 'opacity-55 scale-[0.99]',
@@ -547,6 +547,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
         </template>
       </div>
       <div
+        v-if="!isSorting"
         :class="
           cn(
             'absolute top-[calc(100%+0.25rem)] z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 dark:border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
@@ -734,7 +735,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           :disabled="isUnavailable || script.status === 'STOPPING'"
           :class="
             cn(
-              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
+              'inline-flex h-5 flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
               script.status === 'RUNNING'
                 ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
                 : script.status === 'STOPPING'
@@ -756,7 +757,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <button
             type="button"
             @click="toggleMoreScripts"
-            class="inline-flex flex-none items-center justify-center whitespace-nowrap text-[10px] font-bold text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded border border-transparent transition-colors hover:text-on-surface hover:bg-surface-container-high"
+            class="inline-flex h-5 w-5 flex-none items-center justify-center whitespace-nowrap rounded border border-transparent bg-surface-variant p-0 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
             aria-haspopup="menu"
             :aria-expanded="moreScriptsOpen"
             :aria-label="`显示 ${hiddenScriptCount} 个隐藏脚本`"
@@ -770,7 +771,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           </button>
           <div
             v-if="moreScriptsOpen"
-            class="absolute right-0 top-[calc(100%+0.25rem)] z-30 w-44 overflow-hidden rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-1 shadow-[0_18px_44px_rgba(0,0,0,0.20),0_0_0_1px_rgba(255,255,255,0.45)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
+            class="absolute right-0 top-[calc(100%+0.25rem)] z-30 w-max max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-1 shadow-[0_18px_44px_rgba(0,0,0,0.20),0_0_0_1px_rgba(255,255,255,0.45)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
             @click.stop
             role="menu"
           >
@@ -816,7 +817,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           data-script-measure-button
           :class="
             cn(
-              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border',
+              'inline-flex h-5 flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border',
               script.status === 'RUNNING'
                 ? 'border-status-running/30'
                 : script.status === 'STOPPING'
@@ -836,7 +837,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
         </span>
         <span
           data-script-more-measure
-          class="inline-flex flex-none items-center justify-center whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border border-transparent"
+          class="inline-flex h-5 w-5 flex-none items-center justify-center whitespace-nowrap rounded border border-transparent p-0 text-[10px] font-bold"
         >
           <ChevronDown :size="10" />
         </span>
