@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAutomationConfigurationPersistsAndRejectsStaleRevision(t *testing.T) {
@@ -296,5 +297,132 @@ func TestTrimTotalLogsConvergesAfterEvictingCompletedLogs(t *testing.T) {
 	}
 	if totalSize > logLimit {
 		t.Fatalf("total log size = %d, want at most %d", totalSize, logLimit)
+	}
+	for _, run := range store.data.Runs {
+		if run.Status.IsActive() && !run.OutputTruncated {
+			t.Fatalf("active run %q was truncated without retaining the marker", run.ID)
+		}
+	}
+}
+
+func TestTrimActiveRunLogKeepsReadableRecords(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+
+	const (
+		runID    = "11111111111111111111111111111111"
+		logLimit = int64(64)
+	)
+	store.data.Runs = []Run{{ID: runID, Status: RunStatusRunning}}
+	if _, err := store.AppendEvent(Event{
+		Type:    "stdout",
+		RunID:   runID,
+		Message: strings.Repeat("x", 256),
+	}); err != nil {
+		t.Fatalf("append event: %v", err)
+	}
+
+	store.mutex.Lock()
+	err = store.trimTotalLogsToLimitLocked(logLimit)
+	store.mutex.Unlock()
+	if err != nil {
+		t.Fatalf("trim logs: %v", err)
+	}
+
+	runLog, err := store.ReadRunLog(runID)
+	if err != nil {
+		t.Fatalf("read trimmed log: %v", err)
+	}
+	if runLog.SizeBytes > logLimit {
+		t.Fatalf("trimmed log size = %d, want at most %d", runLog.SizeBytes, logLimit)
+	}
+	if !runLog.Truncated {
+		t.Fatal("trimmed active log is missing its truncation marker")
+	}
+}
+
+func TestReadRunLogIgnoresIncompleteTrailingRecord(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+
+	const runID = "11111111111111111111111111111111"
+	store.data.Runs = []Run{{ID: runID, Status: RunStatusExited}}
+	if err := os.MkdirAll(store.logDirectoryPath(), 0o700); err != nil {
+		t.Fatalf("create log directory: %v", err)
+	}
+	validEvent, err := json.Marshal(Event{Type: "stdout", RunID: runID, Message: "retained output"})
+	if err != nil {
+		t.Fatalf("encode valid event: %v", err)
+	}
+	logContents := append(append(validEvent, '\n'), []byte(`{"type":"stdout"`)...)
+	if err := os.WriteFile(filepath.Join(store.logDirectoryPath(), runID+".log"), logContents, 0o600); err != nil {
+		t.Fatalf("write incomplete log: %v", err)
+	}
+
+	runLog, err := store.ReadRunLog(runID)
+	if err != nil {
+		t.Fatalf("read log with an incomplete tail: %v", err)
+	}
+	if len(runLog.Events) != 1 || runLog.Events[0].Message != "retained output" {
+		t.Fatalf("retained log events = %#v, want the complete event", runLog.Events)
+	}
+	if !runLog.Truncated {
+		t.Fatal("incomplete trailing event is missing truncation metadata")
+	}
+}
+
+func TestTrimRunLogsLimitsCompletedFileCount(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+
+	const (
+		activeRun       = "11111111111111111111111111111111"
+		oldCompleted    = "22222222222222222222222222222222"
+		middleCompleted = "33333333333333333333333333333333"
+		newCompleted    = "44444444444444444444444444444444"
+	)
+	store.data.Runs = []Run{
+		{ID: activeRun, Status: RunStatusRunning},
+		{ID: oldCompleted, Status: RunStatusExited},
+		{ID: middleCompleted, Status: RunStatusFailed},
+		{ID: newCompleted, Status: RunStatusStopped},
+	}
+	if err := os.MkdirAll(store.logDirectoryPath(), 0o700); err != nil {
+		t.Fatalf("create log directory: %v", err)
+	}
+	baseTime := time.Now().Add(-time.Hour)
+	for index, runID := range []string{oldCompleted, middleCompleted, newCompleted, activeRun} {
+		logPath := filepath.Join(store.logDirectoryPath(), runID+".log")
+		if err := os.WriteFile(logPath, []byte("log\n"), 0o600); err != nil {
+			t.Fatalf("write %s log: %v", runID, err)
+		}
+		modifiedAt := baseTime.Add(time.Duration(index) * time.Minute)
+		if err := os.Chtimes(logPath, modifiedAt, modifiedAt); err != nil {
+			t.Fatalf("set %s log time: %v", runID, err)
+		}
+	}
+
+	store.mutex.Lock()
+	err = store.trimRunLogsToLimitsLocked(1024, 2)
+	store.mutex.Unlock()
+	if err != nil {
+		t.Fatalf("trim logs: %v", err)
+	}
+
+	for _, runID := range []string{activeRun, newCompleted} {
+		if _, err := os.Stat(filepath.Join(store.logDirectoryPath(), runID+".log")); err != nil {
+			t.Fatalf("retained log %s is unavailable: %v", runID, err)
+		}
+	}
+	for _, runID := range []string{oldCompleted, middleCompleted} {
+		if _, err := os.Stat(filepath.Join(store.logDirectoryPath(), runID+".log")); !os.IsNotExist(err) {
+			t.Fatalf("old completed log %s still exists, err=%v", runID, err)
+		}
 	}
 }

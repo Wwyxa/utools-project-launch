@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -14,6 +15,25 @@ import (
 )
 
 var version = "dev"
+
+func serviceVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if buildInfo, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range buildInfo.Settings {
+			if setting.Key != "vcs.revision" || setting.Value == "" {
+				continue
+			}
+			revision := setting.Value
+			if len(revision) > 12 {
+				revision = revision[:12]
+			}
+			return "local-" + revision
+		}
+	}
+	return "local"
+}
 
 func main() {
 	var stateDir string
@@ -27,7 +47,7 @@ func main() {
 
 	runtime, err := service.New(service.Config{
 		StateDir: stateDir,
-		Version:  version,
+		Version:  serviceVersion(),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Project Launch Service configuration error: %v\n", err)

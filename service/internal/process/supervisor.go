@@ -335,6 +335,10 @@ func (supervisor *Supervisor) EventsAfterPage(after uint64, maxBytes int) state.
 	return supervisor.store.EventsAfterPage(after, maxBytes)
 }
 
+func (supervisor *Supervisor) RunLog(runID string) (state.RunLog, error) {
+	return supervisor.store.ReadRunLog(runID)
+}
+
 func (supervisor *Supervisor) AutomationSnapshot() state.AutomationState {
 	return supervisor.store.Automation()
 }

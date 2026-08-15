@@ -28,6 +28,7 @@ const (
 	MaxEventMessageBytes              = 16 * 1024
 	MaxRunLogBytes              int64 = 5 * 1024 * 1024
 	MaxTotalLogBytes            int64 = 100 * 1024 * 1024
+	MaxRunLogFiles                    = 200
 	MaxRunHistory                     = 200
 	MaxIdempotencyKeys                = 512
 	MaxAutomationHistoryPerTask       = 20
@@ -35,6 +36,7 @@ const (
 
 var ErrIdempotencyConflict = errors.New("idempotency key was reused with a different request")
 var ErrAutomationRevisionConflict = errors.New("automation revision is stale or conflicts with persisted configuration")
+var ErrRunLogUnavailable = errors.New("run log is unavailable")
 
 var ErrAutomationExecutionInvalid = errors.New("automation execution is invalid")
 
@@ -188,6 +190,13 @@ type EventBatch struct {
 	HasMore        bool    `json:"hasMore"`
 }
 
+type RunLog struct {
+	RunID     string  `json:"runId"`
+	Events    []Event `json:"events"`
+	Truncated bool    `json:"truncated"`
+	SizeBytes int64   `json:"sizeBytes"`
+}
+
 type Store struct {
 	stateDir  string
 	secretKey [32]byte
@@ -219,6 +228,9 @@ func Open(stateDir string) (*Store, error) {
 	}
 	store.data = data
 	if err := store.normalizeLoadedState(); err != nil {
+		return nil, err
+	}
+	if err := store.trimRunLogsLocked(); err != nil {
 		return nil, err
 	}
 	if migrated {
@@ -545,6 +557,76 @@ func (store *Store) EventsAfterPage(after uint64, maxBytes int) EventBatch {
 	return store.eventsAfter(after, maxBytes)
 }
 
+func (store *Store) ReadRunLog(runID string) (RunLog, error) {
+	if !isSafeRunID(runID) {
+		return RunLog{}, ErrRunLogUnavailable
+	}
+
+	store.mutex.RLock()
+	run, found := findRun(store.data.Runs, runID)
+	if !found {
+		store.mutex.RUnlock()
+		return RunLog{}, ErrRunLogUnavailable
+	}
+	logPath := filepath.Join(store.logDirectoryPath(), runID+".log")
+	logFile, err := os.Open(logPath)
+	if err != nil {
+		store.mutex.RUnlock()
+		if errors.Is(err, os.ErrNotExist) {
+			return RunLog{}, ErrRunLogUnavailable
+		}
+		return RunLog{}, fmt.Errorf("open run log: %w", err)
+	}
+	contents, readErr := io.ReadAll(io.LimitReader(logFile, MaxRunLogBytes+1))
+	closeErr := logFile.Close()
+	store.mutex.RUnlock()
+	if readErr != nil {
+		return RunLog{}, fmt.Errorf("read run log: %w", readErr)
+	}
+	if closeErr != nil {
+		return RunLog{}, fmt.Errorf("close run log: %w", closeErr)
+	}
+	if int64(len(contents)) > MaxRunLogBytes {
+		return RunLog{}, errors.New("run log exceeds the retained size limit")
+	}
+
+	lines := bytes.Split(contents, []byte{'\n'})
+	lastRecordIndex := -1
+	for index, line := range lines {
+		if len(bytes.TrimSpace(line)) > 0 {
+			lastRecordIndex = index
+		}
+	}
+
+	events := make([]Event, 0)
+	truncated := run.OutputTruncated
+	for index, line := range lines {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var event Event
+		if err := json.Unmarshal(line, &event); err != nil {
+			if index == lastRecordIndex {
+				truncated = true
+				break
+			}
+			return RunLog{}, fmt.Errorf("decode run log event: %w", err)
+		}
+		if event.RunID != runID {
+			return RunLog{}, errors.New("run log contains an event for another run")
+		}
+		events = append(events, cloneEvent(event))
+	}
+
+	return RunLog{
+		RunID:     runID,
+		Events:    events,
+		Truncated: truncated,
+		SizeBytes: int64(len(contents)),
+	}, nil
+}
+
 func (store *Store) eventsAfter(after uint64, maxBytes int) EventBatch {
 	store.mutex.RLock()
 	defer store.mutex.RUnlock()
@@ -659,23 +741,36 @@ func (store *Store) appendRunLogLocked(event Event) error {
 	if err := logFile.Close(); err != nil {
 		return fmt.Errorf("close run log: %w", err)
 	}
-	if err := truncateFileTail(logPath, MaxRunLogBytes); err != nil {
+	truncated, err := truncateFileTail(logPath, MaxRunLogBytes)
+	if err != nil {
 		return err
 	}
-	if err := store.trimTotalLogsLocked(); err != nil {
+	if truncated && store.markRunOutputTruncatedLocked(event.RunID) {
+		if err := store.persistLocked(); err != nil {
+			return err
+		}
+	}
+	if err := store.trimRunLogsLocked(); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (store *Store) trimTotalLogsLocked() error {
-	return store.trimTotalLogsToLimitLocked(MaxTotalLogBytes)
+func (store *Store) trimRunLogsLocked() error {
+	return store.trimRunLogsToLimitsLocked(MaxTotalLogBytes, MaxRunLogFiles)
 }
 
 func (store *Store) trimTotalLogsToLimitLocked(maxTotalLogBytes int64) error {
+	return store.trimRunLogsToLimitsLocked(maxTotalLogBytes, MaxRunLogFiles)
+}
+
+func (store *Store) trimRunLogsToLimitsLocked(maxTotalLogBytes int64, maxLogFiles int) error {
 	if maxTotalLogBytes < 0 {
 		return errors.New("total run log limit must not be negative")
+	}
+	if maxLogFiles < 0 {
+		return errors.New("run log file limit must not be negative")
 	}
 
 	entries, err := os.ReadDir(store.logDirectoryPath())
@@ -693,6 +788,7 @@ func (store *Store) trimTotalLogsToLimitLocked(maxTotalLogBytes int64) error {
 		}
 	}
 	type logFileInfo struct {
+		runID    string
 		path     string
 		size     int64
 		modified time.Time
@@ -710,6 +806,7 @@ func (store *Store) trimTotalLogsToLimitLocked(maxTotalLogBytes int64) error {
 		}
 		runID := strings.TrimSuffix(entry.Name(), ".log")
 		files = append(files, logFileInfo{
+			runID:    runID,
 			path:     filepath.Join(store.logDirectoryPath(), entry.Name()),
 			size:     info.Size(),
 			modified: info.ModTime(),
@@ -724,8 +821,10 @@ func (store *Store) trimTotalLogsToLimitLocked(maxTotalLogBytes int64) error {
 		return files[left].modified.Before(files[right].modified)
 	})
 
+	retainedFileCount := len(files)
+	runtimeStateChanged := false
 	for index := range files {
-		if totalSize <= maxTotalLogBytes {
+		if totalSize <= maxTotalLogBytes && retainedFileCount <= maxLogFiles {
 			break
 		}
 		file := files[index]
@@ -734,15 +833,23 @@ func (store *Store) trimTotalLogsToLimitLocked(maxTotalLogBytes int64) error {
 				return fmt.Errorf("remove retained run log: %w", err)
 			}
 			totalSize -= file.size
+			retainedFileCount -= 1
 			continue
+		}
+		if totalSize <= maxTotalLogBytes {
+			break
 		}
 
 		targetSize := file.size - (totalSize - maxTotalLogBytes)
 		if targetSize < 0 {
 			targetSize = 0
 		}
-		if err := truncateFileTail(file.path, targetSize); err != nil {
+		truncated, err := truncateFileTail(file.path, targetSize)
+		if err != nil {
 			return err
+		}
+		if truncated && store.markRunOutputTruncatedLocked(file.runID) {
+			runtimeStateChanged = true
 		}
 		updatedInfo, err := os.Stat(file.path)
 		if err != nil {
@@ -750,11 +857,26 @@ func (store *Store) trimTotalLogsToLimitLocked(maxTotalLogBytes int64) error {
 		}
 		totalSize -= file.size - updatedInfo.Size()
 	}
+	if runtimeStateChanged {
+		if err := store.persistLocked(); err != nil {
+			return err
+		}
+	}
 	if totalSize > maxTotalLogBytes {
 		return fmt.Errorf("retained run logs remain above total limit: %d > %d", totalSize, maxTotalLogBytes)
 	}
 
 	return nil
+}
+
+func (store *Store) markRunOutputTruncatedLocked(runID string) bool {
+	for index := range store.data.Runs {
+		if store.data.Runs[index].ID == runID && !store.data.Runs[index].OutputTruncated {
+			store.data.Runs[index].OutputTruncated = true
+			return true
+		}
+	}
+	return false
 }
 
 func (store *Store) trimRunHistoryLocked() {
@@ -875,39 +997,65 @@ func truncateMessage(message string) (string, bool) {
 	return message[:MaxEventMessageBytes] + "\n[output truncated]", true
 }
 
-func truncateFileTail(filePath string, limit int64) error {
+func truncateFileTail(filePath string, limit int64) (bool, error) {
+	if limit < 0 {
+		return false, errors.New("run log limit must not be negative")
+	}
 	info, err := os.Stat(filePath)
 	if err != nil {
-		return fmt.Errorf("read run log size: %w", err)
+		return false, fmt.Errorf("read run log size: %w", err)
 	}
 	if info.Size() <= limit {
-		return nil
+		return false, nil
 	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("open oversized run log: %w", err)
+		return false, fmt.Errorf("open oversized run log: %w", err)
 	}
-	if _, err := file.Seek(info.Size()-limit, io.SeekStart); err != nil {
+	startOffset := info.Size() - limit
+	startsAtRecordBoundary := startOffset == 0
+	if startOffset > 0 {
+		if _, err := file.Seek(startOffset-1, io.SeekStart); err != nil {
+			_ = file.Close()
+			return false, fmt.Errorf("seek oversized run log boundary: %w", err)
+		}
+		previousByte := []byte{0}
+		if _, err := io.ReadFull(file, previousByte); err != nil {
+			_ = file.Close()
+			return false, fmt.Errorf("read oversized run log boundary: %w", err)
+		}
+		startsAtRecordBoundary = previousByte[0] == '\n'
+	}
+	if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("seek oversized run log: %w", err)
+		return false, fmt.Errorf("seek oversized run log: %w", err)
 	}
 	tail, err := io.ReadAll(file)
 	if err != nil {
 		_ = file.Close()
-		return fmt.Errorf("read oversized run log: %w", err)
+		return false, fmt.Errorf("read oversized run log: %w", err)
 	}
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("close oversized run log: %w", err)
+		return false, fmt.Errorf("close oversized run log: %w", err)
 	}
-	if newlineIndex := strings.IndexByte(string(tail), '\n'); newlineIndex >= 0 && newlineIndex+1 < len(tail) {
-		tail = tail[newlineIndex+1:]
+	if !startsAtRecordBoundary {
+		if newlineIndex := bytes.IndexByte(tail, '\n'); newlineIndex >= 0 {
+			tail = tail[newlineIndex+1:]
+		} else {
+			tail = nil
+		}
+	}
+	if lastNewlineIndex := bytes.LastIndexByte(tail, '\n'); lastNewlineIndex >= 0 {
+		tail = tail[:lastNewlineIndex+1]
+	} else {
+		tail = nil
 	}
 	if err := writeFileAtomic(filePath, tail, 0o600); err != nil {
-		return fmt.Errorf("truncate run log: %w", err)
+		return false, fmt.Errorf("truncate run log: %w", err)
 	}
 
-	return nil
+	return true, nil
 }
 
 func isSafeRunID(runID string) bool {

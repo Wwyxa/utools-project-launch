@@ -125,6 +125,13 @@ export interface ProjectLaunchServiceEvent {
   automationRunId?: string;
 }
 
+export interface ProjectLaunchServiceRunLog {
+  runId: string;
+  events: ProjectLaunchServiceEvent[];
+  truncated: boolean;
+  sizeBytes: number;
+}
+
 export interface ProjectLaunchServiceScriptConfig {
   id: string;
   name: string;
@@ -1149,6 +1156,7 @@ export interface ProjectBridge {
   startProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   stopProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   reconcileProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
+  getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog>;
   syncProjectLaunchServiceAutomation(
     config: ProjectLaunchServiceAutomationConfig,
   ): Promise<ProjectLaunchServiceAutomationSyncResult>;

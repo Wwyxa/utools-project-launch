@@ -107,6 +107,56 @@ func TestShutdownRejectsOversizedRequests(t *testing.T) {
 	}
 }
 
+func TestServiceReturnsRetainedRunLog(t *testing.T) {
+	stateDir := t.TempDir()
+	_, discovery, token := startService(t, stateDir)
+	payload, err := json.Marshal(map[string]any{
+		"projectId": "log-project",
+		"scriptId":  "log-script",
+		"command":   "echo retained-output",
+		"cwd":       stateDir,
+		"env":       map[string]string{},
+		"label":     "Retained log test",
+	})
+	if err != nil {
+		t.Fatalf("encode run request: %v", err)
+	}
+	startResponse := serviceRequest(t, discovery, token, http.MethodPost, "/v1/runs", payload, "retained-log-idempotency")
+	defer startResponse.Body.Close()
+	if startResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("start response status = %d, want %d", startResponse.StatusCode, http.StatusCreated)
+	}
+	var started struct {
+		Run state.Run `json:"run"`
+	}
+	if err := json.NewDecoder(startResponse.Body).Decode(&started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+	waitForRunStatusViaAPI(t, discovery, token, started.Run.ID, state.RunStatusExited)
+
+	logResponse := serviceRequest(t, discovery, token, http.MethodGet, "/v1/runs/"+started.Run.ID+"/log", nil, "")
+	defer logResponse.Body.Close()
+	if logResponse.StatusCode != http.StatusOK {
+		t.Fatalf("run log response status = %d, want %d", logResponse.StatusCode, http.StatusOK)
+	}
+	var runLog state.RunLog
+	if err := json.NewDecoder(logResponse.Body).Decode(&runLog); err != nil {
+		t.Fatalf("decode run log: %v", err)
+	}
+	if runLog.RunID != started.Run.ID || !hasRetainedOutput(runLog.Events, "retained-output") {
+		t.Fatalf("retained run log = %#v, want persisted stdout", runLog)
+	}
+}
+
+func hasRetainedOutput(events []state.Event, output string) bool {
+	for _, event := range events {
+		if event.Type == "stdout" && strings.Contains(event.Message, output) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRemoveDiscoveryIfOwnedPreservesAnotherInstance(t *testing.T) {
 	stateDir := t.TempDir()
 	discovery := state.Discovery{

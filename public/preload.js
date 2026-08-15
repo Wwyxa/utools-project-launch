@@ -62,6 +62,7 @@ const projectLaunchServiceEventPollIntervalMs = 750;
 const projectLaunchServiceDownloadTimeoutMs = 30000;
 const projectLaunchServiceMetadataLimitBytes = 1024 * 1024;
 const projectLaunchServiceExecutableLimitBytes = 12 * 1024 * 1024;
+const projectLaunchServiceRunLogResponseLimitBytes = 8 * 1024 * 1024;
 const projectLaunchServiceDownloadRedirectLimit = 3;
 const projectLaunchServiceReleaseApiUrl = "https://api.github.com/repos/Wwyxa/utools-project-launch/releases/latest";
 const projectLaunchServiceAllowedDownloadHosts = new Set([
@@ -1340,9 +1341,7 @@ function readProjectLaunchServiceInstallMetadata() {
   try {
     metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
   } catch (error) {
-    throw projectLaunchServiceInstallVerificationError(
-      "项目启动服务缺少可信安装记录。请重新下载或手动验证后再启用。",
-    );
+    throw projectLaunchServiceInstallVerificationError("项目启动服务缺少可信安装记录。请重新下载或手动验证后再启用。");
   }
 
   const target = projectLaunchServiceTarget();
@@ -1441,7 +1440,8 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
       try {
         fs.unlinkSync(candidatePath);
       } catch (cleanupError) {
-        if (cleanupError?.code !== "ENOENT") console.warn("[utools-project-launch] failed to clean service partial file");
+        if (cleanupError?.code !== "ENOENT")
+          console.warn("[utools-project-launch] failed to clean service partial file");
       }
     });
     if (backupCreated) {
@@ -1455,7 +1455,8 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
       try {
         fs.unlinkSync(executablePath);
       } catch (cleanupError) {
-        if (cleanupError?.code !== "ENOENT") console.warn("[utools-project-launch] failed to remove unverified service executable");
+        if (cleanupError?.code !== "ENOENT")
+          console.warn("[utools-project-launch] failed to remove unverified service executable");
       }
     }
     throw error;
@@ -1651,6 +1652,9 @@ function removeStaleProjectLaunchServiceDiscovery(discovery) {
 function requestProjectLaunchService(discovery, token, method, requestPath, body, options = {}) {
   return new Promise((resolve, reject) => {
     const requestBody = body === undefined ? "" : JSON.stringify(body);
+    const maxResponseBytes = Number.isFinite(options.maxResponseBytes)
+      ? Math.max(1, Math.floor(options.maxResponseBytes))
+      : 256 * 1024;
     const request = http.request(
       {
         host: "127.0.0.1",
@@ -1676,12 +1680,12 @@ function requestProjectLaunchService(discovery, token, method, requestPath, body
         let responseBytes = 0;
         response.on("data", (chunk) => {
           responseBytes += Buffer.byteLength(chunk);
-          if (responseBytes <= 256 * 1024) {
+          if (responseBytes <= maxResponseBytes) {
             chunks.push(chunk);
           }
         });
         response.on("end", () => {
-          if (responseBytes > 256 * 1024) {
+          if (responseBytes > maxResponseBytes) {
             const error = new Error("服务响应超过大小限制。");
             error.code = "response-too-large";
             reject(error);
@@ -1777,6 +1781,27 @@ async function requestProjectLaunchServiceEvents(connection, after) {
   );
 }
 
+async function getProjectLaunchServiceRunLog(runId) {
+  if (!/^[0-9a-f]{32}$/.test(String(runId || ""))) {
+    const error = new Error("运行日志标识无效。");
+    error.code = "invalid-run-id";
+    throw error;
+  }
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/runs/${runId}/log`,
+    undefined,
+    { maxResponseBytes: projectLaunchServiceRunLogResponseLimitBytes },
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "运行日志读取失败。");
+  }
+  return response.payload || { runId, events: [], truncated: false, sizeBytes: 0 };
+}
+
 function advanceProjectLaunchServiceEventCursor(batch) {
   const nextCursor = Number(batch?.nextCursor);
   const latestCursor = Number(batch?.latestCursor);
@@ -1864,7 +1889,10 @@ async function readProjectLaunchServiceStatus(options = {}) {
   if (!status.installed) {
     try {
       status.installed = fs.statSync(status.executablePath).isFile();
-      if (status.installed) status.state = "installed";
+      if (status.installed) {
+        status.state = "installed";
+        status.message = "项目启动服务已安装，尚未运行。";
+      }
     } catch (error) {
       return status;
     }
@@ -1886,6 +1914,7 @@ async function readProjectLaunchServiceStatus(options = {}) {
     const state = await requestProjectLaunchServiceState(connection);
     status.state = "healthy";
     status.running = true;
+    status.message = "";
     status.protocolVersion = health.protocolVersion;
     status.serviceVersion = health.serviceVersion;
     status.activeRunCount = serviceRunCount(state.runs);
@@ -2046,6 +2075,12 @@ async function reconcileProjectLaunchService() {
   } catch (error) {
     return serviceStatusWithError(status, error);
   }
+}
+
+function openProjectLaunchServiceDirectory() {
+  const directoryPath = projectLaunchServiceDirectoryPath();
+  fs.mkdirSync(directoryPath, { recursive: true });
+  return shell.openPath(directoryPath);
 }
 
 async function pollProjectLaunchServiceEvents(emitEvents = true) {
@@ -8082,8 +8117,9 @@ window.projectBridge = {
   startProjectLaunchService,
   stopProjectLaunchService,
   reconcileProjectLaunchService,
+  getProjectLaunchServiceRunLog,
   syncProjectLaunchServiceAutomation,
-  openProjectLaunchServiceDirectory: () => shell.openPath(projectLaunchServiceDirectoryPath()),
+  openProjectLaunchServiceDirectory,
   openProjectLaunchServiceReleases: () => shell.openExternal(projectLaunchServiceReleaseUrl()),
   listAiModels,
   testAiConnection,

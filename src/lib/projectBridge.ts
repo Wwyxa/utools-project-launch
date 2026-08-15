@@ -48,6 +48,7 @@ import type {
   ProjectPathInspection,
   ProjectDetailsTabId,
   ProjectLaunchServicePreferences,
+  ProjectLaunchServiceRunLog,
   ProjectLaunchServiceStatus,
   ProjectLaunchServiceAutomationConfig,
   ProjectLaunchServiceAutomationSyncResult,
@@ -752,6 +753,9 @@ const fallbackBridge: ProjectBridge = {
   },
   async reconcileProjectLaunchService() {
     return browserProjectLaunchServiceStatus();
+  },
+  async getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog> {
+    throw new Error(`浏览器预览无法读取运行日志：${runId}`);
   },
   async syncProjectLaunchServiceAutomation(
     config: ProjectLaunchServiceAutomationConfig,

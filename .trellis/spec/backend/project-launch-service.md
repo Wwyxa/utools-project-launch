@@ -13,10 +13,10 @@
 ### 2. Signatures
 
 - Service executable: `project-launch-service --state-dir <service-directory>`.
-- Service bridge methods: `loadProjectLaunchServicePreferences`, `saveProjectLaunchServicePreferences`, `getProjectLaunchServiceStatus`, `downloadProjectLaunchService`, `startProjectLaunchService`, `stopProjectLaunchService`, `reconcileProjectLaunchService`, `syncProjectLaunchServiceAutomation`, `openProjectLaunchServiceDirectory`, and `openProjectLaunchServiceReleases`.
-- Shared types: `ProjectLaunchServicePreferences`, `ProjectLaunchServiceStatus`, `ProjectLaunchServiceRun`, `ProjectLaunchServiceEvent`, `ProjectLaunchServiceAutomationConfig`, `ProjectLaunchServiceAutomationState`, and `ProjectLaunchServiceAutomationSyncResult` in `src/types.ts`.
+- Service bridge methods: `loadProjectLaunchServicePreferences`, `saveProjectLaunchServicePreferences`, `getProjectLaunchServiceStatus`, `downloadProjectLaunchService`, `startProjectLaunchService`, `stopProjectLaunchService`, `reconcileProjectLaunchService`, `getProjectLaunchServiceRunLog`, `syncProjectLaunchServiceAutomation`, `openProjectLaunchServiceDirectory`, and `openProjectLaunchServiceReleases`.
+- Shared types: `ProjectLaunchServicePreferences`, `ProjectLaunchServiceStatus`, `ProjectLaunchServiceRun`, `ProjectLaunchServiceEvent`, `ProjectLaunchServiceRunLog`, `ProjectLaunchServiceAutomationConfig`, `ProjectLaunchServiceAutomationState`, and `ProjectLaunchServiceAutomationSyncResult` in `src/types.ts`.
 - Loopback requests use `Authorization: Bearer <token>` and `X-Protocol-Version: 1`. JSON mutations also use `Content-Type: application/json`; `POST /v1/runs` requires `Idempotency-Key`.
-- Protocol endpoints are `GET /v1/health`, `GET /v1/state`, `GET /v1/events?after=<cursor>`, `POST /v1/runs`, `POST /v1/runs/{runId}/input`, `POST /v1/runs/{runId}/stop`, `PUT /v1/automation/config`, and `POST /v1/shutdown`.
+- Protocol endpoints are `GET /v1/health`, `GET /v1/state`, `GET /v1/events?after=<cursor>`, `GET /v1/runs/{runId}/log`, `POST /v1/runs`, `POST /v1/runs/{runId}/input`, `POST /v1/runs/{runId}/stop`, `PUT /v1/automation/config`, and `POST /v1/shutdown`.
 
 ### 3. Contracts
 
@@ -28,9 +28,11 @@
 - The service listens only on `127.0.0.1:0`. Preload validates discovery, token location, process identity, health response, and protocol compatibility before trusting an endpoint. Remove a stale discovery file only after identity validation proves its owner is absent.
 - The Go handler authenticates every endpoint before routing. It rejects bad token, incompatible protocol, unsupported media type, oversized JSON, malformed/extra JSON values, and invalid event cursors with typed HTTP errors. A launch retry with the same idempotency key must return the original run; reusing it for different input conflicts.
 - `runId` is the stable public identity. PID is diagnostic data only. Recovered runs must validate both PID and OS process identity before stop/control; an identity mismatch becomes lost/ended state rather than controlling a reused PID.
+- On Windows, launched commands must use `CREATE_NO_WINDOW`, `CREATE_NEW_PROCESS_GROUP`, and `HideWindow`. Service stop enumerates the process tree through native Windows APIs and terminates processes directly, so it does not spawn console helpers during stop or process-existence checks.
 - Enabling service mode pauses every renderer scheduling entry point before starting/synchronizing the service. Persist `enabled=true` only after the service accepts the complete monotonic automation configuration revision. A failed initial start, reconcile, or synchronization before that write clears the handoff barrier, keeps renderer ownership, and resumes renderer scheduling. A later runtime failure after `enabled=true` is persisted reports an unavailable status but keeps service mode enabled: new delegated launches and automation must remain fail-closed until the user explicitly and successfully disables service mode. Disabling requires service-owned active runs to stop first.
 - The service owns bounded event/output history and returns cursor/truncation metadata. `ProjectLaunchServiceAutomationConfig` is input only; `ProjectLaunchServiceAutomationState` in `ProjectLaunchServiceStatus` exposes only a revision and optional executions, never a configuration or environment map. The service must not log tokens, full environments, or credentials.
-- State retains the latest 20 terminal automation executions per `(projectId, taskId)` while retaining active executions. Run output is stored as `logs/<runId>.log`, capped to the newest 5 MiB per run and 100 MiB in total. When the total cap is exceeded, delete the oldest completed-run logs first; only then trim active logs to their newest bounded tail until the total is within the cap.
+- State retains the latest 20 terminal automation executions per `(projectId, taskId)` while retaining active executions. Run output is stored as `logs/<runId>.log`, capped to the newest 5 MiB per run, 100 MiB in total, and 200 retained log files. Enforce the same limits on service startup and after every append. When the file-count or total-size cap is exceeded, delete the oldest completed-run logs first; only then trim active logs to their newest bounded tail until the total is within the size cap. Active runs may temporarily exceed the file-count cap rather than losing their live log.
+- `GET /v1/runs/{runId}/log` returns the retained structured events, byte size, and truncation marker for one run that still exists in bounded run history. The preload bridge keeps the default 256 KiB service-response limit for all other requests and uses an 8 MiB limit only for this bounded log response. The Terminal history dialog lists completed runs for the current project and reads a selected log without merging it into live `scriptLogs`.
 - `/v1/shutdown` accepts only an idle service. Release builds use the six-target matrix, deterministic asset names, checksum verification, stripped pure-Go binaries, and the 12 MiB raw-size limit.
 
 ### 4. Validation & Error Matrix
@@ -45,7 +47,9 @@
 - Reused launch idempotency key with the same fingerprint -> return the prior run; a different fingerprint -> conflict without a second process.
 - Stale automation revision -> reject with `automation_revision_conflict`; accepted revision -> atomically replaces the complete normalized configuration.
 - Active service run during shutdown/disable -> reject shutdown or keep service mode enabled until explicit stop succeeds.
+- Windows stop -> enumerate and terminate the process tree without spawning a visible console helper or relying on a shell command for process-existence checks.
 - Event cursor precedes retained history -> return truncation metadata; the renderer must reconcile from the available boundary instead of inventing missing output.
+- Invalid or unknown run id, or a log already removed by retention -> HTTP `404` with `run_log_unavailable` or the generic endpoint `not_found`; the Terminal keeps live logs unchanged and shows an unavailable message.
 
 ### 5. Good/Base/Bad Cases
 
@@ -53,14 +57,17 @@
 - Good: a user previously enabled a verified service, restarts the device, then opens the plugin; reconciliation starts the installed executable and restores service-owned state without an implicit download.
 - Good: service startup sees a stale discovery record, verifies the recorded process identity is gone, removes that record, and writes a new loopback-only discovery file.
 - Good: enabling service mode clears the renderer timer, waits for configuration acknowledgement, then records the enabled preference so one planned entry can run only once.
+- Good: after reopening uTools, the user opens Terminal log history, selects a completed run, and reads its retained output without adding those rows to the live terminal stream.
 - Base: a user never installs or enables the service; plugin startup continues using the former preload and renderer behavior with no Go executable start or Go toolchain requirement.
 - Bad: a component reads `discovery.json`, sends an unauthenticated local HTTP request, or starts a service executable directly.
 - Bad: a failed service health check falls back to `runCommand` in preload while the global service setting remains enabled.
 - Bad: a persisted PID is used as authority to stop a process without process-identity validation.
+- Bad: routing service-owned process termination through an external shell command and reintroducing a console helper into the stop path.
 
 ### 6. Tests Required
 
-- `go -C service test ./...` covers authentication/protocol rejection, request limits, discovery lifecycle, state/token integrity, idempotency, process-tree stop, recovered-run identity checks, scheduler claims, and executable restart/reconnect.
+- `go -C service test ./...` covers authentication/protocol rejection, request limits, discovery lifecycle, state/token integrity, idempotency, process-tree stop, recovered-run identity checks, scheduler claims, executable restart/reconnect, log file-count eviction, and retained-log API reads.
+- Windows process tests assert console isolation flags on launched commands and cover native process-tree enumeration and termination.
 - `go -C service vet ./...` and `gofmt -l service` pass after Go changes; `npm run go:build` produces only ignored local developer output under `service/bin/`.
 - Bridge/store tests cover default-off status, manual install/recheck failure, enabled-unavailable fail-closed behavior, ownership-handoff timer pause, accepted configuration revision, and reconciliation of service status/events.
 - `node --check public/preload.js`, `npm run lint`, `npm run build`, `npm run validate:process-results`, and `npm run validate:project-storage` pass after cross-layer changes.

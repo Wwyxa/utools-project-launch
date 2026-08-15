@@ -145,6 +145,8 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		handler.handleEvents(responseWriter, request)
 	case request.Method == http.MethodPost && request.URL.Path == "/v1/runs":
 		handler.handleStartRun(responseWriter, request)
+	case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/v1/runs/"):
+		handler.handleRunLog(responseWriter, request)
 	case request.Method == http.MethodPost && strings.HasPrefix(request.URL.Path, "/v1/runs/"):
 		handler.handleRunAction(responseWriter, request)
 	case request.Method == http.MethodPost && request.URL.Path == "/v1/shutdown":
@@ -301,6 +303,26 @@ func (handler *Handler) handleRunAction(responseWriter http.ResponseWriter, requ
 	default:
 		handler.writeError(responseWriter, http.StatusNotFound, "not_found", "The requested run endpoint does not exist.")
 	}
+}
+
+func (handler *Handler) handleRunLog(responseWriter http.ResponseWriter, request *http.Request) {
+	remainingPath := strings.TrimPrefix(request.URL.Path, "/v1/runs/")
+	pathParts := strings.Split(remainingPath, "/")
+	if len(pathParts) != 2 || pathParts[1] != "log" || !isSafeRunID(pathParts[0]) {
+		handler.writeError(responseWriter, http.StatusNotFound, "not_found", "The requested run endpoint does not exist.")
+		return
+	}
+
+	runLog, err := handler.config.Supervisor.RunLog(pathParts[0])
+	if err != nil {
+		if errors.Is(err, state.ErrRunLogUnavailable) {
+			handler.writeError(responseWriter, http.StatusNotFound, "run_log_unavailable", "The retained log for this run is no longer available.")
+			return
+		}
+		handler.writeError(responseWriter, http.StatusInternalServerError, "run_log_failed", err.Error())
+		return
+	}
+	handler.writeJSON(responseWriter, http.StatusOK, runLog)
 }
 
 func (handler *Handler) authorize(responseWriter http.ResponseWriter, request *http.Request) bool {

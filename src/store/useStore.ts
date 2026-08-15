@@ -89,6 +89,8 @@ import type {
   ProjectDetailsTabId,
   ProjectLaunchServicePreferences,
   ProjectLaunchServiceAutomationConfig,
+  ProjectLaunchServiceEvent,
+  ProjectLaunchServiceRunLog,
   ProjectLaunchServiceStatus,
   ProjectVisibility,
   ProjectScript,
@@ -1201,6 +1203,48 @@ function classifyProcessOutputLine(line: string, source: "stdout" | "stderr"): L
   return source === "stderr" ? "INFO" : "INFO";
 }
 
+function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog): LogEntry[] {
+  const entries: LogEntry[] = [];
+  for (const event of runLog.events) {
+    const createEntry = (message: string, type: LogEntry["type"]) => createLogEntry(message, type, event.timestamp);
+    if (event.type === "started") {
+      entries.push(
+        createEntry(
+          [`started (pid ${event.pid || 0})`, event.message || "", event.cwd ? `cwd: ${event.cwd}` : ""]
+            .filter(Boolean)
+            .join(" · "),
+          "SUCCESS",
+        ),
+      );
+      continue;
+    }
+    if (event.type === "stdout" || event.type === "stderr") {
+      const outputSource = event.type;
+      normalizeLogLines(event.message || "").forEach((line) => {
+        entries.push(createEntry(line, classifyProcessOutputLine(line, outputSource)));
+      });
+      continue;
+    }
+    if (event.type === "stdin") {
+      entries.push(createEntry(`> ${event.message || ""}`, "INFO"));
+      continue;
+    }
+    if (event.type === "exit") {
+      const stopped = event.stoppedByUser === true;
+      const succeeded = stopped || event.automationExitMatched === true || event.code === 0;
+      entries.push(
+        createEntry(
+          stopped ? "stopped" : `exited with code ${event.code ?? "unknown"}`,
+          succeeded ? "SUCCESS" : "ERROR",
+        ),
+      );
+      continue;
+    }
+    entries.push(createEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"));
+  }
+  return entries;
+}
+
 function demoProject(id: string, project: Project): Project {
   return hydrateProject({
     ...project,
@@ -1568,6 +1612,23 @@ export const useStore = defineStore("app", {
     },
     reconcileProjectLaunchServiceRuntime(status: ProjectLaunchServiceStatus | null) {
       if (!this.projectLaunchServicePreferences.enabled || status?.state !== "healthy" || !status.running) {
+        for (const project of this.projects) {
+          let clearedServiceRuntime = false;
+          for (const script of project.scripts) {
+            if (script.runtimeOwner !== "service") {
+              continue;
+            }
+            script.status = "ERROR";
+            script.pid = undefined;
+            script.runId = undefined;
+            script.runtimeOwner = undefined;
+            clearedServiceRuntime = true;
+          }
+          if (clearedServiceRuntime) {
+            project.status = deriveProjectStatus(project);
+            project.lastUpdated = new Date().toLocaleString();
+          }
+        }
         return;
       }
 
@@ -1723,6 +1784,13 @@ export const useStore = defineStore("app", {
         await this.reconcileRuntimeProcessState();
       }
       return this.projectLaunchServiceStatus;
+    },
+    async loadProjectLaunchServiceRunLog(runId: string) {
+      const runLog = await bridge.getProjectLaunchServiceRunLog(runId);
+      return {
+        ...runLog,
+        logs: retainedRunLogEntries(runLog),
+      };
     },
     async downloadProjectLaunchService() {
       this.projectLaunchServiceStatus = {
@@ -5764,7 +5832,7 @@ export const useStore = defineStore("app", {
         }
         const launchContext = [
           `started (pid ${event.pid})`,
-          event.message ? `command: ${event.message}` : "",
+          event.message ? (event.runtimeOwner === "service" ? event.message : `command: ${event.message}`) : "",
           event.cwd ? `cwd: ${event.cwd}` : "",
         ]
           .filter(Boolean)

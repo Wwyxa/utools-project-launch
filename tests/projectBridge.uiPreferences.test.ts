@@ -42,7 +42,7 @@ const loadPreloadBridge = (
     },
   };
   const sandbox = {
-    require: (id: string) => (id === "electron" ? { shell: {} } : moduleOverrides[id] ?? nodeRequire(id)),
+    require: (id: string) => moduleOverrides[id] ?? (id === "electron" ? { shell: {} } : nodeRequire(id)),
     process: {
       platform: process.platform,
       arch: process.arch,
@@ -894,18 +894,103 @@ describe("browser UI preferences fallback", () => {
     expect(script.runId).toBeUndefined();
     expect(script.runtimeOwner).toBeUndefined();
   });
+
+  it("clears stale service-owned script state when the service is unavailable", async () => {
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+    };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "restarted-service-project",
+        name: "Restarted service project",
+        path: "/workspace/restarted-service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "restarted-service-script",
+            name: "dev",
+            command: "npm run dev",
+            status: "RUNNING",
+            pid: 4242,
+            runId: "1234567890abcdef1234567890abcdef",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+    const unavailableStatus: ProjectLaunchServiceStatus = {
+      state: "unavailable",
+      installed: true,
+      running: false,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      message: "Project Launch Service is unavailable.",
+    };
+
+    store.reconcileProjectLaunchServiceRuntime(unavailableStatus);
+
+    const project = store.projects[0]!;
+    const script = project.scripts[0]!;
+    expect(project.status).toBe(ProjectStatus.ERROR);
+    expect(script.status).toBe("ERROR");
+    expect(script.pid).toBeUndefined();
+    expect(script.runId).toBeUndefined();
+    expect(script.runtimeOwner).toBeUndefined();
+  });
 });
 
 describe("Project Launch Service preload installation", () => {
   const binaryContents = Buffer.from("verified-project-launch-service");
 
   const createBridge = (serviceRoot: string, moduleOverrides: Record<string, unknown> = {}) =>
-    loadPreloadBridge(
-      new Map(),
-      undefined,
-      { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
-      moduleOverrides,
-    );
+    loadPreloadBridge(new Map(), undefined, { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot }, moduleOverrides);
+
+  it("reports a manually placed executable as installed", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    try {
+      const bridge = createBridge(serviceRoot);
+      const beforeInstall = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(beforeInstall.directoryPath, { recursive: true });
+      writeFileSync(beforeInstall.executablePath, binaryContents);
+
+      await expect(bridge.getProjectLaunchServiceStatus()).resolves.toMatchObject({
+        state: "installed",
+        installed: true,
+        running: false,
+        message: "项目启动服务已安装，尚未运行。",
+      });
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("creates the service directory before opening it", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const openPath = vi.fn(() => "");
+    try {
+      const bridge = createBridge(serviceRoot, { electron: { shell: { openPath } } });
+      const status = await bridge.getProjectLaunchServiceStatus();
+      expect(existsSync(status.directoryPath)).toBe(false);
+
+      await bridge.openProjectLaunchServiceDirectory();
+
+      expect(existsSync(status.directoryPath)).toBe(true);
+      expect(openPath).toHaveBeenCalledWith(status.directoryPath);
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
 
   it("persists verified metadata and blocks automatic startup after executable replacement", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));

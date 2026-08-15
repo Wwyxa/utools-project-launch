@@ -169,6 +169,12 @@ dist/
 
 当前机器只会安装其中一个可执行文件：Windows 的准确路径是 `~/.utools-project-launch/service/project-launch-service.exe`，macOS 和 Linux 的准确路径是 `~/.utools-project-launch/service/project-launch-service`。设置页的“打开目录”会直接打开这个服务目录。
 
+### 日志保留与查看
+
+服务模式会把每次脚本运行的结构化日志写入 `service/logs/<runId>.log`。单次运行最多保留最新 5 MiB，全部日志合计最多 100 MiB，并最多保留 200 个日志文件；达到数量或容量上限时先删除最旧的已完成运行日志，活动运行日志优先保留。服务启动时也会执行同一清理规则，避免旧版本遗留的小日志持续累积。
+
+启用且连接到项目启动服务后，可在项目运行日志工具栏点击“历史日志”，按运行时间查看当前项目仍被保留的日志。已被容量策略淘汰的日志会明确显示为不可用；发生截断时只展示仍保留的最新输出。日志不写入完整环境变量、服务令牌或凭据。
+
 ### 支持的平台与资源
 
 Release 发布的是可直接安装的单个原始可执行文件，不使用压缩包。请按系统和架构选择完全相同的文件名：
@@ -194,27 +200,27 @@ Release 发布的是可直接安装的单个原始可执行文件，不使用压
 
 ## 常用命令
 
-| 命令                                  | 说明                                 |
-| ------------------------------------- | ------------------------------------ |
-| `npm run dev`                         | 启动 Vite 开发服务，默认端口 `3421`  |
-| `npm run build`                       | 构建 uTools 插件产物到 `dist/`       |
-| `npm run preview`                     | 本地预览构建结果                     |
-| `npm run lint` / `npm run type-check` | TypeScript 类型检查 (`tsc --noEmit`) |
-| `npm run clean`                       | 删除 `dist/` 构建目录                |
-| `npm run test:git-diff`               | 运行 Git diff 相关单元测试           |
-| `npm run validate:ai-reasoning`       | 校验 AI reasoning 解析兼容性         |
-| `npm run validate:git-commits`        | 校验 Git 提交记录解析                |
-| `npm run validate:git-diff`           | 校验 Git diff 解析                   |
-| `npm run validate:git-workspace`      | 校验 Git 工作区桥接(含单元测试)      |
-| `npm run validate:markdown-images`    | 校验 Markdown 图片安全与渲染         |
-| `npm run validate:project-files`      | 校验项目文件桥接                     |
-| `npm run validate:project-storage`    | 校验项目存储兼容性                   |
-| `npm run validate:process-results`    | 校验进程结果批次处理                 |
-| `npm run benchmark:git-interactions`  | Git 交互性能基准测试                 |
-| `npm run go:fmt`                      | 格式化可选项目启动服务源码           |
-| `npm run go:vet`                      | 校验可选项目启动服务                 |
-| `npm run go:test`                     | 运行可选项目启动服务测试             |
-| `npm run go:build`                    | 构建到 `service/bin/`(贡献者需要 Go) |
+| 命令                                  | 说明                                                       |
+| ------------------------------------- | ---------------------------------------------------------- |
+| `npm run dev`                         | 启动 Vite 开发服务，默认端口 `3421`                        |
+| `npm run build`                       | 构建 uTools 插件产物到 `dist/`                             |
+| `npm run preview`                     | 本地预览构建结果                                           |
+| `npm run lint` / `npm run type-check` | TypeScript 类型检查 (`tsc --noEmit`)                       |
+| `npm run clean`                       | 删除 `dist/` 构建目录                                      |
+| `npm run test:git-diff`               | 运行 Git diff 相关单元测试                                 |
+| `npm run validate:ai-reasoning`       | 校验 AI reasoning 解析兼容性                               |
+| `npm run validate:git-commits`        | 校验 Git 提交记录解析                                      |
+| `npm run validate:git-diff`           | 校验 Git diff 解析                                         |
+| `npm run validate:git-workspace`      | 校验 Git 工作区桥接(含单元测试)                            |
+| `npm run validate:markdown-images`    | 校验 Markdown 图片安全与渲染                               |
+| `npm run validate:project-files`      | 校验项目文件桥接                                           |
+| `npm run validate:project-storage`    | 校验项目存储兼容性                                         |
+| `npm run validate:process-results`    | 校验进程结果批次处理                                       |
+| `npm run benchmark:git-interactions`  | Git 交互性能基准测试                                       |
+| `npm run go:fmt`                      | 格式化可选项目启动服务源码                                 |
+| `npm run go:vet`                      | 校验可选项目启动服务                                       |
+| `npm run go:test`                     | 运行可选项目启动服务测试                                   |
+| `npm run go:build`                    | 构建到 `service/bin/` 并注入当前 Git 版本（贡献者需要 Go） |
 
 ## 项目结构
 
