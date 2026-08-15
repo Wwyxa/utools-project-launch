@@ -313,3 +313,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 72: 统一项目启动运行时与服务任务状态
+
+**Date**: 2026-08-15
+**Task**: 统一项目启动运行时与服务任务状态
+**Branch**: `feat/go-service`
+
+### Summary
+
+统一 preload 与 Go 服务运行身份、事件和状态快照；补充调度健康恢复、重复运行冲突、安全 handoff、回归测试及跨层规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c17dd82` | (see git log) |
+
+### Status
+
+[OK] **Completed**

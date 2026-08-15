@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 71
-- **Last Active**: 2026-08-14
+- **Total Sessions**: 72
+- **Last Active**: 2026-08-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~315 | Active |
+| `journal-2.md` | ~336 | Active |
 | `journal-1.md` | ~1977 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 72 | 2026-08-15 | 统一项目启动运行时与服务任务状态 | `c17dd82` | `feat/go-service` |
 | 71 | 2026-08-14 | 完成可选 Go 服务与运行时加固 | `e2b9c01`, `9a6d4c5` | `feat/go-service` |
 | 70 | 2026-08-08 | 优化插件冷启动首帧 | `e845f7a` | `master` |
 | 69 | 2026-08-05 | 扩展 Git 操作能力 | `560f23c` | `master` |
