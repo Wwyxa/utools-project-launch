@@ -1,0 +1,11 @@
+{"file":".trellis/spec/guides/index.md","reason":"Shared planning and cross-layer thinking guidance for a runtime contract spanning Vue, preload, HTTP, and Go service layers."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Required boundary, persistence, event, and Windows process checks for the cross-layer runtime change."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Defines ownership boundaries between preload, ProjectBridge, and Go service packages."}
+{"file":".trellis/spec/backend/project-launch-service.md","reason":"Authoritative service ownership, protocol, fail-closed, run identity, handoff, and validation contract."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Defines typed service failure behavior, scheduler persistence constraints, and UI-facing error state rules."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Defines required service isolation, dependency, disabled-mode, and validation rules."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Defines process event attribution, bounded service logs, and secret-safe user-visible logging."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Defines shared type, bridge, store, and test locations for frontend changes."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines Store ownership, runtime reconciliation, service handoff, and persistence boundaries."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Defines shared ProjectBridge contracts, preload normalization, optional compatibility fields, and no-duplicate types."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Defines frontend validation, state placement, and backend-independent UI quality requirements."}

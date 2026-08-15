@@ -1,0 +1,9 @@
+{"file":".trellis/spec/guides/index.md","reason":"Shared quality and cross-layer review checklist for the final verification pass."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review the complete event and state flow across Store, preload, HTTP, persistence, and service scheduler."}
+{"file":".trellis/spec/backend/project-launch-service.md","reason":"Check service protocol, ownership, recovery, duplicate protection, scheduler state, and fail-closed behavior against the executable contract."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check typed failures, scheduler recovery, and secret-safe state exposure."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Check service isolation, default-off behavior, and required Go validation."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Check event attribution, bounded history, truncation, and no secret leakage."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check Store runtime identity guards, service snapshot reconciliation, handoff barriers, and disabled-mode behavior."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Check that all bridge/status/event fields are shared, normalized, and compatible across fallback and preload."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check TypeScript/build requirements and UI state placement for runtime changes."}
