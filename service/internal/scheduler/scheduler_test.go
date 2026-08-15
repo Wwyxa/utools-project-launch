@@ -77,6 +77,127 @@ func TestSchedulerExecutesDuePlanOnce(t *testing.T) {
 	}
 }
 
+func TestSchedulerExecutesEarlyPlanWithOriginalPlannedTime(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+
+	plannedAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
+	config, err := json.Marshal(Config{
+		SchemaVersion: 1,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID:   "early-project",
+			Name: "Early project",
+			Path: stateDir,
+			Env:  map[string]string{},
+			Scripts: []ScriptConfig{{
+				ID:      "early-script",
+				Name:    "Early script",
+				Command: "echo early",
+				Cwd:     stateDir,
+			}},
+			AutomationTasks: []TaskConfig{{
+				ID:        "early-task",
+				Name:      "Early task",
+				Enabled:   true,
+				ScriptIDs: []string{"early-script"},
+				DailyPlans: []DailyPlan{{
+					Date: time.Now().UTC().Format("2006-01-02"),
+					Entries: []PlanEntry{{
+						ID:        "early-entry",
+						PlannedAt: plannedAt,
+						Status:    "pending",
+						RunEarly:  true,
+					}},
+				}},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(1, config); err != nil {
+		t.Fatalf("replace configuration: %v", err)
+	}
+
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run scheduler: %v", err)
+	}
+	waitForExecution(t, store, "early-project", "early-task", "early-entry", state.AutomationExecutionCompleted)
+
+	found := false
+	for _, execution := range store.Automation().Executions {
+		if execution.ID != executionID("early-project", "early-task", "early-entry") {
+			continue
+		}
+		found = true
+		if execution.PlannedAt != plannedAt {
+			t.Fatalf("execution planned time = %q, want %q", execution.PlannedAt, plannedAt)
+		}
+	}
+	if !found {
+		t.Fatal("early execution was not persisted")
+	}
+}
+
+func TestSchedulerContinuesAfterRecoverableErrorAndRecovers(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":2,"projects":[]}`)); err != nil {
+		t.Fatalf("persist invalid scheduler revision: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		runtime.Run(ctx)
+		close(done)
+	}()
+	waitForSchedulerHealth(t, runtime, func(health SchedulerHealth) bool {
+		return health.State == SchedulerStateDegraded && health.LastError != ""
+	})
+
+	config, err := json.Marshal(Config{SchemaVersion: 1, Revision: 2, Projects: []ProjectConfig{}})
+	if err != nil {
+		t.Fatalf("marshal recovered scheduler config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(2, config); err != nil {
+		t.Fatalf("replace recovered scheduler config: %v", err)
+	}
+	waitForSchedulerHealth(t, runtime, func(health SchedulerHealth) bool {
+		return health.State == SchedulerStateRunning && health.LastSuccessAt != "" && health.LastError == ""
+	})
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduler did not stop after context cancellation")
+	}
+}
+
 func TestSchedulerMarksExpiredGracePlanMissed(t *testing.T) {
 	stateDir := t.TempDir()
 	store, err := state.Open(stateDir)
@@ -392,4 +513,23 @@ func waitForExecution(
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatalf("automation execution %s/%s/%s did not reach %q: %#v", projectID, taskID, planEntryID, want, store.Automation().Executions)
+}
+
+func waitForSchedulerHealth(t *testing.T, runtime *Runtime, predicate func(SchedulerHealth) bool) {
+	t.Helper()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if predicate(runtime.Health()) {
+				return
+			}
+		case <-deadline.C:
+			t.Fatalf("scheduler health did not reach expected state: %#v", runtime.Health())
+		}
+	}
 }

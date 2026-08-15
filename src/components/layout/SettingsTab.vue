@@ -164,6 +164,18 @@ const projectLaunchServiceStatusClass = computed(() => {
   if (state === "starting") return "border-primary/30 bg-primary/10 text-primary";
   return "border-status-warning/30 bg-status-warning/10 text-status-warning";
 });
+const projectLaunchServiceSchedulerLabel = computed(() => {
+  const state = projectLaunchServiceStatus.value?.scheduler?.state;
+  if (state === "degraded") return t.value.settings.projectLaunchServiceSchedulerDegraded;
+  if (state === "running") return t.value.settings.projectLaunchServiceSchedulerRunning;
+  return "-";
+});
+const projectLaunchServiceSchedulerClass = computed(() => {
+  const state = projectLaunchServiceStatus.value?.scheduler?.state;
+  if (state === "degraded") return "text-status-error";
+  if (state === "running") return "text-status-running";
+  return "text-on-surface-variant";
+});
 const segmentButtonClass = (active: boolean) =>
   cn(
     "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all",
@@ -969,6 +981,10 @@ watch(
             <dd class="min-w-0 break-words font-mono text-on-surface-variant">
               {{ projectLaunchServiceStatus?.protocolVersion ? `v${projectLaunchServiceStatus.protocolVersion}` : "-" }}
             </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceScheduler }}</dt>
+            <dd :class="cn('min-w-0 break-words font-semibold', projectLaunchServiceSchedulerClass)">
+              {{ projectLaunchServiceSchedulerLabel }}
+            </dd>
             <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceAsset }}</dt>
             <dd class="min-w-0 break-all font-mono text-on-surface-variant">
               {{ projectLaunchServiceStatus?.expectedAssetName || "-" }}
@@ -1030,6 +1046,9 @@ watch(
         </p>
         <p v-if="projectLaunchServiceStatus?.eventsTruncated" class="mt-1 text-xs leading-5 text-status-warning">
           {{ t.settings.projectLaunchServiceLogsTruncated }}
+        </p>
+        <p v-if="projectLaunchServiceStatus?.scheduler?.lastError" class="mt-1 text-xs leading-5 text-status-error">
+          {{ t.settings.projectLaunchServiceSchedulerLastError }}: {{ projectLaunchServiceStatus.scheduler.lastError }}
         </p>
         <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ t.settings.projectLaunchServiceLogHint }}</p>
         <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ t.settings.projectLaunchServiceManualHint }}</p>

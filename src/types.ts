@@ -143,6 +143,7 @@ export interface ProjectLaunchServicePlanEntryConfig {
   id: string;
   plannedAt: string;
   status: ProjectAutomationPlanEntryStatus;
+  runEarly?: boolean;
 }
 
 export interface ProjectLaunchServiceDailyPlanConfig {
@@ -221,6 +222,15 @@ export type ProjectLaunchServiceState =
   | "unavailable"
   | "incompatible";
 
+export type ProjectLaunchServiceSchedulerState = "running" | "degraded";
+
+export interface ProjectLaunchServiceSchedulerStatus {
+  state: ProjectLaunchServiceSchedulerState;
+  lastRunAt?: string;
+  lastSuccessAt?: string;
+  lastError?: string;
+}
+
 export interface ProjectLaunchServiceStatus {
   state: ProjectLaunchServiceState;
   installed: boolean;
@@ -241,6 +251,7 @@ export interface ProjectLaunchServiceStatus {
   eventsTruncated?: boolean;
   automationRevision?: number;
   automation?: ProjectLaunchServiceAutomationState;
+  scheduler?: ProjectLaunchServiceSchedulerStatus;
   message?: string;
 }
 
@@ -991,6 +1002,9 @@ export interface ProjectBridgeSendInputResult {
 
 export interface ProjectBridgeProcessStatusResult {
   active: boolean;
+  serviceState?: ProjectLaunchServiceState;
+  runId?: string;
+  runtimeOwner?: "preload" | "service";
   code?: number | null;
   signal?: string | null;
   stoppedByUser?: boolean;
@@ -1116,11 +1130,12 @@ export interface ProjectFileWriteResult {
   savedAt: string;
 }
 
-export interface ProjectBridgeEvent {
+export interface ProjectBridgeProcessEvent {
   type: "started" | "stdout" | "stderr" | "stdin" | "exit" | "error";
   projectId: string;
   scriptId: string;
   pid: number;
+  cursor?: number;
   runId?: string;
   runtimeOwner?: "preload" | "service";
   timestamp?: string;
@@ -1132,6 +1147,14 @@ export interface ProjectBridgeEvent {
   automationRunId?: string;
   automationExitMatched?: boolean;
 }
+
+export interface ProjectBridgeServiceStateEvent {
+  type: "service-state";
+  status: ProjectLaunchServiceStatus;
+  timestamp?: string;
+}
+
+export type ProjectBridgeEvent = ProjectBridgeProcessEvent | ProjectBridgeServiceStateEvent;
 
 export interface ProjectBridge {
   loadDeviceId(): string;

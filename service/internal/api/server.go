@@ -87,7 +87,8 @@ type automationConfigRequest struct {
 
 type serviceSnapshot struct {
 	state.Snapshot
-	Automation state.AutomationState `json:"automation"`
+	Automation state.AutomationState     `json:"automation"`
+	Scheduler  scheduler.SchedulerHealth `json:"scheduler"`
 }
 
 func NewHandler(config Config) (*Handler, error) {
@@ -179,6 +180,7 @@ func (handler *Handler) serviceSnapshot() serviceSnapshot {
 	return serviceSnapshot{
 		Snapshot:   handler.config.Supervisor.StoreSnapshot(),
 		Automation: handler.config.Supervisor.AutomationSnapshot(),
+		Scheduler:  handler.config.Scheduler.Health(),
 	}
 }
 
@@ -247,6 +249,10 @@ func (handler *Handler) handleStartRun(responseWriter http.ResponseWriter, reque
 	if err != nil {
 		if errors.Is(err, state.ErrIdempotencyConflict) {
 			handler.writeError(responseWriter, http.StatusConflict, "idempotency_conflict", "The Idempotency-Key was already used for another run request.")
+			return
+		}
+		if errors.Is(err, state.ErrActiveRunConflict) {
+			handler.writeError(responseWriter, http.StatusConflict, "active_run_conflict", "An active run already exists for this project and script.")
 			return
 		}
 		handler.writeError(responseWriter, http.StatusBadRequest, "run_start_failed", err.Error())

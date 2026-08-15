@@ -21,6 +21,8 @@ export function mergeScriptRuntimeState(nextScripts: ProjectScript[], previousSc
       ...script,
       status: previousScript.status,
       pid: previousScript.pid,
+      runId: previousScript.runId,
+      runtimeOwner: previousScript.runtimeOwner,
     };
   });
 }

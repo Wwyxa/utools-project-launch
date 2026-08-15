@@ -13,6 +13,7 @@ import {
   ProjectStatus,
   type Project,
   type ProjectBridge,
+  type ProjectBridgeRunResult,
   type ProjectDetailsTabId,
   type ProjectLaunchServiceStatus,
   type UiPreferences,
@@ -306,6 +307,7 @@ describe("browser UI preferences fallback", () => {
 
   it("keeps renderer ownership when Project Launch Service rejects automation handoff", async () => {
     const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const stopProjectLaunchService = vi.fn<ProjectBridge["stopProjectLaunchService"]>();
     const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       async (config) => ({
         accepted: false,
@@ -331,6 +333,7 @@ describe("browser UI preferences fallback", () => {
       saveProjectLaunchServicePreferences,
       getProjectLaunchServiceStatus: async () => healthyStatus,
       startProjectLaunchService: async () => healthyStatus,
+      stopProjectLaunchService,
       reconcileProjectLaunchService: async () => healthyStatus,
       syncProjectLaunchServiceAutomation,
     };
@@ -346,6 +349,7 @@ describe("browser UI preferences fallback", () => {
     );
     expect(store.projectLaunchServicePreferences.enabled).toBe(false);
     expect(saveProjectLaunchServicePreferences).not.toHaveBeenCalled();
+    expect(stopProjectLaunchService).toHaveBeenCalledOnce();
     expect(store.projectLaunchServiceStatus).toMatchObject({
       state: "unavailable",
       message: "service rejected automation configuration",
@@ -476,6 +480,8 @@ describe("browser UI preferences fallback", () => {
     await vi.waitFor(() => expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(1));
 
     await store.runDueAutomationPlans();
+    expect(runCommand).not.toHaveBeenCalled();
+    await expect(store.launchScript("handoff-project", "handoff-script")).resolves.toBeNull();
     expect(runCommand).not.toHaveBeenCalled();
 
     acceptHandoff({ accepted: true, revision: 1 });
@@ -698,6 +704,158 @@ describe("browser UI preferences fallback", () => {
     });
   });
 
+  it("rejects a duplicate service automation submission before the first snapshot", async () => {
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 0,
+    };
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
+      async (config) => ({ accepted: true, revision: config.revision }),
+    );
+    const project: Project = {
+      id: "pending-service-automation-project",
+      name: "Pending service automation project",
+      path: "/workspace/pending-service-automation-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [{ id: "pending-service-automation-script", name: "dev", command: "echo pending", status: "IDLE" }],
+      automationTasks: [
+        {
+          id: "pending-service-automation-task",
+          name: "Pending service automation task",
+          enabled: true,
+          scriptIds: ["pending-service-automation-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
+          missedGraceMinutes: 5,
+          notifyEnabled: false,
+          maxScriptRuntimeMinutes: 30,
+          inputConfigs: [],
+          exitConfigs: [],
+          dailyPlans: [],
+          history: [],
+          createdAt: "2026-08-15T00:00:00.000Z",
+          updatedAt: "2026-08-15T00:00:00.000Z",
+        },
+      ],
+      env: {},
+    };
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      reconcileProjectLaunchService: async () => healthyStatus,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [project];
+
+    const firstSubmission = store.runAutomationTaskNow(project.id, "pending-service-automation-task");
+    await expect(store.runAutomationTaskNow(project.id, "pending-service-automation-task")).resolves.toBe(false);
+    await expect(firstSubmission).resolves.toBe(true);
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the original plan time when submitting a service automation entry early", async () => {
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 0,
+    };
+    const futureAt = new Date(Date.now() + 60_000).toISOString();
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
+      async (config) => ({ accepted: true, revision: config.revision }),
+    );
+    const project: Project = {
+      id: "early-service-automation-project",
+      name: "Early service automation project",
+      path: "/workspace/early-service-automation-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [{ id: "early-service-automation-script", name: "dev", command: "echo early", status: "IDLE" }],
+      automationTasks: [
+        {
+          id: "early-service-automation-task",
+          name: "Early service automation task",
+          enabled: true,
+          scriptIds: ["early-service-automation-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
+          missedGraceMinutes: 5,
+          notifyEnabled: false,
+          maxScriptRuntimeMinutes: 30,
+          inputConfigs: [],
+          exitConfigs: [],
+          dailyPlans: [
+            { date: dateKey(), entries: [{ id: "early-service-entry", plannedAt: futureAt, status: "pending" }] },
+          ],
+          history: [],
+          createdAt: "2026-08-15T00:00:00.000Z",
+          updatedAt: "2026-08-15T00:00:00.000Z",
+        },
+      ],
+      env: {},
+    };
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      reconcileProjectLaunchService: async () => healthyStatus,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [project];
+
+    await expect(
+      store.runAutomationPlanEntryEarly(project.id, "early-service-automation-task", "early-service-entry"),
+    ).resolves.toBe(true);
+
+    const entry = store.projects[0]?.automationTasks?.[0]?.dailyPlans[0]?.entries[0];
+    expect(entry?.plannedAt).toBe(futureAt);
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projects: [
+          expect.objectContaining({
+            automationTasks: [
+              expect.objectContaining({
+                dailyPlans: [
+                  expect.objectContaining({
+                    entries: [
+                      expect.objectContaining({ id: "early-service-entry", plannedAt: futureAt, runEarly: true }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  });
+
   it("restores service-owned script state and retained output after plugin reconnect", async () => {
     const project: Project = {
       id: "reconnected-project",
@@ -895,7 +1053,7 @@ describe("browser UI preferences fallback", () => {
     expect(script.runtimeOwner).toBeUndefined();
   });
 
-  it("clears stale service-owned script state when the service is unavailable", async () => {
+  it("retains service-owned script identity when the service is unavailable", async () => {
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
@@ -942,11 +1100,75 @@ describe("browser UI preferences fallback", () => {
 
     const project = store.projects[0]!;
     const script = project.scripts[0]!;
-    expect(project.status).toBe(ProjectStatus.ERROR);
-    expect(script.status).toBe("ERROR");
-    expect(script.pid).toBeUndefined();
-    expect(script.runId).toBeUndefined();
-    expect(script.runtimeOwner).toBeUndefined();
+    expect(project.status).toBe(ProjectStatus.RUNNING);
+    expect(script).toMatchObject({
+      status: "RUNNING",
+      pid: 4242,
+      runId: "1234567890abcdef1234567890abcdef",
+      runtimeOwner: "service",
+    });
+  });
+
+  it("keeps a service run identity when refresh cannot reach the service", async () => {
+    const unavailableStatus: ProjectLaunchServiceStatus = {
+      state: "unavailable",
+      installed: true,
+      running: false,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      message: "Project Launch Service is unavailable.",
+    };
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      reconcileProjectLaunchService: async () => unavailableStatus,
+      getProcessStatus: async () => ({
+        active: false,
+        serviceState: "unavailable",
+        error: "Project Launch Service is unavailable.",
+      }),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [
+      {
+        id: "unavailable-refresh-project",
+        name: "Unavailable refresh project",
+        path: "/workspace/unavailable-refresh-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "unavailable-refresh-script",
+            name: "dev",
+            command: "echo unavailable",
+            status: "RUNNING",
+            pid: 8801,
+            runId: "unavailable-refresh-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    await store.refreshProjectLaunchServiceStatus();
+
+    expect(store.projectLaunchServiceStatus).toMatchObject({ state: "unavailable" });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({
+      status: "RUNNING",
+      pid: 8801,
+      runId: "unavailable-refresh-run",
+      runtimeOwner: "service",
+    });
   });
 });
 
@@ -970,6 +1192,26 @@ describe("Project Launch Service preload installation", () => {
         running: false,
         message: "项目启动服务已安装，尚未运行。",
       });
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed instead of starting an unverified executable during explicit enable", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const spawn = vi.fn(() => Object.assign(new EventEmitter(), { unref: vi.fn() }));
+    try {
+      const bridge = createBridge(serviceRoot, { child_process: { spawn } });
+      const installed = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(installed.directoryPath, { recursive: true });
+      writeFileSync(installed.executablePath, binaryContents);
+
+      await expect(bridge.startProjectLaunchService()).resolves.toMatchObject({
+        state: "unavailable",
+        installed: true,
+        running: false,
+      });
+      expect(spawn).not.toHaveBeenCalled();
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
@@ -1244,6 +1486,916 @@ describe("store startup timing", () => {
       "projects-load-automation-plan-recomputation-start",
       "projects-load-automation-plan-recomputation-complete",
     ]);
+  });
+
+  it("ignores terminal events from an older script run", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "runtime-project",
+        name: "Runtime project",
+        path: "/workspace/runtime-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        pathExists: true,
+        scripts: [
+          {
+            id: "runtime-script",
+            name: "dev",
+            command: "echo runtime",
+            status: "RUNNING",
+            pid: 2202,
+            runId: "new-run",
+            runtimeOwner: "preload",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    store.handleBridgeEvent({
+      type: "exit",
+      projectId: "runtime-project",
+      scriptId: "runtime-script",
+      pid: 2201,
+      runId: "old-run",
+      runtimeOwner: "preload",
+      code: 1,
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({
+      status: "RUNNING",
+      pid: 2202,
+      runId: "new-run",
+      runtimeOwner: "preload",
+    });
+    expect(store.logs["runtime-project"]).toBeUndefined();
+
+    store.handleBridgeEvent({
+      type: "exit",
+      projectId: "runtime-project",
+      scriptId: "runtime-script",
+      pid: 2202,
+      runId: "new-run",
+      runtimeOwner: "preload",
+      code: 0,
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
+  });
+
+  it("applies service events after an older service snapshot", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [
+      {
+        id: "ordered-service-project",
+        name: "Ordered service project",
+        path: "/workspace/ordered-service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "ordered-service-script",
+            name: "dev",
+            command: "echo ordered",
+            status: "RUNNING",
+            pid: 8101,
+            runId: "ordered-old-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    store.reconcileProjectLaunchServiceRuntime({
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [
+        {
+          id: "ordered-old-run",
+          projectId: "ordered-service-project",
+          scriptId: "ordered-service-script",
+          label: "Ordered service project / dev",
+          command: "echo ordered",
+          cwd: "C:\\workspace",
+          pid: 8101,
+          status: "running",
+          startedAt: "2026-08-15T09:00:00.000Z",
+        },
+      ],
+      events: [
+        {
+          cursor: 10,
+          timestamp: "2026-08-15T09:00:01.000Z",
+          type: "exit",
+          runId: "ordered-old-run",
+          projectId: "ordered-service-project",
+          scriptId: "ordered-service-script",
+          pid: 8101,
+          code: 0,
+        },
+        {
+          cursor: 11,
+          timestamp: "2026-08-15T09:00:02.000Z",
+          type: "started",
+          runId: "ordered-new-run",
+          projectId: "ordered-service-project",
+          scriptId: "ordered-service-script",
+          pid: 8102,
+          message: "echo ordered",
+          cwd: "C:\\workspace",
+        },
+      ],
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({
+      status: "RUNNING",
+      pid: 8102,
+      runId: "ordered-new-run",
+      runtimeOwner: "service",
+    });
+  });
+
+  it("does not append duplicate service output for the same event cursor", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "deduplicated-service-project",
+        name: "Deduplicated service project",
+        path: "/workspace/deduplicated-service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "deduplicated-service-script",
+            name: "dev",
+            command: "echo output",
+            status: "RUNNING",
+            pid: 3301,
+            runId: "deduplicated-service-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+    const event = {
+      type: "stdout" as const,
+      projectId: "deduplicated-service-project",
+      scriptId: "deduplicated-service-script",
+      pid: 3301,
+      cursor: 42,
+      runId: "deduplicated-service-run",
+      runtimeOwner: "service" as const,
+      message: "one line",
+    };
+
+    store.handleBridgeEvent(event);
+    store.handleBridgeEvent(event);
+
+    expect(store.scriptLogs["deduplicated-service-project"]?.["deduplicated-service-script"]).toHaveLength(1);
+    expect(store.logs["deduplicated-service-project"]).toHaveLength(1);
+  });
+
+  it("accepts a legacy terminal event only when its pid matches the current run", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "legacy-event-project",
+        name: "Legacy event project",
+        path: "/workspace/legacy-event-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "legacy-event-script",
+            name: "dev",
+            command: "echo legacy",
+            status: "RUNNING",
+            pid: 5502,
+            runId: "current-run",
+            runtimeOwner: "preload",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    store.handleBridgeEvent({
+      type: "exit",
+      projectId: "legacy-event-project",
+      scriptId: "legacy-event-script",
+      pid: 5501,
+      code: 1,
+    });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "RUNNING", runId: "current-run" });
+
+    store.handleBridgeEvent({
+      type: "exit",
+      projectId: "legacy-event-project",
+      scriptId: "legacy-event-script",
+      pid: 5502,
+      code: 0,
+    });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
+  });
+
+  it("preserves the current identity when a matching legacy started event arrives", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "legacy-started-project",
+        name: "Legacy started project",
+        path: "/workspace/legacy-started-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "legacy-started-script",
+            name: "dev",
+            command: "echo legacy-started",
+            status: "RUNNING",
+            pid: 6602,
+            runId: "current-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    store.handleBridgeEvent({
+      type: "started",
+      projectId: "legacy-started-project",
+      scriptId: "legacy-started-script",
+      pid: 6602,
+      message: "legacy event",
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({
+      status: "RUNNING",
+      pid: 6602,
+      runId: "current-run",
+      runtimeOwner: "service",
+    });
+  });
+
+  it("rejects a delayed started event recorded as a terminal service run", async () => {
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "snapshot-terminal-project",
+        name: "Snapshot terminal project",
+        path: "/workspace/snapshot-terminal-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "snapshot-terminal-script", name: "dev", command: "echo terminal", status: "IDLE" }],
+        env: {},
+      },
+    ];
+
+    const status: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [
+        {
+          id: "snapshot-old-run",
+          projectId: "snapshot-terminal-project",
+          scriptId: "snapshot-terminal-script",
+          label: "Snapshot terminal project / dev",
+          command: "echo terminal",
+          cwd: "C:\\workspace",
+          status: "exited",
+          startedAt: "2026-08-15T09:00:00.000Z",
+          pid: 7701,
+          endedAt: "2026-08-15T09:00:01.000Z",
+          code: 0,
+        },
+      ],
+    };
+
+    store.handleBridgeEvent({ type: "service-state", status });
+    store.handleBridgeEvent({
+      type: "started",
+      projectId: "snapshot-terminal-project",
+      scriptId: "snapshot-terminal-script",
+      pid: 7701,
+      runId: "snapshot-old-run",
+      runtimeOwner: "service",
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
+  });
+
+  it("waits for the matching run identity before applying a terminal event", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "pending-project",
+        name: "Pending project",
+        path: "/workspace/pending-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "pending-script",
+            name: "dev",
+            command: "echo pending",
+            status: "RUNNING",
+            pid: undefined,
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    store.handleBridgeEvent({
+      type: "exit",
+      projectId: "pending-project",
+      scriptId: "pending-script",
+      pid: 3301,
+      runId: "pending-run",
+      runtimeOwner: "preload",
+      code: 0,
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "RUNNING" });
+
+    store.handleBridgeEvent({
+      type: "started",
+      projectId: "pending-project",
+      scriptId: "pending-script",
+      pid: 3301,
+      runId: "pending-run",
+      runtimeOwner: "preload",
+      message: "echo pending",
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
+  });
+
+  it("ignores a delayed started event from a previously settled run", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "settled-project",
+        name: "Settled project",
+        path: "/workspace/settled-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        pathExists: true,
+        scripts: [{ id: "settled-script", name: "dev", command: "echo settled", status: "IDLE" }],
+        env: {},
+      },
+    ];
+
+    store.handleBridgeEvent({
+      type: "started",
+      projectId: "settled-project",
+      scriptId: "settled-script",
+      pid: 4401,
+      runId: "settled-old-run",
+      runtimeOwner: "preload",
+    });
+    store.handleBridgeEvent({
+      type: "exit",
+      projectId: "settled-project",
+      scriptId: "settled-script",
+      pid: 4401,
+      runId: "settled-old-run",
+      runtimeOwner: "preload",
+      code: 0,
+    });
+    store.handleBridgeEvent({
+      type: "started",
+      projectId: "settled-project",
+      scriptId: "settled-script",
+      pid: 4402,
+      runId: "settled-new-run",
+      runtimeOwner: "preload",
+    });
+    store.handleBridgeEvent({
+      type: "exit",
+      projectId: "settled-project",
+      scriptId: "settled-script",
+      pid: 4402,
+      runId: "settled-new-run",
+      runtimeOwner: "preload",
+      code: 0,
+    });
+
+    store.handleBridgeEvent({
+      type: "started",
+      projectId: "settled-project",
+      scriptId: "settled-script",
+      pid: 4401,
+      runId: "settled-old-run",
+      runtimeOwner: "preload",
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
+  });
+
+  it("stops a service run by runId while its process is still starting", async () => {
+    const stopProcess = vi.fn<ProjectBridge["stopProcess"]>(async () => undefined);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      stopProcess,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "starting-service-project",
+        name: "Starting service project",
+        path: "/workspace/starting-service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "starting-service-script",
+            name: "dev",
+            command: "echo starting",
+            status: "RUNNING",
+            runId: "starting-service-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    await store.stopScript("starting-service-project", "starting-service-script");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.projects[0]?.scripts[0]?.status).toBe("STOPPING");
+    expect(stopProcess).toHaveBeenCalledWith(0, {
+      runId: "starting-service-run",
+      runtimeOwner: "service",
+    });
+  });
+
+  it("stops a service launch once its run identity arrives", async () => {
+    let resolveRun: (result: ProjectBridgeRunResult) => void = () => undefined;
+    const runCommand = vi.fn<ProjectBridge["runCommand"]>(
+      () =>
+        new Promise<ProjectBridgeRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    const stopProcess = vi.fn<ProjectBridge["stopProcess"]>(async () => undefined);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      runCommand,
+      stopProcess,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [
+      {
+        id: "pending-service-project",
+        name: "Pending service project",
+        path: "/workspace/pending-service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "pending-service-script", name: "dev", command: "echo pending", status: "IDLE" }],
+        env: {},
+      },
+    ];
+
+    const launch = store.launchScript("pending-service-project", "pending-service-script");
+    await Promise.resolve();
+    await store.stopScript("pending-service-project", "pending-service-script");
+
+    expect(store.projects[0]?.scripts[0]?.status).toBe("STOPPING");
+    expect(stopProcess).not.toHaveBeenCalled();
+
+    resolveRun({
+      pid: 0,
+      startedAt: "2026-08-15T09:00:00.000Z",
+      command: "echo pending",
+      cwd: "/workspace/pending-service-project",
+      runId: "pending-service-run",
+      runtimeOwner: "service",
+    });
+    await launch;
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(stopProcess).toHaveBeenCalledWith(0, {
+      runId: "pending-service-run",
+      runtimeOwner: "service",
+    });
+  });
+
+  it("sends input to a service run by runId while its process is still starting", async () => {
+    const sendProcessInput = vi.fn<ProjectBridge["sendProcessInput"]>(async () => ({ sent: true }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      sendProcessInput,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "input-service-project",
+        name: "Input service project",
+        path: "/workspace/input-service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "input-service-script",
+            name: "dev",
+            command: "echo input",
+            status: "RUNNING",
+            runId: "input-service-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    await expect(store.sendScriptInput("input-service-project", "input-service-script", "hello")).resolves.toEqual({
+      sent: true,
+    });
+    expect(sendProcessInput).toHaveBeenCalledWith(0, "hello", {
+      runId: "input-service-run",
+      runtimeOwner: "service",
+    });
+  });
+
+  it("reconciles a pid-less service run by runId", async () => {
+    const getProcessStatus = vi.fn<ProjectBridge["getProcessStatus"]>(async () => ({
+      active: false,
+      code: 0,
+      runId: "pid-less-service-run",
+      runtimeOwner: "service",
+    }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      getProcessStatus,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "pid-less-service-project",
+        name: "PID-less service project",
+        path: "/workspace/pid-less-service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "pid-less-service-script",
+            name: "dev",
+            command: "echo pid-less",
+            status: "RUNNING",
+            runId: "pid-less-service-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    await store.reconcileRuntimeProcessState();
+
+    expect(getProcessStatus).toHaveBeenCalledWith(0, {
+      runId: "pid-less-service-run",
+      runtimeOwner: "service",
+    });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
+  });
+
+  it("applies live service automation snapshots to the active task and history", async () => {
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "automation-project",
+        name: "Automation project",
+        path: "/workspace/automation-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "automation-script", name: "dev", command: "echo automation", status: "IDLE" }],
+        env: {},
+        automationTasks: [
+          {
+            id: "automation-task",
+            name: "Deploy task",
+            enabled: true,
+            scriptIds: ["automation-script"],
+            schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+            missedPolicy: "grace-run",
+            missedGraceMinutes: 5,
+            notifyEnabled: false,
+            maxScriptRuntimeMinutes: 30,
+            inputConfigs: [],
+            exitConfigs: [],
+            dailyPlans: [
+              {
+                date: dateKey(),
+                entries: [{ id: "automation-entry", plannedAt: "2026-08-15T09:00:00.000Z", status: "pending" }],
+              },
+            ],
+            history: [],
+            createdAt: "2026-08-15T00:00:00.000Z",
+            updatedAt: "2026-08-15T00:00:00.000Z",
+          },
+        ],
+      },
+    ];
+
+    const baseStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 4,
+    };
+    const execution = {
+      id: "automation-run",
+      projectId: "automation-project",
+      taskId: "automation-task",
+      planEntryId: "automation-entry",
+      currentScriptIndex: 0,
+      startedAt: "2026-08-15T09:00:01.000Z",
+      scriptResults: [],
+    };
+
+    store.handleBridgeEvent({
+      type: "service-state",
+      status: {
+        ...baseStatus,
+        automation: { revision: 4, executions: [{ ...execution, status: "running" }] },
+      },
+    });
+
+    expect(store.projects[0]?.automationTasks?.[0]?.dailyPlans[0]?.entries[0]).toMatchObject({
+      status: "running",
+      runId: "automation-run",
+    });
+    expect(store.automationActiveProjectRuns["automation-project"]).toBe("automation-run");
+
+    store.handleBridgeEvent({
+      type: "service-state",
+      status: {
+        ...baseStatus,
+        automation: {
+          revision: 4,
+          executions: [
+            {
+              ...execution,
+              status: "completed",
+              currentScriptIndex: 1,
+              endedAt: "2026-08-15T09:01:00.000Z",
+              scriptResults: [
+                {
+                  scriptId: "automation-script",
+                  status: "completed",
+                  startedAt: execution.startedAt,
+                  endedAt: "2026-08-15T09:01:00.000Z",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const task = store.projects[0]?.automationTasks?.[0];
+    expect(task?.dailyPlans[0]?.entries[0]?.status).toBe("completed");
+    expect(store.automationActiveProjectRuns["automation-project"]).toBeUndefined();
+    expect(task?.history).toHaveLength(1);
+    expect(task?.history[0]).toMatchObject({ id: "automation-run", status: "completed" });
+
+    store.handleBridgeEvent({
+      type: "service-state",
+      status: {
+        ...baseStatus,
+        automation: { revision: 4, executions: [] },
+      },
+    });
+
+    expect(store.automationActiveProjectRuns["automation-project"]).toBeUndefined();
+  });
+
+  it("reconciles the existing service run after an active-run conflict", async () => {
+    const conflict = Object.assign(new Error("An active run already exists."), { code: "active_run_conflict" });
+    const runCommand = vi.fn(async () => {
+      throw conflict;
+    });
+    const reconcileProjectLaunchService = vi.fn(async () => ({
+      state: "healthy" as const,
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [
+        {
+          id: "existing-service-run",
+          projectId: "conflict-project",
+          scriptId: "conflict-script",
+          label: "Conflict project / script",
+          command: "echo existing",
+          cwd: "C:\\workspace",
+          pid: 4422,
+          status: "running" as const,
+          startedAt: "2026-08-15T09:00:00.000Z",
+        },
+      ],
+    }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      runCommand,
+      reconcileProjectLaunchService,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "conflict-project",
+        name: "Conflict project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "conflict-script", name: "dev", command: "echo existing", status: "IDLE" }],
+        env: {},
+      },
+    ];
+
+    await expect(store.launchScript("conflict-project", "conflict-script")).resolves.toBeNull();
+
+    expect(runCommand).toHaveBeenCalledOnce();
+    expect(reconcileProjectLaunchService).toHaveBeenCalledOnce();
+    expect(store.projects[0]?.scripts[0]).toMatchObject({
+      status: "RUNNING",
+      pid: 4422,
+      runId: "existing-service-run",
+      runtimeOwner: "service",
+    });
+  });
+
+  it("does not leave a pid-less running script when an active-run conflict cannot be reconciled", async () => {
+    const conflict = Object.assign(new Error("An active run already exists."), { code: "active_run_conflict" });
+    const runCommand = vi.fn(async () => {
+      throw conflict;
+    });
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [],
+    };
+    const reconcileProjectLaunchService = vi.fn(async () => healthyStatus);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      runCommand,
+      reconcileProjectLaunchService,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "unreconciled-conflict-project",
+        name: "Unreconciled conflict project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "unreconciled-conflict-script", name: "dev", command: "echo conflict", status: "IDLE" }],
+        env: {},
+      },
+    ];
+
+    await expect(
+      store.launchScript("unreconciled-conflict-project", "unreconciled-conflict-script"),
+    ).resolves.toBeNull();
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "ERROR" });
+    expect(store.projects[0]?.scripts[0]?.pid).toBeUndefined();
+    expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
+    expect(store.projects[0]?.scripts[0]?.runtimeOwner).toBeUndefined();
+    expect(store.projectLaunchServiceStatus).toMatchObject({
+      state: "unavailable",
+      message: "项目启动服务存在活动运行，但当前窗口未能恢复其身份。",
+    });
   });
 });
 

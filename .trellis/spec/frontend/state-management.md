@@ -295,6 +295,89 @@ project.status = deriveProjectStatus(project);
 
 Keep script runtime state centralized so project-level UI reflects the whole script list, not only the last script event.
 
+## Scenario: Owner-Neutral Runtime Reconciliation
+
+### 1. Scope / Trigger
+
+- Trigger: the Store consumes direct process events, service process events, service snapshots, automation executions, scheduler status, or service ownership changes.
+- This requires code-spec depth because one runtime fact crosses `src/types.ts`, `public/preload.js`, Pinia, and the local Go service before several UI surfaces consume it.
+
+### 2. Signatures
+
+- `ProjectScript` retains `pid?: number`, `runId?: string`, and `runtimeOwner?: "preload" | "service"` while it is active.
+- `ProjectBridgeServiceStateEvent` is `{ type: "service-state"; status: ProjectLaunchServiceStatus; timestamp?: string }` in the `ProjectBridgeEvent` union.
+- `ProjectLaunchServiceStatus.scheduler` is optional and, when present, contains `state`, `lastRunAt`, `lastSuccessAt`, and `lastError`.
+- Store reconciliation path: `reconcileProjectLaunchServiceRuntime(status)` applies runs, automation executions, and any explicit reconciliation events.
+- Store event path: `handleBridgeEvent(event)` handles `service-state` before process-log/lifecycle handling.
+- Store action: `runAutomationPlanEntryEarly(projectId, taskId, entryId): Promise<boolean>` uses the selected entry id; service mode communicates it through the synchronized `runEarly` configuration field.
+
+### 3. Contracts
+
+- Treat `(runId, runtimeOwner)` as the current script identity. PID is optional for service runs and may be `0` when stop, input, or status reconciliation is sent through the service bridge.
+- For an active script, reject a bridge event with a different `runId` or owner. A legacy event without identity is admissible only when its PID and any supplied owner match the current script.
+- A terminal event that arrives before `runCommand()` returns its matching identity is buffered by project, script, and `runId`; replay it after the result or matching start event establishes that identity. A terminal observation remains terminal and cannot be revived by a delayed `started` event.
+- `service-state` is status/reconciliation data, not a terminal log record. Update `projectLaunchServiceStatus`, reconcile service-owned runs/automation/history, then return without appending a generic process log.
+- When service status is not healthy/running, `reconcileProjectLaunchServiceRuntime` preserves existing service-owned runtime fields. It must not synthesize an `exit`, clear active automation, or re-enable renderer scheduling.
+- For healthy snapshots, choose the latest service run per `(projectId, scriptId)`, preserve active starting/running/stopping identity, and clear identity only for a known terminal service run. Process events with a service cursor must not append the same output twice.
+- Service automation executions are authoritative for service mode. Reconcile each execution into its matching plan entry and history, release a pending submission when its selected entry appears, and derive `automationActiveProjectRuns` from running executions.
+- During `projectLaunchServiceOwnershipHandoff`, block every renderer launch and automation entry point. Persist enabled ownership only after start plus complete configuration synchronization succeed; after persisted ownership, service errors become scoped unavailable state and remain fail-closed.
+- An early service run keeps the original future `plannedAt`. Set the per-project submission guard before synchronization, send `runEarly: true` only for the selected pending entry, and do not persist a successful renderer-local execution/history for it.
+- On `active_run_conflict`, reconcile first. Keep the recovered service run if present; otherwise clear the optimistic script state and surface an unavailable status instead of leaving a PID-less script marked running.
+
+### 4. Validation & Error Matrix
+
+- Current script is `new-run` and an `exit` arrives for `old-run` -> ignore the event and leave current status/logs unchanged.
+- Snapshot marks a run terminal, then an old `started` event arrives -> reject the delayed start; do not recreate a completed run.
+- Same service output event cursor arrives twice -> append one log line only.
+- Service is unavailable during runtime reconciliation -> retain the active service script and show unavailable service status; do not infer a terminal result.
+- `runAutomationPlanEntryEarly` is called during handoff, for a past/non-pending entry, with no scripts, or while a project submission exists -> return `false` without changing plan/history.
+- Healthy service accepts an early submission -> return `true`, keep `plannedAt`, and await the service snapshot for running/completed/failed history.
+- `active_run_conflict` reconciliation returns the existing service run -> restore it as `RUNNING`/`STOPPING` with its `runId`; no second bridge launch occurs.
+- `active_run_conflict` reconciliation cannot find the advertised run -> set only the optimistic target script to `ERROR`, clear its runtime fields, and mark service state unavailable.
+
+### 5. Good/Base/Bad Cases
+
+- Good: service output and a later service snapshot reach an open plugin; output appears once while automation history and scheduler health refresh from the snapshot.
+- Good: a user requests stop or input while a service run is starting without a PID; Store passes `pid: 0` together with `runId` and `runtimeOwner: "service"`.
+- Good: a user enables service mode with a due renderer task; the handoff barrier prevents the renderer timer from launching it before the service accepts the configuration.
+- Base: service mode is disabled; preload processes and renderer automation continue to use the same script runtime fields without involving service state.
+- Bad: clear a service script because one status poll fails, then allow the renderer to launch the same script or task.
+- Bad: implement early service execution by calling the renderer's `runAutomationTaskNow`, because it creates a local manual entry and leaves the selected scheduled entry pending.
+
+### 6. Tests Required
+
+- `tests/projectRuntimeState.test.ts` must preserve `runId` and owner when script arrays are rebuilt.
+- `tests/projectBridge.launchers.test.ts` must assert one generated preload identity across lifecycle events and reject mismatched identity for control calls.
+- `tests/projectBridge.uiPreferences.test.ts` must cover stale terminal events, explicit snapshot/event ordering, service cursor de-duplication, unavailable service reconciliation, owner handoff timer blocking, early service submission, PID-less service controls, and active-run-conflict recovery/failure.
+- Run `npx vitest run tests/projectRuntimeState.test.ts tests/projectBridge.launchers.test.ts tests/projectBridge.uiPreferences.test.ts` after changing runtime reconciliation or automation ownership.
+- Run `node --check public/preload.js`, `npm run lint`, and `npm run build` after changing the bridge event union, Store runtime actions, or service-state presentation.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+if (status.state !== "healthy") {
+  script.status = "STOPPED";
+  script.runId = undefined;
+}
+```
+
+This converts a control-plane failure into a false process result and makes a second owner appear safe to start.
+
+#### Correct
+
+```ts
+if (status.state !== "healthy" || !status.running) {
+  this.projectLaunchServiceStatus = status;
+  return;
+}
+
+this.reconcileProjectLaunchServiceRuntime(status);
+```
+
+Preserve service-owned identity until authoritative state says the run is terminal, and keep enabled ownership fail-closed.
+
 ## Scenario: Project Metadata Persistence Boundary
 
 ### 1. Scope / Trigger

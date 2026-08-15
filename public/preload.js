@@ -1110,11 +1110,17 @@ function saveProjectLaunchServicePreferences(preferences) {
   try {
     if (window.utools?.dbStorage) {
       window.utools.dbStorage.setItem(projectLaunchServicePreferencesStorageKey, normalized);
-      return;
+    } else {
+      window.localStorage?.setItem(projectLaunchServicePreferencesStorageKey, JSON.stringify(normalized));
     }
-    window.localStorage?.setItem(projectLaunchServicePreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep service preference updates non-blocking when host storage is unavailable.
+  }
+  if (normalized.enabled && fs.existsSync(projectLaunchServiceDiscoveryPath())) {
+    scheduleProjectLaunchServiceEventPoll(0);
+  } else if (projectLaunchServiceEventPollTimer) {
+    clearTimeout(projectLaunchServiceEventPollTimer);
+    projectLaunchServiceEventPollTimer = null;
   }
 }
 
@@ -1718,6 +1724,14 @@ function projectLaunchServiceIdempotencyKey(prefix = "request") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}-${process.pid}`;
 }
 
+function createPreloadRunId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ||
+    crypto.randomUUID?.() ||
+    `preload-${Date.now()}-${Math.random().toString(36).slice(2)}-${process.pid}`
+  );
+}
+
 function projectLaunchServiceResponseError(response, fallbackMessage) {
   const error = new Error(response?.payload?.message || fallbackMessage);
   error.code = response?.payload?.code || `http-${response?.statusCode || 0}`;
@@ -1863,6 +1877,7 @@ function projectLaunchServiceEventToBridgeEvent(event) {
     projectId: event.projectId || "",
     scriptId: event.scriptId || "",
     pid: Number.isInteger(event.pid) ? event.pid : 0,
+    ...(Number.isSafeInteger(event.cursor) && event.cursor >= 0 ? { cursor: event.cursor } : {}),
     runId: event.runId,
     runtimeOwner: "service",
     timestamp: event.timestamp,
@@ -1881,6 +1896,17 @@ function projectLaunchServiceAutomationSnapshot(automation) {
   return {
     revision: Number.isSafeInteger(revision) && revision >= 0 ? revision : 0,
     ...(Array.isArray(automation?.executions) ? { executions: automation.executions } : {}),
+  };
+}
+
+function projectLaunchServiceSchedulerSnapshot(scheduler) {
+  if (!scheduler || typeof scheduler !== "object") return undefined;
+  if (scheduler.state !== "running" && scheduler.state !== "degraded") return undefined;
+  return {
+    state: scheduler.state,
+    ...(typeof scheduler.lastRunAt === "string" ? { lastRunAt: scheduler.lastRunAt } : {}),
+    ...(typeof scheduler.lastSuccessAt === "string" ? { lastSuccessAt: scheduler.lastSuccessAt } : {}),
+    ...(typeof scheduler.lastError === "string" ? { lastError: scheduler.lastError } : {}),
   };
 }
 
@@ -1920,11 +1946,13 @@ async function readProjectLaunchServiceStatus(options = {}) {
     status.activeRunCount = serviceRunCount(state.runs);
     if (options.includeState === true) {
       const automation = projectLaunchServiceAutomationSnapshot(state.automation);
+      const scheduler = projectLaunchServiceSchedulerSnapshot(state.scheduler);
       status.runs = Array.isArray(state.runs) ? state.runs : [];
       status.latestCursor = state.latestCursor || 0;
       status.earliestCursor = state.earliestCursor || 0;
       status.automationRevision = automation.revision;
       status.automation = automation;
+      if (scheduler) status.scheduler = scheduler;
     }
     return status;
   } catch (error) {
@@ -1976,7 +2004,7 @@ async function startProjectLaunchService(options = {}) {
   }
   if (!initial.installed) return initial;
 
-  if (options.requireVerifiedInstall === true) {
+  if (options.requireVerifiedInstall !== false) {
     try {
       verifyProjectLaunchServiceInstalledExecutable();
     } catch (error) {
@@ -2055,20 +2083,22 @@ async function reconcileProjectLaunchService() {
 
   try {
     const connection = await projectLaunchServiceConnection();
-    const state = await requestProjectLaunchServiceState(connection);
     const batch = await requestProjectLaunchServiceEvents(connection, projectLaunchServiceEventCursor);
-    const automation = projectLaunchServiceAutomationSnapshot(state.automation);
+    const latestState = await requestProjectLaunchServiceState(connection);
+    const automation = projectLaunchServiceAutomationSnapshot(latestState.automation);
+    const scheduler = projectLaunchServiceSchedulerSnapshot(latestState.scheduler);
     advanceProjectLaunchServiceEventCursor(batch);
     status = {
       ...status,
-      runs: Array.isArray(state.runs) ? state.runs : [],
-      activeRunCount: serviceRunCount(state.runs),
-      latestCursor: batch.latestCursor || state.latestCursor || 0,
-      earliestCursor: batch.earliestCursor || state.earliestCursor || 0,
+      runs: Array.isArray(latestState.runs) ? latestState.runs : [],
+      activeRunCount: serviceRunCount(latestState.runs),
+      latestCursor: batch.latestCursor || latestState.latestCursor || 0,
+      earliestCursor: batch.earliestCursor || latestState.earliestCursor || 0,
       events: Array.isArray(batch.events) ? batch.events : [],
       eventsTruncated: batch.truncated === true,
       automationRevision: automation.revision,
       automation,
+      ...(scheduler ? { scheduler } : {}),
     };
     scheduleProjectLaunchServiceEventPoll(batch.hasMore === true ? 0 : projectLaunchServiceEventPollIntervalMs);
     return status;
@@ -2086,16 +2116,51 @@ function openProjectLaunchServiceDirectory() {
 async function pollProjectLaunchServiceEvents(emitEvents = true) {
   if (projectLaunchServiceEventPollInFlight || !readProjectLaunchServicePreferences().enabled) return false;
   projectLaunchServiceEventPollInFlight = true;
+  let status = projectLaunchServiceBaseStatus();
   try {
+    status = await readProjectLaunchServiceStatus({ includeState: true });
+    if (status.state !== "healthy" || !status.running) {
+      if (emitEvents) {
+        emit({ type: "service-state", status, timestamp: new Date().toISOString() });
+      }
+      return false;
+    }
     const connection = await projectLaunchServiceConnection();
     const batch = await requestProjectLaunchServiceEvents(connection, projectLaunchServiceEventCursor);
+    const latestState = await requestProjectLaunchServiceState(connection);
+    const automation = projectLaunchServiceAutomationSnapshot(latestState.automation);
+    const scheduler = projectLaunchServiceSchedulerSnapshot(latestState.scheduler);
+    status = {
+      ...status,
+      runs: Array.isArray(latestState.runs) ? latestState.runs : [],
+      activeRunCount: serviceRunCount(latestState.runs),
+      automationRevision: automation.revision,
+      automation,
+      ...(scheduler ? { scheduler } : {}),
+    };
     advanceProjectLaunchServiceEventCursor(batch);
+    const snapshot = {
+      ...status,
+      events: emitEvents ? [] : Array.isArray(batch.events) ? batch.events : [],
+      latestCursor: batch.latestCursor || latestState.latestCursor || status.latestCursor || 0,
+      earliestCursor: batch.earliestCursor || latestState.earliestCursor || status.earliestCursor || 0,
+      eventsTruncated: batch.truncated === true,
+    };
     if (emitEvents && Array.isArray(batch.events)) {
       batch.events.forEach((event) => emit(projectLaunchServiceEventToBridgeEvent(event)));
     }
+    if (emitEvents) {
+      emit({ type: "service-state", status: snapshot, timestamp: new Date().toISOString() });
+    }
     return batch.hasMore === true;
   } catch (error) {
-    // The next reconciliation reports the scoped service failure.
+    if (emitEvents) {
+      emit({
+        type: "service-state",
+        status: serviceStatusWithError(status, error),
+        timestamp: new Date().toISOString(),
+      });
+    }
     return false;
   } finally {
     projectLaunchServiceEventPollInFlight = false;
@@ -2140,12 +2205,12 @@ async function runProjectLaunchServiceCommand(payload) {
     throw projectLaunchServiceResponseError(response, "项目启动服务无法启动脚本。");
   }
   const run = response.payload?.run;
-  if (!run || typeof run.id !== "string" || !Number.isInteger(run.pid) || run.pid <= 0) {
+  if (!run || typeof run.id !== "string" || !run.id.trim()) {
     throw new Error("项目启动服务返回了无效的运行记录。");
   }
   await pollProjectLaunchServiceEvents(true);
   return {
-    pid: run.pid,
+    pid: Number.isInteger(run.pid) && run.pid > 0 ? run.pid : 0,
     startedAt: run.startedAt,
     command: run.command,
     cwd: run.cwd,
@@ -2160,6 +2225,8 @@ function projectLaunchServiceRunToProcessStatus(run) {
   }
   return {
     active: ["starting", "running", "stopping"].includes(run.status),
+    runId: run.id,
+    runtimeOwner: "service",
     code: run.code,
     signal: run.signal,
     stoppedByUser: run.stoppedByUser,
@@ -2170,13 +2237,24 @@ function projectLaunchServiceRunToProcessStatus(run) {
   };
 }
 
+function shouldUseProjectLaunchServiceRuntime(options = {}) {
+  if (options.runtimeOwner === "preload") {
+    return false;
+  }
+  return options.runtimeOwner === "service" || (readProjectLaunchServicePreferences().enabled && options.runId);
+}
+
 async function getProjectLaunchServiceRunStatus(runId) {
   if (typeof runId !== "string" || !runId) {
     return { active: false, error: "服务运行记录缺少 runId。" };
   }
   const status = await readProjectLaunchServiceStatus({ includeState: true });
   if (status.state !== "healthy" || !status.running) {
-    return { active: false, error: status.message || "项目启动服务不可用。" };
+    return {
+      active: false,
+      serviceState: status.state,
+      error: status.message || "项目启动服务不可用。",
+    };
   }
   return projectLaunchServiceRunToProcessStatus(status.runs?.find((run) => run.id === runId));
 }
@@ -7738,6 +7816,8 @@ function runCommand(payload) {
     return runProjectLaunchServiceCommand(payload);
   }
 
+  const runId = createPreloadRunId();
+  const runtimeOwner = "preload";
   const resolvedCwd = expandPath(payload.cwd);
   const decodeStdout = createProcessOutputDecoder();
   const decodeStderr = createProcessOutputDecoder();
@@ -7760,6 +7840,8 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       automationRunId: payload.automationRunId,
+      runId,
+      runtimeOwner,
     });
     launchedProcessIds.add(childPid);
   }
@@ -7786,6 +7868,8 @@ function runCommand(payload) {
       ...result,
       endedAt: new Date().toISOString(),
       automationRunId: payload.automationRunId,
+      runId,
+      runtimeOwner,
     };
     completedProcessResults.set(childPid, resultWithEndedAt);
     if (payload.automationRunId) {
@@ -7809,6 +7893,8 @@ function runCommand(payload) {
     projectId: payload.projectId,
     scriptId: payload.scriptId,
     pid: childPid,
+    runId,
+    runtimeOwner,
     automationRunId: payload.automationRunId,
     message: payload.command,
     cwd: resolvedCwd,
@@ -7820,6 +7906,8 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
+      runId,
+      runtimeOwner,
       automationRunId: payload.automationRunId,
       message: decodeStdout(chunk),
     });
@@ -7831,6 +7919,8 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
+      runId,
+      runtimeOwner,
       automationRunId: payload.automationRunId,
       message: decodeStderr(chunk),
     });
@@ -7856,6 +7946,8 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
+      runId,
+      runtimeOwner,
       automationRunId: payload.automationRunId,
       ...(automationExitMatched ? { automationExitMatched: true } : {}),
       message: error?.message || "command failed",
@@ -7882,6 +7974,8 @@ function runCommand(payload) {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
+      runId,
+      runtimeOwner,
       automationRunId: payload.automationRunId,
       ...(automationExitMatched ? { automationExitMatched: true } : {}),
       code,
@@ -7895,20 +7989,27 @@ function runCommand(payload) {
     startedAt: new Date().toISOString(),
     command: payload.command,
     cwd: resolvedCwd,
+    runId,
+    runtimeOwner,
   };
 }
 
 function getProcessStatus(pid, options = {}) {
-  if (options.runtimeOwner === "service" || (readProjectLaunchServicePreferences().enabled && options.runId)) {
+  if (shouldUseProjectLaunchServiceRuntime(options)) {
     return getProjectLaunchServiceRunStatus(options.runId);
   }
 
-  if (activeProcesses.has(pid)) {
-    return { active: true };
+  const metadata = activeProcessMetadata.get(pid);
+  if (activeProcesses.has(pid) && (!options.runId || metadata?.runId === options.runId)) {
+    return {
+      active: true,
+      runId: metadata?.runId,
+      runtimeOwner: metadata?.runtimeOwner,
+    };
   }
 
   const result = completedProcessResults.get(pid);
-  if (result) {
+  if (result && (!options.runId || result.runId === options.runId)) {
     return { active: false, ...result };
   }
 
@@ -7996,13 +8097,17 @@ function stopUnixProcessTree(pid, child) {
 }
 
 async function stopProcess(pid, options) {
-  if (options?.runtimeOwner === "service" || (readProjectLaunchServicePreferences().enabled && options?.runId)) {
+  if (shouldUseProjectLaunchServiceRuntime(options)) {
     await stopProjectLaunchServiceRun(options?.runId);
     return;
   }
 
   const child = activeProcesses.get(pid);
   const metadata = activeProcessMetadata.get(pid);
+
+  if (options?.runId && metadata?.runId !== options.runId) {
+    return;
+  }
 
   if (
     child &&
@@ -8031,7 +8136,7 @@ async function stopProcess(pid, options) {
 }
 
 async function sendProcessInput(pid, input, options = {}) {
-  if (options.runtimeOwner === "service" || (readProjectLaunchServicePreferences().enabled && options.runId)) {
+  if (shouldUseProjectLaunchServiceRuntime(options)) {
     return sendProjectLaunchServiceRunInput(options.runId, input);
   }
 
@@ -8042,6 +8147,9 @@ async function sendProcessInput(pid, input, options = {}) {
   }
   if (!metadata) {
     return { sent: false, message: "当前进程缺少日志上下文。" };
+  }
+  if (options.runId && metadata.runId !== options.runId) {
+    return { sent: false, message: "当前进程运行身份已变更。" };
   }
 
   const line = `${String(input ?? "")}\n`;
@@ -8057,6 +8165,8 @@ async function sendProcessInput(pid, input, options = {}) {
         projectId: metadata.projectId,
         scriptId: metadata.scriptId,
         pid,
+        runId: metadata.runId,
+        runtimeOwner: metadata.runtimeOwner,
         automationRunId: metadata.automationRunId,
         message: String(input ?? ""),
       });

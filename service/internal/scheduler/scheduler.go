@@ -18,6 +18,20 @@ import (
 
 const SchemaVersion = 1
 
+type SchedulerState string
+
+const (
+	SchedulerStateRunning  SchedulerState = "running"
+	SchedulerStateDegraded SchedulerState = "degraded"
+)
+
+type SchedulerHealth struct {
+	State         SchedulerState `json:"state"`
+	LastRunAt     string         `json:"lastRunAt,omitempty"`
+	LastSuccessAt string         `json:"lastSuccessAt,omitempty"`
+	LastError     string         `json:"lastError,omitempty"`
+}
+
 type Config struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Revision      uint64          `json:"revision"`
@@ -82,12 +96,15 @@ type PlanEntry struct {
 	ID        string `json:"id"`
 	PlannedAt string `json:"plannedAt"`
 	Status    string `json:"status"`
+	RunEarly  bool   `json:"runEarly,omitempty"`
 }
 
 type Runtime struct {
 	store      *state.Store
 	supervisor *serviceprocess.Supervisor
 	replaceMu  sync.Mutex
+	healthMu   sync.RWMutex
+	health     SchedulerHealth
 }
 
 const (
@@ -95,6 +112,7 @@ const (
 	defaultMaxScriptRuntime    = 30 * time.Minute
 	defaultOutputMatchWait     = 30 * time.Second
 	maxAutomationOutputTailLen = 64 * 1024
+	maxSchedulerHealthErrorLen = 512
 )
 
 func New(store *state.Store, supervisor *serviceprocess.Supervisor) (*Runtime, error) {
@@ -108,7 +126,17 @@ func New(store *state.Store, supervisor *serviceprocess.Supervisor) (*Runtime, e
 	return &Runtime{
 		store:      store,
 		supervisor: supervisor,
+		health: SchedulerHealth{
+			State: SchedulerStateRunning,
+		},
 	}, nil
+}
+
+func (runtime *Runtime) Health() SchedulerHealth {
+	runtime.healthMu.RLock()
+	defer runtime.healthMu.RUnlock()
+
+	return runtime.health
 }
 
 func (runtime *Runtime) ReplaceConfiguration(revision uint64, rawConfig json.RawMessage) (state.AutomationState, error) {
@@ -124,6 +152,7 @@ func (runtime *Runtime) ReplaceConfiguration(revision uint64, rawConfig json.Raw
 
 	current := runtime.store.Automation()
 	if current.Revision == revision && bytes.Equal(current.Config, rawConfig) {
+		runtime.clearHealthError()
 		return current, nil
 	}
 
@@ -131,6 +160,7 @@ func (runtime *Runtime) ReplaceConfiguration(revision uint64, rawConfig json.Raw
 	if err != nil {
 		return state.AutomationState{}, err
 	}
+	runtime.clearHealthError()
 	return updated, nil
 }
 
@@ -139,7 +169,7 @@ func (runtime *Runtime) Run(ctx context.Context) {
 		return
 	}
 
-	if err := runtime.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	if err := runtime.RunOnce(ctx); errors.Is(err, context.Canceled) {
 		return
 	}
 
@@ -150,7 +180,7 @@ func (runtime *Runtime) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := runtime.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			if err := runtime.RunOnce(ctx); errors.Is(err, context.Canceled) {
 				return
 			}
 		}
@@ -158,6 +188,17 @@ func (runtime *Runtime) Run(ctx context.Context) {
 }
 
 func (runtime *Runtime) RunOnce(ctx context.Context) error {
+	runtime.markIterationStarted()
+	err := runtime.runOnce(ctx)
+	if err == nil {
+		runtime.markIterationSucceeded()
+	} else if !errors.Is(err, context.Canceled) {
+		runtime.markIterationFailed(err)
+	}
+	return err
+}
+
+func (runtime *Runtime) runOnce(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("scheduler context is required")
 	}
@@ -204,10 +245,10 @@ func (runtime *Runtime) RunOnce(ctx context.Context) error {
 					if err != nil {
 						return fmt.Errorf("parse planned time for %s/%s/%s: %w", project.ID, task.ID, entry.ID, err)
 					}
-					if plannedAt.After(now) {
+					if plannedAt.After(now) && !entry.RunEarly {
 						continue
 					}
-					if shouldMarkMissed(task, plannedAt, now) {
+					if !entry.RunEarly && shouldMarkMissed(task, plannedAt, now) {
 						if err := runtime.recordMissedExecution(automation.Revision, project, task, entry, now); err != nil {
 							return err
 						}
@@ -240,6 +281,61 @@ func (runtime *Runtime) RunOnce(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (runtime *Runtime) markIterationStarted() {
+	runtime.healthMu.Lock()
+	defer runtime.healthMu.Unlock()
+
+	runtime.health.LastRunAt = time.Now().UTC().Format(time.RFC3339Nano)
+}
+
+func (runtime *Runtime) markIterationSucceeded() {
+	runtime.healthMu.Lock()
+	defer runtime.healthMu.Unlock()
+
+	runtime.health.State = SchedulerStateRunning
+	runtime.health.LastSuccessAt = runtime.health.LastRunAt
+	runtime.health.LastError = ""
+}
+
+func (runtime *Runtime) markIterationFailed(err error) {
+	runtime.healthMu.Lock()
+	defer runtime.healthMu.Unlock()
+
+	runtime.health.State = SchedulerStateDegraded
+	runtime.health.LastError = boundedSchedulerError(err)
+}
+
+func (runtime *Runtime) clearHealthError() {
+	runtime.healthMu.Lock()
+	defer runtime.healthMu.Unlock()
+
+	runtime.health.State = SchedulerStateRunning
+	runtime.health.LastError = ""
+}
+
+func boundedSchedulerError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	message := strings.Map(func(character rune) rune {
+		switch character {
+		case '\r', '\n', '\t':
+			return ' '
+		default:
+			if character < 0x20 {
+				return ' '
+			}
+			return character
+		}
+	}, strings.TrimSpace(err.Error()))
+	runes := []rune(message)
+	if len(runes) > maxSchedulerHealthErrorLen {
+		return string(runes[:maxSchedulerHealthErrorLen])
+	}
+	return message
 }
 
 func (runtime *Runtime) reconcileRecoveredAutomationExecutions(recoveredRuns []state.Run) error {

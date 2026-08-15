@@ -35,6 +35,7 @@ const (
 )
 
 var ErrIdempotencyConflict = errors.New("idempotency key was reused with a different request")
+var ErrActiveRunConflict = errors.New("an active run already exists for this project and script")
 var ErrAutomationRevisionConflict = errors.New("automation revision is stale or conflicts with persisted configuration")
 var ErrRunLogUnavailable = errors.New("run log is unavailable")
 
@@ -271,6 +272,11 @@ func (store *Store) CreateRun(run Run, idempotencyKey string, requestFingerprint
 			return cloneRun(existing), false, nil
 		}
 		delete(store.data.IdempotencyClaims, keyHash)
+	}
+	for _, existing := range store.data.Runs {
+		if existing.ProjectID == run.ProjectID && existing.ScriptID == run.ScriptID && existing.Status.IsActive() {
+			return cloneRun(existing), false, ErrActiveRunConflict
+		}
 	}
 
 	store.data.Runs = append(store.data.Runs, cloneRun(run))

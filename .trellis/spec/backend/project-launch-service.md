@@ -96,3 +96,84 @@ return serviceEnabled ? runWithService(command) : runWithPreload(command);
 ```
 
 Keep ownership global and explicit: delegate only after healthy validation, otherwise fail the scoped operation without disabling unrelated plugin features.
+
+## Scenario: Unified Runtime Identity, Live State, And Scheduler Recovery
+
+### 1. Scope / Trigger
+
+- Trigger: a change affects script lifecycle identity, service state polling, `/v1/state`, scheduler execution, service-owned automation submission, or the enabled-mode handoff.
+- This requires code-spec depth because `src/types.ts`, `public/preload.js`, `src/store/useStore.ts`, the Go API, supervisor state, and scheduler all exchange the same runtime facts.
+- Script processes may have either owner, but Git, files, AI, and external application launchers remain outside the service runtime.
+
+### 2. Signatures
+
+- `ProjectBridgeRunResult` and `ProjectBridgeEvent` carry `runId?: string` and `runtimeOwner?: "preload" | "service"`; real preload and service events always provide both fields.
+- `ProjectBridgeServiceStateEvent` is `{ type: "service-state"; status: ProjectLaunchServiceStatus; timestamp?: string }` and is delivered on the existing bridge event subscription.
+- `ProjectLaunchServiceStatus` may include `runs`, `events`, cursor/truncation metadata, `automation`, and `scheduler?: { state: "running" | "degraded"; lastRunAt?: string; lastSuccessAt?: string; lastError?: string }`.
+- `GET /v1/state` returns the supervisor snapshot plus automation state and scheduler health. `GET /v1/events?after=<cursor>` returns the ordered process batch and cursor metadata.
+- `POST /v1/runs` returns `409 { "code": "active_run_conflict" }` when an active run already owns the same `projectId` and `scriptId`.
+- Service automation configuration entries may include `runEarly?: boolean`; the field is submission metadata, not a replacement for `plannedAt`.
+
+### 3. Contracts
+
+- `runId` is the stable logical identity and `runtimeOwner` disambiguates its implementation. PID is diagnostic/process-control data only and must not decide whether an event is current.
+- Preload generates a `runId` for every direct launch and emits it with `runtimeOwner: "preload"`. It normalizes service events and service runs with `runtimeOwner: "service"` before exposing them to the Store.
+- A live service poll reads the event batch and a final service state, advances the cursor, emits normalized process events, then emits one `service-state` snapshot with `events: []`. This lets the Store apply live output once while still reconciling runs, automation, and scheduler health from the final snapshot.
+- Explicit reconciliation may return service events in the snapshot. The Store reconciles the run/automation snapshot before replaying those events, and ignores a delayed event whose `runId` or owner differs from the current script identity.
+- An unavailable or incompatible service emits a scoped `service-state` failure. The Store retains already-known service-owned script identity instead of manufacturing an exit; enabled mode stays fail-closed and does not fall back to preload/renderer execution.
+- `CreateRun` first honors an idempotency claim: the same key and fingerprint returns its existing run, while a changed fingerprint returns `idempotency_conflict`. A different request for an active `(projectId, scriptId)` returns `active_run_conflict` and creates no second visible run.
+- `Runtime.Run` records non-cancellation iteration failures as degraded health and continues its ticker. A successful iteration or accepted complete automation configuration clears `lastError` and returns health to `running`. Error text is bounded and control characters are removed before exposure.
+- An early service submission keeps the selected entry's original `plannedAt`, marks only that outbound entry `runEarly: true`, and waits for the accepted automation revision. The scheduler may claim it before its planned time exactly once; normal claim semantics prevent a later due run from duplicating it.
+- Enable handoff blocks renderer submissions, exposes `starting`, starts and validates the service, synchronizes the complete automation revision, and persists `enabled: true` only after acknowledgement. A pre-commit failure stops a newly started service when possible, restores renderer ownership, and resumes its timer.
+
+### 4. Validation & Error Matrix
+
+- A terminal event for an older `runId` or different owner -> ignore it; retain the current script runtime and logs.
+- A terminal event arrives before its matching start/result identity -> keep it pending by `(projectId, scriptId, runId)` until that identity is known, then settle it once.
+- A service poll/read fails while enabled -> emit `service-state` with `unavailable` or `incompatible`; preserve known service runs and block new delegated work.
+- A scheduler iteration fails with a non-cancellation error -> `/v1/state.scheduler.state` becomes `degraded`; the next ticker iteration still runs.
+- A later successful scheduler iteration or accepted valid replacement configuration -> set scheduler state to `running` and clear `lastError`.
+- A second active service start for the same project/script -> HTTP `409 active_run_conflict`; renderer reconciles the existing run or reports unavailable if it cannot recover that identity.
+- A stale, already-running, past, or invalid early entry -> do not submit `runEarly` and do not change its plan/history.
+- Initial handoff start, reconcile, or synchronization failure -> do not persist enabled ownership; resume renderer scheduling. A failure after enabled ownership is persisted -> retain service ownership and fail closed.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a preload launch and a service launch both expose an owner-tagged `runId`; stop and input select the run using that identity even while a service PID is not yet available.
+- Good: a service task completes while the plugin is open; the next bridge poll updates its plan entry, active-run guard, history, and scheduler status without a Settings refresh.
+- Good: an older service snapshot reports a terminal run and its subsequent ordered event batch starts a newer run; the newer run remains current after reconciliation.
+- Base: a browser or legacy fixture omits `runId`; compatibility processing may use matching PID only, but new preload/service events must not omit runtime identity.
+- Bad: treat a failed status read as proof that a service process exited, then clear its `runId` or run renderer automation.
+- Bad: change an early entry's `plannedAt` to now, which destroys the original schedule and can create duplicate/misclassified history.
+
+### 6. Tests Required
+
+- `npx vitest run tests/projectBridge.launchers.test.ts tests/projectBridge.uiPreferences.test.ts tests/projectRuntimeState.test.ts` must assert owner-tagged direct events, stale terminal-event rejection, snapshot/event ordering, duplicate cursor suppression, unavailable-service identity retention, handoff gating, `runEarly` submission, PID-less service stop/input/reconcile, and active-run-conflict recovery.
+- `go -C service test ./internal/process/... ./internal/api/... ./internal/scheduler/...` must assert active-run conflict mapping, state serialization of scheduler health, non-cancellation scheduler recovery, bounded error text, and early-entry single claim behavior.
+- `node --check public/preload.js` must pass after changing bridge polling, run normalization, or direct-process events.
+- `npm run lint` and `npm run build` must pass after changing shared runtime types, Store reconciliation, or service-state UI handling.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+if (event.type === "exit") {
+  script.status = "IDLE";
+  script.pid = undefined;
+}
+```
+
+This lets a delayed exit for an older process erase a newer visible run and treats PID as the authoritative identity.
+
+#### Correct
+
+```ts
+if (script.runId && (event.runId !== script.runId || event.runtimeOwner !== script.runtimeOwner)) {
+  return;
+}
+
+// Apply the matching event, then derive project status from all scripts.
+```
+
+Only the matching owner-neutral runtime identity may mutate a script's live state.

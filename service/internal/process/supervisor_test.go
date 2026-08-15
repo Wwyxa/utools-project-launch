@@ -1,6 +1,7 @@
 package process
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,6 +46,36 @@ func TestSupervisorCapturesOutputAndPersistsHashedIdempotency(t *testing.T) {
 	}
 	if strings.Contains(string(contents), request.IdempotencyKey) {
 		t.Fatal("raw idempotency key was persisted")
+	}
+}
+
+func TestSupervisorRejectsConcurrentRunForSameProjectAndScript(t *testing.T) {
+	store := openStore(t)
+	supervisor, err := NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+
+	request := testStartRequest(t, longRunningTestCommand())
+	run, created, err := supervisor.Start(request)
+	if err != nil || !created {
+		t.Fatalf("start command: run=%#v created=%t err=%v", run, created, err)
+	}
+	waitForRunStatus(t, store, run.ID, state.RunStatusRunning)
+	defer func() {
+		_, _ = supervisor.Stop(run.ID)
+		waitForRunStatus(t, store, run.ID, state.RunStatusStopped)
+	}()
+
+	duplicateRequest := request
+	duplicateRequest.IdempotencyKey += "-second"
+	duplicateRequest.RequestFingerprint += "-second"
+	duplicate, created, err := supervisor.Start(duplicateRequest)
+	if !errors.Is(err, state.ErrActiveRunConflict) || created || duplicate.ID != run.ID {
+		t.Fatalf("duplicate start = %#v, created=%t, err=%v; want active-run conflict", duplicate, created, err)
+	}
+	if activeRuns := store.ActiveRuns(); len(activeRuns) != 1 || activeRuns[0].ID != run.ID {
+		t.Fatalf("active runs = %#v, want only %q", activeRuns, run.ID)
 	}
 }
 

@@ -15,11 +15,26 @@ interface PreloadFixture {
   which?: Record<string, string | Buffer>;
   spawnOutcomes?: SpawnOutcome[];
   env?: Record<string, string>;
+  serviceEnabled?: boolean;
+}
+
+interface TestProcessChild {
+  emit(event: string, ...args: unknown[]): void;
+  stdout: { emit(event: string, ...args: unknown[]): void };
+  stderr: { emit(event: string, ...args: unknown[]): void };
 }
 
 const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   const nodeRequire = createRequire(import.meta.url);
   const spawnOutcomes = [...(fixture.spawnOutcomes || [])];
+  const bridgeEvents: unknown[] = [];
+  const servicePreferenceStorage = new Map<string, unknown>();
+  if (fixture.serviceEnabled !== undefined) {
+    servicePreferenceStorage.set("utools-project-launch.project-launch-service.v1", {
+      schemaVersion: 1,
+      enabled: fixture.serviceEnabled,
+    });
+  }
   const spawn = vi.fn(
     (
       _executable: string,
@@ -27,7 +42,41 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
       _options: { cwd: string; detached: boolean; stdio: string; env?: NodeJS.ProcessEnv },
     ) => {
       const outcome = spawnOutcomes.shift() || "spawn";
-      const child = { once: vi.fn(), unref: vi.fn() };
+      const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+      const createStream = () => {
+        const streamListeners = new Map<string, Array<(...args: unknown[]) => void>>();
+        const stream = {
+          on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+            const eventListeners = streamListeners.get(event) || [];
+            eventListeners.push(listener);
+            streamListeners.set(event, eventListeners);
+            return stream;
+          }),
+          emit: (event: string, ...args: unknown[]) => {
+            streamListeners.get(event)?.forEach((listener) => listener(...args));
+          },
+        };
+        return stream;
+      };
+      const stdout = createStream();
+      const stderr = createStream();
+      const child = {
+        pid: 4100 + spawn.mock.calls.length,
+        stdin: { destroyed: false, writableEnded: false, write: vi.fn() },
+        stdout,
+        stderr,
+        once: vi.fn(),
+        on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+          const eventListeners = listeners.get(event) || [];
+          eventListeners.push(listener);
+          listeners.set(event, eventListeners);
+          return child;
+        }),
+        emit: (event: string, ...args: unknown[]) => {
+          listeners.get(event)?.forEach((listener) => listener(...args));
+        },
+        unref: vi.fn(),
+      };
       child.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
         if (event === outcome) listener(event === "error" ? new Error("launch failed") : undefined);
         return child;
@@ -84,9 +133,23 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     execFile,
     execFileSync,
   };
-  const sandboxWindow: { projectBridge?: ProjectBridge; localStorage: object; utools: { dbStorage: object } } = {
+  const sandboxWindow: {
+    projectBridge?: ProjectBridge;
+    localStorage: object;
+    utools: { dbStorage: object };
+    dispatchEvent: (event: { detail?: unknown }) => boolean;
+  } = {
     localStorage: { getItem: () => null, setItem: () => undefined },
-    utools: { dbStorage: { getItem: () => null, setItem: () => undefined } },
+    utools: {
+      dbStorage: {
+        getItem: (key: string) => servicePreferenceStorage.get(key) ?? null,
+        setItem: (key: string, value: unknown) => servicePreferenceStorage.set(key, value),
+      },
+    },
+    dispatchEvent: (event) => {
+      bridgeEvents.push(event.detail);
+      return true;
+    },
   };
   const sandbox = {
     require: (id: string) => {
@@ -104,6 +167,13 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     },
     Buffer,
     TextDecoder,
+    CustomEvent: class {
+      detail: unknown;
+
+      constructor(_type: string, init?: { detail?: unknown }) {
+        this.detail = init?.detail;
+      }
+    },
     console,
     setTimeout,
     clearTimeout,
@@ -112,7 +182,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   createContext(sandbox);
   runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
   if (!sandboxWindow.projectBridge) throw new Error("The real preload did not register projectBridge.");
-  return { bridge: sandboxWindow.projectBridge, spawn, execFile, execFileSync };
+  return { bridge: sandboxWindow.projectBridge, spawn, execFile, execFileSync, bridgeEvents };
 };
 
 describe("native project launchers", () => {
@@ -310,5 +380,78 @@ describe("native project launchers", () => {
     });
     expect(spawn).toHaveBeenCalledOnce();
     expect(spawn.mock.calls[0]?.[0]).toBe(codeShim);
+  });
+
+  it("keeps one stable identity across direct process lifecycle events", async () => {
+    const { bridge, spawn, bridgeEvents } = loadPreloadBridge("linux", {
+      directories: ["/workspace/project"],
+    });
+
+    const result = await bridge.runCommand({
+      projectId: "project-1",
+      scriptId: "script-1",
+      command: "echo hello",
+      cwd: "/workspace/project",
+      env: {},
+      label: "Project / Script",
+    });
+    const child = spawn.mock.results.at(-1)?.value as TestProcessChild;
+    child.stdout.emit("data", Buffer.from("hello\n"));
+    child.stderr.emit("data", Buffer.from("warning\n"));
+    child.emit("close", 0, null);
+
+    const processEvents = bridgeEvents.filter(
+      (event): event is { type: string; runId?: string; runtimeOwner?: string } =>
+        Boolean(event && typeof event === "object" && "type" in event),
+    );
+    expect(processEvents.map((event) => event.type)).toEqual(["started", "stdout", "stderr", "exit"]);
+    expect(new Set(processEvents.map((event) => `${event.runId}:${event.runtimeOwner}`)).size).toBe(1);
+    expect(processEvents).toEqual(
+      expect.arrayContaining([expect.objectContaining({ runId: result.runId, runtimeOwner: "preload" })]),
+    );
+  });
+
+  it("keeps explicit preload control local when service mode is enabled", async () => {
+    const { bridge } = loadPreloadBridge("linux", {
+      directories: ["/workspace/project"],
+      serviceEnabled: false,
+    });
+    const result = await bridge.runCommand({
+      projectId: "project-1",
+      scriptId: "script-1",
+      command: "echo hello",
+      cwd: "/workspace/project",
+      env: {},
+      label: "Project / Script",
+    });
+
+    bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
+
+    expect(bridge.getProcessStatus(result.pid, { runId: result.runId, runtimeOwner: "preload" })).toMatchObject({
+      active: true,
+      runId: result.runId,
+      runtimeOwner: "preload",
+    });
+  });
+
+  it("does not treat a reused pid as the requested preload run", async () => {
+    const { bridge } = loadPreloadBridge("linux", {
+      directories: ["/workspace/project"],
+    });
+    const result = await bridge.runCommand({
+      projectId: "project-1",
+      scriptId: "script-1",
+      command: "echo hello",
+      cwd: "/workspace/project",
+      env: {},
+      label: "Project / Script",
+    });
+
+    expect(
+      bridge.getProcessStatus(result.pid, {
+        runId: "another-run",
+        runtimeOwner: "preload",
+      }),
+    ).toEqual({ active: false });
   });
 });
