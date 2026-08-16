@@ -443,6 +443,109 @@ describe("browser UI preferences fallback", () => {
     expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
   });
 
+  it("verifies an installed executable before enabling service mode", async () => {
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge["verifyProjectLaunchServiceInstall"]>();
+    const startProjectLaunchService = vi.fn<ProjectBridge["startProjectLaunchService"]>();
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>();
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>();
+    const installedStatus: ProjectLaunchServiceStatus = {
+      state: "installed",
+      installed: true,
+      running: false,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+    };
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      ...installedStatus,
+      state: "healthy",
+      running: true,
+      automationRevision: 0,
+    };
+    verifyProjectLaunchServiceInstall.mockResolvedValue(installedStatus);
+    startProjectLaunchService.mockResolvedValue(healthyStatus);
+    reconcileProjectLaunchService.mockResolvedValue(healthyStatus);
+    syncProjectLaunchServiceAutomation.mockImplementation(async (config) => ({
+      accepted: true,
+      revision: config.revision,
+    }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
+      saveProjectLaunchServicePreferences,
+      getProjectLaunchServiceStatus: async () => installedStatus,
+      verifyProjectLaunchServiceInstall,
+      startProjectLaunchService,
+      reconcileProjectLaunchService,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    await store.setProjectLaunchServiceEnabled(true);
+
+    expect(verifyProjectLaunchServiceInstall).toHaveBeenCalledOnce();
+    expect(verifyProjectLaunchServiceInstall.mock.invocationCallOrder[0]).toBeLessThan(
+      startProjectLaunchService.mock.invocationCallOrder[0]!,
+    );
+    expect(startProjectLaunchService).toHaveBeenCalledWith({ requireVerifiedInstall: false });
+    expect(store.projectLaunchServicePreferences.enabled).toBe(true);
+    expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
+  });
+
+  it("clears service mode when service startup fails", async () => {
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge["verifyProjectLaunchServiceInstall"]>();
+    const startProjectLaunchService = vi.fn<ProjectBridge["startProjectLaunchService"]>();
+    const installedStatus: ProjectLaunchServiceStatus = {
+      state: "installed",
+      installed: true,
+      running: false,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+    };
+    const unavailableStatus: ProjectLaunchServiceStatus = {
+      ...installedStatus,
+      state: "unavailable",
+      message: "service failed to start",
+    };
+    verifyProjectLaunchServiceInstall.mockResolvedValue(installedStatus);
+    startProjectLaunchService.mockResolvedValue(unavailableStatus);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
+      saveProjectLaunchServicePreferences,
+      getProjectLaunchServiceStatus: async () => installedStatus,
+      verifyProjectLaunchServiceInstall,
+      startProjectLaunchService,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    await store.setProjectLaunchServiceEnabled(true);
+
+    expect(verifyProjectLaunchServiceInstall).toHaveBeenCalledOnce();
+    expect(startProjectLaunchService).toHaveBeenCalledOnce();
+    expect(store.projectLaunchServicePreferences.enabled).toBe(false);
+    expect(saveProjectLaunchServicePreferences).not.toHaveBeenCalled();
+    expect(store.projectLaunchServiceStatus).toMatchObject({
+      state: "unavailable",
+      message: "service failed to start",
+    });
+  });
+
   it("keeps service mode enabled while service-managed scripts are still active", async () => {
     const stopProjectLaunchService = vi.fn<ProjectBridge["stopProjectLaunchService"]>();
     const healthyStatus: ProjectLaunchServiceStatus = {
@@ -1469,6 +1572,31 @@ describe("Project Launch Service preload installation", () => {
     }
   });
 
+  it("reports an available service update without downloading it", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const https = createProjectLaunchServiceDownloadHttps(Buffer.from("updated-project-launch-service"));
+    try {
+      const bridge = createBridge(serviceRoot, { https });
+      const status = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(status.directoryPath, { recursive: true });
+      writeFileSync(status.executablePath, binaryContents);
+
+      const updateStatus = await bridge.checkProjectLaunchServiceUpdate();
+
+      expect(updateStatus).toMatchObject({
+        state: "installed",
+        installed: true,
+        running: false,
+        updateAvailable: true,
+      });
+      expect(updateStatus.message).toContain("发现项目启动服务更新");
+      expect(readFileSync(status.executablePath)).toEqual(binaryContents);
+      expect(https.get).toHaveBeenCalledTimes(2);
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed instead of starting an unverified executable during explicit enable", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const spawn = vi.fn(() => Object.assign(new EventEmitter(), { unref: vi.fn() }));
@@ -1506,7 +1634,7 @@ describe("Project Launch Service preload installation", () => {
     }
   });
 
-  it("persists verified metadata and blocks automatic startup after executable replacement", async () => {
+  it("keeps automatic startup fail-closed after executable replacement", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const https = createProjectLaunchServiceDownloadHttps(binaryContents);
     const spawn = vi.fn(() => Object.assign(new EventEmitter(), { unref: vi.fn() }));

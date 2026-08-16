@@ -252,6 +252,8 @@ export interface ProjectLaunchServiceStatus {
   automationRevision?: number;
   automation?: ProjectLaunchServiceAutomationState;
   scheduler?: ProjectLaunchServiceSchedulerStatus;
+  latestServiceVersion?: string;
+  updateAvailable?: boolean;
   message?: string;
 }
 
@@ -1175,9 +1177,10 @@ export interface ProjectBridge {
   loadProjectLaunchServicePreferences(): ProjectLaunchServicePreferences;
   saveProjectLaunchServicePreferences(preferences: ProjectLaunchServicePreferences): void;
   getProjectLaunchServiceStatus(): Promise<ProjectLaunchServiceStatus>;
+  checkProjectLaunchServiceUpdate(): Promise<ProjectLaunchServiceStatus>;
   downloadProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   verifyProjectLaunchServiceInstall(): Promise<ProjectLaunchServiceStatus>;
-  startProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
+  startProjectLaunchService(options?: { requireVerifiedInstall?: boolean }): Promise<ProjectLaunchServiceStatus>;
   stopProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   reconcileProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog>;

@@ -239,13 +239,15 @@ function readProjectLaunchServiceInstallMetadata() {
 
 function verifyProjectLaunchServiceInstalledExecutable() {
   const metadata = readProjectLaunchServiceInstallMetadata();
-  let contents;
+  let actualHash;
   try {
-    contents = fs.readFileSync(projectLaunchServiceExecutablePath());
+    actualHash = crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(projectLaunchServiceExecutablePath()))
+      .digest("hex");
   } catch (error) {
     throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请重新下载或手动验证后再启用。");
   }
-  const actualHash = crypto.createHash("sha256").update(contents).digest("hex");
   if (actualHash !== metadata.sha256) {
     throw projectLaunchServiceInstallVerificationError(
       "项目启动服务文件已变更，无法自动启动。请重新下载或手动验证后再启用。",
@@ -292,6 +294,69 @@ function verifyProjectLaunchServiceManually() {
         console.warn("[utools-project-launch] failed to clean service metadata partial file");
     }
     throw error;
+  }
+}
+
+async function fetchProjectLaunchServiceRelease() {
+  const releaseContents = await fetchProjectLaunchServiceBytes(projectLaunchServiceReleaseApiUrl, {
+    maxBytes: projectLaunchServiceMetadataLimitBytes,
+  });
+  let release;
+  try {
+    release = JSON.parse(releaseContents.toString("utf8"));
+  } catch (error) {
+    const parseError = new Error("GitHub Release 响应不是有效 JSON。");
+    parseError.code = "invalid-release-metadata";
+    throw parseError;
+  }
+  const binaryAsset = projectLaunchServiceReleaseAsset(release, projectLaunchServiceTarget().assetName);
+  const checksumAsset = projectLaunchServiceReleaseAsset(release, "checksums.txt");
+  const checksumContents = await fetchProjectLaunchServiceBytes(checksumAsset.browser_download_url, {
+    maxBytes: projectLaunchServiceMetadataLimitBytes,
+  });
+  return {
+    release,
+    binaryAsset,
+    expectedHash: projectLaunchServiceChecksum(checksumContents.toString("utf8"), binaryAsset.name),
+  };
+}
+
+function projectLaunchServiceReleaseVersion(release) {
+  const tagName = typeof release?.tag_name === "string" ? release.tag_name.trim() : "";
+  return tagName || undefined;
+}
+
+async function checkProjectLaunchServiceUpdate() {
+  const status = await readProjectLaunchServiceStatus();
+  if (!status.installed) {
+    return { ...status, message: "项目启动服务尚未安装，无法检查更新。" };
+  }
+
+  try {
+    const { release, expectedHash } = await fetchProjectLaunchServiceRelease();
+    const currentHash = crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(projectLaunchServiceExecutablePath()))
+      .digest("hex");
+    const updateAvailable = currentHash !== expectedHash;
+    const latestServiceVersion = projectLaunchServiceReleaseVersion(release);
+    return {
+      ...status,
+      updateAvailable,
+      ...(latestServiceVersion ? { latestServiceVersion } : {}),
+      message: updateAvailable
+        ? status.running
+          ? "发现项目启动服务更新。请先停止正在运行的项目，再下载并安装。"
+          : "发现项目启动服务更新，可以下载并安装。"
+        : status.running
+          ? ""
+          : "项目启动服务已是最新版本。",
+    };
+  } catch (error) {
+    return {
+      ...status,
+      message: error instanceof Error ? error.message : "项目启动服务更新检查失败。",
+    };
   }
 }
 
@@ -399,23 +464,7 @@ async function downloadProjectLaunchService() {
     throw error;
   }
 
-  const releaseContents = await fetchProjectLaunchServiceBytes(projectLaunchServiceReleaseApiUrl, {
-    maxBytes: projectLaunchServiceMetadataLimitBytes,
-  });
-  let release;
-  try {
-    release = JSON.parse(releaseContents.toString("utf8"));
-  } catch (error) {
-    const parseError = new Error("GitHub Release 响应不是有效 JSON。");
-    parseError.code = "invalid-release-metadata";
-    throw parseError;
-  }
-  const binaryAsset = projectLaunchServiceReleaseAsset(release, target.assetName);
-  const checksumAsset = projectLaunchServiceReleaseAsset(release, "checksums.txt");
-  const checksumContents = await fetchProjectLaunchServiceBytes(checksumAsset.browser_download_url, {
-    maxBytes: projectLaunchServiceMetadataLimitBytes,
-  });
-  const expectedHash = projectLaunchServiceChecksum(checksumContents.toString("utf8"), target.assetName);
+  const { binaryAsset, expectedHash } = await fetchProjectLaunchServiceRelease();
   const binaryContents = await fetchProjectLaunchServiceBytes(binaryAsset.browser_download_url, {
     maxBytes: projectLaunchServiceExecutableLimitBytes,
   });

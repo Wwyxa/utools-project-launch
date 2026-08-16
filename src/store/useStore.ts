@@ -1928,6 +1928,10 @@ export const useStore = defineStore("app", {
       }
       return this.projectLaunchServiceStatus;
     },
+    async checkProjectLaunchServiceUpdate() {
+      this.projectLaunchServiceStatus = await bridge.checkProjectLaunchServiceUpdate();
+      return this.projectLaunchServiceStatus;
+    },
     async loadProjectLaunchServiceRunLog(runId: string) {
       const runLog = await bridge.getProjectLaunchServiceRunLog(runId);
       return {
@@ -2065,12 +2069,29 @@ export const useStore = defineStore("app", {
         this.automationNextTimerAt = "";
         let serviceStartedForHandoff = false;
         try {
+          const currentStatus = this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus());
           this.projectLaunchServiceStatus = {
-            ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+            ...currentStatus,
             state: "starting",
             message: "正在启动项目启动服务。",
           };
-          const started = await bridge.startProjectLaunchService();
+          let installAlreadyVerified = false;
+          if (currentStatus.state === "installed" && currentStatus.installed && !currentStatus.running) {
+            const verified = await bridge.verifyProjectLaunchServiceInstall();
+            this.projectLaunchServiceStatus = verified;
+            if (verified.state !== "installed" || !verified.installed || verified.running) {
+              throw new Error(verified.message || "项目启动服务校验失败，无法启用服务模式。");
+            }
+            this.projectLaunchServiceStatus = {
+              ...verified,
+              state: "starting",
+              message: "正在启动项目启动服务。",
+            };
+            installAlreadyVerified = true;
+          }
+          const started = installAlreadyVerified
+            ? await bridge.startProjectLaunchService({ requireVerifiedInstall: false })
+            : await bridge.startProjectLaunchService();
           this.projectLaunchServiceStatus = started;
           if (started.state !== "healthy" || !started.running) {
             throw new Error(started.message || "项目启动服务不可用，无法启用服务模式。");
@@ -2087,6 +2108,7 @@ export const useStore = defineStore("app", {
               // Keep the failed handoff as the user-visible state.
             }
           }
+          this.projectLaunchServicePreferences = { schemaVersion: 1, enabled: false };
           this.projectLaunchServiceStatus = {
             ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
             state: "unavailable",

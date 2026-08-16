@@ -742,6 +742,9 @@ const fallbackBridge: ProjectBridge = {
   async getProjectLaunchServiceStatus() {
     return browserProjectLaunchServiceStatus();
   },
+  async checkProjectLaunchServiceUpdate() {
+    return browserProjectLaunchServiceStatus();
+  },
   async downloadProjectLaunchService() {
     return browserProjectLaunchServiceStatus();
   },

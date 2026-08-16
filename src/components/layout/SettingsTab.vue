@@ -61,6 +61,7 @@ const externalApplicationDraft = ref({ name: "", command: "" });
 const externalApplicationErrors = ref({ name: "", command: "" });
 const externalApplicationFeedback = ref("");
 const projectLaunchServiceDisableWarningOpen = ref(false);
+const projectLaunchServiceUpdateChecking = ref(false);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 let stopAppEscapeListener = () => {};
 
@@ -144,7 +145,9 @@ const aiConfigReady = computed(() => {
   );
 });
 const projectLaunchServiceStatus = computed(() => store.projectLaunchServiceStatus);
-const projectLaunchServiceBusy = computed(() => projectLaunchServiceStatus.value?.state === "starting");
+const projectLaunchServiceBusy = computed(
+  () => projectLaunchServiceStatus.value?.state === "starting" || projectLaunchServiceUpdateChecking.value,
+);
 const projectLaunchServiceStatusLabel = computed(() => {
   const state = projectLaunchServiceStatus.value?.state;
   if (state === "installed") return t.value.settings.projectLaunchServiceInstalled;
@@ -159,6 +162,8 @@ const projectLaunchServiceStatusLabel = computed(() => {
 });
 const projectLaunchServiceStatusClass = computed(() => {
   const state = projectLaunchServiceStatus.value?.state;
+  if (projectLaunchServiceStatus.value?.updateAvailable)
+    return "border-status-warning/30 bg-status-warning/10 text-status-warning";
   if (state === "healthy") return "border-status-running/30 bg-status-running/10 text-status-running";
   if (state === "incompatible" || state === "unavailable")
     return "border-status-error/30 bg-status-error/10 text-status-error";
@@ -243,6 +248,15 @@ const handleDownloadProjectLaunchService = async () => {
 
 const handleRecheckProjectLaunchService = async () => {
   await store.refreshProjectLaunchServiceStatus(true);
+};
+
+const handleCheckProjectLaunchServiceUpdate = async () => {
+  projectLaunchServiceUpdateChecking.value = true;
+  try {
+    await store.checkProjectLaunchServiceUpdate();
+  } finally {
+    projectLaunchServiceUpdateChecking.value = false;
+  }
 };
 
 const handleToggleProjectLaunchService = async (event: Event) => {
@@ -1025,8 +1039,25 @@ watch(
           <div class="flex flex-wrap content-start gap-1.5">
             <button
               type="button"
-              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-primary px-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-55"
               :disabled="projectLaunchServiceBusy || !projectLaunchServiceStatus?.expectedAssetName"
+              @click="handleCheckProjectLaunchServiceUpdate"
+            >
+              <RefreshCw :size="13" :class="projectLaunchServiceUpdateChecking ? 'animate-spin' : ''" />
+              {{
+                projectLaunchServiceUpdateChecking
+                  ? t.settings.projectLaunchServiceCheckingUpdate
+                  : t.settings.projectLaunchServiceCheckUpdate
+              }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-primary px-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+              :disabled="
+                projectLaunchServiceBusy ||
+                projectLaunchServiceStatus?.running ||
+                !projectLaunchServiceStatus?.expectedAssetName
+              "
               @click="handleDownloadProjectLaunchService"
             >
               <Download :size="13" :class="projectLaunchServiceBusy ? 'animate-spin' : ''" />
@@ -1042,7 +1073,7 @@ watch(
               :disabled="projectLaunchServiceBusy"
               @click="handleRecheckProjectLaunchService"
             >
-              <RefreshCw :size="13" />
+              <RotateCcw :size="13" />
               {{ t.settings.projectLaunchServiceRecheck }}
             </button>
             <button
