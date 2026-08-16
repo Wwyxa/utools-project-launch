@@ -240,7 +240,8 @@ src/
 
 public/
 ├── plugin.json               # uTools 插件配置
-├── preload.js                # uTools CommonJS preload：本地文件/进程/Git 能力
+├── preload.js                # uTools CommonJS preload 入口加载器
+├── preload/                  # 按职责拆分的 preload 运行时模块
 ├── logo.png
 └── logo.svg
 
@@ -261,7 +262,7 @@ scripts/                      # 校验与基准脚本
 
 - 项目配置、偏好设置、AI 配置、备忘和待办主要保存在本地 uTools / 浏览器存储中。未启用项目启动服务时，定时任务依赖插件运行期间的前台调度，错过计划不会自动补跑；启用服务后，调度和有限的运行历史由本机服务目录持久化，并按原有错过策略执行。
 - 项目启动服务只在本机运行，服务文件位于 `~/.utools-project-launch/service/`；它使用本地回环连接管理受托脚本和调度，不会把项目数据迁移到云端或创建第二个用户数据根目录。服务的自动化配置在 `state.json` 中使用本机服务令牌派生的密钥加密保存，运行状态接口不会返回完整配置或项目环境值。
-- `preload.js` 会使用 Node.js 能力访问本地项目目录、启动 / 停止命令、读取文件、执行 Git 命令和检测开发工具版本。
+- `preload.js` 及其 `preload/` 模块会使用 Node.js 能力访问本地项目目录、启动 / 停止命令、读取文件、执行 Git 命令和检测开发工具版本。
 - Git 写操作仅围绕本地工作区展开，例如暂存、撤销、提交、切换分支、cherry-pick / revert；使用前建议确认当前工作区状态。
 - AI 分析会把选定的 Git 信息或 diff 发送给你配置的模型提供方；涉及私有项目时请先确认模型与接口策略。
 

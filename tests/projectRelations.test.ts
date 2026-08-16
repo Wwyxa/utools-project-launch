@@ -30,6 +30,7 @@ describe("project relations", () => {
       { projectId: "api", bidirectional: true },
       { projectId: "web", bidirectional: false },
       { projectId: "docs", bidirectional: true },
+      { projectId: "worker", bidirectional: true },
     ]);
   });
 
