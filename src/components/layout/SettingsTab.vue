@@ -246,8 +246,10 @@ const handleRecheckProjectLaunchService = async () => {
 };
 
 const handleToggleProjectLaunchService = async (event: Event) => {
-  const enabled = (event.target as HTMLInputElement).checked;
+  const input = event.target as HTMLInputElement;
+  const enabled = input.checked;
   if (!enabled && store.hasActiveProjectLaunchServiceRuns) {
+    input.checked = true;
     projectLaunchServiceDisableWarningOpen.value = true;
     return;
   }
