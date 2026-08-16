@@ -49,7 +49,9 @@ const t = useI18n();
 const githubRepositoryUrl = "https://github.com/Wwyxa/utools-project-launch";
 
 const hostPlatform = window.navigator.platform || window.navigator.userAgent || "";
-const fallbackTerminalOptions: DefaultTerminalKind[] = /win/i.test(hostPlatform)
+type SelectableTerminalKind = Exclude<DefaultTerminalKind, "builtin">;
+
+const fallbackTerminalOptions: SelectableTerminalKind[] = /win/i.test(hostPlatform)
   ? ["windows-terminal", "powershell", "cmd"]
   : /linux/i.test(hostPlatform)
     ? ["linux-terminal"]
@@ -116,7 +118,7 @@ const editingBuiltinHasOverride = computed(() =>
 );
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
-const terminalOptions: DefaultTerminalKind[] = [...fallbackTerminalOptions, "custom"];
+const terminalOptions: SelectableTerminalKind[] = [...fallbackTerminalOptions, "custom"];
 const externalApplications = computed(() => store.externalApplicationPreferences.applications);
 const editingExternalApplication = computed(() =>
   externalApplications.value.find((application) => application.id === editingExternalApplicationId.value),
@@ -1550,7 +1552,6 @@ watch(
                 <button
                   v-else-if="
                     editingExternalApplication &&
-                    editingExternalApplication.kind !== 'custom' &&
                     editingExternalApplication.command !==
                       (editingExternalApplication.kind === 'vscode' ? 'code {path}' : 'cursor {path}')
                   "

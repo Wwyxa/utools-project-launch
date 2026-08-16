@@ -307,11 +307,18 @@ function rememberRuntimeRun(key: string, observation: RuntimeRunObservation) {
 }
 
 function hasObservedServiceEvent(event: ProjectBridgeProcessEvent) {
-  if (event.runtimeOwner !== "service" || !event.runId || !Number.isSafeInteger(event.cursor) || event.cursor < 0) {
+  const { cursor, runId } = event;
+  if (
+    event.runtimeOwner !== "service" ||
+    !runId ||
+    typeof cursor !== "number" ||
+    !Number.isSafeInteger(cursor) ||
+    cursor < 0
+  ) {
     return false;
   }
 
-  const key = `${event.runId}\u0000${event.cursor}`;
+  const key = `${runId}\u0000${cursor}`;
   if (observedServiceEvents.has(key)) {
     return true;
   }
@@ -1769,8 +1776,9 @@ export const useStore = defineStore("app", {
           isActiveServiceRun ? "active" : "terminal",
         );
         if (isActiveServiceRun) {
+          const pid = run.pid;
           script.status = run.status === "stopping" ? "STOPPING" : "RUNNING";
-          script.pid = Number.isInteger(run.pid) && run.pid > 0 ? run.pid : undefined;
+          script.pid = typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? pid : undefined;
           script.runId = run.id;
           script.runtimeOwner = "service";
         } else {
@@ -1861,12 +1869,13 @@ export const useStore = defineStore("app", {
         if (!eventTypes.has(event.type)) {
           continue;
         }
+        const pid = event.pid;
         const bridgeEvent: ProjectBridgeProcessEvent = {
           ...event,
-          pid: Number.isInteger(event.pid) ? event.pid : 0,
+          pid: typeof pid === "number" && Number.isInteger(pid) ? pid : 0,
           runtimeOwner: "service",
         };
-        if (bridgeEvent.type === "error" && lostServiceRunIds.has(bridgeEvent.runId)) {
+        if (bridgeEvent.type === "error" && bridgeEvent.runId && lostServiceRunIds.has(bridgeEvent.runId)) {
           hasObservedServiceEvent(bridgeEvent);
           continue;
         }
@@ -5571,17 +5580,21 @@ export const useStore = defineStore("app", {
           automationRunId,
         });
 
-        const stopRequestedBeforeResult = script.status === "STOPPING";
-        const hadRuntimeIdentity = Boolean(script.runId && script.runtimeOwner);
-        if (script.status === "RUNNING" || stopRequestedBeforeResult) {
-          script.pid = Number.isInteger(result.pid) && result.pid > 0 ? result.pid : undefined;
-          script.runId = result.runId;
-          script.runtimeOwner = result.runtimeOwner;
+        const activeProject = this.projects.find((item) => item.id === projectId);
+        const activeScript = activeProject?.scripts.find((item) => item.id === scriptId);
+        if (!activeProject || !activeScript) return result;
+
+        const stopRequestedBeforeResult = activeScript.status === "STOPPING";
+        const hadRuntimeIdentity = Boolean(activeScript.runId && activeScript.runtimeOwner);
+        if (activeScript.status === "RUNNING" || stopRequestedBeforeResult) {
+          activeScript.pid = Number.isInteger(result.pid) && result.pid > 0 ? result.pid : undefined;
+          activeScript.runId = result.runId;
+          activeScript.runtimeOwner = result.runtimeOwner;
           if (result.runId) {
             rememberRuntimeRun(pendingRuntimeTerminalEventKey(projectId, scriptId, result.runId), "active");
           }
-          project.status = deriveProjectStatus(project);
-          project.lastUpdated = new Date().toLocaleString();
+          activeProject.status = deriveProjectStatus(activeProject);
+          activeProject.lastUpdated = new Date().toLocaleString();
           if (result.runId) {
             const pendingKey = pendingRuntimeTerminalEventKey(projectId, scriptId, result.runId);
             const pendingEvent = pendingRuntimeTerminalEvents.get(pendingKey);
@@ -5590,19 +5603,22 @@ export const useStore = defineStore("app", {
               this.handleBridgeEvent(pendingEvent);
             }
           }
-          if (stopRequestedBeforeResult && !hadRuntimeIdentity && script.status === "STOPPING") {
-            const pid = script.pid;
-            const runId = script.runId;
-            const runtimeOwner = script.runtimeOwner;
-            if (pid || (runtimeOwner === "service" && runId)) {
-              scheduleProcessStop(pid || 0, {
-                ...(runId === undefined ? {} : { runId }),
-                ...(runtimeOwner === undefined ? {} : { runtimeOwner }),
-              });
-            } else {
-              script.status = "STOPPED";
-              project.status = deriveProjectStatus(project);
-              project.lastUpdated = new Date().toLocaleString();
+          if (stopRequestedBeforeResult && !hadRuntimeIdentity) {
+            const currentScript = activeProject.scripts.find((item) => item.id === scriptId);
+            if (currentScript?.status === "STOPPING") {
+              const pid = currentScript.pid;
+              const runId = currentScript.runId;
+              const runtimeOwner = currentScript.runtimeOwner;
+              if (pid || (runtimeOwner === "service" && runId)) {
+                scheduleProcessStop(pid || 0, {
+                  ...(runId === undefined ? {} : { runId }),
+                  ...(runtimeOwner === undefined ? {} : { runtimeOwner }),
+                });
+              } else {
+                currentScript.status = "STOPPED";
+                activeProject.status = deriveProjectStatus(activeProject);
+                activeProject.lastUpdated = new Date().toLocaleString();
+              }
             }
           }
         }
