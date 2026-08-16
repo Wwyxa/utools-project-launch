@@ -253,6 +253,48 @@ function verifyProjectLaunchServiceInstalledExecutable() {
   }
 }
 
+function verifyProjectLaunchServiceManually() {
+  const directoryPath = projectLaunchServiceDirectoryPath();
+  const metadataPath = projectLaunchServiceInstallMetadataPath();
+  const metadataPartialPath = `${metadataPath}.partial`;
+  if (
+    !isPathWithin(directoryPath, metadataPath) ||
+    !isPathWithin(directoryPath, metadataPartialPath) ||
+    !isPathWithin(directoryPath, projectLaunchServiceExecutablePath())
+  ) {
+    throw new Error("项目启动服务安装路径无效。");
+  }
+
+  let contents;
+  try {
+    contents = fs.readFileSync(projectLaunchServiceExecutablePath());
+  } catch (error) {
+    throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请先放置可执行文件后重试。");
+  }
+  if (contents.length > projectLaunchServiceExecutableLimitBytes) {
+    const error = new Error("项目启动服务文件超过 12 MiB 大小限制。");
+    error.code = "asset-too-large";
+    throw error;
+  }
+
+  const installMetadata = projectLaunchServiceInstallMetadata(
+    crypto.createHash("sha256").update(contents).digest("hex"),
+  );
+  try {
+    fs.mkdirSync(directoryPath, { recursive: true });
+    fs.writeFileSync(metadataPartialPath, `${JSON.stringify(installMetadata)}\n`, { mode: 0o600 });
+    fs.renameSync(metadataPartialPath, metadataPath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(metadataPartialPath);
+    } catch (cleanupError) {
+      if (cleanupError?.code !== "ENOENT")
+        console.warn("[utools-project-launch] failed to clean service metadata partial file");
+    }
+    throw error;
+  }
+}
+
 function installProjectLaunchServiceExecutable(contents, expectedHash) {
   const directoryPath = projectLaunchServiceDirectoryPath();
   const downloadsPath = path.join(directoryPath, "downloads");
@@ -379,6 +421,19 @@ async function downloadProjectLaunchService() {
   });
   installProjectLaunchServiceExecutable(binaryContents, expectedHash);
   return readProjectLaunchServiceStatus();
+}
+
+async function verifyProjectLaunchServiceInstall() {
+  const status = await readProjectLaunchServiceStatus();
+  if (status.running) {
+    return serviceStatusWithError(status, new Error("请先停止项目启动服务，再验证服务文件。"));
+  }
+  try {
+    verifyProjectLaunchServiceManually();
+    return readProjectLaunchServiceStatus();
+  } catch (error) {
+    return serviceStatusWithError(status, error);
+  }
 }
 
 function isPathWithin(parentPath, childPath) {
@@ -1163,4 +1218,3 @@ async function sendProjectLaunchServiceRunInput(runId, input) {
   await pollProjectLaunchServiceEvents(true);
   return response.payload || { sent: false, message: "项目启动服务没有返回输入结果。" };
 }
-

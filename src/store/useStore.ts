@@ -1878,10 +1878,15 @@ export const useStore = defineStore("app", {
     setTheme(theme: "light" | "dark" | "auto") {
       this.theme = theme;
     },
-    async refreshProjectLaunchServiceStatus() {
-      this.projectLaunchServiceStatus = this.projectLaunchServicePreferences.enabled
+    async refreshProjectLaunchServiceStatus(verifyManualInstall = false) {
+      const serviceEnabled = this.projectLaunchServicePreferences.enabled;
+      const status = serviceEnabled
         ? await bridge.reconcileProjectLaunchService()
         : await bridge.getProjectLaunchServiceStatus();
+      this.projectLaunchServiceStatus =
+        verifyManualInstall && !serviceEnabled && status.installed && !status.running
+          ? await bridge.verifyProjectLaunchServiceInstall()
+          : status;
       if (this.projectLaunchServicePreferences.enabled) {
         this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
         await this.reconcileRuntimeProcessState();

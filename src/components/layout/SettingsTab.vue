@@ -164,6 +164,22 @@ const projectLaunchServiceStatusClass = computed(() => {
   if (state === "starting") return "border-primary/30 bg-primary/10 text-primary";
   return "border-status-warning/30 bg-status-warning/10 text-status-warning";
 });
+const projectLaunchServiceHasNotice = computed(() => {
+  const status = projectLaunchServiceStatus.value;
+  return Boolean(status?.message || status?.eventsTruncated || status?.scheduler?.lastError);
+});
+const projectLaunchServiceNoticeClass = computed(() => {
+  const status = projectLaunchServiceStatus.value;
+  if (status?.scheduler?.lastError || status?.state === "incompatible" || status?.state === "unavailable") {
+    return "border-status-error/30 bg-status-error/10 text-status-error";
+  }
+  if (status?.eventsTruncated || status?.state === "installed") {
+    return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+  }
+  return status?.state === "healthy"
+    ? "border-status-running/30 bg-status-running/10 text-status-running"
+    : "border-primary/30 bg-primary/10 text-primary";
+});
 const projectLaunchServiceSchedulerLabel = computed(() => {
   const state = projectLaunchServiceStatus.value?.scheduler?.state;
   if (state === "degraded") return t.value.settings.projectLaunchServiceSchedulerDegraded;
@@ -225,7 +241,7 @@ const handleDownloadProjectLaunchService = async () => {
 };
 
 const handleRecheckProjectLaunchService = async () => {
-  await store.refreshProjectLaunchServiceStatus();
+  await store.refreshProjectLaunchServiceStatus(true);
 };
 
 const handleToggleProjectLaunchService = async (event: Event) => {
@@ -1041,20 +1057,61 @@ watch(
           </div>
         </div>
 
-        <p v-if="projectLaunchServiceStatus?.message" class="mt-2 text-xs leading-5 text-on-surface-variant">
-          {{ projectLaunchServiceStatus.message }}
-        </p>
-        <p v-if="projectLaunchServiceStatus?.eventsTruncated" class="mt-1 text-xs leading-5 text-status-warning">
-          {{ t.settings.projectLaunchServiceLogsTruncated }}
-        </p>
-        <p v-if="projectLaunchServiceStatus?.scheduler?.lastError" class="mt-1 text-xs leading-5 text-status-error">
-          {{ t.settings.projectLaunchServiceSchedulerLastError }}: {{ projectLaunchServiceStatus.scheduler.lastError }}
-        </p>
-        <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ t.settings.projectLaunchServiceLogHint }}</p>
-        <p class="mt-1 text-xs leading-5 text-on-surface-variant">{{ t.settings.projectLaunchServiceManualHint }}</p>
-        <p v-if="store.projectLaunchServicePreferences.enabled" class="mt-1 text-xs leading-5 text-status-warning">
-          {{ t.settings.projectLaunchServiceEnabledHint }}
-        </p>
+        <div
+          v-if="projectLaunchServiceHasNotice"
+          :class="cn('mt-3 rounded-md border px-3 py-2 text-xs leading-5', projectLaunchServiceNoticeClass)"
+          role="status"
+          aria-live="polite"
+        >
+          <div class="flex items-start gap-2">
+            <Info :size="14" class="mt-0.5 shrink-0" />
+            <div class="min-w-0">
+              <p class="font-semibold">{{ projectLaunchServiceStatusLabel }}</p>
+              <p v-if="projectLaunchServiceStatus?.message" class="mt-0.5 break-words text-on-surface-variant">
+                {{ projectLaunchServiceStatus.message }}
+              </p>
+              <p v-if="projectLaunchServiceStatus?.eventsTruncated" class="mt-1 text-status-warning">
+                {{ t.settings.projectLaunchServiceLogsTruncated }}
+              </p>
+              <p v-if="projectLaunchServiceStatus?.scheduler?.lastError" class="mt-1 break-words text-status-error">
+                <span class="font-semibold">{{ t.settings.projectLaunchServiceSchedulerLastError }}:</span>
+                {{ projectLaunchServiceStatus.scheduler.lastError }}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="store.projectLaunchServicePreferences.enabled"
+          class="mt-2 flex items-start gap-2 rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs leading-5 text-status-warning"
+        >
+          <ServerCog :size="14" class="mt-0.5 shrink-0" />
+          <p>{{ t.settings.projectLaunchServiceEnabledHint }}</p>
+        </div>
+        <details class="group mt-3 border-t border-border-subtle pt-2.5">
+          <summary
+            class="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-on-surface-variant transition-colors hover:text-on-surface [&::-webkit-details-marker]:hidden"
+          >
+            <span class="flex items-center gap-1.5">
+              <Info :size="13" class="shrink-0" />
+              {{ t.settings.projectLaunchServiceNotes }}
+            </span>
+            <ChevronDown :size="14" class="shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <div class="mt-2 grid gap-2 border-t border-border-subtle pt-2 sm:grid-cols-2">
+            <div class="rounded-md bg-surface-container-low px-3 py-2">
+              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceLogRetention }}</p>
+              <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
+                {{ t.settings.projectLaunchServiceLogHint }}
+              </p>
+            </div>
+            <div class="rounded-md bg-surface-container-low px-3 py-2">
+              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceInstallNote }}</p>
+              <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
+                {{ t.settings.projectLaunchServiceManualHint }}
+              </p>
+            </div>
+          </div>
+        </details>
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">

@@ -1176,6 +1176,7 @@ export interface ProjectBridge {
   saveProjectLaunchServicePreferences(preferences: ProjectLaunchServicePreferences): void;
   getProjectLaunchServiceStatus(): Promise<ProjectLaunchServiceStatus>;
   downloadProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
+  verifyProjectLaunchServiceInstall(): Promise<ProjectLaunchServiceStatus>;
   startProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   stopProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   reconcileProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;

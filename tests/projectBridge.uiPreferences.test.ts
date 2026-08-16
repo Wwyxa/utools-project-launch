@@ -305,6 +305,44 @@ describe("browser UI preferences fallback", () => {
     expect(saveUiPreferences).toHaveBeenCalledTimes(2);
   });
 
+  it("verifies a manually placed Project Launch Service only during an explicit recheck", async () => {
+    const installedStatus: ProjectLaunchServiceStatus = {
+      state: "installed",
+      installed: true,
+      running: false,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+    };
+    const getProjectLaunchServiceStatus = vi.fn<ProjectBridge["getProjectLaunchServiceStatus"]>(
+      async () => installedStatus,
+    );
+    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge["verifyProjectLaunchServiceInstall"]>(
+      async () => installedStatus,
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
+      getProjectLaunchServiceStatus,
+      verifyProjectLaunchServiceInstall,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    await store.refreshProjectLaunchServiceStatus();
+    expect(verifyProjectLaunchServiceInstall).not.toHaveBeenCalled();
+
+    await store.refreshProjectLaunchServiceStatus(true);
+    expect(verifyProjectLaunchServiceInstall).toHaveBeenCalledOnce();
+    expect(store.projectLaunchServiceStatus).toEqual(installedStatus);
+    expect(getProjectLaunchServiceStatus).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps renderer ownership when Project Launch Service rejects automation handoff", async () => {
     const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
     const stopProjectLaunchService = vi.fn<ProjectBridge["stopProjectLaunchService"]>();
@@ -1191,6 +1229,27 @@ describe("Project Launch Service preload installation", () => {
         installed: true,
         running: false,
         message: "项目启动服务已安装，尚未运行。",
+      });
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("records a manually placed executable after explicit verification", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    try {
+      const bridge = createBridge(serviceRoot);
+      const installed = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(installed.directoryPath, { recursive: true });
+      writeFileSync(installed.executablePath, binaryContents);
+
+      const verified = await bridge.verifyProjectLaunchServiceInstall();
+
+      expect(verified).toMatchObject({ state: "installed", installed: true, running: false });
+      expect(JSON.parse(readFileSync(join(installed.directoryPath, "install.json"), "utf8"))).toEqual({
+        schemaVersion: 1,
+        assetName: installed.expectedAssetName,
+        sha256: createHash("sha256").update(binaryContents).digest("hex"),
       });
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });

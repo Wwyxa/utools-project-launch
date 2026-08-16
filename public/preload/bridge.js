@@ -43,6 +43,7 @@ window.projectBridge = {
   saveProjectLaunchServicePreferences,
   getProjectLaunchServiceStatus: readProjectLaunchServiceStatus,
   downloadProjectLaunchService,
+  verifyProjectLaunchServiceInstall,
   startProjectLaunchService,
   stopProjectLaunchService,
   reconcileProjectLaunchService,
