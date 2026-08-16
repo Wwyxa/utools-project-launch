@@ -307,6 +307,10 @@ func (supervisor *Supervisor) HasActiveRuns() bool {
 	return len(supervisor.store.ActiveRuns()) > 0
 }
 
+func (supervisor *Supervisor) Close() error {
+	return supervisor.store.Close()
+}
+
 func (supervisor *Supervisor) Run(runID string) (state.Run, bool) {
 	return supervisor.store.Run(runID)
 }
@@ -337,6 +341,33 @@ func (supervisor *Supervisor) EventsAfterPage(after uint64, maxBytes int) state.
 
 func (supervisor *Supervisor) RunLog(runID string) (state.RunLog, error) {
 	return supervisor.store.ReadRunLog(runID)
+}
+
+func (supervisor *Supervisor) RunLogPage(runID string, beforeOffset int64) (state.RunLog, error) {
+	return supervisor.store.ReadRunLogPage(runID, beforeOffset)
+}
+
+func (supervisor *Supervisor) LogRetentionStatus() (state.LogRetentionStatus, error) {
+	return supervisor.store.LogRetentionStatus()
+}
+
+func (supervisor *Supervisor) UpdateLogRetention(policy state.LogRetentionPolicy) (state.LogRetentionStatus, error) {
+	if _, err := supervisor.store.UpdateLogRetention(policy); err != nil {
+		return state.LogRetentionStatus{}, err
+	}
+	return supervisor.store.LogRetentionStatus()
+}
+
+func (supervisor *Supervisor) RetainedLogDescriptors(projectID string) ([]state.LogDescriptor, error) {
+	return supervisor.store.RetainedLogDescriptors(projectID)
+}
+
+func (supervisor *Supervisor) ClearPersistedLogs() (state.LogClearResult, error) {
+	return supervisor.store.ClearPersistedLogs()
+}
+
+func (supervisor *Supervisor) ClearPersistedLogsForRun(runID string) (state.LogClearResult, error) {
+	return supervisor.store.ClearPersistedLogsForRun(runID)
 }
 
 func (supervisor *Supervisor) AutomationSnapshot() state.AutomationState {
@@ -383,7 +414,7 @@ func (supervisor *Supervisor) waitForExit(run state.Run, managed *managedProcess
 	endedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	exitCode := managed.command.ProcessState.ExitCode()
 	signal := exitSignal(waitErr)
-	_, _ = supervisor.store.UpdateRunAndAppendEvent(run.ID, func(current *state.Run) {
+	if _, err := supervisor.store.UpdateRunAndAppendEvent(run.ID, func(current *state.Run) {
 		current.EndedAt = endedAt
 		current.Code = &exitCode
 		current.Signal = signal
@@ -411,7 +442,9 @@ func (supervisor *Supervisor) waitForExit(run state.Run, managed *managedProcess
 		Signal:                signal,
 		StoppedByUser:         stoppedByUser,
 		AutomationExitMatched: automationExitMatched,
-	})
+	}); err != nil {
+		supervisor.store.ReportDurableWriteFailure(run.ID, err)
+	}
 
 	supervisor.mutex.Lock()
 	delete(supervisor.processes, run.ID)
@@ -472,7 +505,7 @@ func (supervisor *Supervisor) markLost(run state.Run, message string) (state.Run
 }
 
 func (supervisor *Supervisor) appendEvent(run state.Run, eventType string, fields state.Event) {
-	_, _ = supervisor.store.AppendEvent(state.Event{
+	if _, err := supervisor.store.AppendEvent(state.Event{
 		Timestamp:             time.Now().UTC().Format(time.RFC3339Nano),
 		Type:                  eventType,
 		RunID:                 run.ID,
@@ -486,7 +519,9 @@ func (supervisor *Supervisor) appendEvent(run state.Run, eventType string, field
 		StoppedByUser:         fields.StoppedByUser,
 		AutomationExitMatched: fields.AutomationExitMatched,
 		AutomationRunID:       run.AutomationRunID,
-	})
+	}); err != nil {
+		supervisor.store.ReportDurableWriteFailure(run.ID, err)
+	}
 }
 
 func validateStartRequest(request StartRequest) error {

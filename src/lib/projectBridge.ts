@@ -48,6 +48,11 @@ import type {
   ProjectPathInspection,
   ProjectDetailsTabId,
   ProjectLaunchServicePreferences,
+  ProjectLaunchServiceLogClearResult,
+  ProjectLaunchServiceLogClearScope,
+  ProjectLaunchServiceLogDescriptor,
+  ProjectLaunchServiceLogRetentionPolicy,
+  ProjectLaunchServiceLogRetentionStatus,
   ProjectLaunchServiceRunLog,
   ProjectLaunchServiceStatus,
   ProjectLaunchServiceAutomationConfig,
@@ -762,6 +767,25 @@ const fallbackBridge: ProjectBridge = {
   },
   async getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog> {
     throw new Error(`浏览器预览无法读取运行日志：${runId}`);
+  },
+  async getProjectLaunchServiceRunLogPage(runId: string): Promise<ProjectLaunchServiceRunLog> {
+    throw new Error(`浏览器预览无法读取运行日志：${runId}`);
+  },
+  async getProjectLaunchServiceLogRetention(): Promise<ProjectLaunchServiceLogRetentionStatus> {
+    throw new Error("浏览器预览无法读取日志保留策略。");
+  },
+  async updateProjectLaunchServiceLogRetention(
+    _policy: ProjectLaunchServiceLogRetentionPolicy,
+  ): Promise<ProjectLaunchServiceLogRetentionStatus> {
+    throw new Error("浏览器预览无法更新日志保留策略。");
+  },
+  async listProjectLaunchServiceLogs(_projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]> {
+    throw new Error("浏览器预览无法读取运行日志列表。");
+  },
+  async clearProjectLaunchServiceLogs(
+    _scope?: ProjectLaunchServiceLogClearScope,
+  ): Promise<ProjectLaunchServiceLogClearResult> {
+    throw new Error("浏览器预览无法清除运行日志。");
   },
   async syncProjectLaunchServiceAutomation(
     config: ProjectLaunchServiceAutomationConfig,

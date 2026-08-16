@@ -239,6 +239,9 @@ func TestSupervisorSendInputRedactsPersistedEvent(t *testing.T) {
 	if strings.Contains(string(contents), secret) {
 		t.Fatal("stdin secret was persisted")
 	}
+	if err := store.Flush(); err != nil {
+		t.Fatalf("flush persisted stdin status: %v", err)
+	}
 	logContents, err := os.ReadFile(filepath.Join(stateDir, state.LogDirectoryName, run.ID+".log"))
 	if err != nil {
 		t.Fatalf("read persisted run log: %v", err)
@@ -259,6 +262,11 @@ func openStoreAt(t *testing.T, stateDir string) *state.Store {
 	if err != nil {
 		t.Fatalf("open runtime state: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close runtime state: %v", err)
+		}
+	})
 	return store
 }
 

@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Plus,
   RotateCcw,
+  Save,
   ServerCog,
   Settings2,
   SquareTerminal,
@@ -35,7 +36,13 @@ import {
   parseEnvironmentArguments,
   type CustomEnvironmentToolErrors,
 } from "../../lib/environmentTools";
-import type { AiProviderKind, DefaultTerminalKind, EnvironmentToolKey, ExternalApplication } from "../../types";
+import type {
+  AiProviderKind,
+  DefaultTerminalKind,
+  EnvironmentToolKey,
+  ExternalApplication,
+  ProjectLaunchServiceLogRetentionPolicy,
+} from "../../types";
 
 const store = useStore();
 const t = useI18n();
@@ -62,6 +69,12 @@ const externalApplicationErrors = ref({ name: "", command: "" });
 const externalApplicationFeedback = ref("");
 const projectLaunchServiceDisableWarningOpen = ref(false);
 const projectLaunchServiceUpdateChecking = ref(false);
+const logRetentionDraft = ref<ProjectLaunchServiceLogRetentionPolicy | null>(null);
+const logRetentionSaving = ref(false);
+const logRetentionFeedback = ref("");
+const logRetentionFeedbackTone = ref<"success" | "error">("success");
+const logRetentionClearOpen = ref(false);
+const logRetentionClearBusy = ref(false);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 let stopAppEscapeListener = () => {};
 
@@ -170,6 +183,28 @@ const projectLaunchServiceStatusClass = computed(() => {
   if (state === "starting") return "border-primary/30 bg-primary/10 text-primary";
   return "border-status-warning/30 bg-status-warning/10 text-status-warning";
 });
+const projectLaunchServiceLogRetentionStatus = computed(() => store.projectLaunchServiceLogRetentionStatus);
+const logRetentionReady = computed(
+  () => projectLaunchServiceStatus.value?.state === "healthy" && projectLaunchServiceStatus.value.running,
+);
+const formatLogBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes < 0) return "-";
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${Math.round(bytes)} B`;
+};
+const formatLogMiB = (bytes: number) => (Number.isFinite(bytes) ? Number((bytes / (1024 * 1024)).toFixed(3)) : 0);
+const projectLaunchServiceLogRetentionSummary = computed(() => {
+  const policy = projectLaunchServiceLogRetentionStatus.value?.policy;
+  if (!policy) return t.value.settings.projectLaunchServiceLogUnavailable;
+  return [
+    policy.persist
+      ? t.value.settings.projectLaunchServiceLogPersistOn
+      : t.value.settings.projectLaunchServiceLogPersistOff,
+    `${policy.maxCompletedRunsPerProject} ${t.value.settings.projectLaunchServiceLogRunsUnit}`,
+    `${formatLogBytes(policy.maxBytesPerRun)} / ${formatLogBytes(policy.maxBytesTotal)}`,
+  ].join(" / ");
+});
 const projectLaunchServiceHasNotice = computed(() => {
   const status = projectLaunchServiceStatus.value;
   return Boolean(status?.message || status?.eventsTruncated || status?.scheduler?.lastError);
@@ -244,10 +279,12 @@ const handleOpenGithubRepository = async () => {
 
 const handleDownloadProjectLaunchService = async () => {
   await store.downloadProjectLaunchService();
+  await refreshLogRetention();
 };
 
 const handleRecheckProjectLaunchService = async () => {
   await store.refreshProjectLaunchServiceStatus(true);
+  await refreshLogRetention();
 };
 
 const handleCheckProjectLaunchServiceUpdate = async () => {
@@ -268,6 +305,111 @@ const handleToggleProjectLaunchService = async (event: Event) => {
     return;
   }
   await store.setProjectLaunchServiceEnabled(enabled);
+  await refreshLogRetention();
+};
+
+const refreshLogRetention = async () => {
+  let status = store.projectLaunchServiceStatus;
+  if (!status) {
+    status = await store.refreshProjectLaunchServiceStatus();
+  }
+  if (status.state !== "healthy" || !status.running) {
+    logRetentionDraft.value = null;
+    return;
+  }
+  try {
+    const retention = await store.refreshProjectLaunchServiceLogRetention();
+    logRetentionDraft.value = { ...retention.policy };
+    logRetentionFeedback.value = "";
+  } catch (error) {
+    logRetentionDraft.value = null;
+    logRetentionFeedbackTone.value = "error";
+    logRetentionFeedback.value =
+      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceLogLoadError;
+  }
+};
+
+const updateLogRetentionSize = (field: "maxBytesPerRun" | "maxBytesTotal", event: Event) => {
+  if (!logRetentionDraft.value) return;
+  const value = (event.target as HTMLInputElement).valueAsNumber;
+  if (!Number.isFinite(value)) return;
+  logRetentionDraft.value = {
+    ...logRetentionDraft.value,
+    [field]: Math.max(1024, Math.round(value * 1024 * 1024)),
+  };
+};
+
+const updateLogRetentionRuns = (event: Event) => {
+  if (!logRetentionDraft.value) return;
+  const value = (event.target as HTMLInputElement).valueAsNumber;
+  if (!Number.isFinite(value)) return;
+  logRetentionDraft.value = {
+    ...logRetentionDraft.value,
+    maxCompletedRunsPerProject: Math.floor(value),
+  };
+};
+
+const updateLogRetentionPersistence = (event: Event) => {
+  if (!logRetentionDraft.value) return;
+  logRetentionDraft.value = {
+    ...logRetentionDraft.value,
+    persist: (event.target as HTMLInputElement).checked,
+  };
+};
+
+const saveLogRetention = async () => {
+  const draft = logRetentionDraft.value;
+  if (!draft) return;
+  if (
+    !Number.isSafeInteger(draft.maxCompletedRunsPerProject) ||
+    draft.maxCompletedRunsPerProject < 1 ||
+    !Number.isSafeInteger(draft.maxBytesPerRun) ||
+    draft.maxBytesPerRun < 1024 ||
+    !Number.isSafeInteger(draft.maxBytesTotal) ||
+    draft.maxBytesTotal < 1024
+  ) {
+    logRetentionFeedbackTone.value = "error";
+    logRetentionFeedback.value = t.value.settings.projectLaunchServiceLogInvalid;
+    return;
+  }
+  logRetentionSaving.value = true;
+  logRetentionFeedback.value = "";
+  try {
+    const retention = await store.updateProjectLaunchServiceLogRetention({ ...draft });
+    logRetentionDraft.value = { ...retention.policy };
+    logRetentionFeedbackTone.value = "success";
+    logRetentionFeedback.value = t.value.settings.projectLaunchServiceLogSaveSuccess;
+  } catch (error) {
+    logRetentionFeedbackTone.value = "error";
+    logRetentionFeedback.value =
+      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceLogSaveError;
+  } finally {
+    logRetentionSaving.value = false;
+  }
+};
+
+const confirmClearLogRetention = async () => {
+  logRetentionClearBusy.value = true;
+  logRetentionFeedback.value = "";
+  try {
+    const result = await store.clearProjectLaunchServiceLogs();
+    try {
+      await refreshLogRetention();
+    } catch (error) {
+      // Keep the successful clear result visible even if the follow-up usage read fails.
+    }
+    logRetentionFeedbackTone.value = "success";
+    logRetentionFeedback.value = t.value.settings.projectLaunchServiceLogClearResult
+      .replace("{count}", String(result.deletedCount))
+      .replace("{size}", formatLogBytes(result.releasedBytes));
+    logRetentionClearOpen.value = false;
+  } catch (error) {
+    logRetentionFeedbackTone.value = "error";
+    logRetentionFeedback.value =
+      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceLogClearError;
+  } finally {
+    logRetentionClearBusy.value = false;
+  }
 };
 
 const handleAddAiMode = () => {
@@ -424,6 +566,7 @@ const aiTestTitle = computed(() => {
 
 onMounted(() => {
   void loadAiModels();
+  void refreshLogRetention();
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 
@@ -1032,7 +1175,7 @@ watch(
             </dd>
             <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceLogRetention }}</dt>
             <dd class="min-w-0 break-words text-on-surface-variant">
-              {{ t.terminal.historyRetention }}
+              {{ projectLaunchServiceLogRetentionSummary }}
             </dd>
           </dl>
 
@@ -1093,6 +1236,132 @@ watch(
               {{ t.settings.projectLaunchServiceOpenReleases }}
             </button>
           </div>
+        </div>
+
+        <div class="mt-3 border-t border-border-subtle pt-3">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceLogPersistence }}</p>
+              <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
+                {{ t.settings.projectLaunchServiceLogPersistenceHint }}
+              </p>
+            </div>
+            <div class="flex shrink-0 gap-1.5">
+              <button
+                type="button"
+                class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-primary px-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                :disabled="!logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy"
+                @click="saveLogRetention"
+              >
+                <Save :size="13" />
+                {{
+                  logRetentionSaving ? t.settings.projectLaunchServiceLogSaving : t.settings.projectLaunchServiceLogSave
+                }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex h-8 items-center gap-1.5 rounded border border-status-error/30 bg-surface px-2.5 text-xs font-bold text-status-error transition-colors hover:bg-status-error/10 disabled:cursor-not-allowed disabled:opacity-55"
+                :disabled="!logRetentionReady || logRetentionClearBusy"
+                @click="logRetentionClearOpen = true"
+              >
+                <Trash2 :size="13" />
+                {{ t.settings.projectLaunchServiceLogClear }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
+            class="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+          >
+            <label
+              class="flex min-w-0 items-center justify-between gap-2 rounded border border-border-subtle bg-surface-container-low px-2.5 py-2 text-xs font-semibold text-on-surface"
+            >
+              <span class="min-w-0">{{ t.settings.projectLaunchServiceLogPersistLabel }}</span>
+              <input
+                type="checkbox"
+                role="switch"
+                class="h-4 w-4 shrink-0 accent-primary"
+                :checked="logRetentionDraft.persist"
+                :disabled="!logRetentionReady || logRetentionSaving"
+                @change="updateLogRetentionPersistence"
+              />
+            </label>
+            <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+              {{ t.settings.projectLaunchServiceLogCompletedRuns }}
+              <input
+                type="number"
+                min="1"
+                step="1"
+                :value="logRetentionDraft.maxCompletedRunsPerProject"
+                :disabled="!logRetentionReady || logRetentionSaving"
+                class="ui-field mt-1 h-8 w-full text-sm font-normal text-on-surface"
+                @input="updateLogRetentionRuns"
+              />
+            </label>
+            <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+              {{ t.settings.projectLaunchServiceLogPerRunSize }}
+              <input
+                type="number"
+                min="0.001"
+                step="0.001"
+                :value="formatLogMiB(logRetentionDraft.maxBytesPerRun)"
+                :disabled="!logRetentionReady || logRetentionSaving"
+                class="ui-field mt-1 h-8 w-full text-sm font-normal text-on-surface"
+                @input="updateLogRetentionSize('maxBytesPerRun', $event)"
+              />
+            </label>
+            <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+              {{ t.settings.projectLaunchServiceLogTotalSize }}
+              <input
+                type="number"
+                min="0.001"
+                step="0.001"
+                :value="formatLogMiB(logRetentionDraft.maxBytesTotal)"
+                :disabled="!logRetentionReady || logRetentionSaving"
+                class="ui-field mt-1 h-8 w-full text-sm font-normal text-on-surface"
+                @input="updateLogRetentionSize('maxBytesTotal', $event)"
+              />
+            </label>
+          </div>
+          <div
+            v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
+            class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-on-surface-variant"
+          >
+            <span>
+              {{ t.settings.projectLaunchServiceLogUsage }}:
+              <strong class="font-semibold text-on-surface">
+                {{ formatLogBytes(projectLaunchServiceLogRetentionStatus.usage.totalBytes) }} /
+                {{ formatLogBytes(projectLaunchServiceLogRetentionStatus.policy.maxBytesTotal) }}
+              </strong>
+            </span>
+            <span>
+              {{ projectLaunchServiceLogRetentionStatus.usage.fileCount }}
+              {{ t.settings.projectLaunchServiceLogFiles }}
+            </span>
+          </div>
+          <p v-else class="mt-2 text-[11px] leading-4 text-on-surface-variant">
+            {{ t.settings.projectLaunchServiceLogUnavailable }}
+          </p>
+          <p
+            v-if="logRetentionDraft && !logRetentionDraft.persist"
+            class="mt-2 text-[11px] leading-4 text-status-warning"
+          >
+            {{ t.settings.projectLaunchServiceLogPersistenceOff }}
+          </p>
+          <p
+            v-if="logRetentionFeedback"
+            :class="
+              cn(
+                'mt-2 text-[11px] leading-4',
+                logRetentionFeedbackTone === 'error' ? 'text-status-error' : 'text-status-running',
+              )
+            "
+            role="status"
+            aria-live="polite"
+          >
+            {{ logRetentionFeedback }}
+          </p>
         </div>
 
         <div
@@ -1430,6 +1699,20 @@ watch(
         </div>
       </Transition>
     </Teleport>
+
+    <ActionDialog
+      :open="logRetentionClearOpen"
+      tone="danger"
+      icon="trash"
+      :title="t.settings.projectLaunchServiceLogClearTitle"
+      :message="t.settings.projectLaunchServiceLogClearMessage"
+      :primary-label="t.settings.projectLaunchServiceLogClear"
+      :busy="logRetentionClearBusy"
+      :busy-label="t.settings.projectLaunchServiceLogClearBusy"
+      :cancel-label="t.common.cancel"
+      @cancel="logRetentionClearOpen = false"
+      @primary="confirmClearLogRetention"
+    />
 
     <ActionDialog
       :open="projectLaunchServiceDisableWarningOpen"

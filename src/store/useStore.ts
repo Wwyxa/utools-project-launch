@@ -91,6 +91,11 @@ import type {
   ProjectLaunchServicePreferences,
   ProjectLaunchServiceAutomationConfig,
   ProjectLaunchServiceEvent,
+  ProjectLaunchServiceLogClearResult,
+  ProjectLaunchServiceLogClearScope,
+  ProjectLaunchServiceLogDescriptor,
+  ProjectLaunchServiceLogRetentionPolicy,
+  ProjectLaunchServiceLogRetentionStatus,
   ProjectLaunchServiceRunLog,
   ProjectLaunchServiceStatus,
   ProjectVisibility,
@@ -1529,6 +1534,7 @@ export const useStore = defineStore("app", {
     environmentPreferences: bridge.loadEnvironmentPreferences(),
     projectLaunchServicePreferences: bridge.loadProjectLaunchServicePreferences() as ProjectLaunchServicePreferences,
     projectLaunchServiceStatus: null as ProjectLaunchServiceStatus | null,
+    projectLaunchServiceLogRetentionStatus: null as ProjectLaunchServiceLogRetentionStatus | null,
     builtinEnvironmentTools: bridge.loadBuiltinEnvironmentTools() as EnvironmentToolDefinition[],
     environmentResults: [] as EnvironmentToolResult[],
     environmentChecked: false,
@@ -1938,6 +1944,29 @@ export const useStore = defineStore("app", {
         ...runLog,
         logs: retainedRunLogEntries(runLog),
       };
+    },
+    async loadProjectLaunchServiceRunLogPage(runId: string, beforeOffset: number) {
+      const runLog = await bridge.getProjectLaunchServiceRunLogPage(runId, beforeOffset);
+      return {
+        ...runLog,
+        logs: retainedRunLogEntries(runLog),
+      };
+    },
+    async refreshProjectLaunchServiceLogRetention() {
+      this.projectLaunchServiceLogRetentionStatus = await bridge.getProjectLaunchServiceLogRetention();
+      return this.projectLaunchServiceLogRetentionStatus;
+    },
+    async updateProjectLaunchServiceLogRetention(policy: ProjectLaunchServiceLogRetentionPolicy) {
+      this.projectLaunchServiceLogRetentionStatus = await bridge.updateProjectLaunchServiceLogRetention(policy);
+      return this.projectLaunchServiceLogRetentionStatus;
+    },
+    async listProjectLaunchServiceLogs(projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]> {
+      return bridge.listProjectLaunchServiceLogs(projectId);
+    },
+    async clearProjectLaunchServiceLogs(
+      scope?: ProjectLaunchServiceLogClearScope,
+    ): Promise<ProjectLaunchServiceLogClearResult> {
+      return bridge.clearProjectLaunchServiceLogs(scope);
     },
     async downloadProjectLaunchService() {
       this.projectLaunchServiceStatus = {

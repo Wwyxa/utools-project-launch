@@ -106,6 +106,7 @@ export interface ProjectLaunchServiceRun {
   automationRunId?: string;
   processIdentity?: string;
   outputTruncated?: boolean;
+  durableWriteError?: string;
 }
 
 export interface ProjectLaunchServiceEvent {
@@ -130,6 +131,47 @@ export interface ProjectLaunchServiceRunLog {
   events: ProjectLaunchServiceEvent[];
   truncated: boolean;
   sizeBytes: number;
+  hasMore?: boolean;
+  nextOffset?: number;
+}
+
+export interface ProjectLaunchServiceLogRetentionPolicy {
+  persist: boolean;
+  maxCompletedRunsPerProject: number;
+  maxBytesPerRun: number;
+  maxBytesTotal: number;
+}
+
+export interface ProjectLaunchServiceLogUsage {
+  fileCount: number;
+  totalBytes: number;
+}
+
+export interface ProjectLaunchServiceLogRetentionStatus {
+  policy: ProjectLaunchServiceLogRetentionPolicy;
+  usage: ProjectLaunchServiceLogUsage;
+}
+
+export interface ProjectLaunchServiceLogDescriptor {
+  runId: string;
+  projectId: string;
+  scriptId: string;
+  label: string;
+  status: ProjectLaunchServiceRunStatus;
+  startedAt: string;
+  endedAt?: string;
+  sizeBytes: number;
+  truncated: boolean;
+  available: boolean;
+}
+
+export interface ProjectLaunchServiceLogClearResult {
+  deletedCount: number;
+  releasedBytes: number;
+}
+
+export interface ProjectLaunchServiceLogClearScope {
+  runId: string;
 }
 
 export interface ProjectLaunchServiceScriptConfig {
@@ -1184,6 +1226,13 @@ export interface ProjectBridge {
   stopProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   reconcileProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog>;
+  getProjectLaunchServiceRunLogPage(runId: string, beforeOffset: number): Promise<ProjectLaunchServiceRunLog>;
+  getProjectLaunchServiceLogRetention(): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  updateProjectLaunchServiceLogRetention(
+    policy: ProjectLaunchServiceLogRetentionPolicy,
+  ): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  listProjectLaunchServiceLogs(projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]>;
+  clearProjectLaunchServiceLogs(scope?: ProjectLaunchServiceLogClearScope): Promise<ProjectLaunchServiceLogClearResult>;
   syncProjectLaunchServiceAutomation(
     config: ProjectLaunchServiceAutomationConfig,
   ): Promise<ProjectLaunchServiceAutomationSyncResult>;

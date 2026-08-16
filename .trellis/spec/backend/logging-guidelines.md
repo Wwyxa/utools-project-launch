@@ -149,7 +149,7 @@ store.addLog(event.projectId, log, event.scriptId);
 ### 3. Contracts
 
 - Each run gets one append-only log file keyed only by the validated 32-character lowercase hexadecimal `runId`.
-- Keep at most 5 MiB per run, 100 MiB across logs, and 200 log files. Enforce limits at service startup and after every append.
+- Keep at most 5 MiB per run, 100 MiB across logs, and 200 log files. Use one buffered JSONL writer per active run, flushing at about 64 KiB or 200 ms; enforce limits at startup, bounded flush thresholds, run completion, policy changes, service close, and explicit clear boundaries.
 - Delete the oldest completed-run logs before trimming active logs. Active files may temporarily exceed the file-count limit, but total-size trimming may keep only their newest complete JSONL records.
 - If an abrupt stop leaves an incomplete final JSONL record, return earlier complete events with `truncated: true`; a malformed interior record remains an error.
 - The service must not persist tokens, full environment maps, or credentials in events. The run command belongs to run metadata; the generic service `started` event message is a status message, not a command label.

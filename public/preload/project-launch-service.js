@@ -716,6 +716,35 @@ function projectLaunchServiceResponseError(response, fallbackMessage) {
   return error;
 }
 
+function normalizeProjectLaunchServiceRunLog(payload, runId) {
+  const fallback = {
+    runId,
+    events: [],
+    truncated: false,
+    sizeBytes: 0,
+    hasMore: false,
+    nextOffset: 0,
+  };
+  if (payload === null || payload === undefined) {
+    return fallback;
+  }
+  if (typeof payload !== "object" || Array.isArray(payload)) {
+    const error = new Error("项目启动服务返回了无效的运行日志。");
+    error.code = "invalid-run-log-response";
+    throw error;
+  }
+  if (payload.events !== null && payload.events !== undefined && !Array.isArray(payload.events)) {
+    const error = new Error("项目启动服务返回了无效的运行日志事件。");
+    error.code = "invalid-run-log-response";
+    throw error;
+  }
+  return {
+    ...payload,
+    runId: typeof payload.runId === "string" && payload.runId ? payload.runId : runId,
+    events: Array.isArray(payload.events) ? payload.events : [],
+  };
+}
+
 async function projectLaunchServiceConnection() {
   const discovery = readProjectLaunchServiceDiscovery();
   const token = readProjectLaunchServiceToken();
@@ -791,7 +820,124 @@ async function getProjectLaunchServiceRunLog(runId) {
   if (response.statusCode !== 200) {
     throw projectLaunchServiceResponseError(response, "运行日志读取失败。");
   }
-  return response.payload || { runId, events: [], truncated: false, sizeBytes: 0 };
+  return normalizeProjectLaunchServiceRunLog(response.payload, runId);
+}
+
+async function getProjectLaunchServiceRunLogPage(runId, beforeOffset) {
+  if (!/^[0-9a-f]{32}$/.test(String(runId || ""))) {
+    const error = new Error("运行日志标识无效。");
+    error.code = "invalid-run-id";
+    throw error;
+  }
+  if (!Number.isSafeInteger(beforeOffset) || beforeOffset < 0) {
+    const error = new Error("运行日志分页位置无效。");
+    error.code = "invalid-log-page";
+    throw error;
+  }
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/runs/${runId}/log?before=${encodeURIComponent(String(beforeOffset))}`,
+    undefined,
+    { maxResponseBytes: projectLaunchServiceRunLogResponseLimitBytes },
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "运行日志分页读取失败。");
+  }
+  return normalizeProjectLaunchServiceRunLog(response.payload, runId);
+}
+
+async function getProjectLaunchServiceLogRetention() {
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    "/v1/log-retention",
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "日志保留策略读取失败。");
+  }
+  if (!response.payload || typeof response.payload !== "object") {
+    const error = new Error("项目启动服务返回了无效的日志保留策略。");
+    error.code = "invalid-log-retention-response";
+    throw error;
+  }
+  return response.payload;
+}
+
+async function updateProjectLaunchServiceLogRetention(policy) {
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "PUT",
+    "/v1/log-retention",
+    policy,
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "日志保留策略更新失败。");
+  }
+  if (!response.payload || typeof response.payload !== "object") {
+    const error = new Error("项目启动服务返回了无效的日志保留策略。");
+    error.code = "invalid-log-retention-response";
+    throw error;
+  }
+  return response.payload;
+}
+
+async function listProjectLaunchServiceLogs(projectId) {
+  const normalizedProjectId = String(projectId || "").trim();
+  if (!normalizedProjectId) {
+    const error = new Error("项目标识无效。");
+    error.code = "invalid-project-id";
+    throw error;
+  }
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/logs?projectId=${encodeURIComponent(normalizedProjectId)}`,
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "运行日志列表读取失败。");
+  }
+  if (!Array.isArray(response.payload?.logs)) {
+    const error = new Error("项目启动服务返回了无效的运行日志列表。");
+    error.code = "invalid-log-list-response";
+    throw error;
+  }
+  return response.payload.logs;
+}
+
+async function clearProjectLaunchServiceLogs(scope) {
+  const hasScope = scope !== undefined;
+  const runId = typeof scope?.runId === "string" ? scope.runId.trim() : "";
+  if (hasScope && !/^[0-9a-f]{32}$/.test(runId)) {
+    const error = new Error("运行标识无效。");
+    error.code = "invalid-log-scope";
+    throw error;
+  }
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "POST",
+    "/v1/logs/clear",
+    hasScope ? { runId } : {},
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "运行日志清除失败。");
+  }
+  if (!response.payload || typeof response.payload !== "object") {
+    const error = new Error("项目启动服务返回了无效的日志清除结果。");
+    error.code = "invalid-log-clear-response";
+    throw error;
+  }
+  return response.payload;
 }
 
 function advanceProjectLaunchServiceEventCursor(batch) {
@@ -871,9 +1017,19 @@ function projectLaunchServiceEventToBridgeEvent(event) {
 
 function projectLaunchServiceAutomationSnapshot(automation) {
   const revision = Number(automation?.revision);
+  const executions = Array.isArray(automation?.executions)
+    ? automation.executions
+        .filter((execution) => execution && typeof execution === "object" && !Array.isArray(execution))
+        .map((execution) => ({
+          ...execution,
+          scriptResults: Array.isArray(execution.scriptResults)
+            ? execution.scriptResults.filter((result) => result && typeof result === "object" && !Array.isArray(result))
+            : [],
+        }))
+    : undefined;
   return {
     revision: Number.isSafeInteger(revision) && revision >= 0 ? revision : 0,
-    ...(Array.isArray(automation?.executions) ? { executions: automation.executions } : {}),
+    ...(executions ? { executions } : {}),
   };
 }
 

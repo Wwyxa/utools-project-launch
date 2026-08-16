@@ -1473,9 +1473,11 @@ describe("Project Launch Service preload installation", () => {
     }
   });
 
-  it("reads the persisted automation revision while service mode is disabled", async () => {
+  it("normalizes null persisted automation and run log events", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const requestedPaths: string[] = [];
+    const requestedBodies: string[] = [];
+    const runID = "11111111111111111111111111111111";
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
         requestedPaths.push(options.path);
@@ -1484,7 +1486,9 @@ describe("Project Launch Service preload installation", () => {
           end: () => void;
           write: (chunk: string) => void;
         };
-        request.write = () => undefined;
+        request.write = (chunk) => {
+          requestedBodies.push(chunk);
+        };
         request.destroy = (error) => {
           if (error) queueMicrotask(() => request.emit("error", error));
         };
@@ -1492,7 +1496,7 @@ describe("Project Launch Service preload installation", () => {
           const payload =
             options.path === "/v1/health"
               ? {
-                  protocolVersion: 1,
+                  protocolVersion: 2,
                   serviceVersion: "test",
                   instanceId: "existing-service",
                   pid: process.pid,
@@ -1503,9 +1507,33 @@ describe("Project Launch Service preload installation", () => {
                     runs: [],
                     latestCursor: 0,
                     earliestCursor: 0,
-                    automation: { revision: 7, executions: [] },
+                    automation: {
+                      revision: 7,
+                      executions: [
+                        {
+                          id: "execution",
+                          projectId: "project",
+                          taskId: "task",
+                          planEntryId: "entry",
+                          status: "completed",
+                          currentScriptIndex: 0,
+                          scriptResults: null,
+                        },
+                      ],
+                    },
                   }
-                : null;
+                : options.path === `/v1/runs/${runID}/log?before=0`
+                  ? {
+                      runId: runID,
+                      events: null,
+                      truncated: false,
+                      sizeBytes: 0,
+                      hasMore: false,
+                      nextOffset: 0,
+                    }
+                  : options.path === "/v1/logs/clear"
+                    ? { deletedCount: 1, releasedBytes: 128 }
+                    : null;
           const response = new EventEmitter() as EventEmitter & { statusCode: number };
           response.statusCode = payload ? 200 : 404;
           queueMicrotask(() => {
@@ -1527,7 +1555,7 @@ describe("Project Launch Service preload installation", () => {
       writeFileSync(
         join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
-          protocolVersion: 1,
+          protocolVersion: 2,
           serviceVersion: "test",
           instanceId: "existing-service",
           pid: process.pid,
@@ -1539,13 +1567,34 @@ describe("Project Launch Service preload installation", () => {
         }),
       );
 
-      await expect(bridge.reconcileProjectLaunchService()).resolves.toMatchObject({
+      const reconciled = await bridge.reconcileProjectLaunchService();
+      expect(reconciled).toMatchObject({
         state: "healthy",
         running: true,
         automationRevision: 7,
         automation: { revision: 7 },
       });
-      expect(requestedPaths).toEqual(["/v1/health", "/v1/state"]);
+      expect(reconciled.automation?.executions?.[0]?.scriptResults).toEqual([]);
+      await expect(bridge.getProjectLaunchServiceRunLogPage(runID, 0)).resolves.toMatchObject({
+        runId: runID,
+        events: [],
+      });
+      await expect(bridge.clearProjectLaunchServiceLogs({ runId: runID })).resolves.toMatchObject({
+        deletedCount: 1,
+        releasedBytes: 128,
+      });
+      await expect(bridge.clearProjectLaunchServiceLogs()).resolves.toMatchObject({
+        deletedCount: 1,
+        releasedBytes: 128,
+      });
+      expect(requestedPaths).toEqual([
+        "/v1/health",
+        "/v1/state",
+        `/v1/runs/${runID}/log?before=0`,
+        "/v1/logs/clear",
+        "/v1/logs/clear",
+      ]);
+      expect(requestedBodies).toEqual([JSON.stringify({ runId: runID }), JSON.stringify({})]);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
@@ -2935,7 +2984,7 @@ describe("uTools preload UI preferences", () => {
       writeFileSync(
         discoveryPath,
         JSON.stringify({
-          protocolVersion: 1,
+          protocolVersion: 2,
           serviceVersion: "test",
           instanceId: "stale-instance",
           pid: process.pid,

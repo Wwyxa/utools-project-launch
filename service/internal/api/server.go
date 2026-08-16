@@ -85,6 +85,14 @@ type automationConfigRequest struct {
 	Config   json.RawMessage `json:"config"`
 }
 
+type logsResponse struct {
+	Logs []state.LogDescriptor `json:"logs"`
+}
+
+type clearLogsRequest struct {
+	RunID *string `json:"runId"`
+}
+
 type serviceSnapshot struct {
 	state.Snapshot
 	Automation state.AutomationState     `json:"automation"`
@@ -140,6 +148,14 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		})
 	case request.Method == http.MethodGet && request.URL.Path == "/v1/state":
 		handler.writeJSON(responseWriter, http.StatusOK, handler.serviceSnapshot())
+	case request.Method == http.MethodGet && request.URL.Path == "/v1/log-retention":
+		handler.handleLogRetention(responseWriter, request)
+	case request.Method == http.MethodPut && request.URL.Path == "/v1/log-retention":
+		handler.handleLogRetention(responseWriter, request)
+	case request.Method == http.MethodGet && request.URL.Path == "/v1/logs":
+		handler.handleLogs(responseWriter, request)
+	case request.Method == http.MethodPost && request.URL.Path == "/v1/logs/clear":
+		handler.handleClearLogs(responseWriter, request)
 	case request.Method == http.MethodPut && request.URL.Path == "/v1/automation/config":
 		handler.handleAutomationConfig(responseWriter, request)
 	case request.Method == http.MethodGet && request.URL.Path == "/v1/events":
@@ -202,6 +218,79 @@ func (handler *Handler) handleAutomationConfig(responseWriter http.ResponseWrite
 		return
 	}
 	handler.writeJSON(responseWriter, http.StatusOK, updated)
+}
+
+func (handler *Handler) handleLogRetention(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method == http.MethodGet {
+		status, err := handler.config.Supervisor.LogRetentionStatus()
+		if err != nil {
+			handler.writeError(responseWriter, http.StatusInternalServerError, "log_retention_failed", err.Error())
+			return
+		}
+		handler.writeJSON(responseWriter, http.StatusOK, status)
+		return
+	}
+
+	if !handler.requireJSON(responseWriter, request) {
+		return
+	}
+	var policy state.LogRetentionPolicy
+	if _, ok := handler.readJSON(responseWriter, request, &policy); !ok {
+		return
+	}
+	status, err := handler.config.Supervisor.UpdateLogRetention(policy)
+	if err != nil {
+		if errors.Is(err, state.ErrLogRetentionPolicyInvalid) {
+			handler.writeError(responseWriter, http.StatusBadRequest, "invalid_log_retention", err.Error())
+			return
+		}
+		handler.writeError(responseWriter, http.StatusInternalServerError, "log_retention_failed", err.Error())
+		return
+	}
+	handler.writeJSON(responseWriter, http.StatusOK, status)
+}
+
+func (handler *Handler) handleLogs(responseWriter http.ResponseWriter, request *http.Request) {
+	projectID := strings.TrimSpace(request.URL.Query().Get("projectId"))
+	if projectID == "" {
+		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_project_id", "A projectId query parameter is required.")
+		return
+	}
+	logs, err := handler.config.Supervisor.RetainedLogDescriptors(projectID)
+	if err != nil {
+		handler.writeError(responseWriter, http.StatusInternalServerError, "logs_list_failed", err.Error())
+		return
+	}
+	handler.writeJSON(responseWriter, http.StatusOK, logsResponse{Logs: logs})
+}
+
+func (handler *Handler) handleClearLogs(responseWriter http.ResponseWriter, request *http.Request) {
+	if !handler.requireJSON(responseWriter, request) {
+		return
+	}
+	var payload clearLogsRequest
+	if _, ok := handler.readJSON(responseWriter, request, &payload); !ok {
+		return
+	}
+	var (
+		result state.LogClearResult
+		err    error
+	)
+	if payload.RunID == nil {
+		result, err = handler.config.Supervisor.ClearPersistedLogs()
+	} else {
+		runID := strings.TrimSpace(*payload.RunID)
+		if !isSafeRunID(runID) {
+			handler.writeError(responseWriter, http.StatusBadRequest, "invalid_run_id", "runId must be a 32-character lowercase hexadecimal identifier.")
+			return
+		}
+		result, err = handler.config.Supervisor.ClearPersistedLogsForRun(runID)
+	}
+	if err != nil {
+		handler.writeError(responseWriter, http.StatusInternalServerError, "logs_clear_failed", err.Error())
+		return
+	}
+	handler.writeJSON(responseWriter, http.StatusOK, result)
 }
 
 func (handler *Handler) handleEvents(responseWriter http.ResponseWriter, request *http.Request) {
@@ -319,16 +408,45 @@ func (handler *Handler) handleRunLog(responseWriter http.ResponseWriter, request
 		return
 	}
 
-	runLog, err := handler.config.Supervisor.RunLog(pathParts[0])
+	beforeOffset, paged, err := parseRunLogPage(request)
+	if err != nil {
+		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_log_page", err.Error())
+		return
+	}
+	var runLog state.RunLog
+	if paged {
+		runLog, err = handler.config.Supervisor.RunLogPage(pathParts[0], beforeOffset)
+	} else {
+		runLog, err = handler.config.Supervisor.RunLog(pathParts[0])
+	}
 	if err != nil {
 		if errors.Is(err, state.ErrRunLogUnavailable) {
 			handler.writeError(responseWriter, http.StatusNotFound, "run_log_unavailable", "The retained log for this run is no longer available.")
+			return
+		}
+		if errors.Is(err, state.ErrRunLogPageInvalid) {
+			handler.writeError(responseWriter, http.StatusBadRequest, "invalid_log_page", err.Error())
 			return
 		}
 		handler.writeError(responseWriter, http.StatusInternalServerError, "run_log_failed", err.Error())
 		return
 	}
 	handler.writeJSON(responseWriter, http.StatusOK, runLog)
+}
+
+func parseRunLogPage(request *http.Request) (int64, bool, error) {
+	values, paged := request.URL.Query()["before"]
+	if !paged {
+		return 0, false, nil
+	}
+	if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
+		return 0, false, fmt.Errorf("%w: before must be one non-negative byte offset", state.ErrRunLogPageInvalid)
+	}
+	beforeOffset, err := strconv.ParseInt(values[0], 10, 64)
+	if err != nil || beforeOffset < 0 {
+		return 0, false, fmt.Errorf("%w: before must be one non-negative byte offset", state.ErrRunLogPageInvalid)
+	}
+	return beforeOffset, true, nil
 }
 
 func (handler *Handler) authorize(responseWriter http.ResponseWriter, request *http.Request) bool {

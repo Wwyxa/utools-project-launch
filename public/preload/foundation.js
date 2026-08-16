@@ -55,7 +55,7 @@ const completedProcessResults = new Map();
 const completedAutomationProcessResults = new Map();
 const completedProcessResultLimit = 100;
 const processStopGracePeriodMs = 3500;
-const projectLaunchServiceProtocolVersion = 1;
+const projectLaunchServiceProtocolVersion = 2;
 const projectLaunchServiceStartupTimeoutMs = 7000;
 const projectLaunchServiceRequestTimeoutMs = 3000;
 const projectLaunchServiceEventPollIntervalMs = 750;
@@ -831,4 +831,3 @@ function normalizeAiPreferences(value) {
     modes: normalizeAiPromptModes(value.modes, value.commitMessagePrompt),
   };
 }
-

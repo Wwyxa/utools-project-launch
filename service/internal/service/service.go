@@ -30,6 +30,8 @@ type Service struct {
 	httpServer    *http.Server
 	discovery     state.Discovery
 	directoryLock *state.DirectoryLock
+	store         *state.Store
+	supervisor    *serviceprocess.Supervisor
 	scheduler     *scheduler.Runtime
 	schedulerStop context.CancelFunc
 	started       bool
@@ -165,6 +167,8 @@ func (service *Service) Start() error {
 	service.httpServer = httpServer
 	service.discovery = discovery
 	service.directoryLock = directoryLock
+	service.store = store
+	service.supervisor = supervisor
 	service.scheduler = schedulerRuntime
 	service.started = true
 	closeDirectoryLock = false
@@ -209,7 +213,9 @@ func (service *Service) serve() {
 
 	if err := httpServer.Serve(service.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		service.stopOnce.Do(func() {
-			service.shutdownErr = service.cleanupDiscovery(err)
+			shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			service.shutdownErr = service.shutdown(shutdownContext)
 			close(service.done)
 		})
 	}
@@ -219,16 +225,23 @@ func (service *Service) shutdown(shutdownContext context.Context) error {
 	service.mutex.Lock()
 	httpServer := service.httpServer
 	schedulerStop := service.schedulerStop
+	supervisor := service.supervisor
 	service.schedulerStop = nil
 	service.mutex.Unlock()
 	if httpServer == nil {
-		return nil
+		if supervisor == nil {
+			return nil
+		}
+		return supervisor.Close()
 	}
 
 	if schedulerStop != nil {
 		schedulerStop()
 	}
 	err := httpServer.Shutdown(shutdownContext)
+	if supervisor != nil {
+		err = errors.Join(err, supervisor.Close())
+	}
 	return service.cleanupDiscovery(err)
 }
 
