@@ -2423,7 +2423,14 @@ describe("store startup timing", () => {
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
   });
 
-  it("applies live service automation snapshots to the active task and history", async () => {
+  it("applies live service automation snapshots, history, and one completion notification", async () => {
+    const showNotification = vi.fn();
+    window.utools = {
+      isDarkColors: () => false,
+      onPluginEnter: () => undefined,
+      outPlugin: () => false,
+      showNotification,
+    };
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects: vi.fn(async () => []),
@@ -2452,7 +2459,7 @@ describe("store startup timing", () => {
             schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
             missedPolicy: "grace-run",
             missedGraceMinutes: 5,
-            notifyEnabled: false,
+            notifyEnabled: true,
             maxScriptRuntimeMinutes: 30,
             inputConfigs: [],
             exitConfigs: [],
@@ -2537,6 +2544,35 @@ describe("store startup timing", () => {
     expect(store.automationActiveProjectRuns["automation-project"]).toBeUndefined();
     expect(task?.history).toHaveLength(1);
     expect(task?.history[0]).toMatchObject({ id: "automation-run", status: "completed" });
+    expect(showNotification).toHaveBeenCalledWith("任务“Deploy task”已完成");
+
+    store.handleBridgeEvent({
+      type: "service-state",
+      status: {
+        ...baseStatus,
+        automation: {
+          revision: 4,
+          executions: [
+            {
+              ...execution,
+              status: "completed",
+              currentScriptIndex: 1,
+              endedAt: "2026-08-15T09:01:00.000Z",
+              scriptResults: [
+                {
+                  scriptId: "automation-script",
+                  status: "completed",
+                  startedAt: execution.startedAt,
+                  endedAt: "2026-08-15T09:01:00.000Z",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    expect(showNotification).toHaveBeenCalledTimes(1);
 
     store.handleBridgeEvent({
       type: "service-state",

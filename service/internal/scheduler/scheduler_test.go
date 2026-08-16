@@ -151,6 +151,65 @@ func TestSchedulerExecutesEarlyPlanWithOriginalPlannedTime(t *testing.T) {
 	}
 }
 
+func TestSchedulerExecutesManualEarlyPlanForDisabledTask(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+
+	config, err := json.Marshal(Config{
+		SchemaVersion: 1,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID:   "manual-disabled-project",
+			Name: "Manual disabled project",
+			Path: stateDir,
+			Env:  map[string]string{},
+			Scripts: []ScriptConfig{{
+				ID:      "manual-disabled-script",
+				Name:    "Manual disabled script",
+				Command: "echo manual-disabled",
+				Cwd:     stateDir,
+			}},
+			AutomationTasks: []TaskConfig{{
+				ID:        "manual-disabled-task",
+				Name:      "Manual disabled task",
+				Enabled:   false,
+				ScriptIDs: []string{"manual-disabled-script"},
+				DailyPlans: []DailyPlan{{
+					Date: time.Now().UTC().Format("2006-01-02"),
+					Entries: []PlanEntry{{
+						ID:        "manual-disabled-entry",
+						PlannedAt: time.Now().UTC().Format(time.RFC3339Nano),
+						Status:    "pending",
+						RunEarly:  true,
+					}},
+				}},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(1, config); err != nil {
+		t.Fatalf("replace configuration: %v", err)
+	}
+
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run scheduler: %v", err)
+	}
+	waitForExecution(t, store, "manual-disabled-project", "manual-disabled-task", "manual-disabled-entry", state.AutomationExecutionCompleted)
+}
+
 func TestSchedulerContinuesAfterRecoverableErrorAndRecovers(t *testing.T) {
 	stateDir := t.TempDir()
 	store, err := state.Open(stateDir)

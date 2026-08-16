@@ -199,6 +199,22 @@ function releaseServiceAutomationSubmission(projectId: string) {
   serviceAutomationSubmissions.delete(projectId);
 }
 
+function notifyAutomationTaskCompletion(
+  task: Pick<ProjectAutomationTask, "name" | "notifyEnabled">,
+  status: ProjectAutomationHistoryEntry["status"],
+  reason: string,
+) {
+  if (!task.notifyEnabled) {
+    return;
+  }
+
+  const outcome =
+    status === "completed" ? "已完成" : status === "missed" ? "已错过" : status === "skipped" ? "已跳过" : "失败";
+  try {
+    window.utools?.showNotification?.(`任务“${task.name}”${outcome}${reason ? `：${reason}` : ""}`);
+  } catch {}
+}
+
 const queueGitWriteLock = (contextKey: string) => {
   const previousWrite = gitWriteLocks.get(contextKey) || Promise.resolve();
   let release: () => void = () => {};
@@ -1818,6 +1834,9 @@ export const useStore = defineStore("app", {
             : task.history.map((item, index) => (index === existingHistoryIndex ? historyEntry : item)),
         );
         task.updatedAt = execution.endedAt || execution.startedAt || task.updatedAt;
+        if (existingHistoryIndex === -1) {
+          notifyAutomationTaskCompletion(task, execution.status, execution.reason || "");
+        }
       }
 
       if (Array.isArray(serviceExecutions)) {
@@ -5007,14 +5026,8 @@ export const useStore = defineStore("app", {
         ...task.history,
       ].slice(0, AUTOMATION_HISTORY_LIMIT);
       task.updatedAt = endedAt;
-      if (notify && task.notifyEnabled) {
-        try {
-          window.utools?.showNotification?.(
-            `任务“${task.name}”${status === "completed" ? "已完成" : status === "missed" ? "已错过" : status === "skipped" ? "已跳过" : "失败"}${reason ? `：${reason}` : ""}`,
-          );
-        } catch (error) {
-          // Notifications are best-effort and must not affect automation execution.
-        }
+      if (notify) {
+        notifyAutomationTaskCompletion(task, status, reason);
       }
     },
     async runAutomationTask(projectId: string, taskId: string, entryId: string) {
@@ -5119,15 +5132,7 @@ export const useStore = defineStore("app", {
       ].slice(0, AUTOMATION_HISTORY_LIMIT);
       entry.reason = finalReason || undefined;
       task.updatedAt = endedAt;
-      if (task.notifyEnabled) {
-        try {
-          window.utools?.showNotification?.(
-            `任务“${task.name}”${finalStatus === "completed" ? "已完成" : "失败"}${finalReason ? `：${finalReason}` : ""}`,
-          );
-        } catch (error) {
-          // Notifications are best-effort and must not affect automation execution.
-        }
-      }
+      notifyAutomationTaskCompletion(task, finalStatus, finalReason);
       this.scheduleAutomationTimer();
       void this.persistProjects();
     },

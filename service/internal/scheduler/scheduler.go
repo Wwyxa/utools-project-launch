@@ -233,12 +233,9 @@ func (runtime *Runtime) runOnce(ctx context.Context) error {
 			scripts[script.ID] = script
 		}
 		for _, task := range project.AutomationTasks {
-			if !task.Enabled {
-				continue
-			}
 			for _, dailyPlan := range task.DailyPlans {
 				for _, entry := range dailyPlan.Entries {
-					if entry.Status != "pending" {
+					if entry.Status != "pending" || (!task.Enabled && !entry.RunEarly) {
 						continue
 					}
 					plannedAt, err := time.Parse(time.RFC3339Nano, entry.PlannedAt)
