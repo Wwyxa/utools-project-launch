@@ -334,3 +334,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 73: 完善项目启动服务日志保留与历史查看
+
+**Date**: 2026-08-17
+**Task**: 完善项目启动服务日志保留与历史查看
+**Branch**: `feat/go-service`
+
+### Summary
+
+完成项目启动服务日志持久化、保留策略、分页历史读取和运行级清除；验证 Go 服务、preload 桥接、TypeScript 与构建流程。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9b07bd7` | (see git log) |
+
+### Status
+
+[OK] **Completed**
