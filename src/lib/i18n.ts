@@ -336,6 +336,8 @@ const messages = {
       projectLaunchServiceEnable: "启用服务模式",
       projectLaunchServiceDisable: "关闭服务模式",
       projectLaunchServiceEnabledHint: "启用后由服务执行；不可用时不会回退。",
+      projectLaunchServiceDisableBlockedTitle: "无法关闭服务模式",
+      projectLaunchServiceDisableBlockedMessage: "请先停止正在由项目启动服务管理的项目，再关闭服务模式。",
       projectLaunchServiceManualHint: "也可手动放入匹配的可执行文件，然后重新检查以建立可信安装记录。",
       projectLaunchServiceNotInstalled: "未安装",
       projectLaunchServiceInstalled: "已安装，未启用",
@@ -813,6 +815,9 @@ const messages = {
       projectLaunchServiceEnable: "Enable service mode",
       projectLaunchServiceDisable: "Disable service mode",
       projectLaunchServiceEnabledHint: "When enabled, the service owns execution; unavailable mode does not fall back.",
+      projectLaunchServiceDisableBlockedTitle: "Cannot disable service mode",
+      projectLaunchServiceDisableBlockedMessage:
+        "Stop projects managed by Project Launch Service before disabling service mode.",
       projectLaunchServiceManualHint:
         "You can also place a matching executable manually, then recheck to create the trusted install record.",
       projectLaunchServiceNotInstalled: "Not installed",

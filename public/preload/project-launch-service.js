@@ -1001,7 +1001,7 @@ async function stopProjectLaunchService() {
 async function reconcileProjectLaunchService() {
   const preferences = readProjectLaunchServicePreferences();
   if (!preferences.enabled) {
-    return readProjectLaunchServiceStatus();
+    return readProjectLaunchServiceStatus({ includeState: true });
   }
 
   let status = await readProjectLaunchServiceStatus();

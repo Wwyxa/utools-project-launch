@@ -1626,6 +1626,13 @@ export const useStore = defineStore("app", {
       },
     pendingDeleteProject: (state): Project | undefined =>
       state.projects.find((project) => project.id === state.pendingDeleteProjectId),
+    hasActiveProjectLaunchServiceRuns: (state): boolean =>
+      state.projects.some((project) =>
+        project.scripts.some(
+          (script) =>
+            script.runtimeOwner === "service" && (script.status === "RUNNING" || script.status === "STOPPING"),
+        ),
+      ),
     currentMessages: (state) => (state.locale === "zh-CN" ? "zh-CN" : "en-US"),
   },
 
@@ -1712,6 +1719,7 @@ export const useStore = defineStore("app", {
       }
 
       const latestRuns = new Map<string, NonNullable<ProjectLaunchServiceStatus["runs"]>[number]>();
+      const lostServiceRunIds = new Set<string>();
       for (const run of status.runs || []) {
         if (!run.projectId || !run.scriptId || !run.id) {
           continue;
@@ -1720,6 +1728,9 @@ export const useStore = defineStore("app", {
         const previous = latestRuns.get(key);
         if (!previous || new Date(run.startedAt).getTime() >= new Date(previous.startedAt).getTime()) {
           latestRuns.set(key, run);
+        }
+        if (run.status === "lost") {
+          lostServiceRunIds.add(run.id);
         }
       }
 
@@ -1742,7 +1753,7 @@ export const useStore = defineStore("app", {
           script.runtimeOwner = "service";
         } else {
           script.status =
-            run.status === "failed" || run.status === "lost" ? "ERROR" : run.status === "stopped" ? "STOPPED" : "IDLE";
+            run.status === "failed" ? "ERROR" : run.status === "stopped" || run.status === "lost" ? "STOPPED" : "IDLE";
           script.pid = undefined;
           script.runId = undefined;
           script.runtimeOwner = undefined;
@@ -1825,11 +1836,16 @@ export const useStore = defineStore("app", {
         if (!eventTypes.has(event.type)) {
           continue;
         }
-        this.handleBridgeEvent({
+        const bridgeEvent: ProjectBridgeProcessEvent = {
           ...event,
           pid: Number.isInteger(event.pid) ? event.pid : 0,
           runtimeOwner: "service",
-        });
+        };
+        if (bridgeEvent.type === "error" && lostServiceRunIds.has(bridgeEvent.runId)) {
+          hasObservedServiceEvent(bridgeEvent);
+          continue;
+        }
+        this.handleBridgeEvent(bridgeEvent);
       }
     },
     async persistProjects(synchronizeProjectLaunchService = true) {
@@ -2008,17 +2024,19 @@ export const useStore = defineStore("app", {
         return this.projectLaunchServiceStatus;
       }
 
-      const activeScripts = this.projects.flatMap((project) =>
-        project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
-      );
-      if (activeScripts.length > 0) {
-        this.projectLaunchServiceStatus = {
-          ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
-          state: "unavailable",
-          message: enabled
-            ? "请先停止当前脚本，再启用项目启动服务。"
-            : "请先停止项目启动服务管理的脚本，再关闭服务模式。",
-        };
+      if (enabled) {
+        const activeScripts = this.projects.flatMap((project) =>
+          project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
+        );
+        if (activeScripts.length > 0) {
+          this.projectLaunchServiceStatus = {
+            ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+            state: "unavailable",
+            message: "请先停止当前脚本，再启用项目启动服务。",
+          };
+          return this.projectLaunchServiceStatus;
+        }
+      } else if (this.hasActiveProjectLaunchServiceRuns) {
         return this.projectLaunchServiceStatus;
       }
 

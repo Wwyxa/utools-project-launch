@@ -443,6 +443,60 @@ describe("browser UI preferences fallback", () => {
     expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
   });
 
+  it("keeps service mode enabled while service-managed scripts are still active", async () => {
+    const stopProjectLaunchService = vi.fn<ProjectBridge["stopProjectLaunchService"]>();
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 4,
+    };
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+      stopProjectLaunchService,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServiceStatus = healthyStatus;
+    store.projects = [
+      {
+        id: "active-service-project",
+        name: "Active service project",
+        path: "/workspace/active-service-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "active-service-script",
+            name: "dev",
+            command: "npm run dev",
+            status: "RUNNING",
+            runId: "active-service-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    expect(store.hasActiveProjectLaunchServiceRuns).toBe(true);
+    await store.setProjectLaunchServiceEnabled(false);
+
+    expect(stopProjectLaunchService).not.toHaveBeenCalled();
+    expect(store.projectLaunchServicePreferences.enabled).toBe(true);
+    expect(store.projectLaunchServiceStatus).toEqual(healthyStatus);
+  });
+
   it("pauses renderer automation until Project Launch Service accepts the ownership handoff", async () => {
     const healthyStatus: ProjectLaunchServiceStatus = {
       state: "healthy",
@@ -1049,6 +1103,87 @@ describe("browser UI preferences fallback", () => {
     );
   });
 
+  it("restores a service-lost script as stopped after service restart", async () => {
+    const runId = "lost-service-run";
+    const project: Project = {
+      id: "lost-service-project",
+      name: "Lost service project",
+      path: "/workspace/lost-service-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.RUNNING,
+      scripts: [
+        {
+          id: "lost-service-script",
+          name: "dev",
+          command: "npm run dev",
+          status: "RUNNING",
+          pid: 4242,
+          runId,
+          runtimeOwner: "service",
+        },
+      ],
+      env: {},
+    };
+    const status: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "linux",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-linux-amd64",
+      directoryPath: "/service",
+      executablePath: "/service/project-launch-service",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [
+        {
+          id: runId,
+          projectId: project.id,
+          scriptId: "lost-service-script",
+          label: "Lost service project / dev",
+          command: "npm run dev",
+          cwd: project.path,
+          pid: 4242,
+          status: "lost",
+          startedAt: "2026-08-16T00:00:00.000Z",
+          endedAt: "2026-08-16T00:00:01.000Z",
+          error: "The persisted process identity could not be verified after service restart.",
+        },
+      ],
+      events: [
+        {
+          cursor: 7,
+          timestamp: "2026-08-16T00:00:01.000Z",
+          type: "error",
+          runId,
+          projectId: project.id,
+          scriptId: "lost-service-script",
+          pid: 4242,
+          message: "The persisted process identity could not be verified after service restart.",
+        },
+      ],
+    };
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [project];
+
+    store.handleBridgeEvent({ type: "service-state", status });
+
+    const script = store.projects[0]?.scripts[0];
+    expect(script).toMatchObject({ status: "STOPPED" });
+    expect(script?.pid).toBeUndefined();
+    expect(script?.runId).toBeUndefined();
+    expect(script?.runtimeOwner).toBeUndefined();
+    expect(store.projects[0]?.status).toBe(ProjectStatus.STOPPED);
+    expect(store.scriptLogs[project.id]?.["lost-service-script"] || []).toEqual([]);
+  });
+
   it("clears all script runtime identity when a project path becomes unavailable", async () => {
     window.projectBridge = {
       ...getProjectBridge(),
@@ -1230,6 +1365,84 @@ describe("Project Launch Service preload installation", () => {
         running: false,
         message: "项目启动服务已安装，尚未运行。",
       });
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reads the persisted automation revision while service mode is disabled", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const requestedPaths: string[] = [];
+    const http = {
+      request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
+        requestedPaths.push(options.path);
+        const request = new EventEmitter() as EventEmitter & {
+          destroy: (error?: Error) => void;
+          end: () => void;
+          write: (chunk: string) => void;
+        };
+        request.write = () => undefined;
+        request.destroy = (error) => {
+          if (error) queueMicrotask(() => request.emit("error", error));
+        };
+        request.end = () => {
+          const payload =
+            options.path === "/v1/health"
+              ? {
+                  protocolVersion: 1,
+                  serviceVersion: "test",
+                  instanceId: "existing-service",
+                  pid: process.pid,
+                  processIdentity: "test-process",
+                }
+              : options.path === "/v1/state"
+                ? {
+                    runs: [],
+                    latestCursor: 0,
+                    earliestCursor: 0,
+                    automation: { revision: 7, executions: [] },
+                  }
+                : null;
+          const response = new EventEmitter() as EventEmitter & { statusCode: number };
+          response.statusCode = payload ? 200 : 404;
+          queueMicrotask(() => {
+            callback(response);
+            response.emit("data", Buffer.from(JSON.stringify(payload || {})));
+            response.emit("end");
+          });
+        };
+        return request;
+      }),
+    };
+
+    try {
+      const bridge = createBridge(serviceRoot, { http });
+      const installed = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(installed.directoryPath, { recursive: true });
+      writeFileSync(installed.executablePath, binaryContents);
+      writeFileSync(join(installed.directoryPath, "token"), `${"a".repeat(64)}\n`);
+      writeFileSync(
+        join(installed.directoryPath, "discovery.json"),
+        JSON.stringify({
+          protocolVersion: 1,
+          serviceVersion: "test",
+          instanceId: "existing-service",
+          pid: process.pid,
+          processIdentity: "test-process",
+          startedAt: new Date().toISOString(),
+          host: "127.0.0.1",
+          port: 3000,
+          tokenPath: join(installed.directoryPath, "token"),
+        }),
+      );
+
+      await expect(bridge.reconcileProjectLaunchService()).resolves.toMatchObject({
+        state: "healthy",
+        running: true,
+        automationRevision: 7,
+        automation: { revision: 7 },
+      });
+      expect(requestedPaths).toEqual(["/v1/health", "/v1/state"]);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }

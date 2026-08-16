@@ -60,6 +60,7 @@ const editingExternalApplicationId = ref<string | null>(null);
 const externalApplicationDraft = ref({ name: "", command: "" });
 const externalApplicationErrors = ref({ name: "", command: "" });
 const externalApplicationFeedback = ref("");
+const projectLaunchServiceDisableWarningOpen = ref(false);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 let stopAppEscapeListener = () => {};
 
@@ -246,6 +247,10 @@ const handleRecheckProjectLaunchService = async () => {
 
 const handleToggleProjectLaunchService = async (event: Event) => {
   const enabled = (event.target as HTMLInputElement).checked;
+  if (!enabled && store.hasActiveProjectLaunchServiceRuns) {
+    projectLaunchServiceDisableWarningOpen.value = true;
+    return;
+  }
   await store.setProjectLaunchServiceEnabled(enabled);
 };
 
@@ -1392,6 +1397,17 @@ watch(
         </div>
       </Transition>
     </Teleport>
+
+    <ActionDialog
+      :open="projectLaunchServiceDisableWarningOpen"
+      tone="warning"
+      icon="alert"
+      :title="t.settings.projectLaunchServiceDisableBlockedTitle"
+      :message="t.settings.projectLaunchServiceDisableBlockedMessage"
+      :primary-label="t.common.close"
+      @cancel="projectLaunchServiceDisableWarningOpen = false"
+      @primary="projectLaunchServiceDisableWarningOpen = false"
+    />
 
     <ActionDialog
       :open="Boolean(pendingDeleteCustomEnvironmentId)"
