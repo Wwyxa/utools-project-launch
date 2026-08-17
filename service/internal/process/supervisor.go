@@ -327,6 +327,18 @@ func (supervisor *Supervisor) Run(runID string) (state.Run, bool) {
 	return supervisor.store.Run(runID)
 }
 
+func (supervisor *Supervisor) FindActiveScriptRun(projectID string, scriptID string) (state.Run, bool) {
+	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(scriptID) == "" {
+		return state.Run{}, false
+	}
+	for _, run := range supervisor.store.ActiveRuns() {
+		if run.ProjectID == projectID && run.ScriptID == scriptID {
+			return run, true
+		}
+	}
+	return state.Run{}, false
+}
+
 func (supervisor *Supervisor) FindAutomationRun(automationRunID string) (state.Run, bool) {
 	if strings.TrimSpace(automationRunID) == "" {
 		return state.Run{}, false

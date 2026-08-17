@@ -49,6 +49,7 @@ interface AutomationFormState {
   name: string;
   enabled: boolean;
   scriptIds: string[];
+  continuousScriptIds: string[];
   scheduleType: "fixed" | "random";
   startTime: string;
   dailyCount: number;
@@ -69,6 +70,7 @@ const createDefaultForm = (): AutomationFormState => ({
   name: t.value.automation.defaultTaskName,
   enabled: true,
   scriptIds: props.project.scripts[0] ? [props.project.scripts[0].id] : [],
+  continuousScriptIds: [],
   scheduleType: "fixed",
   startTime: "09:00",
   dailyCount: 1,
@@ -185,6 +187,7 @@ const loadTask = (task: ProjectAutomationTask) => {
   form.name = task.name;
   form.enabled = task.enabled;
   form.scriptIds = [...task.scriptIds];
+  form.continuousScriptIds = [...(task.continuousScriptIds || [])];
   form.scheduleType = task.schedule.type;
   if (task.schedule.type === "fixed") {
     form.startTime = task.schedule.startTime;
@@ -215,10 +218,27 @@ const duplicateTask = (task: ProjectAutomationTask) => {
   feedback.value = result.message;
 };
 
+const isContinuousScript = (scriptId: string) => form.continuousScriptIds.includes(scriptId);
+
 const toggleScript = (scriptId: string) => {
-  form.scriptIds = form.scriptIds.includes(scriptId)
-    ? form.scriptIds.filter((id) => id !== scriptId)
-    : [...form.scriptIds, scriptId];
+  if (form.scriptIds.includes(scriptId)) {
+    form.scriptIds = form.scriptIds.filter((id) => id !== scriptId);
+    form.continuousScriptIds = form.continuousScriptIds.filter((id) => id !== scriptId);
+    return;
+  }
+  form.scriptIds = [...form.scriptIds, scriptId];
+};
+
+const toggleContinuousScript = (scriptId: string) => {
+  if (isContinuousScript(scriptId)) {
+    form.continuousScriptIds = form.continuousScriptIds.filter((id) => id !== scriptId);
+    return;
+  }
+  form.continuousScriptIds = [...form.continuousScriptIds, scriptId];
+  const exitConfig = form.exitConfigs[scriptId];
+  if (exitConfig?.enabled) {
+    form.exitConfigs[scriptId] = { ...exitConfig, enabled: false };
+  }
 };
 
 const moveSelectedScript = (scriptId: string, direction: "up" | "down") => {
@@ -284,6 +304,7 @@ const saveTask = () => {
     name: form.name.trim(),
     enabled: form.enabled,
     scriptIds: form.scriptIds,
+    continuousScriptIds: form.continuousScriptIds.filter((scriptId) => form.scriptIds.includes(scriptId)),
     schedule: scheduleFromForm(),
     missedPolicy: form.missedPolicy,
     missedGraceMinutes: Number(form.missedGraceMinutes),
@@ -768,19 +789,32 @@ const taskSummaryText = computed(() =>
                     </span>
                   </div>
                   <div class="space-y-1">
-                    <label
+                    <div
                       v-for="script in orderedScripts"
                       :key="script.id"
                       class="flex h-9 min-w-0 items-center gap-2 border-b border-border-subtle text-on-surface last:border-b-0"
                     >
-                      <input
-                        type="checkbox"
-                        :checked="form.scriptIds.includes(script.id)"
-                        @change="toggleScript(script.id)"
-                      />
-                      <span class="min-w-0 truncate font-mono">{{ script.name }}</span>
-                      <span class="ml-auto flex h-6 w-14 shrink-0 items-center justify-end gap-1">
+                      <label class="flex min-w-0 flex-1 items-center gap-2">
+                        <input
+                          type="checkbox"
+                          :checked="form.scriptIds.includes(script.id)"
+                          @change="toggleScript(script.id)"
+                        />
+                        <span class="min-w-0 truncate font-mono">{{ script.name }}</span>
+                      </label>
+                      <span class="ml-auto flex h-6 shrink-0 items-center justify-end gap-1">
                         <template v-if="form.scriptIds.includes(script.id)">
+                          <label
+                            class="flex items-center gap-1 text-[10px] font-semibold text-on-surface-variant"
+                            :title="t.automation.continuousRunHint"
+                          >
+                            <input
+                              type="checkbox"
+                              :checked="isContinuousScript(script.id)"
+                              @change="toggleContinuousScript(script.id)"
+                            />
+                            {{ t.automation.continuousRun }}
+                          </label>
                           <button
                             type="button"
                             class="rounded border border-border-subtle bg-surface p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
@@ -803,7 +837,7 @@ const taskSummaryText = computed(() =>
                           </button>
                         </template>
                       </span>
-                    </label>
+                    </div>
                   </div>
                 </section>
                 <section class="border-b border-border-subtle pb-4">
@@ -1071,10 +1105,14 @@ const taskSummaryText = computed(() =>
                       <input
                         type="checkbox"
                         :checked="form.exitConfigs[scriptId]?.enabled"
+                        :disabled="isContinuousScript(scriptId)"
                         @change="toggleExitConfig(scriptId)"
                       />
                       {{ t.automation.keywordExit }}
                     </label>
+                    <p v-if="isContinuousScript(scriptId)" class="mt-1 text-[11px] leading-4 text-on-surface-variant">
+                      {{ t.automation.continuousExitConflict }}
+                    </p>
                     <input
                       v-if="form.exitConfigs[scriptId]?.enabled"
                       v-model="form.exitConfigs[scriptId].matchText"

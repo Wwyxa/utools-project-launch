@@ -269,6 +269,7 @@ interface AutomationScriptRuntimeContext {
   startedAt: string;
   steps: ProjectAutomationInputStep[];
   exitConfig?: ProjectAutomationExitConfig;
+  continueAfterInput: boolean;
   output: string;
   stepIndex: number;
   waitingStepIndex: number | null;
@@ -795,14 +796,21 @@ function normalizeAutomationTasks(projectId: string, value: unknown): ProjectAut
 
     const candidate = task as Partial<ProjectAutomationTask>;
     const now = new Date().toISOString();
+    const scriptIds = Array.isArray(candidate.scriptIds)
+      ? candidate.scriptIds.filter(
+          (scriptId): scriptId is string => typeof scriptId === "string" && scriptId.trim().length > 0,
+        )
+      : [];
     const automationTask: ProjectAutomationTask = {
       id:
         typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `${projectId}-automation-${index + 1}`,
       name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name : `任务 ${index + 1}`,
       enabled: Boolean(candidate.enabled),
-      scriptIds: Array.isArray(candidate.scriptIds)
-        ? candidate.scriptIds.filter(
-            (scriptId): scriptId is string => typeof scriptId === "string" && scriptId.trim().length > 0,
+      scriptIds,
+      continuousScriptIds: Array.isArray(candidate.continuousScriptIds)
+        ? candidate.continuousScriptIds.filter(
+            (scriptId): scriptId is string =>
+              typeof scriptId === "string" && scriptId.trim().length > 0 && scriptIds.includes(scriptId),
           )
         : [],
       schedule: normalizeAutomationSchedule(candidate.schedule),
@@ -929,6 +937,7 @@ function buildProjectLaunchServiceAutomationConfig(
         name: task.name,
         enabled: task.enabled,
         scriptIds: [...task.scriptIds],
+        continuousScriptIds: [...(task.continuousScriptIds || [])],
         missedPolicy: task.missedPolicy,
         missedGraceMinutes: task.missedGraceMinutes,
         maxScriptRuntimeMinutes: task.maxScriptRuntimeMinutes,
@@ -4611,6 +4620,12 @@ export const useStore = defineStore("app", {
       if (invalidExit) {
         return { valid: false, message: "关键词退出需要填写匹配文本。" };
       }
+      const continuousExit = task.exitConfigs.find(
+        (config) => config.enabled && task.continuousScriptIds?.includes(config.scriptId),
+      );
+      if (continuousExit) {
+        return { valid: false, message: "持续运行脚本不能启用关键词退出。" };
+      }
       return { valid: true, message: "" };
     },
     scheduleAutomationTimer() {
@@ -4974,6 +4989,7 @@ export const useStore = defineStore("app", {
           name: patch.name || "任务",
           enabled: patch.enabled ?? true,
           scriptIds: patch.scriptIds?.length ? patch.scriptIds : firstScriptId ? [firstScriptId] : [],
+          continuousScriptIds: patch.continuousScriptIds || [],
           schedule: patch.schedule || defaultAutomationSchedule(),
           notifyEnabled: patch.notifyEnabled ?? true,
           maxScriptRuntimeMinutes: patch.maxScriptRuntimeMinutes || DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES,
@@ -5012,6 +5028,7 @@ export const useStore = defineStore("app", {
           id: createAutomationTaskId(),
           name,
           scriptIds: [...sourceTask.scriptIds],
+          continuousScriptIds: [...(sourceTask.continuousScriptIds || [])],
           inputConfigs: sourceTask.inputConfigs.map((config) => ({
             scriptId: config.scriptId,
             steps: config.steps.map((step) => ({ ...step })),
@@ -5142,6 +5159,7 @@ export const useStore = defineStore("app", {
       entry.runId = runId;
       this.automationActiveProjectRuns[projectId] = runId;
       const scriptResults: ProjectAutomationScriptResult[] = [];
+      const continuousScriptIds = new Set(task.continuousScriptIds || []);
       let finalStatus: ProjectAutomationHistoryEntry["status"] = "completed";
       let finalReason = "";
       const startedAt = new Date().toISOString();
@@ -5149,11 +5167,22 @@ export const useStore = defineStore("app", {
       try {
         for (const scriptId of task.scriptIds) {
           const script = project.scripts.find((item) => item.id === scriptId);
+          const continueAfterInput = continuousScriptIds.has(scriptId);
           if (!script) {
             finalStatus = "failed";
             finalReason = `脚本不存在：${scriptId}`;
             scriptResults.push({ scriptId, scriptName: scriptId, status: "failed", reason: finalReason });
             break;
+          }
+          if (script.status === "RUNNING" && continueAfterInput) {
+            scriptResults.push({
+              scriptId,
+              scriptName: script.name,
+              status: "started",
+              startedAt: new Date().toISOString(),
+              reason: "脚本已在运行。",
+            });
+            continue;
           }
           if (
             project.pathExists === false ||
@@ -5189,9 +5218,10 @@ export const useStore = defineStore("app", {
             inputConfig?.steps || [],
             exitConfig,
             task.maxScriptRuntimeMinutes,
+            continueAfterInput,
           );
           scriptResults.push(result);
-          if (result.status !== "completed") {
+          if (result.status !== "completed" && result.status !== "started") {
             finalStatus = "failed";
             finalReason = result.reason || `${script.name} 执行失败。`;
             break;
@@ -5384,6 +5414,7 @@ export const useStore = defineStore("app", {
       steps: ProjectAutomationInputStep[],
       exitConfig: ProjectAutomationExitConfig | undefined,
       maxRuntimeMinutes: number,
+      continueAfterInput: boolean,
     ): Promise<ProjectAutomationScriptResult> {
       const project = this.projects.find((item) => item.id === projectId);
       const script = project?.scripts.find((item) => item.id === scriptId);
@@ -5400,6 +5431,7 @@ export const useStore = defineStore("app", {
           startedAt,
           steps,
           exitConfig,
+          continueAfterInput,
           output: "",
           stepIndex: 0,
           waitingStepIndex: null,
@@ -5471,6 +5503,17 @@ export const useStore = defineStore("app", {
       const step = context.steps[context.stepIndex];
       if (!step) {
         context.inputCompleted = true;
+        if (context.continueAfterInput) {
+          settleAutomationScriptContext(context, {
+            scriptId: context.scriptId,
+            scriptName: context.scriptName,
+            status: "started",
+            startedAt: context.startedAt,
+            endedAt: new Date().toISOString(),
+            reason: "持续运行脚本已启动。",
+          });
+          return;
+        }
         if (shouldAutomationExitOnOutput(context)) {
           context.stopRequestedByAutomationExit = true;
           void this.stopScript(context.projectId, context.scriptId, {

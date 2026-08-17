@@ -198,6 +198,7 @@ export interface ProjectLaunchServiceAutomationTaskConfig {
   name: string;
   enabled: boolean;
   scriptIds: string[];
+  continuousScriptIds?: string[];
   missedPolicy: ProjectAutomationMissedPolicy;
   missedGraceMinutes: number;
   maxScriptRuntimeMinutes: number;
@@ -225,7 +226,7 @@ export type ProjectLaunchServiceAutomationExecutionStatus = "running" | "complet
 
 export interface ProjectLaunchServiceAutomationScriptResult {
   scriptId: string;
-  status: "completed" | "failed" | "skipped" | "timeout" | "stopped";
+  status: "started" | "completed" | "failed" | "skipped" | "timeout" | "stopped";
   startedAt?: string;
   endedAt?: string;
   reason?: string;
@@ -541,7 +542,7 @@ export type ProjectAutomationHistoryStatus = "completed" | "failed" | "skipped" 
 export interface ProjectAutomationScriptResult {
   scriptId: string;
   scriptName: string;
-  status: "completed" | "failed" | "skipped" | "timeout" | "stopped";
+  status: "started" | "completed" | "failed" | "skipped" | "timeout" | "stopped";
   startedAt?: string;
   endedAt?: string;
   reason?: string;
@@ -566,6 +567,7 @@ export interface ProjectAutomationTask {
   name: string;
   enabled: boolean;
   scriptIds: string[];
+  continuousScriptIds?: string[];
   schedule: ProjectAutomationSchedule;
   missedPolicy: ProjectAutomationMissedPolicy;
   missedGraceMinutes: number;

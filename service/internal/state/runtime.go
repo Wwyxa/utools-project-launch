@@ -242,6 +242,7 @@ const (
 type AutomationScriptResultStatus string
 
 const (
+	AutomationScriptStarted   AutomationScriptResultStatus = "started"
 	AutomationScriptCompleted AutomationScriptResultStatus = "completed"
 	AutomationScriptFailed    AutomationScriptResultStatus = "failed"
 	AutomationScriptSkipped   AutomationScriptResultStatus = "skipped"

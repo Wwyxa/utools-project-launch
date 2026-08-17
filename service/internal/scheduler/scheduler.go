@@ -59,6 +59,7 @@ type TaskConfig struct {
 	Name                    string        `json:"name"`
 	Enabled                 bool          `json:"enabled"`
 	ScriptIDs               []string      `json:"scriptIds"`
+	ContinuousScriptIDs     []string      `json:"continuousScriptIds"`
 	MissedPolicy            string        `json:"missedPolicy"`
 	MissedGraceMinutes      int           `json:"missedGraceMinutes"`
 	MaxScriptRuntimeMinutes int           `json:"maxScriptRuntimeMinutes"`
@@ -508,6 +509,21 @@ func (runtime *Runtime) execute(
 			runtime.failExecution(execution.ID, index, scriptID, state.Run{}, "The scheduled task references an unavailable script.")
 			return
 		}
+		continueAfterInput := isContinuousScript(task, script.ID)
+		if continueAfterInput {
+			if activeRun, active := runtime.supervisor.FindActiveScriptRun(project.ID, script.ID); active && activeRun.Status == state.RunStatusRunning {
+				if err := runtime.recordContinuousScriptStarted(
+					execution.ID,
+					index,
+					script.ID,
+					activeRun.StartedAt,
+					"The continuous script is already running.",
+				); err != nil {
+					return
+				}
+				continue
+			}
+		}
 		label := runLabel(project, script)
 		run, _, err := runtime.supervisor.Start(serviceprocess.StartRequest{
 			ProjectID:          project.ID,
@@ -532,13 +548,26 @@ func (runtime *Runtime) execute(
 			return
 		}
 
-		finishedRun, found, controlResult := runtime.waitForRun(
+		finishedRun, found, controlResult, inputReady := runtime.waitForRun(
 			run.ID,
 			controlsFor(task, script.ID, run.StartedAt),
+			continueAfterInput,
 		)
 		if !found {
 			runtime.failExecution(execution.ID, index, script.ID, run, "The scheduled process record is unavailable.")
 			return
+		}
+		if inputReady {
+			if err := runtime.recordContinuousScriptStarted(
+				execution.ID,
+				index,
+				script.ID,
+				finishedRun.StartedAt,
+				"The continuous script started and completed its automation input.",
+			); err != nil {
+				return
+			}
+			continue
 		}
 
 		result := scriptResult(finishedRun)
@@ -560,6 +589,26 @@ func (runtime *Runtime) execute(
 	}
 
 	runtime.completeExecution(execution.ID, state.AutomationExecutionCompleted, "")
+}
+
+func (runtime *Runtime) recordContinuousScriptStarted(
+	executionID string,
+	scriptIndex int,
+	scriptID string,
+	startedAt string,
+	reason string,
+) error {
+	_, err := runtime.store.UpdateAutomationExecution(executionID, func(current *state.AutomationExecution) {
+		current.CurrentScriptIndex = scriptIndex + 1
+		current.ActiveRunID = ""
+		current.ScriptResults = append(current.ScriptResults, state.AutomationScriptResult{
+			ScriptID:  scriptID,
+			Status:    state.AutomationScriptStarted,
+			StartedAt: startedAt,
+			Reason:    reason,
+		})
+	})
+	return err
 }
 
 func (runtime *Runtime) failExecution(
@@ -630,7 +679,8 @@ func controlsFor(task TaskConfig, scriptID string, startedAt string) automationR
 func (runtime *Runtime) waitForRun(
 	runID string,
 	controls automationRunControls,
-) (state.Run, bool, *automationControlResult) {
+	returnAfterInput bool,
+) (state.Run, bool, *automationControlResult, bool) {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	lastCursor := uint64(0)
@@ -639,12 +689,15 @@ func (runtime *Runtime) waitForRun(
 	for {
 		run, found := runtime.supervisor.Run(runID)
 		if !found || !run.Status.IsActive() {
-			return run, found, controller.result
+			return run, found, controller.result, false
 		}
 		batch := runtime.supervisor.EventsAfter(lastCursor)
 		lastCursor = batch.LatestCursor
 		controller.observe(batch.Events)
 		controller.advance(time.Now().UTC())
+		if returnAfterInput && controller.inputComplete && !controller.stopRequested && controller.result == nil {
+			return run, true, nil, true
+		}
 		<-ticker.C
 	}
 }
@@ -829,6 +882,15 @@ func validateConfig(config Config) error {
 			if task.MaxScriptRuntimeMinutes < 0 {
 				return fmt.Errorf("automation task %q has a negative script runtime limit", task.ID)
 			}
+			selectedScriptIDs := make(map[string]struct{}, len(task.ScriptIDs))
+			for _, scriptID := range task.ScriptIDs {
+				selectedScriptIDs[scriptID] = struct{}{}
+			}
+			for _, scriptID := range task.ContinuousScriptIDs {
+				if _, selected := selectedScriptIDs[scriptID]; !selected {
+					return fmt.Errorf("automation task %q configures a continuous script that is not selected", task.ID)
+				}
+			}
 			switch normalizedMissedPolicy(task) {
 			case "grace-run", "run-now", "mark-missed":
 			default:
@@ -856,6 +918,9 @@ func validateConfig(config Config) error {
 			for _, exitConfig := range task.ExitConfigs {
 				if exitConfig.Enabled && (strings.TrimSpace(exitConfig.ScriptID) == "" || strings.TrimSpace(exitConfig.MatchText) == "") {
 					return fmt.Errorf("automation task %q has an invalid output exit configuration", task.ID)
+				}
+				if exitConfig.Enabled && isContinuousScript(task, exitConfig.ScriptID) {
+					return fmt.Errorf("automation task %q configures output exit for a continuous script", task.ID)
 				}
 			}
 		}
@@ -907,6 +972,15 @@ func inputStepsFor(task TaskConfig, scriptID string) []InputStep {
 		}
 	}
 	return nil
+}
+
+func isContinuousScript(task TaskConfig, scriptID string) bool {
+	for _, configuredScriptID := range task.ContinuousScriptIDs {
+		if configuredScriptID == scriptID {
+			return true
+		}
+	}
+	return false
 }
 
 func outputMatchTimeout(step InputStep) time.Duration {

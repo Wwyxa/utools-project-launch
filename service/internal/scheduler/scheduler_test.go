@@ -630,6 +630,157 @@ func TestSchedulerSendsConfiguredInputSteps(t *testing.T) {
 	}
 }
 
+func TestSchedulerContinuesAfterContinuousScriptInput(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+
+	now := time.Now()
+	configValue := Config{
+		SchemaVersion: 1,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID:   "continuous-project",
+			Name: "Continuous project",
+			Path: stateDir,
+			Env:  map[string]string{},
+			Scripts: []ScriptConfig{
+				{
+					ID:      "continuous-script",
+					Name:    "continuous",
+					Command: continuousInputCommand(),
+					Cwd:     stateDir,
+				},
+				{
+					ID:      "follower-script",
+					Name:    "follower",
+					Command: "echo follower",
+					Cwd:     stateDir,
+				},
+			},
+			AutomationTasks: []TaskConfig{{
+				ID:                  "continuous-task",
+				Name:                "Continuous task",
+				Enabled:             true,
+				ScriptIDs:           []string{"continuous-script", "follower-script"},
+				ContinuousScriptIDs: []string{"continuous-script"},
+				InputConfigs: []InputConfig{{
+					ScriptID: "continuous-script",
+					Steps: []InputStep{{
+						Mode:    "delay",
+						Value:   "from-service",
+						DelayMS: 0,
+					}},
+				}},
+				DailyPlans: []DailyPlan{{
+					Date: now.UTC().Format("2006-01-02"),
+					Entries: []PlanEntry{
+						{
+							ID:        "first-entry",
+							PlannedAt: now.Add(-time.Second).UTC().Format(time.RFC3339Nano),
+							Status:    "pending",
+						},
+						{
+							ID:        "second-entry",
+							PlannedAt: now.Add(time.Hour).UTC().Format(time.RFC3339Nano),
+							Status:    "pending",
+						},
+					},
+				}},
+			}},
+		}},
+	}
+	config, err := json.Marshal(configValue)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(1, config); err != nil {
+		t.Fatalf("replace configuration: %v", err)
+	}
+
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run scheduler: %v", err)
+	}
+	waitForExecution(t, store, "continuous-project", "continuous-task", "first-entry", state.AutomationExecutionCompleted)
+
+	deadline := time.Now().Add(time.Second)
+	for !hasOutput(store.EventsAfter(0).Events, "continuous-script", "RECEIVED:from-service") && time.Now().Before(deadline) {
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !hasOutput(store.EventsAfter(0).Events, "continuous-script", "RECEIVED:from-service") {
+		t.Fatalf("continuous script did not receive automation input: %#v", store.EventsAfter(0).Events)
+	}
+
+	executions := store.Automation().Executions
+	if len(executions) != 1 || len(executions[0].ScriptResults) != 2 {
+		t.Fatalf("first execution results = %#v, want both scripts", executions)
+	}
+	if executions[0].ScriptResults[0].Status != state.AutomationScriptStarted || executions[0].ScriptResults[1].Status != state.AutomationScriptCompleted {
+		t.Fatalf("first execution results = %#v, want started then completed", executions[0].ScriptResults)
+	}
+
+	var continuousRun state.Run
+	continuousRuns := 0
+	for _, run := range supervisor.StoreSnapshot().Runs {
+		if run.ScriptID == "continuous-script" {
+			continuousRuns++
+			continuousRun = run
+		}
+	}
+	if continuousRuns != 1 || !continuousRun.Status.IsActive() {
+		t.Fatalf("continuous runs = %#v, want one active continuous run", supervisor.StoreSnapshot().Runs)
+	}
+	defer func() {
+		if _, err := supervisor.Stop(continuousRun.ID); err != nil {
+			t.Errorf("stop continuous run: %v", err)
+			return
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			run, found := store.Run(continuousRun.ID)
+			if found && !run.Status.IsActive() {
+				return
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		t.Errorf("continuous run %q did not stop before test cleanup", continuousRun.ID)
+	}()
+
+	configValue.Revision = 2
+	configValue.Projects[0].AutomationTasks[0].DailyPlans[0].Entries[1].PlannedAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+	config, err = json.Marshal(configValue)
+	if err != nil {
+		t.Fatalf("marshal second config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(2, config); err != nil {
+		t.Fatalf("replace second configuration: %v", err)
+	}
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run scheduler for second entry: %v", err)
+	}
+	waitForExecution(t, store, "continuous-project", "continuous-task", "second-entry", state.AutomationExecutionCompleted)
+
+	continuousRuns = 0
+	for _, run := range supervisor.StoreSnapshot().Runs {
+		if run.ScriptID == "continuous-script" {
+			continuousRuns++
+		}
+	}
+	if continuousRuns != 1 {
+		t.Fatalf("continuous run count = %d, want one after repeated task", continuousRuns)
+	}
+}
+
 func outputMatchCommand() string {
 	if runtime.GOOS == "windows" {
 		return "echo SERVICE_READY & ping -n 5 127.0.0.1 >nul"
@@ -642,6 +793,13 @@ func inputCommand() string {
 		return "set /p value= & call echo RECEIVED:^%value^%"
 	}
 	return "read value; echo RECEIVED:$value"
+}
+
+func continuousInputCommand() string {
+	if runtime.GOOS == "windows" {
+		return "set /p value= & call echo RECEIVED:^%value^% & ping -n 15 127.0.0.1 >nul"
+	}
+	return "read value; echo RECEIVED:$value; sleep 15"
 }
 
 func hasOutput(events []state.Event, scriptID string, contents string) bool {
