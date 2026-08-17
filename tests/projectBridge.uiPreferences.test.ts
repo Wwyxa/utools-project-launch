@@ -95,7 +95,10 @@ const projectLaunchServiceAssetName = () => {
 
 const projectLaunchServiceExecutableName = () => `project-launch-service${process.platform === "win32" ? ".exe" : ""}`;
 
-const createProjectLaunchServiceDownloadHttps = (binaryContents: Buffer) => {
+const createProjectLaunchServiceDownloadHttps = (
+  binaryContents: Buffer,
+  { redirectToReleaseAssets = false }: { redirectToReleaseAssets?: boolean } = {},
+) => {
   const assetName = projectLaunchServiceAssetName();
   const checksum = createHash("sha256").update(binaryContents).digest("hex");
   const checksumContents = Buffer.from(`${checksum}  ${assetName}\n`);
@@ -115,12 +118,20 @@ const createProjectLaunchServiceDownloadHttps = (binaryContents: Buffer) => {
       ],
     }),
   );
-  const responses = [releaseContents, checksumContents, binaryContents];
+  const responses = redirectToReleaseAssets
+    ? [
+        { contents: releaseContents },
+        { location: "https://release-assets.githubusercontent.com/checksums.txt" },
+        { contents: checksumContents },
+        { location: `https://release-assets.githubusercontent.com/${assetName}` },
+        { contents: binaryContents },
+      ]
+    : [{ contents: releaseContents }, { contents: checksumContents }, { contents: binaryContents }];
 
   return {
     get: vi.fn((_options: unknown, callback: (response: EventEmitter) => void) => {
-      const contents = responses.shift();
-      if (!contents) throw new Error("unexpected service download request");
+      const nextResponse = responses.shift();
+      if (!nextResponse) throw new Error("unexpected service download request");
       const request = new EventEmitter() as EventEmitter & { destroy: (error?: Error) => void };
       request.destroy = (error) => {
         if (error) queueMicrotask(() => request.emit("error", error));
@@ -131,12 +142,16 @@ const createProjectLaunchServiceDownloadHttps = (binaryContents: Buffer) => {
           headers: Record<string, string>;
           resume: () => void;
         };
-        response.statusCode = 200;
-        response.headers = { "content-length": String(contents.length) };
+        response.statusCode = nextResponse.location ? 302 : 200;
+        response.headers = nextResponse.location
+          ? { location: nextResponse.location }
+          : { "content-length": String(nextResponse.contents!.length) };
         response.resume = () => undefined;
         callback(response);
-        response.emit("data", contents);
-        response.emit("end");
+        if (nextResponse.contents) {
+          response.emit("data", nextResponse.contents);
+          response.emit("end");
+        }
       });
       return request;
     }),
@@ -1937,6 +1952,27 @@ describe("Project Launch Service preload installation", () => {
       expect(reconciled.message).toContain("文件已变更");
       expect(spawn).not.toHaveBeenCalled();
       expect(https.get).toHaveBeenCalledTimes(3);
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("downloads release assets redirected through release-assets.githubusercontent.com", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const https = createProjectLaunchServiceDownloadHttps(binaryContents, { redirectToReleaseAssets: true });
+    try {
+      const bridge = createBridge(serviceRoot, { https });
+
+      const installed = await bridge.downloadProjectLaunchService();
+
+      expect(readFileSync(installed.executablePath)).toEqual(binaryContents);
+      expect(https.get.mock.calls.map(([options]) => (options as { hostname: string }).hostname)).toEqual([
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+      ]);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }

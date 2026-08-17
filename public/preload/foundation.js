@@ -69,6 +69,7 @@ const projectLaunchServiceAllowedDownloadHosts = new Set([
   "github.com",
   "api.github.com",
   "objects.githubusercontent.com",
+  "release-assets.githubusercontent.com",
   "github-releases.githubusercontent.com",
 ]);
 let projectLaunchServiceProcess = null;
