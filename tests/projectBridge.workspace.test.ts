@@ -755,6 +755,42 @@ describe("browser Git workspace fallback", () => {
     expect(store.gitRepositoryReadFailures[contextKey]).toBeUndefined();
   });
 
+  it("refreshes dashboard changed-file counts without loading Git history", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const changedPath = "C:\\changed-project";
+    const cleanPath = "C:\\clean-project";
+    const changedFiles: ProjectGitFileChange[] = [
+      { path: "changed.txt", additions: 3, deletions: 1, status: "MODIFIED", unstaged: true },
+    ];
+    const readGitWorkingTreeSnapshotResult = vi.fn<ProjectBridge["readGitWorkingTreeSnapshotResult"]>(async (path) => ({
+      ok: true,
+      value: workingTreeSnapshot(path, path === changedPath ? changedFiles : []),
+    }));
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>();
+    window.projectBridge = { ...getProjectBridge(), readGitWorkingTreeSnapshotResult, readGitSnapshot };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const changedProject = createProject("project-dashboard-changed", changedPath);
+    const cleanProject = createProject("project-dashboard-clean", cleanPath);
+    const unavailableProject = { ...createProject("project-dashboard-unavailable", "C:\\missing-project"), pathExists: false };
+    store.projects = [changedProject, cleanProject, unavailableProject];
+
+    await store.refreshDashboardGitChangeCounts();
+
+    expect(readGitWorkingTreeSnapshotResult).toHaveBeenCalledTimes(2);
+    expect(readGitWorkingTreeSnapshotResult.mock.calls.map(([path]) => path)).toEqual([changedPath, cleanPath]);
+    expect(store.stagedFiles[changedProject.id]).toEqual(changedFiles);
+    expect(store.stagedFiles[cleanProject.id]).toEqual([]);
+    expect(store.stagedFiles[unavailableProject.id]).toBeUndefined();
+    expect(readGitSnapshot).not.toHaveBeenCalled();
+  });
+
   it("clears a stale snapshot when a working-tree read reports no repository", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },

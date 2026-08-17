@@ -1307,7 +1307,7 @@ const handleProjectDragEnd = () => {
       <div
         v-if="hasRegularProjects"
         class="grid gap-3 pb-5"
-        style="grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr))"
+        style="grid-template-columns: repeat(auto-fit, minmax(16.5rem, 1fr))"
         :aria-busy="!projectCardsMounted ? 'true' : undefined"
       >
         <template v-if="projectCardsMounted">
@@ -1361,7 +1361,7 @@ const handleProjectDragEnd = () => {
       </summary>
       <div
         class="grid gap-2.5 border-t border-border-subtle p-3"
-        style="grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr))"
+        style="grid-template-columns: repeat(auto-fit, minmax(16.5rem, 1fr))"
         :aria-busy="!projectCardsMounted ? 'true' : undefined"
       >
         <template v-if="projectCardsMounted">
