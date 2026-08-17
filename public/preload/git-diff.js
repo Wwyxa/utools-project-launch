@@ -592,11 +592,28 @@ function pullGitRemote(projectPath) {
   );
 }
 
-function pushGitRemote(projectPath) {
+function normalizeGitPushTagNames(options = {}) {
+  if (!Array.isArray(options?.tagNames)) return [];
+  return [
+    ...new Set(options.tagNames.map((tagName) => (typeof tagName === "string" ? tagName.trim() : "")).filter(Boolean)),
+  ];
+}
+
+function pushGitRemote(projectPath, options = {}) {
+  const tagNames = normalizeGitPushTagNames(options);
   return runGitRemoteResult(
     projectPath,
-    (upstream) => ["push", "--progress", upstream.remote, `HEAD:${upstream.branch}`],
-    (upstream) => `已推送到 ${upstream.ref}。`,
+    (upstream) => [
+      "push",
+      "--progress",
+      upstream.remote,
+      `HEAD:${upstream.branch}`,
+      ...tagNames.map((tagName) => `refs/tags/${tagName}:refs/tags/${tagName}`),
+    ],
+    (upstream) =>
+      tagNames.length > 0
+        ? `已推送到 ${upstream.ref}，并推送 ${tagNames.length} 个标签。`
+        : `已推送到 ${upstream.ref}。`,
   );
 }
 

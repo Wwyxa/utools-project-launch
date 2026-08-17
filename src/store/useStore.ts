@@ -59,6 +59,7 @@ import type {
   ProjectGitActionResult,
   ProjectGitCommitPage,
   ProjectGitCommitMessageDiffResult,
+  ProjectGitPushOptions,
   ProjectConfigFile,
   ProjectBridgeEvent,
   ProjectBridgeProcessEvent,
@@ -4492,12 +4493,14 @@ export const useStore = defineStore("app", {
     async pushGitRemote(
       projectId: string,
       target: ProjectGitRepositoryTarget = { kind: "main" },
+      options: ProjectGitPushOptions = {},
     ): Promise<ProjectGitActionResult | null> {
-      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.pushGitRemote(context.repositoryPath), {
-        refresh: "full",
-        refs: true,
-        refreshOnFailure: true,
-      });
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.pushGitRemote(context.repositoryPath, options),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
     },
     async publishGitBranch(
       projectId: string,

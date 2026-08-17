@@ -655,6 +655,10 @@ export interface ProjectGitBulkFileActionOptions {
   all?: boolean;
 }
 
+export interface ProjectGitPushOptions {
+  tagNames?: string[];
+}
+
 export interface ProjectGitStashOptions {
   includeUntracked?: boolean;
 }
@@ -1367,7 +1371,7 @@ export interface ProjectBridge {
   fetchGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   fetchGitRemoteByName(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   pullGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
-  pushGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
+  pushGitRemote(projectPath: string, options?: ProjectGitPushOptions): Promise<ProjectGitActionResult>;
   initializeGitRepository(projectPath: string): Promise<ProjectGitActionResult>;
   publishGitBranch(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   addGitRemote(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;

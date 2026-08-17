@@ -502,7 +502,7 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - `ProjectGitRemoteBranchSummary = { remote: string; branch: string; ref: string }`; `ref` is the local remote-tracking ref presentation such as `origin/feature/login`.
 - `ProjectGitUpstreamSummary = { remote: string; branch: string; ref: string; ahead: number; behind: number }`.
 - `ProjectGitSnapshot` and `ProjectGitStatusSnapshot` include `remotes: ProjectGitRemoteSummary[]`, `remoteBranches: ProjectGitRemoteBranchSummary[]`, and `upstream: ProjectGitUpstreamSummary | null`.
-- Bridge methods: `fetchGitRemote(projectPath)`, `fetchGitRemoteByName(projectPath, remoteName)`, `pullGitRemote(projectPath)`, `pushGitRemote(projectPath)`, `addGitRemote(projectPath, remoteName, remoteUrl)`, `setGitRemoteUrl(projectPath, remoteName, remoteUrl)`, `removeGitRemote(projectPath, remoteName)`, and `deleteGitRemoteBranch(projectPath, remoteName, branchName)`.
+- Bridge methods: `fetchGitRemote(projectPath)`, `fetchGitRemoteByName(projectPath, remoteName)`, `pullGitRemote(projectPath)`, `pushGitRemote(projectPath, { tagNames? })`, `addGitRemote(projectPath, remoteName, remoteUrl)`, `setGitRemoteUrl(projectPath, remoteName, remoteUrl)`, `removeGitRemote(projectPath, remoteName)`, and `deleteGitRemoteBranch(projectPath, remoteName, branchName)`.
 - Store actions mirror the bridge methods with `projectId` replacing `projectPath` and preserve repository-target authorization.
 - `ProjectGitRemoteProgressEvent = { type: "git-remote-progress"; repositoryPath: string; message: string; phase: "start" | "output" | "complete" }` is the preload-to-renderer progress payload.
 - `runGitRemoteCommandResult(startPath, args)` returns `{ status: number; stdout: string; stderr: string }` while emitting `ProjectGitRemoteProgressEvent` values for its process lifecycle.
@@ -513,6 +513,7 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - `remoteBranches` is read from locally fetched `refs/remotes/<remote>/<branch>` refs. It is an explicitly labeled local snapshot of fetched tracking refs, not a live server-side branch listing; symbolic `<remote>/HEAD` is excluded.
 - Browser fallback snapshots must explicitly return `remotes: []`, `remoteBranches: []`, and `upstream: null` so consumers can distinguish "no remote" from a missing field.
 - Fetch, pull, and push operate only on the current branch upstream. Do not add force push, rebase pull, or `push -u` without a new requirement and updated spec.
+- A normal push keeps its current branch-only refspec. When the current `HEAD` has structured tag refs, GitTab asks whether to include them; users can explicitly push the tags, push only the commit, or cancel. A confirmed tag push appends one exact `refs/tags/<name>:refs/tags/<name>` refspec per selected HEAD tag, so annotated and lightweight tags both work. Do not use `--tags`, which pushes unrelated local tags, or `--follow-tags`, which omits lightweight tags.
 - Named remote refresh is a separate operation: validate the configured remote, run async `git fetch --prune <remote>`, and refresh the full snapshot even when Git reports failure because refs may have changed before a network or authentication error.
 - Server-side branch deletion is separate from removing a remote configuration or deleting a local tracking ref: validate the branch as a `refs/heads` name, run async `git push --delete <remote> refs/heads/<branch>`, and preserve the local branch. The UI confirmation must state that local branches are not deleted; when the deleted ref is the current upstream, warn that a later push may recreate it.
 - Fetch, pull, push, first publication, and remote branch deletion pass `--progress` so Git produces displayable progress even without an interactive terminal. Remote configuration writes keep their existing fixed argv forms.
@@ -529,6 +530,8 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 
 - Missing Git repository -> return `{ ok: false, message: "未检测到 Git 仓库。" }`.
 - Missing upstream for fetch/pull/push -> return a clear failure and keep buttons disabled in the UI.
+- Current `HEAD` has no tag or the user selects commit-only -> retain the branch-only push behavior.
+- Current `HEAD` has a tag and the user confirms -> the remote branch and each selected remote tag resolve to the current HEAD commit.
 - Missing or unknown named remote -> return a clear failure before fetch or delete.
 - Empty or invalid remote name -> return the validation message before running Git.
 - Empty, invalid, or `HEAD` branch name -> return a validation message before push deletion.
@@ -560,7 +563,7 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - `node --check public/preload.js` after changing preload remote command helpers.
 - `npm run lint` after changing shared Git remote types, bridge methods, store actions, or GitTab calls.
 - `npm run build` after changing GitTab remote UI or shared snapshot fields.
-- `npm run validate:git-commits` must assert named remote fetch, `remoteBranches` population, `<remote>/HEAD` exclusion, server-side branch deletion, protected `HEAD` rejection, and post-delete refresh.
+- `npm run validate:git-commits` must assert named remote fetch, `remoteBranches` population, `<remote>/HEAD` exclusion, server-side branch deletion, protected `HEAD` rejection, post-delete refresh, branch-only push omission of a local tag, and confirmed HEAD-tag push to a bare remote.
 - `npx vitest run tests/projectBridge.workspace.test.ts` must assert target routing and stale-target rejection for named remote refresh and deletion.
 - `npx vitest run tests/projectBridge.launchers.test.ts` must fake chunked stdout/stderr, assert `spawn` receives `--progress`, assert the exact `git-remote-progress` channel and start/output/complete phases, and cover ANSI plus `\r` normalization.
 - Manual smoke test in browser preview: GitTab top panel shows no-remote state, disabled fetch/pull/push, and the add remote dialog opens.
@@ -586,7 +589,9 @@ const child = spawn("git", ["-C", repositoryPath, "fetch", "--progress", "--prun
   windowsHide: true,
 });
 child.stderr.on("data", (chunk) => consumeProgress("stderr", chunk));
-child.on("close", () => emitGitRemoteProgress({ type: "git-remote-progress", repositoryPath, message: "", phase: "complete" }));
+child.on("close", () =>
+  emitGitRemoteProgress({ type: "git-remote-progress", repositoryPath, message: "", phase: "complete" }),
+);
 ```
 
 Stream output with disabled interactive prompts and a timeout so remote Git failures return safely while the renderer receives progress before completion.

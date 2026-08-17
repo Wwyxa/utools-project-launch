@@ -48,6 +48,7 @@ import {
   type ProjectGitRemoteBranchSummary,
   type ProjectGitRemoteSummary,
   type ProjectGitRepositoryTarget,
+  type ProjectGitPushOptions,
 } from "../../types";
 import { cn } from "../../lib/utils";
 import { type ProjectStatusMessageState, useStore } from "../../store/useStore";
@@ -55,6 +56,7 @@ import { useI18n } from "../../lib/i18n";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import { gitRepositoryTargetsEqual } from "../../lib/gitRepositoryTarget";
+import { presentGitCommitRefs } from "../../lib/gitCommitRefs";
 import ActionDialog from "../common/ActionDialog.vue";
 import GitDiffViewer from "./GitDiffViewer.vue";
 import GitChangesPane from "./GitChangesPane.vue";
@@ -78,8 +80,10 @@ type AppActionDialog = {
   message: string;
   detail?: string;
   confirmLabel: string;
+  secondaryLabel?: string;
   cancelLabel?: string;
   onConfirm: () => Promise<void> | void;
+  onSecondary?: () => Promise<void> | void;
 };
 type GitRepositoryRow = {
   key: string;
@@ -165,6 +169,22 @@ const activeRepositoryContext = computed(() =>
   store.resolveGitRepositoryContext(props.project.id, activeRepositoryTarget.value),
 );
 const snapshot = computed(() => store.gitSnapshotForRepository(props.project.id, activeRepositoryTarget.value));
+const headTagNames = computed(() => {
+  const currentSnapshot = snapshot.value;
+  const headHash = currentSnapshot?.headHash;
+  if (!currentSnapshot || !headHash) return [];
+  const headCommit = currentSnapshot.commits.find(
+    (commit) => commit.hash === headHash || commit.hash.startsWith(headHash),
+  );
+  if (!headCommit) return [];
+  return [
+    ...new Set(
+      presentGitCommitRefs(headCommit, currentSnapshot)
+        .full.filter((ref) => ref.kind === "tag")
+        .map((ref) => ref.name),
+    ),
+  ];
+});
 const activeGitReadFailure = computed(() => {
   const context = activeRepositoryContext.value;
   if (!context) return null;
@@ -840,7 +860,7 @@ const executeInitializeGitRepository = async () => {
   }
 };
 
-const executeGitRemoteAction = async (action: GitRemoteActionName) => {
+const executeGitRemoteAction = async (action: GitRemoteActionName, pushOptions: ProjectGitPushOptions = {}) => {
   if (isAnyGitWriteRunning.value) return;
   isRemoteMenuOpen.value = false;
   if (!hasUpstream.value) {
@@ -857,7 +877,7 @@ const executeGitRemoteAction = async (action: GitRemoteActionName) => {
         ? await store.fetchGitRemote(props.project.id, activeRepositoryTarget.value)
         : action === "pull"
           ? await store.pullGitRemote(props.project.id, activeRepositoryTarget.value)
-          : await store.pushGitRemote(props.project.id, activeRepositoryTarget.value);
+          : await store.pushGitRemote(props.project.id, activeRepositoryTarget.value, pushOptions);
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法执行远程 Git 操作。");
       return;
@@ -1022,9 +1042,31 @@ const requestPublishGitBranch = (remote: ProjectGitRemoteSummary) => {
   };
 };
 
+const requestGitPush = () => {
+  if (isAnyGitWriteRunning.value || !hasUpstream.value) return;
+  const tagNames = headTagNames.value;
+  if (tagNames.length === 0) {
+    void executeGitRemoteAction("push");
+    return;
+  }
+
+  isRemoteMenuOpen.value = false;
+  confirmationDialog.value = {
+    kind: "warning",
+    title: "推送 Git 标签",
+    message: `当前 HEAD 关联 ${tagNames.length} 个标签。是否一并推送到 ${upstreamLabel.value}？`,
+    detail: tagNames.join("\n"),
+    confirmLabel: "推送标签",
+    secondaryLabel: "仅推送提交",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeGitRemoteAction("push", { tagNames }),
+    onSecondary: () => executeGitRemoteAction("push"),
+  };
+};
+
 const handlePushAction = (event: MouseEvent) => {
   if (hasUpstream.value) {
-    void executeGitRemoteAction("push");
+    requestGitPush();
     return;
   }
   if (!canPublishGitBranch.value) return;
@@ -1161,6 +1203,19 @@ const confirmRiskyAction = async () => {
   isConfirmationRunning.value = true;
   try {
     await dialog.onConfirm();
+    if (confirmationDialog.value === dialog) confirmationDialog.value = null;
+  } finally {
+    isConfirmationRunning.value = false;
+  }
+};
+
+const confirmSecondaryAction = async () => {
+  const dialog = confirmationDialog.value;
+  if (!dialog?.onSecondary || isConfirmationRunning.value) return;
+
+  isConfirmationRunning.value = true;
+  try {
+    await dialog.onSecondary();
     if (confirmationDialog.value === dialog) confirmationDialog.value = null;
   } finally {
     isConfirmationRunning.value = false;
@@ -2477,11 +2532,13 @@ watch(
       :message="confirmationDialog?.message || ''"
       :detail="confirmationDialog?.detail"
       :primary-label="confirmationDialog?.confirmLabel || ''"
+      :secondary-label="confirmationDialog?.secondaryLabel"
       :cancel-label="confirmationDialog?.cancelLabel"
       :busy="isConfirmationRunning"
       busy-label="处理中"
       @cancel="closeConfirmationDialog"
       @primary="confirmRiskyAction"
+      @secondary="confirmSecondaryAction"
     />
   </div>
 </template>

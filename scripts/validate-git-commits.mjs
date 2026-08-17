@@ -60,6 +60,12 @@ fs.writeFileSync(path.join(unbornRoot, "untracked.txt"), "untracked\n");
 
 const createPreloadBridge = (childProcess = require("child_process")) => {
   const sandbox = {
+    CustomEvent: class {
+      constructor(type, options = {}) {
+        this.type = type;
+        this.detail = options.detail;
+      }
+    },
     TextDecoder,
     clearTimeout,
     console: { warn() {}, error() {}, log() {} },
@@ -461,6 +467,22 @@ try {
   );
   assert.throws(() => runGitAt(publishOriginRoot, "show-ref", "--verify", "--quiet", `refs/heads/${publishBranch}`));
   assert.equal((await bridge.publishGitBranch(publishProjectRoot, "mirror")).ok, false);
+
+  const unpushedTagName = "service-v0.9.0";
+  runGitAt(publishProjectRoot, "tag", unpushedTagName);
+  assert.equal((await bridge.pushGitRemote(publishProjectRoot)).ok, true);
+  assert.throws(() => runGitAt(publishMirrorRoot, "show-ref", "--verify", "--quiet", `refs/tags/${unpushedTagName}`));
+
+  fs.appendFileSync(path.join(publishProjectRoot, "publish.txt"), "release\n");
+  runGitAt(publishProjectRoot, "add", "--", "publish.txt");
+  runGitAt(publishProjectRoot, "commit", "-m", "release commit");
+  const releaseCommit = runGitAt(publishProjectRoot, "rev-parse", "HEAD").trim();
+  const releaseTagName = "service-v1.0.0";
+  runGitAt(publishProjectRoot, "tag", releaseTagName);
+  const taggedPush = await bridge.pushGitRemote(publishProjectRoot, { tagNames: [releaseTagName] });
+  assert.equal(taggedPush.ok, true);
+  assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `refs/heads/${publishBranch}`).trim(), releaseCommit);
+  assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `${releaseTagName}^{commit}`).trim(), releaseCommit);
 
   const remoteDeleteBranch = "feature/remote-delete";
   runGitAt(publishProjectRoot, "switch", "-c", remoteDeleteBranch);
