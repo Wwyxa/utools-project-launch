@@ -162,7 +162,6 @@ const messages = {
       keywordExitHint: "停止脚本的关键词同样匹配本次运行的累计输出，并且只会在该脚本自动输入步骤全部完成后生效。",
       nextRun: "下次执行",
       latestResult: "最近结果",
-      recentResults: "最近结果",
       missedTasks: "已错过任务",
       allTasks: "所有任务",
       runNow: "立即执行",
@@ -644,7 +643,8 @@ const messages = {
       notificationsOn: "Notifications on",
       notificationsOff: "Notifications off",
       scripts: "Scripts",
-      scriptOrderHint: "Selected scripts run serially; continuous scripts continue after their automated input finishes.",
+      scriptOrderHint:
+        "Selected scripts run serially; continuous scripts continue after their automated input finishes.",
       continuousRun: "Keep running",
       continuousRunHint:
         "Continues to the next script after all automated input finishes without waiting for this script to exit.",
@@ -684,7 +684,6 @@ const messages = {
         "The stop keyword uses the same accumulated output from this run and only activates after all auto-input steps finish.",
       nextRun: "Next run",
       latestResult: "Latest result",
-      recentResults: "Recent results",
       missedTasks: "Missed tasks",
       allTasks: "All tasks",
       runNow: "Run now",

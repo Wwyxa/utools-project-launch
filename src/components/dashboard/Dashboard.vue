@@ -28,6 +28,7 @@ import type { TodoItem } from "../../types";
 const store = useStore();
 const t = useI18n();
 const PROJECT_STATUS_FEEDBACK_MIN_DURATION_MS = 200;
+const AUTOMATION_RUN_FEEDBACK_MIN_DURATION_MS = 400;
 let initialDashboardProjectCardsMounted = false;
 
 const searchQuery = ref("");
@@ -50,6 +51,7 @@ const todoProjectMenu = ref<HTMLElement | null>(null);
 const todoProjectSearchInput = ref<HTMLInputElement | null>(null);
 const todoProjectMenuStyle = ref<Record<string, string>>({});
 const automationOverviewFeedback = ref("");
+const automationRunPendingTaskKeys = ref(new Set<string>());
 const draggingProjectId = ref<string | null>(null);
 const selectedProjectGroupKey = ref("all");
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
@@ -425,16 +427,6 @@ const upcomingAutomationTasks = computed(() =>
     )
     .slice(0, 6),
 );
-const recentAutomationTasks = computed(() =>
-  automationTasks.value
-    .filter((item) => item.latestHistory)
-    .sort(
-      (left, right) =>
-        new Date(right.latestHistory?.endedAt || right.latestHistory?.plannedAt || 0).getTime() -
-        new Date(left.latestHistory?.endedAt || left.latestHistory?.plannedAt || 0).getTime(),
-    )
-    .slice(0, 6),
-);
 const todoProjectGroups = computed<ProjectTodoGroup[]>(() =>
   store.visibleProjects
     .map((project) => ({
@@ -495,6 +487,38 @@ const isAutomationTaskRunning = (projectId: string, taskId: string) =>
   Boolean(automationTasks.value.find((item) => item.project.id === projectId && item.task.id === taskId)?.runningEntry);
 
 const formatAutomationDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : t.value.common.never);
+
+const automationRunTaskKey = (projectId: string, taskId: string) => `${projectId}:${taskId}`;
+const isAutomationRunPending = (projectId: string, taskId: string) =>
+  automationRunPendingTaskKeys.value.has(automationRunTaskKey(projectId, taskId));
+const setAutomationRunPending = (projectId: string, taskId: string, pending: boolean) => {
+  const nextKeys = new Set(automationRunPendingTaskKeys.value);
+  const taskKey = automationRunTaskKey(projectId, taskId);
+  if (pending) {
+    nextKeys.add(taskKey);
+  } else {
+    nextKeys.delete(taskKey);
+  }
+  automationRunPendingTaskKeys.value = nextKeys;
+};
+const runAutomationWithButtonFeedback = async (projectId: string, taskId: string, run: () => Promise<boolean>) => {
+  if (isAutomationRunPending(projectId, taskId)) {
+    return false;
+  }
+  const feedbackStartedAt = performance.now();
+  setAutomationRunPending(projectId, taskId, true);
+  await nextTick();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  try {
+    return await run();
+  } finally {
+    const remainingFeedbackDuration = AUTOMATION_RUN_FEEDBACK_MIN_DURATION_MS - (performance.now() - feedbackStartedAt);
+    if (remainingFeedbackDuration > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, remainingFeedbackDuration));
+    }
+    setAutomationRunPending(projectId, taskId, false);
+  }
+};
 
 const toggleTodoOverview = () => {
   todoOverviewOpen.value = !todoOverviewOpen.value;
@@ -572,13 +596,23 @@ const automationRunFailureMessage = () =>
     : t.value.automation.runBlocked;
 
 const runAutomationTaskNow = async (projectId: string, taskId: string) => {
-  const started = await store.runAutomationTaskNow(projectId, taskId);
-  automationOverviewFeedback.value = started ? t.value.automation.runStarted : automationRunFailureMessage();
+  if (isAutomationRunPending(projectId, taskId)) {
+    return;
+  }
+  const started = await runAutomationWithButtonFeedback(projectId, taskId, () =>
+    store.runAutomationTaskNow(projectId, taskId),
+  );
+  automationOverviewFeedback.value = started ? "" : automationRunFailureMessage();
 };
 
 const runAutomationPlanEntryEarly = async (projectId: string, taskId: string, entryId: string) => {
-  const started = await store.runAutomationPlanEntryEarly(projectId, taskId, entryId);
-  automationOverviewFeedback.value = started ? t.value.automation.runStarted : automationRunFailureMessage();
+  if (isAutomationRunPending(projectId, taskId)) {
+    return;
+  }
+  const started = await runAutomationWithButtonFeedback(projectId, taskId, () =>
+    store.runAutomationPlanEntryEarly(projectId, taskId, entryId),
+  );
+  automationOverviewFeedback.value = started ? "" : automationRunFailureMessage();
 };
 
 const ignoreMissedAutomationTask = (projectId: string, taskId: string) => {
@@ -588,7 +622,12 @@ const ignoreMissedAutomationTask = (projectId: string, taskId: string) => {
 const canRunAutomationTaskNow = (projectId: string, taskId: string) => {
   const project = store.visibleProjects.find((item) => item.id === projectId);
   const task = project?.automationTasks?.find((item) => item.id === taskId);
-  return Boolean(task && task.scriptIds.length > 0 && !isAutomationTaskRunning(projectId, taskId));
+  return Boolean(
+    task &&
+    task.scriptIds.length > 0 &&
+    !isAutomationTaskRunning(projectId, taskId) &&
+    !isAutomationRunPending(projectId, taskId),
+  );
 };
 
 const handleProjectDragStart = (event: DragEvent, projectId: string) => {
@@ -1065,11 +1104,22 @@ const handleProjectDragEnd = () => {
                       type="button"
                       class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                       :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
-                      :title="t.automation.runNow"
-                      :aria-label="t.automation.runNow"
+                      :aria-busy="isAutomationRunPending(item.project.id, item.task.id)"
+                      :title="
+                        isAutomationRunPending(item.project.id, item.task.id) ? t.common.running : t.automation.runNow
+                      "
+                      :aria-label="
+                        isAutomationRunPending(item.project.id, item.task.id) ? t.common.running : t.automation.runNow
+                      "
                       @click.stop="runAutomationTaskNow(item.project.id, item.task.id)"
                     >
-                      <Play :size="13" />
+                      <RefreshCw
+                        v-if="isAutomationRunPending(item.project.id, item.task.id)"
+                        :size="13"
+                        class="animate-spin"
+                        aria-hidden="true"
+                      />
+                      <Play v-else :size="13" />
                     </button>
                     <button
                       type="button"
@@ -1083,154 +1133,149 @@ const handleProjectDragEnd = () => {
                   </div>
                 </div>
               </div>
-              <div class="grid gap-3 border-b border-border-subtle md:grid-cols-2">
-                <section class="min-w-0 py-3 md:border-r md:border-border-subtle md:pr-3">
-                  <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.nextRun }}</div>
-                  <div v-if="upcomingAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
+              <section class="border-b border-border-subtle py-3">
+                <div class="min-w-0">
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <div class="text-xs font-bold text-on-surface-variant">{{ t.automation.allTasks }}</div>
+                    <span class="ui-panel-meta">{{ automationSummary.total }}</span>
+                  </div>
+                  <div v-if="automationProjectGroups.length === 0" class="text-xs text-on-surface-variant">
                     {{ t.common.noData }}
                   </div>
                   <div
-                    v-for="item in upcomingAutomationTasks"
-                    :key="`${item.project.id}-${item.task.id}-next`"
-                    class="flex w-full items-center justify-between gap-2 border-b border-border-subtle py-2 text-left text-xs last:border-b-0 hover:bg-surface-container-low"
-                    role="button"
-                    tabindex="0"
-                    @click="openProjectAutomation(item.project.id)"
-                    @keydown.enter.self="openProjectAutomation(item.project.id)"
-                    @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
+                    v-for="group in automationProjectGroups"
+                    :key="group.project.id"
+                    class="border-t border-border-subtle py-3 first:border-t-0"
                   >
-                    <span class="min-w-0 flex-1">
-                      <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
-                      <span class="block truncate text-on-surface-variant">{{ item.project.name }}</span>
-                    </span>
-                    <span class="flex min-w-0 max-w-[70%] shrink items-center gap-1">
-                      <span
-                        class="min-w-0 truncate font-mono text-[10px] text-on-surface-variant"
-                        :title="formatAutomationDateTime(item.nextEntry?.plannedAt)"
-                      >
-                        {{ formatAutomationDateTime(item.nextEntry?.plannedAt) }}
+                    <div class="mb-1.5 flex min-w-0 items-center gap-2">
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate text-xs font-bold text-on-surface">{{ group.project.name }}</span>
                       </span>
-                      <button
-                        v-if="item.nextEntry"
-                        type="button"
-                        class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                        :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
-                        :title="t.automation.runEarly"
-                        :aria-label="t.automation.runEarly"
-                        @click.stop="runAutomationPlanEntryEarly(item.project.id, item.task.id, item.nextEntry.id)"
-                        @keydown.enter.stop
-                        @keydown.space.stop
+                      <span class="ui-panel-meta">{{ group.tasks.length }}</span>
+                    </div>
+                    <div class="divide-y divide-border-subtle">
+                      <div
+                        v-for="item in group.tasks"
+                        :key="`${item.project.id}-${item.task.id}-project`"
+                        class="flex cursor-pointer items-center justify-between gap-2 py-2 pl-1 text-xs transition-colors hover:bg-surface-container-low"
+                        role="button"
+                        tabindex="0"
+                        @click="openProjectAutomation(item.project.id)"
+                        @keydown.enter.self="openProjectAutomation(item.project.id)"
+                        @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
                       >
-                        <Play :size="13" />
-                      </button>
-                    </span>
-                  </div>
-                </section>
-                <section class="min-w-0 py-3 md:pl-3">
-                  <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.recentResults }}</div>
-                  <div v-if="recentAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
-                    {{ t.common.noData }}
-                  </div>
-                  <button
-                    v-for="item in recentAutomationTasks"
-                    :key="`${item.project.id}-${item.task.id}-recent`"
-                    type="button"
-                    class="flex w-full items-center justify-between gap-2 border-b border-border-subtle py-2 text-left text-xs last:border-b-0 hover:bg-surface-container-low"
-                    @click="openProjectAutomation(item.project.id)"
-                  >
-                    <span class="min-w-0">
-                      <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
-                      <span class="block truncate text-on-surface-variant">
-                        {{ item.project.name }} ·
-                        {{ formatAutomationDateTime(item.latestHistory?.endedAt || item.latestHistory?.plannedAt) }}
-                      </span>
-                    </span>
-                    <span
-                      :class="
-                        cn(
-                          'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                          automationStatusClass(item.latestHistory?.status),
-                        )
-                      "
-                    >
-                      {{ automationStatusLabel(item.latestHistory?.status) }}
-                    </span>
-                  </button>
-                </section>
-              </div>
-              <section class="pt-3">
-                <div class="mb-2 flex items-center justify-between gap-2">
-                  <div class="text-xs font-bold text-on-surface-variant">{{ t.automation.allTasks }}</div>
-                  <span class="ui-panel-meta">{{ automationSummary.total }}</span>
-                </div>
-                <div v-if="automationProjectGroups.length === 0" class="text-xs text-on-surface-variant">
-                  {{ t.common.noData }}
-                </div>
-                <div
-                  v-for="group in automationProjectGroups"
-                  :key="group.project.id"
-                  class="border-t border-border-subtle py-3 first:border-t-0"
-                >
-                  <div class="mb-1.5 flex min-w-0 items-center gap-2">
-                    <span class="min-w-0 flex-1">
-                      <span class="block truncate text-xs font-bold text-on-surface">{{ group.project.name }}</span>
-                    </span>
-                    <span class="ui-panel-meta">{{ group.tasks.length }}</span>
-                  </div>
-                  <div class="divide-y divide-border-subtle">
-                    <div
-                      v-for="item in group.tasks"
-                      :key="`${item.project.id}-${item.task.id}-project`"
-                      class="flex cursor-pointer items-center justify-between gap-2 py-2 pl-1 text-xs transition-colors hover:bg-surface-container-low"
-                      role="button"
-                      tabindex="0"
-                      @click="openProjectAutomation(item.project.id)"
-                      @keydown.enter.self="openProjectAutomation(item.project.id)"
-                      @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
-                    >
-                      <span class="h-1 w-1 shrink-0 rounded-full bg-outline-variant" aria-hidden="true" />
-                      <span class="min-w-0 flex-1 truncate">
-                        <span class="font-semibold text-on-surface">{{ item.task.name }}</span>
-                        <span class="ml-1 text-[10px] text-on-surface-variant">
-                          ·
-                          {{
-                            formatAutomationDateTime(
-                              item.runningEntry?.plannedAt ||
-                                item.nextEntry?.plannedAt ||
-                                item.latestHistory?.endedAt ||
-                                item.latestHistory?.plannedAt,
-                            )
-                          }}
+                        <span class="h-1 w-1 shrink-0 rounded-full bg-outline-variant" aria-hidden="true" />
+                        <span class="min-w-0 flex-1 truncate">
+                          <span class="font-semibold text-on-surface">{{ item.task.name }}</span>
+                          <span class="ml-1 text-[10px] text-on-surface-variant">
+                            ·
+                            {{
+                              formatAutomationDateTime(
+                                item.runningEntry?.plannedAt ||
+                                  item.nextEntry?.plannedAt ||
+                                  item.latestHistory?.endedAt ||
+                                  item.latestHistory?.plannedAt,
+                              )
+                            }}
+                          </span>
                         </span>
-                      </span>
-                      <div class="flex shrink-0 items-center justify-end gap-1">
-                        <span
-                          :class="
-                            cn(
-                              'inline-flex min-w-14 items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                              automationStatusClass(item.currentStatus),
-                            )
-                          "
-                        >
+                        <div class="flex shrink-0 items-center justify-end gap-1">
                           <span
-                            v-if="item.currentStatus === 'running'"
-                            class="h-1.5 w-1.5 rounded-full bg-status-info animate-pulse"
-                          />
-                          {{ automationStatusLabel(item.currentStatus) }}
-                        </span>
-                        <button
-                          type="button"
-                          class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                          :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
-                          :title="t.automation.runNow"
-                          :aria-label="t.automation.runNow"
-                          @click.stop="runAutomationTaskNow(item.project.id, item.task.id)"
-                        >
-                          <Play :size="12" />
-                        </button>
+                            :class="
+                              cn(
+                                'inline-flex min-w-14 items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                                automationStatusClass(item.currentStatus),
+                              )
+                            "
+                          >
+                            <span
+                              v-if="item.currentStatus === 'running'"
+                              class="h-1.5 w-1.5 rounded-full bg-status-info animate-pulse"
+                            />
+                            {{ automationStatusLabel(item.currentStatus) }}
+                          </span>
+                          <button
+                            type="button"
+                            class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                            :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
+                            :aria-busy="isAutomationRunPending(item.project.id, item.task.id)"
+                            :title="
+                              isAutomationRunPending(item.project.id, item.task.id)
+                                ? t.common.running
+                                : t.automation.runNow
+                            "
+                            :aria-label="
+                              isAutomationRunPending(item.project.id, item.task.id)
+                                ? t.common.running
+                                : t.automation.runNow
+                            "
+                            @click.stop="runAutomationTaskNow(item.project.id, item.task.id)"
+                          >
+                            <RefreshCw
+                              v-if="isAutomationRunPending(item.project.id, item.task.id)"
+                              :size="12"
+                              class="animate-spin"
+                              aria-hidden="true"
+                            />
+                            <Play v-else :size="12" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
+                </div>
+              </section>
+              <section class="pt-3">
+                <div class="mb-2 text-xs font-bold text-on-surface-variant">{{ t.automation.nextRun }}</div>
+                <div v-if="upcomingAutomationTasks.length === 0" class="text-xs text-on-surface-variant">
+                  {{ t.common.noData }}
+                </div>
+                <div
+                  v-for="item in upcomingAutomationTasks"
+                  :key="`${item.project.id}-${item.task.id}-next`"
+                  class="flex w-full items-center justify-between gap-2 border-b border-border-subtle py-2 text-left text-xs last:border-b-0 hover:bg-surface-container-low"
+                  role="button"
+                  tabindex="0"
+                  @click="openProjectAutomation(item.project.id)"
+                  @keydown.enter.self="openProjectAutomation(item.project.id)"
+                  @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
+                >
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-bold text-on-surface">{{ item.task.name }}</span>
+                    <span class="block truncate text-on-surface-variant">{{ item.project.name }}</span>
+                  </span>
+                  <span class="flex min-w-0 max-w-[70%] shrink items-center gap-1">
+                    <span
+                      class="min-w-0 truncate font-mono text-[10px] text-on-surface-variant"
+                      :title="formatAutomationDateTime(item.nextEntry?.plannedAt)"
+                    >
+                      {{ formatAutomationDateTime(item.nextEntry?.plannedAt) }}
+                    </span>
+                    <button
+                      v-if="item.nextEntry"
+                      type="button"
+                      class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
+                      :aria-busy="isAutomationRunPending(item.project.id, item.task.id)"
+                      :title="
+                        isAutomationRunPending(item.project.id, item.task.id) ? t.common.running : t.automation.runEarly
+                      "
+                      :aria-label="
+                        isAutomationRunPending(item.project.id, item.task.id) ? t.common.running : t.automation.runEarly
+                      "
+                      @click.stop="runAutomationPlanEntryEarly(item.project.id, item.task.id, item.nextEntry.id)"
+                      @keydown.enter.stop
+                      @keydown.space.stop
+                    >
+                      <RefreshCw
+                        v-if="isAutomationRunPending(item.project.id, item.task.id)"
+                        :size="13"
+                        class="animate-spin"
+                        aria-hidden="true"
+                      />
+                      <Play v-else :size="13" />
+                    </button>
+                  </span>
                 </div>
               </section>
             </div>
