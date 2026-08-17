@@ -504,6 +504,8 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - `ProjectGitSnapshot` and `ProjectGitStatusSnapshot` include `remotes: ProjectGitRemoteSummary[]`, `remoteBranches: ProjectGitRemoteBranchSummary[]`, and `upstream: ProjectGitUpstreamSummary | null`.
 - Bridge methods: `fetchGitRemote(projectPath)`, `fetchGitRemoteByName(projectPath, remoteName)`, `pullGitRemote(projectPath)`, `pushGitRemote(projectPath)`, `addGitRemote(projectPath, remoteName, remoteUrl)`, `setGitRemoteUrl(projectPath, remoteName, remoteUrl)`, `removeGitRemote(projectPath, remoteName)`, and `deleteGitRemoteBranch(projectPath, remoteName, branchName)`.
 - Store actions mirror the bridge methods with `projectId` replacing `projectPath` and preserve repository-target authorization.
+- `ProjectGitRemoteProgressEvent = { type: "git-remote-progress"; repositoryPath: string; message: string; phase: "start" | "output" | "complete" }` is the preload-to-renderer progress payload.
+- `runGitRemoteCommandResult(startPath, args)` returns `{ status: number; stdout: string; stderr: string }` while emitting `ProjectGitRemoteProgressEvent` values for its process lifecycle.
 
 ### 3. Contracts
 
@@ -513,9 +515,13 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - Fetch, pull, and push operate only on the current branch upstream. Do not add force push, rebase pull, or `push -u` without a new requirement and updated spec.
 - Named remote refresh is a separate operation: validate the configured remote, run async `git fetch --prune <remote>`, and refresh the full snapshot even when Git reports failure because refs may have changed before a network or authentication error.
 - Server-side branch deletion is separate from removing a remote configuration or deleting a local tracking ref: validate the branch as a `refs/heads` name, run async `git push --delete <remote> refs/heads/<branch>`, and preserve the local branch. The UI confirmation must state that local branches are not deleted; when the deleted ref is the current upstream, warn that a later push may recreate it.
+- Fetch, pull, push, first publication, and remote branch deletion pass `--progress` so Git produces displayable progress even without an interactive terminal. Remote configuration writes keep their existing fixed argv forms.
 - Preload validates remote names and URLs before invoking Git. Remote names are non-empty, cannot start with `-`, and only contain letters, digits, `.`, `_`, and `-`. Remote URLs are non-empty and cannot contain control characters.
 - Named remote operations validate remote existence before invoking Git and reject the symbolic `HEAD` branch instead of treating it as a server branch.
-- Remote network commands must use async process execution with a timeout and `GIT_TERMINAL_PROMPT=0` / `GCM_INTERACTIVE=Never`; do not run them through blocking `spawnSync` or commands that can wait forever for credentials.
+- Remote network commands must use async process execution with a timeout and `GIT_TERMINAL_PROMPT=0` / `GCM_INTERACTIVE=Never`; do not run them through blocking `spawnSync` or commands that can wait forever for credentials. Long-running commands with progress use `spawn` in `runGitRemoteCommandResult`, not `execFile`, because progress must reach the renderer before process exit.
+- A remote command emits exactly one `start` event before spawning, zero or more `output` events, and exactly one empty-message `complete` event after either `error` or `close`. The settlement guard prevents `error` followed by `close` from producing a duplicate completion.
+- Progress parsing keeps independent stdout/stderr remainders, splits on both `\r` and `\n`, strips ANSI control sequences, ignores blank output, and flushes an unfinished remainder only when the command settles. This preserves partial chunks while treating carriage-return updates as replacement-style progress.
+- `App.vue` is the only renderer owner of remote-progress state: it prioritizes the latest remote message over ordinary project status, replaces the latest entry when its derived stage is unchanged, caps history at 20 entries, opens the shared status popover on `start`, and clears message/history/expanded state on `complete`. `ActionStatusPopover` remains presentation-only and receives generic message, state, entries, and expansion props without inspecting Git events.
 - Store remote mutations refresh the full Git snapshot after every result, including failures, because `pull` can fetch before merge failure and remote refs may still change.
 - GitTab keeps remote controls in the existing top Git status panel; use a compact popover for remote list management instead of adding a separate full-width remote panel.
 
@@ -529,6 +535,10 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - Empty or control-character remote URL -> return the validation message before running Git.
 - Remote command timeout -> return a timeout message and refresh the Git snapshot afterward.
 - Git authentication failure with prompts disabled -> return the Git error text to the UI without blocking the plugin.
+- A stdout/stderr chunk split mid-line -> retain it until a `\r`/`\n` delimiter or terminal flush; do not emit a truncated progress entry.
+- ANSI control sequences or blank chunks -> remove or ignore them before dispatching an `output` event.
+- `error` followed by `close` -> resolve once and dispatch one `complete` event only.
+- A `start` event -> replace the previous remote history and expand the shared progress popover. A `complete` event -> clear remote-only status and collapse the popover without clearing unrelated Store status.
 - Successful add/set-url/remove -> refresh the full Git snapshot so `remotes` and `upstream` are current.
 
 ### 5. Good/Base/Bad Cases
@@ -536,10 +546,13 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - Good: a repository with `origin/main` upstream shows one compact upstream chip, enables fetch/pull/push, and refreshes ahead/behind after each operation.
 - Good: a repository with remotes but no current upstream shows the remote list but disables fetch/pull/push with a clear tooltip.
 - Good: the popover groups fetched tracking refs by configured remote, offers per-remote prune refresh, and distinguishes checkout from server-side deletion.
+- Good: a chunked fetch stream emits `Receiving objects: 50%` without ANSI bytes, replaces repeated transfer-stage entries, and leaves at most 20 historical stages visible.
+- Good: confirming a remote operation starts the shared progress popover without requiring a second click; a user may close it manually while later output continues in the background.
 - Base: browser preview has no real Git bridge; snapshots still include empty remote fields and remote actions return unsupported messages.
 - Bad: adding a separate component-local remote list that can drift from `ProjectGitSnapshot.remotes`.
 - Bad: presenting `refs/remotes/*` as the server's complete live branch list, or using `git remote remove` when the user requested deletion of one server branch.
-- Bad: running `git pull` with `spawnSync`; a credential prompt can freeze the uTools preload process.
+- Bad: buffering `git pull` through `execFile` and then attempting to reconstruct live progress after exit; the user sees no progress during a slow network operation.
+- Bad: dispatching remote progress through `project-bridge-event` or keeping an additional GitTab-local status chip; consumers either miss the event or duplicate the global display.
 - Bad: refreshing only on successful remote operations; failed `pull` may still update fetched refs and leave UI stale.
 
 ### 6. Tests Required
@@ -549,8 +562,9 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - `npm run build` after changing GitTab remote UI or shared snapshot fields.
 - `npm run validate:git-commits` must assert named remote fetch, `remoteBranches` population, `<remote>/HEAD` exclusion, server-side branch deletion, protected `HEAD` rejection, and post-delete refresh.
 - `npx vitest run tests/projectBridge.workspace.test.ts` must assert target routing and stale-target rejection for named remote refresh and deletion.
+- `npx vitest run tests/projectBridge.launchers.test.ts` must fake chunked stdout/stderr, assert `spawn` receives `--progress`, assert the exact `git-remote-progress` channel and start/output/complete phases, and cover ANSI plus `\r` normalization.
 - Manual smoke test in browser preview: GitTab top panel shows no-remote state, disabled fetch/pull/push, and the add remote dialog opens.
-- Manual smoke test in uTools with a real repository: fetch/pull/push update status feedback and refresh ahead/behind.
+- Manual smoke test in uTools with a real repository: fetch/pull/push open the shared progress popover immediately, update its current line progressively, and refresh ahead/behind after completion.
 - Manual smoke test in uTools with no upstream: remote operations remain disabled or return a clear warning.
 
 ### 7. Wrong vs Correct
@@ -558,23 +572,40 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 #### Wrong
 
 ```js
-const result = spawnSync("git", ["-C", repositoryPath, "pull"], { encoding: "utf8" });
+execFile("git", ["-C", repositoryPath, "pull"], callback);
 ```
 
-This can block the preload process indefinitely when Git asks for credentials or waits on the network.
+This buffers output until the remote command exits, so a slow fetch or pull cannot display live progress.
 
 #### Correct
 
 ```js
-execFile(
-  "git",
-  ["-C", repositoryPath, "pull", "--ff", "--no-rebase", upstream.remote, upstream.branch],
-  { env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" }, timeout: 120000 },
-  callback,
-);
+const child = spawn("git", ["-C", repositoryPath, "fetch", "--progress", "--prune", remoteName], {
+  env: { ...resolveGitExecutionEnvironment(), GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
+  stdio: ["ignore", "pipe", "pipe"],
+  windowsHide: true,
+});
+child.stderr.on("data", (chunk) => consumeProgress("stderr", chunk));
+child.on("close", () => emitGitRemoteProgress({ type: "git-remote-progress", repositoryPath, message: "", phase: "complete" }));
 ```
 
-Use async execution with disabled interactive prompts and a timeout so remote Git failures return to the UI safely.
+Stream output with disabled interactive prompts and a timeout so remote Git failures return safely while the renderer receives progress before completion.
+
+#### Wrong
+
+```js
+window.dispatchEvent(new CustomEvent("project-bridge-event", { detail: progress }));
+```
+
+This reuses the process-event channel, while the application listens for a dedicated remote-progress event.
+
+#### Correct
+
+```js
+window.dispatchEvent(new CustomEvent("git-remote-progress", { detail: progress }));
+```
+
+Keep the event name and the `ProjectGitRemoteProgressEvent.type` value aligned so the application-level status owner receives every phase.
 
 #### Wrong
 

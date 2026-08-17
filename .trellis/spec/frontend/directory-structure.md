@@ -37,6 +37,9 @@ src/
 	├── layout/
 	│   ├── Sidebar.vue
 	│   └── TopBar.vue
+	├── common/
+	│   ├── ActionDialog.vue
+	│   └── ActionStatusPopover.vue
 	├── project/
 	│   ├── GitTab.vue
 	│   ├── MemoTab.vue
@@ -55,9 +58,10 @@ Feature modules are grouped by screen or capability, not by technical layer.
 - `layout/` contains the persistent shell UI such as sidebar and top bar
 - `dashboard/` contains the project overview cards and dashboard header
 - `project/` contains tabbed detail views for scripts, Git, and memo editing
+- `common/` contains reusable cross-feature interaction primitives such as `ActionDialog.vue` and `ActionStatusPopover.vue`
 - `terminal/` contains the embedded terminal/log panel used inside project details
 
-Keep new features close to the screen that owns them. For example, a future project settings panel should live alongside the project detail views, not in a generic shared folder.
+Keep new features close to the screen that owns them. For example, a future project settings panel should live alongside the project detail views, not in `common/`. Add a component to `common/` only when it has shared behavior across multiple feature surfaces or forms an application-level interaction boundary; do not move feature panels there merely to shorten imports.
 
 There is no separate `pages/` or `composables/` directory yet. If one is added later, it should solve an actual reuse problem rather than just moving code around.
 

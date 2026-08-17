@@ -565,7 +565,7 @@ const handleCommitRowClick = (event: MouseEvent, hash: string) => {
 - Render both levels through `Teleport`, measure after `nextTick`, and clamp with actual DOM dimensions. The state fields consumed by the style must receive the clamped values: the current main menu uses `x/y`, while the submenu uses `left/top`.
 - Internal scrolling of an overflowed main menu must keep the main menu open and close only its now-unanchored submenu. Window or history-panel scroll, resize, outside pointerdown, repository replacement, and unmount close both levels.
 - Support ArrowUp/ArrowDown/Home/End within each level, ArrowRight into a branch submenu, ArrowLeft back to the parent row, hierarchical Escape, and final focus restoration to the context-menu opener.
-- Use the global `ActionDialog` for simple destructive or warning confirmations. Set `icon="trash"` for delete/discard actions, `icon="undo"` for reversals, and leave the default alert icon for generic warnings. Do not add native confirmations or make a confirmation-only component own create/rename/tag form fields.
+- Use the shared `src/components/common/ActionDialog.vue` for simple destructive or warning confirmations. Set `icon="trash"` for delete/discard actions, `icon="undo"` for reversals, and leave the default alert icon for generic warnings. Do not add native confirmations or make a confirmation-only component own create/rename/tag form fields.
 
 **Validation**:
 
