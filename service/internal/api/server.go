@@ -56,6 +56,12 @@ type healthResponse struct {
 	StartedAt       string `json:"startedAt"`
 }
 
+type syncResponse struct {
+	Health healthResponse   `json:"health"`
+	State  serviceSnapshot  `json:"state"`
+	Events state.EventBatch `json:"events"`
+}
+
 type errorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -138,16 +144,11 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 
 	switch {
 	case request.Method == http.MethodGet && request.URL.Path == "/v1/health":
-		handler.writeJSON(responseWriter, http.StatusOK, healthResponse{
-			ProtocolVersion: handler.config.ProtocolVersion,
-			ServiceVersion:  handler.config.ServiceVersion,
-			InstanceID:      handler.config.InstanceID,
-			PID:             handler.config.PID,
-			ProcessIdentity: handler.config.ProcessIdentity,
-			StartedAt:       handler.config.StartedAt.UTC().Format(time.RFC3339Nano),
-		})
+		handler.writeJSON(responseWriter, http.StatusOK, handler.healthResponse())
 	case request.Method == http.MethodGet && request.URL.Path == "/v1/state":
 		handler.writeJSON(responseWriter, http.StatusOK, handler.serviceSnapshot())
+	case request.Method == http.MethodGet && request.URL.Path == "/v1/sync":
+		handler.handleSync(responseWriter, request)
 	case request.Method == http.MethodGet && request.URL.Path == "/v1/log-retention":
 		handler.handleLogRetention(responseWriter, request)
 	case request.Method == http.MethodPut && request.URL.Path == "/v1/log-retention":
@@ -192,12 +193,38 @@ func (handler *Handler) SupervisorSnapshot() state.Snapshot {
 	return handler.config.Supervisor.StoreSnapshot()
 }
 
+func (handler *Handler) healthResponse() healthResponse {
+	return healthResponse{
+		ProtocolVersion: handler.config.ProtocolVersion,
+		ServiceVersion:  handler.config.ServiceVersion,
+		InstanceID:      handler.config.InstanceID,
+		PID:             handler.config.PID,
+		ProcessIdentity: handler.config.ProcessIdentity,
+		StartedAt:       handler.config.StartedAt.UTC().Format(time.RFC3339Nano),
+	}
+}
+
 func (handler *Handler) serviceSnapshot() serviceSnapshot {
 	return serviceSnapshot{
 		Snapshot:   handler.config.Supervisor.StoreSnapshot(),
 		Automation: handler.config.Supervisor.AutomationSnapshot(),
 		Scheduler:  handler.config.Scheduler.Health(),
 	}
+}
+
+func (handler *Handler) handleSync(responseWriter http.ResponseWriter, request *http.Request) {
+	after, err := eventCursorAfter(request)
+	if err != nil {
+		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_cursor", "The event cursor must be a non-negative integer.")
+		return
+	}
+	events := handler.SupervisorEventsAfter(after)
+	snapshot := handler.serviceSnapshot()
+	handler.writeJSON(responseWriter, http.StatusOK, syncResponse{
+		Health: handler.healthResponse(),
+		State:  snapshot,
+		Events: events,
+	})
 }
 
 func (handler *Handler) handleAutomationConfig(responseWriter http.ResponseWriter, request *http.Request) {
@@ -294,16 +321,20 @@ func (handler *Handler) handleClearLogs(responseWriter http.ResponseWriter, requ
 }
 
 func (handler *Handler) handleEvents(responseWriter http.ResponseWriter, request *http.Request) {
-	afterText := request.URL.Query().Get("after")
-	if afterText == "" {
-		afterText = "0"
-	}
-	after, err := strconv.ParseUint(afterText, 10, 64)
+	after, err := eventCursorAfter(request)
 	if err != nil {
 		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_cursor", "The event cursor must be a non-negative integer.")
 		return
 	}
 	handler.writeJSON(responseWriter, http.StatusOK, handler.SupervisorEventsAfter(after))
+}
+
+func eventCursorAfter(request *http.Request) (uint64, error) {
+	afterText := request.URL.Query().Get("after")
+	if afterText == "" {
+		afterText = "0"
+	}
+	return strconv.ParseUint(afterText, 10, 64)
 }
 
 func (handler *Handler) SupervisorEventsAfter(after uint64) state.EventBatch {

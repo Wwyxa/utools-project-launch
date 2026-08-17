@@ -307,6 +307,18 @@ func (supervisor *Supervisor) HasActiveRuns() bool {
 	return len(supervisor.store.ActiveRuns()) > 0
 }
 
+func (supervisor *Supervisor) HasRecoveredRuns() bool {
+	supervisor.mutex.Lock()
+	defer supervisor.mutex.Unlock()
+
+	for _, managed := range supervisor.processes {
+		if managed.recovered {
+			return true
+		}
+	}
+	return false
+}
+
 func (supervisor *Supervisor) Close() error {
 	return supervisor.store.Close()
 }

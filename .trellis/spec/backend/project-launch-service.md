@@ -16,7 +16,7 @@
 - Service bridge methods: `loadProjectLaunchServicePreferences`, `saveProjectLaunchServicePreferences`, `getProjectLaunchServiceStatus`, `downloadProjectLaunchService`, `verifyProjectLaunchServiceInstall`, `startProjectLaunchService`, `stopProjectLaunchService`, `reconcileProjectLaunchService`, `getProjectLaunchServiceRunLog`, `getProjectLaunchServiceRunLogPage`, `getProjectLaunchServiceLogRetention`, `updateProjectLaunchServiceLogRetention`, `listProjectLaunchServiceLogs`, `clearProjectLaunchServiceLogs`, `syncProjectLaunchServiceAutomation`, `openProjectLaunchServiceDirectory`, and `openProjectLaunchServiceReleases`.
 - Shared types: `ProjectLaunchServicePreferences`, `ProjectLaunchServiceStatus`, `ProjectLaunchServiceRun`, `ProjectLaunchServiceEvent`, `ProjectLaunchServiceRunLog`, `ProjectLaunchServiceLogRetentionPolicy`, `ProjectLaunchServiceLogRetentionStatus`, `ProjectLaunchServiceLogDescriptor`, `ProjectLaunchServiceLogClearResult`, `ProjectLaunchServiceAutomationConfig`, `ProjectLaunchServiceAutomationState`, and `ProjectLaunchServiceAutomationSyncResult` in `src/types.ts`.
 - Loopback requests use `Authorization: Bearer <token>` and `X-Protocol-Version: 2`. JSON mutations also use `Content-Type: application/json`; `POST /v1/runs` requires `Idempotency-Key`.
-- Protocol endpoints are `GET /v1/health`, `GET /v1/state`, `GET /v1/events?after=<cursor>`, `GET /v1/runs/{runId}/log?before=<byte-offset>`, `GET/PUT /v1/log-retention`, `GET /v1/logs?projectId=<id>`, `POST /v1/logs/clear`, `POST /v1/runs`, `POST /v1/runs/{runId}/input`, `POST /v1/runs/{runId}/stop`, `PUT /v1/automation/config`, and `POST /v1/shutdown`.
+- Protocol endpoints are `GET /v1/health`, `GET /v1/state`, `GET /v1/events?after=<cursor>`, optional `GET /v1/sync?after=<cursor>`, `GET /v1/runs/{runId}/log?before=<byte-offset>`, `GET/PUT /v1/log-retention`, `GET /v1/logs?projectId=<id>`, `POST /v1/logs/clear`, `POST /v1/runs`, `POST /v1/runs/{runId}/input`, `POST /v1/runs/{runId}/stop`, `PUT /v1/automation/config`, and `POST /v1/shutdown`.
 
 ### 3. Contracts
 
@@ -98,11 +98,11 @@ return serviceEnabled ? runWithService(command) : runWithPreload(command);
 
 Keep ownership global and explicit: delegate only after healthy validation, otherwise fail the scoped operation without disabling unrelated plugin features.
 
-## Scenario: Unified Runtime Identity, Live State, And Scheduler Recovery
+## Scenario: Unified Runtime Identity, Efficient Live State, And Scheduler Recovery
 
 ### 1. Scope / Trigger
 
-- Trigger: a change affects script lifecycle identity, service state polling, `/v1/state`, scheduler execution, service-owned automation submission, or the enabled-mode handoff.
+- Trigger: a change affects script lifecycle identity, service synchronization polling, `/v1/state`, `/v1/sync`, scheduler execution, service-owned automation submission, or the enabled-mode handoff.
 - This requires code-spec depth because `src/types.ts`, `public/preload.js`, `src/store/useStore.ts`, the Go API, supervisor state, and scheduler all exchange the same runtime facts.
 - Script processes may have either owner, but Git, files, AI, and external application launchers remain outside the service runtime.
 
@@ -111,7 +111,9 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 - `ProjectBridgeRunResult` and `ProjectBridgeEvent` carry `runId?: string` and `runtimeOwner?: "preload" | "service"`; real preload and service events always provide both fields.
 - `ProjectBridgeServiceStateEvent` is `{ type: "service-state"; status: ProjectLaunchServiceStatus; timestamp?: string }` and is delivered on the existing bridge event subscription.
 - `ProjectLaunchServiceStatus` may include `runs`, `events`, cursor/truncation metadata, `automation`, and `scheduler?: { state: "running" | "degraded"; lastRunAt?: string; lastSuccessAt?: string; lastError?: string }`.
-- `GET /v1/state` returns the supervisor snapshot plus automation state and scheduler health. `GET /v1/events?after=<cursor>` returns the ordered process batch and cursor metadata.
+- `GET /v1/sync?after=<cursor>` returns `{ health, state, events }`: `health` has the same validated identity fields as `/v1/health`, `state` has the `/v1/state` snapshot shape, and `events` has the `/v1/events` cursor/truncation batch shape.
+- `GET /v1/health`, `GET /v1/state`, and `GET /v1/events?after=<cursor>` remain the compatibility sequence for a service that returns `404` for `/v1/sync`.
+- `Runtime.Run(ctx)` runs an iteration immediately, then waits on either the next computed deadline, a configuration wake signal, or context cancellation.
 - `POST /v1/runs` returns `409 { "code": "active_run_conflict" }` when an active run already owns the same `projectId` and `scriptId`.
 - Service automation configuration entries may include `runEarly?: boolean`; the field is submission metadata, not a replacement for `plannedAt`.
 
@@ -119,11 +121,12 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 
 - `runId` is the stable logical identity and `runtimeOwner` disambiguates its implementation. PID is diagnostic/process-control data only and must not decide whether an event is current.
 - Preload generates a `runId` for every direct launch and emits it with `runtimeOwner: "preload"`. It normalizes service events and service runs with `runtimeOwner: "service"` before exposing them to the Store.
-- A live service poll reads the event batch and a final service state, advances the cursor, emits normalized process events, then emits one `service-state` snapshot with `events: []`. This lets the Store apply live output once while still reconciling runs, automation, and scheduler health from the final snapshot.
+- A live service poll first requests authenticated `GET /v1/sync?after=<cursor>`. A `404` means the older service lacks this optional capability and must use the legacy health/events/state sequence; another non-`200` response or a malformed combined payload is a scoped unavailable/incompatible failure, not a preload fallback.
+- Keep the existing `750 ms` poll cadence for a healthy service. Advance the cursor from the returned batch, emit each normalized process event, then emit one `service-state` snapshot with `events: []`. Suppress that snapshot only when the batch is empty and the status signature is unchanged; an empty healthy poll must not create redundant Pinia work.
 - Explicit reconciliation may return service events in the snapshot. The Store reconciles the run/automation snapshot before replaying those events, and ignores a delayed event whose `runId` or owner differs from the current script identity.
 - An unavailable or incompatible service emits a scoped `service-state` failure. The Store retains already-known service-owned script identity instead of manufacturing an exit; enabled mode stays fail-closed and does not fall back to preload/renderer execution.
 - `CreateRun` first honors an idempotency claim: the same key and fingerprint returns its existing run, while a changed fingerprint returns `idempotency_conflict`. A different request for an active `(projectId, scriptId)` returns `active_run_conflict` and creates no second visible run.
-- `Runtime.Run` records non-cancellation iteration failures as degraded health and continues its ticker. A successful iteration or accepted complete automation configuration clears `lastError` and returns health to `running`. Error text is bounded and control characters are removed before exposure.
+- `Runtime.Run` derives its next delay from the earliest unclaimed eligible plan entry and waits with one `time.Timer`; an idle scheduler may wait up to `24h`. `ReplaceConfiguration` signals an immediate wake, while recovered-process reconciliation retains a `500 ms` poll. Non-cancellation iteration failures set degraded health and retry from `1s` with exponential backoff capped at `1m`; a later successful iteration or accepted complete configuration clears `lastError` and returns health to `running`. Error text is bounded and control characters are removed before exposure.
 - An early service submission keeps the selected entry's original `plannedAt`, marks only that outbound entry `runEarly: true`, and waits for the accepted automation revision. The scheduler may claim it before its planned time exactly once; normal claim semantics prevent a later due run from duplicating it.
 - Enable handoff blocks renderer submissions, exposes `starting`, starts and validates the service, synchronizes the complete automation revision, and persists `enabled: true` only after acknowledgement. A pre-commit failure stops a newly started service when possible, restores renderer ownership, and resumes its timer.
 
@@ -131,8 +134,11 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 
 - A terminal event for an older `runId` or different owner -> ignore it; retain the current script runtime and logs.
 - A terminal event arrives before its matching start/result identity -> keep it pending by `(projectId, scriptId, runId)` until that identity is known, then settle it once.
+- `/v1/sync` returns `404` -> read health, events, and state through the legacy sequence; another non-`200` response or an invalid `{ health, state, events }` body -> emit an unavailable service state and retain existing service-owned runtime identity.
+- A healthy sync batch is empty and the status signature is unchanged -> do not emit `service-state`; a non-empty batch -> emit all process events and exactly one reconciliation snapshot.
 - A service poll/read fails while enabled -> emit `service-state` with `unavailable` or `incompatible`; preserve known service runs and block new delegated work.
-- A scheduler iteration fails with a non-cancellation error -> `/v1/state.scheduler.state` becomes `degraded`; the next ticker iteration still runs.
+- An automation configuration replacement arrives while the scheduler is idle -> wake immediately instead of waiting for the old deadline; a recovered run remains eligible for the bounded `500 ms` reconciliation poll.
+- A scheduler iteration fails with a non-cancellation error -> `/v1/state.scheduler.state` becomes `degraded`; retry with bounded exponential backoff and continue serving future plans.
 - A later successful scheduler iteration or accepted valid replacement configuration -> set scheduler state to `running` and clear `lastError`.
 - A second active service start for the same project/script -> HTTP `409 active_run_conflict`; renderer reconciles the existing run or reports unavailable if it cannot recover that identity.
 - A stale, already-running, past, or invalid early entry -> do not submit `runEarly` and do not change its plan/history.
@@ -141,16 +147,18 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 ### 5. Good/Base/Bad Cases
 
 - Good: a preload launch and a service launch both expose an owner-tagged `runId`; stop and input select the run using that identity even while a service PID is not yet available.
-- Good: a service task completes while the plugin is open; the next bridge poll updates its plan entry, active-run guard, history, and scheduler status without a Settings refresh.
+- Good: a service task completes while the plugin is open; one sync response updates its plan entry, active-run guard, history, scheduler status, and ordered output without a Settings refresh.
 - Good: an older service snapshot reports a terminal run and its subsequent ordered event batch starts a newer run; the newer run remains current after reconciliation.
+- Base: an older compatible service returns `404` for `/v1/sync`; preload uses the existing three reads and preserves the same cursor and ownership semantics.
 - Base: a browser or legacy fixture omits `runId`; compatibility processing may use matching PID only, but new preload/service events must not omit runtime identity.
 - Bad: treat a failed status read as proof that a service process exited, then clear its `runId` or run renderer automation.
+- Bad: keep issuing the legacy three-request sequence after a valid `/v1/sync` response, or broadcast an unchanged empty healthy snapshot every poll.
 - Bad: change an early entry's `plannedAt` to now, which destroys the original schedule and can create duplicate/misclassified history.
 
 ### 6. Tests Required
 
-- `npx vitest run tests/projectBridge.launchers.test.ts tests/projectBridge.uiPreferences.test.ts tests/projectRuntimeState.test.ts` must assert owner-tagged direct events, stale terminal-event rejection, snapshot/event ordering, duplicate cursor suppression, unavailable-service identity retention, handoff gating, `runEarly` submission, PID-less service stop/input/reconcile, and active-run-conflict recovery.
-- `go -C service test ./internal/process/... ./internal/api/... ./internal/scheduler/...` must assert active-run conflict mapping, state serialization of scheduler health, non-cancellation scheduler recovery, bounded error text, and early-entry single claim behavior.
+- `npx vitest run tests/projectBridge.launchers.test.ts tests/projectBridge.uiPreferences.test.ts tests/projectRuntimeState.test.ts` must assert owner-tagged direct events, `/v1/sync` consumption, `404` compatibility fallback, unchanged-empty broadcast suppression, stale terminal-event rejection, snapshot/event ordering, duplicate cursor suppression, unavailable-service identity retention, handoff gating, `runEarly` submission, PID-less service stop/input/reconcile, and active-run-conflict recovery.
+- `go -C service test ./internal/process/... ./internal/api/... ./internal/scheduler/...` must assert active-run conflict mapping, `/v1/sync` health/state/event serialization, configuration wake-up, idle deadline selection, state serialization of scheduler health, non-cancellation scheduler recovery, bounded error text, and early-entry single claim behavior.
 - `node --check public/preload.js` must pass after changing bridge polling, run normalization, or direct-process events.
 - `npm run lint` and `npm run build` must pass after changing shared runtime types, Store reconciliation, or service-state UI handling.
 
@@ -178,3 +186,28 @@ if (script.runId && (event.runId !== script.runId || event.runtimeOwner !== scri
 ```
 
 Only the matching owner-neutral runtime identity may mutate a script's live state.
+
+#### Wrong
+
+```js
+const health = await requestProjectLaunchServiceHealth(connection);
+const events = await requestProjectLaunchServiceEvents(connection, cursor);
+const state = await requestProjectLaunchServiceState(connection);
+emit({ type: "service-state", status: { ...state, events } });
+```
+
+This keeps three healthy polling requests and broadcasts unchanged empty state on every cycle.
+
+#### Correct
+
+```js
+const sync = await requestProjectLaunchServiceSync(connection, cursor);
+const health = sync ? sync.health : await requestProjectLaunchServiceHealth(connection);
+const batch = sync ? sync.events : await requestProjectLaunchServiceEvents(connection, cursor);
+const state = sync ? sync.state : await requestProjectLaunchServiceState(connection);
+advanceProjectLaunchServiceEventCursor(batch);
+emitProcessEvents(batch.events);
+emitChangedServiceState({ ...state, health, events: [] }, batch.events.length);
+```
+
+Prefer the combined response, retain the `404` compatibility path, and make an empty unchanged poll invisible to the Store.

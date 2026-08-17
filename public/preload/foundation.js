@@ -75,6 +75,7 @@ let projectLaunchServiceProcess = null;
 let projectLaunchServiceEventCursor = 0;
 let projectLaunchServiceEventPollTimer = null;
 let projectLaunchServiceEventPollInFlight = false;
+let projectLaunchServiceLastBroadcastSignature = "";
 const gitCommitAvatarResults = new Map();
 const gitCommitAvatarResultLimit = 160;
 const gitCommitAvatarRequestTimeoutMs = 3500;

@@ -261,6 +261,9 @@ function saveProjectLaunchServicePreferences(preferences) {
   } catch (error) {
     // Keep service preference updates non-blocking when host storage is unavailable.
   }
+  if (!normalized.enabled) {
+    projectLaunchServiceLastBroadcastSignature = "";
+  }
   if (normalized.enabled && fs.existsSync(projectLaunchServiceDiscoveryPath())) {
     scheduleProjectLaunchServiceEventPoll(0);
   } else if (projectLaunchServiceEventPollTimer) {
@@ -268,4 +271,3 @@ function saveProjectLaunchServicePreferences(preferences) {
     projectLaunchServiceEventPollTimer = null;
   }
 }
-

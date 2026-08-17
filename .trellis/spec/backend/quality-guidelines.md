@@ -52,6 +52,64 @@ Minimum service validation is:
 
 Service changes that affect ownership, persistence, protocol, or scheduler behavior also require focused bridge/store validation and a check that disabled service mode retains the existing preload/renderer behavior. See [Project Launch Service](./project-launch-service.md) for exact contract-level assertions.
 
+## Scenario: Windows Service Resource Benchmark
+
+### 1. Scope / Trigger
+
+- Trigger: a change claims to reduce Project Launch Service polling, scheduler, log, memory, or CPU overhead.
+- The benchmark measures local process resources; it does not prove that moving work into Go lowers the total cost of the managed project process.
+
+### 2. Signatures
+
+- Command: `npm run benchmark:service-resources -- --label <scenario> --pid <pid> [--pid <pid> ...] [--duration <seconds>] [--interval <milliseconds>] [--service-log-dir <path>] [--counter <name=value>] [--output <path>]`.
+- Report schema: `{ schemaVersion: 1, label, startedAt, completedAt, requestedDurationSeconds, actualDurationMilliseconds, sampleIntervalMilliseconds, counters, serviceLogUsage, aggregate, processes, samples }`.
+- Each process summary includes `rssBytes`, `privateBytes`, and CPU `deltaSeconds` / `percentOfOneCore`; the aggregate sums the selected process samples.
+
+### 3. Contracts
+
+- The command is Windows-only because it obtains private memory through PowerShell `Get-Process`. `--label` and at least one positive `--pid` are required; duplicate PIDs are sampled once. Defaults are `60` seconds and a `1,000 ms` interval.
+- Include every comparable process in the selected PID set: uTools, Project Launch Service when enabled, and each managed project process. Do not judge total consumption from the Go service PID alone.
+- `--service-log-dir` recursively reports file count and bytes without modifying retention. `--counter` records manually observed values such as preload request count, Pinia event count, or terminal row count; it does not influence sampling.
+- A missing sampled process remains an unavailable sample in the JSON report. An unreadable log directory yields `serviceLogUsage.available: false` while retaining the process report.
+
+### 4. Validation & Error Matrix
+
+- Missing `--label` or every `--pid` -> fail before sampling with a usage error.
+- A PID exits during sampling -> report its missing samples; do not replace it with another process that later reuses the PID.
+- Invalid `--counter` syntax or a non-positive PID/interval -> fail with an argument error.
+- A non-Windows host -> fail before invoking a platform-specific sampler.
+- A nonexistent `--service-log-dir` -> produce a report with unavailable log usage rather than discard measured process data.
+
+### 5. Good/Base/Bad Cases
+
+- Good: compare equal-duration service-off idle, service-on idle, uTools-closed service-running, and controlled high-output scenarios with the same process set and counters.
+- Base: run `--duration 0` against a known live PID to validate the command and report shape without claiming a performance result.
+- Bad: compare only the service's RSS before and after a change, or treat a reduction in plugin memory as proof that uTools plus service plus managed processes use less memory overall.
+
+### 6. Tests Required
+
+- `npm run benchmark:service-resources -- --help` must print usage without sampling.
+- On Windows, run `npm run benchmark:service-resources -- --label cli-self-check --pid $PID --duration 0 --interval 1` and assert a schema-versioned JSON report with one available process sample.
+- For a resource-affecting change, save reports for each comparison scenario and inspect aggregate RSS, private bytes, CPU delta, service log usage, request/event counters, and terminal row count.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```powershell
+npm run benchmark:service-resources -- --label after --pid <service-pid>
+```
+
+This hides renderer and managed-project resource shifts.
+
+#### Correct
+
+```powershell
+npm run benchmark:service-resources -- --label service-on-idle --pid <utools-pid> --pid <service-pid> --pid <managed-project-pid> --duration 60
+```
+
+Measure the complete workload with a named, reproducible scenario before making a total-resource claim.
+
 ---
 
 ## Code Review Checklist

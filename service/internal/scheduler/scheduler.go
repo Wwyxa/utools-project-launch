@@ -105,10 +105,14 @@ type Runtime struct {
 	replaceMu  sync.Mutex
 	healthMu   sync.RWMutex
 	health     SchedulerHealth
+	wake       chan struct{}
 }
 
 const (
-	pollInterval               = 500 * time.Millisecond
+	schedulerIdleWakeDelay     = 24 * time.Hour
+	schedulerRetryInitialDelay = time.Second
+	schedulerRetryMaximumDelay = time.Minute
+	recoveredRunPollInterval   = 500 * time.Millisecond
 	defaultMaxScriptRuntime    = 30 * time.Minute
 	defaultOutputMatchWait     = 30 * time.Second
 	maxAutomationOutputTailLen = 64 * 1024
@@ -126,6 +130,7 @@ func New(store *state.Store, supervisor *serviceprocess.Supervisor) (*Runtime, e
 	return &Runtime{
 		store:      store,
 		supervisor: supervisor,
+		wake:       make(chan struct{}, 1),
 		health: SchedulerHealth{
 			State: SchedulerStateRunning,
 		},
@@ -161,6 +166,7 @@ func (runtime *Runtime) ReplaceConfiguration(revision uint64, rawConfig json.Raw
 		return state.AutomationState{}, err
 	}
 	runtime.clearHealthError()
+	runtime.signalWake()
 	return updated, nil
 }
 
@@ -169,61 +175,108 @@ func (runtime *Runtime) Run(ctx context.Context) {
 		return
 	}
 
-	if err := runtime.RunOnce(ctx); errors.Is(err, context.Canceled) {
-		return
-	}
-
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
+	delay := time.Duration(0)
+	failures := 0
 	for {
-		select {
-		case <-ctx.Done():
+		if delay > 0 && !runtime.waitForNextIteration(ctx, delay) {
 			return
-		case <-ticker.C:
-			if err := runtime.RunOnce(ctx); errors.Is(err, context.Canceled) {
-				return
-			}
 		}
+
+		nextDelay, err := runtime.runIteration(ctx)
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		if err != nil {
+			failures++
+			delay = schedulerRetryDelay(failures)
+			continue
+		}
+		failures = 0
+		delay = nextDelay
 	}
 }
 
 func (runtime *Runtime) RunOnce(ctx context.Context) error {
+	_, err := runtime.runIteration(ctx)
+	return err
+}
+
+func (runtime *Runtime) runIteration(ctx context.Context) (time.Duration, error) {
 	runtime.markIterationStarted()
-	err := runtime.runOnce(ctx)
+	delay, err := runtime.runOnce(ctx)
 	if err == nil {
 		runtime.markIterationSucceeded()
 	} else if !errors.Is(err, context.Canceled) {
 		runtime.markIterationFailed(err)
 	}
-	return err
+	return delay, err
 }
 
-func (runtime *Runtime) runOnce(ctx context.Context) error {
+func (runtime *Runtime) waitForNextIteration(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-runtime.wake:
+		return true
+	case <-timer.C:
+		return true
+	}
+}
+
+func (runtime *Runtime) signalWake() {
+	select {
+	case runtime.wake <- struct{}{}:
+	default:
+	}
+}
+
+func schedulerRetryDelay(failures int) time.Duration {
+	delay := schedulerRetryInitialDelay
+	for index := 1; index < failures && delay < schedulerRetryMaximumDelay; index++ {
+		if delay > schedulerRetryMaximumDelay/2 {
+			return schedulerRetryMaximumDelay
+		}
+		delay *= 2
+	}
+	return delay
+}
+
+func (runtime *Runtime) runOnce(ctx context.Context) (time.Duration, error) {
 	if ctx == nil {
-		return errors.New("scheduler context is required")
+		return 0, errors.New("scheduler context is required")
 	}
 	recoveredRuns, err := runtime.supervisor.ReconcileRecoveredRuns()
 	if err != nil {
-		return fmt.Errorf("reconcile recovered process state: %w", err)
+		return 0, fmt.Errorf("reconcile recovered process state: %w", err)
 	}
 	if err := runtime.reconcileRecoveredAutomationExecutions(recoveredRuns); err != nil {
-		return err
+		return 0, err
 	}
 
 	automation := runtime.store.Automation()
 	if automation.Revision == 0 {
-		return nil
+		return runtime.nextWakeDelay(time.Now().UTC(), Config{}), nil
 	}
 	if len(automation.Config) == 0 {
-		return errors.New("persisted automation configuration is missing")
+		return 0, errors.New("persisted automation configuration is missing")
 	}
 
 	config, err := decodeConfig(automation.Config)
 	if err != nil {
-		return fmt.Errorf("parse persisted automation configuration: %w", err)
+		return 0, fmt.Errorf("parse persisted automation configuration: %w", err)
 	}
 	if config.Revision != automation.Revision {
-		return errors.New("persisted automation configuration revision is inconsistent")
+		return 0, errors.New("persisted automation configuration revision is inconsistent")
 	}
 
 	now := time.Now().UTC()
@@ -240,19 +293,19 @@ func (runtime *Runtime) runOnce(ctx context.Context) error {
 					}
 					plannedAt, err := time.Parse(time.RFC3339Nano, entry.PlannedAt)
 					if err != nil {
-						return fmt.Errorf("parse planned time for %s/%s/%s: %w", project.ID, task.ID, entry.ID, err)
+						return 0, fmt.Errorf("parse planned time for %s/%s/%s: %w", project.ID, task.ID, entry.ID, err)
 					}
 					if plannedAt.After(now) && !entry.RunEarly {
 						continue
 					}
 					if !entry.RunEarly && shouldMarkMissed(task, plannedAt, now) {
 						if err := runtime.recordMissedExecution(automation.Revision, project, task, entry, now); err != nil {
-							return err
+							return 0, err
 						}
 						continue
 					}
 					if err := ctx.Err(); err != nil {
-						return err
+						return 0, err
 					}
 
 					execution, claimed, err := runtime.store.ClaimAutomationExecution(automation.Revision, state.AutomationExecution{
@@ -267,7 +320,7 @@ func (runtime *Runtime) runOnce(ctx context.Context) error {
 						ScriptResults:      []state.AutomationScriptResult{},
 					})
 					if err != nil {
-						return fmt.Errorf("claim scheduled execution: %w", err)
+						return 0, fmt.Errorf("claim scheduled execution: %w", err)
 					}
 					if claimed {
 						go runtime.execute(execution, project, task, scripts)
@@ -277,7 +330,54 @@ func (runtime *Runtime) runOnce(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return runtime.nextWakeDelay(now, config), nil
+}
+
+func (runtime *Runtime) nextWakeDelay(now time.Time, config Config) time.Duration {
+	delay := schedulerIdleWakeDelay
+	if runtime.supervisor.HasRecoveredRuns() {
+		delay = recoveredRunPollInterval
+	}
+
+	automation := runtime.store.Automation()
+	claimedEntries := make(map[string]struct{}, len(automation.Executions))
+	activeProjects := make(map[string]struct{})
+	for _, execution := range automation.Executions {
+		claimedEntries[execution.ID] = struct{}{}
+		if execution.Status == state.AutomationExecutionRunning {
+			activeProjects[execution.ProjectID] = struct{}{}
+		}
+	}
+
+	for _, project := range config.Projects {
+		if _, active := activeProjects[project.ID]; active {
+			continue
+		}
+		for _, task := range project.AutomationTasks {
+			for _, dailyPlan := range task.DailyPlans {
+				for _, entry := range dailyPlan.Entries {
+					if entry.Status != "pending" || (!task.Enabled && !entry.RunEarly) {
+						continue
+					}
+					if _, claimed := claimedEntries[executionID(project.ID, task.ID, entry.ID)]; claimed {
+						continue
+					}
+					plannedAt, err := time.Parse(time.RFC3339Nano, entry.PlannedAt)
+					if err != nil {
+						continue
+					}
+					if entry.RunEarly || !plannedAt.After(now) {
+						return schedulerRetryInitialDelay
+					}
+					if candidate := plannedAt.Sub(now); candidate < delay {
+						delay = candidate
+					}
+				}
+			}
+		}
+	}
+
+	return delay
 }
 
 func (runtime *Runtime) markIterationStarted() {
@@ -470,7 +570,7 @@ func (runtime *Runtime) failExecution(
 	reason string,
 ) {
 	endedAt := time.Now().UTC().Format(time.RFC3339Nano)
-	_, _ = runtime.store.UpdateAutomationExecution(executionID, func(current *state.AutomationExecution) {
+	if _, err := runtime.store.UpdateAutomationExecution(executionID, func(current *state.AutomationExecution) {
 		current.CurrentScriptIndex = scriptIndex
 		current.ActiveRunID = run.ID
 		current.ScriptResults = append(current.ScriptResults, state.AutomationScriptResult{
@@ -483,7 +583,9 @@ func (runtime *Runtime) failExecution(
 		current.Status = state.AutomationExecutionFailed
 		current.Reason = reason
 		current.EndedAt = endedAt
-	})
+	}); err == nil {
+		runtime.signalWake()
+	}
 }
 
 func (runtime *Runtime) completeExecution(
@@ -492,12 +594,14 @@ func (runtime *Runtime) completeExecution(
 	reason string,
 ) {
 	endedAt := time.Now().UTC().Format(time.RFC3339Nano)
-	_, _ = runtime.store.UpdateAutomationExecution(executionID, func(current *state.AutomationExecution) {
+	if _, err := runtime.store.UpdateAutomationExecution(executionID, func(current *state.AutomationExecution) {
 		current.Status = status
 		current.Reason = reason
 		current.EndedAt = endedAt
 		current.ActiveRunID = ""
-	})
+	}); err == nil {
+		runtime.signalWake()
+	}
 }
 
 type automationRunControls struct {

@@ -195,3 +195,66 @@ truncated, err := truncateFileTail(logPath, MaxRunLogBytes)
 ```
 
 The implementation aligns both edges to newline boundaries and reports that output was truncated when complete history is no longer available.
+
+## Scenario: Bounded In-Session Live Logs
+
+### 1. Scope / Trigger
+
+- Trigger: direct preload or service process output is appended to Pinia while a project produces sustained output.
+- This is distinct from persisted service run history: it bounds renderer-session memory and terminal rendering without changing durable service retention.
+
+### 2. Signatures
+
+- `LIVE_PROJECT_LOG_ENTRY_LIMIT = 2_000` limits `logs[projectId]`.
+- `addLog(projectId: string, log: LogEntry, scriptId?: string): void` updates the aggregate project stream and, when supplied, `scriptLogs[projectId][scriptId]`.
+- `clearLogs(projectId: string): void` and `clearScriptLogs(projectId: string, scriptId: string): void` keep the same aggregate/script object-index contract.
+
+### 3. Contracts
+
+- `addLog` creates one fresh stored `LogEntry` object per call. The aggregate stream and the optional script stream retain that same stored object, but callers must not be able to alias one input object across projects or scripts.
+- At most `2,000` newest aggregate entries remain per project. When the aggregate stream overflows, remove its oldest entries and remove each matching object from its owning script stream.
+- Entries without `scriptId` belong only to the aggregate stream. Removing them must not alter a script stream.
+- Do not trim or merge service-owned retained history into live `logs` or `scriptLogs`; the history reader stays a separate bounded-disk surface.
+
+### 4. Validation & Error Matrix
+
+- A script emits `2,001` live entries -> aggregate and that script stream retain `2,000` newest entries.
+- One script emits `2,000` entries, then another emits one -> aggregate retains `2,000`; the first script retains `1,999` and the second retains `1`.
+- The caller reuses one `LogEntry` input object for multiple `addLog` calls -> every stored row remains independently attributable and overflow removes the correct script row.
+- An aggregate-only entry overflows -> it is removed only from `logs[projectId]`.
+- A retained service log is opened -> live Pinia streams remain unchanged.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a noisy development server remains readable because the terminal keeps its newest output while the service history can still expose completed-run output separately.
+- Base: a short command produces fewer than `2,000` entries and no row is discarded.
+- Bad: cap only `logs[projectId]` and leave stale objects in `scriptLogs`, or retain a caller-owned log object as the identity for more than one stream row.
+
+### 6. Tests Required
+
+- `npx vitest run tests/projectBridge.uiPreferences.test.ts` must assert the `2,000` entry cap, cross-script eviction alignment, and reused-input-object isolation.
+- `npm run lint` and `npm run build` must pass after changing the Store log shape or retention helper.
+- Manual terminal smoke: run a high-output script, switch script tabs, clear one script, and verify aggregate output neither leaks stale rows nor changes another script's output.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+this.logs[projectId].push(log);
+this.scriptLogs[projectId][scriptId].push(log);
+this.logs[projectId].splice(0, overflow);
+```
+
+This lets reused input identities corrupt the script mapping and leaves evicted rows in the script index.
+
+#### Correct
+
+```ts
+this.logs[projectId].push({ ...log });
+const storedLog = this.logs[projectId][this.logs[projectId].length - 1];
+this.scriptLogs[projectId][scriptId].push(storedLog);
+trimLiveProjectLogs(this.logs[projectId], this.scriptLogs[projectId]);
+```
+
+Store a unique entry, share it only between its two internal indexes, and trim both indexes together.

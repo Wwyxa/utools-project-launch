@@ -175,6 +175,16 @@ dist/
 
 启用且连接到项目启动服务后，可在项目运行日志工具栏点击“历史日志”，按运行时间查看当前项目仍被保留的日志。已被容量策略淘汰的日志会明确显示为不可用；发生截断时只展示仍保留的最新输出。日志不写入完整环境变量、服务令牌或凭据。
 
+### 资源基准
+
+项目启动服务的价值是隔离和后台持续运行，不代表 uTools 与服务同时打开时总资源一定下降。Windows 上可使用以下命令对明确的进程 PID 进行本机采样，报告会包含每个进程及合计的 RSS、私有内存、CPU 时间、服务日志目录大小和可选的手工计数器：
+
+```powershell
+npm run benchmark:service-resources -- --label service-on-idle --duration 60 --pid <utools-pid> --pid <service-pid> --service-log-dir "$env:USERPROFILE\.utools-project-launch\service\logs" --output .\artifacts\service-on-idle.json
+```
+
+以相同的采样时长和项目负载分别记录服务关闭空闲、服务开启空闲、uTools 可见、uTools 关闭后服务仍运行，以及受控高输出脚本等场景。需要记录 preload 请求数、Pinia 事件数或终端行数时，可追加 `--counter preloadRequests=0 --counter piniaEvents=0 --counter terminalRows=0`。比较时应合计 uTools、Go 服务和受管项目进程，而不是只比较其中一个 PID。
+
 ### 支持的平台与资源
 
 Release 发布的是可直接安装的单个原始可执行文件，不使用压缩包。请按系统和架构选择完全相同的文件名：
@@ -217,6 +227,7 @@ Release 发布的是可直接安装的单个原始可执行文件，不使用压
 | `npm run validate:project-storage`    | 校验项目存储兼容性                                         |
 | `npm run validate:process-results`    | 校验进程结果批次处理                                       |
 | `npm run benchmark:git-interactions`  | Git 交互性能基准测试                                       |
+| `npm run benchmark:service-resources` | Windows 项目启动服务资源采样基准                           |
 | `npm run go:fmt`                      | 格式化可选项目启动服务源码                                 |
 | `npm run go:vet`                      | 校验可选项目启动服务                                       |
 | `npm run go:test`                     | 运行可选项目启动服务测试                                   |

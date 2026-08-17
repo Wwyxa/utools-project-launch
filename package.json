@@ -17,6 +17,7 @@
     "type-check": "tsc --noEmit",
     "validate:ai-reasoning": "node scripts/validate-ai-reasoning.mjs",
     "benchmark:git-interactions": "node scripts/benchmark-git-interactions.mjs",
+    "benchmark:service-resources": "node scripts/benchmark-service-resources.mjs",
     "validate:git-commits": "node scripts/validate-git-commits.mjs",
     "validate:git-diff": "node scripts/validate-git-diff.mjs",
     "validate:git-workspace": "vitest run tests/projectBridge.workspace.test.ts && node scripts/validate-git-workspace.mjs",

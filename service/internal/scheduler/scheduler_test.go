@@ -257,6 +257,108 @@ func TestSchedulerContinuesAfterRecoverableErrorAndRecovers(t *testing.T) {
 	}
 }
 
+func TestSchedulerWakesForConfigurationReplacement(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+	woke := make(chan bool, 1)
+	go func() {
+		woke <- runtime.waitForNextIteration(context.Background(), time.Hour)
+	}()
+
+	config, err := json.Marshal(Config{SchemaVersion: 1, Revision: 1, Projects: []ProjectConfig{}})
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(1, config); err != nil {
+		t.Fatalf("replace configuration: %v", err)
+	}
+
+	select {
+	case awakened := <-woke:
+		if !awakened {
+			t.Fatal("configuration replacement did not wake the scheduler")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("configuration replacement did not wake the scheduler")
+	}
+}
+
+func TestSchedulerNextWakeSkipsClaimedEarlyPlan(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+
+	now := time.Now().UTC()
+	configValue := Config{
+		SchemaVersion: 1,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID:   "claimed-project",
+			Path: stateDir,
+			Scripts: []ScriptConfig{{
+				ID:      "claimed-script",
+				Name:    "claimed",
+				Command: "echo claimed",
+				Cwd:     stateDir,
+			}},
+			AutomationTasks: []TaskConfig{{
+				ID:        "claimed-task",
+				Enabled:   true,
+				ScriptIDs: []string{"claimed-script"},
+				DailyPlans: []DailyPlan{{
+					Entries: []PlanEntry{{
+						ID:        "claimed-entry",
+						PlannedAt: now.Add(time.Hour).Format(time.RFC3339Nano),
+						Status:    "pending",
+						RunEarly:  true,
+					}},
+				}},
+			}},
+		}},
+	}
+	config, err := json.Marshal(configValue)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(1, config); err != nil {
+		t.Fatalf("replace configuration: %v", err)
+	}
+	if _, claimed, err := store.ClaimAutomationExecution(1, state.AutomationExecution{
+		ID:          executionID("claimed-project", "claimed-task", "claimed-entry"),
+		ProjectID:   "claimed-project",
+		TaskID:      "claimed-task",
+		PlanEntryID: "claimed-entry",
+		Status:      state.AutomationExecutionRunning,
+	}); err != nil || !claimed {
+		t.Fatalf("claim execution: claimed=%t err=%v", claimed, err)
+	}
+
+	if delay := runtime.nextWakeDelay(now, configValue); delay != schedulerIdleWakeDelay {
+		t.Fatalf("next wake delay = %s, want idle delay %s", delay, schedulerIdleWakeDelay)
+	}
+}
+
 func TestSchedulerMarksExpiredGracePlanMissed(t *testing.T) {
 	stateDir := t.TempDir()
 	store, err := state.Open(stateDir)

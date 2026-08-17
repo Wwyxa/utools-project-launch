@@ -31,15 +31,35 @@ const loadPreloadBridge = (
   },
   environment: NodeJS.ProcessEnv = {},
   moduleOverrides: Record<string, unknown> = {},
+  onBridgeEvent: (detail: unknown) => void = () => undefined,
 ) => {
   const nodeRequire = createRequire(import.meta.url);
-  const sandboxWindow: { projectBridge?: ProjectBridge; utools: { dbStorage: object } } = {
+  class SandboxCustomEvent {
+    readonly type: string;
+    readonly detail: unknown;
+
+    constructor(type: string, init?: { detail?: unknown }) {
+      this.type = type;
+      this.detail = init?.detail;
+    }
+  }
+  const sandboxWindow: {
+    projectBridge?: ProjectBridge;
+    utools: { dbStorage: object };
+    dispatchEvent: (event: { type?: string; detail?: unknown }) => boolean;
+  } = {
     utools: {
       dbStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: unknown) => storage.set(key, value),
         removeItem,
       },
+    },
+    dispatchEvent: (event) => {
+      if (event.type === "project-bridge-event") {
+        onBridgeEvent(event.detail);
+      }
+      return true;
     },
   };
   const sandbox = {
@@ -55,6 +75,7 @@ const loadPreloadBridge = (
     },
     Buffer,
     console,
+    CustomEvent: SandboxCustomEvent,
     URL,
     setTimeout,
     clearTimeout,
@@ -1588,6 +1609,7 @@ describe("Project Launch Service preload installation", () => {
         releasedBytes: 128,
       });
       expect(requestedPaths).toEqual([
+        "/v1/sync?after=0",
         "/v1/health",
         "/v1/state",
         `/v1/runs/${runID}/log?before=0`,
@@ -1596,6 +1618,212 @@ describe("Project Launch Service preload installation", () => {
       ]);
       expect(requestedBodies).toEqual([JSON.stringify({ runId: runID }), JSON.stringify({})]);
     } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("uses one combined synchronization request when the service supports it", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const requestedPaths: string[] = [];
+    const storage = new Map<string, unknown>([
+      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
+    ]);
+    const http = {
+      request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
+        requestedPaths.push(options.path);
+        const request = new EventEmitter() as EventEmitter & {
+          destroy: (error?: Error) => void;
+          end: () => void;
+        };
+        request.destroy = (error) => {
+          if (error) queueMicrotask(() => request.emit("error", error));
+        };
+        request.end = () => {
+          const payload =
+            options.path === "/v1/sync?after=0"
+              ? {
+                  health: {
+                    protocolVersion: 2,
+                    serviceVersion: "test",
+                    instanceId: "sync-service",
+                    pid: process.pid,
+                    processIdentity: "sync-process",
+                  },
+                  state: {
+                    runs: [],
+                    latestCursor: 1,
+                    earliestCursor: 1,
+                    automation: { revision: 3, executions: [] },
+                    scheduler: { state: "running" },
+                  },
+                  events: {
+                    events: [
+                      {
+                        cursor: 1,
+                        timestamp: "2026-08-17T00:00:00.000Z",
+                        type: "stdout",
+                        runId: "11111111111111111111111111111111",
+                        projectId: "sync-project",
+                        scriptId: "sync-script",
+                        message: "sync output",
+                      },
+                    ],
+                    latestCursor: 1,
+                    earliestCursor: 1,
+                    truncated: false,
+                    nextCursor: 1,
+                    hasMore: false,
+                  },
+                }
+              : { code: "not_found" };
+          const response = new EventEmitter() as EventEmitter & { statusCode: number };
+          response.statusCode = options.path === "/v1/sync?after=0" ? 200 : 404;
+          queueMicrotask(() => {
+            callback(response);
+            response.emit("data", Buffer.from(JSON.stringify(payload)));
+            response.emit("end");
+          });
+        };
+        return request;
+      }),
+    };
+
+    try {
+      const bridge = loadPreloadBridge(
+        storage,
+        undefined,
+        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { http },
+      );
+      const installed = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(installed.directoryPath, { recursive: true });
+      writeFileSync(installed.executablePath, binaryContents);
+      writeFileSync(join(installed.directoryPath, "token"), `${"a".repeat(64)}\n`);
+      writeFileSync(
+        join(installed.directoryPath, "discovery.json"),
+        JSON.stringify({
+          protocolVersion: 2,
+          serviceVersion: "test",
+          instanceId: "sync-service",
+          pid: process.pid,
+          processIdentity: "sync-process",
+          startedAt: new Date().toISOString(),
+          host: "127.0.0.1",
+          port: 3000,
+          tokenPath: join(installed.directoryPath, "token"),
+        }),
+      );
+
+      const reconciled = await bridge.reconcileProjectLaunchService();
+
+      expect(reconciled).toMatchObject({
+        state: "healthy",
+        running: true,
+        automationRevision: 3,
+        events: [expect.objectContaining({ message: "sync output" })],
+      });
+      expect(requestedPaths).toEqual(["/v1/sync?after=0"]);
+      bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("suppresses unchanged empty service-state broadcasts", async () => {
+    vi.useFakeTimers();
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus }> = [];
+    const requestedPaths: string[] = [];
+    const storage = new Map<string, unknown>([
+      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
+    ]);
+    const http = {
+      request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
+        requestedPaths.push(options.path);
+        const request = new EventEmitter() as EventEmitter & {
+          destroy: (error?: Error) => void;
+          end: () => void;
+        };
+        request.destroy = () => undefined;
+        request.end = () => {
+          const response = new EventEmitter() as EventEmitter & { statusCode: number };
+          response.statusCode = 200;
+          callback(response);
+          response.emit(
+            "data",
+            Buffer.from(
+              JSON.stringify({
+                health: {
+                  protocolVersion: 2,
+                  serviceVersion: "test",
+                  instanceId: "quiet-service",
+                  pid: process.pid,
+                  processIdentity: "quiet-process",
+                },
+                state: {
+                  runs: [],
+                  latestCursor: 0,
+                  earliestCursor: 0,
+                  automation: { revision: 0, executions: [] },
+                  scheduler: { state: "running" },
+                },
+                events: {
+                  events: [],
+                  latestCursor: 0,
+                  earliestCursor: 0,
+                  truncated: false,
+                  nextCursor: 0,
+                  hasMore: false,
+                },
+              }),
+            ),
+          );
+          response.emit("end");
+        };
+        return request;
+      }),
+    };
+
+    try {
+      const bridge = loadPreloadBridge(
+        storage,
+        undefined,
+        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { http },
+        (detail) => {
+          if (detail && typeof detail === "object") {
+            emittedEvents.push(detail as { type?: string; status?: ProjectLaunchServiceStatus });
+          }
+        },
+      );
+      const installed = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(installed.directoryPath, { recursive: true });
+      writeFileSync(installed.executablePath, binaryContents);
+      writeFileSync(join(installed.directoryPath, "token"), `${"a".repeat(64)}\n`);
+      writeFileSync(
+        join(installed.directoryPath, "discovery.json"),
+        JSON.stringify({
+          protocolVersion: 2,
+          serviceVersion: "test",
+          instanceId: "quiet-service",
+          pid: process.pid,
+          processIdentity: "quiet-process",
+          startedAt: new Date().toISOString(),
+          host: "127.0.0.1",
+          port: 3000,
+          tokenPath: join(installed.directoryPath, "token"),
+        }),
+      );
+
+      bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(750);
+
+      expect(requestedPaths).toEqual(["/v1/sync?after=0", "/v1/sync?after=0"]);
+      expect(emittedEvents.filter((event) => event.type === "service-state")).toHaveLength(1);
+      bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
+    } finally {
+      vi.useRealTimers();
       rmSync(serviceRoot, { recursive: true, force: true });
     }
   });
@@ -2129,6 +2357,49 @@ describe("store startup timing", () => {
 
     expect(store.scriptLogs["deduplicated-service-project"]?.["deduplicated-service-script"]).toHaveLength(1);
     expect(store.logs["deduplicated-service-project"]).toHaveLength(1);
+  });
+
+  it("bounds live project and script logs together", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    for (let index = 0; index < 2_000; index += 1) {
+      store.addLog(
+        "bounded-log-project",
+        { timestamp: "10:00:00", message: `first ${index}`, type: "INFO" },
+        "first-script",
+      );
+    }
+    store.addLog("bounded-log-project", { timestamp: "10:00:01", message: "second 0", type: "INFO" }, "second-script");
+
+    expect(store.logs["bounded-log-project"]).toHaveLength(2_000);
+    expect(store.scriptLogs["bounded-log-project"]?.["first-script"]).toHaveLength(1_999);
+    expect(store.scriptLogs["bounded-log-project"]?.["first-script"]?.[0]?.message).toBe("first 1");
+    expect(store.scriptLogs["bounded-log-project"]?.["second-script"]).toEqual([
+      { timestamp: "10:00:01", message: "second 0", type: "INFO" },
+    ]);
+    expect(store.logs["bounded-log-project"]?.some((entry) => entry.message === "first 0")).toBe(false);
+  });
+
+  it("keeps reused log inputs aligned while trimming", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const reusedLog = { timestamp: "10:00:00", message: "reused", type: "INFO" as const };
+
+    for (let index = 0; index < 2_000; index += 1) {
+      store.addLog("reused-log-project", reusedLog, "first-script");
+    }
+    store.addLog("reused-log-project", reusedLog, "second-script");
+
+    expect(store.logs["reused-log-project"]).toHaveLength(2_000);
+    expect(store.scriptLogs["reused-log-project"]?.["first-script"]).toHaveLength(1_999);
+    expect(store.scriptLogs["reused-log-project"]?.["second-script"]).toHaveLength(1);
   });
 
   it("accepts a legacy terminal event only when its pid matches the current run", async () => {

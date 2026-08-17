@@ -751,12 +751,7 @@ async function projectLaunchServiceConnection() {
   return { discovery, token };
 }
 
-async function requestProjectLaunchServiceHealth(connection) {
-  const response = await requestProjectLaunchService(connection.discovery, connection.token, "GET", "/v1/health");
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务健康检查失败。");
-  }
-  const health = response.payload;
+function validateProjectLaunchServiceHealth(health, connection) {
   if (
     !health ||
     health.protocolVersion !== projectLaunchServiceProtocolVersion ||
@@ -772,12 +767,37 @@ async function requestProjectLaunchServiceHealth(connection) {
   return health;
 }
 
+function projectLaunchServiceStateSnapshot(payload) {
+  return payload || { runs: [], latestCursor: 0, earliestCursor: 0 };
+}
+
+function projectLaunchServiceEventBatch(payload, after) {
+  return (
+    payload || {
+      events: [],
+      latestCursor: after,
+      earliestCursor: 0,
+      truncated: false,
+      nextCursor: after,
+      hasMore: false,
+    }
+  );
+}
+
+async function requestProjectLaunchServiceHealth(connection) {
+  const response = await requestProjectLaunchService(connection.discovery, connection.token, "GET", "/v1/health");
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务健康检查失败。");
+  }
+  return validateProjectLaunchServiceHealth(response.payload, connection);
+}
+
 async function requestProjectLaunchServiceState(connection) {
   const response = await requestProjectLaunchService(connection.discovery, connection.token, "GET", "/v1/state");
   if (response.statusCode !== 200) {
     throw projectLaunchServiceResponseError(response, "项目启动服务状态读取失败。");
   }
-  return response.payload || { runs: [], latestCursor: 0, earliestCursor: 0 };
+  return projectLaunchServiceStateSnapshot(response.payload);
 }
 
 async function requestProjectLaunchServiceEvents(connection, after) {
@@ -790,16 +810,43 @@ async function requestProjectLaunchServiceEvents(connection, after) {
   if (response.statusCode !== 200) {
     throw projectLaunchServiceResponseError(response, "项目启动服务事件读取失败。");
   }
-  return (
-    response.payload || {
-      events: [],
-      latestCursor: after,
-      earliestCursor: 0,
-      truncated: false,
-      nextCursor: after,
-      hasMore: false,
-    }
+  return projectLaunchServiceEventBatch(response.payload, after);
+}
+
+async function requestProjectLaunchServiceSync(connection, after) {
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/sync?after=${encodeURIComponent(String(after))}`,
   );
+  if (response.statusCode === 404) {
+    return null;
+  }
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务同步失败。");
+  }
+  const payload = response.payload;
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload) ||
+    !payload.state ||
+    typeof payload.state !== "object" ||
+    Array.isArray(payload.state) ||
+    !payload.events ||
+    typeof payload.events !== "object" ||
+    Array.isArray(payload.events)
+  ) {
+    const error = new Error("项目启动服务返回了无效的同步响应。");
+    error.code = "invalid-sync-response";
+    throw error;
+  }
+  return {
+    health: validateProjectLaunchServiceHealth(payload.health, connection),
+    state: projectLaunchServiceStateSnapshot(payload.state),
+    events: projectLaunchServiceEventBatch(payload.events, after),
+  };
 }
 
 async function getProjectLaunchServiceRunLog(runId) {
@@ -1044,6 +1091,29 @@ function projectLaunchServiceSchedulerSnapshot(scheduler) {
   };
 }
 
+function projectLaunchServiceStatusResult(status, batch, options) {
+  return options.returnEventBatch === true ? { status, batch } : status;
+}
+
+function projectLaunchServiceStateSignature(status) {
+  const snapshot = { ...status };
+  delete snapshot.events;
+  return JSON.stringify(snapshot);
+}
+
+function shouldEmitProjectLaunchServiceState(status, eventCount = 0) {
+  const signature = projectLaunchServiceStateSignature(status);
+  if (eventCount === 0 && signature === projectLaunchServiceLastBroadcastSignature) {
+    return false;
+  }
+  projectLaunchServiceLastBroadcastSignature = signature;
+  return true;
+}
+
+function rememberProjectLaunchServiceState(status) {
+  projectLaunchServiceLastBroadcastSignature = projectLaunchServiceStateSignature(status);
+}
+
 async function readProjectLaunchServiceStatus(options = {}) {
   const status = projectLaunchServiceBaseStatus();
   if (!status.installed) {
@@ -1054,7 +1124,7 @@ async function readProjectLaunchServiceStatus(options = {}) {
         status.message = "项目启动服务已安装，尚未运行。";
       }
     } catch (error) {
-      return status;
+      return projectLaunchServiceStatusResult(status, null, options);
     }
   }
 
@@ -1062,16 +1132,24 @@ async function readProjectLaunchServiceStatus(options = {}) {
   try {
     connection = await projectLaunchServiceConnection();
   } catch (error) {
-    if (error?.code === "ENOENT") return status;
+    if (error?.code === "ENOENT") return projectLaunchServiceStatusResult(status, null, options);
     if (error?.code === "protocol-mismatch") status.state = "incompatible";
     else status.state = readProjectLaunchServicePreferences().enabled ? "unavailable" : "installed";
     status.message = error instanceof Error ? error.message : "项目启动服务发现失败。";
-    return status;
+    return projectLaunchServiceStatusResult(status, null, options);
   }
 
   try {
-    const health = await requestProjectLaunchServiceHealth(connection);
-    const state = await requestProjectLaunchServiceState(connection);
+    const sync =
+      options.includeState === true
+        ? await requestProjectLaunchServiceSync(connection, projectLaunchServiceEventCursor)
+        : null;
+    const health = sync ? sync.health : await requestProjectLaunchServiceHealth(connection);
+    const batch =
+      sync || options.includeEvents !== true
+        ? sync?.events
+        : await requestProjectLaunchServiceEvents(connection, projectLaunchServiceEventCursor);
+    const state = sync ? sync.state : await requestProjectLaunchServiceState(connection);
     status.state = "healthy";
     status.running = true;
     status.message = "";
@@ -1088,7 +1166,14 @@ async function readProjectLaunchServiceStatus(options = {}) {
       status.automation = automation;
       if (scheduler) status.scheduler = scheduler;
     }
-    return status;
+    if (options.includeEvents === true && batch) {
+      advanceProjectLaunchServiceEventCursor(batch);
+      status.events = Array.isArray(batch.events) ? batch.events : [];
+      status.eventsTruncated = batch.truncated === true;
+      status.latestCursor = batch.latestCursor || state.latestCursor || status.latestCursor || 0;
+      status.earliestCursor = batch.earliestCursor || state.earliestCursor || status.earliestCursor || 0;
+    }
+    return projectLaunchServiceStatusResult(status, batch || null, options);
   } catch (error) {
     if (error?.code === "protocol-mismatch") status.state = "incompatible";
     else status.state = "unavailable";
@@ -1098,7 +1183,7 @@ async function readProjectLaunchServiceStatus(options = {}) {
     } catch (cleanupError) {
       // Keep the original service failure visible.
     }
-    return status;
+    return projectLaunchServiceStatusResult(status, null, options);
   }
 }
 
@@ -1209,36 +1294,31 @@ async function reconcileProjectLaunchService() {
     return readProjectLaunchServiceStatus({ includeState: true });
   }
 
-  let status = await readProjectLaunchServiceStatus();
+  let result = await readProjectLaunchServiceStatus({
+    includeState: true,
+    includeEvents: true,
+    returnEventBatch: true,
+  });
+  let status = result.status;
+  let batch = result.batch;
   if (status.state !== "healthy" || !status.running) {
     status = await startProjectLaunchService({ requireVerifiedInstall: true });
   }
   if (status.state !== "healthy" || !status.running) return status;
 
-  try {
-    const connection = await projectLaunchServiceConnection();
-    const batch = await requestProjectLaunchServiceEvents(connection, projectLaunchServiceEventCursor);
-    const latestState = await requestProjectLaunchServiceState(connection);
-    const automation = projectLaunchServiceAutomationSnapshot(latestState.automation);
-    const scheduler = projectLaunchServiceSchedulerSnapshot(latestState.scheduler);
-    advanceProjectLaunchServiceEventCursor(batch);
-    status = {
-      ...status,
-      runs: Array.isArray(latestState.runs) ? latestState.runs : [],
-      activeRunCount: serviceRunCount(latestState.runs),
-      latestCursor: batch.latestCursor || latestState.latestCursor || 0,
-      earliestCursor: batch.earliestCursor || latestState.earliestCursor || 0,
-      events: Array.isArray(batch.events) ? batch.events : [],
-      eventsTruncated: batch.truncated === true,
-      automationRevision: automation.revision,
-      automation,
-      ...(scheduler ? { scheduler } : {}),
-    };
-    scheduleProjectLaunchServiceEventPoll(batch.hasMore === true ? 0 : projectLaunchServiceEventPollIntervalMs);
-    return status;
-  } catch (error) {
-    return serviceStatusWithError(status, error);
+  if (!batch) {
+    result = await readProjectLaunchServiceStatus({
+      includeState: true,
+      includeEvents: true,
+      returnEventBatch: true,
+    });
+    status = result.status;
+    batch = result.batch;
   }
+  if (status.state !== "healthy" || !status.running) return status;
+  scheduleProjectLaunchServiceEventPoll(batch?.hasMore === true ? 0 : projectLaunchServiceEventPollIntervalMs);
+  rememberProjectLaunchServiceState(status);
+  return status;
 }
 
 function openProjectLaunchServiceDirectory() {
@@ -1252,46 +1332,37 @@ async function pollProjectLaunchServiceEvents(emitEvents = true) {
   projectLaunchServiceEventPollInFlight = true;
   let status = projectLaunchServiceBaseStatus();
   try {
-    status = await readProjectLaunchServiceStatus({ includeState: true });
+    const result = await readProjectLaunchServiceStatus({
+      includeState: true,
+      includeEvents: true,
+      returnEventBatch: true,
+    });
+    status = result.status;
+    const batch = result.batch;
     if (status.state !== "healthy" || !status.running) {
-      if (emitEvents) {
+      if (emitEvents && shouldEmitProjectLaunchServiceState(status)) {
         emit({ type: "service-state", status, timestamp: new Date().toISOString() });
       }
       return false;
     }
-    const connection = await projectLaunchServiceConnection();
-    const batch = await requestProjectLaunchServiceEvents(connection, projectLaunchServiceEventCursor);
-    const latestState = await requestProjectLaunchServiceState(connection);
-    const automation = projectLaunchServiceAutomationSnapshot(latestState.automation);
-    const scheduler = projectLaunchServiceSchedulerSnapshot(latestState.scheduler);
-    status = {
-      ...status,
-      runs: Array.isArray(latestState.runs) ? latestState.runs : [],
-      activeRunCount: serviceRunCount(latestState.runs),
-      automationRevision: automation.revision,
-      automation,
-      ...(scheduler ? { scheduler } : {}),
-    };
-    advanceProjectLaunchServiceEventCursor(batch);
+    const events = Array.isArray(status.events) ? status.events : [];
     const snapshot = {
       ...status,
-      events: emitEvents ? [] : Array.isArray(batch.events) ? batch.events : [],
-      latestCursor: batch.latestCursor || latestState.latestCursor || status.latestCursor || 0,
-      earliestCursor: batch.earliestCursor || latestState.earliestCursor || status.earliestCursor || 0,
-      eventsTruncated: batch.truncated === true,
+      events: emitEvents ? [] : events,
     };
-    if (emitEvents && Array.isArray(batch.events)) {
-      batch.events.forEach((event) => emit(projectLaunchServiceEventToBridgeEvent(event)));
-    }
     if (emitEvents) {
+      events.forEach((event) => emit(projectLaunchServiceEventToBridgeEvent(event)));
+    }
+    if (emitEvents && shouldEmitProjectLaunchServiceState(snapshot, events.length)) {
       emit({ type: "service-state", status: snapshot, timestamp: new Date().toISOString() });
     }
-    return batch.hasMore === true;
+    return batch?.hasMore === true;
   } catch (error) {
-    if (emitEvents) {
+    const failedStatus = serviceStatusWithError(status, error);
+    if (emitEvents && shouldEmitProjectLaunchServiceState(failedStatus)) {
       emit({
         type: "service-state",
-        status: serviceStatusWithError(status, error),
+        status: failedStatus,
         timestamp: new Date().toISOString(),
       });
     }

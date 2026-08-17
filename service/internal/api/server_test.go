@@ -62,6 +62,76 @@ func TestStateIncludesSchedulerHealth(t *testing.T) {
 	}
 }
 
+func TestSyncIncludesHealthStateAndEvents(t *testing.T) {
+	store, err := state.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close state: %v", err)
+		}
+	})
+	if _, err := store.AppendEvent(state.Event{
+		Type:      "stdout",
+		RunID:     "11111111111111111111111111111111",
+		ProjectID: "sync-project",
+		ScriptID:  "sync-script",
+		Message:   "sync output",
+	}); err != nil {
+		t.Fatalf("append sync event: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	schedulerRuntime, err := scheduler.New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+	handler, err := NewHandler(Config{
+		Token:           "test-token",
+		ProtocolVersion: state.ProtocolVersion,
+		ServiceVersion:  "test",
+		InstanceID:      "test-instance",
+		PID:             1,
+		ProcessIdentity: "test-identity",
+		StartedAt:       time.Now().UTC(),
+		Supervisor:      supervisor,
+		Scheduler:       schedulerRuntime,
+	})
+	if err != nil {
+		t.Fatalf("create handler: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/sync?after=0", nil)
+	request.Header.Set(AuthorizationHeader, "Bearer test-token")
+	request.Header.Set(ProtocolHeader, fmt.Sprint(state.ProtocolVersion))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("sync response status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var payload struct {
+		Health healthResponse   `json:"health"`
+		State  serviceSnapshot  `json:"state"`
+		Events state.EventBatch `json:"events"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode sync response: %v", err)
+	}
+	if payload.Health.InstanceID != "test-instance" || payload.Health.ProtocolVersion != state.ProtocolVersion {
+		t.Fatalf("sync health = %#v, want current service identity", payload.Health)
+	}
+	if payload.State.Scheduler.State != scheduler.SchedulerStateRunning {
+		t.Fatalf("sync scheduler state = %q, want %q", payload.State.Scheduler.State, scheduler.SchedulerStateRunning)
+	}
+	if len(payload.Events.Events) != 1 || payload.Events.Events[0].Message != "sync output" {
+		t.Fatalf("sync events = %#v, want the retained event", payload.Events.Events)
+	}
+}
+
 func TestStartRunReturnsTypedConflictForActiveProjectScript(t *testing.T) {
 	store, err := state.Open(t.TempDir())
 	if err != nil {

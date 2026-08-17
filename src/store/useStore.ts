@@ -144,6 +144,7 @@ const PROJECT_STATUS_MESSAGE_CLEAR_DELAY_MS = 2200;
 const AUTOMATION_HISTORY_LIMIT = 20;
 const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
+const LIVE_PROJECT_LOG_ENTRY_LIMIT = 2_000;
 const waitForInitialPaint = (): Promise<void> => {
   if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
     return Promise.resolve();
@@ -287,6 +288,31 @@ const runtimeRunObservations = new Map<string, RuntimeRunObservation>();
 const runtimeRunObservationLimit = 128;
 const observedServiceEvents = new Map<string, true>();
 const observedServiceEventLimit = 512;
+const liveLogScriptIds = new WeakMap<LogEntry, string>();
+
+function trimLiveProjectLogs(projectLogs: LogEntry[], scriptLogs?: Record<string, LogEntry[]>) {
+  const overflow = projectLogs.length - LIVE_PROJECT_LOG_ENTRY_LIMIT;
+  if (overflow <= 0) {
+    return;
+  }
+
+  const removedLogs = projectLogs.splice(0, overflow);
+  for (const log of removedLogs) {
+    const scriptId = liveLogScriptIds.get(log);
+    const scriptEntries = scriptId ? scriptLogs?.[scriptId] : undefined;
+    if (!scriptEntries) {
+      continue;
+    }
+    if (scriptEntries[0] === log) {
+      scriptEntries.shift();
+      continue;
+    }
+    const entryIndex = scriptEntries.indexOf(log);
+    if (entryIndex >= 0) {
+      scriptEntries.splice(entryIndex, 1);
+    }
+  }
+}
 
 function automationScriptContextKey(projectId: string, scriptId: string) {
   return `${projectId}::${scriptId}`;
@@ -6022,7 +6048,8 @@ export const useStore = defineStore("app", {
       if (!this.logs[projectId]) {
         this.logs[projectId] = [];
       }
-      this.logs[projectId].push(log);
+      this.logs[projectId].push({ ...log });
+      const storedLog = this.logs[projectId][this.logs[projectId].length - 1];
       if (scriptId) {
         if (!this.scriptLogs[projectId]) {
           this.scriptLogs[projectId] = {};
@@ -6030,8 +6057,10 @@ export const useStore = defineStore("app", {
         if (!this.scriptLogs[projectId][scriptId]) {
           this.scriptLogs[projectId][scriptId] = [];
         }
-        this.scriptLogs[projectId][scriptId].push(log);
+        this.scriptLogs[projectId][scriptId].push(storedLog);
+        liveLogScriptIds.set(storedLog, scriptId);
       }
+      trimLiveProjectLogs(this.logs[projectId], this.scriptLogs[projectId]);
     },
     clearLogs(projectId: string) {
       this.logs[projectId] = [];
