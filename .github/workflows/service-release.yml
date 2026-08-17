@@ -124,6 +124,6 @@ jobs:
             gh release upload "$RELEASE_TAG" "${release_assets[@]}" --clobber
           else
             gh release create "$RELEASE_TAG" "${release_assets[@]}" \
-              --title "Project Launch Service $RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
               --generate-notes
           fi
