@@ -1200,6 +1200,13 @@ export interface ProjectBridgeServiceStateEvent {
 
 export type ProjectBridgeEvent = ProjectBridgeProcessEvent | ProjectBridgeServiceStateEvent;
 
+export interface ProjectGitRemoteProgressEvent {
+  type: "git-remote-progress";
+  repositoryPath: string;
+  message: string;
+  phase: "start" | "output" | "complete";
+}
+
 export interface ProjectBridge {
   loadDeviceId(): string;
   loadProjects(): Promise<Project[]>;

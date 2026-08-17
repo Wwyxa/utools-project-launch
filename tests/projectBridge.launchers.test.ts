@@ -13,6 +13,7 @@ interface PreloadFixture {
   files?: string[];
   where?: Record<string, string | Buffer>;
   which?: Record<string, string | Buffer>;
+  gitAsyncOutput?: (args: readonly string[]) => string | undefined;
   spawnOutcomes?: SpawnOutcome[];
   env?: Record<string, string>;
   serviceEnabled?: boolean;
@@ -20,14 +21,16 @@ interface PreloadFixture {
 
 interface TestProcessChild {
   emit(event: string, ...args: unknown[]): void;
-  stdout: { emit(event: string, ...args: unknown[]): void };
-  stderr: { emit(event: string, ...args: unknown[]): void };
+  kill(): void;
+  stdout: { emit(event: string, ...args: unknown[]): void; setEncoding(encoding: string): void };
+  stderr: { emit(event: string, ...args: unknown[]): void; setEncoding(encoding: string): void };
 }
 
 const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   const nodeRequire = createRequire(import.meta.url);
   const spawnOutcomes = [...(fixture.spawnOutcomes || [])];
   const bridgeEvents: unknown[] = [];
+  const bridgeEventTypes: string[] = [];
   const servicePreferenceStorage = new Map<string, unknown>();
   if (fixture.serviceEnabled !== undefined) {
     servicePreferenceStorage.set("utools-project-launch.project-launch-service.v1", {
@@ -55,6 +58,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
           emit: (event: string, ...args: unknown[]) => {
             streamListeners.get(event)?.forEach((listener) => listener(...args));
           },
+          setEncoding: vi.fn(),
         };
         return stream;
       };
@@ -75,6 +79,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
         emit: (event: string, ...args: unknown[]) => {
           listeners.get(event)?.forEach((listener) => listener(...args));
         },
+        kill: vi.fn(),
         unref: vi.fn(),
       };
       child.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
@@ -110,9 +115,10 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
       options: { encoding?: string },
       callback: (error: Error | null, stdout: string | Buffer) => void,
     ) => {
-      const resolved = lookupResult(command, args);
+      const gitOutput = command === "git" ? fixture.gitAsyncOutput?.(args) : undefined;
+      const resolved = gitOutput ?? lookupResult(command, args);
       queueMicrotask(() => {
-        if (!resolved) {
+        if (resolved === undefined) {
           callback(new Error("not found"), options.encoding === "utf8" ? "" : Buffer.alloc(0));
           return;
         }
@@ -137,7 +143,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     projectBridge?: ProjectBridge;
     localStorage: object;
     utools: { dbStorage: object };
-    dispatchEvent: (event: { detail?: unknown }) => boolean;
+    dispatchEvent: (event: { type?: string; detail?: unknown }) => boolean;
   } = {
     localStorage: { getItem: () => null, setItem: () => undefined },
     utools: {
@@ -147,6 +153,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
       },
     },
     dispatchEvent: (event) => {
+      if (event.type) bridgeEventTypes.push(event.type);
       bridgeEvents.push(event.detail);
       return true;
     },
@@ -168,9 +175,11 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     Buffer,
     TextDecoder,
     CustomEvent: class {
+      type: string;
       detail: unknown;
 
-      constructor(_type: string, init?: { detail?: unknown }) {
+      constructor(type: string, init?: { detail?: unknown }) {
+        this.type = type;
         this.detail = init?.detail;
       }
     },
@@ -182,7 +191,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   createContext(sandbox);
   runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
   if (!sandboxWindow.projectBridge) throw new Error("The real preload did not register projectBridge.");
-  return { bridge: sandboxWindow.projectBridge, spawn, execFile, execFileSync, bridgeEvents };
+  return { bridge: sandboxWindow.projectBridge, spawn, execFile, execFileSync, bridgeEvents, bridgeEventTypes };
 };
 
 describe("native project launchers", () => {
@@ -408,6 +417,51 @@ describe("native project launchers", () => {
     expect(new Set(processEvents.map((event) => `${event.runId}:${event.runtimeOwner}`)).size).toBe(1);
     expect(processEvents).toEqual(
       expect.arrayContaining([expect.objectContaining({ runId: result.runId, runtimeOwner: "preload" })]),
+    );
+  });
+
+  it("streams remote Git progress without exposing ANSI control sequences", async () => {
+    const projectPath = "/workspace/project";
+    const { bridge, spawn, bridgeEvents, bridgeEventTypes } = loadPreloadBridge("linux", {
+      gitAsyncOutput: (args) => {
+        if (args.includes("--show-toplevel")) return projectPath;
+        if (args.includes("remote")) return "origin\thttps://example.test/owner/repository.git (fetch)\n";
+        return undefined;
+      },
+    });
+
+    const resultPromise = bridge.fetchGitRemoteByName(projectPath, "origin");
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+    const child = spawn.mock.results[0]?.value as TestProcessChild;
+    child.stderr.emit("data", "\u001b[2KReceiving objects: 5");
+    child.stderr.emit("data", "0%\r");
+    child.stderr.emit("data", "Resolving deltas: 100%");
+    child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ ok: true, remote: "origin" });
+    expect(bridgeEventTypes).toEqual([
+      "git-remote-progress",
+      "git-remote-progress",
+      "git-remote-progress",
+      "git-remote-progress",
+    ]);
+    expect(spawn).toHaveBeenCalledWith(
+      "git",
+      ["-C", projectPath, "fetch", "--progress", "--prune", "origin"],
+      expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"], windowsHide: true }),
+    );
+    expect(bridgeEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "git-remote-progress",
+          repositoryPath: projectPath,
+          phase: "start",
+          message: "开始: git fetch --progress --prune origin",
+        }),
+        expect.objectContaining({ phase: "output", message: "Receiving objects: 50%" }),
+        expect.objectContaining({ phase: "output", message: "Resolving deltas: 100%" }),
+        expect.objectContaining({ phase: "complete", message: "" }),
+      ]),
     );
   });
 

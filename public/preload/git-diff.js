@@ -558,7 +558,7 @@ async function readGitStatusSnapshot(projectPath) {
 function fetchGitRemote(projectPath) {
   return runGitRemoteResult(
     projectPath,
-    (upstream) => ["fetch", "--prune", upstream.remote],
+    (upstream) => ["fetch", "--progress", "--prune", upstream.remote],
     (upstream) => `已从 ${upstream.remote} 获取远程更新。`,
   );
 }
@@ -571,6 +571,7 @@ async function fetchGitRemoteByName(projectPath, remoteName) {
 
   const result = await runGitRemoteCommandResult(remoteContext.repositoryPath, [
     "fetch",
+    "--progress",
     "--prune",
     remoteContext.remote,
   ]);
@@ -586,7 +587,7 @@ async function fetchGitRemoteByName(projectPath, remoteName) {
 function pullGitRemote(projectPath) {
   return runGitRemoteResult(
     projectPath,
-    (upstream) => ["pull", "--ff", "--no-rebase", upstream.remote, upstream.branch],
+    (upstream) => ["pull", "--progress", "--ff", "--no-rebase", upstream.remote, upstream.branch],
     (upstream) => `已从 ${upstream.ref} 拉取更新。`,
   );
 }
@@ -594,7 +595,7 @@ function pullGitRemote(projectPath) {
 function pushGitRemote(projectPath) {
   return runGitRemoteResult(
     projectPath,
-    (upstream) => ["push", upstream.remote, `HEAD:${upstream.branch}`],
+    (upstream) => ["push", "--progress", upstream.remote, `HEAD:${upstream.branch}`],
     (upstream) => `已推送到 ${upstream.ref}。`,
   );
 }
@@ -657,7 +658,13 @@ async function publishGitBranch(projectPath, remoteName) {
     return { ok: false, remote: name, branch, message: `当前分支已设置 upstream：${upstream.ref}。` };
   }
 
-  const result = await runGitRemoteCommandResult(repositoryPath, ["push", "--set-upstream", name, `HEAD:${branch}`]);
+  const result = await runGitRemoteCommandResult(repositoryPath, [
+    "push",
+    "--progress",
+    "--set-upstream",
+    name,
+    `HEAD:${branch}`,
+  ]);
   return result.status === 0
     ? { ok: true, remote: name, branch, message: `已发布 ${branch} 到 ${name}/${branch} 并设置 upstream。` }
     : { ok: false, remote: name, branch, message: firstGitError(result, "发布当前分支失败。") };
@@ -741,6 +748,7 @@ async function deleteGitRemoteBranch(projectPath, remoteName, branchName) {
 
   const result = await runGitRemoteCommandResult(remoteContext.repositoryPath, [
     "push",
+    "--progress",
     "--delete",
     remoteContext.remote,
     `refs/heads/${branch}`,
@@ -1143,4 +1151,3 @@ async function readGitSnapshot(projectPath, options = {}) {
     }
   );
 }
-

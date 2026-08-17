@@ -18,7 +18,7 @@ import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../l
 import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import type { LogEntry, ProjectLaunchServiceLogDescriptor, ProjectScript } from "../../types";
-import ActionDialog from "../ActionDialog.vue";
+import ActionDialog from "../common/ActionDialog.vue";
 
 const props = defineProps<{
   projectId: string;

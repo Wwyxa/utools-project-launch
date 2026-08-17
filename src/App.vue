@@ -1,25 +1,32 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { type ProjectStatusMessageState, useStore } from "./store/useStore";
 import Dashboard from "./components/dashboard/Dashboard.vue";
 import ProjectDetails from "./components/project/ProjectDetails.vue";
 import ProjectFormModal from "./components/project/ProjectFormModal.vue";
-import ActionDialog from "./components/ActionDialog.vue";
+import ActionDialog from "./components/common/ActionDialog.vue";
+import ActionStatusPopover from "./components/common/ActionStatusPopover.vue";
 import SettingsTab from "./components/layout/SettingsTab.vue";
 import EnvironmentTab from "./components/environment/EnvironmentTab.vue";
 import { useI18n } from "./lib/i18n";
-import { cn } from "./lib/utils";
 import { requestAppEscape } from "./lib/escape";
-import type { ProjectBridgeEvent } from "./types";
+import type { ProjectBridgeEvent, ProjectGitRemoteProgressEvent } from "./types";
 
 type GlobalProjectStatus = { message: string; state: ProjectStatusMessageState };
+type GitRemoteProgressEntry = { timestamp: string; message: string; stage: string };
 
 const store = useStore();
 const storeMessages = useI18n();
 const selectedProject = computed(() => store.selectedProject);
 const activeTab = computed(() => store.activeTab);
 const theme = computed(() => store.theme);
+const gitRemoteProgressMessage = ref("");
+const gitRemoteProgressEntries = ref<GitRemoteProgressEntry[]>([]);
+const isGlobalProjectStatusExpanded = ref(false);
 const globalProjectStatus = computed<GlobalProjectStatus | null>(() => {
+  if (gitRemoteProgressMessage.value) {
+    return { message: gitRemoteProgressMessage.value, state: "loading" };
+  }
   if (store.projectStatusMessage) {
     return { message: store.projectStatusMessage, state: store.projectStatusMessageState };
   }
@@ -34,27 +41,45 @@ const globalProjectStatus = computed<GlobalProjectStatus | null>(() => {
   }
   return null;
 });
-const globalProjectStatusIconClass = computed(() => {
-  const state = globalProjectStatus.value?.state;
-  if (state === "success") return "border-status-running bg-status-running";
-  if (state === "warning") return "border-status-warning bg-status-warning";
-  if (state === "error") return "border-status-error bg-status-error";
-  return "animate-spin border-primary border-t-transparent";
-});
-const globalProjectStatusTextClass = computed(() => {
-  const state = globalProjectStatus.value?.state;
-  if (state === "success") return "text-status-running";
-  if (state === "warning") return "text-status-warning";
-  if (state === "error") return "text-status-error";
-  return "text-primary";
-});
-const globalProjectStatusBorderClass = computed(() => {
-  const state = globalProjectStatus.value?.state;
-  if (state === "success") return "border-status-running/30";
-  if (state === "warning") return "border-status-warning/30";
-  if (state === "error") return "border-status-error/30";
-  return "border-primary/30";
-});
+const gitRemoteProgressStage = (message: string) =>
+  message
+    .replace(/^remote:\s*/i, "")
+    .split(":", 1)[0]
+    ?.trim()
+    .toLocaleLowerCase() || message;
+
+const handleGitRemoteProgress = (event: Event) => {
+  const progress = (event as CustomEvent<ProjectGitRemoteProgressEvent>).detail;
+  if (!progress || progress.type !== "git-remote-progress") return;
+
+  if (progress.phase === "complete") {
+    gitRemoteProgressMessage.value = "";
+    gitRemoteProgressEntries.value = [];
+    isGlobalProjectStatusExpanded.value = false;
+    return;
+  }
+
+  const entry: GitRemoteProgressEntry = {
+    timestamp: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+    message: progress.message,
+    stage: progress.phase === "start" ? "start" : gitRemoteProgressStage(progress.message),
+  };
+  gitRemoteProgressMessage.value = progress.message;
+
+  if (progress.phase === "start") {
+    gitRemoteProgressEntries.value = [entry];
+    isGlobalProjectStatusExpanded.value = true;
+    return;
+  }
+
+  const entries = gitRemoteProgressEntries.value;
+  const latest = entries[entries.length - 1];
+  if (latest?.stage === entry.stage) {
+    gitRemoteProgressEntries.value = [...entries.slice(0, -1), entry];
+  } else {
+    gitRemoteProgressEntries.value = [...entries, entry].slice(-20);
+  }
+};
 let pluginOutHookRegistered = false;
 let startupProjectLoadId = 0;
 
@@ -197,6 +222,7 @@ onMounted(() => {
     pluginOutHookRegistered = true;
   }
   window.addEventListener("project-bridge-event", handleBridgeEvent);
+  window.addEventListener("git-remote-progress", handleGitRemoteProgress);
   window.addEventListener("focus", handleRuntimeResume);
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("keydown", handleGlobalEscape, true);
@@ -206,6 +232,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("project-bridge-event", handleBridgeEvent);
+  window.removeEventListener("git-remote-progress", handleGitRemoteProgress);
   window.removeEventListener("focus", handleRuntimeResume);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   window.removeEventListener("keydown", handleGlobalEscape, true);
@@ -243,29 +270,14 @@ onUnmounted(() => {
         </Transition>
       </main>
     </div>
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div
-          v-if="globalProjectStatus"
-          :class="
-            cn(
-              'fixed right-4 top-16 z-50 flex max-w-xs items-center gap-2.5 rounded-lg border bg-surface px-3 py-2 shadow-lg',
-              globalProjectStatusBorderClass,
-            )
-          "
-          role="status"
-          aria-live="polite"
-          :title="globalProjectStatus.message"
-        >
-          <div class="flex h-4 w-4 shrink-0 items-center justify-center">
-            <div :class="cn('h-3 w-3 rounded-full border-2', globalProjectStatusIconClass)" />
-          </div>
-          <span :class="cn('text-xs font-medium', globalProjectStatusTextClass)">
-            {{ globalProjectStatus.message }}
-          </span>
-        </div>
-      </Transition>
-    </Teleport>
+    <ActionStatusPopover
+      v-if="globalProjectStatus"
+      class="fixed right-4 top-16 z-50 max-w-xs"
+      :message="globalProjectStatus.message"
+      :state="globalProjectStatus.state"
+      :entries="gitRemoteProgressEntries"
+      v-model:expanded="isGlobalProjectStatusExpanded"
+    />
     <ProjectFormModal />
     <ActionDialog
       :open="Boolean(store.pendingDeleteProject)"

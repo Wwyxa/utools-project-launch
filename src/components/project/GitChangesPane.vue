@@ -33,7 +33,7 @@ import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import ActionDialog from "../ActionDialog.vue";
+import ActionDialog from "../common/ActionDialog.vue";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitFeedbackState = Exclude<AiState, "idle">;

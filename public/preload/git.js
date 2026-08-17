@@ -2,6 +2,10 @@ function emit(detail) {
   window.dispatchEvent(new CustomEvent("project-bridge-event", { detail }));
 }
 
+function emitGitRemoteProgress(detail) {
+  window.dispatchEvent(new CustomEvent("git-remote-progress", { detail }));
+}
+
 function logStorageError(action, error) {
   console.warn(`[utools-project-launch] ${action} failed`, error?.message || error);
 }
@@ -212,25 +216,94 @@ function runGitRemoteCommandResult(startPath, args) {
   const resolvedPath = expandPath(startPath);
 
   return new Promise((resolve) => {
-    execFile(
-      "git",
-      ["-C", resolvedPath, ...args],
-      {
-        encoding: "utf8",
-        env: { ...resolveGitExecutionEnvironment(), GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
-        timeout: 120000,
-        windowsHide: true,
-      },
-      (error, stdout, stderr) => {
-        const status = error ? (typeof error.code === "number" ? error.code : 1) : 0;
-        const timeoutMessage = error?.killed ? "远程 Git 操作超时，请检查网络或认证配置。" : "";
-        resolve({
-          status,
-          stdout: String(stdout || ""),
-          stderr: String(stderr || timeoutMessage || error?.message || ""),
-        });
-      },
-    );
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    const progressRemainders = { stdout: "", stderr: "" };
+    let settled = false;
+    let timedOut = false;
+    const emitProgress = (message, phase = "output") => {
+      const normalized = String(message || "")
+        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+        .trim();
+      if (!normalized) return;
+      emitGitRemoteProgress({
+        type: "git-remote-progress",
+        repositoryPath: resolvedPath,
+        message: normalized,
+        phase,
+      });
+    };
+    const consumeProgress = (stream, chunk, flush = false) => {
+      progressRemainders[stream] += String(chunk || "");
+      const lines = progressRemainders[stream].split(/[\r\n]/);
+      progressRemainders[stream] = lines.pop() || "";
+      lines.forEach((line) => emitProgress(line));
+      if (flush && progressRemainders[stream]) {
+        emitProgress(progressRemainders[stream]);
+        progressRemainders[stream] = "";
+      }
+    };
+    const commandArgs = ["-C", resolvedPath, ...args];
+    emitProgress(`开始: git ${args.join(" ")}`, "start");
+    const child = spawn("git", commandArgs, {
+      env: { ...resolveGitExecutionEnvironment(), GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, 120000);
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      const text = String(chunk || "");
+      stdoutChunks.push(text);
+      consumeProgress("stdout", text);
+    });
+    child.stderr.on("data", (chunk) => {
+      const text = String(chunk || "");
+      stderrChunks.push(text);
+      consumeProgress("stderr", text);
+    });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      consumeProgress("stderr", error.message, true);
+      emitGitRemoteProgress({
+        type: "git-remote-progress",
+        repositoryPath: resolvedPath,
+        message: "",
+        phase: "complete",
+      });
+      resolve({
+        status: typeof error.code === "number" ? error.code : 1,
+        stdout: stdoutChunks.join(""),
+        stderr: stderrChunks.join("") || error.message,
+      });
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      consumeProgress("stdout", "", true);
+      consumeProgress("stderr", "", true);
+      emitGitRemoteProgress({
+        type: "git-remote-progress",
+        repositoryPath: resolvedPath,
+        message: "",
+        phase: "complete",
+      });
+      const status = typeof code === "number" ? code : 1;
+      const timeoutMessage = timedOut ? "远程 Git 操作超时，请检查网络或认证配置。" : "";
+      resolve({
+        status,
+        stdout: stdoutChunks.join(""),
+        stderr: stderrChunks.join("") || timeoutMessage,
+      });
+    });
   });
 }
 
@@ -2607,4 +2680,3 @@ function checkoutGitRemoteBranch(projectPath, remoteRef, options = {}) {
     ? { ok: true, branch: name.split("/").slice(1).join("/"), message: `已检出远程分支 ${name}。` }
     : { ok: false, branch: name, message: firstGitError(result, "检出远程分支失败。") };
 }
-

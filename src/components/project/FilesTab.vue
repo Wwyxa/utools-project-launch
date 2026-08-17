@@ -39,7 +39,7 @@ import { classifyProjectMarkdownImageSource } from "../../lib/projectMarkdown";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import FileTreeNode, { type InlineTreeEdit, type TreeNode } from "./FileTreeNode.vue";
-import ActionDialog from "../ActionDialog.vue";
+import ActionDialog from "../common/ActionDialog.vue";
 
 type SearchMatch = { start: number; end: number };
 type MarkdownAssetState = { status: "loading" | "failed" | "ready"; dataUrl?: string };

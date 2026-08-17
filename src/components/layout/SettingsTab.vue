@@ -29,7 +29,7 @@ import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
-import ActionDialog from "../ActionDialog.vue";
+import ActionDialog from "../common/ActionDialog.vue";
 import { getProjectBridge } from "../../lib/projectBridge";
 import {
   formatEnvironmentArguments,

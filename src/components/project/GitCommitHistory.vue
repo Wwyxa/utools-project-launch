@@ -74,7 +74,7 @@ import { renderMarkdown } from "../../lib/markdown";
 import { getProjectBridge } from "../../lib/projectBridge";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
-import ActionDialog from "../ActionDialog.vue";
+import ActionDialog from "../common/ActionDialog.vue";
 
 defineOptions({ inheritAttrs: false });
 

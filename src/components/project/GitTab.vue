@@ -55,7 +55,7 @@ import { useI18n } from "../../lib/i18n";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import { gitRepositoryTargetsEqual } from "../../lib/gitRepositoryTarget";
-import ActionDialog from "../ActionDialog.vue";
+import ActionDialog from "../common/ActionDialog.vue";
 import GitDiffViewer from "./GitDiffViewer.vue";
 import GitChangesPane from "./GitChangesPane.vue";
 import GitCommitHistory from "./GitCommitHistory.vue";
@@ -136,8 +136,6 @@ const isRemoteDialogOpen = ref(false);
 const remoteDialogMode = ref<RemoteDialogMode>("add");
 const remoteFormName = ref("");
 const remoteFormUrl = ref("");
-const gitActionMessage = ref("");
-const gitActionState = ref<GitActionState>("idle");
 const activeGitAction = ref("");
 const isChangesPaneBusy = ref(false);
 const isCommitHistoryBusy = ref(false);
@@ -1140,8 +1138,6 @@ const requestRemoveRemote = (remote: ProjectGitRemoteSummary) => {
 };
 
 const setGitActionResult = (state: GitActionState, message: string) => {
-  gitActionState.value = state;
-  gitActionMessage.value = message;
   store.setProjectStatusMessage(state, message);
 };
 
@@ -1958,22 +1954,6 @@ watch(
           >
             <FileDiff :size="12" class="shrink-0" aria-hidden="true" />
             <span class="min-w-0 truncate">{{ topBarStatusText }}</span>
-          </span>
-          <span
-            v-if="gitActionMessage"
-            :class="
-              cn(
-                'hidden max-w-72 truncate rounded-full border px-2 py-0.5 text-[10px] font-bold lg:inline',
-                gitActionState === 'success' && 'border-status-running/30 bg-status-running/10 text-status-running',
-                gitActionState === 'warning' && 'border-status-warning/30 bg-status-warning/10 text-status-warning',
-                gitActionState === 'error' && 'border-status-error/30 bg-status-error/10 text-status-error',
-                (gitActionState === 'idle' || gitActionState === 'loading') &&
-                  'border-border-subtle bg-surface-container-low text-on-surface-variant',
-              )
-            "
-            :title="gitActionMessage"
-          >
-            {{ gitActionMessage }}
           </span>
           <span
             v-if="isGitSnapshotRefreshing || isGitStatusRefreshing"
