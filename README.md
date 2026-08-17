@@ -222,7 +222,6 @@ Release 发布的是可直接安装的单个原始可执行文件，不使用压
 | `npm run validate:git-commits`        | 校验 Git 提交记录解析                                      |
 | `npm run validate:git-diff`           | 校验 Git diff 解析                                         |
 | `npm run validate:git-workspace`      | 校验 Git 工作区桥接(含单元测试)                            |
-| `npm run validate:markdown-images`    | 校验 Markdown 图片安全与渲染                               |
 | `npm run validate:project-files`      | 校验项目文件桥接                                           |
 | `npm run validate:project-storage`    | 校验项目存储兼容性                                         |
 | `npm run validate:process-results`    | 校验进程结果批次处理                                       |

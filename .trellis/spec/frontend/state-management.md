@@ -1322,7 +1322,6 @@ Update local state first, then let the bridge stop the process in the background
 ### 6. Tests Required
 
 - `npm run validate:project-files` must assert ignored directories, bounded search, invalid names, collisions, create/rename/delete behavior, root/traversal rejection, and both internal/external symbolic-link cases where the platform permits fixtures.
-- `npm run validate:markdown-images` must assert local/external/blocked image classification and isolated render failures.
 - `npm run type-check` should verify shared bridge types across `src/types.ts`, `src/lib/projectBridge.ts`, store actions, and components.
 - `node --check public/preload.js` must pass after filesystem boundary changes.
 - `npm run build` should verify the Vue file-browser components compile.

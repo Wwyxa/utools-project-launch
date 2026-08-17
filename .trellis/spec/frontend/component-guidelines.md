@@ -188,7 +188,7 @@ const renderedCode = computed(() => highlightCode(draftContent.value, previewLan
 - Parse Markdown images only from the body so image-like YAML strings do not trigger project file reads.
 - Leave unclosed blocks and ordinary leading thematic breaks to markdown-it's default behavior.
 
-**Related**: `src/lib/markdown.ts`, `scripts/validate-markdown-images.mjs`.
+**Related**: `src/lib/markdown.ts`.
 
 ### Convention: Theme-Aware Code Preview Surfaces
 
