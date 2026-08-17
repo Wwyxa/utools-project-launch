@@ -735,7 +735,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           :disabled="isUnavailable || script.status === 'STOPPING'"
           :class="
             cn(
-              'inline-flex h-5 flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
+              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
               script.status === 'RUNNING'
                 ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
                 : script.status === 'STOPPING'
@@ -757,7 +757,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <button
             type="button"
             @click="toggleMoreScripts"
-            class="inline-flex h-5 w-5 flex-none items-center justify-center whitespace-nowrap rounded border border-transparent bg-surface-variant p-0 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            class="inline-flex h-[21px] w-5 flex-none items-center justify-center whitespace-nowrap rounded border border-transparent bg-surface-variant p-0 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
             aria-haspopup="menu"
             :aria-expanded="moreScriptsOpen"
             :aria-label="`显示 ${hiddenScriptCount} 个隐藏脚本`"
@@ -817,7 +817,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           data-script-measure-button
           :class="
             cn(
-              'inline-flex h-5 flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border',
+              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border',
               script.status === 'RUNNING'
                 ? 'border-status-running/30'
                 : script.status === 'STOPPING'
@@ -837,7 +837,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
         </span>
         <span
           data-script-more-measure
-          class="inline-flex h-5 w-5 flex-none items-center justify-center whitespace-nowrap rounded border border-transparent p-0 text-[10px] font-bold"
+          class="inline-flex h-[21px] w-5 flex-none items-center justify-center whitespace-nowrap rounded border border-transparent p-0 text-[10px] font-bold"
         >
           <ChevronDown :size="10" />
         </span>
