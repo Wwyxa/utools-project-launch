@@ -1,0 +1,10 @@
+{"file":".trellis/spec/backend/index.md","reason":"Defines the current no-backend baseline and the required isolated boundary for a new backend runtime."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Defines the preload bridge boundary and process-control placement rules."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Defines typed failures, host command parity, process-tree cleanup, and plugin lifecycle behavior."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Defines user-visible event semantics and secret-safe logging requirements."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Requires focused backend lifecycle tests and preservation of the no-service path."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines Pinia ownership, runtime reconciliation, persisted preference, and bridge routing patterns."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Requires shared typed ProjectBridge contracts and boundary validation."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Defines settings component, icon, accessibility, and existing UI composition conventions."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Covers complete data-flow, lifecycle survival boundaries, and cross-layer contract checks."}
+{"file":".trellis/tasks/08-13-optional-go-service/research/summary.md","reason":"Provides repository evidence, official release/build evidence, binary-size measurements, and resulting design decisions."}

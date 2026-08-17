@@ -14,6 +14,8 @@ import {
   RefreshCw,
   Plus,
   RotateCcw,
+  Save,
+  ServerCog,
   Settings2,
   SquareTerminal,
   Sun,
@@ -34,14 +36,22 @@ import {
   parseEnvironmentArguments,
   type CustomEnvironmentToolErrors,
 } from "../../lib/environmentTools";
-import type { AiProviderKind, DefaultTerminalKind, EnvironmentToolKey, ExternalApplication } from "../../types";
+import type {
+  AiProviderKind,
+  DefaultTerminalKind,
+  EnvironmentToolKey,
+  ExternalApplication,
+  ProjectLaunchServiceLogRetentionPolicy,
+} from "../../types";
 
 const store = useStore();
 const t = useI18n();
 const githubRepositoryUrl = "https://github.com/Wwyxa/utools-project-launch";
 
 const hostPlatform = window.navigator.platform || window.navigator.userAgent || "";
-const fallbackTerminalOptions: DefaultTerminalKind[] = /win/i.test(hostPlatform)
+type SelectableTerminalKind = Exclude<DefaultTerminalKind, "builtin">;
+
+const fallbackTerminalOptions: SelectableTerminalKind[] = /win/i.test(hostPlatform)
   ? ["windows-terminal", "powershell", "cmd"]
   : /linux/i.test(hostPlatform)
     ? ["linux-terminal"]
@@ -59,6 +69,14 @@ const editingExternalApplicationId = ref<string | null>(null);
 const externalApplicationDraft = ref({ name: "", command: "" });
 const externalApplicationErrors = ref({ name: "", command: "" });
 const externalApplicationFeedback = ref("");
+const projectLaunchServiceDisableWarningOpen = ref(false);
+const projectLaunchServiceUpdateChecking = ref(false);
+const logRetentionDraft = ref<ProjectLaunchServiceLogRetentionPolicy | null>(null);
+const logRetentionSaving = ref(false);
+const logRetentionFeedback = ref("");
+const logRetentionFeedbackTone = ref<"success" | "error">("success");
+const logRetentionClearOpen = ref(false);
+const logRetentionClearBusy = ref(false);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 let stopAppEscapeListener = () => {};
 
@@ -100,7 +118,7 @@ const editingBuiltinHasOverride = computed(() =>
 );
 
 const terminalUsesCustomCommand = computed(() => store.terminalPreferences.kind === "custom");
-const terminalOptions: DefaultTerminalKind[] = [...fallbackTerminalOptions, "custom"];
+const terminalOptions: SelectableTerminalKind[] = [...fallbackTerminalOptions, "custom"];
 const externalApplications = computed(() => store.externalApplicationPreferences.applications);
 const editingExternalApplication = computed(() =>
   externalApplications.value.find((application) => application.id === editingExternalApplicationId.value),
@@ -140,6 +158,82 @@ const aiConfigReady = computed(() => {
   return Boolean(
     store.aiPreferences.baseUrl.trim() && store.aiPreferences.model.trim() && store.aiPreferences.apiKey.trim(),
   );
+});
+const projectLaunchServiceStatus = computed(() => store.projectLaunchServiceStatus);
+const projectLaunchServiceBusy = computed(
+  () => projectLaunchServiceStatus.value?.state === "starting" || projectLaunchServiceUpdateChecking.value,
+);
+const projectLaunchServiceStatusLabel = computed(() => {
+  const state = projectLaunchServiceStatus.value?.state;
+  if (state === "installed") return t.value.settings.projectLaunchServiceInstalled;
+  if (state === "starting") return t.value.settings.projectLaunchServiceStarting;
+  if (state === "healthy") return t.value.settings.projectLaunchServiceHealthy;
+  if (state === "incompatible") return t.value.settings.projectLaunchServiceIncompatible;
+  if (state === "unavailable" && !projectLaunchServiceStatus.value?.expectedAssetName) {
+    return t.value.settings.projectLaunchServiceUnsupported;
+  }
+  if (state === "unavailable") return t.value.settings.projectLaunchServiceUnavailable;
+  return t.value.settings.projectLaunchServiceNotInstalled;
+});
+const projectLaunchServiceStatusClass = computed(() => {
+  const state = projectLaunchServiceStatus.value?.state;
+  if (projectLaunchServiceStatus.value?.updateAvailable)
+    return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+  if (state === "healthy") return "border-status-running/30 bg-status-running/10 text-status-running";
+  if (state === "incompatible" || state === "unavailable")
+    return "border-status-error/30 bg-status-error/10 text-status-error";
+  if (state === "starting") return "border-primary/30 bg-primary/10 text-primary";
+  return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+});
+const projectLaunchServiceLogRetentionStatus = computed(() => store.projectLaunchServiceLogRetentionStatus);
+const logRetentionReady = computed(
+  () => projectLaunchServiceStatus.value?.state === "healthy" && projectLaunchServiceStatus.value.running,
+);
+const formatLogBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes < 0) return "-";
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${Math.round(bytes)} B`;
+};
+const formatLogMiB = (bytes: number) => (Number.isFinite(bytes) ? Number((bytes / (1024 * 1024)).toFixed(3)) : 0);
+const projectLaunchServiceLogRetentionSummary = computed(() => {
+  const policy = projectLaunchServiceLogRetentionStatus.value?.policy;
+  if (!policy) return t.value.settings.projectLaunchServiceLogUnavailable;
+  return [
+    policy.persist
+      ? t.value.settings.projectLaunchServiceLogPersistOn
+      : t.value.settings.projectLaunchServiceLogPersistOff,
+    `${policy.maxCompletedRunsPerProject} ${t.value.settings.projectLaunchServiceLogRunsUnit}`,
+    `${formatLogBytes(policy.maxBytesPerRun)} / ${formatLogBytes(policy.maxBytesTotal)}`,
+  ].join(" / ");
+});
+const projectLaunchServiceHasNotice = computed(() => {
+  const status = projectLaunchServiceStatus.value;
+  return Boolean(status?.message || status?.eventsTruncated || status?.scheduler?.lastError);
+});
+const projectLaunchServiceNoticeClass = computed(() => {
+  const status = projectLaunchServiceStatus.value;
+  if (status?.scheduler?.lastError || status?.state === "incompatible" || status?.state === "unavailable") {
+    return "border-status-error/30 bg-status-error/10 text-status-error";
+  }
+  if (status?.eventsTruncated || status?.state === "installed") {
+    return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+  }
+  return status?.state === "healthy"
+    ? "border-status-running/30 bg-status-running/10 text-status-running"
+    : "border-primary/30 bg-primary/10 text-primary";
+});
+const projectLaunchServiceSchedulerLabel = computed(() => {
+  const state = projectLaunchServiceStatus.value?.scheduler?.state;
+  if (state === "degraded") return t.value.settings.projectLaunchServiceSchedulerDegraded;
+  if (state === "running") return t.value.settings.projectLaunchServiceSchedulerRunning;
+  return "-";
+});
+const projectLaunchServiceSchedulerClass = computed(() => {
+  const state = projectLaunchServiceStatus.value?.scheduler?.state;
+  if (state === "degraded") return "text-status-error";
+  if (state === "running") return "text-status-running";
+  return "text-on-surface-variant";
 });
 const segmentButtonClass = (active: boolean) =>
   cn(
@@ -183,6 +277,141 @@ const handleTestAi = async () => {
 
 const handleOpenGithubRepository = async () => {
   await getProjectBridge().openPath(githubRepositoryUrl);
+};
+
+const handleDownloadProjectLaunchService = async () => {
+  await store.downloadProjectLaunchService();
+  await refreshLogRetention();
+};
+
+const handleRecheckProjectLaunchService = async () => {
+  await store.refreshProjectLaunchServiceStatus(true);
+  await refreshLogRetention();
+};
+
+const handleCheckProjectLaunchServiceUpdate = async () => {
+  projectLaunchServiceUpdateChecking.value = true;
+  try {
+    await store.checkProjectLaunchServiceUpdate();
+  } finally {
+    projectLaunchServiceUpdateChecking.value = false;
+  }
+};
+
+const handleToggleProjectLaunchService = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const enabled = input.checked;
+  if (!enabled && store.hasActiveProjectLaunchServiceRuns) {
+    input.checked = true;
+    projectLaunchServiceDisableWarningOpen.value = true;
+    return;
+  }
+  await store.setProjectLaunchServiceEnabled(enabled);
+  await refreshLogRetention();
+};
+
+const refreshLogRetention = async () => {
+  let status = store.projectLaunchServiceStatus;
+  if (!status) {
+    status = await store.refreshProjectLaunchServiceStatus();
+  }
+  if (status.state !== "healthy" || !status.running) {
+    logRetentionDraft.value = null;
+    return;
+  }
+  try {
+    const retention = await store.refreshProjectLaunchServiceLogRetention();
+    logRetentionDraft.value = { ...retention.policy };
+    logRetentionFeedback.value = "";
+  } catch (error) {
+    logRetentionDraft.value = null;
+    logRetentionFeedbackTone.value = "error";
+    logRetentionFeedback.value =
+      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceLogLoadError;
+  }
+};
+
+const updateLogRetentionSize = (field: "maxBytesPerRun" | "maxBytesTotal", event: Event) => {
+  if (!logRetentionDraft.value) return;
+  const value = (event.target as HTMLInputElement).valueAsNumber;
+  if (!Number.isFinite(value)) return;
+  logRetentionDraft.value = {
+    ...logRetentionDraft.value,
+    [field]: Math.max(1024, Math.round(value * 1024 * 1024)),
+  };
+};
+
+const updateLogRetentionRuns = (event: Event) => {
+  if (!logRetentionDraft.value) return;
+  const value = (event.target as HTMLInputElement).valueAsNumber;
+  if (!Number.isFinite(value)) return;
+  logRetentionDraft.value = {
+    ...logRetentionDraft.value,
+    maxCompletedRunsPerProject: Math.floor(value),
+  };
+};
+
+const updateLogRetentionPersistence = (event: Event) => {
+  if (!logRetentionDraft.value) return;
+  logRetentionDraft.value = {
+    ...logRetentionDraft.value,
+    persist: (event.target as HTMLInputElement).checked,
+  };
+};
+
+const saveLogRetention = async () => {
+  const draft = logRetentionDraft.value;
+  if (!draft) return;
+  if (
+    !Number.isSafeInteger(draft.maxCompletedRunsPerProject) ||
+    draft.maxCompletedRunsPerProject < 1 ||
+    !Number.isSafeInteger(draft.maxBytesPerRun) ||
+    draft.maxBytesPerRun < 1024 ||
+    !Number.isSafeInteger(draft.maxBytesTotal) ||
+    draft.maxBytesTotal < 1024
+  ) {
+    logRetentionFeedbackTone.value = "error";
+    logRetentionFeedback.value = t.value.settings.projectLaunchServiceLogInvalid;
+    return;
+  }
+  logRetentionSaving.value = true;
+  logRetentionFeedback.value = "";
+  try {
+    const retention = await store.updateProjectLaunchServiceLogRetention({ ...draft });
+    logRetentionDraft.value = { ...retention.policy };
+    logRetentionFeedbackTone.value = "success";
+    logRetentionFeedback.value = t.value.settings.projectLaunchServiceLogSaveSuccess;
+  } catch (error) {
+    logRetentionFeedbackTone.value = "error";
+    logRetentionFeedback.value =
+      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceLogSaveError;
+  } finally {
+    logRetentionSaving.value = false;
+  }
+};
+
+const confirmClearLogRetention = async () => {
+  logRetentionClearBusy.value = true;
+  logRetentionFeedback.value = "";
+  try {
+    const result = await store.clearProjectLaunchServiceLogs();
+    try {
+      await refreshLogRetention();
+    } catch (error) {
+      // Keep the successful clear result visible even if the follow-up usage read fails.
+    }
+    logRetentionFeedbackTone.value = "success";
+    logRetentionFeedback.value = t.value.settings.projectLaunchServiceLogClearResult
+      .replace("{count}", String(result.deletedCount))
+      .replace("{size}", formatLogBytes(result.releasedBytes));
+    logRetentionClearOpen.value = false;
+  } catch (error) {
+    logRetentionFeedbackTone.value = "error";
+    logRetentionFeedback.value =
+      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceLogClearError;
+  } finally {
+    logRetentionClearBusy.value = false;
+  }
 };
 
 const handleAddAiMode = () => {
@@ -339,6 +568,7 @@ const aiTestTitle = computed(() => {
 
 onMounted(() => {
   void loadAiModels();
+  void refreshLogRetention();
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 
@@ -890,6 +1120,310 @@ watch(
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex flex-wrap items-center gap-2">
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <ServerCog :size="15" class="shrink-0 text-primary" />
+            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectLaunchService }}</h3>
+            <span class="text-[10px] leading-4 text-on-surface-variant">{{ t.settings.projectLaunchServiceHint }}</span>
+          </div>
+          <div class="ml-auto flex shrink-0 items-center gap-2">
+            <span :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', projectLaunchServiceStatusClass)">
+              {{ projectLaunchServiceStatusLabel }}
+            </span>
+            <label class="inline-flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
+              <span>{{
+                store.projectLaunchServicePreferences.enabled
+                  ? t.settings.projectLaunchServiceDisable
+                  : t.settings.projectLaunchServiceEnable
+              }}</span>
+              <input
+                type="checkbox"
+                role="switch"
+                class="h-4 w-4 accent-primary"
+                :checked="store.projectLaunchServicePreferences.enabled"
+                :disabled="projectLaunchServiceBusy"
+                :aria-label="t.settings.projectLaunchServiceEnable"
+                @change="handleToggleProjectLaunchService"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.8fr)]">
+          <dl class="grid gap-x-3 gap-y-1.5 text-xs sm:grid-cols-[8rem_minmax(0,1fr)]">
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServicePlatform }}</dt>
+            <dd class="min-w-0 break-words font-mono text-on-surface">
+              {{ projectLaunchServiceStatus?.platform || "-" }} / {{ projectLaunchServiceStatus?.architecture || "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceVersion }}</dt>
+            <dd class="min-w-0 break-all font-mono text-on-surface-variant">
+              {{ projectLaunchServiceStatus?.serviceVersion || "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceProtocol }}</dt>
+            <dd class="min-w-0 break-words font-mono text-on-surface-variant">
+              {{ projectLaunchServiceStatus?.protocolVersion ? `v${projectLaunchServiceStatus.protocolVersion}` : "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceScheduler }}</dt>
+            <dd :class="cn('min-w-0 break-words font-semibold', projectLaunchServiceSchedulerClass)">
+              {{ projectLaunchServiceSchedulerLabel }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceAsset }}</dt>
+            <dd class="min-w-0 break-all font-mono text-on-surface-variant">
+              {{ projectLaunchServiceStatus?.expectedAssetName || "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceExecutable }}</dt>
+            <dd class="min-w-0 break-all font-mono text-on-surface-variant">
+              {{ projectLaunchServiceStatus?.executablePath || "-" }}
+            </dd>
+            <dt class="font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceLogRetention }}</dt>
+            <dd class="min-w-0 break-words text-on-surface-variant">
+              {{ projectLaunchServiceLogRetentionSummary }}
+            </dd>
+          </dl>
+
+          <div class="flex flex-wrap content-start gap-1.5">
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-55"
+              :disabled="projectLaunchServiceBusy || !projectLaunchServiceStatus?.expectedAssetName"
+              @click="handleCheckProjectLaunchServiceUpdate"
+            >
+              <RefreshCw :size="13" :class="projectLaunchServiceUpdateChecking ? 'animate-spin' : ''" />
+              {{
+                projectLaunchServiceUpdateChecking
+                  ? t.settings.projectLaunchServiceCheckingUpdate
+                  : t.settings.projectLaunchServiceCheckUpdate
+              }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-primary px-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+              :disabled="
+                projectLaunchServiceBusy ||
+                projectLaunchServiceStatus?.running ||
+                !projectLaunchServiceStatus?.expectedAssetName
+              "
+              @click="handleDownloadProjectLaunchService"
+            >
+              <Download :size="13" :class="projectLaunchServiceBusy ? 'animate-spin' : ''" />
+              {{
+                projectLaunchServiceBusy
+                  ? t.settings.projectLaunchServiceDownloading
+                  : t.settings.projectLaunchServiceDownload
+              }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-55"
+              :disabled="projectLaunchServiceBusy"
+              @click="handleRecheckProjectLaunchService"
+            >
+              <RotateCcw :size="13" />
+              {{ t.settings.projectLaunchServiceRecheck }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              @click="store.openProjectLaunchServiceDirectory"
+            >
+              <FolderCog :size="13" />
+              {{ t.settings.projectLaunchServiceOpenDirectory }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              @click="store.openProjectLaunchServiceReleases"
+            >
+              <Github :size="13" />
+              {{ t.settings.projectLaunchServiceOpenReleases }}
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-3 border-t border-border-subtle pt-3">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceLogPersistence }}</p>
+              <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
+                {{ t.settings.projectLaunchServiceLogPersistenceHint }}
+              </p>
+            </div>
+            <div class="flex shrink-0 gap-1.5">
+              <button
+                type="button"
+                class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-primary px-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                :disabled="!logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy"
+                @click="saveLogRetention"
+              >
+                <Save :size="13" />
+                {{
+                  logRetentionSaving ? t.settings.projectLaunchServiceLogSaving : t.settings.projectLaunchServiceLogSave
+                }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex h-8 items-center gap-1.5 rounded border border-status-error/30 bg-surface px-2.5 text-xs font-bold text-status-error transition-colors hover:bg-status-error/10 disabled:cursor-not-allowed disabled:opacity-55"
+                :disabled="!logRetentionReady || logRetentionClearBusy"
+                @click="logRetentionClearOpen = true"
+              >
+                <Trash2 :size="13" />
+                {{ t.settings.projectLaunchServiceLogClear }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
+            class="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+          >
+            <label
+              class="flex min-w-0 items-center justify-between gap-2 rounded border border-border-subtle bg-surface-container-low px-2.5 py-2 text-xs font-semibold text-on-surface"
+            >
+              <span class="min-w-0">{{ t.settings.projectLaunchServiceLogPersistLabel }}</span>
+              <input
+                type="checkbox"
+                role="switch"
+                class="h-4 w-4 shrink-0 accent-primary"
+                :checked="logRetentionDraft.persist"
+                :disabled="!logRetentionReady || logRetentionSaving"
+                @change="updateLogRetentionPersistence"
+              />
+            </label>
+            <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+              {{ t.settings.projectLaunchServiceLogCompletedRuns }}
+              <input
+                type="number"
+                min="1"
+                step="1"
+                :value="logRetentionDraft.maxCompletedRunsPerProject"
+                :disabled="!logRetentionReady || logRetentionSaving"
+                class="ui-field mt-1 h-8 w-full text-sm font-normal text-on-surface"
+                @input="updateLogRetentionRuns"
+              />
+            </label>
+            <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+              {{ t.settings.projectLaunchServiceLogPerRunSize }}
+              <input
+                type="number"
+                min="0.001"
+                step="0.001"
+                :value="formatLogMiB(logRetentionDraft.maxBytesPerRun)"
+                :disabled="!logRetentionReady || logRetentionSaving"
+                class="ui-field mt-1 h-8 w-full text-sm font-normal text-on-surface"
+                @input="updateLogRetentionSize('maxBytesPerRun', $event)"
+              />
+            </label>
+            <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+              {{ t.settings.projectLaunchServiceLogTotalSize }}
+              <input
+                type="number"
+                min="0.001"
+                step="0.001"
+                :value="formatLogMiB(logRetentionDraft.maxBytesTotal)"
+                :disabled="!logRetentionReady || logRetentionSaving"
+                class="ui-field mt-1 h-8 w-full text-sm font-normal text-on-surface"
+                @input="updateLogRetentionSize('maxBytesTotal', $event)"
+              />
+            </label>
+          </div>
+          <div
+            v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
+            class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-on-surface-variant"
+          >
+            <span>
+              {{ t.settings.projectLaunchServiceLogUsage }}:
+              <strong class="font-semibold text-on-surface">
+                {{ formatLogBytes(projectLaunchServiceLogRetentionStatus.usage.totalBytes) }} /
+                {{ formatLogBytes(projectLaunchServiceLogRetentionStatus.policy.maxBytesTotal) }}
+              </strong>
+            </span>
+            <span>
+              {{ projectLaunchServiceLogRetentionStatus.usage.fileCount }}
+              {{ t.settings.projectLaunchServiceLogFiles }}
+            </span>
+          </div>
+          <p v-else class="mt-2 text-[11px] leading-4 text-on-surface-variant">
+            {{ t.settings.projectLaunchServiceLogUnavailable }}
+          </p>
+          <p
+            v-if="logRetentionDraft && !logRetentionDraft.persist"
+            class="mt-2 text-[11px] leading-4 text-status-warning"
+          >
+            {{ t.settings.projectLaunchServiceLogPersistenceOff }}
+          </p>
+          <p
+            v-if="logRetentionFeedback"
+            :class="
+              cn(
+                'mt-2 text-[11px] leading-4',
+                logRetentionFeedbackTone === 'error' ? 'text-status-error' : 'text-status-running',
+              )
+            "
+            role="status"
+            aria-live="polite"
+          >
+            {{ logRetentionFeedback }}
+          </p>
+        </div>
+
+        <div
+          v-if="projectLaunchServiceHasNotice"
+          :class="cn('mt-3 rounded-md border px-3 py-2 text-xs leading-5', projectLaunchServiceNoticeClass)"
+          role="status"
+          aria-live="polite"
+        >
+          <div class="flex items-start gap-2">
+            <Info :size="14" class="mt-0.5 shrink-0" />
+            <div class="min-w-0">
+              <p class="font-semibold">{{ projectLaunchServiceStatusLabel }}</p>
+              <p v-if="projectLaunchServiceStatus?.message" class="mt-0.5 break-words text-on-surface-variant">
+                {{ projectLaunchServiceStatus.message }}
+              </p>
+              <p v-if="projectLaunchServiceStatus?.eventsTruncated" class="mt-1 text-status-warning">
+                {{ t.settings.projectLaunchServiceLogsTruncated }}
+              </p>
+              <p v-if="projectLaunchServiceStatus?.scheduler?.lastError" class="mt-1 break-words text-status-error">
+                <span class="font-semibold">{{ t.settings.projectLaunchServiceSchedulerLastError }}:</span>
+                {{ projectLaunchServiceStatus.scheduler.lastError }}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="store.projectLaunchServicePreferences.enabled"
+          class="mt-2 flex items-start gap-2 rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs leading-5 text-status-warning"
+        >
+          <ServerCog :size="14" class="mt-0.5 shrink-0" />
+          <p>{{ t.settings.projectLaunchServiceEnabledHint }}</p>
+        </div>
+        <details class="group mt-3 border-t border-border-subtle pt-2.5">
+          <summary
+            class="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-on-surface-variant transition-colors hover:text-on-surface [&::-webkit-details-marker]:hidden"
+          >
+            <span class="flex items-center gap-1.5">
+              <Info :size="13" class="shrink-0" />
+              {{ t.settings.projectLaunchServiceNotes }}
+            </span>
+            <ChevronDown :size="14" class="shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <div class="mt-2 grid gap-2 border-t border-border-subtle pt-2 sm:grid-cols-2">
+            <div class="rounded-md bg-surface-container-low px-3 py-2">
+              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceLogRetention }}</p>
+              <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
+                {{ t.settings.projectLaunchServiceLogHint }}
+              </p>
+            </div>
+            <div class="rounded-md bg-surface-container-low px-3 py-2">
+              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceInstallNote }}</p>
+              <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
+                {{ t.settings.projectLaunchServiceManualHint }}
+              </p>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
             <FolderCog :size="15" class="shrink-0 text-primary" />
@@ -1018,7 +1552,6 @@ watch(
                 <button
                   v-else-if="
                     editingExternalApplication &&
-                    editingExternalApplication.kind !== 'custom' &&
                     editingExternalApplication.command !==
                       (editingExternalApplication.kind === 'vscode' ? 'code {path}' : 'cursor {path}')
                   "
@@ -1167,6 +1700,31 @@ watch(
         </div>
       </Transition>
     </Teleport>
+
+    <ActionDialog
+      :open="logRetentionClearOpen"
+      tone="danger"
+      icon="trash"
+      :title="t.settings.projectLaunchServiceLogClearTitle"
+      :message="t.settings.projectLaunchServiceLogClearMessage"
+      :primary-label="t.settings.projectLaunchServiceLogClear"
+      :busy="logRetentionClearBusy"
+      :busy-label="t.settings.projectLaunchServiceLogClearBusy"
+      :cancel-label="t.common.cancel"
+      @cancel="logRetentionClearOpen = false"
+      @primary="confirmClearLogRetention"
+    />
+
+    <ActionDialog
+      :open="projectLaunchServiceDisableWarningOpen"
+      tone="warning"
+      icon="alert"
+      :title="t.settings.projectLaunchServiceDisableBlockedTitle"
+      :message="t.settings.projectLaunchServiceDisableBlockedMessage"
+      :primary-label="t.common.close"
+      @cancel="projectLaunchServiceDisableWarningOpen = false"
+      @primary="projectLaunchServiceDisableWarningOpen = false"
+    />
 
     <ActionDialog
       :open="Boolean(pendingDeleteCustomEnvironmentId)"

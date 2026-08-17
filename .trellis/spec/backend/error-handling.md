@@ -317,3 +317,67 @@ If a backend is introduced later, document the exact error payload shape here be
 - Reusing success styling for error output
 - Adding API-style error handling before there is an API
 - Throwing raw preload errors into Vue components instead of converting them into typed store state
+
+---
+
+## Scenario: Project Launch Service Encrypted Automation State
+
+### 1. Scope / Trigger
+
+- Trigger: the optional Go service receives automation configuration containing project environment values and must retain it across a service restart.
+- This crosses the Store-to-preload-to-service protocol, the service `state.json` persistence boundary, and the `/v1/state` reconciliation response.
+
+### 2. Signatures
+
+- `state.Open(stateDir string) (*Store, error)` loads or migrates the runtime state using the existing service token.
+- `Store.ReplaceAutomation(revision uint64, config json.RawMessage) (AutomationState, error)` retains the usable configuration in memory.
+- `Store.Fingerprint(parts ...string) string` produces the persisted request fingerprint for direct and scheduled launches.
+- `GET /v1/state` returns `automation: { revision, executions }`; it does not return `automation.config`.
+
+### 3. Contracts
+
+- `AutomationState.Config` is an in-memory scheduler value and must use `json:"-"`; never marshal it directly into a disk file or HTTP response.
+- Runtime state schema `2` stores `automation.encryptedConfig`, encrypted with AES-GCM and a per-service key derived from the existing restricted token. It must use a fresh nonce on every write.
+- Schema `1` states with a plaintext `automation.config` are read once, validated, and atomically rewritten as schema `2`; the plaintext must not remain in `state.json`.
+- A schema `2` state that contains plaintext `automation.config`, an unreadable ciphertext, or a replaced/missing token fails closed during service startup. Service mode stays unavailable and preload must not execute a fallback command.
+- Direct-run and scheduler idempotency fingerprints that include environment values use `Store.Fingerprint`; do not persist an unkeyed digest of a low-entropy secret.
+
+### 4. Validation & Error Matrix
+
+- New configuration with `env.API_KEY` -> state contains `encryptedConfig`, never the raw value or `"config":` payload.
+- Service restart with the same token -> decrypted configuration equals the accepted configuration and scheduled execution keeps its environment semantics.
+- Legacy schema `1` state -> service starts, preserves the configuration in memory, then rewrites the state without plaintext values.
+- Corrupt ciphertext or a different token -> startup returns an actionable state-load error; no automation command is launched.
+- `/v1/state` snapshot -> callers receive revision and executions only, so preload/renderer reconciliation cannot expose the full project environment.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a scheduled project uses its configured environment after a normal service restart while a copied `state.json` contains only ciphertext.
+- Base: automation has no configuration; state stores no encrypted payload and `/v1/state` reports revision `0`.
+- Bad: `json.Marshal(store.data)` writes the raw configuration, or `sha256(env)` is saved as an idempotency fingerprint that can be guessed offline.
+
+### 6. Tests Required
+
+- `go -C service test ./internal/state` must assert plaintext environment exclusion, encrypted restart recovery, schema `1` migration, hidden JSON snapshots, and stable per-service keyed fingerprints.
+- `go -C service test ./internal/process ./internal/scheduler ./internal/api` must keep direct and scheduled launch idempotency working with the keyed fingerprint.
+- `go -C service vet ./...` and `gofmt -l service` must pass after changing state serialization or cryptographic helpers.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+contents, err := json.Marshal(store.data)
+fingerprint := sha256.Sum256([]byte(serializedEnvironment))
+```
+
+This writes the complete automation environment to `state.json` and leaves a reusable unkeyed secret-derived digest.
+
+#### Correct
+
+```go
+contents, err := marshalPersistedRuntimeState(store.data, store.secretKey)
+fingerprint := store.Fingerprint(serializedEnvironment)
+```
+
+Keep the plaintext configuration only in the running service, encrypt its disk representation with the existing per-service secret, and expose only the status fields the Store needs to reconcile.

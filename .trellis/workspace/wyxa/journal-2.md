@@ -291,3 +291,88 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 71: 完成可选 Go 服务与运行时加固
+
+**Date**: 2026-08-14
+**Task**: 完成可选 Go 服务与运行时加固
+**Branch**: `feat/go-service`
+
+### Summary
+
+实现并加固可选 Project Launch Service，补充跨层规范、状态加密、安装校验和定点验证；任务已归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e2b9c01` | (see git log) |
+| `9a6d4c5` | (see git log) |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 72: 统一项目启动运行时与服务任务状态
+
+**Date**: 2026-08-15
+**Task**: 统一项目启动运行时与服务任务状态
+**Branch**: `feat/go-service`
+
+### Summary
+
+统一 preload 与 Go 服务运行身份、事件和状态快照；补充调度健康恢复、重复运行冲突、安全 handoff、回归测试及跨层规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c17dd82` | (see git log) |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 73: 完善项目启动服务日志保留与历史查看
+
+**Date**: 2026-08-17
+**Task**: 完善项目启动服务日志保留与历史查看
+**Branch**: `feat/go-service`
+
+### Summary
+
+完成项目启动服务日志持久化、保留策略、分页历史读取和运行级清除；验证 Go 服务、preload 桥接、TypeScript 与构建流程。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9b07bd7` | (see git log) |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 74: 优化项目启动服务资源开销
+
+**Date**: 2026-08-17
+**Task**: 优化项目启动服务资源开销
+**Branch**: `feat/go-service`
+
+### Summary
+
+合并服务同步请求并保留兼容回退，改为最近计划唤醒调度器，限制实时日志窗口，新增 Windows 资源基准、回归测试和可执行规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `78b0be6` | (see git log) |
+
+### Status
+
+[OK] **Completed**

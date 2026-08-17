@@ -73,6 +73,232 @@ export interface UiPreferences {
   };
 }
 
+export interface ProjectLaunchServicePreferences {
+  schemaVersion: 1;
+  enabled: boolean;
+}
+
+export type ProjectLaunchServiceRunStatus =
+  | "starting"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "exited"
+  | "failed"
+  | "lost";
+
+export interface ProjectLaunchServiceRun {
+  id: string;
+  projectId: string;
+  scriptId: string;
+  label: string;
+  command: string;
+  cwd: string;
+  pid?: number;
+  status: ProjectLaunchServiceRunStatus;
+  startedAt: string;
+  endedAt?: string;
+  code?: number | null;
+  signal?: string;
+  error?: string;
+  stoppedByUser?: boolean;
+  automationExitMatched?: boolean;
+  automationRunId?: string;
+  processIdentity?: string;
+  outputTruncated?: boolean;
+  durableWriteError?: string;
+}
+
+export interface ProjectLaunchServiceEvent {
+  cursor: number;
+  timestamp: string;
+  type: "started" | "stdout" | "stderr" | "stdin" | "exit" | "error";
+  runId: string;
+  projectId: string;
+  scriptId: string;
+  pid?: number;
+  message?: string;
+  cwd?: string;
+  code?: number | null;
+  signal?: string;
+  stoppedByUser?: boolean;
+  automationExitMatched?: boolean;
+  automationRunId?: string;
+}
+
+export interface ProjectLaunchServiceRunLog {
+  runId: string;
+  events: ProjectLaunchServiceEvent[];
+  truncated: boolean;
+  sizeBytes: number;
+  hasMore?: boolean;
+  nextOffset?: number;
+}
+
+export interface ProjectLaunchServiceLogRetentionPolicy {
+  persist: boolean;
+  maxCompletedRunsPerProject: number;
+  maxBytesPerRun: number;
+  maxBytesTotal: number;
+}
+
+export interface ProjectLaunchServiceLogUsage {
+  fileCount: number;
+  totalBytes: number;
+}
+
+export interface ProjectLaunchServiceLogRetentionStatus {
+  policy: ProjectLaunchServiceLogRetentionPolicy;
+  usage: ProjectLaunchServiceLogUsage;
+}
+
+export interface ProjectLaunchServiceLogDescriptor {
+  runId: string;
+  projectId: string;
+  scriptId: string;
+  label: string;
+  status: ProjectLaunchServiceRunStatus;
+  startedAt: string;
+  endedAt?: string;
+  sizeBytes: number;
+  truncated: boolean;
+  available: boolean;
+}
+
+export interface ProjectLaunchServiceLogClearResult {
+  deletedCount: number;
+  releasedBytes: number;
+}
+
+export interface ProjectLaunchServiceLogClearScope {
+  runId: string;
+}
+
+export interface ProjectLaunchServiceScriptConfig {
+  id: string;
+  name: string;
+  command: string;
+  cwd: string;
+}
+
+export interface ProjectLaunchServicePlanEntryConfig {
+  id: string;
+  plannedAt: string;
+  status: ProjectAutomationPlanEntryStatus;
+  runEarly?: boolean;
+}
+
+export interface ProjectLaunchServiceDailyPlanConfig {
+  date: string;
+  entries: ProjectLaunchServicePlanEntryConfig[];
+}
+
+export interface ProjectLaunchServiceAutomationTaskConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  scriptIds: string[];
+  missedPolicy: ProjectAutomationMissedPolicy;
+  missedGraceMinutes: number;
+  maxScriptRuntimeMinutes: number;
+  inputConfigs: ProjectAutomationScriptInputConfig[];
+  exitConfigs: ProjectAutomationExitConfig[];
+  dailyPlans: ProjectLaunchServiceDailyPlanConfig[];
+}
+
+export interface ProjectLaunchServiceProjectConfig {
+  id: string;
+  name: string;
+  path: string;
+  env: Record<string, string>;
+  scripts: ProjectLaunchServiceScriptConfig[];
+  automationTasks: ProjectLaunchServiceAutomationTaskConfig[];
+}
+
+export interface ProjectLaunchServiceAutomationConfig {
+  schemaVersion: 1;
+  revision: number;
+  projects: ProjectLaunchServiceProjectConfig[];
+}
+
+export type ProjectLaunchServiceAutomationExecutionStatus = "running" | "completed" | "failed" | "skipped" | "missed";
+
+export interface ProjectLaunchServiceAutomationScriptResult {
+  scriptId: string;
+  status: "completed" | "failed" | "skipped" | "timeout" | "stopped";
+  startedAt?: string;
+  endedAt?: string;
+  reason?: string;
+}
+
+export interface ProjectLaunchServiceAutomationExecution {
+  id: string;
+  projectId: string;
+  taskId: string;
+  planEntryId: string;
+  status: ProjectLaunchServiceAutomationExecutionStatus;
+  currentScriptIndex: number;
+  activeRunId?: string;
+  startedAt?: string;
+  endedAt?: string;
+  reason?: string;
+  scriptResults: ProjectLaunchServiceAutomationScriptResult[];
+}
+
+export interface ProjectLaunchServiceAutomationState {
+  revision: number;
+  executions?: ProjectLaunchServiceAutomationExecution[];
+}
+
+export interface ProjectLaunchServiceAutomationSyncResult {
+  accepted: boolean;
+  revision: number;
+  message?: string;
+}
+
+export type ProjectLaunchServiceState =
+  | "not-installed"
+  | "installed"
+  | "starting"
+  | "healthy"
+  | "unavailable"
+  | "incompatible";
+
+export type ProjectLaunchServiceSchedulerState = "running" | "degraded";
+
+export interface ProjectLaunchServiceSchedulerStatus {
+  state: ProjectLaunchServiceSchedulerState;
+  lastRunAt?: string;
+  lastSuccessAt?: string;
+  lastError?: string;
+}
+
+export interface ProjectLaunchServiceStatus {
+  state: ProjectLaunchServiceState;
+  installed: boolean;
+  running: boolean;
+  platform: string;
+  architecture: string;
+  expectedAssetName: string;
+  directoryPath: string;
+  executablePath: string;
+  releaseUrl: string;
+  protocolVersion?: number;
+  serviceVersion?: string;
+  activeRunCount?: number;
+  runs?: ProjectLaunchServiceRun[];
+  events?: ProjectLaunchServiceEvent[];
+  latestCursor?: number;
+  earliestCursor?: number;
+  eventsTruncated?: boolean;
+  automationRevision?: number;
+  automation?: ProjectLaunchServiceAutomationState;
+  scheduler?: ProjectLaunchServiceSchedulerStatus;
+  latestServiceVersion?: string;
+  updateAvailable?: boolean;
+  message?: string;
+}
+
 export interface TerminalPreferences {
   kind: DefaultTerminalKind;
   customCommand: string;
@@ -249,6 +475,8 @@ export interface ProjectScript {
   status: "IDLE" | "RUNNING" | "STOPPING" | "ERROR" | "STOPPED";
   cwd?: string;
   pid?: number;
+  runId?: string;
+  runtimeOwner?: "preload" | "service";
   note?: string;
   source?: ProjectScriptSource;
 }
@@ -790,6 +1018,8 @@ export interface ProjectBridgeRunResult {
   startedAt: string;
   command: string;
   cwd: string;
+  runId?: string;
+  runtimeOwner?: "preload" | "service";
 }
 
 export interface ProjectBridgeRunCommandPayload {
@@ -803,6 +1033,8 @@ export interface ProjectBridgeRunCommandPayload {
 }
 
 export interface ProjectBridgeStopProcessOptions {
+  runId?: string;
+  runtimeOwner?: "preload" | "service";
   automationRunId?: string;
   automationExitMatched?: boolean;
 }
@@ -814,6 +1046,9 @@ export interface ProjectBridgeSendInputResult {
 
 export interface ProjectBridgeProcessStatusResult {
   active: boolean;
+  serviceState?: ProjectLaunchServiceState;
+  runId?: string;
+  runtimeOwner?: "preload" | "service";
   code?: number | null;
   signal?: string | null;
   stoppedByUser?: boolean;
@@ -939,11 +1174,15 @@ export interface ProjectFileWriteResult {
   savedAt: string;
 }
 
-export interface ProjectBridgeEvent {
+export interface ProjectBridgeProcessEvent {
   type: "started" | "stdout" | "stderr" | "stdin" | "exit" | "error";
   projectId: string;
   scriptId: string;
   pid: number;
+  cursor?: number;
+  runId?: string;
+  runtimeOwner?: "preload" | "service";
+  timestamp?: string;
   message?: string;
   cwd?: string;
   code?: number | null;
@@ -952,6 +1191,14 @@ export interface ProjectBridgeEvent {
   automationRunId?: string;
   automationExitMatched?: boolean;
 }
+
+export interface ProjectBridgeServiceStateEvent {
+  type: "service-state";
+  status: ProjectLaunchServiceStatus;
+  timestamp?: string;
+}
+
+export type ProjectBridgeEvent = ProjectBridgeProcessEvent | ProjectBridgeServiceStateEvent;
 
 export interface ProjectBridge {
   loadDeviceId(): string;
@@ -969,6 +1216,28 @@ export interface ProjectBridge {
   detectEnvironmentTool(request: EnvironmentToolRequest): Promise<EnvironmentToolResult>;
   loadAiPreferences(): AiPreferences;
   saveAiPreferences(preferences: AiPreferences): void;
+  loadProjectLaunchServicePreferences(): ProjectLaunchServicePreferences;
+  saveProjectLaunchServicePreferences(preferences: ProjectLaunchServicePreferences): void;
+  getProjectLaunchServiceStatus(): Promise<ProjectLaunchServiceStatus>;
+  checkProjectLaunchServiceUpdate(): Promise<ProjectLaunchServiceStatus>;
+  downloadProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
+  verifyProjectLaunchServiceInstall(): Promise<ProjectLaunchServiceStatus>;
+  startProjectLaunchService(options?: { requireVerifiedInstall?: boolean }): Promise<ProjectLaunchServiceStatus>;
+  stopProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
+  reconcileProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
+  getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog>;
+  getProjectLaunchServiceRunLogPage(runId: string, beforeOffset: number): Promise<ProjectLaunchServiceRunLog>;
+  getProjectLaunchServiceLogRetention(): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  updateProjectLaunchServiceLogRetention(
+    policy: ProjectLaunchServiceLogRetentionPolicy,
+  ): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  listProjectLaunchServiceLogs(projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]>;
+  clearProjectLaunchServiceLogs(scope?: ProjectLaunchServiceLogClearScope): Promise<ProjectLaunchServiceLogClearResult>;
+  syncProjectLaunchServiceAutomation(
+    config: ProjectLaunchServiceAutomationConfig,
+  ): Promise<ProjectLaunchServiceAutomationSyncResult>;
+  openProjectLaunchServiceDirectory(): Promise<void>;
+  openProjectLaunchServiceReleases(): Promise<void>;
   listAiModels(preferences?: AiPreferences): Promise<AiModelInfo[]>;
   testAiConnection(preferences: AiPreferences): Promise<AiModelTestResult>;
   analyzeWithAi(payload: AiAnalyzePayload): Promise<AiAnalyzeResult>;
@@ -1121,13 +1390,17 @@ export interface ProjectBridge {
   ): Promise<ProjectBridgeExternalApplicationLaunchResult>;
   runCommand(payload: ProjectBridgeRunCommandPayload): Promise<ProjectBridgeRunResult>;
   stopProcess(pid: number, options?: ProjectBridgeStopProcessOptions): Promise<void>;
-  getProcessStatus(pid: number): Promise<ProjectBridgeProcessStatusResult>;
+  getProcessStatus(pid: number, options?: ProjectBridgeStopProcessOptions): Promise<ProjectBridgeProcessStatusResult>;
   getAutomationProcessResult(
     projectId: string,
     scriptId: string,
     automationRunId: string,
   ): Promise<ProjectBridgeProcessStatusResult | null>;
-  sendProcessInput(pid: number, input: string): Promise<ProjectBridgeSendInputResult>;
+  sendProcessInput(
+    pid: number,
+    input: string,
+    options?: ProjectBridgeStopProcessOptions,
+  ): Promise<ProjectBridgeSendInputResult>;
   stopAllProcesses(): Promise<void>;
   openPath(path: string): Promise<void>;
   showItemInFolder(path: string): Promise<void>;

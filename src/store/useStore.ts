@@ -61,6 +61,7 @@ import type {
   ProjectGitCommitMessageDiffResult,
   ProjectConfigFile,
   ProjectBridgeEvent,
+  ProjectBridgeProcessEvent,
   ProjectBridgeProcessStatusResult,
   ProjectBridgeStopProcessOptions,
   ProjectEnvironmentEntry,
@@ -87,6 +88,16 @@ import type {
   ProjectIconKey,
   ProjectKind,
   ProjectDetailsTabId,
+  ProjectLaunchServicePreferences,
+  ProjectLaunchServiceAutomationConfig,
+  ProjectLaunchServiceEvent,
+  ProjectLaunchServiceLogClearResult,
+  ProjectLaunchServiceLogClearScope,
+  ProjectLaunchServiceLogDescriptor,
+  ProjectLaunchServiceLogRetentionPolicy,
+  ProjectLaunchServiceLogRetentionStatus,
+  ProjectLaunchServiceRunLog,
+  ProjectLaunchServiceStatus,
   ProjectVisibility,
   ProjectScript,
   ProjectBridgeScriptCandidate,
@@ -133,6 +144,7 @@ const PROJECT_STATUS_MESSAGE_CLEAR_DELAY_MS = 2200;
 const AUTOMATION_HISTORY_LIMIT = 20;
 const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
+const LIVE_PROJECT_LOG_ENTRY_LIMIT = 2_000;
 const waitForInitialPaint = (): Promise<void> => {
   if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
     return Promise.resolve();
@@ -156,6 +168,11 @@ let projectConfigMessageClearTimer: number | null = null;
 let projectStatusMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
 let runtimeReconciliationPromise: Promise<void> | null = null;
+let projectLaunchServiceAutomationRevision = 0;
+let projectLaunchServiceAutomationSyncPromise: Promise<void> | null = null;
+let projectLaunchServiceOwnershipHandoff = false;
+type ServiceAutomationSubmission = { entryId: string };
+const serviceAutomationSubmissions = new Map<string, ServiceAutomationSubmission>();
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
 const gitStatusRefreshPromises = new Map<string, Promise<void>>();
 const gitWorkingTreeRefreshPromises = new Map<string, Promise<void>>();
@@ -169,6 +186,41 @@ const gitLoadMoreTokens = new Map<string, symbol>();
 const gitWorkspaceRefreshTokens = new Map<string, symbol>();
 const gitMutationVersions = new Map<string, number>();
 const gitRefMutationVersions = new Map<string, number>();
+
+function beginServiceAutomationSubmission(projectId: string) {
+  if (serviceAutomationSubmissions.has(projectId)) {
+    return false;
+  }
+  serviceAutomationSubmissions.set(projectId, { entryId: "" });
+  return true;
+}
+
+function updateServiceAutomationSubmission(projectId: string, entryId: string) {
+  if (serviceAutomationSubmissions.has(projectId)) {
+    serviceAutomationSubmissions.set(projectId, { entryId });
+  }
+}
+
+function releaseServiceAutomationSubmission(projectId: string) {
+  serviceAutomationSubmissions.delete(projectId);
+}
+
+function notifyAutomationTaskCompletion(
+  task: Pick<ProjectAutomationTask, "name" | "notifyEnabled">,
+  status: ProjectAutomationHistoryEntry["status"],
+  reason: string,
+) {
+  if (!task.notifyEnabled) {
+    return;
+  }
+
+  const outcome =
+    status === "completed" ? "已完成" : status === "missed" ? "已错过" : status === "skipped" ? "已跳过" : "失败";
+  try {
+    window.utools?.showNotification?.(`任务“${task.name}”${outcome}${reason ? `：${reason}` : ""}`);
+  } catch {}
+}
+
 const queueGitWriteLock = (contextKey: string) => {
   const previousWrite = gitWriteLocks.get(contextKey) || Promise.resolve();
   let release: () => void = () => {};
@@ -228,9 +280,94 @@ interface AutomationScriptRuntimeContext {
 }
 
 const automationScriptContexts = new Map<string, AutomationScriptRuntimeContext>();
+type PendingRuntimeTerminalEvent = ProjectBridgeEvent & { type: "exit" | "error" };
+const pendingRuntimeTerminalEvents = new Map<string, PendingRuntimeTerminalEvent>();
+const pendingRuntimeTerminalEventLimit = 64;
+type RuntimeRunObservation = "active" | "pending-terminal" | "terminal";
+const runtimeRunObservations = new Map<string, RuntimeRunObservation>();
+const runtimeRunObservationLimit = 128;
+const observedServiceEvents = new Map<string, true>();
+const observedServiceEventLimit = 512;
+const liveLogScriptIds = new WeakMap<LogEntry, string>();
+
+function trimLiveProjectLogs(projectLogs: LogEntry[], scriptLogs?: Record<string, LogEntry[]>) {
+  const overflow = projectLogs.length - LIVE_PROJECT_LOG_ENTRY_LIMIT;
+  if (overflow <= 0) {
+    return;
+  }
+
+  const removedLogs = projectLogs.splice(0, overflow);
+  for (const log of removedLogs) {
+    const scriptId = liveLogScriptIds.get(log);
+    const scriptEntries = scriptId ? scriptLogs?.[scriptId] : undefined;
+    if (!scriptEntries) {
+      continue;
+    }
+    if (scriptEntries[0] === log) {
+      scriptEntries.shift();
+      continue;
+    }
+    const entryIndex = scriptEntries.indexOf(log);
+    if (entryIndex >= 0) {
+      scriptEntries.splice(entryIndex, 1);
+    }
+  }
+}
 
 function automationScriptContextKey(projectId: string, scriptId: string) {
   return `${projectId}::${scriptId}`;
+}
+
+function pendingRuntimeTerminalEventKey(projectId: string, scriptId: string, runId: string) {
+  return `${projectId}\u0000${scriptId}\u0000${runId}`;
+}
+
+function rememberRuntimeRun(key: string, observation: RuntimeRunObservation) {
+  runtimeRunObservations.delete(key);
+  runtimeRunObservations.set(key, observation);
+  while (runtimeRunObservations.size > runtimeRunObservationLimit) {
+    const oldestKey = runtimeRunObservations.keys().next().value;
+    if (oldestKey === undefined) break;
+    runtimeRunObservations.delete(oldestKey);
+  }
+}
+
+function hasObservedServiceEvent(event: ProjectBridgeProcessEvent) {
+  const { cursor, runId } = event;
+  if (
+    event.runtimeOwner !== "service" ||
+    !runId ||
+    typeof cursor !== "number" ||
+    !Number.isSafeInteger(cursor) ||
+    cursor < 0
+  ) {
+    return false;
+  }
+
+  const key = `${runId}\u0000${cursor}`;
+  if (observedServiceEvents.has(key)) {
+    return true;
+  }
+  observedServiceEvents.set(key, true);
+  while (observedServiceEvents.size > observedServiceEventLimit) {
+    const oldestKey = observedServiceEvents.keys().next().value;
+    if (oldestKey === undefined) break;
+    observedServiceEvents.delete(oldestKey);
+  }
+  return false;
+}
+
+function isPendingRuntimeTerminalEvent(event: ProjectBridgeEvent): event is PendingRuntimeTerminalEvent {
+  return event.type === "exit" || event.type === "error";
+}
+
+function clearPendingRuntimeTerminalEvents(projectId: string, scriptId: string) {
+  const prefix = `${projectId}\u0000${scriptId}\u0000`;
+  for (const key of pendingRuntimeTerminalEvents.keys()) {
+    if (key.startsWith(prefix)) {
+      pendingRuntimeTerminalEvents.delete(key);
+    }
+  }
 }
 
 function clearAutomationSchedulerTimer() {
@@ -462,6 +599,9 @@ function normalizeProjectScripts(projectId: string, value: unknown): ProjectScri
       pid: typeof candidate.pid === "number" ? candidate.pid : undefined,
       note: typeof candidate.note === "string" ? candidate.note : "",
       source,
+      runId: typeof candidate.runId === "string" && candidate.runId.trim() ? candidate.runId : undefined,
+      runtimeOwner:
+        candidate.runtimeOwner === "service" ? "service" : candidate.runtimeOwner === "preload" ? "preload" : undefined,
     });
 
     return normalizedScripts;
@@ -763,6 +903,51 @@ function resolveScriptCwd(projectPath: string, scriptCwd: string | undefined): s
   }
 
   return `${projectPath.replace(/[\\/]$/, "")}/${cwd}`;
+}
+
+function buildProjectLaunchServiceAutomationConfig(
+  projects: Project[],
+  revision: number,
+): ProjectLaunchServiceAutomationConfig {
+  return {
+    schemaVersion: 1,
+    revision,
+    projects: projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      path: project.path,
+      env: { ...project.env },
+      scripts: project.scripts.map((script) => ({
+        id: script.id,
+        name: script.name,
+        command: script.command,
+        cwd: resolveScriptCwd(project.path, script.cwd),
+      })),
+      automationTasks: normalizeAutomationTasks(project.id, project.automationTasks).map((task) => ({
+        id: task.id,
+        name: task.name,
+        enabled: task.enabled,
+        scriptIds: [...task.scriptIds],
+        missedPolicy: task.missedPolicy,
+        missedGraceMinutes: task.missedGraceMinutes,
+        maxScriptRuntimeMinutes: task.maxScriptRuntimeMinutes,
+        inputConfigs: task.inputConfigs.map((config) => ({
+          scriptId: config.scriptId,
+          steps: config.steps.map((step) => ({ ...step })),
+        })),
+        exitConfigs: task.exitConfigs.map((config) => ({ ...config })),
+        dailyPlans: task.dailyPlans.map((plan) => ({
+          date: plan.date,
+          entries: plan.entries.map((entry) => ({
+            id: entry.id,
+            plannedAt: new Date(entry.plannedAt).toISOString(),
+            status: entry.status,
+            ...(serviceAutomationSubmissions.get(project.id)?.entryId === entry.id ? { runEarly: true } : {}),
+          })),
+        })),
+      })),
+    })),
+  };
 }
 
 const normalizeGitCommitSkip = (value: unknown, fallback: number) =>
@@ -1095,9 +1280,13 @@ function hydrateProject(project: Project): Project {
   };
 }
 
-function createLogEntry(message: string, type: LogEntry["type"]): LogEntry {
+function createLogEntry(message: string, type: LogEntry["type"], eventTimestamp?: string): LogEntry {
+  const eventTime = eventTimestamp ? new Date(eventTimestamp) : null;
   return {
-    timestamp: new Date().toLocaleTimeString(),
+    timestamp:
+      eventTime && !Number.isNaN(eventTime.getTime())
+        ? eventTime.toLocaleTimeString()
+        : new Date().toLocaleTimeString(),
     message,
     type,
   };
@@ -1142,6 +1331,48 @@ function classifyProcessOutputLine(line: string, source: "stdout" | "stderr"): L
   }
 
   return source === "stderr" ? "INFO" : "INFO";
+}
+
+function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog): LogEntry[] {
+  const entries: LogEntry[] = [];
+  for (const event of runLog.events) {
+    const createEntry = (message: string, type: LogEntry["type"]) => createLogEntry(message, type, event.timestamp);
+    if (event.type === "started") {
+      entries.push(
+        createEntry(
+          [`started (pid ${event.pid || 0})`, event.message || "", event.cwd ? `cwd: ${event.cwd}` : ""]
+            .filter(Boolean)
+            .join(" · "),
+          "SUCCESS",
+        ),
+      );
+      continue;
+    }
+    if (event.type === "stdout" || event.type === "stderr") {
+      const outputSource = event.type;
+      normalizeLogLines(event.message || "").forEach((line) => {
+        entries.push(createEntry(line, classifyProcessOutputLine(line, outputSource)));
+      });
+      continue;
+    }
+    if (event.type === "stdin") {
+      entries.push(createEntry(`> ${event.message || ""}`, "INFO"));
+      continue;
+    }
+    if (event.type === "exit") {
+      const stopped = event.stoppedByUser === true;
+      const succeeded = stopped || event.automationExitMatched === true || event.code === 0;
+      entries.push(
+        createEntry(
+          stopped ? "stopped" : `exited with code ${event.code ?? "unknown"}`,
+          succeeded ? "SUCCESS" : "ERROR",
+        ),
+      );
+      continue;
+    }
+    entries.push(createEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"));
+  }
+  return entries;
 }
 
 function demoProject(id: string, project: Project): Project {
@@ -1334,6 +1565,9 @@ export const useStore = defineStore("app", {
     terminalPreferences: bridge.loadTerminalPreferences(),
     externalApplicationPreferences: bridge.loadExternalApplicationPreferences(),
     environmentPreferences: bridge.loadEnvironmentPreferences(),
+    projectLaunchServicePreferences: bridge.loadProjectLaunchServicePreferences() as ProjectLaunchServicePreferences,
+    projectLaunchServiceStatus: null as ProjectLaunchServiceStatus | null,
+    projectLaunchServiceLogRetentionStatus: null as ProjectLaunchServiceLogRetentionStatus | null,
     builtinEnvironmentTools: bridge.loadBuiltinEnvironmentTools() as EnvironmentToolDefinition[],
     environmentResults: [] as EnvironmentToolResult[],
     environmentChecked: false,
@@ -1447,6 +1681,13 @@ export const useStore = defineStore("app", {
       },
     pendingDeleteProject: (state): Project | undefined =>
       state.projects.find((project) => project.id === state.pendingDeleteProjectId),
+    hasActiveProjectLaunchServiceRuns: (state): boolean =>
+      state.projects.some((project) =>
+        project.scripts.some(
+          (script) =>
+            script.runtimeOwner === "service" && (script.status === "RUNNING" || script.status === "STOPPING"),
+        ),
+      ),
     currentMessages: (state) => (state.locale === "zh-CN" ? "zh-CN" : "en-US"),
   },
 
@@ -1457,6 +1698,7 @@ export const useStore = defineStore("app", {
       this.terminalPreferences = bridge.loadTerminalPreferences();
       this.externalApplicationPreferences = bridge.loadExternalApplicationPreferences();
       this.environmentPreferences = bridge.loadEnvironmentPreferences();
+      this.projectLaunchServicePreferences = bridge.loadProjectLaunchServicePreferences();
       this.aiPreferences = bridge.loadAiPreferences();
       markStartupPhase?.("projects-load-preferences-complete");
 
@@ -1493,6 +1735,10 @@ export const useStore = defineStore("app", {
       await this.refreshProjectAvailability();
       markStartupPhase?.("projects-load-path-availability-complete");
 
+      this.projectLaunchServiceStatus = this.projectLaunchServicePreferences.enabled
+        ? await bridge.reconcileProjectLaunchService()
+        : await bridge.getProjectLaunchServiceStatus();
+      this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
       void this.refreshDashboardGitChangeCounts();
 
       markStartupPhase?.("projects-load-runtime-reconciliation-start");
@@ -1503,7 +1749,167 @@ export const useStore = defineStore("app", {
       this.recomputeAutomationPlans();
       markStartupPhase?.("projects-load-automation-plan-recomputation-complete");
     },
-    async persistProjects() {
+    reconcileProjectLaunchServiceRuntime(status: ProjectLaunchServiceStatus | null) {
+      if (!this.projectLaunchServicePreferences.enabled) {
+        for (const project of this.projects) {
+          let clearedServiceRuntime = false;
+          for (const script of project.scripts) {
+            if (script.runtimeOwner !== "service") {
+              continue;
+            }
+            script.status = "ERROR";
+            script.pid = undefined;
+            script.runId = undefined;
+            script.runtimeOwner = undefined;
+            clearedServiceRuntime = true;
+          }
+          if (clearedServiceRuntime) {
+            project.status = deriveProjectStatus(project);
+            project.lastUpdated = new Date().toLocaleString();
+          }
+        }
+        return;
+      }
+      if (status?.state !== "healthy" || !status.running) {
+        return;
+      }
+
+      const latestRuns = new Map<string, NonNullable<ProjectLaunchServiceStatus["runs"]>[number]>();
+      const lostServiceRunIds = new Set<string>();
+      for (const run of status.runs || []) {
+        if (!run.projectId || !run.scriptId || !run.id) {
+          continue;
+        }
+        const key = `${run.projectId}\u0000${run.scriptId}`;
+        const previous = latestRuns.get(key);
+        if (!previous || new Date(run.startedAt).getTime() >= new Date(previous.startedAt).getTime()) {
+          latestRuns.set(key, run);
+        }
+        if (run.status === "lost") {
+          lostServiceRunIds.add(run.id);
+        }
+      }
+
+      for (const run of latestRuns.values()) {
+        const project = this.projects.find((item) => item.id === run.projectId);
+        const script = project?.scripts.find((item) => item.id === run.scriptId);
+        if (!project || !script) {
+          continue;
+        }
+
+        const isActiveServiceRun = run.status === "starting" || run.status === "running" || run.status === "stopping";
+        rememberRuntimeRun(
+          pendingRuntimeTerminalEventKey(run.projectId, run.scriptId, run.id),
+          isActiveServiceRun ? "active" : "terminal",
+        );
+        if (isActiveServiceRun) {
+          const pid = run.pid;
+          script.status = run.status === "stopping" ? "STOPPING" : "RUNNING";
+          script.pid = typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? pid : undefined;
+          script.runId = run.id;
+          script.runtimeOwner = "service";
+        } else {
+          script.status =
+            run.status === "failed" ? "ERROR" : run.status === "stopped" || run.status === "lost" ? "STOPPED" : "IDLE";
+          script.pid = undefined;
+          script.runId = undefined;
+          script.runtimeOwner = undefined;
+        }
+        project.status = deriveProjectStatus(project);
+        project.lastUpdated = new Date().toLocaleString();
+      }
+
+      const serviceActiveAutomationRuns: Record<string, string> = {};
+      const serviceExecutions = status.automation?.executions;
+      for (const execution of serviceExecutions || []) {
+        if (!execution.id || !execution.projectId || !execution.taskId || !execution.planEntryId) {
+          continue;
+        }
+        if (serviceAutomationSubmissions.get(execution.projectId)?.entryId === execution.planEntryId) {
+          releaseServiceAutomationSubmission(execution.projectId);
+        }
+        if (execution.status === "running") {
+          serviceActiveAutomationRuns[execution.projectId] = execution.id;
+        }
+        const project = this.projects.find((item) => item.id === execution.projectId);
+        const task = project?.automationTasks?.find((item) => item.id === execution.taskId);
+        const entry = task?.dailyPlans
+          .flatMap((plan) => plan.entries)
+          .find((item) => item.id === execution.planEntryId);
+        if (!project || !task || !entry) {
+          continue;
+        }
+
+        entry.status = execution.status;
+        entry.runId = execution.id;
+        entry.reason = execution.reason || undefined;
+        if (execution.status === "running") {
+          this.automationActiveProjectRuns[project.id] = execution.id;
+          task.updatedAt = execution.startedAt || task.updatedAt;
+          continue;
+        }
+
+        if (this.automationActiveProjectRuns[project.id] === execution.id) {
+          delete this.automationActiveProjectRuns[project.id];
+        }
+        const historyEntry: ProjectAutomationHistoryEntry = {
+          id: execution.id,
+          taskId: task.id,
+          taskName: task.name,
+          projectId: project.id,
+          projectName: project.name,
+          plannedAt: entry.plannedAt,
+          startedAt: execution.startedAt,
+          endedAt: execution.endedAt,
+          status: execution.status,
+          reason: execution.reason || undefined,
+          scriptResults: execution.scriptResults.map((result) => ({
+            ...result,
+            scriptName: project.scripts.find((script) => script.id === result.scriptId)?.name || result.scriptId,
+          })),
+        };
+        const existingHistoryIndex = task.history.findIndex((item) => item.id === historyEntry.id);
+        task.history = normalizeAutomationHistory(
+          existingHistoryIndex === -1
+            ? [historyEntry, ...task.history]
+            : task.history.map((item, index) => (index === existingHistoryIndex ? historyEntry : item)),
+        );
+        task.updatedAt = execution.endedAt || execution.startedAt || task.updatedAt;
+        if (existingHistoryIndex === -1) {
+          notifyAutomationTaskCompletion(task, execution.status, execution.reason || "");
+        }
+      }
+
+      if (Array.isArray(serviceExecutions)) {
+        Object.entries(this.automationActiveProjectRuns).forEach(([projectId, runId]) => {
+          const currentServiceRunId = serviceActiveAutomationRuns[projectId];
+          if (currentServiceRunId) {
+            this.automationActiveProjectRuns[projectId] = currentServiceRunId;
+          } else if (runId) {
+            delete this.automationActiveProjectRuns[projectId];
+          }
+        });
+      }
+
+      const eventTypes = new Set<ProjectBridgeEvent["type"]>(["started", "stdout", "stderr", "stdin", "exit", "error"]);
+      for (const event of status.events || []) {
+        if (!eventTypes.has(event.type)) {
+          continue;
+        }
+        const pid = event.pid;
+        const bridgeEvent: ProjectBridgeProcessEvent = {
+          ...event,
+          pid: typeof pid === "number" && Number.isInteger(pid) ? pid : 0,
+          runtimeOwner: "service",
+        };
+        if (bridgeEvent.type === "error" && bridgeEvent.runId && lostServiceRunIds.has(bridgeEvent.runId)) {
+          hasObservedServiceEvent(bridgeEvent);
+          continue;
+        }
+        this.handleBridgeEvent(bridgeEvent);
+      }
+    },
+    async persistProjects(synchronizeProjectLaunchService = true) {
       try {
         const persistedProjects = this.projects.map((project, index) => {
           const persistedProject = toPersistedProject(project, index);
@@ -1514,6 +1920,9 @@ export const useStore = defineStore("app", {
         this.projectStorageMessage = "";
       } catch (error) {
         this.projectStorageMessage = "项目配置保存失败，请稍后重试";
+      }
+      if (synchronizeProjectLaunchService && this.projectLaunchServicePreferences.enabled) {
+        void this.queueProjectLaunchServiceAutomationSync();
       }
     },
     async refreshProjectAvailability() {
@@ -1533,6 +1942,8 @@ export const useStore = defineStore("app", {
             project.scripts.forEach((script) => {
               script.status = "IDLE";
               script.pid = undefined;
+              script.runId = undefined;
+              script.runtimeOwner = undefined;
             });
           }
         }),
@@ -1543,6 +1954,252 @@ export const useStore = defineStore("app", {
     },
     setTheme(theme: "light" | "dark" | "auto") {
       this.theme = theme;
+    },
+    async refreshProjectLaunchServiceStatus(verifyManualInstall = false) {
+      const serviceEnabled = this.projectLaunchServicePreferences.enabled;
+      const status = serviceEnabled
+        ? await bridge.reconcileProjectLaunchService()
+        : await bridge.getProjectLaunchServiceStatus();
+      this.projectLaunchServiceStatus =
+        verifyManualInstall && !serviceEnabled && status.installed && !status.running
+          ? await bridge.verifyProjectLaunchServiceInstall()
+          : status;
+      if (this.projectLaunchServicePreferences.enabled) {
+        this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
+        await this.reconcileRuntimeProcessState();
+      }
+      return this.projectLaunchServiceStatus;
+    },
+    async checkProjectLaunchServiceUpdate() {
+      this.projectLaunchServiceStatus = await bridge.checkProjectLaunchServiceUpdate();
+      return this.projectLaunchServiceStatus;
+    },
+    async loadProjectLaunchServiceRunLog(runId: string) {
+      const runLog = await bridge.getProjectLaunchServiceRunLog(runId);
+      return {
+        ...runLog,
+        logs: retainedRunLogEntries(runLog),
+      };
+    },
+    async loadProjectLaunchServiceRunLogPage(runId: string, beforeOffset: number) {
+      const runLog = await bridge.getProjectLaunchServiceRunLogPage(runId, beforeOffset);
+      return {
+        ...runLog,
+        logs: retainedRunLogEntries(runLog),
+      };
+    },
+    async refreshProjectLaunchServiceLogRetention() {
+      this.projectLaunchServiceLogRetentionStatus = await bridge.getProjectLaunchServiceLogRetention();
+      return this.projectLaunchServiceLogRetentionStatus;
+    },
+    async updateProjectLaunchServiceLogRetention(policy: ProjectLaunchServiceLogRetentionPolicy) {
+      this.projectLaunchServiceLogRetentionStatus = await bridge.updateProjectLaunchServiceLogRetention(policy);
+      return this.projectLaunchServiceLogRetentionStatus;
+    },
+    async listProjectLaunchServiceLogs(projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]> {
+      return bridge.listProjectLaunchServiceLogs(projectId);
+    },
+    async clearProjectLaunchServiceLogs(
+      scope?: ProjectLaunchServiceLogClearScope,
+    ): Promise<ProjectLaunchServiceLogClearResult> {
+      return bridge.clearProjectLaunchServiceLogs(scope);
+    },
+    async downloadProjectLaunchService() {
+      this.projectLaunchServiceStatus = {
+        ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+        state: "starting",
+        message: "正在下载项目启动服务。",
+      };
+      try {
+        this.projectLaunchServiceStatus = await bridge.downloadProjectLaunchService();
+      } catch (error) {
+        this.projectLaunchServiceStatus = {
+          ...this.projectLaunchServiceStatus,
+          state: "unavailable",
+          message: error instanceof Error ? error.message : "项目启动服务下载失败。",
+        };
+      }
+      return this.projectLaunchServiceStatus;
+    },
+    async openProjectLaunchServiceDirectory() {
+      await bridge.openProjectLaunchServiceDirectory();
+    },
+    async openProjectLaunchServiceReleases() {
+      await bridge.openProjectLaunchServiceReleases();
+    },
+    async synchronizeProjectLaunchServiceAutomation() {
+      const status = await bridge.reconcileProjectLaunchService();
+      this.projectLaunchServiceStatus = status;
+      if (status.state !== "healthy" || !status.running) {
+        throw new Error(status.message || "项目启动服务不可用，无法同步自动化配置。");
+      }
+
+      const revision = Math.max(projectLaunchServiceAutomationRevision, status.automationRevision || 0) + 1;
+      const result = await bridge.syncProjectLaunchServiceAutomation(
+        buildProjectLaunchServiceAutomationConfig(this.projects, revision),
+      );
+      if (!result.accepted || result.revision !== revision) {
+        throw new Error(result.message || "项目启动服务没有确认自动化配置。");
+      }
+
+      projectLaunchServiceAutomationRevision = result.revision;
+      this.projectLaunchServiceStatus = {
+        ...status,
+        automationRevision: result.revision,
+      };
+      return result;
+    },
+    queueProjectLaunchServiceAutomationSync() {
+      if (!this.projectLaunchServicePreferences.enabled) {
+        return Promise.resolve();
+      }
+
+      const previous = projectLaunchServiceAutomationSyncPromise || Promise.resolve();
+      const queued = previous
+        .catch(() => undefined)
+        .then(async () => {
+          if (!this.projectLaunchServicePreferences.enabled) {
+            return;
+          }
+          try {
+            await this.synchronizeProjectLaunchServiceAutomation();
+          } catch (error) {
+            this.projectLaunchServiceStatus = {
+              ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+              state: "unavailable",
+              message: error instanceof Error ? error.message : "项目启动服务自动化配置同步失败。",
+            };
+          }
+        });
+      projectLaunchServiceAutomationSyncPromise = queued;
+      void queued.finally(() => {
+        if (projectLaunchServiceAutomationSyncPromise === queued) {
+          projectLaunchServiceAutomationSyncPromise = null;
+        }
+      });
+      return queued;
+    },
+    async synchronizeProjectLaunchServiceAutomationForUserAction() {
+      await (projectLaunchServiceAutomationSyncPromise || Promise.resolve());
+      try {
+        await this.synchronizeProjectLaunchServiceAutomation();
+        return true;
+      } catch (error) {
+        this.projectLaunchServiceStatus = {
+          ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+          state: "unavailable",
+          message: error instanceof Error ? error.message : "项目启动服务自动化配置同步失败。",
+        };
+        return false;
+      }
+    },
+    async setProjectLaunchServiceEnabled(enabled: boolean) {
+      if (enabled && projectLaunchServiceOwnershipHandoff) {
+        return this.projectLaunchServiceStatus;
+      }
+      if (enabled === this.projectLaunchServicePreferences.enabled) {
+        if (enabled) {
+          try {
+            await this.synchronizeProjectLaunchServiceAutomation();
+          } catch (error) {
+            this.projectLaunchServiceStatus = {
+              ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+              state: "unavailable",
+              message: error instanceof Error ? error.message : "项目启动服务自动化配置同步失败。",
+            };
+          }
+        }
+        return this.projectLaunchServiceStatus;
+      }
+
+      if (enabled) {
+        const activeScripts = this.projects.flatMap((project) =>
+          project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
+        );
+        if (activeScripts.length > 0) {
+          this.projectLaunchServiceStatus = {
+            ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+            state: "unavailable",
+            message: "请先停止当前脚本，再启用项目启动服务。",
+          };
+          return this.projectLaunchServiceStatus;
+        }
+      } else if (this.hasActiveProjectLaunchServiceRuns) {
+        return this.projectLaunchServiceStatus;
+      }
+
+      if (enabled) {
+        projectLaunchServiceOwnershipHandoff = true;
+        clearAutomationSchedulerTimer();
+        this.automationNextTimerAt = "";
+        let serviceStartedForHandoff = false;
+        try {
+          const currentStatus = this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus());
+          this.projectLaunchServiceStatus = {
+            ...currentStatus,
+            state: "starting",
+            message: "正在启动项目启动服务。",
+          };
+          let installAlreadyVerified = false;
+          if (currentStatus.state === "installed" && currentStatus.installed && !currentStatus.running) {
+            const verified = await bridge.verifyProjectLaunchServiceInstall();
+            this.projectLaunchServiceStatus = verified;
+            if (verified.state !== "installed" || !verified.installed || verified.running) {
+              throw new Error(verified.message || "项目启动服务校验失败，无法启用服务模式。");
+            }
+            this.projectLaunchServiceStatus = {
+              ...verified,
+              state: "starting",
+              message: "正在启动项目启动服务。",
+            };
+            installAlreadyVerified = true;
+          }
+          const started = installAlreadyVerified
+            ? await bridge.startProjectLaunchService({ requireVerifiedInstall: false })
+            : await bridge.startProjectLaunchService();
+          this.projectLaunchServiceStatus = started;
+          if (started.state !== "healthy" || !started.running) {
+            throw new Error(started.message || "项目启动服务不可用，无法启用服务模式。");
+          }
+          serviceStartedForHandoff = true;
+          await this.synchronizeProjectLaunchServiceAutomation();
+          this.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+          bridge.saveProjectLaunchServicePreferences(this.projectLaunchServicePreferences);
+        } catch (error) {
+          if (serviceStartedForHandoff) {
+            try {
+              await bridge.stopProjectLaunchService();
+            } catch (stopError) {
+              // Keep the failed handoff as the user-visible state.
+            }
+          }
+          this.projectLaunchServicePreferences = { schemaVersion: 1, enabled: false };
+          this.projectLaunchServiceStatus = {
+            ...(this.projectLaunchServiceStatus || (await bridge.getProjectLaunchServiceStatus())),
+            state: "unavailable",
+            message: error instanceof Error ? error.message : "项目启动服务自动化配置同步失败。",
+          };
+        } finally {
+          projectLaunchServiceOwnershipHandoff = false;
+          this.scheduleAutomationTimer();
+        }
+        return this.projectLaunchServiceStatus;
+      }
+
+      const stopped = await bridge.stopProjectLaunchService();
+      if (stopped.running) {
+        this.projectLaunchServiceStatus = {
+          ...stopped,
+          state: "unavailable",
+          message: stopped.message || "项目启动服务仍有活动进程，无法关闭。",
+        };
+        return this.projectLaunchServiceStatus;
+      }
+      this.projectLaunchServicePreferences = { schemaVersion: 1, enabled: false };
+      bridge.saveProjectLaunchServicePreferences(this.projectLaunchServicePreferences);
+      this.projectLaunchServiceStatus = await bridge.getProjectLaunchServiceStatus();
+      this.scheduleAutomationTimer();
+      return this.projectLaunchServiceStatus;
     },
     setProjectDetailsTabOrder(order: ProjectDetailsTabId[]) {
       const nextPreferences = normalizeUiPreferences({
@@ -3955,6 +4612,10 @@ export const useStore = defineStore("app", {
     },
     scheduleAutomationTimer() {
       clearAutomationSchedulerTimer();
+      if (projectLaunchServiceOwnershipHandoff || this.projectLaunchServicePreferences.enabled) {
+        this.automationNextTimerAt = "";
+        return;
+      }
       const now = new Date();
       const today = dateKey(now);
       const upcoming: Array<{ projectId: string; taskId: string; entry: ProjectAutomationPlanEntry }> = [];
@@ -4138,15 +4799,27 @@ export const useStore = defineStore("app", {
       const reconciliation = async () => {
         const runningScripts = this.projects.flatMap((project) =>
           project.scripts
-            .filter((script) => (script.status === "RUNNING" || script.status === "STOPPING") && script.pid)
-            .map((script) => ({ project, script, pid: script.pid as number })),
+            .filter(
+              (script) =>
+                (script.status === "RUNNING" || script.status === "STOPPING") &&
+                (script.pid || (script.runtimeOwner === "service" && script.runId)),
+            )
+            .map((script) => ({ project, script, pid: script.pid || 0 })),
         );
         let changed = false;
 
         const statuses = await Promise.all(
           runningScripts.map(async ({ project, script, pid }) => {
             try {
-              return { project, script, pid, status: await bridge.getProcessStatus(pid) };
+              return {
+                project,
+                script,
+                pid,
+                status: await bridge.getProcessStatus(pid, {
+                  runId: script.runId,
+                  runtimeOwner: script.runtimeOwner,
+                }),
+              };
             } catch (error) {
               return { project, script, pid, status: { active: true } };
             }
@@ -4158,6 +4831,23 @@ export const useStore = defineStore("app", {
             return;
           }
 
+          if (
+            status.serviceState &&
+            status.serviceState !== "healthy" &&
+            script.runtimeOwner === "service" &&
+            script.runId
+          ) {
+            if (this.projectLaunchServiceStatus) {
+              this.projectLaunchServiceStatus = {
+                ...this.projectLaunchServiceStatus,
+                state: status.serviceState,
+                running: false,
+                message: status.error || this.projectLaunchServiceStatus.message,
+              };
+            }
+            return;
+          }
+
           changed = true;
           if (status.error) {
             this.handleBridgeEvent({
@@ -4165,6 +4855,8 @@ export const useStore = defineStore("app", {
               projectId: project.id,
               scriptId: script.id,
               pid,
+              runId: script.runId,
+              runtimeOwner: script.runtimeOwner,
               automationRunId: status.automationRunId,
               automationExitMatched: status.automationExitMatched,
               message: status.error,
@@ -4177,6 +4869,8 @@ export const useStore = defineStore("app", {
             projectId: project.id,
             scriptId: script.id,
             pid,
+            runId: script.runId,
+            runtimeOwner: script.runtimeOwner,
             code: status.code ?? 0,
             signal: status.signal ?? null,
             stoppedByUser: Boolean(status.stoppedByUser || script.status === "STOPPING"),
@@ -4204,6 +4898,11 @@ export const useStore = defineStore("app", {
       return sharedPromise;
     },
     async runDueAutomationPlans() {
+      if (projectLaunchServiceOwnershipHandoff || this.projectLaunchServicePreferences.enabled) {
+        clearAutomationSchedulerTimer();
+        this.automationNextTimerAt = "";
+        return;
+      }
       this.markMissedAutomationPlans();
       const nowTime = Date.now();
       const dueEntries: Array<{ project: Project; task: ProjectAutomationTask; entry: ProjectAutomationPlanEntry }> =
@@ -4235,6 +4934,9 @@ export const useStore = defineStore("app", {
       void this.persistProjects();
     },
     recomputeAutomationPlans(projectId?: string) {
+      if (projectLaunchServiceOwnershipHandoff) {
+        return;
+      }
       const today = dateKey();
       this.projects
         .filter((project) => !projectId || project.id === projectId)
@@ -4249,6 +4951,10 @@ export const useStore = defineStore("app", {
             };
           });
         });
+      if (this.projectLaunchServicePreferences.enabled) {
+        void this.persistProjects();
+        return;
+      }
       this.markMissedAutomationPlans();
       void this.runDueAutomationPlans();
     },
@@ -4410,14 +5116,8 @@ export const useStore = defineStore("app", {
         ...task.history,
       ].slice(0, AUTOMATION_HISTORY_LIMIT);
       task.updatedAt = endedAt;
-      if (notify && task.notifyEnabled) {
-        try {
-          window.utools?.showNotification?.(
-            `任务“${task.name}”${status === "completed" ? "已完成" : status === "missed" ? "已错过" : status === "skipped" ? "已跳过" : "失败"}${reason ? `：${reason}` : ""}`,
-          );
-        } catch (error) {
-          // Notifications are best-effort and must not affect automation execution.
-        }
+      if (notify) {
+        notifyAutomationTaskCompletion(task, status, reason);
       }
     },
     async runAutomationTask(projectId: string, taskId: string, entryId: string) {
@@ -4425,6 +5125,13 @@ export const useStore = defineStore("app", {
       const task = project?.automationTasks?.find((item) => item.id === taskId);
       const entry = task?.dailyPlans.flatMap((plan) => plan.entries).find((item) => item.id === entryId);
       if (!project || !task || !entry || entry.status !== "pending") {
+        return;
+      }
+      if (projectLaunchServiceOwnershipHandoff) {
+        return;
+      }
+      if (this.projectLaunchServicePreferences.enabled) {
+        void this.persistProjects();
         return;
       }
       const runId = createAutomationRunId();
@@ -4515,68 +5222,131 @@ export const useStore = defineStore("app", {
       ].slice(0, AUTOMATION_HISTORY_LIMIT);
       entry.reason = finalReason || undefined;
       task.updatedAt = endedAt;
-      if (task.notifyEnabled) {
-        try {
-          window.utools?.showNotification?.(
-            `任务“${task.name}”${finalStatus === "completed" ? "已完成" : "失败"}${finalReason ? `：${finalReason}` : ""}`,
-          );
-        } catch (error) {
-          // Notifications are best-effort and must not affect automation execution.
-        }
-      }
+      notifyAutomationTaskCompletion(task, finalStatus, finalReason);
       this.scheduleAutomationTimer();
       void this.persistProjects();
     },
-    runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string) {
+    async runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const task = project?.automationTasks?.find((item) => item.id === taskId);
       const entry = task?.dailyPlans
         .find((plan) => plan.date === dateKey())
         ?.entries.find((item) => item.id === entryId);
       const plannedAtTime = entry ? new Date(entry.plannedAt).getTime() : Number.NaN;
+      const serviceEnabled = this.projectLaunchServicePreferences.enabled;
       if (
         !project ||
         !task ||
         !entry ||
+        projectLaunchServiceOwnershipHandoff ||
         entry.status !== "pending" ||
         !Number.isFinite(plannedAtTime) ||
         plannedAtTime <= Date.now() ||
         task.scriptIds.length === 0 ||
-        this.automationActiveProjectRuns[projectId]
+        this.automationActiveProjectRuns[projectId] ||
+        (serviceEnabled && serviceAutomationSubmissions.has(projectId))
       ) {
         return false;
+      }
+
+      if (serviceEnabled) {
+        if (!beginServiceAutomationSubmission(projectId)) {
+          return false;
+        }
+        let accepted = false;
+        try {
+          const status = await bridge.reconcileProjectLaunchService();
+          this.projectLaunchServiceStatus = status;
+          if (status.state !== "healthy" || !status.running) {
+            return false;
+          }
+          const previousReason = entry.reason;
+          entry.reason = "手动提前执行。";
+          updateServiceAutomationSubmission(projectId, entry.id);
+          if (!(await this.synchronizeProjectLaunchServiceAutomationForUserAction())) {
+            entry.reason = previousReason;
+            return false;
+          }
+          accepted = true;
+          void this.persistProjects(false);
+          return true;
+        } finally {
+          if (!accepted) {
+            releaseServiceAutomationSubmission(projectId);
+          }
+        }
       }
 
       void this.runAutomationTask(projectId, taskId, entryId);
       return true;
     },
-    runAutomationTaskNow(projectId: string, taskId: string) {
+    async runAutomationTaskNow(projectId: string, taskId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const task = project?.automationTasks?.find((item) => item.id === taskId);
-      if (!project || !task || task.scriptIds.length === 0 || this.automationActiveProjectRuns[projectId]) {
+      const serviceEnabled = this.projectLaunchServicePreferences.enabled;
+      if (
+        projectLaunchServiceOwnershipHandoff ||
+        !project ||
+        !task ||
+        task.scriptIds.length === 0 ||
+        this.automationActiveProjectRuns[projectId] ||
+        (serviceEnabled && serviceAutomationSubmissions.has(projectId))
+      ) {
         return false;
       }
 
-      const now = new Date();
-      const today = dateKey(now);
-      let todayPlan = task.dailyPlans.find((plan) => plan.date === today);
-      if (!todayPlan) {
-        todayPlan = generateAutomationDailyPlan(task.id, task.schedule, today);
-        task.dailyPlans = [todayPlan, ...task.dailyPlans].slice(0, 7);
+      if (serviceEnabled && !beginServiceAutomationSubmission(projectId)) {
+        return false;
       }
+      let acceptedServiceSubmission = false;
+      try {
+        if (serviceEnabled) {
+          const status = await bridge.reconcileProjectLaunchService();
+          this.projectLaunchServiceStatus = status;
+          if (status.state !== "healthy" || !status.running) {
+            return false;
+          }
+        }
 
-      const plannedAt = now.toISOString();
-      const manualEntry: ProjectAutomationPlanEntry = {
-        id: `${task.id}-${plannedAt}-manual`,
-        plannedAt,
-        status: "pending",
-        reason: "手动立即执行。",
-      };
-      todayPlan.entries = [...todayPlan.entries, manualEntry].sort(
-        (left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime(),
-      );
-      void this.runAutomationTask(projectId, taskId, manualEntry.id);
-      return true;
+        const now = new Date();
+        const today = dateKey(now);
+        let todayPlan = task.dailyPlans.find((plan) => plan.date === today);
+        const createdTodayPlan = !todayPlan;
+        if (!todayPlan) {
+          todayPlan = generateAutomationDailyPlan(task.id, task.schedule, today);
+          task.dailyPlans = [todayPlan, ...task.dailyPlans].slice(0, 7);
+        }
+
+        const plannedAt = now.toISOString();
+        const manualEntry: ProjectAutomationPlanEntry = {
+          id: `${task.id}-${plannedAt}-manual`,
+          plannedAt,
+          status: "pending",
+          reason: "手动立即执行。",
+        };
+        todayPlan.entries = [...todayPlan.entries, manualEntry].sort(
+          (left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime(),
+        );
+        if (serviceEnabled) {
+          updateServiceAutomationSubmission(projectId, manualEntry.id);
+          if (!(await this.synchronizeProjectLaunchServiceAutomationForUserAction())) {
+            todayPlan.entries = todayPlan.entries.filter((entry) => entry.id !== manualEntry.id);
+            if (createdTodayPlan) {
+              task.dailyPlans = task.dailyPlans.filter((plan) => plan !== todayPlan);
+            }
+            return false;
+          }
+          acceptedServiceSubmission = true;
+          void this.persistProjects(false);
+          return true;
+        }
+        void this.runAutomationTask(projectId, taskId, manualEntry.id);
+        return true;
+      } finally {
+        if (serviceEnabled && !acceptedServiceSubmission) {
+          releaseServiceAutomationSubmission(projectId);
+        }
+      }
     },
     ignoreMissedAutomationTask(projectId: string, taskId: string) {
       const project = this.projects.find((item) => item.id === projectId);
@@ -4758,6 +5528,9 @@ export const useStore = defineStore("app", {
       this.advanceAutomationInputStep(context);
     },
     handleAutomationBridgeEvent(event: ProjectBridgeEvent) {
+      if (event.type === "service-state") {
+        return;
+      }
       const context = automationScriptContexts.get(automationScriptContextKey(event.projectId, event.scriptId));
       if (!context || context.settled || event.automationRunId !== context.runId) {
         return;
@@ -4810,6 +5583,7 @@ export const useStore = defineStore("app", {
       const project = this.projects.find((item) => item.id === projectId);
       const script = project?.scripts.find((item) => item.id === scriptId);
       if (
+        projectLaunchServiceOwnershipHandoff ||
         !project ||
         !script ||
         project.pathExists === false ||
@@ -4836,15 +5610,110 @@ export const useStore = defineStore("app", {
           automationRunId,
         });
 
-        if (script.status === "RUNNING") {
-          script.pid = result.pid;
-          project.status = deriveProjectStatus(project);
-          project.lastUpdated = new Date().toLocaleString();
+        const activeProject = this.projects.find((item) => item.id === projectId);
+        const activeScript = activeProject?.scripts.find((item) => item.id === scriptId);
+        if (!activeProject || !activeScript) return result;
+
+        const stopRequestedBeforeResult = activeScript.status === "STOPPING";
+        const hadRuntimeIdentity = Boolean(activeScript.runId && activeScript.runtimeOwner);
+        if (activeScript.status === "RUNNING" || stopRequestedBeforeResult) {
+          activeScript.pid = Number.isInteger(result.pid) && result.pid > 0 ? result.pid : undefined;
+          activeScript.runId = result.runId;
+          activeScript.runtimeOwner = result.runtimeOwner;
+          if (result.runId) {
+            rememberRuntimeRun(pendingRuntimeTerminalEventKey(projectId, scriptId, result.runId), "active");
+          }
+          activeProject.status = deriveProjectStatus(activeProject);
+          activeProject.lastUpdated = new Date().toLocaleString();
+          if (result.runId) {
+            const pendingKey = pendingRuntimeTerminalEventKey(projectId, scriptId, result.runId);
+            const pendingEvent = pendingRuntimeTerminalEvents.get(pendingKey);
+            if (pendingEvent) {
+              pendingRuntimeTerminalEvents.delete(pendingKey);
+              this.handleBridgeEvent(pendingEvent);
+            }
+          }
+          if (stopRequestedBeforeResult && !hadRuntimeIdentity) {
+            const currentScript = activeProject.scripts.find((item) => item.id === scriptId);
+            if (currentScript?.status === "STOPPING") {
+              const pid = currentScript.pid;
+              const runId = currentScript.runId;
+              const runtimeOwner = currentScript.runtimeOwner;
+              if (pid || (runtimeOwner === "service" && runId)) {
+                scheduleProcessStop(pid || 0, {
+                  ...(runId === undefined ? {} : { runId }),
+                  ...(runtimeOwner === undefined ? {} : { runtimeOwner }),
+                });
+              } else {
+                currentScript.status = "STOPPED";
+                activeProject.status = deriveProjectStatus(activeProject);
+                activeProject.lastUpdated = new Date().toLocaleString();
+              }
+            }
+          }
         }
         return result;
       } catch (error) {
+        const errorCode = error && typeof error === "object" && "code" in error ? error.code : undefined;
+        if (this.projectLaunchServicePreferences.enabled && errorCode === "active_run_conflict") {
+          try {
+            const status = await bridge.reconcileProjectLaunchService();
+            this.projectLaunchServiceStatus = status;
+            this.reconcileProjectLaunchServiceRuntime(status);
+            const recoveredScript = this.projects
+              .find((item) => item.id === projectId)
+              ?.scripts.find((item) => item.id === scriptId);
+            if (recoveredScript?.runtimeOwner === "service" && recoveredScript.runId) {
+              return null;
+            }
+            this.projectLaunchServiceStatus = {
+              ...status,
+              state: "unavailable",
+              message: "项目启动服务存在活动运行，但当前窗口未能恢复其身份。",
+            };
+            clearPendingRuntimeTerminalEvents(projectId, scriptId);
+            script.status = "ERROR";
+            script.pid = undefined;
+            script.runId = undefined;
+            script.runtimeOwner = undefined;
+            project.status = deriveProjectStatus(project);
+            project.lastUpdated = new Date().toLocaleString();
+            this.addLog(
+              projectId,
+              createLogEntry("项目启动服务存在活动运行，但当前窗口未能恢复其身份。", "ERROR"),
+              scriptId,
+            );
+            return null;
+          } catch (reconcileError) {
+            const message = reconcileError instanceof Error ? reconcileError.message : "项目启动服务重连失败。";
+            try {
+              const status = await bridge.getProjectLaunchServiceStatus();
+              this.projectLaunchServiceStatus = { ...status, state: "unavailable", message };
+            } catch (statusError) {
+              if (this.projectLaunchServiceStatus) {
+                this.projectLaunchServiceStatus = {
+                  ...this.projectLaunchServiceStatus,
+                  state: "unavailable",
+                  message,
+                };
+              }
+            }
+            clearPendingRuntimeTerminalEvents(projectId, scriptId);
+            script.status = "ERROR";
+            script.pid = undefined;
+            script.runId = undefined;
+            script.runtimeOwner = undefined;
+            project.status = deriveProjectStatus(project);
+            project.lastUpdated = new Date().toLocaleString();
+            this.addLog(projectId, createLogEntry(message, "ERROR"), scriptId);
+            return null;
+          }
+        }
+        clearPendingRuntimeTerminalEvents(projectId, scriptId);
         script.status = "ERROR";
         script.pid = undefined;
+        script.runId = undefined;
+        script.runtimeOwner = undefined;
         project.status = deriveProjectStatus(project);
         project.lastUpdated = new Date().toLocaleString();
         this.addLog(
@@ -4881,14 +5750,27 @@ export const useStore = defineStore("app", {
       }
 
       const pid = script.pid;
+      const hasServiceRunIdentity = script.runtimeOwner === "service" && Boolean(script.runId);
+      const isServiceLaunchPending =
+        this.projectLaunchServicePreferences.enabled && !script.runtimeOwner && !script.runId;
       this.addLog(projectId, createLogEntry(`[${script.name}] stop requested`, "WARN"), scriptId);
-      script.status = pid ? "STOPPING" : "STOPPED";
+      script.status = pid || hasServiceRunIdentity || isServiceLaunchPending ? "STOPPING" : "STOPPED";
       project.status = deriveProjectStatus(project);
       project.lastUpdated = new Date().toLocaleString();
       void this.persistProjects();
 
-      if (pid) {
-        scheduleProcessStop(pid, stopOptions);
+      const runId = stopOptions?.runId || script.runId;
+      const runtimeOwner = stopOptions?.runtimeOwner || script.runtimeOwner;
+      if (pid || (runtimeOwner === "service" && runId)) {
+        if (stopOptions || runId !== undefined || runtimeOwner !== undefined) {
+          scheduleProcessStop(pid || 0, {
+            ...stopOptions,
+            ...(runId === undefined ? {} : { runId }),
+            ...(runtimeOwner === undefined ? {} : { runtimeOwner }),
+          });
+        } else {
+          scheduleProcessStop(pid || 0);
+        }
       } else {
         this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "SUCCESS"), scriptId);
       }
@@ -4901,9 +5783,12 @@ export const useStore = defineStore("app", {
             return;
           }
 
-          if (script.pid) {
+          if (script.pid || (script.runtimeOwner === "service" && script.runId)) {
             const pid = script.pid;
-            scheduleProcessStop(pid);
+            scheduleProcessStop(pid || 0, {
+              ...(script.runId === undefined ? {} : { runId: script.runId }),
+              ...(script.runtimeOwner === undefined ? {} : { runtimeOwner: script.runtimeOwner }),
+            });
             script.status = "STOPPING";
           } else {
             script.status = "STOPPED";
@@ -4923,11 +5808,15 @@ export const useStore = defineStore("app", {
       const line = input;
       const project = this.projects.find((item) => item.id === projectId);
       const script = project?.scripts.find((item) => item.id === scriptId);
-      if (!project || !script || script.status !== "RUNNING" || !script.pid) {
+      const serviceRunWithoutPid = script?.runtimeOwner === "service" && Boolean(script.runId);
+      if (!project || !script || script.status !== "RUNNING" || (!script.pid && !serviceRunWithoutPid)) {
         return { sent: false, message: "当前选中的脚本不可输入。" };
       }
 
-      const result = await bridge.sendProcessInput(script.pid, line);
+      const result = await bridge.sendProcessInput(script.pid || 0, line, {
+        runId: script.runId,
+        runtimeOwner: script.runtimeOwner,
+      });
       if (!result.sent) {
         this.addLog(projectId, createLogEntry(result.message || "输入发送失败。", "WARN"), scriptId);
       }
@@ -5163,7 +6052,8 @@ export const useStore = defineStore("app", {
       if (!this.logs[projectId]) {
         this.logs[projectId] = [];
       }
-      this.logs[projectId].push(log);
+      this.logs[projectId].push({ ...log });
+      const storedLog = this.logs[projectId][this.logs[projectId].length - 1];
       if (scriptId) {
         if (!this.scriptLogs[projectId]) {
           this.scriptLogs[projectId] = {};
@@ -5171,8 +6061,10 @@ export const useStore = defineStore("app", {
         if (!this.scriptLogs[projectId][scriptId]) {
           this.scriptLogs[projectId][scriptId] = [];
         }
-        this.scriptLogs[projectId][scriptId].push(log);
+        this.scriptLogs[projectId][scriptId].push(storedLog);
+        liveLogScriptIds.set(storedLog, scriptId);
       }
+      trimLiveProjectLogs(this.logs[projectId], this.scriptLogs[projectId]);
     },
     clearLogs(projectId: string) {
       this.logs[projectId] = [];
@@ -5307,6 +6199,14 @@ export const useStore = defineStore("app", {
       this.setProjectConfigMessage(`已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`);
     },
     handleBridgeEvent(event: ProjectBridgeEvent) {
+      if (event.type === "service-state") {
+        this.projectLaunchServiceStatus = event.status;
+        this.reconcileProjectLaunchServiceRuntime(event.status);
+        return;
+      }
+      if (hasObservedServiceEvent(event)) {
+        return;
+      }
       const automationContext = automationScriptContexts.get(
         automationScriptContextKey(event.projectId, event.scriptId),
       );
@@ -5315,11 +6215,57 @@ export const useStore = defineStore("app", {
       }
       const project = this.projects.find((item) => item.id === event.projectId);
       const script = project?.scripts.find((item) => item.id === event.scriptId);
+      if (script && !script.runId && event.runId && isPendingRuntimeTerminalEvent(event)) {
+        const key = pendingRuntimeTerminalEventKey(event.projectId, event.scriptId, event.runId);
+        if (runtimeRunObservations.get(key) === "terminal") {
+          return;
+        }
+        rememberRuntimeRun(key, "pending-terminal");
+        pendingRuntimeTerminalEvents.set(key, event);
+        while (pendingRuntimeTerminalEvents.size > pendingRuntimeTerminalEventLimit) {
+          const oldestKey = pendingRuntimeTerminalEvents.keys().next().value;
+          if (oldestKey === undefined) break;
+          pendingRuntimeTerminalEvents.delete(oldestKey);
+        }
+        return;
+      }
+      if (
+        script?.runId &&
+        !event.runId &&
+        (!script.pid || event.pid !== script.pid || (event.runtimeOwner && event.runtimeOwner !== script.runtimeOwner))
+      ) {
+        return;
+      }
+      if (
+        script?.runId &&
+        event.runId &&
+        (event.runId !== script.runId || (event.runtimeOwner && event.runtimeOwner !== script.runtimeOwner))
+      ) {
+        return;
+      }
+      if (script && event.runId) {
+        const key = pendingRuntimeTerminalEventKey(event.projectId, event.scriptId, event.runId);
+        const observation = runtimeRunObservations.get(key);
+        if (event.type === "started" && (observation === "terminal" || (observation === "active" && !script.runId))) {
+          return;
+        }
+        if (event.type !== "started" && observation === "terminal") {
+          return;
+        }
+      }
+      const createBridgeLogEntry = (message: string, type: LogEntry["type"]) =>
+        createLogEntry(message, type, event.timestamp);
 
       if (event.type === "started") {
+        const stopRequestedBeforeStart = script?.status === "STOPPING";
+        if (event.runId) {
+          rememberRuntimeRun(pendingRuntimeTerminalEventKey(event.projectId, event.scriptId, event.runId), "active");
+        }
         if (script) {
-          script.status = "RUNNING";
+          script.status = stopRequestedBeforeStart ? "STOPPING" : "RUNNING";
           script.pid = event.pid;
+          script.runId = event.runId ?? script.runId;
+          script.runtimeOwner = event.runtimeOwner ?? script.runtimeOwner;
         }
         if (project) {
           project.status = deriveProjectStatus(project);
@@ -5327,12 +6273,26 @@ export const useStore = defineStore("app", {
         }
         const launchContext = [
           `started (pid ${event.pid})`,
-          event.message ? `command: ${event.message}` : "",
+          event.message ? (event.runtimeOwner === "service" ? event.message : `command: ${event.message}`) : "",
           event.cwd ? `cwd: ${event.cwd}` : "",
         ]
           .filter(Boolean)
           .join(" · ");
-        this.addLog(event.projectId, createLogEntry(launchContext, "SUCCESS"), event.scriptId);
+        this.addLog(event.projectId, createBridgeLogEntry(launchContext, "SUCCESS"), event.scriptId);
+        if (event.runId) {
+          const pendingKey = pendingRuntimeTerminalEventKey(event.projectId, event.scriptId, event.runId);
+          const pendingEvent = pendingRuntimeTerminalEvents.get(pendingKey);
+          if (pendingEvent) {
+            pendingRuntimeTerminalEvents.delete(pendingKey);
+            this.handleBridgeEvent(pendingEvent);
+          }
+        }
+        if (stopRequestedBeforeStart && script?.status === "STOPPING") {
+          scheduleProcessStop(event.pid || 0, {
+            ...(event.runId === undefined ? {} : { runId: event.runId }),
+            ...(event.runtimeOwner === undefined ? {} : { runtimeOwner: event.runtimeOwner }),
+          });
+        }
       }
 
       if (event.type === "stdout" || event.type === "stderr") {
@@ -5340,22 +6300,27 @@ export const useStore = defineStore("app", {
         normalizeLogLines(event.message || "").forEach((line) => {
           this.addLog(
             event.projectId,
-            createLogEntry(line, classifyProcessOutputLine(line, outputSource)),
+            createBridgeLogEntry(line, classifyProcessOutputLine(line, outputSource)),
             event.scriptId,
           );
         });
       }
 
       if (event.type === "stdin") {
-        this.addLog(event.projectId, createLogEntry(`> ${event.message || ""}`, "INFO"), event.scriptId);
+        this.addLog(event.projectId, createBridgeLogEntry(`> ${event.message || ""}`, "INFO"), event.scriptId);
       }
 
       if (event.type === "exit") {
+        if (event.runId) {
+          rememberRuntimeRun(pendingRuntimeTerminalEventKey(event.projectId, event.scriptId, event.runId), "terminal");
+        }
         const isStopped = Boolean(event.stoppedByUser || script?.status === "STOPPING");
         const isSuccess = isSuccessfulAutomationProcessResult(event);
         if (script) {
           script.status = isStopped ? "STOPPED" : isSuccess ? "IDLE" : "ERROR";
           script.pid = undefined;
+          script.runId = undefined;
+          script.runtimeOwner = undefined;
         }
         if (project) {
           project.status = deriveProjectStatus(project);
@@ -5363,7 +6328,7 @@ export const useStore = defineStore("app", {
         }
         this.addLog(
           event.projectId,
-          createLogEntry(
+          createBridgeLogEntry(
             isStopped ? "stopped" : `exited with code ${event.code ?? "unknown"}`,
             isSuccess || isStopped ? "SUCCESS" : "ERROR",
           ),
@@ -5372,9 +6337,14 @@ export const useStore = defineStore("app", {
       }
 
       if (event.type === "error") {
+        if (event.runId) {
+          rememberRuntimeRun(pendingRuntimeTerminalEventKey(event.projectId, event.scriptId, event.runId), "terminal");
+        }
         if (script) {
           script.status = "ERROR";
           script.pid = undefined;
+          script.runId = undefined;
+          script.runtimeOwner = undefined;
         }
         if (project) {
           project.status = deriveProjectStatus(project);
@@ -5382,7 +6352,7 @@ export const useStore = defineStore("app", {
         }
         this.addLog(
           event.projectId,
-          createLogEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"),
+          createBridgeLogEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"),
           event.scriptId,
         );
       }

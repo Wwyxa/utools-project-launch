@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Owns backend validation expectations and protection of the no-service baseline."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Checks typed failures, process lifecycle, command parity, and cleanup behavior."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Checks event attribution, bounded logs, and secret exclusion."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Checks frontend build, accessibility, semantic styling, and no-backend behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Checks runtime owner, scheduler handoff, persisted preference, and state reconciliation contracts."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Checks shared service and ProjectBridge contracts without duplicated or unsafe types."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Checks every lifecycle and persistence boundary across Go, preload, store, and UI."}
+{"file":".trellis/tasks/08-13-optional-go-service/research/summary.md","reason":"Provides the agreed six-target matrix, official evidence, and 12 MiB measurement basis."}

@@ -326,10 +326,21 @@ const canRunTaskNow = (task: ProjectAutomationTask) => !runningEntry(task) && ta
 const isFuturePendingPlanEntry = (entry: ProjectAutomationPlanEntry) =>
   entry.status === "pending" && new Date(entry.plannedAt).getTime() > Date.now();
 const canRunPlanEntryEarly = (task: ProjectAutomationTask) => !runningEntry(task) && task.scriptIds.length > 0;
-const runPlanEntryEarly = (task: ProjectAutomationTask, entry: ProjectAutomationPlanEntry) => {
-  const started = store.runAutomationPlanEntryEarly(props.project.id, task.id, entry.id);
+const automationRunFailureMessage = () =>
+  store.projectLaunchServicePreferences.enabled
+    ? store.projectLaunchServiceStatus?.message || t.value.automation.runBlocked
+    : t.value.automation.runBlocked;
+const runTaskNow = async (task: ProjectAutomationTask) => {
+  const started = await store.runAutomationTaskNow(props.project.id, task.id);
   actionFeedback.value = {
-    message: started ? t.value.automation.runStarted : t.value.automation.runBlocked,
+    message: started ? t.value.automation.runStarted : automationRunFailureMessage(),
+    tone: started ? "success" : "warning",
+  };
+};
+const runPlanEntryEarly = async (task: ProjectAutomationTask, entry: ProjectAutomationPlanEntry) => {
+  const started = await store.runAutomationPlanEntryEarly(props.project.id, task.id, entry.id);
+  actionFeedback.value = {
+    message: started ? t.value.automation.runStarted : automationRunFailureMessage(),
     tone: started ? "success" : "warning",
   };
 };
@@ -500,7 +511,7 @@ const taskSummaryText = computed(() =>
                 :disabled="!canRunTaskNow(task)"
                 :title="t.automation.runNow"
                 :aria-label="t.automation.runNow"
-                @click="store.runAutomationTaskNow(project.id, task.id)"
+                @click="runTaskNow(task)"
               >
                 <Play :size="14" />
               </button>

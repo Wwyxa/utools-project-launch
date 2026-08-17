@@ -390,7 +390,10 @@ export const layoutGitCommitGraph = (
 
   return {
     rows,
-    canvasWidth: rows.reduce((width, row) => Math.max(width, row.graphWidth), GIT_COMMIT_GRAPH_GEOMETRY.minimumWidth),
+    canvasWidth: rows.reduce<number>(
+      (width, row) => Math.max(width, row.graphWidth),
+      GIT_COMMIT_GRAPH_GEOMETRY.minimumWidth,
+    ),
     height,
   };
 };

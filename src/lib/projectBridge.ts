@@ -47,6 +47,16 @@ import type {
   ProjectFileWriteResult,
   ProjectPathInspection,
   ProjectDetailsTabId,
+  ProjectLaunchServicePreferences,
+  ProjectLaunchServiceLogClearResult,
+  ProjectLaunchServiceLogClearScope,
+  ProjectLaunchServiceLogDescriptor,
+  ProjectLaunchServiceLogRetentionPolicy,
+  ProjectLaunchServiceLogRetentionStatus,
+  ProjectLaunchServiceRunLog,
+  ProjectLaunchServiceStatus,
+  ProjectLaunchServiceAutomationConfig,
+  ProjectLaunchServiceAutomationSyncResult,
   TerminalPreferences,
   UiPreferences,
 } from "../types";
@@ -61,6 +71,7 @@ const environmentPreferencesStorageKey = "utools-project-launch.environment-sett
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
 const projectDetailsTabOrderStorageKey = "utools-project-launch.project-details-tab-order.v1";
+const projectLaunchServicePreferencesStorageKey = "utools-project-launch.project-launch-service.v1";
 const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
 
@@ -457,6 +468,21 @@ export const normalizeUiPreferences = (value: unknown): UiPreferences => {
   };
 };
 
+const defaultProjectLaunchServicePreferences = (): ProjectLaunchServicePreferences => ({
+  schemaVersion: 1,
+  enabled: false,
+});
+
+export const normalizeProjectLaunchServicePreferences = (value: unknown): ProjectLaunchServicePreferences => {
+  if (!value || typeof value !== "object" || (value as Partial<ProjectLaunchServicePreferences>).schemaVersion !== 1) {
+    return defaultProjectLaunchServicePreferences();
+  }
+  return {
+    schemaVersion: 1,
+    enabled: (value as Partial<ProjectLaunchServicePreferences>).enabled === true,
+  };
+};
+
 const writeStoredUiPreferences = (preferences: UiPreferences) => {
   const normalized = normalizeUiPreferences(preferences);
   try {
@@ -497,6 +523,37 @@ const readStoredUiPreferences = (): UiPreferences => {
     return defaultUiPreferences();
   }
 };
+
+const readStoredProjectLaunchServicePreferences = (): ProjectLaunchServicePreferences => {
+  try {
+    const raw = window.localStorage?.getItem(projectLaunchServicePreferencesStorageKey);
+    return raw ? normalizeProjectLaunchServicePreferences(JSON.parse(raw)) : defaultProjectLaunchServicePreferences();
+  } catch {
+    return defaultProjectLaunchServicePreferences();
+  }
+};
+
+const writeStoredProjectLaunchServicePreferences = (preferences: ProjectLaunchServicePreferences) => {
+  const normalized = normalizeProjectLaunchServicePreferences(preferences);
+  try {
+    window.localStorage?.setItem(projectLaunchServicePreferencesStorageKey, JSON.stringify(normalized));
+  } catch {
+    // Keep service preference updates non-blocking when browser storage is unavailable.
+  }
+};
+
+const browserProjectLaunchServiceStatus = (): ProjectLaunchServiceStatus => ({
+  state: "not-installed",
+  installed: false,
+  running: false,
+  platform: "browser",
+  architecture: "unknown",
+  expectedAssetName: "",
+  directoryPath: "",
+  executablePath: "",
+  releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+  message: "浏览器预览不支持 Project Launch Service。",
+});
 
 const readStoredEnvironmentPreferences = (): EnvironmentPreferences => {
   try {
@@ -680,6 +737,70 @@ const fallbackBridge: ProjectBridge = {
   },
   saveUiPreferences(preferences) {
     writeStoredUiPreferences(preferences);
+  },
+  loadProjectLaunchServicePreferences() {
+    return readStoredProjectLaunchServicePreferences();
+  },
+  saveProjectLaunchServicePreferences(preferences) {
+    writeStoredProjectLaunchServicePreferences(preferences);
+  },
+  async getProjectLaunchServiceStatus() {
+    return browserProjectLaunchServiceStatus();
+  },
+  async checkProjectLaunchServiceUpdate() {
+    return browserProjectLaunchServiceStatus();
+  },
+  async downloadProjectLaunchService() {
+    return browserProjectLaunchServiceStatus();
+  },
+  async verifyProjectLaunchServiceInstall() {
+    return browserProjectLaunchServiceStatus();
+  },
+  async startProjectLaunchService() {
+    return browserProjectLaunchServiceStatus();
+  },
+  async stopProjectLaunchService() {
+    return browserProjectLaunchServiceStatus();
+  },
+  async reconcileProjectLaunchService() {
+    return browserProjectLaunchServiceStatus();
+  },
+  async getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog> {
+    throw new Error(`浏览器预览无法读取运行日志：${runId}`);
+  },
+  async getProjectLaunchServiceRunLogPage(runId: string): Promise<ProjectLaunchServiceRunLog> {
+    throw new Error(`浏览器预览无法读取运行日志：${runId}`);
+  },
+  async getProjectLaunchServiceLogRetention(): Promise<ProjectLaunchServiceLogRetentionStatus> {
+    throw new Error("浏览器预览无法读取日志保留策略。");
+  },
+  async updateProjectLaunchServiceLogRetention(
+    _policy: ProjectLaunchServiceLogRetentionPolicy,
+  ): Promise<ProjectLaunchServiceLogRetentionStatus> {
+    throw new Error("浏览器预览无法更新日志保留策略。");
+  },
+  async listProjectLaunchServiceLogs(_projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]> {
+    throw new Error("浏览器预览无法读取运行日志列表。");
+  },
+  async clearProjectLaunchServiceLogs(
+    _scope?: ProjectLaunchServiceLogClearScope,
+  ): Promise<ProjectLaunchServiceLogClearResult> {
+    throw new Error("浏览器预览无法清除运行日志。");
+  },
+  async syncProjectLaunchServiceAutomation(
+    config: ProjectLaunchServiceAutomationConfig,
+  ): Promise<ProjectLaunchServiceAutomationSyncResult> {
+    return {
+      accepted: false,
+      revision: config.revision,
+      message: "浏览器预览不支持 Project Launch Service 自动化同步。",
+    };
+  },
+  async openProjectLaunchServiceDirectory() {
+    return undefined;
+  },
+  async openProjectLaunchServiceReleases() {
+    await fallbackBridge.openPath("https://github.com/Wwyxa/utools-project-launch/releases");
   },
   loadTerminalPreferences() {
     return readStoredTerminalPreferences();
@@ -1116,6 +1237,9 @@ const fallbackBridge: ProjectBridge = {
     };
   },
   async runCommand(payload): Promise<ProjectBridgeRunResult> {
+    if (readStoredProjectLaunchServicePreferences().enabled) {
+      throw new Error("项目启动服务在浏览器预览中不可用。请关闭服务模式后重试。");
+    }
     return {
       pid: Date.now(),
       startedAt: new Date().toISOString(),

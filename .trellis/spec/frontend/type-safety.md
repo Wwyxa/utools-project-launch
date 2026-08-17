@@ -70,6 +70,17 @@ Use inferred literals and shared interfaces first. Reach for type guards only wh
 
 Preload bridge contracts should be represented in `src/types.ts` and consumed through `src/lib/projectBridge.ts`, not duplicated in components.
 
+### Convention: Project Launch Service Bridge Contract
+
+- `src/types.ts` owns the complete service bridge contract: `ProjectLaunchServicePreferences`, status/state unions, runs, events, automation configuration/executions, and `ProjectBridge` service methods. Components must not redefine a partial status or inspect raw HTTP payloads.
+- `ProjectLaunchServiceStatus.state` remains the closed union `not-installed | installed | starting | healthy | unavailable | incompatible`. Use the status plus `running` flag for ownership decisions; do not infer health from an executable path or a PID alone.
+- `ProjectLaunchServiceAutomationConfig` carries project environments only while the Store sends the complete normalized configuration to `syncProjectLaunchServiceAutomation`. `ProjectLaunchServiceAutomationState` is the outgoing snapshot shape used by `ProjectLaunchServiceStatus.automation`; it exposes only `revision` and optional `executions`, never the configuration or an environment map.
+- `src/lib/projectBridge.ts` implements every service method in the browser fallback with a typed unavailable result. It must never report a healthy/running service, accepted synchronization, or service-owned process that does not exist.
+- `public/preload.js` is the runtime validation boundary for disk discovery, install assets, service HTTP responses, protocol compatibility, and untrusted external values. It must project raw service automation state into the outgoing snapshot fields instead of assigning a raw response object to `ProjectLaunchServiceStatus`. Store and components consume only normalized shared types.
+- Adding a field or method requires one coordinated change to `src/types.ts`, `src/lib/projectBridge.ts`, `public/preload.js`, and every Store consumer. Test default status, unavailable/incompatible status, manual recheck, and synchronization result shapes.
+
+**Related**: [Project Launch Service](../backend/project-launch-service.md) and [Encrypted Automation State](../backend/error-handling.md#scenario-project-launch-service-encrypted-automation-state).
+
 ### Convention: Typed Git read results
 
 - Use `ProjectGitReadResult<T>` at the preload-to-Store boundary whenever an empty value is valid domain data.

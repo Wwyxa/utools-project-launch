@@ -6,9 +6,9 @@
 
 ## Overview
 
-This project is currently frontend-only. There is no checked-in backend runtime, API layer, database schema, or migration system yet.
+This project has a Vue/Pinia application plus one optional local Go runtime: Project Launch Service. The service is a separately built executable under `service/`; it owns delegated script processes and automation only when the user explicitly enables service mode. It is not a general backend for project, Git, file, AI, or preference operations.
 
-Use these docs to capture the rules we want to keep if a backend is added later, but document the current state honestly: project management, memo editing, terminal output, and Git actions are all modeled in the Vue app and Pinia store today.
+Keep the current boundaries explicit: most product behavior remains in Vue, Pinia, and the uTools preload bridge, while service-owned process supervision, scheduling, and persisted runtime state stay inside the Go runtime.
 
 ---
 
@@ -16,10 +16,11 @@ Use these docs to capture the rules we want to keep if a backend is added later,
 
 | Guide                                           | Description                                         | Status     |
 | ----------------------------------------------- | --------------------------------------------------- | ---------- |
-| [Directory Structure](./directory-structure.md) | Current layout and future backend boundaries        | Documented |
+| [Directory Structure](./directory-structure.md) | Service runtime and preload boundaries              | Documented |
 | [Database Guidelines](./database-guidelines.md) | No database today; future persistence notes         | Documented |
 | [Error Handling](./error-handling.md)           | UI-state error conventions and future backend rules | Documented |
-| [Quality Guidelines](./quality-guidelines.md)   | Backend-specific guardrails and no-backend baseline | Documented |
+| [Project Launch Service](./project-launch-service.md) | Optional service protocol, ownership, and lifecycle contract | Implemented |
+| [Quality Guidelines](./quality-guidelines.md)   | Service validation and default-off baseline         | Documented |
 | [Logging Guidelines](./logging-guidelines.md)   | Current UI log shape and secret handling            | Documented |
 
 ---

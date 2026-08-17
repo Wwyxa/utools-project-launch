@@ -1,0 +1,8 @@
+# Local executable builds
+/project-launch-service
+/project-launch-service.exe
+/bin/
+
+# Release staging output
+/.release/
+/.release-ci/

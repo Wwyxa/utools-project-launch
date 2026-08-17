@@ -1,0 +1,181 @@
+{
+  "ok": true,
+  "error_type": "",
+  "error": "",
+  "session_id": "cb8a7ac61601",
+  "query": "Official GitHub Actions documentation matrix builds create releases upload release assets and artifact attestations site:docs.github.com",
+  "platform": "",
+  "model": "grok-4.20-multi-agent-xhigh",
+  "primary_api_mode": "chat-completions",
+  "content": "**Primary Official Documentation (docs.github.com)**\n\nThe search query best matches GitHub's guide that combines all these topics in a modern, secure release pipeline:\n\n### Core Page\n**Using artifact attestations to establish provenance for builds**  \n**URL**: https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations-to-establish-provenance-for-builds (or minor path variations such as `/security-guides/`)\n\nThis page demonstrates an end-to-end pattern using:\n- `strategy.matrix` for multi-platform/architecture builds\n- Creating a GitHub Release (`gh release create`)\n- Uploading built binaries as release assets (`gh release upload`)\n- Generating and attaching **artifact attestations** (cryptographically signed SLSA-style provenance using OIDC and GitHub's signing infrastructure)\n\nIt is the most relevant single resource as of 2026.\n\n### Supporting Official Pages\n\n**Matrix builds / strategy**\n- https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/running-variations-of-jobs-in-a-workflow\n- https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs\n- Key syntax: `strategy: matrix:` with arrays/objects, `include`/`exclude`, `matrix.*` context, `fail-fast`, and `max-parallel`.\n\n**Creating releases and uploading release assets**\n- https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository (includes automation guidance)\n- https://docs.github.com/en/actions/using-workflows/using-github-cli-in-workflows (covers `gh release create` and `gh release upload`)\n- Recommended pattern (official): Use the preinstalled `gh` CLI with `GITHUB_TOKEN` (requires `contents: write` permission). The older `actions/upload-release-asset` action is largely superseded.\n- Related: https://docs.github.com/en/repositories/releasing-projects-on-github/automating-releases-with-continuous-integration\n\n**Artifact attestations (provenance / SLSA)**\n- Main guide (above)\n- Overview: https://docs.github.com/en/actions/security-for-github-actions/about-artifact-attestations (or similar path)\n- Requires `id-token: write` and `attestations: write` permissions. Typically uses `actions/attest-build`, `gh attestation`, or equivalent official tooling to sign artifacts and link them back to the exact workflow run.\n\n### Typical Combined Workflow Pattern (from official docs)\n\nA standard secure release workflow follows this structure:\n\n```yaml\nname: Build, Release, and Attest\n\non:\n  push:\n    tags: ['v*']\n\npermissions:\n  contents: write\n  id-token: write\n  attestations: write\n\njobs:\n  build:\n    strategy:\n      matrix:\n        os: [ubuntu-latest, windows-latest, macos-latest]\n        # Can extend to architecture, Go version, etc.\n    runs-on: ${{ matrix.os }}\n    steps:\n      - uses: actions/checkout@v4\n      - name: Build binary\n        run: ./build.sh\n      - name: Generate attestation for this build\n        uses: actions/attest-build@v1  # or equivalent per current docs\n        with:\n          subject-path: './dist/myapp-*'\n      - uses: actions/upload-artifact@v4\n        with:\n          name: build-${{ matrix.os }}\n          path: ./dist/*\n\nrelease:\n    needs: build\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/download-artifact@v4\n        with:\n          pattern: build-*\n          merge-multiple: true\n      - name: Create Release and upload assets + attestations\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          gh release create ${{ github.ref_name }} \\\n            --title \"Release ${{ github.ref_name }}\" \\\n            --generate-notes\n          gh release upload ${{ github.ref_name }} ./dist/*\n```\n\n**Key points from the docs**:\n- Matrix jobs run in parallel for different platforms.\n- Attestations provide verifiable provenance (who built it, in which workflow, from which commit).\n- The release job uses `needs:` to wait for all matrix variants.\n- Attestations can be viewed in the GitHub UI and consumed by dependency review or external verifiers (e.g., `sigstore` tools).\n\n**Sources**: All links above are from `docs.github.com`. The artifact attestations guide is the authoritative reference that ties matrix builds, release creation, asset upload, and provenance together. Check the pages directly for the latest action versions and exact syntax, as GitHub updates these frequently.",
+  "sources": [
+    {
+      "url": "https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds",
+      "provider": "tavily",
+      "title": "Using artifact attestations to establish provenance for builds - GitHub Docs",
+      "description": "Skip to main content\n\nGitHub Docs\n\nVersion: Free, Pro, & Team\n\nSearch or ask Copilot\n\nSearch or ask Copilot\n\nSelect language: current language is English\n\nSearch or ask Copilot\n\nSearch or ask Copilot\n\nOpen menu\n\nCollapse sidebar Expand sidebar\n\nScroll breadcrumbs left\n\n1.   Home\n2.   GitHub Actions\n3.   How-tos\n4.   Secure your work\n5.   Use artifact attestations\n6.   Use artifact attestations\n\nScroll breadcrumbs right\n\n## GitHub Actions\n\n          \n   Uploading artifacts to the linked artifacts page\n   Verifying artifact attestations with the GitHub CLI\n   Next steps\n\n## Prerequisites\n\nBefore you start generating artifact attestations, you need to understand what they are and when you should use them. See Artifact attestations.\n\n## Generating artifact attestations for your builds [...] ## Uploading artifacts to the linked artifacts page\n\nWe recommend uploading attested assets to your organization's linked artifacts page. This page displays artifacts' build history, deployment records, and storage details. You can use this data to prioritize security alerts or quickly connect vulnerable artifacts to their owning team, source code, and build run. For more information, see About linked artifacts.\n\nThe attest action automatically creates storage records on the linked artifacts page if both:\n\n   The `push-to-registry` option is set to `true`\n   The workflow that includes the action has the `artifact-metadata: write` permission\n\nFor an example workflow, see Uploading storage and deployment data to the linked artifacts page. [...] ## Generating artifact attestations for your builds\n\nYou can use GitHub Actions to generate artifact attestations that establish build provenance for artifacts such as binaries and container images.\n\nTo generate an artifact attestation, you must:\n\n   Ensure you have the appropriate permissions configured in your workflow.\n   Include a step in your workflow that uses the `attest` action.\n\nWhen you run your updated workflows, they will build your artifacts and generate an artifact attestation that establishes build provenance. You can view attestations in your repository's Actions tab. For more information, see the `attest` repository.\n\n### Generating build provenance for binaries\n\n1.   In the workflow that builds the binary you would like to attest, add the following permissions."
+    }
+  ],
+  "sources_count": 1,
+  "primary_sources": [],
+  "primary_sources_count": 0,
+  "extra_sources": [
+    {
+      "url": "https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds",
+      "provider": "tavily",
+      "title": "Using artifact attestations to establish provenance for builds - GitHub Docs",
+      "description": "Skip to main content\n\nGitHub Docs\n\nVersion: Free, Pro, & Team\n\nSearch or ask Copilot\n\nSearch or ask Copilot\n\nSelect language: current language is English\n\nSearch or ask Copilot\n\nSearch or ask Copilot\n\nOpen menu\n\nCollapse sidebar Expand sidebar\n\nScroll breadcrumbs left\n\n1.   Home\n2.   GitHub Actions\n3.   How-tos\n4.   Secure your work\n5.   Use artifact attestations\n6.   Use artifact attestations\n\nScroll breadcrumbs right\n\n## GitHub Actions\n\n          \n   Uploading artifacts to the linked artifacts page\n   Verifying artifact attestations with the GitHub CLI\n   Next steps\n\n## Prerequisites\n\nBefore you start generating artifact attestations, you need to understand what they are and when you should use them. See Artifact attestations.\n\n## Generating artifact attestations for your builds [...] ## Uploading artifacts to the linked artifacts page\n\nWe recommend uploading attested assets to your organization's linked artifacts page. This page displays artifacts' build history, deployment records, and storage details. You can use this data to prioritize security alerts or quickly connect vulnerable artifacts to their owning team, source code, and build run. For more information, see About linked artifacts.\n\nThe attest action automatically creates storage records on the linked artifacts page if both:\n\n   The `push-to-registry` option is set to `true`\n   The workflow that includes the action has the `artifact-metadata: write` permission\n\nFor an example workflow, see Uploading storage and deployment data to the linked artifacts page. [...] ## Generating artifact attestations for your builds\n\nYou can use GitHub Actions to generate artifact attestations that establish build provenance for artifacts such as binaries and container images.\n\nTo generate an artifact attestation, you must:\n\n   Ensure you have the appropriate permissions configured in your workflow.\n   Include a step in your workflow that uses the `attest` action.\n\nWhen you run your updated workflows, they will build your artifacts and generate an artifact attestation that establishes build provenance. You can view attestations in your repository's Actions tab. For more information, see the `attest` repository.\n\n### Generating build provenance for binaries\n\n1.   In the workflow that builds the binary you would like to attest, add the following permissions."
+    }
+  ],
+  "extra_sources_count": 1,
+  "source_warning": "extra_sources are retrieved in parallel and are not automatically used to verify generated content; use fetch on key URLs for claim-level evidence.",
+  "routing_decision": {
+    "docs_intent": true,
+    "zh_current_intent": false,
+    "web_current_intent": false,
+    "fetch_intent": false,
+    "supplemental_paths": [
+      "docs_search",
+      "web_search",
+      "vertical_search"
+    ],
+    "intent_router_mode": "hybrid",
+    "required_capabilities": [
+      "docs_search",
+      "web_search",
+      "vertical_search"
+    ],
+    "intent_signals": {
+      "docs_api_intent": true,
+      "current_or_locale_intent": false,
+      "known_url": false,
+      "vertical_intent": true,
+      "strict_validation": true,
+      "rule_scores": {
+        "docs_search": 0.82,
+        "web_search": 0.72,
+        "vertical_search": 0.72
+      },
+      "urls": []
+    },
+    "confidence": 0.82,
+    "router_engines_used": [
+      "rules"
+    ],
+    "degraded": true,
+    "degraded_reason": "embeddings not configured; classifier not configured",
+    "reasons": [
+      "rules matched docs/API/library terms",
+      "strict validation requires source reinforcement",
+      "rules matched vertical-domain terms"
+    ],
+    "validation_level": "strict",
+    "fallback_mode": "auto",
+    "providers": "openai-compatible",
+    "main_search_chain": [
+      "openai-compatible"
+    ],
+    "openai_compatible_stream": true,
+    "openai_compatible_models": [
+      "grok-4.20-multi-agent-xhigh"
+    ],
+    "openai_compatible_model_fallback_enabled": false
+  },
+  "providers_used": [
+    "OpenAI-compatible",
+    "tavily"
+  ],
+  "provider_attempts": [
+    {
+      "capability": "main_search",
+      "provider": "OpenAI-compatible",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 51855.38,
+      "result_count": 1,
+      "transport": "stream",
+      "model": "grok-4.20-multi-agent-xhigh",
+      "breaker_state": {
+        "state": "closed",
+        "consecutive_failures": 0
+      }
+    },
+    {
+      "capability": "web_search",
+      "provider": "tavily",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 7761.22,
+      "result_count": 1
+    }
+  ],
+  "fallback_used": false,
+  "transport_fallback_used": false,
+  "model_fallback_used": false,
+  "validation_level": "strict",
+  "minimum_profile_ok": true,
+  "capability_status": {
+    "main_search": {
+      "configured": [
+        "openai-compatible"
+      ],
+      "fallback_chain": [
+        "xai-responses",
+        "openai-compatible"
+      ],
+      "ok": true
+    },
+    "web_search": {
+      "configured": [
+        "tavily"
+      ],
+      "fallback_chain": [
+        "zhipu",
+        "zhipu-mcp",
+        "tavily",
+        "firecrawl"
+      ],
+      "ok": true
+    },
+    "docs_search": {
+      "configured": [
+        "context7"
+      ],
+      "fallback_chain": [
+        "context7",
+        "exa"
+      ],
+      "ok": true
+    },
+    "web_fetch": {
+      "configured": [
+        "tavily"
+      ],
+      "fallback_chain": [
+        "tavily",
+        "jina",
+        "zhipu-mcp-reader",
+        "firecrawl"
+      ],
+      "ok": true
+    },
+    "vertical_search": {
+      "configured": [],
+      "fallback_chain": [
+        "anysearch"
+      ],
+      "experimental": true,
+      "explicit_only": [
+        "sciverse"
+      ],
+      "route_enabled": {
+        "anysearch": true,
+        "sciverse": false
+      },
+      "ok": false
+    }
+  },
+  "elapsed_ms": 59623.5
+}

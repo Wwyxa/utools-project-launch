@@ -1,0 +1,1496 @@
+function projectLaunchServiceTarget() {
+  const architecture =
+    process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : process.arch || "unknown";
+  const platform = process.platform === "win32" ? "windows" : process.platform;
+  const supported =
+    (platform === "windows" || platform === "linux" || platform === "darwin") &&
+    (architecture === "amd64" || architecture === "arm64");
+  const assetName = supported
+    ? `project-launch-service-${platform}-${architecture}${platform === "windows" ? ".exe" : ""}`
+    : "";
+  return { platform, architecture, supported, assetName };
+}
+
+function projectLaunchServiceDirectoryPath() {
+  return path.join(path.dirname(getDeviceIdFilePath()), "service");
+}
+
+function projectLaunchServiceExecutablePath() {
+  return path.join(
+    projectLaunchServiceDirectoryPath(),
+    `project-launch-service${process.platform === "win32" ? ".exe" : ""}`,
+  );
+}
+
+function projectLaunchServiceDiscoveryPath() {
+  return path.join(projectLaunchServiceDirectoryPath(), "discovery.json");
+}
+
+function projectLaunchServiceInstallMetadataPath() {
+  return path.join(projectLaunchServiceDirectoryPath(), "install.json");
+}
+
+function projectLaunchServiceTokenPath() {
+  return path.join(projectLaunchServiceDirectoryPath(), "token");
+}
+
+function projectLaunchServiceReleaseUrl() {
+  return "https://github.com/Wwyxa/utools-project-launch/releases";
+}
+
+function projectLaunchServiceBaseStatus() {
+  const target = projectLaunchServiceTarget();
+  const directoryPath = projectLaunchServiceDirectoryPath();
+  return {
+    state: target.supported ? "not-installed" : "unavailable",
+    installed: false,
+    running: false,
+    platform: target.platform,
+    architecture: target.architecture,
+    expectedAssetName: target.assetName,
+    directoryPath,
+    executablePath: projectLaunchServiceExecutablePath(),
+    releaseUrl: projectLaunchServiceReleaseUrl(),
+    message: target.supported ? "项目启动服务尚未安装。" : "当前系统或 CPU 架构暂不支持项目启动服务。",
+  };
+}
+
+function isAllowedProjectLaunchServiceUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && projectLaunchServiceAllowedDownloadHosts.has(parsed.hostname.toLowerCase());
+  } catch (error) {
+    return false;
+  }
+}
+
+function fetchProjectLaunchServiceBytes(url, options = {}, redirectCount = 0) {
+  const maxBytes = Number.isFinite(options.maxBytes) ? options.maxBytes : projectLaunchServiceMetadataLimitBytes;
+  if (!isAllowedProjectLaunchServiceUrl(url)) {
+    const error = new Error("项目启动服务下载地址不受支持。");
+    error.code = "invalid-download-url";
+    return Promise.reject(error);
+  }
+  if (redirectCount > projectLaunchServiceDownloadRedirectLimit) {
+    const error = new Error("项目启动服务下载重定向次数过多。");
+    error.code = "too-many-redirects";
+    return Promise.reject(error);
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+    } catch (error) {
+      finish(reject, error);
+      return;
+    }
+
+    const request = https.get(
+      {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        timeout: projectLaunchServiceDownloadTimeoutMs,
+        headers: {
+          Accept: "application/octet-stream, application/json",
+          "User-Agent": "utools-project-launch",
+        },
+      },
+      (response) => {
+        const statusCode = response.statusCode || 0;
+        if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+          const nextUrl = new URL(response.headers.location, url).toString();
+          response.resume();
+          fetchProjectLaunchServiceBytes(nextUrl, options, redirectCount + 1).then(
+            (value) => finish(resolve, value),
+            (error) => finish(reject, error),
+          );
+          return;
+        }
+        if (statusCode < 200 || statusCode >= 300) {
+          response.resume();
+          const error = new Error(`项目启动服务下载请求失败（HTTP ${statusCode}）。`);
+          error.code = `http-${statusCode}`;
+          finish(reject, error);
+          return;
+        }
+
+        const contentLength = Number(response.headers["content-length"]);
+        if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+          response.resume();
+          const error = new Error("项目启动服务响应超过大小限制。");
+          error.code = "response-too-large";
+          finish(reject, error);
+          return;
+        }
+
+        const chunks = [];
+        let totalBytes = 0;
+        response.on("data", (chunk) => {
+          totalBytes += Buffer.byteLength(chunk);
+          if (totalBytes > maxBytes) {
+            response.destroy();
+            const error = new Error("项目启动服务响应超过大小限制。");
+            error.code = "response-too-large";
+            finish(reject, error);
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on("end", () => finish(resolve, Buffer.concat(chunks)));
+        response.on("error", (error) => finish(reject, error));
+      },
+    );
+    request.on("timeout", () => {
+      const error = new Error("项目启动服务下载超时。");
+      error.code = "download-timeout";
+      request.destroy(error);
+    });
+    request.on("error", (error) => finish(reject, error));
+  });
+}
+
+function projectLaunchServiceReleaseAsset(release, assetName) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const asset = assets.find((candidate) => candidate?.name === assetName);
+  if (
+    !asset ||
+    typeof asset.browser_download_url !== "string" ||
+    !isAllowedProjectLaunchServiceUrl(asset.browser_download_url)
+  ) {
+    const error = new Error(`当前发布未提供兼容的项目启动服务文件：${assetName}`);
+    error.code = "asset-not-found";
+    throw error;
+  }
+  if (Number.isFinite(asset.size) && asset.size > projectLaunchServiceExecutableLimitBytes) {
+    const error = new Error("项目启动服务文件超过 12 MiB 大小限制。");
+    error.code = "asset-too-large";
+    throw error;
+  }
+  return asset;
+}
+
+function projectLaunchServiceChecksum(checksumContents, assetName) {
+  const match = String(checksumContents)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .map((line) => line.match(/^([0-9a-f]{64})\s+\*?(.+)$/i))
+    .find((candidate) => candidate && candidate[2].replace(/^\.\//, "") === assetName);
+  if (!match) {
+    const error = new Error(`checksums.txt 中缺少 ${assetName} 的校验值。`);
+    error.code = "checksum-not-found";
+    throw error;
+  }
+  return match[1].toLowerCase();
+}
+
+function projectLaunchServiceInstallVerificationError(message) {
+  const error = new Error(message);
+  error.code = "unverified-install";
+  return error;
+}
+
+function projectLaunchServiceInstallMetadata(expectedHash) {
+  const target = projectLaunchServiceTarget();
+  if (!target.supported || !/^[0-9a-f]{64}$/i.test(expectedHash)) {
+    throw projectLaunchServiceInstallVerificationError("项目启动服务安装元数据无效。");
+  }
+  return {
+    schemaVersion: 1,
+    assetName: target.assetName,
+    sha256: expectedHash.toLowerCase(),
+  };
+}
+
+function readProjectLaunchServiceInstallMetadata() {
+  const directoryPath = projectLaunchServiceDirectoryPath();
+  const metadataPath = projectLaunchServiceInstallMetadataPath();
+  if (!isPathWithin(directoryPath, metadataPath)) {
+    throw projectLaunchServiceInstallVerificationError("项目启动服务安装元数据路径无效。");
+  }
+
+  let metadata;
+  try {
+    metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+  } catch (error) {
+    throw projectLaunchServiceInstallVerificationError("项目启动服务缺少可信安装记录。请重新下载或手动验证后再启用。");
+  }
+
+  const target = projectLaunchServiceTarget();
+  if (
+    !metadata ||
+    metadata.schemaVersion !== 1 ||
+    metadata.assetName !== target.assetName ||
+    typeof metadata.sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/i.test(metadata.sha256)
+  ) {
+    throw projectLaunchServiceInstallVerificationError("项目启动服务安装记录无效。请重新下载或手动验证后再启用。");
+  }
+  return metadata;
+}
+
+function verifyProjectLaunchServiceInstalledExecutable() {
+  const metadata = readProjectLaunchServiceInstallMetadata();
+  let actualHash;
+  try {
+    actualHash = crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(projectLaunchServiceExecutablePath()))
+      .digest("hex");
+  } catch (error) {
+    throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请重新下载或手动验证后再启用。");
+  }
+  if (actualHash !== metadata.sha256) {
+    throw projectLaunchServiceInstallVerificationError(
+      "项目启动服务文件已变更，无法自动启动。请重新下载或手动验证后再启用。",
+    );
+  }
+}
+
+function verifyProjectLaunchServiceManually() {
+  const directoryPath = projectLaunchServiceDirectoryPath();
+  const metadataPath = projectLaunchServiceInstallMetadataPath();
+  const metadataPartialPath = `${metadataPath}.partial`;
+  if (
+    !isPathWithin(directoryPath, metadataPath) ||
+    !isPathWithin(directoryPath, metadataPartialPath) ||
+    !isPathWithin(directoryPath, projectLaunchServiceExecutablePath())
+  ) {
+    throw new Error("项目启动服务安装路径无效。");
+  }
+
+  let contents;
+  try {
+    contents = fs.readFileSync(projectLaunchServiceExecutablePath());
+  } catch (error) {
+    throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请先放置可执行文件后重试。");
+  }
+  if (contents.length > projectLaunchServiceExecutableLimitBytes) {
+    const error = new Error("项目启动服务文件超过 12 MiB 大小限制。");
+    error.code = "asset-too-large";
+    throw error;
+  }
+
+  const installMetadata = projectLaunchServiceInstallMetadata(
+    crypto.createHash("sha256").update(contents).digest("hex"),
+  );
+  try {
+    fs.mkdirSync(directoryPath, { recursive: true });
+    fs.writeFileSync(metadataPartialPath, `${JSON.stringify(installMetadata)}\n`, { mode: 0o600 });
+    fs.renameSync(metadataPartialPath, metadataPath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(metadataPartialPath);
+    } catch (cleanupError) {
+      if (cleanupError?.code !== "ENOENT")
+        console.warn("[utools-project-launch] failed to clean service metadata partial file");
+    }
+    throw error;
+  }
+}
+
+async function fetchProjectLaunchServiceRelease() {
+  const releaseContents = await fetchProjectLaunchServiceBytes(projectLaunchServiceReleaseApiUrl, {
+    maxBytes: projectLaunchServiceMetadataLimitBytes,
+  });
+  let release;
+  try {
+    release = JSON.parse(releaseContents.toString("utf8"));
+  } catch (error) {
+    const parseError = new Error("GitHub Release 响应不是有效 JSON。");
+    parseError.code = "invalid-release-metadata";
+    throw parseError;
+  }
+  const binaryAsset = projectLaunchServiceReleaseAsset(release, projectLaunchServiceTarget().assetName);
+  const checksumAsset = projectLaunchServiceReleaseAsset(release, "checksums.txt");
+  const checksumContents = await fetchProjectLaunchServiceBytes(checksumAsset.browser_download_url, {
+    maxBytes: projectLaunchServiceMetadataLimitBytes,
+  });
+  return {
+    release,
+    binaryAsset,
+    expectedHash: projectLaunchServiceChecksum(checksumContents.toString("utf8"), binaryAsset.name),
+  };
+}
+
+function projectLaunchServiceReleaseVersion(release) {
+  const tagName = typeof release?.tag_name === "string" ? release.tag_name.trim() : "";
+  return tagName || undefined;
+}
+
+async function checkProjectLaunchServiceUpdate() {
+  const status = await readProjectLaunchServiceStatus();
+  if (!status.installed) {
+    return { ...status, message: "项目启动服务尚未安装，无法检查更新。" };
+  }
+
+  try {
+    const { release, expectedHash } = await fetchProjectLaunchServiceRelease();
+    const currentHash = crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(projectLaunchServiceExecutablePath()))
+      .digest("hex");
+    const updateAvailable = currentHash !== expectedHash;
+    const latestServiceVersion = projectLaunchServiceReleaseVersion(release);
+    return {
+      ...status,
+      updateAvailable,
+      ...(latestServiceVersion ? { latestServiceVersion } : {}),
+      message: updateAvailable
+        ? status.running
+          ? "发现项目启动服务更新。请先停止正在运行的项目，再下载并安装。"
+          : "发现项目启动服务更新，可以下载并安装。"
+        : status.running
+          ? ""
+          : "项目启动服务已是最新版本。",
+    };
+  } catch (error) {
+    return {
+      ...status,
+      message: error instanceof Error ? error.message : "项目启动服务更新检查失败。",
+    };
+  }
+}
+
+function installProjectLaunchServiceExecutable(contents, expectedHash) {
+  const directoryPath = projectLaunchServiceDirectoryPath();
+  const downloadsPath = path.join(directoryPath, "downloads");
+  const executablePath = projectLaunchServiceExecutablePath();
+  const installMetadataPath = projectLaunchServiceInstallMetadataPath();
+  const backupPath = path.join(directoryPath, "update.backup");
+  const partialPath = path.join(downloadsPath, `${path.basename(executablePath)}.partial`);
+  const metadataPartialPath = `${installMetadataPath}.partial`;
+  if (
+    !isPathWithin(directoryPath, downloadsPath) ||
+    !isPathWithin(directoryPath, executablePath) ||
+    !isPathWithin(directoryPath, installMetadataPath) ||
+    !isPathWithin(directoryPath, metadataPartialPath)
+  ) {
+    throw new Error("项目启动服务安装路径无效。");
+  }
+
+  let backupCreated = false;
+  let executableInstalled = false;
+  try {
+    fs.mkdirSync(downloadsPath, { recursive: true });
+    fs.writeFileSync(partialPath, contents, { mode: process.platform === "win32" ? 0o700 : 0o755 });
+    const actualHash = crypto.createHash("sha256").update(contents).digest("hex");
+    if (actualHash !== expectedHash) {
+      const error = new Error("项目启动服务校验失败，文件未安装。");
+      error.code = "checksum-mismatch";
+      throw error;
+    }
+    if (contents.length > projectLaunchServiceExecutableLimitBytes) {
+      const error = new Error("项目启动服务文件超过 12 MiB 大小限制。");
+      error.code = "asset-too-large";
+      throw error;
+    }
+    const installMetadata = projectLaunchServiceInstallMetadata(expectedHash);
+
+    try {
+      fs.unlinkSync(backupPath);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    try {
+      fs.renameSync(executablePath, backupPath);
+      backupCreated = true;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    fs.renameSync(partialPath, executablePath);
+    executableInstalled = true;
+    const installedHash = crypto.createHash("sha256").update(fs.readFileSync(executablePath)).digest("hex");
+    if (installedHash !== installMetadata.sha256) {
+      const error = new Error("项目启动服务校验失败，文件未安装。");
+      error.code = "checksum-mismatch";
+      throw error;
+    }
+    if (process.platform !== "win32") {
+      fs.chmodSync(executablePath, 0o755);
+    }
+    fs.writeFileSync(metadataPartialPath, `${JSON.stringify(installMetadata)}\n`, { mode: 0o600 });
+    fs.renameSync(metadataPartialPath, installMetadataPath);
+    if (backupCreated) {
+      fs.unlinkSync(backupPath);
+    }
+  } catch (error) {
+    [partialPath, metadataPartialPath].forEach((candidatePath) => {
+      try {
+        fs.unlinkSync(candidatePath);
+      } catch (cleanupError) {
+        if (cleanupError?.code !== "ENOENT")
+          console.warn("[utools-project-launch] failed to clean service partial file");
+      }
+    });
+    if (backupCreated) {
+      try {
+        if (executableInstalled) fs.unlinkSync(executablePath);
+        fs.renameSync(backupPath, executablePath);
+      } catch (restoreError) {
+        console.warn("[utools-project-launch] failed to restore service executable backup");
+      }
+    } else if (executableInstalled) {
+      try {
+        fs.unlinkSync(executablePath);
+      } catch (cleanupError) {
+        if (cleanupError?.code !== "ENOENT")
+          console.warn("[utools-project-launch] failed to remove unverified service executable");
+      }
+    }
+    throw error;
+  }
+}
+
+async function downloadProjectLaunchService() {
+  const target = projectLaunchServiceTarget();
+  if (!target.supported) {
+    const error = new Error("当前系统或 CPU 架构暂不支持项目启动服务。");
+    error.code = "unsupported-platform";
+    throw error;
+  }
+  const current = await readProjectLaunchServiceStatus();
+  if (current.running) {
+    const error = new Error("请先停止项目启动服务，再更新服务文件。");
+    error.code = "service-running";
+    throw error;
+  }
+
+  const { binaryAsset, expectedHash } = await fetchProjectLaunchServiceRelease();
+  const binaryContents = await fetchProjectLaunchServiceBytes(binaryAsset.browser_download_url, {
+    maxBytes: projectLaunchServiceExecutableLimitBytes,
+  });
+  installProjectLaunchServiceExecutable(binaryContents, expectedHash);
+  return readProjectLaunchServiceStatus();
+}
+
+async function verifyProjectLaunchServiceInstall() {
+  const status = await readProjectLaunchServiceStatus();
+  if (status.running) {
+    return serviceStatusWithError(status, new Error("请先停止项目启动服务，再验证服务文件。"));
+  }
+  try {
+    verifyProjectLaunchServiceManually();
+    return readProjectLaunchServiceStatus();
+  } catch (error) {
+    return serviceStatusWithError(status, error);
+  }
+}
+
+function isPathWithin(parentPath, childPath) {
+  const parent = path.resolve(parentPath) + path.sep;
+  const child = path.resolve(childPath);
+  return child === path.resolve(parentPath) || child.startsWith(parent);
+}
+
+function readProjectLaunchServiceDiscovery() {
+  const discoveryPath = projectLaunchServiceDiscoveryPath();
+  if (!isPathWithin(projectLaunchServiceDirectoryPath(), discoveryPath)) {
+    throw new Error("服务发现路径无效。");
+  }
+  const discovery = JSON.parse(fs.readFileSync(discoveryPath, "utf8"));
+  if (
+    !discovery ||
+    discovery.protocolVersion !== projectLaunchServiceProtocolVersion ||
+    typeof discovery.serviceVersion !== "string" ||
+    !discovery.serviceVersion.trim() ||
+    typeof discovery.instanceId !== "string" ||
+    !discovery.instanceId.trim() ||
+    typeof discovery.processIdentity !== "string" ||
+    !discovery.processIdentity.trim() ||
+    !Number.isInteger(discovery.pid) ||
+    discovery.pid <= 0 ||
+    typeof discovery.startedAt !== "string" ||
+    !Number.isFinite(Date.parse(discovery.startedAt)) ||
+    discovery.host !== "127.0.0.1" ||
+    !Number.isInteger(discovery.port) ||
+    discovery.port < 1 ||
+    discovery.port > 65535 ||
+    typeof discovery.tokenPath !== "string" ||
+    path.resolve(discovery.tokenPath) !== path.resolve(projectLaunchServiceTokenPath())
+  ) {
+    const error = new Error("服务发现信息无效或协议不兼容。");
+    error.code =
+      discovery?.protocolVersion && discovery.protocolVersion !== projectLaunchServiceProtocolVersion
+        ? "protocol-mismatch"
+        : "invalid-discovery";
+    throw error;
+  }
+  return discovery;
+}
+
+function readProjectLaunchServiceToken() {
+  const tokenPath = projectLaunchServiceTokenPath();
+  if (!isPathWithin(projectLaunchServiceDirectoryPath(), tokenPath)) {
+    throw new Error("服务令牌路径无效。");
+  }
+  const token = fs.readFileSync(tokenPath, "utf8").trim();
+  if (!/^[0-9a-f]{64}$/i.test(token)) {
+    throw new Error("服务令牌无效。");
+  }
+  return token;
+}
+
+function projectLaunchServiceProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0 || typeof process.kill !== "function") {
+    return null;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "ESRCH" ? false : null;
+  }
+}
+
+function projectLaunchServiceProcessIdentity(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return null;
+  }
+  try {
+    if (process.platform === "win32") {
+      const result = spawnSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "$process = Get-Process -Id $env:UTOOLS_PROJECT_LAUNCH_SERVICE_PROCESS_ID -ErrorAction Stop; [Console]::Out.Write($process.StartTime.ToUniversalTime().ToFileTimeUtc())",
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, UTOOLS_PROJECT_LAUNCH_SERVICE_PROCESS_ID: String(pid) },
+          timeout: projectLaunchServiceRequestTimeoutMs,
+          windowsHide: true,
+        },
+      );
+      const startTicks = String(result.stdout || "").trim();
+      return /^\d+$/.test(startTicks) ? `windows:${startTicks}` : null;
+    }
+    if (process.platform === "linux") {
+      const bootId = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+      const closingName = stat.lastIndexOf(")");
+      if (!bootId || closingName < 0) return null;
+      const startTicks = stat
+        .slice(closingName + 1)
+        .trim()
+        .split(/\s+/)[19];
+      return /^\d+$/.test(startTicks || "") ? `linux:${bootId}:${startTicks}` : null;
+    }
+    if (process.platform === "darwin") {
+      const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+        encoding: "utf8",
+        timeout: projectLaunchServiceRequestTimeoutMs,
+        windowsHide: true,
+      });
+      const startedAt = String(result.stdout || "").trim();
+      return result.status === 0 && startedAt ? `darwin:${startedAt}` : null;
+    }
+  } catch (error) {
+    return null;
+  }
+  return null;
+}
+
+function projectLaunchServiceProcessMatches(discovery) {
+  const alive = projectLaunchServiceProcessAlive(discovery.pid);
+  if (alive !== true) {
+    return alive;
+  }
+  const identity = projectLaunchServiceProcessIdentity(discovery.pid);
+  if (!identity) {
+    return null;
+  }
+  return identity === discovery.processIdentity;
+}
+
+function removeStaleProjectLaunchServiceDiscovery(discovery) {
+  if (projectLaunchServiceProcessMatches(discovery) !== false) {
+    return;
+  }
+  try {
+    const current = readProjectLaunchServiceDiscovery();
+    if (
+      current.instanceId === discovery.instanceId &&
+      current.pid === discovery.pid &&
+      current.processIdentity === discovery.processIdentity
+    ) {
+      fs.unlinkSync(projectLaunchServiceDiscoveryPath());
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      return;
+    }
+  }
+}
+
+function requestProjectLaunchService(discovery, token, method, requestPath, body, options = {}) {
+  return new Promise((resolve, reject) => {
+    const requestBody = body === undefined ? "" : JSON.stringify(body);
+    const maxResponseBytes = Number.isFinite(options.maxResponseBytes)
+      ? Math.max(1, Math.floor(options.maxResponseBytes))
+      : 256 * 1024;
+    const request = http.request(
+      {
+        host: "127.0.0.1",
+        port: discovery.port,
+        method,
+        path: requestPath,
+        timeout: projectLaunchServiceRequestTimeoutMs,
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Protocol-Version": String(projectLaunchServiceProtocolVersion),
+          ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+          ...(body === undefined
+            ? {}
+            : {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(requestBody),
+              }),
+        },
+      },
+      (response) => {
+        const chunks = [];
+        let responseBytes = 0;
+        response.on("data", (chunk) => {
+          responseBytes += Buffer.byteLength(chunk);
+          if (responseBytes <= maxResponseBytes) {
+            chunks.push(chunk);
+          }
+        });
+        response.on("end", () => {
+          if (responseBytes > maxResponseBytes) {
+            const error = new Error("服务响应超过大小限制。");
+            error.code = "response-too-large";
+            reject(error);
+            return;
+          }
+          const text = Buffer.concat(chunks).toString("utf8");
+          let payload = null;
+          try {
+            payload = text ? JSON.parse(text) : null;
+          } catch (error) {
+            const parseError = new Error("服务响应不是有效 JSON。");
+            parseError.code = "invalid-response";
+            reject(parseError);
+            return;
+          }
+          resolve({ statusCode: response.statusCode || 0, payload });
+        });
+      },
+    );
+    request.on("timeout", () => request.destroy(new Error("服务请求超时。")));
+    request.on("error", (error) => reject(error));
+    if (body !== undefined) {
+      request.write(requestBody);
+    }
+    request.end();
+  });
+}
+
+function projectLaunchServiceIdempotencyKey(prefix = "request") {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}-${process.pid}`;
+}
+
+function createPreloadRunId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ||
+    crypto.randomUUID?.() ||
+    `preload-${Date.now()}-${Math.random().toString(36).slice(2)}-${process.pid}`
+  );
+}
+
+function projectLaunchServiceResponseError(response, fallbackMessage) {
+  const error = new Error(response?.payload?.message || fallbackMessage);
+  error.code = response?.payload?.code || `http-${response?.statusCode || 0}`;
+  return error;
+}
+
+function normalizeProjectLaunchServiceRunLog(payload, runId) {
+  const fallback = {
+    runId,
+    events: [],
+    truncated: false,
+    sizeBytes: 0,
+    hasMore: false,
+    nextOffset: 0,
+  };
+  if (payload === null || payload === undefined) {
+    return fallback;
+  }
+  if (typeof payload !== "object" || Array.isArray(payload)) {
+    const error = new Error("项目启动服务返回了无效的运行日志。");
+    error.code = "invalid-run-log-response";
+    throw error;
+  }
+  if (payload.events !== null && payload.events !== undefined && !Array.isArray(payload.events)) {
+    const error = new Error("项目启动服务返回了无效的运行日志事件。");
+    error.code = "invalid-run-log-response";
+    throw error;
+  }
+  return {
+    ...payload,
+    runId: typeof payload.runId === "string" && payload.runId ? payload.runId : runId,
+    events: Array.isArray(payload.events) ? payload.events : [],
+  };
+}
+
+async function projectLaunchServiceConnection() {
+  const discovery = readProjectLaunchServiceDiscovery();
+  const token = readProjectLaunchServiceToken();
+  return { discovery, token };
+}
+
+function validateProjectLaunchServiceHealth(health, connection) {
+  if (
+    !health ||
+    health.protocolVersion !== projectLaunchServiceProtocolVersion ||
+    health.instanceId !== connection.discovery.instanceId ||
+    health.pid !== connection.discovery.pid ||
+    health.processIdentity !== connection.discovery.processIdentity
+  ) {
+    const error = new Error("项目启动服务身份或协议校验失败。");
+    error.code =
+      health?.protocolVersion !== projectLaunchServiceProtocolVersion ? "protocol-mismatch" : "identity-mismatch";
+    throw error;
+  }
+  return health;
+}
+
+function projectLaunchServiceStateSnapshot(payload) {
+  return payload || { runs: [], latestCursor: 0, earliestCursor: 0 };
+}
+
+function projectLaunchServiceEventBatch(payload, after) {
+  return (
+    payload || {
+      events: [],
+      latestCursor: after,
+      earliestCursor: 0,
+      truncated: false,
+      nextCursor: after,
+      hasMore: false,
+    }
+  );
+}
+
+async function requestProjectLaunchServiceHealth(connection) {
+  const response = await requestProjectLaunchService(connection.discovery, connection.token, "GET", "/v1/health");
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务健康检查失败。");
+  }
+  return validateProjectLaunchServiceHealth(response.payload, connection);
+}
+
+async function requestProjectLaunchServiceState(connection) {
+  const response = await requestProjectLaunchService(connection.discovery, connection.token, "GET", "/v1/state");
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务状态读取失败。");
+  }
+  return projectLaunchServiceStateSnapshot(response.payload);
+}
+
+async function requestProjectLaunchServiceEvents(connection, after) {
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/events?after=${encodeURIComponent(String(after))}`,
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务事件读取失败。");
+  }
+  return projectLaunchServiceEventBatch(response.payload, after);
+}
+
+async function requestProjectLaunchServiceSync(connection, after) {
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/sync?after=${encodeURIComponent(String(after))}`,
+  );
+  if (response.statusCode === 404) {
+    return null;
+  }
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务同步失败。");
+  }
+  const payload = response.payload;
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload) ||
+    !payload.state ||
+    typeof payload.state !== "object" ||
+    Array.isArray(payload.state) ||
+    !payload.events ||
+    typeof payload.events !== "object" ||
+    Array.isArray(payload.events)
+  ) {
+    const error = new Error("项目启动服务返回了无效的同步响应。");
+    error.code = "invalid-sync-response";
+    throw error;
+  }
+  return {
+    health: validateProjectLaunchServiceHealth(payload.health, connection),
+    state: projectLaunchServiceStateSnapshot(payload.state),
+    events: projectLaunchServiceEventBatch(payload.events, after),
+  };
+}
+
+async function getProjectLaunchServiceRunLog(runId) {
+  if (!/^[0-9a-f]{32}$/.test(String(runId || ""))) {
+    const error = new Error("运行日志标识无效。");
+    error.code = "invalid-run-id";
+    throw error;
+  }
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/runs/${runId}/log`,
+    undefined,
+    { maxResponseBytes: projectLaunchServiceRunLogResponseLimitBytes },
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "运行日志读取失败。");
+  }
+  return normalizeProjectLaunchServiceRunLog(response.payload, runId);
+}
+
+async function getProjectLaunchServiceRunLogPage(runId, beforeOffset) {
+  if (!/^[0-9a-f]{32}$/.test(String(runId || ""))) {
+    const error = new Error("运行日志标识无效。");
+    error.code = "invalid-run-id";
+    throw error;
+  }
+  if (!Number.isSafeInteger(beforeOffset) || beforeOffset < 0) {
+    const error = new Error("运行日志分页位置无效。");
+    error.code = "invalid-log-page";
+    throw error;
+  }
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/runs/${runId}/log?before=${encodeURIComponent(String(beforeOffset))}`,
+    undefined,
+    { maxResponseBytes: projectLaunchServiceRunLogResponseLimitBytes },
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "运行日志分页读取失败。");
+  }
+  return normalizeProjectLaunchServiceRunLog(response.payload, runId);
+}
+
+async function getProjectLaunchServiceLogRetention() {
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    "/v1/log-retention",
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "日志保留策略读取失败。");
+  }
+  if (!response.payload || typeof response.payload !== "object") {
+    const error = new Error("项目启动服务返回了无效的日志保留策略。");
+    error.code = "invalid-log-retention-response";
+    throw error;
+  }
+  return response.payload;
+}
+
+async function updateProjectLaunchServiceLogRetention(policy) {
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "PUT",
+    "/v1/log-retention",
+    policy,
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "日志保留策略更新失败。");
+  }
+  if (!response.payload || typeof response.payload !== "object") {
+    const error = new Error("项目启动服务返回了无效的日志保留策略。");
+    error.code = "invalid-log-retention-response";
+    throw error;
+  }
+  return response.payload;
+}
+
+async function listProjectLaunchServiceLogs(projectId) {
+  const normalizedProjectId = String(projectId || "").trim();
+  if (!normalizedProjectId) {
+    const error = new Error("项目标识无效。");
+    error.code = "invalid-project-id";
+    throw error;
+  }
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/logs?projectId=${encodeURIComponent(normalizedProjectId)}`,
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "运行日志列表读取失败。");
+  }
+  if (!Array.isArray(response.payload?.logs)) {
+    const error = new Error("项目启动服务返回了无效的运行日志列表。");
+    error.code = "invalid-log-list-response";
+    throw error;
+  }
+  return response.payload.logs;
+}
+
+async function clearProjectLaunchServiceLogs(scope) {
+  const hasScope = scope !== undefined;
+  const runId = typeof scope?.runId === "string" ? scope.runId.trim() : "";
+  if (hasScope && !/^[0-9a-f]{32}$/.test(runId)) {
+    const error = new Error("运行标识无效。");
+    error.code = "invalid-log-scope";
+    throw error;
+  }
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "POST",
+    "/v1/logs/clear",
+    hasScope ? { runId } : {},
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "运行日志清除失败。");
+  }
+  if (!response.payload || typeof response.payload !== "object") {
+    const error = new Error("项目启动服务返回了无效的日志清除结果。");
+    error.code = "invalid-log-clear-response";
+    throw error;
+  }
+  return response.payload;
+}
+
+function advanceProjectLaunchServiceEventCursor(batch) {
+  const nextCursor = Number(batch?.nextCursor);
+  const latestCursor = Number(batch?.latestCursor);
+  const deliveredCursor = Number.isSafeInteger(nextCursor) ? nextCursor : latestCursor;
+  if (Number.isSafeInteger(deliveredCursor) && deliveredCursor >= 0) {
+    projectLaunchServiceEventCursor = Math.max(projectLaunchServiceEventCursor, deliveredCursor);
+  }
+}
+
+async function syncProjectLaunchServiceAutomation(config) {
+  if (!config || !Number.isInteger(config.revision) || config.revision < 1) {
+    const error = new Error("项目启动服务自动化配置 revision 无效。");
+    error.code = "invalid-automation-revision";
+    throw error;
+  }
+
+  const status = await readProjectLaunchServiceStatus({ includeState: true });
+  if (status.state !== "healthy" || !status.running) {
+    const error = new Error(status.message || "项目启动服务不可用，无法同步自动化配置。");
+    error.code = "service-unavailable";
+    throw error;
+  }
+
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "PUT",
+    "/v1/automation/config",
+    { revision: config.revision, config },
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务拒绝了自动化配置。");
+  }
+
+  const revision = Number(response.payload?.revision);
+  if (!Number.isInteger(revision) || revision !== config.revision) {
+    const error = new Error("项目启动服务返回了无效的自动化 revision。");
+    error.code = "invalid-automation-response";
+    throw error;
+  }
+
+  return {
+    accepted: true,
+    revision,
+    message: response.payload?.message,
+  };
+}
+
+function serviceRunCount(runs) {
+  return Array.isArray(runs)
+    ? runs.filter((run) => ["starting", "running", "stopping"].includes(run.status)).length
+    : 0;
+}
+
+function projectLaunchServiceEventToBridgeEvent(event) {
+  return {
+    type: event.type,
+    projectId: event.projectId || "",
+    scriptId: event.scriptId || "",
+    pid: Number.isInteger(event.pid) ? event.pid : 0,
+    ...(Number.isSafeInteger(event.cursor) && event.cursor >= 0 ? { cursor: event.cursor } : {}),
+    runId: event.runId,
+    runtimeOwner: "service",
+    timestamp: event.timestamp,
+    message: event.message,
+    cwd: event.cwd,
+    code: event.code,
+    signal: event.signal,
+    stoppedByUser: event.stoppedByUser,
+    automationExitMatched: event.automationExitMatched === true,
+    automationRunId: event.automationRunId,
+  };
+}
+
+function projectLaunchServiceAutomationSnapshot(automation) {
+  const revision = Number(automation?.revision);
+  const executions = Array.isArray(automation?.executions)
+    ? automation.executions
+        .filter((execution) => execution && typeof execution === "object" && !Array.isArray(execution))
+        .map((execution) => ({
+          ...execution,
+          scriptResults: Array.isArray(execution.scriptResults)
+            ? execution.scriptResults.filter((result) => result && typeof result === "object" && !Array.isArray(result))
+            : [],
+        }))
+    : undefined;
+  return {
+    revision: Number.isSafeInteger(revision) && revision >= 0 ? revision : 0,
+    ...(executions ? { executions } : {}),
+  };
+}
+
+function projectLaunchServiceSchedulerSnapshot(scheduler) {
+  if (!scheduler || typeof scheduler !== "object") return undefined;
+  if (scheduler.state !== "running" && scheduler.state !== "degraded") return undefined;
+  return {
+    state: scheduler.state,
+    ...(typeof scheduler.lastRunAt === "string" ? { lastRunAt: scheduler.lastRunAt } : {}),
+    ...(typeof scheduler.lastSuccessAt === "string" ? { lastSuccessAt: scheduler.lastSuccessAt } : {}),
+    ...(typeof scheduler.lastError === "string" ? { lastError: scheduler.lastError } : {}),
+  };
+}
+
+function projectLaunchServiceStatusResult(status, batch, options) {
+  return options.returnEventBatch === true ? { status, batch } : status;
+}
+
+function projectLaunchServiceStateSignature(status) {
+  const snapshot = { ...status };
+  delete snapshot.events;
+  return JSON.stringify(snapshot);
+}
+
+function shouldEmitProjectLaunchServiceState(status, eventCount = 0) {
+  const signature = projectLaunchServiceStateSignature(status);
+  if (eventCount === 0 && signature === projectLaunchServiceLastBroadcastSignature) {
+    return false;
+  }
+  projectLaunchServiceLastBroadcastSignature = signature;
+  return true;
+}
+
+function rememberProjectLaunchServiceState(status) {
+  projectLaunchServiceLastBroadcastSignature = projectLaunchServiceStateSignature(status);
+}
+
+async function readProjectLaunchServiceStatus(options = {}) {
+  const status = projectLaunchServiceBaseStatus();
+  if (!status.installed) {
+    try {
+      status.installed = fs.statSync(status.executablePath).isFile();
+      if (status.installed) {
+        status.state = "installed";
+        status.message = "项目启动服务已安装，尚未运行。";
+      }
+    } catch (error) {
+      return projectLaunchServiceStatusResult(status, null, options);
+    }
+  }
+
+  let connection;
+  try {
+    connection = await projectLaunchServiceConnection();
+  } catch (error) {
+    if (error?.code === "ENOENT") return projectLaunchServiceStatusResult(status, null, options);
+    if (error?.code === "protocol-mismatch") status.state = "incompatible";
+    else status.state = readProjectLaunchServicePreferences().enabled ? "unavailable" : "installed";
+    status.message = error instanceof Error ? error.message : "项目启动服务发现失败。";
+    return projectLaunchServiceStatusResult(status, null, options);
+  }
+
+  try {
+    const sync =
+      options.includeState === true
+        ? await requestProjectLaunchServiceSync(connection, projectLaunchServiceEventCursor)
+        : null;
+    const health = sync ? sync.health : await requestProjectLaunchServiceHealth(connection);
+    const batch =
+      sync || options.includeEvents !== true
+        ? sync?.events
+        : await requestProjectLaunchServiceEvents(connection, projectLaunchServiceEventCursor);
+    const state = sync ? sync.state : await requestProjectLaunchServiceState(connection);
+    status.state = "healthy";
+    status.running = true;
+    status.message = "";
+    status.protocolVersion = health.protocolVersion;
+    status.serviceVersion = health.serviceVersion;
+    status.activeRunCount = serviceRunCount(state.runs);
+    if (options.includeState === true) {
+      const automation = projectLaunchServiceAutomationSnapshot(state.automation);
+      const scheduler = projectLaunchServiceSchedulerSnapshot(state.scheduler);
+      status.runs = Array.isArray(state.runs) ? state.runs : [];
+      status.latestCursor = state.latestCursor || 0;
+      status.earliestCursor = state.earliestCursor || 0;
+      status.automationRevision = automation.revision;
+      status.automation = automation;
+      if (scheduler) status.scheduler = scheduler;
+    }
+    if (options.includeEvents === true && batch) {
+      advanceProjectLaunchServiceEventCursor(batch);
+      status.events = Array.isArray(batch.events) ? batch.events : [];
+      status.eventsTruncated = batch.truncated === true;
+      status.latestCursor = batch.latestCursor || state.latestCursor || status.latestCursor || 0;
+      status.earliestCursor = batch.earliestCursor || state.earliestCursor || status.earliestCursor || 0;
+    }
+    return projectLaunchServiceStatusResult(status, batch || null, options);
+  } catch (error) {
+    if (error?.code === "protocol-mismatch") status.state = "incompatible";
+    else status.state = "unavailable";
+    status.message = error instanceof Error ? error.message : "项目启动服务不可用。";
+    try {
+      removeStaleProjectLaunchServiceDiscovery(connection.discovery);
+    } catch (cleanupError) {
+      // Keep the original service failure visible.
+    }
+    return projectLaunchServiceStatusResult(status, null, options);
+  }
+}
+
+function serviceStatusWithError(status, error, state = "unavailable") {
+  return {
+    ...status,
+    state,
+    message: error instanceof Error ? error.message : String(error || "项目启动服务不可用。"),
+  };
+}
+
+function waitForProjectLaunchService() {
+  const deadline = Date.now() + projectLaunchServiceStartupTimeoutMs;
+  return new Promise((resolve) => {
+    const check = async () => {
+      const status = await readProjectLaunchServiceStatus();
+      if (status.running && status.state === "healthy") {
+        resolve(status);
+        return;
+      }
+      if (Date.now() >= deadline) {
+        resolve(status);
+        return;
+      }
+      setTimeout(check, 100);
+    };
+    void check();
+  });
+}
+
+async function startProjectLaunchService(options = {}) {
+  const initial = projectLaunchServiceBaseStatus();
+  try {
+    initial.installed = fs.statSync(initial.executablePath).isFile();
+  } catch (error) {
+    return initial;
+  }
+  if (!initial.installed) return initial;
+
+  if (options.requireVerifiedInstall !== false) {
+    try {
+      verifyProjectLaunchServiceInstalledExecutable();
+    } catch (error) {
+      return serviceStatusWithError(initial, error);
+    }
+  }
+
+  const current = await readProjectLaunchServiceStatus();
+  if (current.state === "healthy" && current.running) return current;
+  if (current.state === "incompatible") return current;
+
+  try {
+    fs.mkdirSync(initial.directoryPath, { recursive: true });
+    const child = spawn(initial.executablePath, ["--state-dir", initial.directoryPath], {
+      cwd: initial.directoryPath,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    projectLaunchServiceProcess = child;
+    child.once("exit", () => {
+      if (projectLaunchServiceProcess === child) projectLaunchServiceProcess = null;
+    });
+    child.once("error", () => {
+      if (projectLaunchServiceProcess === child) projectLaunchServiceProcess = null;
+    });
+    child.unref?.();
+  } catch (error) {
+    return serviceStatusWithError(initial, error);
+  }
+
+  return waitForProjectLaunchService();
+}
+
+async function stopProjectLaunchService() {
+  const status = await readProjectLaunchServiceStatus();
+  if (!status.running) return status;
+  try {
+    const connection = await projectLaunchServiceConnection();
+    const response = await requestProjectLaunchService(
+      connection.discovery,
+      connection.token,
+      "POST",
+      "/v1/shutdown",
+      {},
+    );
+    if (response.statusCode !== 202 && response.statusCode !== 200) {
+      return serviceStatusWithError(status, projectLaunchServiceResponseError(response, "项目启动服务停止失败。"));
+    }
+    const deadline = Date.now() + projectLaunchServiceStartupTimeoutMs;
+    while (Date.now() < deadline) {
+      const next = await readProjectLaunchServiceStatus();
+      if (!next.running) {
+        projectLaunchServiceProcess = null;
+        return next;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return serviceStatusWithError(status, new Error("项目启动服务停止超时。"));
+  } catch (error) {
+    return serviceStatusWithError(status, error);
+  }
+}
+
+async function reconcileProjectLaunchService() {
+  const preferences = readProjectLaunchServicePreferences();
+  if (!preferences.enabled) {
+    return readProjectLaunchServiceStatus({ includeState: true });
+  }
+
+  let result = await readProjectLaunchServiceStatus({
+    includeState: true,
+    includeEvents: true,
+    returnEventBatch: true,
+  });
+  let status = result.status;
+  let batch = result.batch;
+  if (status.state !== "healthy" || !status.running) {
+    status = await startProjectLaunchService({ requireVerifiedInstall: true });
+  }
+  if (status.state !== "healthy" || !status.running) return status;
+
+  if (!batch) {
+    result = await readProjectLaunchServiceStatus({
+      includeState: true,
+      includeEvents: true,
+      returnEventBatch: true,
+    });
+    status = result.status;
+    batch = result.batch;
+  }
+  if (status.state !== "healthy" || !status.running) return status;
+  scheduleProjectLaunchServiceEventPoll(batch?.hasMore === true ? 0 : projectLaunchServiceEventPollIntervalMs);
+  rememberProjectLaunchServiceState(status);
+  return status;
+}
+
+function openProjectLaunchServiceDirectory() {
+  const directoryPath = projectLaunchServiceDirectoryPath();
+  fs.mkdirSync(directoryPath, { recursive: true });
+  return shell.openPath(directoryPath);
+}
+
+async function pollProjectLaunchServiceEvents(emitEvents = true) {
+  if (projectLaunchServiceEventPollInFlight || !readProjectLaunchServicePreferences().enabled) return false;
+  projectLaunchServiceEventPollInFlight = true;
+  let status = projectLaunchServiceBaseStatus();
+  try {
+    const result = await readProjectLaunchServiceStatus({
+      includeState: true,
+      includeEvents: true,
+      returnEventBatch: true,
+    });
+    status = result.status;
+    const batch = result.batch;
+    if (status.state !== "healthy" || !status.running) {
+      if (emitEvents && shouldEmitProjectLaunchServiceState(status)) {
+        emit({ type: "service-state", status, timestamp: new Date().toISOString() });
+      }
+      return false;
+    }
+    const events = Array.isArray(status.events) ? status.events : [];
+    const snapshot = {
+      ...status,
+      events: emitEvents ? [] : events,
+    };
+    if (emitEvents) {
+      events.forEach((event) => emit(projectLaunchServiceEventToBridgeEvent(event)));
+    }
+    if (emitEvents && shouldEmitProjectLaunchServiceState(snapshot, events.length)) {
+      emit({ type: "service-state", status: snapshot, timestamp: new Date().toISOString() });
+    }
+    return batch?.hasMore === true;
+  } catch (error) {
+    const failedStatus = serviceStatusWithError(status, error);
+    if (emitEvents && shouldEmitProjectLaunchServiceState(failedStatus)) {
+      emit({
+        type: "service-state",
+        status: failedStatus,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    return false;
+  } finally {
+    projectLaunchServiceEventPollInFlight = false;
+  }
+}
+
+function scheduleProjectLaunchServiceEventPoll(delay = projectLaunchServiceEventPollIntervalMs) {
+  if (projectLaunchServiceEventPollTimer) clearTimeout(projectLaunchServiceEventPollTimer);
+  if (!readProjectLaunchServicePreferences().enabled) return;
+  projectLaunchServiceEventPollTimer = setTimeout(async () => {
+    projectLaunchServiceEventPollTimer = null;
+    const hasMore = await pollProjectLaunchServiceEvents(true);
+    scheduleProjectLaunchServiceEventPoll(hasMore ? 0 : projectLaunchServiceEventPollIntervalMs);
+  }, delay);
+}
+
+async function runProjectLaunchServiceCommand(payload) {
+  const status = await reconcileProjectLaunchService();
+  if (status.state !== "healthy" || !status.running) {
+    throw new Error(status.message || "项目启动服务不可用。请修复服务或在设置中关闭服务模式。");
+  }
+  const connection = await projectLaunchServiceConnection();
+  const idempotencyKey =
+    globalThis.crypto?.randomUUID?.() || `launch-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "POST",
+    "/v1/runs",
+    {
+      projectId: payload.projectId,
+      scriptId: payload.scriptId,
+      command: payload.command,
+      cwd: expandPath(payload.cwd),
+      env: payload.env || {},
+      label: payload.label,
+      automationRunId: payload.automationRunId,
+    },
+    { idempotencyKey: projectLaunchServiceIdempotencyKey("run") },
+  );
+  if (response.statusCode !== 200 && response.statusCode !== 201) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务无法启动脚本。");
+  }
+  const run = response.payload?.run;
+  if (!run || typeof run.id !== "string" || !run.id.trim()) {
+    throw new Error("项目启动服务返回了无效的运行记录。");
+  }
+  await pollProjectLaunchServiceEvents(true);
+  return {
+    pid: Number.isInteger(run.pid) && run.pid > 0 ? run.pid : 0,
+    startedAt: run.startedAt,
+    command: run.command,
+    cwd: run.cwd,
+    runId: run.id,
+    runtimeOwner: "service",
+  };
+}
+
+function projectLaunchServiceRunToProcessStatus(run) {
+  if (!run) {
+    return { active: false };
+  }
+  return {
+    active: ["starting", "running", "stopping"].includes(run.status),
+    runId: run.id,
+    runtimeOwner: "service",
+    code: run.code,
+    signal: run.signal,
+    stoppedByUser: run.stoppedByUser,
+    error: run.error,
+    endedAt: run.endedAt,
+    automationExitMatched: run.automationExitMatched === true,
+    automationRunId: run.automationRunId,
+  };
+}
+
+function shouldUseProjectLaunchServiceRuntime(options = {}) {
+  if (options.runtimeOwner === "preload") {
+    return false;
+  }
+  return options.runtimeOwner === "service" || (readProjectLaunchServicePreferences().enabled && options.runId);
+}
+
+async function getProjectLaunchServiceRunStatus(runId) {
+  if (typeof runId !== "string" || !runId) {
+    return { active: false, error: "服务运行记录缺少 runId。" };
+  }
+  const status = await readProjectLaunchServiceStatus({ includeState: true });
+  if (status.state !== "healthy" || !status.running) {
+    return {
+      active: false,
+      serviceState: status.state,
+      error: status.message || "项目启动服务不可用。",
+    };
+  }
+  return projectLaunchServiceRunToProcessStatus(status.runs?.find((run) => run.id === runId));
+}
+
+async function stopProjectLaunchServiceRun(runId) {
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "POST",
+    `/v1/runs/${encodeURIComponent(runId)}/stop`,
+    {},
+  );
+  if (response.statusCode !== 202 && response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务停止脚本失败。");
+  }
+  await pollProjectLaunchServiceEvents(true);
+}
+
+async function sendProjectLaunchServiceRunInput(runId, input) {
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "POST",
+    `/v1/runs/${encodeURIComponent(runId)}/input`,
+    { input: String(input ?? "") },
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "项目启动服务发送输入失败。");
+  }
+  await pollProjectLaunchServiceEvents(true);
+  return response.payload || { sent: false, message: "项目启动服务没有返回输入结果。" };
+}

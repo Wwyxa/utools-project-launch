@@ -566,14 +566,19 @@ const openProjectAutomation = (projectId: string) => {
   store.openProjectAutomation(projectId);
 };
 
-const runAutomationTaskNow = (projectId: string, taskId: string) => {
-  const started = store.runAutomationTaskNow(projectId, taskId);
-  automationOverviewFeedback.value = started ? t.value.automation.runStarted : t.value.automation.runBlocked;
+const automationRunFailureMessage = () =>
+  store.projectLaunchServicePreferences.enabled
+    ? store.projectLaunchServiceStatus?.message || t.value.automation.runBlocked
+    : t.value.automation.runBlocked;
+
+const runAutomationTaskNow = async (projectId: string, taskId: string) => {
+  const started = await store.runAutomationTaskNow(projectId, taskId);
+  automationOverviewFeedback.value = started ? t.value.automation.runStarted : automationRunFailureMessage();
 };
 
-const runAutomationPlanEntryEarly = (projectId: string, taskId: string, entryId: string) => {
-  const started = store.runAutomationPlanEntryEarly(projectId, taskId, entryId);
-  automationOverviewFeedback.value = started ? t.value.automation.runStarted : t.value.automation.runBlocked;
+const runAutomationPlanEntryEarly = async (projectId: string, taskId: string, entryId: string) => {
+  const started = await store.runAutomationPlanEntryEarly(projectId, taskId, entryId);
+  automationOverviewFeedback.value = started ? t.value.automation.runStarted : automationRunFailureMessage();
 };
 
 const ignoreMissedAutomationTask = (projectId: string, taskId: string) => {
