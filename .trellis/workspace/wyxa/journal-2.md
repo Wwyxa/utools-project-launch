@@ -355,3 +355,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 74: 优化项目启动服务资源开销
+
+**Date**: 2026-08-17
+**Task**: 优化项目启动服务资源开销
+**Branch**: `feat/go-service`
+
+### Summary
+
+合并服务同步请求并保留兼容回退，改为最近计划唤醒调度器，限制实时日志窗口，新增 Windows 资源基准、回归测试和可执行规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `78b0be6` | (see git log) |
+
+### Status
+
+[OK] **Completed**

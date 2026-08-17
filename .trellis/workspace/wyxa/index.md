@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 73
+- **Total Sessions**: 74
 - **Last Active**: 2026-08-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~357 | Active |
+| `journal-2.md` | ~378 | Active |
 | `journal-1.md` | ~1977 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 74 | 2026-08-17 | 优化项目启动服务资源开销 | `78b0be6` | `feat/go-service` |
 | 73 | 2026-08-17 | 完善项目启动服务日志保留与历史查看 | `9b07bd7` | `feat/go-service` |
 | 72 | 2026-08-15 | 统一项目启动运行时与服务任务状态 | `c17dd82` | `feat/go-service` |
 | 71 | 2026-08-14 | 完成可选 Go 服务与运行时加固 | `e2b9c01`, `9a6d4c5` | `feat/go-service` |
