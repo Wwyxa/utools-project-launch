@@ -1642,7 +1642,7 @@ watch(
 
 <template>
   <div
-    class="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden"
+    class="relative flex h-full min-h-0 flex-col gap-2 overflow-hidden"
     @click.capture="handleGitTabInteraction"
     @click="closeFloatingControls"
   >
@@ -1654,7 +1654,7 @@ watch(
         cn(
           'overflow-hidden rounded-lg border bg-surface transition-all duration-300 ease-out',
           isTopInfoCollapsed
-            ? '-mb-3 max-h-0 -translate-y-2 border-0 opacity-0 pointer-events-none'
+            ? '-mb-2 max-h-0 -translate-y-2 border-0 opacity-0 pointer-events-none'
             : 'mb-0 max-h-56 translate-y-0 border-border-subtle opacity-100',
         )
       "

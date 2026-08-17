@@ -618,14 +618,7 @@ watch(
       </div>
     </div>
 
-    <div
-      :class="
-        cn(
-          'flex min-w-0 items-end border-b border-border-subtle',
-          activeTab === 'git' && !isGitTopInfoCollapsed ? 'mb-3' : 'mb-2',
-        )
-      "
-    >
+    <div :class="cn('mb-2 flex min-w-0 items-end border-b border-border-subtle')">
       <div class="relative min-w-0 flex-1">
         <nav ref="tabListRef" role="tablist" class="flex min-w-0 gap-5 overflow-x-auto">
           <button
