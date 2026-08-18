@@ -319,6 +319,7 @@ Keep script runtime state centralized so project-level UI reflects the whole scr
 - `service-state` is status/reconciliation data, not a terminal log record. Update `projectLaunchServiceStatus`, reconcile service-owned runs/automation/history, then return without appending a generic process log.
 - When service status is not healthy/running, `reconcileProjectLaunchServiceRuntime` preserves existing service-owned runtime fields. It must not synthesize an `exit`, clear active automation, or re-enable renderer scheduling.
 - For healthy snapshots, choose the latest service run per `(projectId, scriptId)`, preserve active starting/running/stopping identity, and clear identity only for a known terminal service run. Process events with a service cursor must not append the same output twice.
+- A cold/reconnect service event batch may populate current terminal logs only for an active snapshot run identity. A `started` event may establish a successor only after the active predecessor's terminal event was accepted in the same ordered batch. Completed runs, or a snapshot with no active runs, are marked observed without creating script state or terminal logs.
 - Service automation executions are authoritative for service mode. Reconcile each execution into its matching plan entry and history, release a pending submission when its selected entry appears, and derive `automationActiveProjectRuns` from running executions.
 - During `projectLaunchServiceOwnershipHandoff`, block every renderer launch and automation entry point. Persist enabled ownership only after start plus complete configuration synchronization succeed; after persisted ownership, service errors become scoped unavailable state and remain fail-closed.
 - An early service run keeps the original future `plannedAt`. Set the per-project submission guard before synchronization, send `runEarly: true` only for the selected pending entry, and do not persist a successful renderer-local execution/history for it.
@@ -329,6 +330,8 @@ Keep script runtime state centralized so project-level UI reflects the whole scr
 - Current script is `new-run` and an `exit` arrives for `old-run` -> ignore the event and leave current status/logs unchanged.
 - Snapshot marks a run terminal, then an old `started` event arrives -> reject the delayed start; do not recreate a completed run.
 - Same service output event cursor arrives twice -> append one log line only.
+- Healthy snapshot has no active runs plus persisted `started`/`exit` events -> leave script state and both terminal log collections empty.
+- One script has an active service run while another script has persisted terminal events -> append only the active script's current-run output.
 - Service is unavailable during runtime reconciliation -> retain the active service script and show unavailable service status; do not infer a terminal result.
 - `runAutomationPlanEntryEarly` is called during handoff, for a past/non-pending entry, with no scripts, or while a project submission exists -> return `false` without changing plan/history.
 - Healthy service accepts an early submission -> return `true`, keep `plannedAt`, and await the service snapshot for running/completed/failed history.
@@ -338,6 +341,7 @@ Keep script runtime state centralized so project-level UI reflects the whole scr
 ### 5. Good/Base/Bad Cases
 
 - Good: service output and a later service snapshot reach an open plugin; output appears once while automation history and scheduler health refresh from the snapshot.
+- Good: reopening the plugin while one service run is active restores only that run's current output; old stopped scripts do not gain terminal tabs.
 - Good: a user requests stop or input while a service run is starting without a PID; Store passes `pid: 0` together with `runId` and `runtimeOwner: "service"`.
 - Good: a user enables service mode with a due renderer task; the handoff barrier prevents the renderer timer from launching it before the service accepts the configuration.
 - Base: service mode is disabled; preload processes and renderer automation continue to use the same script runtime fields without involving service state.
@@ -348,7 +352,7 @@ Keep script runtime state centralized so project-level UI reflects the whole scr
 
 - `tests/projectRuntimeState.test.ts` must preserve `runId` and owner when script arrays are rebuilt.
 - `tests/projectBridge.launchers.test.ts` must assert one generated preload identity across lifecycle events and reject mismatched identity for control calls.
-- `tests/projectBridge.uiPreferences.test.ts` must cover stale terminal events, explicit snapshot/event ordering, service cursor de-duplication, unavailable service reconciliation, owner handoff timer blocking, early service submission, PID-less service controls, and active-run-conflict recovery/failure.
+- `tests/projectBridge.uiPreferences.test.ts` must cover stale terminal events, cold replay with no active service run, active-run log isolation from another script's retained terminal events, explicit snapshot/event ordering, service cursor de-duplication, unavailable service reconciliation, owner handoff timer blocking, early service submission, PID-less service controls, and active-run-conflict recovery/failure.
 - Run `npx vitest run tests/projectRuntimeState.test.ts tests/projectBridge.launchers.test.ts tests/projectBridge.uiPreferences.test.ts` after changing runtime reconciliation or automation ownership.
 - Run `node --check public/preload.js`, `npm run lint`, and `npm run build` after changing the bridge event union, Store runtime actions, or service-state presentation.
 
@@ -375,6 +379,27 @@ if (status.state !== "healthy" || !status.running) {
 
 this.reconcileProjectLaunchServiceRuntime(status);
 ```
+
+#### Wrong
+
+```ts
+for (const event of status.events || []) {
+  this.handleBridgeEvent({ ...event, runtimeOwner: "service" });
+}
+```
+
+#### Correct
+
+```ts
+if (!isCurrentServiceEvent) {
+  hasObservedServiceEvent(event);
+  continue;
+}
+
+this.handleBridgeEvent(event);
+```
+
+Filter a cold/reconnect event batch against the active service-run identity before it can mutate current terminal state.
 
 Preserve service-owned identity until authoritative state says the run is terminal, and keep enabled ownership fail-closed.
 

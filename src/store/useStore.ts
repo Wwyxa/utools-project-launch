@@ -1776,6 +1776,8 @@ export const useStore = defineStore("app", {
       }
 
       const latestRuns = new Map<string, NonNullable<ProjectLaunchServiceStatus["runs"]>[number]>();
+      const activeServiceRunIds = new Map<string, string>();
+      const serviceScriptsAwaitingStart = new Set<string>();
       const lostServiceRunIds = new Set<string>();
       for (const run of status.runs || []) {
         if (!run.projectId || !run.scriptId || !run.id) {
@@ -1798,12 +1800,14 @@ export const useStore = defineStore("app", {
           continue;
         }
 
+        const scriptKey = `${run.projectId}\u0000${run.scriptId}`;
         const isActiveServiceRun = run.status === "starting" || run.status === "running" || run.status === "stopping";
         rememberRuntimeRun(
           pendingRuntimeTerminalEventKey(run.projectId, run.scriptId, run.id),
           isActiveServiceRun ? "active" : "terminal",
         );
         if (isActiveServiceRun) {
+          activeServiceRunIds.set(scriptKey, run.id);
           const pid = run.pid;
           script.status = run.status === "stopping" ? "STOPPING" : "RUNNING";
           script.pid = typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? pid : undefined;
@@ -1903,11 +1907,31 @@ export const useStore = defineStore("app", {
           pid: typeof pid === "number" && Number.isInteger(pid) ? pid : 0,
           runtimeOwner: "service",
         };
+        const serviceScriptKey = `${bridgeEvent.projectId}\u0000${bridgeEvent.scriptId}`;
+        const activeRunId = activeServiceRunIds.get(serviceScriptKey);
+        const isCurrentServiceEvent =
+          Boolean(bridgeEvent.runId) &&
+          (bridgeEvent.runId === activeRunId ||
+            (bridgeEvent.type === "started" &&
+              activeRunId === undefined &&
+              serviceScriptsAwaitingStart.has(serviceScriptKey)));
+        if (!isCurrentServiceEvent) {
+          hasObservedServiceEvent(bridgeEvent);
+          continue;
+        }
         if (bridgeEvent.type === "error" && bridgeEvent.runId && lostServiceRunIds.has(bridgeEvent.runId)) {
           hasObservedServiceEvent(bridgeEvent);
           continue;
         }
+        if (bridgeEvent.type === "started" && bridgeEvent.runId) {
+          activeServiceRunIds.set(serviceScriptKey, bridgeEvent.runId);
+          serviceScriptsAwaitingStart.delete(serviceScriptKey);
+        }
         this.handleBridgeEvent(bridgeEvent);
+        if (bridgeEvent.type === "exit" || bridgeEvent.type === "error") {
+          activeServiceRunIds.delete(serviceScriptKey);
+          serviceScriptsAwaitingStart.add(serviceScriptKey);
+        }
       }
     },
     async persistProjects(synchronizeProjectLaunchService = true) {

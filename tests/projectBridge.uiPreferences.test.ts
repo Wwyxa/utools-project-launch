@@ -2457,6 +2457,162 @@ describe("store startup timing", () => {
     });
   });
 
+  it("does not replay completed service events into current terminal logs", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [
+      {
+        id: "completed-service-project",
+        name: "Completed service project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "completed-service-script", name: "dev", command: "echo completed", status: "IDLE" }],
+        env: {},
+      },
+    ];
+
+    store.reconcileProjectLaunchServiceRuntime({
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [],
+      events: [
+        {
+          cursor: 91,
+          timestamp: "2026-08-18T12:00:00.000Z",
+          type: "started",
+          runId: "completed-service-run",
+          projectId: "completed-service-project",
+          scriptId: "completed-service-script",
+          pid: 8103,
+          message: "echo completed",
+          cwd: "C:\\workspace",
+        },
+        {
+          cursor: 92,
+          timestamp: "2026-08-18T12:00:01.000Z",
+          type: "exit",
+          runId: "completed-service-run",
+          projectId: "completed-service-project",
+          scriptId: "completed-service-script",
+          pid: 8103,
+          stoppedByUser: true,
+          code: 0,
+        },
+      ],
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.logs["completed-service-project"]).toBeUndefined();
+    expect(store.scriptLogs["completed-service-project"]).toBeUndefined();
+  });
+
+  it("keeps current terminal logs scoped to active service runs", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [
+      {
+        id: "active-service-project",
+        name: "Active service project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [
+          { id: "active-service-script", name: "dev", command: "echo active", status: "IDLE" },
+          { id: "completed-service-script", name: "server", command: "echo completed", status: "IDLE" },
+        ],
+        env: {},
+      },
+    ];
+
+    store.reconcileProjectLaunchServiceRuntime({
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [
+        {
+          id: "active-service-run",
+          projectId: "active-service-project",
+          scriptId: "active-service-script",
+          label: "Active service project / dev",
+          command: "echo active",
+          cwd: "C:\\workspace",
+          pid: 8104,
+          status: "running",
+          startedAt: "2026-08-18T12:01:00.000Z",
+        },
+      ],
+      events: [
+        {
+          cursor: 93,
+          timestamp: "2026-08-18T11:00:00.000Z",
+          type: "started",
+          runId: "completed-service-run",
+          projectId: "active-service-project",
+          scriptId: "completed-service-script",
+          pid: 8103,
+          message: "echo completed",
+          cwd: "C:\\workspace",
+        },
+        {
+          cursor: 94,
+          timestamp: "2026-08-18T11:00:01.000Z",
+          type: "exit",
+          runId: "completed-service-run",
+          projectId: "active-service-project",
+          scriptId: "completed-service-script",
+          pid: 8103,
+          stoppedByUser: true,
+          code: 0,
+        },
+        {
+          cursor: 95,
+          timestamp: "2026-08-18T12:01:01.000Z",
+          type: "stdout",
+          runId: "active-service-run",
+          projectId: "active-service-project",
+          scriptId: "active-service-script",
+          pid: 8104,
+          message: "current run output",
+        },
+      ],
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({
+      status: "RUNNING",
+      pid: 8104,
+      runId: "active-service-run",
+      runtimeOwner: "service",
+    });
+    expect(store.scriptLogs["active-service-project"]?.["completed-service-script"]).toBeUndefined();
+    expect(store.scriptLogs["active-service-project"]?.["active-service-script"]).toContainEqual(
+      expect.objectContaining({ message: "current run output" }),
+    );
+  });
+
   it("does not append duplicate service output for the same event cursor", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
