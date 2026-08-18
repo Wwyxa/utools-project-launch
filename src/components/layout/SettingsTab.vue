@@ -6,6 +6,7 @@ import {
   Code2,
   Download,
   FolderCog,
+  FolderOpen,
   Github,
   Info,
   Monitor,
@@ -16,6 +17,7 @@ import {
   RotateCcw,
   Save,
   ServerCog,
+  ShieldCheck,
   Settings2,
   SquareTerminal,
   Sun,
@@ -71,6 +73,9 @@ const externalApplicationErrors = ref({ name: "", command: "" });
 const externalApplicationFeedback = ref("");
 const projectLaunchServiceDisableWarningOpen = ref(false);
 const projectLaunchServiceUpdateChecking = ref(false);
+const projectLaunchServiceDownloading = ref(false);
+const projectLaunchServiceRechecking = ref(false);
+const projectLaunchServiceUpdateDialogOpen = ref(false);
 const logRetentionDraft = ref<ProjectLaunchServiceLogRetentionPolicy | null>(null);
 const logRetentionSaving = ref(false);
 const logRetentionFeedback = ref("");
@@ -161,10 +166,15 @@ const aiConfigReady = computed(() => {
 });
 const projectLaunchServiceStatus = computed(() => store.projectLaunchServiceStatus);
 const projectLaunchServiceBusy = computed(
-  () => projectLaunchServiceStatus.value?.state === "starting" || projectLaunchServiceUpdateChecking.value,
+  () =>
+    projectLaunchServiceStatus.value?.state === "starting" ||
+    projectLaunchServiceUpdateChecking.value ||
+    projectLaunchServiceDownloading.value ||
+    projectLaunchServiceRechecking.value,
 );
 const projectLaunchServiceStatusLabel = computed(() => {
   const state = projectLaunchServiceStatus.value?.state;
+  if (projectLaunchServiceStatus.value?.updateAvailable) return t.value.settings.projectLaunchServiceUpdateAvailable;
   if (state === "installed") return t.value.settings.projectLaunchServiceInstalled;
   if (state === "starting") return t.value.settings.projectLaunchServiceStarting;
   if (state === "healthy") return t.value.settings.projectLaunchServiceHealthy;
@@ -174,6 +184,18 @@ const projectLaunchServiceStatusLabel = computed(() => {
   }
   if (state === "unavailable") return t.value.settings.projectLaunchServiceUnavailable;
   return t.value.settings.projectLaunchServiceNotInstalled;
+});
+const projectLaunchServiceUpdateDownloadAllowed = computed(() =>
+  Boolean(projectLaunchServiceStatus.value?.updateAvailable && !projectLaunchServiceStatus.value?.running),
+);
+const projectLaunchServiceUpdateDialogMessage = computed(() =>
+  projectLaunchServiceStatus.value?.running
+    ? t.value.settings.projectLaunchServiceUpdateRunningMessage
+    : t.value.settings.projectLaunchServiceUpdateMessage,
+);
+const projectLaunchServiceUpdateDialogDetail = computed(() => {
+  const version = projectLaunchServiceStatus.value?.latestServiceVersion;
+  return version ? `${t.value.settings.projectLaunchServiceUpdateVersion}: ${version}` : "";
 });
 const projectLaunchServiceStatusClass = computed(() => {
   const state = projectLaunchServiceStatus.value?.state;
@@ -243,6 +265,17 @@ const segmentButtonClass = (active: boolean) =>
       : "text-on-surface-variant hover:bg-surface-container",
   );
 
+type ServiceActionTone = "primary" | "secondary" | "danger";
+const serviceActionButtonClass = (tone: ServiceActionTone = "secondary") =>
+  cn(
+    "inline-flex h-8 min-w-[7.5rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-55",
+    tone === "primary"
+      ? "border-primary bg-primary text-on-primary hover:bg-primary/90"
+      : tone === "danger"
+        ? "border-status-error/30 bg-surface text-status-error hover:bg-status-error/10"
+        : "border-border-subtle bg-surface text-on-surface hover:bg-surface-variant",
+  );
+
 const loadAiModels = async () => {
   await store.refreshAiModels();
   if (store.aiPreferences.provider === "utools" && !store.aiPreferences.model && store.aiModels[0]) {
@@ -280,19 +313,70 @@ const handleOpenGithubRepository = async () => {
 };
 
 const handleDownloadProjectLaunchService = async () => {
-  await store.downloadProjectLaunchService();
-  await refreshLogRetention();
+  projectLaunchServiceDownloading.value = true;
+  store.setProjectStatusMessage("loading", t.value.settings.projectLaunchServiceDownloading);
+  try {
+    const status = await store.downloadProjectLaunchService();
+    await refreshLogRetention();
+    store.setProjectStatusMessage(
+      status.installed && status.state === "installed" ? "success" : "error",
+      status.installed && status.state === "installed"
+        ? t.value.settings.projectLaunchServiceDownloadSuccess
+        : status.message || t.value.settings.projectLaunchServiceDownloadError,
+    );
+  } catch (error) {
+    store.setProjectStatusMessage(
+      "error",
+      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceDownloadError,
+    );
+  } finally {
+    projectLaunchServiceDownloading.value = false;
+  }
+};
+
+const confirmProjectLaunchServiceUpdate = async () => {
+  if (!projectLaunchServiceUpdateDownloadAllowed.value) {
+    projectLaunchServiceUpdateDialogOpen.value = false;
+    return;
+  }
+  projectLaunchServiceUpdateDialogOpen.value = false;
+  await handleDownloadProjectLaunchService();
 };
 
 const handleRecheckProjectLaunchService = async () => {
-  await store.refreshProjectLaunchServiceStatus(true);
-  await refreshLogRetention();
+  projectLaunchServiceRechecking.value = true;
+  try {
+    await store.refreshProjectLaunchServiceStatus(true);
+    await refreshLogRetention();
+  } finally {
+    projectLaunchServiceRechecking.value = false;
+  }
 };
 
 const handleCheckProjectLaunchServiceUpdate = async () => {
   projectLaunchServiceUpdateChecking.value = true;
+  store.setProjectStatusMessage("loading", t.value.settings.projectLaunchServiceCheckingUpdate);
   try {
-    await store.checkProjectLaunchServiceUpdate();
+    const status = await store.checkProjectLaunchServiceUpdate();
+    if (status.updateCheckError) {
+      store.setProjectStatusMessage("error", status.message || t.value.settings.projectLaunchServiceUpdateCheckError);
+      return;
+    }
+    if (status.updateAvailable) {
+      projectLaunchServiceUpdateDialogOpen.value = true;
+      store.setProjectStatusMessage("warning", t.value.settings.projectLaunchServiceUpdateAvailable);
+      return;
+    }
+    if (!status.installed || status.state === "unavailable" || status.state === "incompatible") {
+      store.setProjectStatusMessage("warning", status.message || t.value.settings.projectLaunchServiceUpdateCheckError);
+      return;
+    }
+    store.setProjectStatusMessage("success", t.value.settings.projectLaunchServiceUpToDate);
+  } catch (error) {
+    store.setProjectStatusMessage(
+      "error",
+      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceUpdateCheckError,
+    );
   } finally {
     projectLaunchServiceUpdateChecking.value = false;
   }
@@ -1127,22 +1211,49 @@ watch(
             <span class="text-[10px] leading-4 text-on-surface-variant">{{ t.settings.projectLaunchServiceHint }}</span>
           </div>
           <div class="ml-auto flex shrink-0 items-center gap-2">
+            <button
+              v-if="
+                projectLaunchServiceStatus &&
+                !projectLaunchServiceStatus.installed &&
+                projectLaunchServiceStatus.expectedAssetName
+              "
+              type="button"
+              class="inline-flex h-7 items-center gap-1 rounded border border-primary bg-primary px-2 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+              :disabled="projectLaunchServiceBusy"
+              :aria-busy="projectLaunchServiceDownloading"
+              @click="handleDownloadProjectLaunchService"
+            >
+              <RefreshCw v-if="projectLaunchServiceDownloading" :size="12" class="animate-spin" />
+              <Download v-else :size="12" />
+              {{
+                projectLaunchServiceDownloading
+                  ? t.settings.projectLaunchServiceDownloading
+                  : t.settings.projectLaunchServiceDownload
+              }}
+            </button>
             <span :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', projectLaunchServiceStatusClass)">
               {{ projectLaunchServiceStatusLabel }}
             </span>
             <label class="inline-flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
-              <span>{{
-                store.projectLaunchServicePreferences.enabled
-                  ? t.settings.projectLaunchServiceDisable
-                  : t.settings.projectLaunchServiceEnable
-              }}</span>
+              <span>{{ t.settings.projectLaunchServiceMode }}</span>
+              <span class="text-[10px] font-medium text-on-surface-variant">
+                {{
+                  store.projectLaunchServicePreferences.enabled
+                    ? t.settings.projectLaunchServiceModeOn
+                    : t.settings.projectLaunchServiceModeOff
+                }}
+              </span>
               <input
                 type="checkbox"
                 role="switch"
                 class="h-4 w-4 accent-primary"
                 :checked="store.projectLaunchServicePreferences.enabled"
                 :disabled="projectLaunchServiceBusy"
-                :aria-label="t.settings.projectLaunchServiceEnable"
+                :aria-label="
+                  store.projectLaunchServicePreferences.enabled
+                    ? t.settings.projectLaunchServiceDisable
+                    : t.settings.projectLaunchServiceEnable
+                "
                 @change="handleToggleProjectLaunchService"
               />
             </label>
@@ -1181,11 +1292,12 @@ watch(
             </dd>
           </dl>
 
-          <div class="flex flex-wrap content-start gap-1.5">
+          <div class="flex min-w-0 flex-wrap content-start gap-1.5">
             <button
               type="button"
-              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-55"
-              :disabled="projectLaunchServiceBusy || !projectLaunchServiceStatus?.expectedAssetName"
+              :class="serviceActionButtonClass('primary')"
+              :disabled="projectLaunchServiceBusy || !projectLaunchServiceStatus?.installed"
+              :aria-busy="projectLaunchServiceUpdateChecking"
               @click="handleCheckProjectLaunchServiceUpdate"
             >
               <RefreshCw :size="13" :class="projectLaunchServiceUpdateChecking ? 'animate-spin' : ''" />
@@ -1197,43 +1309,24 @@ watch(
             </button>
             <button
               type="button"
-              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-primary px-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
-              :disabled="
-                projectLaunchServiceBusy ||
-                projectLaunchServiceStatus?.running ||
-                !projectLaunchServiceStatus?.expectedAssetName
-              "
-              @click="handleDownloadProjectLaunchService"
-            >
-              <Download :size="13" :class="projectLaunchServiceBusy ? 'animate-spin' : ''" />
-              {{
-                projectLaunchServiceBusy
-                  ? t.settings.projectLaunchServiceDownloading
-                  : t.settings.projectLaunchServiceDownload
-              }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-55"
+              :class="serviceActionButtonClass()"
               :disabled="projectLaunchServiceBusy"
+              :aria-busy="projectLaunchServiceRechecking"
               @click="handleRecheckProjectLaunchService"
             >
-              <RotateCcw :size="13" />
-              {{ t.settings.projectLaunchServiceRecheck }}
+              <RefreshCw v-if="projectLaunchServiceRechecking" :size="13" class="animate-spin" />
+              <ShieldCheck v-else :size="13" />
+              {{
+                projectLaunchServiceRechecking
+                  ? t.settings.projectLaunchServiceRechecking
+                  : t.settings.projectLaunchServiceRecheck
+              }}
             </button>
-            <button
-              type="button"
-              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-              @click="store.openProjectLaunchServiceDirectory"
-            >
-              <FolderCog :size="13" />
+            <button type="button" :class="serviceActionButtonClass()" @click="store.openProjectLaunchServiceDirectory">
+              <FolderOpen :size="13" />
               {{ t.settings.projectLaunchServiceOpenDirectory }}
             </button>
-            <button
-              type="button"
-              class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-              @click="store.openProjectLaunchServiceReleases"
-            >
+            <button type="button" :class="serviceActionButtonClass()" @click="store.openProjectLaunchServiceReleases">
               <Github :size="13" />
               {{ t.settings.projectLaunchServiceOpenReleases }}
             </button>
@@ -1248,10 +1341,23 @@ watch(
                 {{ t.settings.projectLaunchServiceLogPersistenceHint }}
               </p>
             </div>
-            <div class="flex shrink-0 gap-1.5">
+            <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+              <label
+                class="inline-flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface px-2.5 text-xs font-semibold text-on-surface"
+              >
+                <span class="min-w-0">{{ t.settings.projectLaunchServiceLogPersistLabel }}</span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="h-4 w-4 shrink-0 accent-primary"
+                  :checked="logRetentionDraft?.persist"
+                  :disabled="!logRetentionReady || !logRetentionDraft || logRetentionSaving"
+                  @change="updateLogRetentionPersistence"
+                />
+              </label>
               <button
                 type="button"
-                class="inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-primary px-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                :class="serviceActionButtonClass('primary')"
                 :disabled="!logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy"
                 @click="saveLogRetention"
               >
@@ -1262,7 +1368,7 @@ watch(
               </button>
               <button
                 type="button"
-                class="inline-flex h-8 items-center gap-1.5 rounded border border-status-error/30 bg-surface px-2.5 text-xs font-bold text-status-error transition-colors hover:bg-status-error/10 disabled:cursor-not-allowed disabled:opacity-55"
+                :class="serviceActionButtonClass('danger')"
                 :disabled="!logRetentionReady || logRetentionClearBusy"
                 @click="logRetentionClearOpen = true"
               >
@@ -1272,23 +1378,7 @@ watch(
             </div>
           </div>
 
-          <div
-            v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
-            class="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
-          >
-            <label
-              class="flex min-w-0 items-center justify-between gap-2 rounded border border-border-subtle bg-surface-container-low px-2.5 py-2 text-xs font-semibold text-on-surface"
-            >
-              <span class="min-w-0">{{ t.settings.projectLaunchServiceLogPersistLabel }}</span>
-              <input
-                type="checkbox"
-                role="switch"
-                class="h-4 w-4 shrink-0 accent-primary"
-                :checked="logRetentionDraft.persist"
-                :disabled="!logRetentionReady || logRetentionSaving"
-                @change="updateLogRetentionPersistence"
-              />
-            </label>
+          <div v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus" class="mt-3 grid grid-cols-3 gap-2">
             <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
               {{ t.settings.projectLaunchServiceLogCompletedRuns }}
               <input
@@ -1724,6 +1814,21 @@ watch(
       :primary-label="t.common.close"
       @cancel="projectLaunchServiceDisableWarningOpen = false"
       @primary="projectLaunchServiceDisableWarningOpen = false"
+    />
+
+    <ActionDialog
+      :open="projectLaunchServiceUpdateDialogOpen"
+      tone="warning"
+      icon="alert"
+      :title="t.settings.projectLaunchServiceUpdateTitle"
+      :message="projectLaunchServiceUpdateDialogMessage"
+      :detail="projectLaunchServiceUpdateDialogDetail"
+      :primary-label="
+        projectLaunchServiceUpdateDownloadAllowed ? t.settings.projectLaunchServiceDownload : t.common.close
+      "
+      :cancel-label="projectLaunchServiceUpdateDownloadAllowed ? t.common.cancel : ''"
+      @cancel="projectLaunchServiceUpdateDialogOpen = false"
+      @primary="confirmProjectLaunchServiceUpdate"
     />
 
     <ActionDialog

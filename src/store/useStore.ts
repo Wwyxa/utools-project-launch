@@ -253,6 +253,8 @@ const launchMessage = (locale: Locale, code: string, target: string) => {
   };
   return labels[code] || (zh ? `无法打开 ${target}` : `Could not open ${target}`);
 };
+const projectLaunchServiceDownloadProgressMessage = (locale: Locale, percent: number) =>
+  locale === "zh-CN" ? `正在下载并安装（${percent}%）` : `Downloading and installing (${percent}%)`;
 const resolvedExternalApplicationName = (
   applications: readonly ExternalApplication[],
   applicationId: string | undefined,
@@ -5574,7 +5576,7 @@ export const useStore = defineStore("app", {
       this.advanceAutomationInputStep(context);
     },
     handleAutomationBridgeEvent(event: ProjectBridgeEvent) {
-      if (event.type === "service-state") {
+      if (event.type === "service-state" || event.type === "service-download-progress") {
         return;
       }
       const context = automationScriptContexts.get(automationScriptContextKey(event.projectId, event.scriptId));
@@ -6248,6 +6250,13 @@ export const useStore = defineStore("app", {
       if (event.type === "service-state") {
         this.projectLaunchServiceStatus = event.status;
         this.reconcileProjectLaunchServiceRuntime(event.status);
+        return;
+      }
+      if (event.type === "service-download-progress") {
+        if (Number.isFinite(event.percent)) {
+          const percent = Math.max(0, Math.min(100, Math.floor(event.percent)));
+          this.setProjectStatusMessage("loading", projectLaunchServiceDownloadProgressMessage(this.locale, percent));
+        }
         return;
       }
       if (hasObservedServiceEvent(event)) {

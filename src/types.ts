@@ -297,6 +297,7 @@ export interface ProjectLaunchServiceStatus {
   scheduler?: ProjectLaunchServiceSchedulerStatus;
   latestServiceVersion?: string;
   updateAvailable?: boolean;
+  updateCheckError?: boolean;
   message?: string;
 }
 
@@ -1204,7 +1205,18 @@ export interface ProjectBridgeServiceStateEvent {
   timestamp?: string;
 }
 
-export type ProjectBridgeEvent = ProjectBridgeProcessEvent | ProjectBridgeServiceStateEvent;
+export interface ProjectBridgeServiceDownloadProgressEvent {
+  type: "service-download-progress";
+  receivedBytes: number;
+  totalBytes: number;
+  percent: number;
+  timestamp?: string;
+}
+
+export type ProjectBridgeEvent =
+  | ProjectBridgeProcessEvent
+  | ProjectBridgeServiceStateEvent
+  | ProjectBridgeServiceDownloadProgressEvent;
 
 export interface ProjectGitRemoteProgressEvent {
   type: "git-remote-progress";

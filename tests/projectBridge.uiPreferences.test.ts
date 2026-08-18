@@ -97,7 +97,7 @@ const projectLaunchServiceExecutableName = () => `project-launch-service${proces
 
 const createProjectLaunchServiceDownloadHttps = (
   binaryContents: Buffer,
-  { redirectToReleaseAssets = false }: { redirectToReleaseAssets?: boolean } = {},
+  { redirectToReleaseAssets = false, chunkSize = 0 }: { redirectToReleaseAssets?: boolean; chunkSize?: number } = {},
 ) => {
   const assetName = projectLaunchServiceAssetName();
   const checksum = createHash("sha256").update(binaryContents).digest("hex");
@@ -149,7 +149,13 @@ const createProjectLaunchServiceDownloadHttps = (
         response.resume = () => undefined;
         callback(response);
         if (nextResponse.contents) {
-          response.emit("data", nextResponse.contents);
+          if (chunkSize > 0) {
+            for (let offset = 0; offset < nextResponse.contents.length; offset += chunkSize) {
+              response.emit("data", nextResponse.contents.subarray(offset, offset + chunkSize));
+            }
+          } else {
+            response.emit("data", nextResponse.contents);
+          }
           response.emit("end");
         }
       });
@@ -1640,6 +1646,7 @@ describe("Project Launch Service preload installation", () => {
   it("uses one combined synchronization request when the service supports it", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const requestedPaths: string[] = [];
+    const https = createProjectLaunchServiceDownloadHttps(Buffer.from("updated-project-launch-service"));
     const storage = new Map<string, unknown>([
       [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
     ]);
@@ -1654,45 +1661,44 @@ describe("Project Launch Service preload installation", () => {
           if (error) queueMicrotask(() => request.emit("error", error));
         };
         request.end = () => {
-          const payload =
-            options.path === "/v1/sync?after=0"
-              ? {
-                  health: {
-                    protocolVersion: 2,
-                    serviceVersion: "test",
-                    instanceId: "sync-service",
-                    pid: process.pid,
-                    processIdentity: "sync-process",
-                  },
-                  state: {
-                    runs: [],
-                    latestCursor: 1,
-                    earliestCursor: 1,
-                    automation: { revision: 3, executions: [] },
-                    scheduler: { state: "running" },
-                  },
-                  events: {
-                    events: [
-                      {
-                        cursor: 1,
-                        timestamp: "2026-08-17T00:00:00.000Z",
-                        type: "stdout",
-                        runId: "11111111111111111111111111111111",
-                        projectId: "sync-project",
-                        scriptId: "sync-script",
-                        message: "sync output",
-                      },
-                    ],
-                    latestCursor: 1,
-                    earliestCursor: 1,
-                    truncated: false,
-                    nextCursor: 1,
-                    hasMore: false,
-                  },
-                }
-              : { code: "not_found" };
+          const payload = options.path.startsWith("/v1/sync?after=")
+            ? {
+                health: {
+                  protocolVersion: 2,
+                  serviceVersion: "test",
+                  instanceId: "sync-service",
+                  pid: process.pid,
+                  processIdentity: "sync-process",
+                },
+                state: {
+                  runs: [],
+                  latestCursor: 1,
+                  earliestCursor: 1,
+                  automation: { revision: 3, executions: [] },
+                  scheduler: { state: "running" },
+                },
+                events: {
+                  events: [
+                    {
+                      cursor: 1,
+                      timestamp: "2026-08-17T00:00:00.000Z",
+                      type: "stdout",
+                      runId: "11111111111111111111111111111111",
+                      projectId: "sync-project",
+                      scriptId: "sync-script",
+                      message: "sync output",
+                    },
+                  ],
+                  latestCursor: 1,
+                  earliestCursor: 1,
+                  truncated: false,
+                  nextCursor: 1,
+                  hasMore: false,
+                },
+              }
+            : { code: "not_found" };
           const response = new EventEmitter() as EventEmitter & { statusCode: number };
-          response.statusCode = options.path === "/v1/sync?after=0" ? 200 : 404;
+          response.statusCode = options.path.startsWith("/v1/sync?after=") ? 200 : 404;
           queueMicrotask(() => {
             callback(response);
             response.emit("data", Buffer.from(JSON.stringify(payload)));
@@ -1708,7 +1714,7 @@ describe("Project Launch Service preload installation", () => {
         storage,
         undefined,
         { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
-        { http },
+        { http, https },
       );
       const installed = await bridge.getProjectLaunchServiceStatus();
       mkdirSync(installed.directoryPath, { recursive: true });
@@ -1737,7 +1743,17 @@ describe("Project Launch Service preload installation", () => {
         automationRevision: 3,
         events: [expect.objectContaining({ message: "sync output" })],
       });
-      expect(requestedPaths).toEqual(["/v1/sync?after=0"]);
+      const updateStatus = await bridge.checkProjectLaunchServiceUpdate();
+
+      expect(updateStatus).toMatchObject({
+        state: "healthy",
+        running: true,
+        scheduler: { state: "running" },
+        updateAvailable: true,
+        updateCheckError: false,
+      });
+      expect(requestedPaths).toEqual(["/v1/sync?after=0", "/v1/sync?after=1"]);
+      expect(https.get).toHaveBeenCalledTimes(2);
       bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
@@ -1884,6 +1900,70 @@ describe("Project Launch Service preload installation", () => {
       expect(updateStatus.message).toContain("发现项目启动服务更新");
       expect(readFileSync(status.executablePath)).toEqual(binaryContents);
       expect(https.get).toHaveBeenCalledTimes(2);
+    } finally {
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("emits percentage progress while downloading the service binary", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const progressEvents: Array<{ type?: string; percent?: number; receivedBytes?: number; totalBytes?: number }> = [];
+    const binary = Buffer.from("12345678");
+    const https = createProjectLaunchServiceDownloadHttps(binary, { chunkSize: 2 });
+    try {
+      const bridge = loadPreloadBridge(
+        new Map(),
+        undefined,
+        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { https },
+        (detail) => {
+          if (detail && typeof detail === "object") {
+            progressEvents.push(
+              detail as { type?: string; percent?: number; receivedBytes?: number; totalBytes?: number },
+            );
+          }
+        },
+      );
+
+      await bridge.downloadProjectLaunchService();
+
+      expect(progressEvents.filter((event) => event.type === "service-download-progress")).toEqual([
+        {
+          type: "service-download-progress",
+          receivedBytes: 0,
+          totalBytes: 8,
+          percent: 0,
+          timestamp: expect.any(String),
+        },
+        {
+          type: "service-download-progress",
+          receivedBytes: 2,
+          totalBytes: 8,
+          percent: 25,
+          timestamp: expect.any(String),
+        },
+        {
+          type: "service-download-progress",
+          receivedBytes: 4,
+          totalBytes: 8,
+          percent: 50,
+          timestamp: expect.any(String),
+        },
+        {
+          type: "service-download-progress",
+          receivedBytes: 6,
+          totalBytes: 8,
+          percent: 75,
+          timestamp: expect.any(String),
+        },
+        {
+          type: "service-download-progress",
+          receivedBytes: 8,
+          totalBytes: 8,
+          percent: 100,
+          timestamp: expect.any(String),
+        },
+      ]);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
@@ -2199,6 +2279,34 @@ describe("store startup timing", () => {
       "projects-load-automation-plan-recomputation-start",
       "projects-load-automation-plan-recomputation-complete",
     ]);
+  });
+
+  it("surfaces service download percentage progress through the global status message", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    store.handleBridgeEvent({
+      type: "service-download-progress",
+      receivedBytes: 42,
+      totalBytes: 100,
+      percent: 42,
+    });
+
+    expect(store.projectStatusMessageState).toBe("loading");
+    expect(store.projectStatusMessage).toBe("正在下载并安装（42%）");
+
+    store.setLocale("en-US");
+    store.handleBridgeEvent({
+      type: "service-download-progress",
+      receivedBytes: 75,
+      totalBytes: 100,
+      percent: 75,
+    });
+
+    expect(store.projectStatusMessage).toBe("Downloading and installing (75%)");
   });
 
   it("ignores terminal events from an older script run", async () => {

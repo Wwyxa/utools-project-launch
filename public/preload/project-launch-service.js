@@ -66,6 +66,8 @@ function isAllowedProjectLaunchServiceUrl(value) {
 
 function fetchProjectLaunchServiceBytes(url, options = {}, redirectCount = 0) {
   const maxBytes = Number.isFinite(options.maxBytes) ? options.maxBytes : projectLaunchServiceMetadataLimitBytes;
+  const expectedTotalBytes =
+    Number.isFinite(options.totalBytes) && options.totalBytes > 0 ? Math.floor(options.totalBytes) : undefined;
   if (!isAllowedProjectLaunchServiceUrl(url)) {
     const error = new Error("项目启动服务下载地址不受支持。");
     error.code = "invalid-download-url";
@@ -131,6 +133,8 @@ function fetchProjectLaunchServiceBytes(url, options = {}, redirectCount = 0) {
           finish(reject, error);
           return;
         }
+        const progressTotalBytes =
+          Number.isFinite(contentLength) && contentLength > 0 ? contentLength : expectedTotalBytes;
 
         const chunks = [];
         let totalBytes = 0;
@@ -144,6 +148,13 @@ function fetchProjectLaunchServiceBytes(url, options = {}, redirectCount = 0) {
             return;
           }
           chunks.push(chunk);
+          if (
+            typeof options.onProgress === "function" &&
+            Number.isFinite(progressTotalBytes) &&
+            progressTotalBytes > 0
+          ) {
+            options.onProgress(totalBytes, progressTotalBytes);
+          }
         });
         response.on("end", () => finish(resolve, Buffer.concat(chunks)));
         response.on("error", (error) => finish(reject, error));
@@ -327,9 +338,9 @@ function projectLaunchServiceReleaseVersion(release) {
 }
 
 async function checkProjectLaunchServiceUpdate() {
-  const status = await readProjectLaunchServiceStatus();
+  const status = await readProjectLaunchServiceStatus({ includeState: true });
   if (!status.installed) {
-    return { ...status, message: "项目启动服务尚未安装，无法检查更新。" };
+    return { ...status, updateCheckError: false, message: "项目启动服务尚未安装，无法检查更新。" };
   }
 
   try {
@@ -343,6 +354,7 @@ async function checkProjectLaunchServiceUpdate() {
     return {
       ...status,
       updateAvailable,
+      updateCheckError: false,
       ...(latestServiceVersion ? { latestServiceVersion } : {}),
       message: updateAvailable
         ? status.running
@@ -355,6 +367,7 @@ async function checkProjectLaunchServiceUpdate() {
   } catch (error) {
     return {
       ...status,
+      updateCheckError: true,
       message: error instanceof Error ? error.message : "项目启动服务更新检查失败。",
     };
   }
@@ -465,8 +478,25 @@ async function downloadProjectLaunchService() {
   }
 
   const { binaryAsset, expectedHash } = await fetchProjectLaunchServiceRelease();
+  let lastProgress = -1;
+  const reportProgress = (receivedBytes, totalBytes) => {
+    if (!Number.isFinite(totalBytes) || totalBytes <= 0) return;
+    const percent = Math.max(0, Math.min(100, Math.floor((receivedBytes / totalBytes) * 100)));
+    if (percent === lastProgress) return;
+    lastProgress = percent;
+    emit({
+      type: "service-download-progress",
+      receivedBytes: Math.max(0, Math.floor(receivedBytes)),
+      totalBytes: Math.floor(totalBytes),
+      percent,
+      timestamp: new Date().toISOString(),
+    });
+  };
+  reportProgress(0, binaryAsset.size);
   const binaryContents = await fetchProjectLaunchServiceBytes(binaryAsset.browser_download_url, {
     maxBytes: projectLaunchServiceExecutableLimitBytes,
+    totalBytes: binaryAsset.size,
+    onProgress: reportProgress,
   });
   installProjectLaunchServiceExecutable(binaryContents, expectedHash);
   return readProjectLaunchServiceStatus();
