@@ -51,9 +51,17 @@ import {
   type ProjectGitPushOptions,
 } from "../../types";
 import { cn } from "../../lib/utils";
-import { type ProjectStatusMessageState, useStore } from "../../store/useStore";
+import { useStore } from "../../store/useStore";
+import {
+  type ActionStatusState,
+  completeActionProgress,
+  dismissActionStatus,
+  showActionProgress,
+  showActionStatus,
+} from "../common/actionStatus";
 import { useI18n } from "../../lib/i18n";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import { gitRemoteProgressOperationId } from "../../lib/gitRemoteProgress";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import { gitRepositoryTargetsEqual } from "../../lib/gitRepositoryTarget";
 import { presentGitCommitRefs } from "../../lib/gitCommitRefs";
@@ -65,7 +73,7 @@ import GitAiAnalysisDialog from "./GitAiAnalysisDialog.vue";
 import { clearGitAiAnalysisSessionsForProject } from "../../lib/gitAiAnalysisSession";
 import ExternalApplicationLaunchButton from "./ExternalApplicationLaunchButton.vue";
 
-type GitActionState = ProjectStatusMessageState;
+type GitActionState = ActionStatusState | "idle";
 type GitRemoteActionName = "fetch" | "pull" | "push";
 type RemoteDialogMode = "add" | "edit";
 type WorktreeDiffScope = Exclude<ProjectGitDiffScope, "combined">;
@@ -869,7 +877,7 @@ const executeGitRemoteAction = async (action: GitRemoteActionName, pushOptions: 
   }
 
   activeGitAction.value = `remote:${action}`;
-  setGitActionResult("loading", remoteActionLoadingMessage(action));
+  setGitActionResult("loading", remoteActionLoadingMessage(action), { retainRemoteProgress: true });
   await waitForVisualFeedback();
   try {
     const result =
@@ -879,15 +887,17 @@ const executeGitRemoteAction = async (action: GitRemoteActionName, pushOptions: 
           ? await store.pullGitRemote(props.project.id, activeRepositoryTarget.value)
           : await store.pushGitRemote(props.project.id, activeRepositoryTarget.value, pushOptions);
     if (!result) {
-      setGitActionResult("warning", "当前项目不可用，无法执行远程 Git 操作。");
+      setGitActionResult("warning", "当前项目不可用，无法执行远程 Git 操作。", { retainRemoteProgress: true });
       return;
     }
-    setGitActionResult(result.ok ? "success" : "error", result.message);
+    setGitActionResult(result.ok ? "success" : "error", result.message, { retainRemoteProgress: true });
     if (result.ok) {
       clearCommitSelection();
     }
   } catch (error) {
-    setGitActionResult("error", error instanceof Error ? error.message : "远程 Git 操作失败。");
+    setGitActionResult("error", error instanceof Error ? error.message : "远程 Git 操作失败。", {
+      retainRemoteProgress: true,
+    });
   } finally {
     activeGitAction.value = "";
   }
@@ -897,18 +907,20 @@ const executeFetchGitRemoteByName = async (remoteName: string) => {
   if (isAnyGitWriteRunning.value || !remoteName) return;
 
   activeGitAction.value = `remote:fetch:${remoteName}`;
-  setGitActionResult("loading", `正在刷新 ${remoteName} 的远端分支...`);
+  setGitActionResult("loading", `正在刷新 ${remoteName} 的远端分支...`, { retainRemoteProgress: true });
   await waitForVisualFeedback();
   try {
     const result = await store.fetchGitRemoteByName(props.project.id, remoteName, activeRepositoryTarget.value);
     if (!result) {
-      setGitActionResult("warning", "当前项目不可用，无法刷新 remote 分支。");
+      setGitActionResult("warning", "当前项目不可用，无法刷新 remote 分支。", { retainRemoteProgress: true });
       return;
     }
-    setGitActionResult(result.ok ? "success" : "error", result.message);
+    setGitActionResult(result.ok ? "success" : "error", result.message, { retainRemoteProgress: true });
     if (result.ok) clearCommitSelection();
   } catch (error) {
-    setGitActionResult("error", error instanceof Error ? error.message : "刷新 remote 分支失败。");
+    setGitActionResult("error", error instanceof Error ? error.message : "刷新 remote 分支失败。", {
+      retainRemoteProgress: true,
+    });
   } finally {
     activeGitAction.value = "";
   }
@@ -965,7 +977,9 @@ const executeDeleteGitRemoteBranch = async (remoteName: string, branchName: stri
 
   isRemoteMenuOpen.value = false;
   activeGitAction.value = `remote:delete-branch:${remoteName}/${branchName}`;
-  setGitActionResult("loading", `正在从 ${remoteName} 删除远端分支 ${branchName}...`);
+  setGitActionResult("loading", `正在从 ${remoteName} 删除远端分支 ${branchName}...`, {
+    retainRemoteProgress: true,
+  });
   await waitForVisualFeedback();
   try {
     const result = await store.deleteGitRemoteBranch(
@@ -975,13 +989,15 @@ const executeDeleteGitRemoteBranch = async (remoteName: string, branchName: stri
       activeRepositoryTarget.value,
     );
     if (!result) {
-      setGitActionResult("warning", "当前项目不可用，无法删除远端分支。");
+      setGitActionResult("warning", "当前项目不可用，无法删除远端分支。", { retainRemoteProgress: true });
       return;
     }
-    setGitActionResult(result.ok ? "success" : "error", result.message);
+    setGitActionResult(result.ok ? "success" : "error", result.message, { retainRemoteProgress: true });
     if (result.ok) clearCommitSelection();
   } catch (error) {
-    setGitActionResult("error", error instanceof Error ? error.message : "删除远端分支失败。");
+    setGitActionResult("error", error instanceof Error ? error.message : "删除远端分支失败。", {
+      retainRemoteProgress: true,
+    });
   } finally {
     activeGitAction.value = "";
   }
@@ -1009,18 +1025,22 @@ const executePublishGitBranch = async (remoteName: string) => {
 
   isRemoteMenuOpen.value = false;
   activeGitAction.value = `remote:publish:${remoteName}`;
-  setGitActionResult("loading", `正在发布 ${currentLocalBranch.value} 到 ${remoteName}...`);
+  setGitActionResult("loading", `正在发布 ${currentLocalBranch.value} 到 ${remoteName}...`, {
+    retainRemoteProgress: true,
+  });
   await waitForVisualFeedback();
   try {
     const result = await store.publishGitBranch(props.project.id, remoteName, activeRepositoryTarget.value);
     if (!result) {
-      setGitActionResult("warning", "当前项目不可用，无法发布 Git 分支。");
+      setGitActionResult("warning", "当前项目不可用，无法发布 Git 分支。", { retainRemoteProgress: true });
       return;
     }
-    setGitActionResult(result.ok ? "success" : "error", result.message);
+    setGitActionResult(result.ok ? "success" : "error", result.message, { retainRemoteProgress: true });
     if (result.ok) clearCommitSelection();
   } catch (error) {
-    setGitActionResult("error", error instanceof Error ? error.message : "发布当前分支失败。");
+    setGitActionResult("error", error instanceof Error ? error.message : "发布当前分支失败。", {
+      retainRemoteProgress: true,
+    });
   } finally {
     activeGitAction.value = "";
   }
@@ -1179,8 +1199,35 @@ const requestRemoveRemote = (remote: ProjectGitRemoteSummary) => {
   };
 };
 
-const setGitActionResult = (state: GitActionState, message: string) => {
-  store.setProjectStatusMessage(state, message);
+const setGitActionResult = (
+  state: GitActionState,
+  message: string,
+  { retainRemoteProgress = false }: { retainRemoteProgress?: boolean } = {},
+) => {
+  if (state === "idle" || !message) {
+    dismissActionStatus();
+    return;
+  }
+  if (retainRemoteProgress && state === "loading") {
+    showActionProgress({
+      operationId: gitRemoteProgressOperationId,
+      state,
+      message,
+      entries: [
+        {
+          timestamp: new Date().toLocaleTimeString(store.locale, { hour12: false }),
+          message,
+          stage: "start",
+        },
+      ],
+    });
+    return;
+  }
+  if (retainRemoteProgress) {
+    completeActionProgress(state, message, gitRemoteProgressOperationId);
+    return;
+  }
+  showActionStatus({ state, message });
 };
 
 const isDirtyGitWriteBlock = (result: ProjectGitActionResult, options: { force?: boolean }) =>

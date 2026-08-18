@@ -219,6 +219,7 @@ describe("browser external application preferences", () => {
       pathExists: async () => true,
     };
     const { useStore } = await import("../src/store/useStore");
+    const { activeActionStatus } = await import("../src/components/common/actionStatus");
     setActivePinia(createPinia());
     const store = useStore();
     const project: Project = {
@@ -243,8 +244,8 @@ describe("browser external application preferences", () => {
 
     await store.openProjectInEditor(project.id);
     expect(openExternalApplication.mock.calls.at(-1)?.[0].application.id).toBe("custom_20260806");
-    expect(store.projectStatusMessage).toContain("Custom Editor");
-    expect(store.projectStatusMessage).not.toContain("custom_20260806");
+    expect(activeActionStatus.value?.message).toContain("Custom Editor");
+    expect(activeActionStatus.value?.message).not.toContain("custom_20260806");
     expect(store.externalApplicationPreferences.defaultApplicationId).toBe("custom_20260806");
 
     expect(store.setExternalApplicationEnabled("vscode", true)).toBe(true);

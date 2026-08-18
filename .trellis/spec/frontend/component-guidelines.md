@@ -803,6 +803,10 @@ const fileIcon = computed(() => {
 - Coloring normal startup/readiness output as error red just because it arrived on stderr; reserve error tones for true failures and use semantic content to classify logs
 - Positioning hover-revealed action buttons as siblings outside the card div without a hover bridge — the mouse loses hover state crossing the gap and buttons become unclickable. Always add `after:absolute after:inset-x-0 after:top-full after:h-*` on the positioning parent to bridge the gap
 
+### Rule: Initially Expanded Teleported Panels
+
+Use `onMounted` when the initial `expanded` prop is true and a `flush: "post"` watcher for later opens; a normal watcher misses initial state and an unmounted Teleport target cannot be measured. Verify default-expanded and click-expanded panels both position below their trigger.
+
 ### 布局与间距
 
 - **侧边栏 (Sidebar)**: 固定宽度为 `64px`，采用极简图标设计，不显示文字标签。

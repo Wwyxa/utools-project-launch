@@ -5,6 +5,7 @@ import ProjectCard from "./ProjectCard.vue";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import { dismissActionStatus, showActionStatus } from "../common/actionStatus";
 import type { Project, ProjectAutomationHistoryEntry } from "../../types";
 import {
   Search,
@@ -341,7 +342,7 @@ const handleRefreshAll = async () => {
 
   const refreshStartedAt = performance.now();
   isRefreshingProjects.value = true;
-  store.setProjectStatusMessage("loading", t.value.common.refreshing);
+  const refreshStatusId = showActionStatus({ state: "loading", message: t.value.common.refreshing });
   await nextTick();
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   try {
@@ -352,7 +353,7 @@ const handleRefreshAll = async () => {
       await new Promise<void>((resolve) => window.setTimeout(resolve, remainingFeedbackDuration));
     }
     isRefreshingProjects.value = false;
-    store.setProjectStatusMessage("idle", "");
+    dismissActionStatus(refreshStatusId);
   }
 };
 

@@ -99,6 +99,7 @@ onMounted(() => {
   window.addEventListener("pointerdown", handlePointerDown);
   window.addEventListener("resize", handleViewportChange);
   window.addEventListener("scroll", handleViewportChange, true);
+  if (props.expanded) void updatePanelPosition();
 });
 
 onUnmounted(() => {
@@ -113,6 +114,7 @@ watch(
   (expanded) => {
     if (expanded) void updatePanelPosition();
   },
+  { flush: "post" },
 );
 </script>
 

@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { showActionStatus } from "../components/common/actionStatus";
 import { aiStreamChunkRawText } from "../lib/aiReasoning";
 import {
   dateKey,
@@ -115,7 +116,6 @@ const normalizeTinyCardButtonCount = (value: unknown) =>
     : PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT;
 
 type AiAnalysisState = "idle" | "loading" | "success" | "warning" | "error";
-export type ProjectStatusMessageState = "idle" | "loading" | "success" | "warning" | "error";
 
 interface AiStreamHandlers {
   onStart?: () => void;
@@ -141,7 +141,6 @@ const defaultAutomationSchedule = (): ProjectAutomationSchedule => ({
   intervalMinutes: 60,
 });
 const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
-const PROJECT_STATUS_MESSAGE_CLEAR_DELAY_MS = 2200;
 const AUTOMATION_HISTORY_LIMIT = 20;
 const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
@@ -166,7 +165,6 @@ const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>([
 ]);
 const automationMissedPolicies = new Set<ProjectAutomationMissedPolicy>(["grace-run", "run-now", "mark-missed"]);
 let projectConfigMessageClearTimer: number | null = null;
-let projectStatusMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
 let runtimeReconciliationPromise: Promise<void> | null = null;
 let projectLaunchServiceAutomationRevision = 0;
@@ -422,13 +420,6 @@ function cancelProjectConfigMessageClear() {
   if (projectConfigMessageClearTimer) {
     window.clearTimeout(projectConfigMessageClearTimer);
     projectConfigMessageClearTimer = null;
-  }
-}
-
-function cancelProjectStatusMessageClear() {
-  if (projectStatusMessageClearTimer) {
-    window.clearTimeout(projectStatusMessageClearTimer);
-    projectStatusMessageClearTimer = null;
   }
 }
 
@@ -1602,8 +1593,6 @@ export const useStore = defineStore("app", {
     projectsLoaded: false,
     projectStorageMessage: "",
     projectConfigMessage: "",
-    projectStatusMessage: "",
-    projectStatusMessageState: "idle" as ProjectStatusMessageState,
     projectFormInspectionMessage: "",
     projectFormInspecting: false,
     projectFormCwdSuggestions: ["."] as string[],
@@ -2254,22 +2243,6 @@ export const useStore = defineStore("app", {
         }
         projectConfigMessageClearTimer = null;
       }, PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS);
-    },
-    setProjectStatusMessage(state: ProjectStatusMessageState, message: string) {
-      cancelProjectStatusMessageClear();
-      this.projectStatusMessageState = state;
-      this.projectStatusMessage = message;
-      if (state === "idle" || !message || state === "loading") {
-        return;
-      }
-
-      projectStatusMessageClearTimer = window.setTimeout(() => {
-        if (this.projectStatusMessageState === state && this.projectStatusMessage === message) {
-          this.projectStatusMessageState = "idle";
-          this.projectStatusMessage = "";
-        }
-        projectStatusMessageClearTimer = null;
-      }, PROJECT_STATUS_MESSAGE_CLEAR_DELAY_MS);
     },
     setDefaultTerminal(kind: DefaultTerminalKind) {
       this.terminalPreferences = { ...this.terminalPreferences, kind };
@@ -5915,10 +5888,10 @@ export const useStore = defineStore("app", {
             result.launched ? "INFO" : "ERROR",
           ),
         );
-        this.setProjectStatusMessage(
-          result.launched ? "success" : "error",
-          launchMessage(this.locale, result.code, result.kind),
-        );
+        showActionStatus({
+          state: result.launched ? "success" : "error",
+          message: launchMessage(this.locale, result.code, result.kind),
+        });
       } catch (error) {
         this.addLog(
           projectId,
@@ -5945,7 +5918,10 @@ export const useStore = defineStore("app", {
       );
       if (!selectedApplication) {
         this.addLog(projectId, createLogEntry("External application is unavailable.", "ERROR"));
-        this.setProjectStatusMessage("error", launchMessage(this.locale, "application-unavailable", "editor"));
+        showActionStatus({
+          state: "error",
+          message: launchMessage(this.locale, "application-unavailable", "editor"),
+        });
         return;
       }
       const application = { ...selectedApplication } satisfies ExternalApplication;
@@ -5963,9 +5939,9 @@ export const useStore = defineStore("app", {
             result.launched ? "INFO" : "ERROR",
           ),
         );
-        this.setProjectStatusMessage(
-          result.launched ? "success" : "error",
-          launchMessage(
+        showActionStatus({
+          state: result.launched ? "success" : "error",
+          message: launchMessage(
             this.locale,
             result.code,
             resolvedExternalApplicationName(
@@ -5974,7 +5950,7 @@ export const useStore = defineStore("app", {
               application.name,
             ),
           ),
-        );
+        });
       } catch (error) {
         this.addLog(
           projectId,
@@ -5991,7 +5967,10 @@ export const useStore = defineStore("app", {
         return;
       }
       const terminalPreferences = { ...this.terminalPreferences };
-      this.setProjectStatusMessage("loading", this.locale === "zh-CN" ? "正在打开终端..." : "Opening terminal...");
+      showActionStatus({
+        state: "loading",
+        message: this.locale === "zh-CN" ? "正在打开终端..." : "Opening terminal...",
+      });
 
       try {
         const result = await bridge.openTerminal({
@@ -6003,7 +5982,7 @@ export const useStore = defineStore("app", {
 
         if (result.launched) {
           this.addLog(projectId, createLogEntry(`Open terminal (${result.kind}): ${result.command}`, "INFO"));
-          this.setProjectStatusMessage("success", launchMessage(this.locale, result.code, result.kind));
+          showActionStatus({ state: "success", message: launchMessage(this.locale, result.code, result.kind) });
           return;
         }
 
@@ -6011,7 +5990,7 @@ export const useStore = defineStore("app", {
           projectId,
           createLogEntry(`Failed to open terminal (${result.kind}): ${result.message || "unknown error"}`, "ERROR"),
         );
-        this.setProjectStatusMessage("error", launchMessage(this.locale, result.code, result.kind));
+        showActionStatus({ state: "error", message: launchMessage(this.locale, result.code, result.kind) });
       } catch (error) {
         project.lastUpdated = new Date().toLocaleString();
         this.addLog(
@@ -6034,12 +6013,18 @@ export const useStore = defineStore("app", {
       );
       if (!selectedApplication) {
         this.addLog(projectId, createLogEntry("External application is unavailable.", "ERROR"));
-        this.setProjectStatusMessage("error", launchMessage(this.locale, "application-unavailable", "editor"));
+        showActionStatus({
+          state: "error",
+          message: launchMessage(this.locale, "application-unavailable", "editor"),
+        });
         return;
       }
       const application = { ...selectedApplication } satisfies ExternalApplication;
       try {
-        this.setProjectStatusMessage("loading", this.locale === "zh-CN" ? "正在打开编辑器..." : "Opening editor...");
+        showActionStatus({
+          state: "loading",
+          message: this.locale === "zh-CN" ? "正在打开编辑器..." : "Opening editor...",
+        });
         const result = await bridge.openExternalApplication({
           projectPath: project.path,
           application,
@@ -6047,9 +6032,9 @@ export const useStore = defineStore("app", {
         project.lastUpdated = new Date().toLocaleString();
         if (result.launched) {
           this.addLog(projectId, createLogEntry(`Open with ${application.name}: ${result.command}`, "INFO"));
-          this.setProjectStatusMessage(
-            "success",
-            launchMessage(
+          showActionStatus({
+            state: "success",
+            message: launchMessage(
               this.locale,
               result.code,
               resolvedExternalApplicationName(
@@ -6058,14 +6043,17 @@ export const useStore = defineStore("app", {
                 application.name,
               ),
             ),
-          );
+          });
           return;
         }
         this.addLog(
           projectId,
           createLogEntry(`Failed to open with ${application.name}: ${result.message || "unknown error"}`, "ERROR"),
         );
-        this.setProjectStatusMessage("error", launchMessage(this.locale, result.code, application.name));
+        showActionStatus({
+          state: "error",
+          message: launchMessage(this.locale, result.code, application.name),
+        });
       } catch (error) {
         project.lastUpdated = new Date().toLocaleString();
         this.addLog(
@@ -6255,7 +6243,10 @@ export const useStore = defineStore("app", {
       if (event.type === "service-download-progress") {
         if (Number.isFinite(event.percent)) {
           const percent = Math.max(0, Math.min(100, Math.floor(event.percent)));
-          this.setProjectStatusMessage("loading", projectLaunchServiceDownloadProgressMessage(this.locale, percent));
+          showActionStatus({
+            state: "loading",
+            message: projectLaunchServiceDownloadProgressMessage(this.locale, percent),
+          });
         }
         return;
       }

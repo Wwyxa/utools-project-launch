@@ -32,6 +32,7 @@ import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import ActionDialog from "../common/ActionDialog.vue";
+import { showActionStatus } from "../common/actionStatus";
 import { getProjectBridge } from "../../lib/projectBridge";
 import {
   formatEnvironmentArguments,
@@ -314,21 +315,22 @@ const handleOpenGithubRepository = async () => {
 
 const handleDownloadProjectLaunchService = async () => {
   projectLaunchServiceDownloading.value = true;
-  store.setProjectStatusMessage("loading", t.value.settings.projectLaunchServiceDownloading);
+  showActionStatus({ state: "loading", message: t.value.settings.projectLaunchServiceDownloading });
   try {
     const status = await store.downloadProjectLaunchService();
     await refreshLogRetention();
-    store.setProjectStatusMessage(
-      status.installed && status.state === "installed" ? "success" : "error",
-      status.installed && status.state === "installed"
-        ? t.value.settings.projectLaunchServiceDownloadSuccess
-        : status.message || t.value.settings.projectLaunchServiceDownloadError,
-    );
+    showActionStatus({
+      state: status.installed && status.state === "installed" ? "success" : "error",
+      message:
+        status.installed && status.state === "installed"
+          ? t.value.settings.projectLaunchServiceDownloadSuccess
+          : status.message || t.value.settings.projectLaunchServiceDownloadError,
+    });
   } catch (error) {
-    store.setProjectStatusMessage(
-      "error",
-      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceDownloadError,
-    );
+    showActionStatus({
+      state: "error",
+      message: error instanceof Error ? error.message : t.value.settings.projectLaunchServiceDownloadError,
+    });
   } finally {
     projectLaunchServiceDownloading.value = false;
   }
@@ -355,28 +357,34 @@ const handleRecheckProjectLaunchService = async () => {
 
 const handleCheckProjectLaunchServiceUpdate = async () => {
   projectLaunchServiceUpdateChecking.value = true;
-  store.setProjectStatusMessage("loading", t.value.settings.projectLaunchServiceCheckingUpdate);
+  showActionStatus({ state: "loading", message: t.value.settings.projectLaunchServiceCheckingUpdate });
   try {
     const status = await store.checkProjectLaunchServiceUpdate();
     if (status.updateCheckError) {
-      store.setProjectStatusMessage("error", status.message || t.value.settings.projectLaunchServiceUpdateCheckError);
+      showActionStatus({
+        state: "error",
+        message: status.message || t.value.settings.projectLaunchServiceUpdateCheckError,
+      });
       return;
     }
     if (status.updateAvailable) {
       projectLaunchServiceUpdateDialogOpen.value = true;
-      store.setProjectStatusMessage("warning", t.value.settings.projectLaunchServiceUpdateAvailable);
+      showActionStatus({ state: "warning", message: t.value.settings.projectLaunchServiceUpdateAvailable });
       return;
     }
     if (!status.installed || status.state === "unavailable" || status.state === "incompatible") {
-      store.setProjectStatusMessage("warning", status.message || t.value.settings.projectLaunchServiceUpdateCheckError);
+      showActionStatus({
+        state: "warning",
+        message: status.message || t.value.settings.projectLaunchServiceUpdateCheckError,
+      });
       return;
     }
-    store.setProjectStatusMessage("success", t.value.settings.projectLaunchServiceUpToDate);
+    showActionStatus({ state: "success", message: t.value.settings.projectLaunchServiceUpToDate });
   } catch (error) {
-    store.setProjectStatusMessage(
-      "error",
-      error instanceof Error ? error.message : t.value.settings.projectLaunchServiceUpdateCheckError,
-    );
+    showActionStatus({
+      state: "error",
+      message: error instanceof Error ? error.message : t.value.settings.projectLaunchServiceUpdateCheckError,
+    });
   } finally {
     projectLaunchServiceUpdateChecking.value = false;
   }

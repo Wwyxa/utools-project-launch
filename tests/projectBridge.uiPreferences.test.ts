@@ -2281,10 +2281,11 @@ describe("store startup timing", () => {
     ]);
   });
 
-  it("surfaces service download percentage progress through the global status message", async () => {
+  it("surfaces service download percentage progress through the global action status", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
     const { useStore } = await import("../src/store/useStore");
+    const { activeActionStatus } = await import("../src/components/common/actionStatus");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -2295,8 +2296,7 @@ describe("store startup timing", () => {
       percent: 42,
     });
 
-    expect(store.projectStatusMessageState).toBe("loading");
-    expect(store.projectStatusMessage).toBe("正在下载并安装（42%）");
+    expect(activeActionStatus.value).toMatchObject({ state: "loading", message: "正在下载并安装（42%）" });
 
     store.setLocale("en-US");
     store.handleBridgeEvent({
@@ -2306,7 +2306,7 @@ describe("store startup timing", () => {
       percent: 75,
     });
 
-    expect(store.projectStatusMessage).toBe("Downloading and installing (75%)");
+    expect(activeActionStatus.value?.message).toBe("Downloading and installing (75%)");
   });
 
   it("ignores terminal events from an older script run", async () => {

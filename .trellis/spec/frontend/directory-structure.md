@@ -13,6 +13,7 @@ Shared concerns are deliberately small and central:
 - `src/store/useStore.ts` owns the current project, memo, todo, log, and staged-file state
 - `src/types.ts` owns shared domain types and enums
 - `src/lib/utils.ts` owns the `cn` helper used for class merging
+- `src/composables/useGlobalActionStatus.ts` adapts renderer-wide action feedback sources into one display model
 - `src/index.css` owns theme tokens and global styling
 
 ---
@@ -27,7 +28,11 @@ src/
 ├── index.css
 ├── types.ts
 ├── lib/
+│   ├── gitRemoteProgress.ts
 │   └── utils.ts
+├── composables/
+│   ├── useGlobalActionStatus.ts
+│   └── useResizableSplit.ts
 ├── store/
 │   └── useStore.ts
 └── components/
@@ -60,10 +65,11 @@ Feature modules are grouped by screen or capability, not by technical layer.
 - `project/` contains tabbed detail views for scripts, Git, and memo editing
 - `common/` contains reusable cross-feature interaction primitives such as `ActionDialog.vue` and `ActionStatusPopover.vue`
 - `terminal/` contains the embedded terminal/log panel used inside project details
+- `composables/` contains stateful UI adapters with a meaningful lifecycle boundary; it does not replace Pinia ownership of domain state
 
 Keep new features close to the screen that owns them. For example, a future project settings panel should live alongside the project detail views, not in `common/`. Add a component to `common/` only when it has shared behavior across multiple feature surfaces or forms an application-level interaction boundary; do not move feature panels there merely to shorten imports.
 
-There is no separate `pages/` or `composables/` directory yet. If one is added later, it should solve an actual reuse problem rather than just moving code around.
+There is no separate `pages/` directory. Add a composable only when it owns a real lifecycle or presentation-adaptation boundary, such as global event subscription and cleanup; do not move one-off component-local state into `composables/` merely to shorten a component.
 
 ## Test Layout
 

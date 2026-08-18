@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { type ProjectStatusMessageState, useStore } from "./store/useStore";
+import { computed, onMounted, onUnmounted, watch } from "vue";
+import { useStore } from "./store/useStore";
+import { useGlobalActionStatus } from "./composables/useGlobalActionStatus";
 import Dashboard from "./components/dashboard/Dashboard.vue";
 import ProjectDetails from "./components/project/ProjectDetails.vue";
 import ProjectFormModal from "./components/project/ProjectFormModal.vue";
@@ -10,76 +11,14 @@ import SettingsTab from "./components/layout/SettingsTab.vue";
 import EnvironmentTab from "./components/environment/EnvironmentTab.vue";
 import { useI18n } from "./lib/i18n";
 import { requestAppEscape } from "./lib/escape";
-import type { ProjectBridgeEvent, ProjectGitRemoteProgressEvent } from "./types";
-
-type GlobalProjectStatus = { message: string; state: ProjectStatusMessageState };
-type GitRemoteProgressEntry = { timestamp: string; message: string; stage: string };
+import type { ProjectBridgeEvent } from "./types";
 
 const store = useStore();
 const storeMessages = useI18n();
 const selectedProject = computed(() => store.selectedProject);
 const activeTab = computed(() => store.activeTab);
 const theme = computed(() => store.theme);
-const gitRemoteProgressMessage = ref("");
-const gitRemoteProgressEntries = ref<GitRemoteProgressEntry[]>([]);
-const isGlobalProjectStatusExpanded = ref(false);
-const globalProjectStatus = computed<GlobalProjectStatus | null>(() => {
-  if (gitRemoteProgressMessage.value) {
-    return { message: gitRemoteProgressMessage.value, state: "loading" };
-  }
-  if (store.projectStatusMessage) {
-    return { message: store.projectStatusMessage, state: store.projectStatusMessageState };
-  }
-  if (Object.values(store.gitRepositoryRefreshing).some(Boolean)) {
-    return { message: "正在刷新 Git 快照...", state: "loading" };
-  }
-  if (Object.values(store.gitRepositoryStatusRefreshing).some(Boolean)) {
-    return { message: "正在更新 Git 状态...", state: "loading" };
-  }
-  if (Object.values(store.gitRepositoryLoadingMore).some(Boolean)) {
-    return { message: "正在加载更多提交...", state: "loading" };
-  }
-  return null;
-});
-const gitRemoteProgressStage = (message: string) =>
-  message
-    .replace(/^remote:\s*/i, "")
-    .split(":", 1)[0]
-    ?.trim()
-    .toLocaleLowerCase() || message;
-
-const handleGitRemoteProgress = (event: Event) => {
-  const progress = (event as CustomEvent<ProjectGitRemoteProgressEvent>).detail;
-  if (!progress || progress.type !== "git-remote-progress") return;
-
-  if (progress.phase === "complete") {
-    gitRemoteProgressMessage.value = "";
-    gitRemoteProgressEntries.value = [];
-    isGlobalProjectStatusExpanded.value = false;
-    return;
-  }
-
-  const entry: GitRemoteProgressEntry = {
-    timestamp: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-    message: progress.message,
-    stage: progress.phase === "start" ? "start" : gitRemoteProgressStage(progress.message),
-  };
-  gitRemoteProgressMessage.value = progress.message;
-
-  if (progress.phase === "start") {
-    gitRemoteProgressEntries.value = [entry];
-    isGlobalProjectStatusExpanded.value = true;
-    return;
-  }
-
-  const entries = gitRemoteProgressEntries.value;
-  const latest = entries[entries.length - 1];
-  if (latest?.stage === entry.stage) {
-    gitRemoteProgressEntries.value = [...entries.slice(0, -1), entry];
-  } else {
-    gitRemoteProgressEntries.value = [...entries, entry].slice(-20);
-  }
-};
+const { globalActionStatus, isGlobalActionStatusExpanded } = useGlobalActionStatus(store);
 let pluginOutHookRegistered = false;
 let startupProjectLoadId = 0;
 
@@ -222,7 +161,6 @@ onMounted(() => {
     pluginOutHookRegistered = true;
   }
   window.addEventListener("project-bridge-event", handleBridgeEvent);
-  window.addEventListener("git-remote-progress", handleGitRemoteProgress);
   window.addEventListener("focus", handleRuntimeResume);
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("keydown", handleGlobalEscape, true);
@@ -232,7 +170,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("project-bridge-event", handleBridgeEvent);
-  window.removeEventListener("git-remote-progress", handleGitRemoteProgress);
   window.removeEventListener("focus", handleRuntimeResume);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   window.removeEventListener("keydown", handleGlobalEscape, true);
@@ -271,12 +208,12 @@ onUnmounted(() => {
       </main>
     </div>
     <ActionStatusPopover
-      v-if="globalProjectStatus"
+      v-if="globalActionStatus"
       class="fixed right-4 top-16 z-50 max-w-xs"
-      :message="globalProjectStatus.message"
-      :state="globalProjectStatus.state"
-      :entries="gitRemoteProgressEntries"
-      v-model:expanded="isGlobalProjectStatusExpanded"
+      :message="globalActionStatus.message"
+      :state="globalActionStatus.state"
+      :entries="globalActionStatus.entries"
+      v-model:expanded="isGlobalActionStatusExpanded"
     />
     <ProjectFormModal />
     <ActionDialog
