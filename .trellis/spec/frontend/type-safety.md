@@ -267,6 +267,7 @@ Resolve and validate the base where Git configuration and refs are available, th
 - `ProjectGitActionBlockReason = "dirty-worktree" | "unmerged-branch"`.
 - `ProjectGitActionResult.blockReason?: ProjectGitActionBlockReason`.
 - Bridge/store actions: `createGitBranch(..., { checkout?, force? })`, `createGitTag(..., { annotated?, message? })`, `renameGitBranch(...)`, `deleteGitBranch(..., { force? })`, `checkoutGitRemoteBranch(..., { force? })`, and `checkoutGitCommit(..., { detach?, force?, preferredBranch? })`.
+- Tag-only bridge/store actions: `readGitTagInfo(projectPath, tagName): Promise<ProjectGitTagInfo | null>` and `pushGitTag(projectPath, tagName, remoteName?): Promise<ProjectGitActionResult>`. `pushGitRemote(..., { tagNames })` remains the separate HEAD-plus-selected-tags operation.
 
 ### 3. Contracts
 
@@ -274,6 +275,7 @@ Resolve and validate the base where Git configuration and refs are available, th
 - Build one ref map with `git for-each-ref`; do not split `%D` by comma as the authoritative protocol. Peel annotated tags to their target commit and preserve Git-valid comma names.
 - `kind` decides UI capabilities. Never infer local/remote/tag behavior from color, display text, or a hard-coded remote prefix when structured data exists.
 - Preload validates names with `git check-ref-format`, validates `<hash>^{commit}`, and treats same names in `refs/heads` and `refs/tags` as valid independent refs.
+- `readGitTagInfo` returns `null` for unavailable, missing, invalid, or non-commit tags. Lightweight tags have an empty message; annotated commit tags expose a peeled target, tag object hash, normalized annotation, and optional tagger. `pushGitTag` sends only `refs/tags/<name>` to the resolved remote, never a broad tag push; the browser fallback returns `null`/unavailable and the Store refreshes refs around the write.
 - Dirty atomic create-and-switch, tracking checkout, branch switch, and detached checkout return `blockReason: "dirty-worktree"` before mutation. UI may pass `force: true` only after the app-rendered destructive confirmation.
 - Safe delete returns `blockReason: "unmerged-branch"` without deleting. Force delete is a separate confirmed call; current branch deletion is rejected in UI and preload.
 - `detach: true` must bypass matching local branch tips and always enter detached HEAD.
@@ -302,7 +304,7 @@ Resolve and validate the base where Git configuration and refs are available, th
 
 ### 6. Tests Required
 
-- `npm run validate:git-commits` must use a real temporary repository and assert comma refs, peeled annotated tags, namespace coexistence, atomic create/switch, typed dirty and unmerged blockers, safe/force delete, tracking checkout, current-branch restrictions, and explicit detached checkout.
+- `npm run validate:git-commits` must use a real temporary repository and assert comma refs, peeled annotated tags, namespace coexistence, atomic create/switch, typed dirty and unmerged blockers, safe/force delete, tracking checkout, current-branch restrictions, explicit detached checkout, tag-info null fallback, and standalone lightweight/annotated tag publication that preserves the annotated tag object and message.
 - `npx vitest run src/lib/projectBridge.workspace.test.ts` must assert exact repository target routing, stale-target rejection, and full ref refresh for the new store actions.
 - Run `node --check public/preload.js`, `npm run type-check`, and `npm run build` after changing these contracts.
 - Browser/uTools smoke must check local/remote submenu differences, confirmations, copied-name feedback, viewport clamping, and snapshot refresh.
