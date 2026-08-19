@@ -17,6 +17,40 @@ export type GlobalActionStatus = {
   entries: readonly ActionStatusEntry[];
 };
 
+type ActionStatusSnapshot = {
+  operationId?: string;
+  isProgress: boolean;
+  state: ActionStatus["state"];
+  entries: readonly ActionStatusEntry[];
+};
+
+export const mergeGitRemoteProgressEntry = (
+  entries: readonly ActionStatusEntry[],
+  entry: ActionStatusEntry,
+  phase: ProjectGitRemoteProgressEvent["phase"],
+) => {
+  if (phase === "start") {
+    return [entry];
+  }
+
+  const latestEntry = entries[entries.length - 1];
+  if (latestEntry?.stage && latestEntry.stage === entry.stage) {
+    return [...entries.slice(0, -1), entry];
+  }
+
+  return [...entries, entry].slice(-20);
+};
+
+export const isNewProgressOperation = (
+  status: ActionStatusSnapshot | null | undefined,
+  previousStatus: ActionStatusSnapshot | null | undefined,
+) =>
+  Boolean(status?.isProgress && status.state === "loading" && status.entries.length > 0) &&
+  (!previousStatus?.isProgress ||
+    previousStatus.operationId !== status.operationId ||
+    previousStatus.state !== "loading" ||
+    previousStatus.entries.length === 0);
+
 export const useGlobalActionStatus = (store: AppStore) => {
   const actionStatus = activeActionStatus;
   const isGlobalActionStatusExpanded = ref(false);
@@ -63,13 +97,7 @@ export const useGlobalActionStatus = (store: AppStore) => {
       stage: progress.phase === "start" ? "start" : gitRemoteProgressStage(message),
     };
     const entries = status?.isProgress && status.operationId === gitRemoteProgressOperationId ? status.entries : [];
-    const latest = entries[entries.length - 1];
-    const nextEntries =
-      progress.phase === "start"
-        ? [entry]
-        : latest?.stage === entry.stage
-          ? [...entries.slice(0, -1), entry]
-          : [...entries, entry].slice(-20);
+    const nextEntries = mergeGitRemoteProgressEntry(entries, entry, progress.phase);
     showActionProgress({
       operationId: gitRemoteProgressOperationId,
       state: "loading",
@@ -79,10 +107,13 @@ export const useGlobalActionStatus = (store: AppStore) => {
   };
 
   watch(
-    () => [actionStatus.value?.id, actionStatus.value?.isProgress, actionStatus.value?.entries.length] as const,
-    () => {
-      const status = actionStatus.value;
-      isGlobalActionStatusExpanded.value = Boolean(status?.isProgress && status.entries.length > 0);
+    actionStatus,
+    (status, previousStatus) => {
+      if (isNewProgressOperation(status, previousStatus)) {
+        isGlobalActionStatusExpanded.value = true;
+      } else if (!status?.isProgress) {
+        isGlobalActionStatusExpanded.value = false;
+      }
     },
     { immediate: true },
   );

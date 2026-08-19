@@ -523,9 +523,10 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - Preload validates remote names and URLs before invoking Git. Remote names are non-empty, cannot start with `-`, and only contain letters, digits, `.`, `_`, and `-`. Remote URLs are non-empty and cannot contain control characters.
 - Named remote operations validate remote existence before invoking Git and reject the symbolic `HEAD` branch instead of treating it as a server branch.
 - Remote network commands must use async process execution with a timeout and `GIT_TERMINAL_PROMPT=0` / `GCM_INTERACTIVE=Never`; do not run them through blocking `spawnSync` or commands that can wait forever for credentials. Long-running commands with progress use `spawn` in `runGitRemoteCommandResult`, not `execFile`, because progress must reach the renderer before process exit.
-- A remote command emits exactly one `start` event before spawning, zero or more `output` events, and exactly one empty-message `complete` event after either `error` or `close`. The settlement guard prevents `error` followed by `close` from producing a duplicate completion.
+- A remote command emits one `start` before spawn, zero or more `output`, and one empty-message `complete` after `error` or `close`; guard duplicate settlement, queue output in separate timer turns (`60ms` between later frames), and drain before `complete`.
 - Progress parsing keeps independent stdout/stderr remainders, splits on both `\r` and `\n`, strips ANSI control sequences, ignores blank output, and flushes an unfinished remainder only when the command settles. This preserves partial chunks while treating carriage-return updates as replacement-style progress.
 - `useGlobalActionStatus(store)` prioritizes explicit action feedback over Store-derived Git loading, owns remote listener cleanup, and supplies `App.vue` with generic state only. `ActionStatusPopover` does not inspect Git events or operation ids.
+- Renderer history replaces the latest same-stage frame and appends stage changes (maximum 20 entries); auto-expand only for a new loading operation, so manual collapse survives later frames. The popover renders all entries without duplicating the trigger message.
 - A `complete` event retains matching progress history until GitTab settles the final result with `completeActionProgress(...)` and the same operation id.
 - Store remote mutations refresh the full Git snapshot after every result, including failures, because `pull` can fetch before merge failure and remote refs may still change.
 - GitTab keeps remote controls in the existing top Git status panel; use a compact popover for remote list management instead of adding a separate full-width remote panel.
@@ -544,9 +545,10 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - Git authentication failure with prompts disabled -> return the Git error text to the UI without blocking the plugin.
 - A stdout/stderr chunk split mid-line -> retain it until a `\r`/`\n` delimiter or terminal flush; do not emit a truncated progress entry.
 - ANSI control sequences or blank chunks -> remove or ignore them before dispatching an `output` event.
+- Carriage-return frames or a full queue -> retain intermediate frames, replace only the pending tail when full, and drain before `complete`.
 - `error` followed by `close` -> resolve once and dispatch one `complete` event only.
 - A `start` event -> replace the previous remote history and expand the shared progress popover. A `complete` event -> retain matching remote history with a confirmation message until the final action result settles it.
-- A remote completion for a no-longer-active operation id -> do not replace the current global action status.
+- A `complete` event without the active loading remote status -> ignore it; final result updates must use the matching operation key.
 - Successful add/set-url/remove -> refresh the full Git snapshot so `remotes` and `upstream` are current.
 
 ### 5. Good/Base/Bad Cases
@@ -554,7 +556,7 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - Good: a repository with `origin/main` upstream shows one compact upstream chip, enables fetch/pull/push, and refreshes ahead/behind after each operation.
 - Good: a repository with remotes but no current upstream shows the remote list but disables fetch/pull/push with a clear tooltip.
 - Good: the popover groups fetched tracking refs by configured remote, offers per-remote prune refresh, and distinguishes checkout from server-side deletion.
-- Good: a chunked fetch stream emits `Receiving objects: 50%` without ANSI bytes, replaces repeated transfer-stage entries, and leaves at most 20 historical stages visible.
+- Good: a chunked fetch stream emits `Receiving objects: 50%`, then `Receiving objects: 75%`, in separate renderer turns without ANSI bytes; the popover updates that current stage in place and leaves at most 20 history entries visible.
 - Good: confirming a remote operation starts the shared progress popover without requiring a second click; its final success, warning, or error remains visible after the process closes.
 - Base: browser preview has no real Git bridge; snapshots still include empty remote fields and remote actions return unsupported messages.
 - Bad: adding a separate component-local remote list that can drift from `ProjectGitSnapshot.remotes`.
@@ -571,8 +573,8 @@ Keep the UI-triggered all action explicit, let preload collect live Git status, 
 - `npm run build` after changing GitTab remote UI or shared snapshot fields.
 - `npm run validate:git-commits` must assert named remote fetch, `remoteBranches` population, `<remote>/HEAD` exclusion, server-side branch deletion, protected `HEAD` rejection, post-delete refresh, branch-only push omission of a local tag, and confirmed HEAD-tag push to a bare remote.
 - `npx vitest run tests/projectBridge.workspace.test.ts` must assert target routing and stale-target rejection for named remote refresh and deletion.
-- `npx vitest run tests/projectBridge.launchers.test.ts` must fake chunked stdout/stderr, assert `spawn` receives `--progress`, assert the exact `git-remote-progress` channel and start/output/complete phases, and cover ANSI plus `\r` normalization.
-- `npx vitest run tests/globalActionStatus.test.ts` must cover loading persistence, matching progress completion with retained entries, and rejection of stale operation completions.
+- `npx vitest run tests/projectBridge.launchers.test.ts` must fake chunked stdout/stderr, assert `spawn` receives `--progress`, assert the exact `git-remote-progress` channel and start/output/complete phases, cover ANSI plus `\r` normalization, and prove intermediate percentages arrive before `complete` in distinct timer turns.
+- `npx vitest run tests/globalActionStatus.test.ts` must cover retained completion history, same-stage replacement, and new-operation-only auto-expand.
 - Manual smoke test in browser preview: GitTab top panel shows no-remote state, disabled fetch/pull/push, and the add remote dialog opens.
 - Manual smoke test in uTools with a real repository: fetch/pull/push open the shared progress popover immediately, update its current line progressively, retain the final result after completion, and refresh ahead/behind afterward.
 - Manual smoke test in uTools with no upstream: remote operations remain disabled or return a clear warning.

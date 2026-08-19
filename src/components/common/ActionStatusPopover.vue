@@ -6,7 +6,7 @@ import { cn } from "../../lib/utils";
 
 export type ActionStatusState = "idle" | "loading" | "success" | "warning" | "error";
 export type ActionStatusEntry = { timestamp: string; message: string };
-type FloatingPosition = { left: number; top: number };
+type FloatingPosition = { left: number; top: number; maxHeight: string };
 
 defineOptions({ inheritAttrs: false });
 
@@ -30,9 +30,13 @@ const emit = defineEmits<{
 
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const panelRef = ref<HTMLElement | null>(null);
-const panelPosition = ref<FloatingPosition>({ left: 8, top: 8 });
+const panelPosition = ref<FloatingPosition>({
+  left: 8,
+  top: 8,
+  maxHeight: "min(12rem, calc(100vh - 1rem))",
+});
+let panelResizeObserver: ResizeObserver | null = null;
 const hasDetails = computed(() => props.entries.length > 0);
-const historyEntries = computed(() => props.entries.slice(0, -1));
 const stateClasses = computed(() => {
   if (props.state === "loading") return "text-primary";
   if (props.state === "success") return "text-status-running";
@@ -48,31 +52,48 @@ const indicatorClasses = computed(() => {
   return "bg-on-surface-variant";
 });
 
-const positionPanel = (trigger: HTMLElement, width: number, estimatedHeight: number): FloatingPosition => {
+const positionPanel = (trigger: HTMLElement, width: number, height: number): FloatingPosition => {
   const rect = trigger.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const viewportInset = 8;
   const left = Math.max(8, Math.min(rect.left, viewportWidth - width - 8));
   const belowTop = rect.bottom + 6;
-  const top = belowTop + estimatedHeight <= viewportHeight - 8 ? belowTop : Math.max(8, rect.top - estimatedHeight - 6);
-  return { left, top };
+  const availableBelow = Math.max(0, viewportHeight - belowTop - viewportInset);
+  const availableAbove = Math.max(0, rect.top - 6 - viewportInset);
+  const placeBelow = height <= 0 || availableBelow >= Math.min(height, availableAbove);
+  const top = placeBelow ? belowTop : Math.max(viewportInset, rect.top - height - 6);
+  const availableHeight = placeBelow ? availableBelow : availableAbove;
+  return {
+    left,
+    top,
+    maxHeight: `min(12rem, ${Math.max(1, Math.floor(availableHeight))}px)`,
+  };
+};
+
+const positionPanelFromLayout = () => {
+  const trigger = triggerRef.value;
+  const panel = panelRef.value;
+  if (!trigger || !panel || !props.expanded) return;
+
+  const rect = panel.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  panelPosition.value = positionPanel(trigger, rect.width, rect.height);
 };
 
 const updatePanelPosition = async () => {
   const trigger = triggerRef.value;
   if (!trigger) return;
 
-  panelPosition.value = positionPanel(trigger, 320, 192);
+  panelPosition.value = positionPanel(trigger, 320, 0);
   await nextTick();
-  if (!props.expanded || !panelRef.value) return;
-  panelPosition.value = positionPanel(trigger, panelRef.value.offsetWidth, panelRef.value.offsetHeight);
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  positionPanelFromLayout();
 };
 
 const toggleExpanded = () => {
   if (!hasDetails.value) return;
-  const expanded = !props.expanded;
-  emit("update:expanded", expanded);
-  if (expanded) void updatePanelPosition();
+  emit("update:expanded", !props.expanded);
 };
 
 const close = () => {
@@ -86,7 +107,15 @@ const handlePointerDown = (event: PointerEvent) => {
   close();
 };
 
-const handleViewportChange = () => close();
+const handleViewportChange = () => {
+  if (props.expanded) void updatePanelPosition();
+};
+
+const handleViewportScroll = (event: Event) => {
+  const panel = panelRef.value;
+  if (panel && event.composedPath().includes(panel)) return;
+  close();
+};
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (!props.expanded || event.detail.handled) return;
   close();
@@ -95,19 +124,37 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
 
 let stopAppEscapeListener = () => {};
 onMounted(() => {
+  if (typeof ResizeObserver !== "undefined") {
+    panelResizeObserver = new ResizeObserver(positionPanelFromLayout);
+    if (panelRef.value) panelResizeObserver.observe(panelRef.value);
+  }
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
   window.addEventListener("pointerdown", handlePointerDown);
   window.addEventListener("resize", handleViewportChange);
-  window.addEventListener("scroll", handleViewportChange, true);
+  window.addEventListener("scroll", handleViewportScroll, true);
   if (props.expanded) void updatePanelPosition();
 });
 
 onUnmounted(() => {
+  panelResizeObserver?.disconnect();
+  panelResizeObserver = null;
   stopAppEscapeListener();
   window.removeEventListener("pointerdown", handlePointerDown);
   window.removeEventListener("resize", handleViewportChange);
-  window.removeEventListener("scroll", handleViewportChange, true);
+  window.removeEventListener("scroll", handleViewportScroll, true);
 });
+
+watch(
+  panelRef,
+  (panel, previousPanel) => {
+    if (previousPanel) panelResizeObserver?.unobserve(previousPanel);
+    if (panel) {
+      panelResizeObserver?.observe(panel);
+      positionPanelFromLayout();
+    }
+  },
+  { flush: "post" },
+);
 
 watch(
   () => props.expanded,
@@ -159,37 +206,26 @@ watch(
         :style="{
           left: `${panelPosition.left}px`,
           top: `${panelPosition.top}px`,
-          maxHeight: 'min(12rem, calc(100vh - 1rem))',
+          maxHeight: panelPosition.maxHeight,
         }"
         role="dialog"
         aria-label="操作进度"
         @click.stop
       >
         <div
-          class="flex min-w-0 items-center gap-2 border-b border-border-subtle bg-surface-container-low px-3 py-2"
+          v-overlay-scrollbar
+          class="themed-scrollbar max-h-32 overscroll-contain overflow-y-auto px-2 py-1.5 font-mono text-[9px] leading-4"
           aria-live="polite"
         >
-          <RefreshCw
-            :size="12"
-            :class="cn('shrink-0', stateClasses, state === 'loading' && 'animate-spin')"
-            aria-hidden="true"
-          />
-          <span class="min-w-0 flex-1 truncate font-mono text-[10px] font-semibold text-on-surface" :title="message">
-            {{ message }}
-          </span>
-        </div>
-        <div
-          v-if="historyEntries.length"
-          v-overlay-scrollbar
-          class="themed-scrollbar max-h-32 space-y-0.5 overflow-y-auto px-2 py-1.5 font-mono text-[9px] leading-4"
-        >
-          <div
-            v-for="entry in historyEntries"
-            :key="`${entry.timestamp}:${entry.message}`"
-            class="flex min-w-0 gap-1.5 rounded-md px-1.5 py-1 text-on-surface-variant"
-          >
-            <span class="shrink-0 text-[9px] text-on-surface-variant">{{ entry.timestamp }}</span>
-            <span class="min-w-0 break-words">{{ entry.message }}</span>
+          <div class="space-y-0.5">
+            <div
+              v-for="entry in entries"
+              :key="`${entry.timestamp}:${entry.message}`"
+              class="flex min-w-0 gap-1.5 rounded-md px-1.5 py-1 text-on-surface-variant"
+            >
+              <span class="shrink-0 text-[9px] text-on-surface-variant">{{ entry.timestamp }}</span>
+              <span class="min-w-0 break-words">{{ entry.message }}</span>
+            </div>
           </div>
         </div>
       </div>

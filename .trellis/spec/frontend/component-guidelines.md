@@ -738,10 +738,10 @@ const fileIcon = computed(() => {
 - For clickable cards that also contain action buttons, stop event propagation on the action area and on each icon button so card-level navigation does not fire accidentally.
 - If an action is meant to stay in the current view, do not let the card root click handler override it.
 - Keep action buttons visually and structurally separated from card navigation affordances so users can tell whether they are opening a detail view or running a direct command.
-- For nested scroll panels such as runtime logs, provide direct top/bottom controls and avoid forcing auto-scroll while the user is reading history.
-- When a nested scroll panel reaches its top or bottom boundary, pass wheel movement to the nearest outer scroll container so users can leave the panel naturally.
+- For non-floating nested scroll panels such as runtime logs, provide direct top/bottom controls and avoid forcing auto-scroll while the user is reading history.
+- When a non-floating nested scroll panel reaches its top or bottom boundary, pass wheel movement to the nearest outer scroll container so users can leave the panel naturally.
 - For dense panels with variable-width rows such as Git history or file trees, combine `min-w-0` on flex/grid children with explicit `overflow-x-auto` or a fixed minimum row width so narrow windows do not clip the right edge of the content.
-- For floating UI inside clipped/scrolling panels, render the floating layer outside the panel with `Teleport` and keep positioning logic minimal. Over-calculated placement can be worse than a simple above/below rule in compact windows.
+- For floating UI inside clipped/scrolling panels, render the floating layer outside the panel with `Teleport`; streaming or resizing panels use the measured-placement rule below.
 
 ### Convention: Tiny Card Layout
 
@@ -805,7 +805,10 @@ const fileIcon = computed(() => {
 
 ### Rule: Initially Expanded Teleported Panels
 
-Use `onMounted` when the initial `expanded` prop is true and a `flush: "post"` watcher for later opens; a normal watcher misses initial state and an unmounted Teleport target cannot be measured. Verify default-expanded and click-expanded panels both position below their trigger.
+Use `onMounted` for an initially expanded panel and a `flush: "post"` watcher for later opens; measure it after `nextTick` plus one animation frame, observe size changes with `ResizeObserver`, and clamp it to the viewport.
+
+- An internal list must remain scrollable without closing its owner: use `composedPath()` and `overscroll-contain`, and close only for external scroll, outside pointerdown, Escape, or unmount.
+- Verify default-expanded and click-expanded panels with short and long content, panel-internal scrolling, viewport resize, and observer cleanup.
 
 ### 布局与间距
 

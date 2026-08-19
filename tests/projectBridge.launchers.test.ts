@@ -434,12 +434,26 @@ describe("native project launchers", () => {
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
     const child = spawn.mock.results[0]?.value as TestProcessChild;
     child.stderr.emit("data", "\u001b[2KReceiving objects: 5");
-    child.stderr.emit("data", "0%\r");
+    child.stderr.emit("data", "0%\rReceiving objects: 75%\r");
+    await Promise.resolve();
+    expect(bridgeEvents).toEqual([
+      expect.objectContaining({ phase: "start", message: "开始: git fetch --progress --prune origin" }),
+    ]);
+    await new Promise<void>((resolveTimer) => setTimeout(resolveTimer, 0));
+    expect(bridgeEvents).toEqual(
+      expect.arrayContaining([expect.objectContaining({ phase: "output", message: "Receiving objects: 50%" })]),
+    );
+    await vi.waitFor(() =>
+      expect(bridgeEvents).toEqual(
+        expect.arrayContaining([expect.objectContaining({ phase: "output", message: "Receiving objects: 75%" })]),
+      ),
+    );
     child.stderr.emit("data", "Resolving deltas: 100%");
     child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ ok: true, remote: "origin" });
     expect(bridgeEventTypes).toEqual([
+      "git-remote-progress",
       "git-remote-progress",
       "git-remote-progress",
       "git-remote-progress",
@@ -459,6 +473,7 @@ describe("native project launchers", () => {
           message: "开始: git fetch --progress --prune origin",
         }),
         expect.objectContaining({ phase: "output", message: "Receiving objects: 50%" }),
+        expect.objectContaining({ phase: "output", message: "Receiving objects: 75%" }),
         expect.objectContaining({ phase: "output", message: "Resolving deltas: 100%" }),
         expect.objectContaining({ phase: "complete", message: "" }),
       ]),

@@ -219,19 +219,56 @@ function runGitRemoteCommandResult(startPath, args) {
     const stdoutChunks = [];
     const stderrChunks = [];
     const progressRemainders = { stdout: "", stderr: "" };
+    const pendingProgress = [];
+    const progressDrainResolvers = [];
+    let progressDispatchTimer = null;
     let settled = false;
     let timedOut = false;
+
+    const resolveProgressDrains = () => {
+      if (pendingProgress.length || progressDispatchTimer !== null) return;
+      progressDrainResolvers.splice(0).forEach((resolveProgressDrain) => resolveProgressDrain());
+    };
+    const scheduleProgressDispatch = (delayMs) => {
+      if (progressDispatchTimer !== null) return;
+      progressDispatchTimer = setTimeout(() => {
+        progressDispatchTimer = null;
+        const detail = pendingProgress.shift();
+        if (detail) emitGitRemoteProgress(detail);
+        if (pendingProgress.length) {
+          scheduleProgressDispatch(gitRemoteProgressDispatchIntervalMs);
+        } else {
+          resolveProgressDrains();
+        }
+      }, delayMs);
+    };
+    const waitForProgressDispatch = () => {
+      if (!pendingProgress.length && progressDispatchTimer === null) {
+        return Promise.resolve();
+      }
+      return new Promise((resolveProgressDrain) => progressDrainResolvers.push(resolveProgressDrain));
+    };
     const emitProgress = (message, phase = "output") => {
       const normalized = String(message || "")
         .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
         .trim();
       if (!normalized) return;
-      emitGitRemoteProgress({
+      const detail = {
         type: "git-remote-progress",
         repositoryPath: resolvedPath,
         message: normalized,
         phase,
-      });
+      };
+      if (phase === "start") {
+        emitGitRemoteProgress(detail);
+        return;
+      }
+      if (pendingProgress.length >= gitRemoteProgressQueueLimit) {
+        pendingProgress[pendingProgress.length - 1] = detail;
+      } else {
+        pendingProgress.push(detail);
+      }
+      scheduleProgressDispatch(0);
     };
     const consumeProgress = (stream, chunk, flush = false) => {
       progressRemainders[stream] += String(chunk || "");
@@ -254,6 +291,20 @@ function runGitRemoteCommandResult(startPath, args) {
       timedOut = true;
       child.kill();
     }, 120000);
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      void waitForProgressDispatch().then(() => {
+        emitGitRemoteProgress({
+          type: "git-remote-progress",
+          repositoryPath: resolvedPath,
+          message: "",
+          phase: "complete",
+        });
+        resolve(result);
+      });
+    };
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -269,16 +320,8 @@ function runGitRemoteCommandResult(startPath, args) {
     });
     child.on("error", (error) => {
       if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
       consumeProgress("stderr", error.message, true);
-      emitGitRemoteProgress({
-        type: "git-remote-progress",
-        repositoryPath: resolvedPath,
-        message: "",
-        phase: "complete",
-      });
-      resolve({
+      settle({
         status: typeof error.code === "number" ? error.code : 1,
         stdout: stdoutChunks.join(""),
         stderr: stderrChunks.join("") || error.message,
@@ -286,19 +329,11 @@ function runGitRemoteCommandResult(startPath, args) {
     });
     child.on("close", (code) => {
       if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
       consumeProgress("stdout", "", true);
       consumeProgress("stderr", "", true);
-      emitGitRemoteProgress({
-        type: "git-remote-progress",
-        repositoryPath: resolvedPath,
-        message: "",
-        phase: "complete",
-      });
       const status = typeof code === "number" ? code : 1;
       const timeoutMessage = timedOut ? "远程 Git 操作超时，请检查网络或认证配置。" : "";
-      resolve({
+      settle({
         status,
         stdout: stdoutChunks.join(""),
         stderr: stderrChunks.join("") || timeoutMessage,
