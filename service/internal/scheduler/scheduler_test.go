@@ -42,15 +42,17 @@ func TestSchedulerExecutesDuePlanOnce(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
-				ID:        "scheduled-task",
-				Name:      "Scheduled task",
-				Enabled:   true,
-				ScriptIDs: []string{"scheduled-script"},
+				ID:                 "scheduled-task",
+				Name:               "Scheduled task",
+				Enabled:            true,
+				MissedPolicy:       "grace-run",
+				MissedGraceMinutes: 5,
+				ScriptIDs:          []string{"scheduled-script"},
 				DailyPlans: []DailyPlan{{
 					Date: time.Now().UTC().Format("2006-01-02"),
 					Entries: []PlanEntry{{
 						ID:        "due-entry",
-						PlannedAt: time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano),
+						PlannedAt: time.Now().Add(-3 * time.Minute).UTC().Format(time.RFC3339Nano),
 						Status:    "pending",
 					}},
 				}},
@@ -356,6 +358,46 @@ func TestSchedulerNextWakeSkipsClaimedEarlyPlan(t *testing.T) {
 
 	if delay := runtime.nextWakeDelay(now, configValue); delay != schedulerIdleWakeDelay {
 		t.Fatalf("next wake delay = %s, want idle delay %s", delay, schedulerIdleWakeDelay)
+	}
+}
+
+func TestSchedulerRechecksFuturePlansAfterSleepRecovery(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+
+	now := time.Now().UTC()
+	config := Config{
+		SchemaVersion: 1,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID: "future-project",
+			AutomationTasks: []TaskConfig{{
+				ID:      "future-task",
+				Enabled: true,
+				DailyPlans: []DailyPlan{{
+					Entries: []PlanEntry{{
+						ID:        "future-entry",
+						PlannedAt: now.Add(time.Hour).Format(time.RFC3339Nano),
+						Status:    "pending",
+					}},
+				}},
+			}},
+		}},
+	}
+
+	if delay := runtime.nextWakeDelay(now, config); delay != schedulerFuturePlanRecheckDelay {
+		t.Fatalf("next wake delay = %s, want future-plan recheck delay %s", delay, schedulerFuturePlanRecheckDelay)
 	}
 }
 

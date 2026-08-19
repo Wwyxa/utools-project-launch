@@ -110,14 +110,15 @@ type Runtime struct {
 }
 
 const (
-	schedulerIdleWakeDelay     = 24 * time.Hour
-	schedulerRetryInitialDelay = time.Second
-	schedulerRetryMaximumDelay = time.Minute
-	recoveredRunPollInterval   = 500 * time.Millisecond
-	defaultMaxScriptRuntime    = 30 * time.Minute
-	defaultOutputMatchWait     = 30 * time.Second
-	maxAutomationOutputTailLen = 64 * 1024
-	maxSchedulerHealthErrorLen = 512
+	schedulerIdleWakeDelay          = 24 * time.Hour
+	schedulerFuturePlanRecheckDelay = 30 * time.Second
+	schedulerRetryInitialDelay      = time.Second
+	schedulerRetryMaximumDelay      = time.Minute
+	recoveredRunPollInterval        = 500 * time.Millisecond
+	defaultMaxScriptRuntime         = 30 * time.Minute
+	defaultOutputMatchWait          = 30 * time.Second
+	maxAutomationOutputTailLen      = 64 * 1024
+	maxSchedulerHealthErrorLen      = 512
 )
 
 func New(store *state.Store, supervisor *serviceprocess.Supervisor) (*Runtime, error) {
@@ -336,6 +337,7 @@ func (runtime *Runtime) runOnce(ctx context.Context) (time.Duration, error) {
 
 func (runtime *Runtime) nextWakeDelay(now time.Time, config Config) time.Duration {
 	delay := schedulerIdleWakeDelay
+	hasFuturePlan := false
 	if runtime.supervisor.HasRecoveredRuns() {
 		delay = recoveredRunPollInterval
 	}
@@ -370,6 +372,7 @@ func (runtime *Runtime) nextWakeDelay(now time.Time, config Config) time.Duratio
 					if entry.RunEarly || !plannedAt.After(now) {
 						return schedulerRetryInitialDelay
 					}
+					hasFuturePlan = true
 					if candidate := plannedAt.Sub(now); candidate < delay {
 						delay = candidate
 					}
@@ -378,6 +381,9 @@ func (runtime *Runtime) nextWakeDelay(now time.Time, config Config) time.Duratio
 		}
 	}
 
+	if hasFuturePlan && delay > schedulerFuturePlanRecheckDelay {
+		return schedulerFuturePlanRecheckDelay
+	}
 	return delay
 }
 
