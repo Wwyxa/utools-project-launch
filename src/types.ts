@@ -682,6 +682,17 @@ export interface ProjectGitCommitRef {
   head?: boolean;
 }
 
+export type ProjectGitTagKind = "annotated" | "lightweight";
+
+export interface ProjectGitTagInfo {
+  name: string;
+  kind: ProjectGitTagKind;
+  targetHash: string;
+  objectHash: string;
+  message: string;
+  tagger?: string;
+}
+
 export interface ProjectGitStash {
   selector: string;
   baseHash: string;
@@ -1315,6 +1326,7 @@ export interface ProjectBridge {
     options?: ProjectGitFileDiffOptions,
   ): Promise<ProjectGitFileDiffResult>;
   readGitCommitFiles(projectPath: string, commitHash: string, stash?: ProjectGitStash): Promise<ProjectGitFileChange[]>;
+  readGitTagInfo(projectPath: string, tagName: string): Promise<ProjectGitTagInfo | null>;
   readGitCommitAuthorAvatar(projectPath: string, commitHash: string): Promise<string | null>;
   readGitCommitMessageDiff(projectPath: string): Promise<ProjectGitCommitMessageDiffResult>;
   stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
@@ -1371,6 +1383,7 @@ export interface ProjectBridge {
     options?: { annotated?: boolean; message?: string },
   ): Promise<ProjectGitActionResult>;
   deleteGitTag(projectPath: string, tagName: string): Promise<ProjectGitActionResult>;
+  pushGitTag(projectPath: string, tagName: string, remoteName?: string): Promise<ProjectGitActionResult>;
   renameGitBranch(projectPath: string, branchName: string, nextBranchName: string): Promise<ProjectGitActionResult>;
   deleteGitBranch(
     projectPath: string,

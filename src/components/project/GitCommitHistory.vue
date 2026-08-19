@@ -16,6 +16,7 @@ import {
   Clock3,
   Cloud,
   CloudDownload,
+  Copy,
   Filter,
   Folder,
   GitBranch,
@@ -39,6 +40,7 @@ import type {
   ProjectGitCommitSummary,
   ProjectGitFileChange,
   ProjectGitRepositoryTarget,
+  ProjectGitTagInfo,
 } from "../../types";
 import {
   collapseGitStashAuxiliaryCommits,
@@ -121,10 +123,17 @@ type CommitContextMenuState = {
   maxHeight: number;
 };
 type CommitBranchRef = { kind: "local" | "remote"; name: string; current: boolean };
-type CommitSubmenuContent = { kind: "branch"; branch: CommitBranchRef } | { kind: "tags"; tags: string[] };
+type CommitTagRef = { name: string };
+type CommitSubmenuContent = { kind: "branch"; branch: CommitBranchRef } | { kind: "tag"; tag: CommitTagRef };
 type CommitSubmenuState = CommitSubmenuContent & { left: number; top: number; parent: HTMLElement };
 type RefDialogMode = "create-branch" | "rename-branch" | "create-tag";
 type RefDialogState = { mode: RefDialogMode; commit: ProjectGitCommitSummary; sourceBranch?: string };
+type TagInfoDialogState = {
+  tagName: string;
+  info: ProjectGitTagInfo | null;
+  isLoading: boolean;
+  error: string;
+};
 type GitHistoryAction = "cherry-pick" | "revert";
 type AppActionDialog = {
   tone?: "danger" | "warning";
@@ -201,6 +210,7 @@ const refDialogCheckout = ref(false);
 const refDialogAnnotated = ref(false);
 const refDialogError = ref("");
 const refDialogInputRef = ref<HTMLInputElement | null>(null);
+const tagInfoDialog = ref<TagInfoDialogState | null>(null);
 const confirmationDialog = ref<AppActionDialog | null>(null);
 const confirmationBusy = ref(false);
 const activeAction = ref("");
@@ -220,11 +230,20 @@ let pendingGraphScrollAnchor: { hash: string; offset: number } | null = null;
 let graphScrollAnchorRestoreScheduled = false;
 let loadMoreObserver: IntersectionObserver | null = null;
 let loadMoreSentinelWasIntersecting = false;
+let tagInfoRequestGeneration = 0;
 let stopAppEscapeListener = () => {};
 
 const context = computed(() => store.resolveGitRepositoryContext(props.projectId, props.repositoryTarget));
 const snapshot = computed(() => store.gitSnapshotForRepository(props.projectId, props.repositoryTarget));
 const projectPath = computed(() => store.projects.find((project) => project.id === props.projectId)?.path || "");
+const tagPushRemotes = computed(() => {
+  const remotes = snapshot.value?.remotes || [];
+  const upstreamRemote = snapshot.value?.upstream?.remote;
+  if (!upstreamRemote) return remotes;
+  const upstream = remotes.find((remote) => remote.name === upstreamRemote);
+  return upstream ? [upstream, ...remotes.filter((remote) => remote.name !== upstreamRemote)] : remotes;
+});
+const tagInfoDialogInfo = computed(() => tagInfoDialog.value?.info || null);
 const isLoadingMore = computed(() => {
   const contextKey = context.value?.contextKey;
   return Boolean(contextKey && store.gitRepositoryLoadingMore[contextKey]);
@@ -859,14 +878,14 @@ const commitBranchRefs = (commit: ProjectGitCommitSummary): CommitBranchRef[] =>
       current: locals.has(name) && name === snapshot.value?.branch && !snapshot.value?.isDetachedHead,
     }));
 };
-const commitTagRefs = (commit: ProjectGitCommitSummary) =>
+const commitTagRefs = (commit: ProjectGitCommitSummary): CommitTagRef[] =>
   commit.refNames
-    ? commit.refNames.filter((ref) => ref.kind === "tag").map((ref) => ref.name)
+    ? commit.refNames.filter((ref) => ref.kind === "tag").map((ref) => ({ name: ref.name }))
     : (commit.refs || "")
         .split(",")
         .map((name) => name.trim())
         .filter((name) => name.startsWith("tag:"))
-        .map((name) => name.replace(/^tag:\s*/, ""));
+        .map((name) => ({ name: name.replace(/^tag:\s*/, "") }));
 const commitStashRef = (commit: ProjectGitCommitSummary) => {
   if (commit.stash?.selector) return commit.stash.selector;
   const structuredRef = commit.refNames?.find((ref) => ref.kind === "stash")?.name;
@@ -1418,6 +1437,61 @@ const deleteTag = async (tagName: string) => {
   );
   if (result) report(result.ok ? "success" : "error", result.message);
 };
+const executePushTag = async (tagName: string, remoteName: string) => {
+  if (!remoteName || isInteractionDisabled.value) return;
+  closeCommitContextMenu(false);
+  const result = await runAction(`push-tag:${remoteName}:${tagName}`, () =>
+    store.pushGitTag(props.projectId, tagName, remoteName, props.repositoryTarget),
+  );
+  if (result) report(result.ok ? "success" : "error", result.message);
+};
+const requestPushTag = (tagName: string, remoteName: string) => {
+  if (!tagName || !remoteName || isInteractionDisabled.value) return;
+  closeCommitContextMenu();
+  requestConfirmation({
+    tone: "warning",
+    title: "推送 Git 标签",
+    message: `将标签 ${tagName} 推送到 ${remoteName}。`,
+    detail: `refs/tags/${tagName}`,
+    confirmLabel: "推送标签",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executePushTag(tagName, remoteName),
+  });
+};
+const copyTagRef = async (name: string) => {
+  try {
+    await navigator.clipboard.writeText(name);
+    copiedText.value = name;
+    window.clearTimeout(copiedTimer.value);
+    copiedTimer.value = window.setTimeout(() => (copiedText.value = ""), 1200);
+    report("success", `已复制标签名：${name}`);
+  } catch {
+    report("error", "复制标签名失败。");
+  }
+};
+const closeTagInfoDialog = () => {
+  tagInfoRequestGeneration += 1;
+  tagInfoDialog.value = null;
+};
+const openTagInfo = async (tagName: string) => {
+  if (!tagName || isInteractionDisabled.value) return;
+  closeCommitContextMenu(false);
+  const requestGeneration = ++tagInfoRequestGeneration;
+  tagInfoDialog.value = { tagName, info: null, isLoading: true, error: "" };
+  let info: ProjectGitTagInfo | null = null;
+  try {
+    info = await store.readGitTagInfo(props.projectId, tagName, props.repositoryTarget);
+  } catch {
+    if (requestGeneration === tagInfoRequestGeneration) {
+      tagInfoDialog.value = { tagName, info: null, isLoading: false, error: "无法读取标签信息。" };
+    }
+    return;
+  }
+  if (requestGeneration !== tagInfoRequestGeneration) return;
+  tagInfoDialog.value = info
+    ? { tagName, info, isLoading: false, error: "" }
+    : { tagName, info: null, isLoading: false, error: "无法读取标签信息。" };
+};
 const executeStashAction = async (action: "apply" | "pop" | "drop", commit: ProjectGitCommitSummary) => {
   const stashRef = commitStashRef(commit);
   if (!stashRef || isInteractionDisabled.value) return null;
@@ -1674,10 +1748,11 @@ const handleCommitMenuKeydown = (event: KeyboardEvent, level: "main" | "submenu"
     const commit = commitContextMenu.value?.commit;
     const branchIndex = current.dataset.branchIndex;
     const branch = commit && branchIndex !== undefined ? commitBranchRefs(commit)[Number(branchIndex)] : undefined;
-    const tags = commit && current.hasAttribute("data-tag-list") ? commitTagRefs(commit) : [];
-    if (branch || tags.length) {
+    const tagIndex = current.dataset.tagIndex;
+    const tag = commit && tagIndex !== undefined ? commitTagRefs(commit)[Number(tagIndex)] : undefined;
+    if (branch || tag) {
       event.preventDefault();
-      void openCommitSubmenu(branch ? { kind: "branch", branch } : { kind: "tags", tags }, current, true);
+      void openCommitSubmenu(branch ? { kind: "branch", branch } : { kind: "tag", tag: tag! }, current, true);
     }
   } else if (level === "submenu" && event.key === "ArrowLeft") {
     event.preventDefault();
@@ -1745,6 +1820,7 @@ const closeHistoryFloatingControls = () => {
   closeCommitContextMenu(false);
   refDialog.value = null;
   refDialogError.value = "";
+  closeTagInfoDialog();
   confirmationDialog.value = null;
   closeCommitFilters();
 };
@@ -1772,6 +1848,9 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
     event.detail.handle();
   } else if (refDialog.value) {
     closeRefDialog();
+    event.detail.handle();
+  } else if (tagInfoDialog.value) {
+    closeTagInfoDialog();
     event.detail.handle();
   } else if (showCommitFilters.value) {
     closeCommitFilters();
@@ -2629,6 +2708,16 @@ onBeforeUnmount(() => {
         >
           <Undo :size="12" />Revert
         </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="git-history-menu-item"
+          :disabled="isInteractionDisabled || !canCheckoutDetachedCommit(commitContextMenu.commit)"
+          @click="checkoutCommit(commitContextMenu.commit)"
+          @keydown="handleCommitMenuKeydown($event, 'main')"
+        >
+          <GitCommitHorizontal :size="12" />切换（分离 HEAD）
+        </button>
         <template v-if="commitStashRef(commitContextMenu.commit)">
           <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
           <button
@@ -2663,31 +2752,10 @@ onBeforeUnmount(() => {
           </button>
         </template>
         <div
-          v-if="commitTagRefs(commitContextMenu.commit).length"
-          role="menuitem"
-          tabindex="0"
-          data-tag-list
-          aria-haspopup="menu"
-          :aria-expanded="commitSubmenu?.kind === 'tags'"
-          class="git-history-menu-item cursor-default"
-          @click="
-            openCommitSubmenu(
-              { kind: 'tags', tags: commitTagRefs(commitContextMenu.commit) },
-              $event.currentTarget as HTMLElement,
-            )
-          "
-          @mouseenter="
-            openCommitSubmenu(
-              { kind: 'tags', tags: commitTagRefs(commitContextMenu.commit) },
-              $event.currentTarget as HTMLElement,
-            )
-          "
-          @keydown="handleCommitMenuKeydown($event, 'main')"
-        >
-          <Trash2 :size="12" class="text-status-error" /><span>删除标签</span>
-          <ChevronRight :size="11" class="ml-auto shrink-0 text-on-surface-variant" />
-        </div>
-        <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
+          v-if="commitBranchRefs(commitContextMenu.commit).length || commitTagRefs(commitContextMenu.commit).length"
+          class="mx-1 my-1 border-t border-border-subtle"
+          role="separator"
+        />
         <template v-if="commitBranchRefs(commitContextMenu.commit).length">
           <div
             v-for="(branch, branchIndex) in commitBranchRefs(commitContextMenu.commit)"
@@ -2720,17 +2788,33 @@ onBeforeUnmount(() => {
             <ChevronRight v-else :size="11" class="shrink-0 text-on-surface-variant" />
           </div>
         </template>
-        <button
-          v-else
-          type="button"
-          role="menuitem"
-          class="git-history-menu-item"
-          :disabled="isInteractionDisabled || !canCheckoutDetachedCommit(commitContextMenu.commit)"
-          @click="checkoutCommit(commitContextMenu.commit)"
-          @keydown="handleCommitMenuKeydown($event, 'main')"
-        >
-          <GitCommitHorizontal :size="12" />切换（分离 HEAD）
-        </button>
+        <template v-if="commitTagRefs(commitContextMenu.commit).length">
+          <div
+            v-for="(tag, tagIndex) in commitTagRefs(commitContextMenu.commit)"
+            :key="`${commitContextMenu.commit.hash}:tag:${tag.name}`"
+            role="menuitem"
+            tabindex="0"
+            :data-tag-index="tagIndex"
+            aria-haspopup="menu"
+            :aria-expanded="commitSubmenu?.kind === 'tag' && commitSubmenu.tag.name === tag.name"
+            class="git-history-menu-item cursor-default"
+            @click="openCommitSubmenu({ kind: 'tag', tag }, $event.currentTarget as HTMLElement)"
+            @mouseenter="openCommitSubmenu({ kind: 'tag', tag }, $event.currentTarget as HTMLElement)"
+            @keydown="handleCommitMenuKeydown($event, 'main')"
+          >
+            <Tag :size="12" class="shrink-0 text-tertiary" />
+            <button
+              type="button"
+              tabindex="-1"
+              class="min-w-0 flex-1 truncate text-left font-mono"
+              :title="copyLabel(tag.name)"
+              @click.stop="copyTagRef(tag.name)"
+            >
+              {{ tag.name }}
+            </button>
+            <ChevronRight :size="11" class="ml-auto shrink-0 text-on-surface-variant" />
+          </div>
+        </template>
       </div>
     </div>
     <div
@@ -2739,7 +2823,9 @@ onBeforeUnmount(() => {
       data-commit-context-menu
       class="fixed z-[76] w-fit min-w-[7.85rem] max-w-[13rem] rounded-md border border-outline-variant/70 bg-surface-container-lowest shadow-2xl"
       role="menu"
-      :aria-label="commitSubmenu.kind === 'branch' ? `${commitSubmenu.branch.name} 操作` : '删除标签'"
+      :aria-label="
+        commitSubmenu.kind === 'branch' ? `${commitSubmenu.branch.name} 操作` : `${commitSubmenu.tag.name} 操作`
+      "
       :style="{ left: `${commitSubmenu.left}px`, top: `${commitSubmenu.top}px` }"
       @click.stop
     >
@@ -2759,16 +2845,6 @@ onBeforeUnmount(() => {
           >
             <component :is="commitSubmenu.branch.kind === 'local' ? GitBranch : CloudDownload" :size="12" />
             {{ commitSubmenu.branch.kind === "local" ? "切换到分支" : "检出为 tracking 分支" }}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="git-history-menu-item"
-            :disabled="isInteractionDisabled || !canCheckoutDetachedCommit(commitContextMenu.commit)"
-            @click="checkoutCommit(commitContextMenu.commit)"
-            @keydown="handleCommitMenuKeydown($event, 'submenu')"
-          >
-            <GitCommitHorizontal :size="12" />分离 HEAD 查看
           </button>
           <template v-if="commitSubmenu.branch.kind === 'local'">
             <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
@@ -2797,17 +2873,61 @@ onBeforeUnmount(() => {
         </template>
         <template v-else>
           <button
-            v-for="tagName in commitSubmenu.tags"
-            :key="tagName"
+            type="button"
+            role="menuitem"
+            class="git-history-menu-item"
+            :disabled="isInteractionDisabled"
+            @click="openTagInfo(commitSubmenu.tag.name)"
+            @keydown="handleCommitMenuKeydown($event, 'submenu')"
+          >
+            <List :size="12" />查看标签
+          </button>
+          <template v-if="tagPushRemotes.length">
+            <button
+              v-for="remote in tagPushRemotes"
+              :key="`${commitSubmenu.tag.name}:${remote.name}`"
+              type="button"
+              role="menuitem"
+              class="git-history-menu-item"
+              :disabled="isInteractionDisabled"
+              :title="`推送到 ${remote.name}`"
+              @click="requestPushTag(commitSubmenu.tag.name, remote.name)"
+              @keydown="handleCommitMenuKeydown($event, 'submenu')"
+            >
+              <Cloud :size="12" />{{ tagPushRemotes.length === 1 ? "推送标签" : `推送到 ${remote.name}` }}
+            </button>
+          </template>
+          <button
+            v-else
+            type="button"
+            role="menuitem"
+            class="git-history-menu-item"
+            disabled
+            title="当前没有可用的推送 remote"
+            @keydown="handleCommitMenuKeydown($event, 'submenu')"
+          >
+            <Cloud :size="12" />推送标签
+          </button>
+          <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            class="git-history-menu-item"
+            :disabled="isInteractionDisabled"
+            @click="copyTagRef(commitSubmenu.tag.name)"
+            @keydown="handleCommitMenuKeydown($event, 'submenu')"
+          >
+            <Copy :size="12" />复制标签名
+          </button>
+          <button
             type="button"
             role="menuitem"
             class="git-history-menu-item text-status-error"
             :disabled="isInteractionDisabled"
-            :title="`删除标签 ${tagName}`"
-            @click="requestDeleteTag(tagName)"
+            @click="requestDeleteTag(commitSubmenu.tag.name)"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
           >
-            <Tag :size="12" /><span class="min-w-0 truncate font-mono">{{ tagName }}</span>
+            <Trash2 :size="12" />删除标签
           </button>
         </template>
       </div>
@@ -2910,6 +3030,96 @@ onBeforeUnmount(() => {
       </div></Transition
     ></Teleport
   >
+  <Teleport to="body">
+    <Transition name="scale">
+      <div
+        v-if="tagInfoDialog"
+        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="git-tag-info-title"
+        @click.self="closeTagInfoDialog"
+      >
+        <section
+          class="w-[min(30rem,94vw)] overflow-hidden rounded-lg border border-border-subtle bg-surface text-on-surface shadow-2xl"
+          @click.stop
+        >
+          <header
+            class="flex items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-3"
+          >
+            <div class="flex min-w-0 items-center gap-3">
+              <div
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-tertiary/30 bg-tertiary/10 text-tertiary"
+              >
+                <Tag :size="16" />
+              </div>
+              <div class="min-w-0">
+                <h3 id="git-tag-info-title" class="text-sm font-bold text-on-surface">查看标签</h3>
+                <p class="truncate font-mono text-[11px] text-on-surface-variant">{{ tagInfoDialog.tagName }}</p>
+              </div>
+            </div>
+            <button type="button" class="git-top-action" title="关闭" aria-label="关闭" @click="closeTagInfoDialog">
+              <X :size="14" />
+            </button>
+          </header>
+          <div class="space-y-3 px-4 py-4">
+            <div v-if="tagInfoDialog.isLoading" class="flex items-center gap-2 py-5 text-xs text-on-surface-variant">
+              <Clock3 :size="14" class="animate-spin" />正在读取标签信息...
+            </div>
+            <p
+              v-else-if="tagInfoDialog.error"
+              class="rounded border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error"
+            >
+              {{ tagInfoDialog.error }}
+            </p>
+            <template v-else-if="tagInfoDialogInfo">
+              <dl class="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+                <dt class="text-on-surface-variant">类型</dt>
+                <dd class="font-medium text-on-surface">
+                  {{ tagInfoDialogInfo.kind === "annotated" ? "附注标签" : "轻量标签" }}
+                </dd>
+                <dt class="text-on-surface-variant">目标提交</dt>
+                <dd class="flex min-w-0 items-center gap-1">
+                  <button
+                    type="button"
+                    class="min-w-0 truncate font-mono text-left text-primary hover:underline"
+                    :title="copyLabel(tagInfoDialogInfo.targetHash) + '完整 commit hash'"
+                    @click="copyText(tagInfoDialogInfo.targetHash)"
+                  >
+                    {{ tagInfoDialogInfo.targetHash }}
+                  </button>
+                  <Check
+                    v-if="copiedText === tagInfoDialogInfo.targetHash"
+                    :size="12"
+                    class="shrink-0 text-status-running"
+                  />
+                </dd>
+                <template v-if="tagInfoDialogInfo.tagger">
+                  <dt class="text-on-surface-variant">创建者</dt>
+                  <dd class="break-words text-on-surface">{{ tagInfoDialogInfo.tagger }}</dd>
+                </template>
+              </dl>
+              <div class="border-t border-border-subtle pt-3">
+                <div class="mb-2 flex items-center justify-between gap-3">
+                  <h4 class="text-xs font-bold text-on-surface">附注说明</h4>
+                  <span v-if="tagInfoDialogInfo.kind === 'lightweight'" class="text-[10px] text-on-surface-variant"
+                    >轻量标签没有附注说明</span
+                  >
+                </div>
+                <pre
+                  class="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-surface-container-low px-3 py-3 font-mono text-xs leading-5 text-on-surface"
+                  >{{ tagInfoDialogInfo.message || "此标签没有附注说明。" }}</pre
+                >
+              </div>
+            </template>
+          </div>
+          <footer class="flex justify-end border-t border-border-subtle px-4 py-3">
+            <button type="button" class="git-dialog-secondary" @click="closeTagInfoDialog">关闭</button>
+          </footer>
+        </section>
+      </div>
+    </Transition>
+  </Teleport>
   <ActionDialog
     :open="Boolean(confirmationDialog)"
     :tone="confirmationDialog?.tone || 'danger'"

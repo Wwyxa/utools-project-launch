@@ -53,7 +53,7 @@ runGit("commit", "-m", "second commit");
 const rootHash = runGit("rev-list", "--max-parents=0", "HEAD").trim();
 runGit("branch", "feature,comma", rootHash);
 runGit("tag", "lightweight,comma", rootHash);
-runGit("tag", "-a", "annotated", "-m", "annotated message", rootHash);
+runGit("tag", "-a", "annotated", "-m", "annotated message\n\nsecond line", rootHash);
 fs.mkdirSync(unbornRoot, { recursive: true });
 execFileSync("git", ["-C", unbornRoot, "init"], { encoding: "utf8" });
 fs.writeFileSync(path.join(unbornRoot, "untracked.txt"), "untracked\n");
@@ -483,6 +483,20 @@ try {
   assert.equal(taggedPush.ok, true);
   assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `refs/heads/${publishBranch}`).trim(), releaseCommit);
   assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `${releaseTagName}^{commit}`).trim(), releaseCommit);
+  const standaloneTagName = "service-standalone-tag";
+  runGitAt(publishProjectRoot, "tag", standaloneTagName);
+  const standaloneTagPush = await bridge.pushGitTag(publishProjectRoot, standaloneTagName, "mirror");
+  assert.equal(standaloneTagPush.ok, true);
+  assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `${standaloneTagName}^{commit}`).trim(), releaseCommit);
+  const standaloneAnnotatedTagName = "service-standalone-annotated-tag";
+  runGitAt(publishProjectRoot, "tag", "-a", standaloneAnnotatedTagName, "-m", "standalone annotation", releaseCommit);
+  const standaloneAnnotatedTagPush = await bridge.pushGitTag(publishProjectRoot, standaloneAnnotatedTagName, "mirror");
+  assert.equal(standaloneAnnotatedTagPush.ok, true);
+  assert.equal(runGitAt(publishMirrorRoot, "cat-file", "-t", `refs/tags/${standaloneAnnotatedTagName}`).trim(), "tag");
+  assert.match(
+    runGitAt(publishMirrorRoot, "show", "-s", "--format=%B", `refs/tags/${standaloneAnnotatedTagName}`),
+    /standalone annotation/,
+  );
 
   const remoteDeleteBranch = "feature/remote-delete";
   runGitAt(publishProjectRoot, "switch", "-c", remoteDeleteBranch);
@@ -839,6 +853,38 @@ try {
     latestCommit.refNames.some((ref) => ref.kind === "local" && ref.head),
     true,
   );
+  const annotatedTagInfo = await bridge.readGitTagInfo(projectRoot, "annotated");
+  assert.deepEqual(
+    annotatedTagInfo && {
+      name: annotatedTagInfo.name,
+      kind: annotatedTagInfo.kind,
+      targetHash: annotatedTagInfo.targetHash,
+      message: annotatedTagInfo.message,
+    },
+    {
+      name: "annotated",
+      kind: "annotated",
+      targetHash: rootCommit.hash,
+      message: "annotated message\n\nsecond line",
+    },
+  );
+  assert.match(annotatedTagInfo?.tagger || "", /Git Commits Validation/);
+  const lightweightTagInfo = await bridge.readGitTagInfo(projectRoot, "lightweight,comma");
+  assert.deepEqual(
+    lightweightTagInfo && {
+      name: lightweightTagInfo.name,
+      kind: lightweightTagInfo.kind,
+      targetHash: lightweightTagInfo.targetHash,
+      message: lightweightTagInfo.message,
+    },
+    {
+      name: "lightweight,comma",
+      kind: "lightweight",
+      targetHash: rootCommit.hash,
+      message: "",
+    },
+  );
+  assert.equal(await bridge.readGitTagInfo(projectRoot, "missing-tag"), null);
 
   const untrackedOnlyPath = path.join(projectRoot, "untracked-only.txt");
   fs.writeFileSync(untrackedOnlyPath, "untracked only\n");

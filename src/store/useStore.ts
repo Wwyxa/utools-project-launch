@@ -78,6 +78,7 @@ import type {
   ProjectGitSnapshot,
   ProjectGitStash,
   ProjectGitStashOptions,
+  ProjectGitTagInfo,
   ProjectGitStatusSnapshot,
   ProjectBridgeGitWorkingTreeSnapshot,
   ProjectGitWorkspaceSnapshot,
@@ -4028,6 +4029,18 @@ export const useStore = defineStore("app", {
         ? result
         : [];
     },
+    async readGitTagInfo(
+      projectId: string,
+      tagName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitTagInfo | null> {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
+      const result = await bridge.readGitTagInfo(context.repositoryPath, tagName);
+      return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
+        ? result
+        : null;
+    },
     async readGitCommitAuthorAvatar(
       projectId: string,
       commitHash: string,
@@ -4425,6 +4438,19 @@ export const useStore = defineStore("app", {
         target,
         (context) => bridge.deleteGitTag(context.repositoryPath, tagName),
         { refresh: "full", refs: true },
+      );
+    },
+    async pushGitTag(
+      projectId: string,
+      tagName: string,
+      remoteName = "",
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.pushGitTag(context.repositoryPath, tagName, remoteName),
+        { refresh: "full", refs: true, refreshOnFailure: true },
       );
     },
     async renameGitBranch(

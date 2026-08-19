@@ -599,6 +599,46 @@ function normalizeGitPushTagNames(options = {}) {
   ];
 }
 
+async function pushGitTag(projectPath, tagName, remoteName = "") {
+  const name = normalizeGitRefName(tagName);
+  const repositoryPath = findGitRoot(projectPath);
+  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  const nameError = validateGitRefName(repositoryPath, "refs/tags", name, "请输入标签名称。");
+  if (nameError) return { ok: false, message: nameError };
+  if (!gitRefExists(repositoryPath, `refs/tags/${name}`)) return { ok: false, message: "标签不存在。" };
+
+  const requestedRemote = normalizeGitRemoteName(remoteName);
+  const remoteContext = requestedRemote
+    ? await resolveNamedGitRemoteOperation(projectPath, requestedRemote)
+    : await (async () => {
+        const upstream = await readGitUpstreamAsync(repositoryPath);
+        if (upstream) return { ok: true, repositoryPath, remote: upstream.remote };
+        const remotes = await readGitRemotesAsync(repositoryPath);
+        return remotes.length === 1
+          ? { ok: true, repositoryPath, remote: remotes[0].name }
+          : {
+              ok: false,
+              repositoryPath,
+              message: remotes.length > 1 ? "当前仓库有多个 remote，请指定推送目标。" : "当前仓库未配置 remote。",
+            };
+      })();
+  if (!remoteContext.ok) return { ok: false, remote: remoteContext.remote, message: remoteContext.message };
+
+  const result = await runGitRemoteCommandResult(remoteContext.repositoryPath, [
+    "push",
+    "--progress",
+    remoteContext.remote,
+    `refs/tags/${name}:refs/tags/${name}`,
+  ]);
+  return result.status === 0
+    ? { ok: true, remote: remoteContext.remote, message: `已将标签 ${name} 推送到 ${remoteContext.remote}。` }
+    : {
+        ok: false,
+        remote: remoteContext.remote,
+        message: firstGitError(result, "推送 Git 标签失败。"),
+      };
+}
+
 function pushGitRemote(projectPath, options = {}) {
   const tagNames = normalizeGitPushTagNames(options);
   return runGitRemoteResult(
@@ -746,6 +786,52 @@ async function removeGitRemote(projectPath, remoteName) {
   return result.status === 0
     ? { ok: true, remote: name, message: `已删除 remote：${name}。` }
     : { ok: false, remote: name, message: firstGitError(result, "删除 remote 失败。") };
+}
+
+function readGitTagInfo(projectPath, tagName) {
+  const repositoryPath = findGitRoot(projectPath);
+  const name = normalizeGitRefName(tagName);
+  if (!repositoryPath || !name) return null;
+  if (validateGitRefName(repositoryPath, "refs/tags", name, "请输入标签名称。")) return null;
+
+  const fullRef = `refs/tags/${name}`;
+  if (!gitRefExists(repositoryPath, fullRef)) return null;
+
+  const objectHash = (runGit(repositoryPath, ["rev-parse", fullRef]) || "").trim();
+  const objectType = (runGit(repositoryPath, ["cat-file", "-t", fullRef]) || "").trim();
+  if (!objectHash || !objectType) return null;
+
+  if (objectType === "commit") {
+    const targetHash = (runGit(repositoryPath, ["rev-parse", `${fullRef}^{commit}`]) || "").trim();
+    return targetHash ? { name, kind: "lightweight", targetHash, objectHash, message: "" } : null;
+  }
+  if (objectType !== "tag") return null;
+
+  const rawTag = runGit(repositoryPath, ["cat-file", "-p", fullRef]);
+  if (rawTag === null) return null;
+  const objectMatch = rawTag.match(/^object ([0-9a-f]{40,64})$/m);
+  const typeMatch = rawTag.match(/^type ([^\r\n]+)$/m);
+  if (!objectMatch || typeMatch?.[1] !== "commit") return null;
+
+  const targetHash = (runGit(repositoryPath, ["rev-parse", `${objectMatch[1]}^{commit}`]) || "").trim();
+  if (!targetHash) return null;
+  const headerEnd = rawTag.match(/\r?\n\r?\n/);
+  const message =
+    headerEnd?.index === undefined
+      ? ""
+      : rawTag
+          .slice(headerEnd.index + headerEnd[0].length)
+          .replace(/\r\n/g, "\n")
+          .trim();
+  const tagger = rawTag.match(/^tagger ([^\r\n]+)$/m)?.[1]?.trim() || "";
+  return {
+    name,
+    kind: "annotated",
+    targetHash,
+    objectHash,
+    message,
+    ...(tagger ? { tagger } : {}),
+  };
 }
 
 async function deleteGitRemoteBranch(projectPath, remoteName, branchName) {

@@ -39,6 +39,7 @@ import type {
   ProjectBridgeRunResult,
   ProjectBridgeStopProcessOptions,
   ProjectGitReadResult,
+  ProjectGitTagInfo,
   ProjectFileListResult,
   ProjectFileMutationKind,
   ProjectFileMutationResult,
@@ -1030,6 +1031,9 @@ const fallbackBridge: ProjectBridge = {
   async readGitCommitFiles(): Promise<ProjectGitFileChange[]> {
     return [];
   },
+  async readGitTagInfo(): Promise<ProjectGitTagInfo | null> {
+    return null;
+  },
   async readGitCommitAuthorAvatar(): Promise<string | null> {
     return null;
   },
@@ -1108,6 +1112,9 @@ const fallbackBridge: ProjectBridge = {
   },
   async deleteGitTag(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法删除 Git 标签。");
+  },
+  async pushGitTag(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法推送 Git 标签。");
   },
   async renameGitBranch(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法重命名 Git 分支。");
