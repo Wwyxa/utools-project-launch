@@ -503,8 +503,7 @@ try {
   fs.writeFileSync(path.join(publishProjectRoot, "remote-delete.txt"), "remote delete\n");
   runGitAt(publishProjectRoot, "add", "--", "remote-delete.txt");
   runGitAt(publishProjectRoot, "commit", "-m", "remote delete branch");
-  runGitAt(publishProjectRoot, "push", "mirror", `HEAD:${remoteDeleteBranch}`);
-  runGitAt(publishProjectRoot, "switch", publishBranch);
+  runGitAt(publishProjectRoot, "push", "--set-upstream", "mirror", `HEAD:${remoteDeleteBranch}`);
 
   const fetchedNamedRemote = await bridge.fetchGitRemoteByName(publishProjectRoot, "mirror");
   assert.equal(fetchedNamedRemote.ok, true);
@@ -529,12 +528,18 @@ try {
   assert.throws(() =>
     runGitAt(publishMirrorRoot, "show-ref", "--verify", "--quiet", `refs/heads/${remoteDeleteBranch}`),
   );
-  const afterRemoteDeleteSnapshot = await bridge.readGitStatusSnapshot(publishProjectRoot);
+  assert.throws(() => runGitAt(publishProjectRoot, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"));
+  const afterRemoteDeleteSnapshotResult = await bridge.readGitStatusSnapshotResult(publishProjectRoot);
+  assert.equal(afterRemoteDeleteSnapshotResult.ok, true, JSON.stringify(afterRemoteDeleteSnapshotResult));
+  if (!afterRemoteDeleteSnapshotResult.ok) throw new Error("删除远端分支后无法读取 Git 状态。");
+  const afterRemoteDeleteSnapshot = afterRemoteDeleteSnapshotResult.value;
+  assert.equal(afterRemoteDeleteSnapshot.upstream, null);
   assert.equal(
     afterRemoteDeleteSnapshot.remoteBranches?.some((branch) => branch.ref === `mirror/${remoteDeleteBranch}`),
     false,
   );
 
+  runGitAt(publishProjectRoot, "switch", publishBranch);
   runGitAt(publishProjectRoot, "branch", "--unset-upstream");
   runGitAt(publishProjectRoot, "fetch", "mirror");
   runGitAt(publishProjectRoot, "symbolic-ref", "HEAD", `refs/remotes/mirror/${publishBranch}`);

@@ -771,6 +771,35 @@ async function setGitRemoteUrl(projectPath, remoteName, remoteUrl) {
     : { ok: false, remote: name, message: firstGitError(result, "更新 remote URL 失败。") };
 }
 
+async function unsetGitUpstreamsForDeletedRemoteBranch(repositoryPath, remoteName, branchName) {
+  const fieldSeparator = "\x1f";
+  const deletedRemoteRef = `${remoteName}/${branchName}`;
+  const branchesResult = await runGitAsyncResult(repositoryPath, [
+    "for-each-ref",
+    `--format=%(refname:short)${fieldSeparator}%(upstream:short)`,
+    "refs/heads",
+  ]);
+  if (!branchesResult.ok) {
+    return firstGitError(branchesResult, "无法读取本地分支 upstream。");
+  }
+
+  const trackingBranches = branchesResult.stdout
+    .split(/\r?\n/)
+    .map((line) => {
+      const [branch, upstream] = line.split(fieldSeparator);
+      return String(upstream || "").trim() === deletedRemoteRef ? String(branch || "").trim() : "";
+    })
+    .filter(Boolean);
+  for (const localBranch of trackingBranches) {
+    const unsetResult = await runGitAsyncResult(repositoryPath, ["branch", "--unset-upstream", "--", localBranch]);
+    if (!unsetResult.ok) {
+      return firstGitError(unsetResult, `无法解除本地分支 ${localBranch} 的 upstream。`);
+    }
+  }
+
+  return "";
+}
+
 async function removeGitRemote(projectPath, remoteName) {
   const repositoryPath = await findGitRootAsync(projectPath);
   const name = normalizeGitRemoteName(remoteName);
@@ -856,18 +885,32 @@ async function deleteGitRemoteBranch(projectPath, remoteName, branchName) {
     remoteContext.remote,
     `refs/heads/${branch}`,
   ]);
-  return result.status === 0
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      remote: remoteContext.remote,
+      branch,
+      message: firstGitError(result, "删除远端分支失败。"),
+    };
+  }
+
+  const upstreamError = await unsetGitUpstreamsForDeletedRemoteBranch(
+    remoteContext.repositoryPath,
+    remoteContext.remote,
+    branch,
+  );
+  return upstreamError
     ? {
+        ok: false,
+        remote: remoteContext.remote,
+        branch,
+        message: `已从 ${remoteContext.remote} 删除远端分支 ${branch}，但无法解除本地 upstream：${upstreamError}`,
+      }
+    : {
         ok: true,
         remote: remoteContext.remote,
         branch,
         message: `已从 ${remoteContext.remote} 删除远端分支 ${branch}。`,
-      }
-    : {
-        ok: false,
-        remote: remoteContext.remote,
-        branch,
-        message: firstGitError(result, "删除远端分支失败。"),
       };
 }
 

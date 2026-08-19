@@ -1007,7 +1007,7 @@ const requestDeleteGitRemoteBranch = (remote: ProjectGitRemoteSummary, branch: P
   if (isAnyGitWriteRunning.value) return;
 
   const trackingWarning =
-    upstream.value?.ref === branch.ref ? "当前分支正在跟踪此远端分支；下次推送可能会重新创建它。" : "";
+    upstream.value?.ref === branch.ref ? "当前分支正在跟踪此远端分支；删除后将解除本地 upstream。" : "";
   confirmationDialog.value = {
     kind: "danger",
     icon: "trash",
