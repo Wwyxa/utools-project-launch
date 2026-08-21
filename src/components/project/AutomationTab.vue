@@ -322,11 +322,28 @@ const saveTask = () => {
   }
 };
 
-const taskPlan = (task: ProjectAutomationTask) =>
-  task.dailyPlans.find((plan) => plan.date === today.value) ||
-  generateAutomationDailyPlan(task.id, task.schedule, today.value);
+const serviceTaskEntries = (task: ProjectAutomationTask) =>
+  store.serviceAutomationTaskEntries(props.project.id, task.id);
+const taskPlan = (task: ProjectAutomationTask) => {
+  const entries = serviceTaskEntries(task);
+  if (entries) {
+    return {
+      date: today.value,
+      entries: entries.filter((entry) => dateKey(new Date(entry.plannedAt)) === today.value),
+    };
+  }
+  return (
+    task.dailyPlans.find((plan) => plan.date === today.value) ||
+    generateAutomationDailyPlan(task.id, task.schedule, today.value)
+  );
+};
 
-const nextRun = (task: ProjectAutomationTask) => getNextAutomationPlanEntry(task.dailyPlans)?.plannedAt || "";
+const nextRun = (task: ProjectAutomationTask) => {
+  const entries = serviceTaskEntries(task);
+  return entries
+    ? getNextAutomationPlanEntry([{ date: today.value, entries }])?.plannedAt || ""
+    : getNextAutomationPlanEntry(task.dailyPlans)?.plannedAt || "";
+};
 const scriptName = (scriptId: string) =>
   props.project.scripts.find((script) => script.id === scriptId)?.name || scriptId;
 const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : t.value.common.never);
@@ -340,7 +357,9 @@ const taskHistory = (task: ProjectAutomationTask) =>
 const historyDialogEntries = computed(() => (historyDialogTask.value ? taskHistory(historyDialogTask.value) : []));
 const latestHistory = (task: ProjectAutomationTask) => taskHistory(task)[0];
 const runningEntry = (task: ProjectAutomationTask) =>
-  task.dailyPlans.flatMap((plan) => plan.entries).find((entry) => entry.status === "running") || null;
+  (serviceTaskEntries(task) ?? task.dailyPlans.flatMap((plan) => plan.entries)).find(
+    (entry) => entry.status === "running",
+  ) || null;
 const taskCurrentStatus = (task: ProjectAutomationTask) =>
   runningEntry(task)?.status || latestHistory(task)?.status || "pending";
 const canRunTaskNow = (task: ProjectAutomationTask) => !runningEntry(task) && task.scriptIds.length > 0;

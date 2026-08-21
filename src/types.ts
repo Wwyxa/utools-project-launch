@@ -181,16 +181,9 @@ export interface ProjectLaunchServiceScriptConfig {
   cwd: string;
 }
 
-export interface ProjectLaunchServicePlanEntryConfig {
+export interface ProjectLaunchServiceAutomationManualRunConfig {
   id: string;
   plannedAt: string;
-  status: ProjectAutomationPlanEntryStatus;
-  runEarly?: boolean;
-}
-
-export interface ProjectLaunchServiceDailyPlanConfig {
-  date: string;
-  entries: ProjectLaunchServicePlanEntryConfig[];
 }
 
 export interface ProjectLaunchServiceAutomationTaskConfig {
@@ -199,12 +192,15 @@ export interface ProjectLaunchServiceAutomationTaskConfig {
   enabled: boolean;
   scriptIds: string[];
   continuousScriptIds?: string[];
+  schedule: ProjectAutomationSchedule;
+  scheduleAlgorithmVersion: 1;
+  runEarlyEntryId?: string;
+  manualRun?: ProjectLaunchServiceAutomationManualRunConfig;
   missedPolicy: ProjectAutomationMissedPolicy;
   missedGraceMinutes: number;
   maxScriptRuntimeMinutes: number;
   inputConfigs: ProjectAutomationScriptInputConfig[];
   exitConfigs: ProjectAutomationExitConfig[];
-  dailyPlans: ProjectLaunchServiceDailyPlanConfig[];
 }
 
 export interface ProjectLaunchServiceProjectConfig {
@@ -232,11 +228,19 @@ export interface ProjectLaunchServiceAutomationScriptResult {
   reason?: string;
 }
 
+export interface ProjectLaunchServiceAutomationUpcoming {
+  projectId: string;
+  taskId: string;
+  planEntryId: string;
+  plannedAt: string;
+}
+
 export interface ProjectLaunchServiceAutomationExecution {
   id: string;
   projectId: string;
   taskId: string;
   planEntryId: string;
+  plannedAt?: string;
   status: ProjectLaunchServiceAutomationExecutionStatus;
   currentScriptIndex: number;
   activeRunId?: string;
@@ -249,6 +253,7 @@ export interface ProjectLaunchServiceAutomationExecution {
 export interface ProjectLaunchServiceAutomationState {
   revision: number;
   executions?: ProjectLaunchServiceAutomationExecution[];
+  upcoming?: ProjectLaunchServiceAutomationUpcoming[];
 }
 
 export interface ProjectLaunchServiceAutomationSyncResult {

@@ -35,6 +35,7 @@ const (
 	MaxRunHistory                     = 200
 	MaxIdempotencyKeys                = 512
 	MaxAutomationHistoryPerTask       = 20
+	MaxAutomationHistory              = 200
 	RunLogFlushBytes                  = 64 * 1024
 	RunLogFlushInterval               = 200 * time.Millisecond
 	RunLogPageBytes             int64 = 256 * 1024
@@ -207,9 +208,64 @@ type RuntimeState struct {
 }
 
 type AutomationState struct {
-	Revision   uint64                `json:"revision"`
-	Config     json.RawMessage       `json:"-"`
-	Executions []AutomationExecution `json:"executions,omitempty"`
+	Revision           uint64                 `json:"revision"`
+	Config             json.RawMessage        `json:"-"`
+	Plans              []AutomationPlan       `json:"-"`
+	PendingSubmissions []AutomationSubmission `json:"-"`
+	Executions         []AutomationExecution  `json:"executions,omitempty"`
+	Upcoming           []AutomationUpcoming   `json:"upcoming,omitempty"`
+}
+
+type AutomationSubmissionKind string
+
+const (
+	AutomationSubmissionManual AutomationSubmissionKind = "manual"
+	AutomationSubmissionEarly  AutomationSubmissionKind = "early"
+)
+
+type AutomationSubmission struct {
+	Kind        AutomationSubmissionKind `json:"kind"`
+	ProjectID   string                   `json:"projectId"`
+	TaskID      string                   `json:"taskId"`
+	PlanEntryID string                   `json:"planEntryId"`
+	PlannedAt   string                   `json:"plannedAt,omitempty"`
+}
+
+type AutomationPlanEntryStatus string
+
+const (
+	AutomationPlanEntryPending   AutomationPlanEntryStatus = "pending"
+	AutomationPlanEntryRunning   AutomationPlanEntryStatus = "running"
+	AutomationPlanEntryCompleted AutomationPlanEntryStatus = "completed"
+	AutomationPlanEntryFailed    AutomationPlanEntryStatus = "failed"
+	AutomationPlanEntrySkipped   AutomationPlanEntryStatus = "skipped"
+	AutomationPlanEntryMissed    AutomationPlanEntryStatus = "missed"
+)
+
+type AutomationPlan struct {
+	ProjectID string                `json:"projectId"`
+	TaskID    string                `json:"taskId"`
+	Date      string                `json:"date"`
+	Entries   []AutomationPlanEntry `json:"entries"`
+}
+
+type AutomationPlanTask struct {
+	ProjectID string
+	TaskID    string
+}
+
+type AutomationPlanEntry struct {
+	ID        string                    `json:"id"`
+	PlannedAt string                    `json:"plannedAt"`
+	Status    AutomationPlanEntryStatus `json:"status"`
+	RunEarly  bool                      `json:"runEarly,omitempty"`
+}
+
+type AutomationUpcoming struct {
+	ProjectID   string `json:"projectId"`
+	TaskID      string `json:"taskId"`
+	PlanEntryID string `json:"planEntryId"`
+	PlannedAt   string `json:"plannedAt"`
 }
 
 type persistedRuntimeState struct {
@@ -223,10 +279,12 @@ type persistedRuntimeState struct {
 }
 
 type persistedAutomationState struct {
-	Revision        uint64                `json:"revision"`
-	Config          json.RawMessage       `json:"config,omitempty"`
-	EncryptedConfig string                `json:"encryptedConfig,omitempty"`
-	Executions      []AutomationExecution `json:"executions,omitempty"`
+	Revision           uint64                 `json:"revision"`
+	Config             json.RawMessage        `json:"config,omitempty"`
+	EncryptedConfig    string                 `json:"encryptedConfig,omitempty"`
+	Plans              []AutomationPlan       `json:"plans,omitempty"`
+	PendingSubmissions []AutomationSubmission `json:"pendingSubmissions,omitempty"`
+	Executions         []AutomationExecution  `json:"executions,omitempty"`
 }
 
 type AutomationExecutionStatus string
@@ -454,10 +512,16 @@ func (store *Store) Automation() AutomationState {
 	store.mutex.RLock()
 	defer store.mutex.RUnlock()
 
+	return store.automationSnapshotLocked()
+}
+
+func (store *Store) automationSnapshotLocked() AutomationState {
 	return AutomationState{
-		Revision:   store.data.Automation.Revision,
-		Config:     append(json.RawMessage(nil), store.data.Automation.Config...),
-		Executions: cloneAutomationExecutions(store.data.Automation.Executions),
+		Revision:           store.data.Automation.Revision,
+		Config:             append(json.RawMessage(nil), store.data.Automation.Config...),
+		Plans:              cloneAutomationPlans(store.data.Automation.Plans),
+		PendingSubmissions: cloneAutomationSubmissions(store.data.Automation.PendingSubmissions),
+		Executions:         cloneAutomationExecutions(store.data.Automation.Executions),
 	}
 }
 
@@ -682,6 +746,14 @@ func (store *Store) clearPersistedLogsLocked(runID string) (LogClearResult, erro
 }
 
 func (store *Store) ReplaceAutomation(revision uint64, config json.RawMessage) (AutomationState, error) {
+	return store.ReplaceAutomationWithSubmissions(revision, config, nil)
+}
+
+func (store *Store) ReplaceAutomationWithSubmissions(
+	revision uint64,
+	config json.RawMessage,
+	submissions []AutomationSubmission,
+) (AutomationState, error) {
 	store.mutex.Lock()
 	defer store.mutex.Unlock()
 
@@ -700,21 +772,179 @@ func (store *Store) ReplaceAutomation(revision uint64, config json.RawMessage) (
 	if revision == store.data.Automation.Revision && !bytes.Equal(config, store.data.Automation.Config) {
 		return AutomationState{}, ErrAutomationRevisionConflict
 	}
+	pendingSubmissions, err := mergeAutomationSubmissions(store.data.Automation.PendingSubmissions, submissions)
+	if err != nil {
+		return AutomationState{}, err
+	}
+	claimedEntries := make(map[string]struct{}, len(store.data.Automation.Executions))
+	for _, execution := range store.data.Automation.Executions {
+		claimedEntries[automationPlanEntryKey(execution.ProjectID, execution.TaskID, execution.PlanEntryID)] = struct{}{}
+	}
+	pendingSubmissions = filterUnclaimedAutomationSubmissions(pendingSubmissions, claimedEntries)
+	if revision == store.data.Automation.Revision &&
+		bytes.Equal(config, store.data.Automation.Config) &&
+		automationSubmissionsEqual(store.data.Automation.PendingSubmissions, pendingSubmissions) {
+		return store.automationSnapshotLocked(), nil
+	}
 
 	store.data.Automation = AutomationState{
-		Revision:   revision,
-		Config:     append(json.RawMessage(nil), config...),
-		Executions: cloneAutomationExecutions(store.data.Automation.Executions),
+		Revision:           revision,
+		Config:             append(json.RawMessage(nil), config...),
+		Plans:              cloneAutomationPlans(store.data.Automation.Plans),
+		PendingSubmissions: pendingSubmissions,
+		Executions:         cloneAutomationExecutions(store.data.Automation.Executions),
 	}
 	if err := store.persistLocked(); err != nil {
 		return AutomationState{}, fmt.Errorf("write automation configuration: %w", err)
 	}
 
-	return AutomationState{
-		Revision:   store.data.Automation.Revision,
-		Config:     append(json.RawMessage(nil), store.data.Automation.Config...),
-		Executions: cloneAutomationExecutions(store.data.Automation.Executions),
-	}, nil
+	return store.automationSnapshotLocked(), nil
+}
+
+func mergeAutomationSubmissions(
+	existing []AutomationSubmission,
+	requested []AutomationSubmission,
+) ([]AutomationSubmission, error) {
+	merged := cloneAutomationSubmissions(existing)
+	known := make(map[string]struct{}, len(merged))
+	for _, submission := range merged {
+		known[automationSubmissionKey(submission)] = struct{}{}
+	}
+	for _, submission := range requested {
+		if err := validateAutomationSubmission(submission); err != nil {
+			return nil, err
+		}
+		key := automationSubmissionKey(submission)
+		if _, found := known[key]; found {
+			continue
+		}
+		known[key] = struct{}{}
+		merged = append(merged, submission)
+	}
+	return merged, nil
+}
+
+func validateAutomationSubmission(submission AutomationSubmission) error {
+	if strings.TrimSpace(submission.ProjectID) == "" ||
+		strings.TrimSpace(submission.TaskID) == "" ||
+		strings.TrimSpace(submission.PlanEntryID) == "" {
+		return ErrAutomationExecutionInvalid
+	}
+	switch submission.Kind {
+	case AutomationSubmissionManual:
+		if _, err := time.Parse(time.RFC3339Nano, submission.PlannedAt); err != nil {
+			return fmt.Errorf("manual automation submission planned time: %w", err)
+		}
+	case AutomationSubmissionEarly:
+		if submission.PlannedAt != "" {
+			return ErrAutomationExecutionInvalid
+		}
+	default:
+		return ErrAutomationExecutionInvalid
+	}
+	return nil
+}
+
+func automationSubmissionKey(submission AutomationSubmission) string {
+	return string(submission.Kind) + "\x00" + submission.ProjectID + "\x00" + submission.TaskID + "\x00" + submission.PlanEntryID
+}
+
+func filterUnclaimedAutomationSubmissions(
+	submissions []AutomationSubmission,
+	claimedEntries map[string]struct{},
+) []AutomationSubmission {
+	filtered := submissions[:0]
+	for _, submission := range submissions {
+		if _, claimed := claimedEntries[automationPlanEntryKey(submission.ProjectID, submission.TaskID, submission.PlanEntryID)]; claimed {
+			continue
+		}
+		filtered = append(filtered, submission)
+	}
+	return filtered
+}
+
+func automationSubmissionsEqual(left []AutomationSubmission, right []AutomationSubmission) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func (store *Store) ReconcileAutomationPlans(
+	revision uint64,
+	desiredPlans []AutomationPlan,
+	activeTasks []AutomationPlanTask,
+	retainAfter string,
+) (AutomationState, error) {
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
+
+	if revision == 0 || store.data.Automation.Revision != revision {
+		return AutomationState{}, ErrAutomationRevisionConflict
+	}
+
+	activeTaskKeys := make(map[string]struct{}, len(activeTasks))
+	for _, task := range activeTasks {
+		activeTaskKeys[automationPlanTaskKey(task.ProjectID, task.TaskID)] = struct{}{}
+	}
+	stateChanged := store.pruneAutomationStateLocked(activeTaskKeys)
+	claimedEntries := make(map[string]struct{}, len(store.data.Automation.Executions))
+	for _, execution := range store.data.Automation.Executions {
+		claimedEntries[automationPlanEntryKey(execution.ProjectID, execution.TaskID, execution.PlanEntryID)] = struct{}{}
+	}
+	existingPlans := make(map[string]AutomationPlan, len(store.data.Automation.Plans))
+	for _, plan := range store.data.Automation.Plans {
+		existingPlans[automationPlanKey(plan.ProjectID, plan.TaskID, plan.Date)] = plan
+	}
+
+	nextPlans := make([]AutomationPlan, 0, len(store.data.Automation.Plans)+len(desiredPlans))
+	desiredKeys := make(map[string]struct{}, len(desiredPlans))
+	for _, desired := range desiredPlans {
+		key := automationPlanKey(desired.ProjectID, desired.TaskID, desired.Date)
+		desiredKeys[key] = struct{}{}
+		if existing, found := existingPlans[key]; found {
+			nextPlans = append(nextPlans, mergeAutomationPlan(existing, desired, claimedEntries))
+			continue
+		}
+		nextPlans = append(nextPlans, normalizedAutomationPlan(desired))
+	}
+
+	for _, existing := range store.data.Automation.Plans {
+		key := automationPlanKey(existing.ProjectID, existing.TaskID, existing.Date)
+		if _, desired := desiredKeys[key]; desired {
+			continue
+		}
+		if _, activeTask := activeTaskKeys[automationPlanTaskKey(existing.ProjectID, existing.TaskID)]; !activeTask {
+			continue
+		}
+		if existing.Date >= retainAfter || automationPlanHasClaimedEntry(existing, claimedEntries) {
+			nextPlans = append(nextPlans, normalizedAutomationPlan(existing))
+		}
+	}
+
+	sort.Slice(nextPlans, func(left, right int) bool {
+		if nextPlans[left].ProjectID != nextPlans[right].ProjectID {
+			return nextPlans[left].ProjectID < nextPlans[right].ProjectID
+		}
+		if nextPlans[left].TaskID != nextPlans[right].TaskID {
+			return nextPlans[left].TaskID < nextPlans[right].TaskID
+		}
+		return nextPlans[left].Date < nextPlans[right].Date
+	})
+	if automationPlansEqual(store.data.Automation.Plans, nextPlans) && !stateChanged {
+		return store.automationSnapshotLocked(), nil
+	}
+
+	store.data.Automation.Plans = nextPlans
+	if err := store.persistLocked(); err != nil {
+		return AutomationState{}, fmt.Errorf("write automation plans: %w", err)
+	}
+	return store.automationSnapshotLocked(), nil
 }
 
 func (store *Store) ClaimAutomationExecution(revision uint64, execution AutomationExecution) (AutomationExecution, bool, error) {
@@ -756,12 +986,40 @@ func (store *Store) ClaimAutomationExecution(revision uint64, execution Automati
 	}
 
 	store.data.Automation.Executions = append(store.data.Automation.Executions, cloneAutomationExecution(execution))
+	store.data.Automation.PendingSubmissions = removeAutomationSubmissionsForPlan(
+		store.data.Automation.PendingSubmissions,
+		execution.ProjectID,
+		execution.TaskID,
+		execution.PlanEntryID,
+	)
+	store.updateAutomationPlanEntryStatusLocked(
+		execution.ProjectID,
+		execution.TaskID,
+		execution.PlanEntryID,
+		automationPlanStatusForExecution(execution.Status),
+	)
 	store.trimAutomationExecutionsLocked()
 	if err := store.persistLocked(); err != nil {
 		return AutomationExecution{}, false, fmt.Errorf("write automation execution claim: %w", err)
 	}
 
 	return cloneAutomationExecution(execution), true, nil
+}
+
+func removeAutomationSubmissionsForPlan(
+	submissions []AutomationSubmission,
+	projectID string,
+	taskID string,
+	planEntryID string,
+) []AutomationSubmission {
+	retained := submissions[:0]
+	for _, submission := range submissions {
+		if submission.ProjectID == projectID && submission.TaskID == taskID && submission.PlanEntryID == planEntryID {
+			continue
+		}
+		retained = append(retained, submission)
+	}
+	return retained
 }
 
 func (store *Store) UpdateAutomationExecution(executionID string, mutate func(*AutomationExecution)) (AutomationExecution, error) {
@@ -776,6 +1034,13 @@ func (store *Store) UpdateAutomationExecution(executionID string, mutate func(*A
 		if store.data.Automation.Executions[index].ScriptResults == nil {
 			store.data.Automation.Executions[index].ScriptResults = []AutomationScriptResult{}
 		}
+		current := store.data.Automation.Executions[index]
+		store.updateAutomationPlanEntryStatusLocked(
+			current.ProjectID,
+			current.TaskID,
+			current.PlanEntryID,
+			automationPlanStatusForExecution(current.Status),
+		)
 		store.trimAutomationExecutionsLocked()
 		if err := store.persistLocked(); err != nil {
 			return AutomationExecution{}, fmt.Errorf("write automation execution: %w", err)
@@ -1946,6 +2211,7 @@ func (store *Store) trimAutomationExecutionsLocked() {
 
 	retained := make([]AutomationExecution, 0, len(store.data.Automation.Executions))
 	terminalCounts := map[string]int{}
+	terminalTotal := 0
 	for index := len(store.data.Automation.Executions) - 1; index >= 0; index-- {
 		execution := store.data.Automation.Executions[index]
 		if execution.Status == AutomationExecutionRunning {
@@ -1953,10 +2219,11 @@ func (store *Store) trimAutomationExecutionsLocked() {
 			continue
 		}
 		key := execution.ProjectID + "\x00" + execution.TaskID
-		if terminalCounts[key] >= MaxAutomationHistoryPerTask {
+		if terminalCounts[key] >= MaxAutomationHistoryPerTask || terminalTotal >= MaxAutomationHistory {
 			continue
 		}
 		terminalCounts[key] += 1
+		terminalTotal++
 		retained = append(retained, execution)
 	}
 
@@ -1964,6 +2231,183 @@ func (store *Store) trimAutomationExecutionsLocked() {
 		retained[left], retained[right] = retained[right], retained[left]
 	}
 	store.data.Automation.Executions = retained
+}
+
+func (store *Store) pruneAutomationStateLocked(activeTaskKeys map[string]struct{}) bool {
+	stateChanged := false
+	retainedSubmissions := make([]AutomationSubmission, 0, len(store.data.Automation.PendingSubmissions))
+	for _, submission := range store.data.Automation.PendingSubmissions {
+		if _, active := activeTaskKeys[automationPlanTaskKey(submission.ProjectID, submission.TaskID)]; !active {
+			stateChanged = true
+			continue
+		}
+		retainedSubmissions = append(retainedSubmissions, submission)
+	}
+	if len(retainedSubmissions) != len(store.data.Automation.PendingSubmissions) {
+		store.data.Automation.PendingSubmissions = retainedSubmissions
+	}
+
+	retainedExecutions := make([]AutomationExecution, 0, len(store.data.Automation.Executions))
+	for _, execution := range store.data.Automation.Executions {
+		if execution.Status != AutomationExecutionRunning {
+			if _, active := activeTaskKeys[automationPlanTaskKey(execution.ProjectID, execution.TaskID)]; !active {
+				stateChanged = true
+				continue
+			}
+		}
+		retainedExecutions = append(retainedExecutions, execution)
+	}
+	if len(retainedExecutions) != len(store.data.Automation.Executions) {
+		store.data.Automation.Executions = retainedExecutions
+	}
+	beforeTrim := len(store.data.Automation.Executions)
+	store.trimAutomationExecutionsLocked()
+	return stateChanged || len(store.data.Automation.Executions) != beforeTrim
+}
+
+func automationPlanKey(projectID string, taskID string, date string) string {
+	return projectID + "\x00" + taskID + "\x00" + date
+}
+
+func automationPlanTaskKey(projectID string, taskID string) string {
+	return projectID + "\x00" + taskID
+}
+
+func automationPlanEntryKey(projectID string, taskID string, entryID string) string {
+	return projectID + "\x00" + taskID + "\x00" + entryID
+}
+
+func mergeAutomationPlan(
+	existing AutomationPlan,
+	desired AutomationPlan,
+	claimedEntries map[string]struct{},
+) AutomationPlan {
+	existingEntries := make(map[string]AutomationPlanEntry, len(existing.Entries))
+	for _, entry := range existing.Entries {
+		existingEntries[entry.ID] = entry
+	}
+
+	merged := AutomationPlan{
+		ProjectID: desired.ProjectID,
+		TaskID:    desired.TaskID,
+		Date:      desired.Date,
+		Entries:   make([]AutomationPlanEntry, 0, len(desired.Entries)+len(existing.Entries)),
+	}
+	desiredEntryIDs := make(map[string]struct{}, len(desired.Entries))
+	for _, entry := range desired.Entries {
+		desiredEntryIDs[entry.ID] = struct{}{}
+		if current, found := existingEntries[entry.ID]; found &&
+			(current.Status != AutomationPlanEntryPending || hasAutomationPlanEntryClaim(claimedEntries, existing, current)) {
+			merged.Entries = append(merged.Entries, current)
+			continue
+		}
+		merged.Entries = append(merged.Entries, normalizedAutomationPlanEntry(entry))
+	}
+	for _, entry := range existing.Entries {
+		if _, desired := desiredEntryIDs[entry.ID]; desired ||
+			(entry.Status == AutomationPlanEntryPending && !hasAutomationPlanEntryClaim(claimedEntries, existing, entry)) {
+			continue
+		}
+		merged.Entries = append(merged.Entries, entry)
+	}
+	return normalizedAutomationPlan(merged)
+}
+
+func normalizedAutomationPlan(plan AutomationPlan) AutomationPlan {
+	normalized := plan
+	normalized.Entries = make([]AutomationPlanEntry, 0, len(plan.Entries))
+	for _, entry := range plan.Entries {
+		normalized.Entries = append(normalized.Entries, normalizedAutomationPlanEntry(entry))
+	}
+	sort.Slice(normalized.Entries, func(left, right int) bool {
+		if normalized.Entries[left].PlannedAt != normalized.Entries[right].PlannedAt {
+			return normalized.Entries[left].PlannedAt < normalized.Entries[right].PlannedAt
+		}
+		return normalized.Entries[left].ID < normalized.Entries[right].ID
+	})
+	return normalized
+}
+
+func normalizedAutomationPlanEntry(entry AutomationPlanEntry) AutomationPlanEntry {
+	if entry.Status == "" {
+		entry.Status = AutomationPlanEntryPending
+	}
+	return entry
+}
+
+func automationPlanHasClaimedEntry(plan AutomationPlan, claimedEntries map[string]struct{}) bool {
+	for _, entry := range plan.Entries {
+		if entry.Status != AutomationPlanEntryPending || hasAutomationPlanEntryClaim(claimedEntries, plan, entry) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAutomationPlanEntryClaim(
+	claimedEntries map[string]struct{},
+	plan AutomationPlan,
+	entry AutomationPlanEntry,
+) bool {
+	_, claimed := claimedEntries[automationPlanEntryKey(plan.ProjectID, plan.TaskID, entry.ID)]
+	return claimed
+}
+
+func automationPlansEqual(left []AutomationPlan, right []AutomationPlan) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for planIndex := range left {
+		if left[planIndex].ProjectID != right[planIndex].ProjectID ||
+			left[planIndex].TaskID != right[planIndex].TaskID ||
+			left[planIndex].Date != right[planIndex].Date ||
+			len(left[planIndex].Entries) != len(right[planIndex].Entries) {
+			return false
+		}
+		for entryIndex := range left[planIndex].Entries {
+			if left[planIndex].Entries[entryIndex] != right[planIndex].Entries[entryIndex] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (store *Store) updateAutomationPlanEntryStatusLocked(
+	projectID string,
+	taskID string,
+	planEntryID string,
+	status AutomationPlanEntryStatus,
+) {
+	for planIndex := range store.data.Automation.Plans {
+		plan := &store.data.Automation.Plans[planIndex]
+		if plan.ProjectID != projectID || plan.TaskID != taskID {
+			continue
+		}
+		for entryIndex := range plan.Entries {
+			if plan.Entries[entryIndex].ID == planEntryID {
+				plan.Entries[entryIndex].Status = status
+				return
+			}
+		}
+	}
+}
+
+func automationPlanStatusForExecution(status AutomationExecutionStatus) AutomationPlanEntryStatus {
+	switch status {
+	case AutomationExecutionRunning:
+		return AutomationPlanEntryRunning
+	case AutomationExecutionCompleted:
+		return AutomationPlanEntryCompleted
+	case AutomationExecutionFailed:
+		return AutomationPlanEntryFailed
+	case AutomationExecutionSkipped:
+		return AutomationPlanEntrySkipped
+	case AutomationExecutionMissed:
+		return AutomationPlanEntryMissed
+	default:
+		return AutomationPlanEntryPending
+	}
 }
 
 func newRuntimeState() RuntimeState {
@@ -2111,8 +2555,10 @@ func decodePersistedRuntimeState(contents []byte, secretKey [32]byte) (RuntimeSt
 		IdempotencyClaims: persisted.IdempotencyClaims,
 		LogRetention:      persisted.LogRetention,
 		Automation: AutomationState{
-			Revision:   persisted.Automation.Revision,
-			Executions: persisted.Automation.Executions,
+			Revision:           persisted.Automation.Revision,
+			Plans:              persisted.Automation.Plans,
+			PendingSubmissions: persisted.Automation.PendingSubmissions,
+			Executions:         persisted.Automation.Executions,
 		},
 	}
 
@@ -2156,9 +2602,11 @@ func marshalPersistedRuntimeState(data RuntimeState, secretKey [32]byte) ([]byte
 		IdempotencyClaims: data.IdempotencyClaims,
 		LogRetention:      data.LogRetention,
 		Automation: persistedAutomationState{
-			Revision:        data.Automation.Revision,
-			EncryptedConfig: encryptedConfig,
-			Executions:      data.Automation.Executions,
+			Revision:           data.Automation.Revision,
+			EncryptedConfig:    encryptedConfig,
+			Plans:              data.Automation.Plans,
+			PendingSubmissions: data.Automation.PendingSubmissions,
+			Executions:         data.Automation.Executions,
 		},
 	})
 }
@@ -2238,6 +2686,19 @@ func cloneAutomationExecutions(executions []AutomationExecution) []AutomationExe
 		cloned[index] = cloneAutomationExecution(execution)
 	}
 	return cloned
+}
+
+func cloneAutomationPlans(plans []AutomationPlan) []AutomationPlan {
+	cloned := make([]AutomationPlan, len(plans))
+	for index, plan := range plans {
+		cloned[index] = plan
+		cloned[index].Entries = append([]AutomationPlanEntry(nil), plan.Entries...)
+	}
+	return cloned
+}
+
+func cloneAutomationSubmissions(submissions []AutomationSubmission) []AutomationSubmission {
+	return append([]AutomationSubmission(nil), submissions...)
 }
 
 func cloneAutomationExecution(execution AutomationExecution) AutomationExecution {

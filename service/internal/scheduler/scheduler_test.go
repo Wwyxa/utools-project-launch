@@ -3,6 +3,8 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -42,20 +44,23 @@ func TestSchedulerExecutesDuePlanOnce(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
-				ID:                 "scheduled-task",
-				Name:               "Scheduled task",
-				Enabled:            true,
-				MissedPolicy:       "grace-run",
-				MissedGraceMinutes: 5,
-				ScriptIDs:          []string{"scheduled-script"},
-				DailyPlans: []DailyPlan{{
-					Date: time.Now().UTC().Format("2006-01-02"),
-					Entries: []PlanEntry{{
-						ID:        "due-entry",
-						PlannedAt: time.Now().Add(-3 * time.Minute).UTC().Format(time.RFC3339Nano),
-						Status:    "pending",
-					}},
-				}},
+				ID:                       "scheduled-task",
+				Name:                     "Scheduled task",
+				Enabled:                  true,
+				MissedPolicy:             "grace-run",
+				MissedGraceMinutes:       5,
+				ScriptIDs:                []string{"scheduled-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{
+					ID:        "due-entry",
+					PlannedAt: time.Now().Add(-3 * time.Minute).UTC().Format(time.RFC3339Nano),
+				},
 			}},
 		}},
 	})
@@ -110,19 +115,18 @@ func TestSchedulerExecutesEarlyPlanWithOriginalPlannedTime(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
-				ID:        "early-task",
-				Name:      "Early task",
-				Enabled:   true,
-				ScriptIDs: []string{"early-script"},
-				DailyPlans: []DailyPlan{{
-					Date: time.Now().UTC().Format("2006-01-02"),
-					Entries: []PlanEntry{{
-						ID:        "early-entry",
-						PlannedAt: plannedAt,
-						Status:    "pending",
-						RunEarly:  true,
-					}},
-				}},
+				ID:                       "early-task",
+				Name:                     "Early task",
+				Enabled:                  true,
+				ScriptIDs:                []string{"early-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{ID: "early-entry", PlannedAt: plannedAt},
 			}},
 		}},
 	})
@@ -183,19 +187,21 @@ func TestSchedulerExecutesManualEarlyPlanForDisabledTask(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
-				ID:        "manual-disabled-task",
-				Name:      "Manual disabled task",
-				Enabled:   false,
-				ScriptIDs: []string{"manual-disabled-script"},
-				DailyPlans: []DailyPlan{{
-					Date: time.Now().UTC().Format("2006-01-02"),
-					Entries: []PlanEntry{{
-						ID:        "manual-disabled-entry",
-						PlannedAt: time.Now().UTC().Format(time.RFC3339Nano),
-						Status:    "pending",
-						RunEarly:  true,
-					}},
-				}},
+				ID:                       "manual-disabled-task",
+				Name:                     "Manual disabled task",
+				Enabled:                  false,
+				ScriptIDs:                []string{"manual-disabled-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{
+					ID:        "manual-disabled-entry",
+					PlannedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				},
 			}},
 		}},
 	})
@@ -325,17 +331,20 @@ func TestSchedulerNextWakeSkipsClaimedEarlyPlan(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
-				ID:        "claimed-task",
-				Enabled:   true,
-				ScriptIDs: []string{"claimed-script"},
-				DailyPlans: []DailyPlan{{
-					Entries: []PlanEntry{{
-						ID:        "claimed-entry",
-						PlannedAt: now.Add(time.Hour).Format(time.RFC3339Nano),
-						Status:    "pending",
-						RunEarly:  true,
-					}},
-				}},
+				ID:                       "claimed-task",
+				Enabled:                  true,
+				ScriptIDs:                []string{"claimed-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{
+					ID:        "claimed-entry",
+					PlannedAt: now.Add(time.Hour).Format(time.RFC3339Nano),
+				},
 			}},
 		}},
 	}
@@ -376,28 +385,462 @@ func TestSchedulerRechecksFuturePlansAfterSleepRecovery(t *testing.T) {
 		t.Fatalf("create scheduler: %v", err)
 	}
 
-	now := time.Now().UTC()
+	now := time.Date(2026, 8, 15, 10, 0, 0, 0, time.Local)
 	config := Config{
 		SchemaVersion: 1,
 		Revision:      1,
 		Projects: []ProjectConfig{{
 			ID: "future-project",
 			AutomationTasks: []TaskConfig{{
-				ID:      "future-task",
-				Enabled: true,
-				DailyPlans: []DailyPlan{{
-					Entries: []PlanEntry{{
-						ID:        "future-entry",
-						PlannedAt: now.Add(time.Hour).Format(time.RFC3339Nano),
-						Status:    "pending",
-					}},
-				}},
+				ID:                       "future-task",
+				Enabled:                  true,
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "11:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
 			}},
 		}},
 	}
 
 	if delay := runtime.nextWakeDelay(now, config); delay != schedulerFuturePlanRecheckDelay {
 		t.Fatalf("next wake delay = %s, want future-plan recheck delay %s", delay, schedulerFuturePlanRecheckDelay)
+	}
+}
+
+func TestMaterializedAutomationPlansGenerateCurrentAndNextDayFromSchedule(t *testing.T) {
+	now := time.Date(2026, 8, 15, 10, 0, 0, 0, time.Local).UTC()
+	config := Config{
+		SchemaVersion: SchemaVersion,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID: "materialized-project",
+			AutomationTasks: []TaskConfig{{
+				ID:                       "materialized-task",
+				Enabled:                  true,
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "11:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+			}},
+		}},
+	}
+
+	plans, activeTasks, retainAfter, err := materializedAutomationPlans(config, now, nil)
+	if err != nil {
+		t.Fatalf("materialize schedule plans: %v", err)
+	}
+	if len(activeTasks) != 1 || activeTasks[0] != (state.AutomationPlanTask{ProjectID: "materialized-project", TaskID: "materialized-task"}) {
+		t.Fatalf("active tasks = %#v", activeTasks)
+	}
+	if retainAfter != "2026-08-08" {
+		t.Fatalf("retain after = %q, want 2026-08-08", retainAfter)
+	}
+	if len(plans) != 2 {
+		t.Fatalf("plan count = %d, want 2", len(plans))
+	}
+	if plans[0].Date != "2026-08-15" || plans[1].Date != "2026-08-16" {
+		t.Fatalf("plan dates = %q, %q, want current and next local day", plans[0].Date, plans[1].Date)
+	}
+	for _, plan := range plans {
+		if len(plan.Entries) != 1 {
+			t.Fatalf("plan %q entry count = %d, want 1", plan.Date, len(plan.Entries))
+		}
+		if plan.Entries[0].ID != schedulePlanEntryID("materialized-task", plan.Date, ScheduleAlgorithmVersion, 0) {
+			t.Fatalf("plan %q entry id = %q", plan.Date, plan.Entries[0].ID)
+		}
+	}
+
+	upcoming := automationUpcomingEntries(config, plans, now)
+	if len(upcoming) != 2 {
+		t.Fatalf("upcoming count = %d, want 2", len(upcoming))
+	}
+}
+
+func TestMaterializedAutomationPlansIncludesManualRunWithoutRendererDailyPlan(t *testing.T) {
+	now := time.Date(2026, 8, 15, 10, 0, 0, 0, time.Local).UTC()
+	manualPlannedAt := time.Date(2026, 8, 15, 10, 1, 0, 0, time.Local).UTC().Format(time.RFC3339Nano)
+	config := Config{
+		SchemaVersion: SchemaVersion,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID: "manual-project",
+			AutomationTasks: []TaskConfig{{
+				ID:                       "manual-task",
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "11:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{ID: "manual-entry", PlannedAt: manualPlannedAt},
+			}},
+		}},
+	}
+
+	plans, _, _, err := materializedAutomationPlans(config, now, nil)
+	if err != nil {
+		t.Fatalf("materialize plans with manual run: %v", err)
+	}
+	currentPlan := plans[0]
+	manualEntry := currentPlan.Entries[len(currentPlan.Entries)-1]
+	if manualEntry.ID != "manual-entry" || manualEntry.PlannedAt != manualPlannedAt || !manualEntry.RunEarly {
+		t.Fatalf("manual entry = %#v", manualEntry)
+	}
+}
+
+func TestMaterializedAutomationPlansAppliesPersistentEarlySubmission(t *testing.T) {
+	now := time.Date(2026, 8, 15, 10, 0, 0, 0, time.Local).UTC()
+	date := now.In(time.Local).Format("2006-01-02")
+	entryID := schedulePlanEntryID("early-task", date, ScheduleAlgorithmVersion, 0)
+	config := Config{
+		SchemaVersion: SchemaVersion,
+		Revision:      2,
+		Projects: []ProjectConfig{{
+			ID: "early-project",
+			AutomationTasks: []TaskConfig{{
+				ID:                       "early-task",
+				Enabled:                  true,
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "11:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+			}},
+		}},
+	}
+
+	plans, _, _, err := materializedAutomationPlans(config, now, []state.AutomationSubmission{{
+		Kind:        state.AutomationSubmissionEarly,
+		ProjectID:   "early-project",
+		TaskID:      "early-task",
+		PlanEntryID: entryID,
+	}})
+	if err != nil {
+		t.Fatalf("materialize plans with persistent early submission: %v", err)
+	}
+	if !plans[0].Entries[0].RunEarly {
+		t.Fatalf("early entry = %#v, want runEarly", plans[0].Entries[0])
+	}
+}
+
+func TestSchedulerExecutesManualRunForDisabledTask(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+
+	configValue := Config{
+		SchemaVersion: SchemaVersion,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID:   "manual-submission-project",
+			Path: stateDir,
+			Scripts: []ScriptConfig{{
+				ID:      "manual-submission-script",
+				Name:    "manual-submission",
+				Command: "echo manual-submission",
+				Cwd:     stateDir,
+			}},
+			AutomationTasks: []TaskConfig{{
+				ID:                       "manual-submission-task",
+				Enabled:                  false,
+				ScriptIDs:                []string{"manual-submission-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{
+					ID:        "manual-submission-entry",
+					PlannedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				},
+			}},
+		}},
+	}
+	config, err := json.Marshal(configValue)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(1, config); err != nil {
+		t.Fatalf("replace configuration: %v", err)
+	}
+
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run scheduler: %v", err)
+	}
+	waitForExecution(t, store, "manual-submission-project", "manual-submission-task", "manual-submission-entry", state.AutomationExecutionCompleted)
+
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run scheduler again: %v", err)
+	}
+	if runs := supervisor.StoreSnapshot().Runs; len(runs) != 1 {
+		t.Fatalf("run count = %d, want 1 after repeat scheduler pass", len(runs))
+	}
+
+	configValue.Revision = 2
+	resyncedConfig, err := json.Marshal(configValue)
+	if err != nil {
+		t.Fatalf("marshal resynced config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(2, resyncedConfig); err != nil {
+		t.Fatalf("resync completed manual config: %v", err)
+	}
+	if pending := store.Automation().PendingSubmissions; len(pending) != 0 {
+		t.Fatalf("pending submissions = %#v, want no resubmission after completion", pending)
+	}
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run scheduler after resync: %v", err)
+	}
+	if runs := supervisor.StoreSnapshot().Runs; len(runs) != 1 {
+		t.Fatalf("run count = %d, want 1 after completed manual resync", len(runs))
+	}
+}
+
+func TestSchedulerExecutesPersistedManualSubmissionAfterConfigRefresh(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+
+	manualEntryID := "persisted-manual-entry"
+	config := Config{
+		SchemaVersion: SchemaVersion,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID:   "persisted-manual-project",
+			Path: stateDir,
+			Scripts: []ScriptConfig{{
+				ID:      "persisted-manual-script",
+				Name:    "persisted-manual",
+				Command: "echo persisted-manual",
+				Cwd:     stateDir,
+			}},
+			AutomationTasks: []TaskConfig{{
+				ID:                       "persisted-manual-task",
+				Enabled:                  false,
+				ScriptIDs:                []string{"persisted-manual-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{
+					ID:        manualEntryID,
+					PlannedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				},
+			}},
+		}},
+	}
+	initial, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("marshal initial config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(1, initial); err != nil {
+		t.Fatalf("persist manual submission: %v", err)
+	}
+	config.Revision = 2
+	config.Projects[0].AutomationTasks[0].ManualRun = nil
+	refreshed, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("marshal refreshed config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(2, refreshed); err != nil {
+		t.Fatalf("replace config after renderer restart: %v", err)
+	}
+
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run scheduler after config refresh: %v", err)
+	}
+	waitForExecution(t, store, "persisted-manual-project", "persisted-manual-task", manualEntryID, state.AutomationExecutionCompleted)
+	if pending := store.Automation().PendingSubmissions; len(pending) != 0 {
+		t.Fatalf("pending submissions = %#v, want cleared after claim", pending)
+	}
+}
+
+func TestAutomationSnapshotExposesUpcomingPlansFromScheduleRules(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+	nextHour := time.Now().In(time.Local).Add(2 * time.Hour)
+	config, err := json.Marshal(Config{
+		SchemaVersion: SchemaVersion,
+		Revision:      1,
+		Projects: []ProjectConfig{{
+			ID: "upcoming-project",
+			Scripts: []ScriptConfig{{
+				ID:      "upcoming-script",
+				Name:    "upcoming",
+				Command: "echo upcoming",
+				Cwd:     stateDir,
+			}},
+			AutomationTasks: []TaskConfig{{
+				ID:                       "upcoming-task",
+				Enabled:                  true,
+				ScriptIDs:                []string{"upcoming-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       nextHour.Format("15:04"),
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if _, err := runtime.ReplaceConfiguration(1, config); err != nil {
+		t.Fatalf("replace configuration: %v", err)
+	}
+
+	snapshot := runtime.AutomationSnapshot()
+	if len(snapshot.Upcoming) == 0 {
+		t.Fatal("automation snapshot is missing service-owned upcoming plans")
+	}
+	if snapshot.Upcoming[0].ProjectID != "upcoming-project" || snapshot.Upcoming[0].TaskID != "upcoming-task" {
+		t.Fatalf("upcoming plan = %#v", snapshot.Upcoming[0])
+	}
+	if snapshot.Plans != nil {
+		t.Fatalf("automation snapshot exposes internal plans: %#v", snapshot.Plans)
+	}
+}
+
+func TestAutomationUpcomingEntriesAreGloballyCapped(t *testing.T) {
+	now := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	entries := make([]state.AutomationPlanEntry, 1440)
+	for index := range entries {
+		entries[index] = state.AutomationPlanEntry{
+			ID:        fmt.Sprintf("entry-%04d", index),
+			PlannedAt: now.Add(time.Duration(index+1) * time.Minute).Format(time.RFC3339Nano),
+			Status:    state.AutomationPlanEntryPending,
+		}
+	}
+	config := Config{Projects: []ProjectConfig{{
+		ID: "project",
+		AutomationTasks: []TaskConfig{{
+			ID:      "task",
+			Enabled: true,
+		}},
+	}}}
+	upcoming := automationUpcomingEntries(config, []state.AutomationPlan{{
+		ProjectID: "project",
+		TaskID:    "task",
+		Entries:   entries,
+	}}, now)
+	if len(upcoming) != maxAutomationUpcoming {
+		t.Fatalf("upcoming count = %d, want %d", len(upcoming), maxAutomationUpcoming)
+	}
+	if upcoming[0].PlanEntryID != "entry-0000" || upcoming[len(upcoming)-1].PlanEntryID != "entry-0099" {
+		t.Fatalf("upcoming boundary = %#v, want first 100 entries", upcoming)
+	}
+}
+
+func TestRandomScheduleMatchesCanonicalVectors(t *testing.T) {
+	previousLocal := time.Local
+	time.Local = time.FixedZone("UTC", 0)
+	t.Cleanup(func() { time.Local = previousLocal })
+
+	tests := []struct {
+		name     string
+		taskID   string
+		date     string
+		schedule ScheduleConfig
+		minutes  []int
+	}{
+		{
+			name:   "three entries",
+			taskID: "vector-task",
+			date:   "2026-08-15",
+			schedule: ScheduleConfig{
+				Type:               "random",
+				WindowStart:        "08:00",
+				WindowEnd:          "18:00",
+				DailyCount:         3,
+				MinIntervalMinutes: 30,
+				MaxIntervalMinutes: 120,
+			},
+			minutes: []int{513, 553, 656},
+		},
+		{
+			name:   "single entry",
+			taskID: "vector-task",
+			date:   "2026-08-15",
+			schedule: ScheduleConfig{
+				Type:        "random",
+				WindowStart: "00:00",
+				WindowEnd:   "23:59",
+				DailyCount:  1,
+			},
+			minutes: []int{227},
+		},
+		{
+			name:   "tight window",
+			taskID: "vector-task",
+			date:   "2026-08-15",
+			schedule: ScheduleConfig{
+				Type:               "random",
+				WindowStart:        "09:00",
+				WindowEnd:          "12:00",
+				DailyCount:         4,
+				MinIntervalMinutes: 10,
+				MaxIntervalMinutes: 45,
+			},
+			minutes: []int{674, 690, 705, 718},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			minutes, err := randomScheduleMinutes(test.taskID, test.date, test.schedule)
+			if err != nil {
+				t.Fatalf("random schedule: %v", err)
+			}
+			if !reflect.DeepEqual(minutes, test.minutes) {
+				t.Fatalf("random minutes = %#v, want %#v", minutes, test.minutes)
+			}
+		})
 	}
 }
 
@@ -415,6 +858,12 @@ func TestSchedulerMarksExpiredGracePlanMissed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scheduler: %v", err)
 	}
+	now := time.Now().In(time.Local)
+	scheduleTime := now.Add(-time.Minute)
+	if scheduleTime.Format("2006-01-02") != now.Format("2006-01-02") {
+		scheduleTime = now
+	}
+	expiredEntryID := schedulePlanEntryID("missed-task", now.Format("2006-01-02"), ScheduleAlgorithmVersion, 0)
 
 	config, err := json.Marshal(Config{
 		SchemaVersion: 1,
@@ -431,20 +880,19 @@ func TestSchedulerMarksExpiredGracePlanMissed(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
-				ID:                 "missed-task",
-				Name:               "Missed task",
-				Enabled:            true,
-				MissedPolicy:       "grace-run",
-				MissedGraceMinutes: 0,
-				ScriptIDs:          []string{"missed-script"},
-				DailyPlans: []DailyPlan{{
-					Date: time.Now().UTC().Format("2006-01-02"),
-					Entries: []PlanEntry{{
-						ID:        "expired-entry",
-						PlannedAt: time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano),
-						Status:    "pending",
-					}},
-				}},
+				ID:                       "missed-task",
+				Name:                     "Missed task",
+				Enabled:                  true,
+				MissedPolicy:             "grace-run",
+				MissedGraceMinutes:       0,
+				ScriptIDs:                []string{"missed-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       scheduleTime.Format("15:04"),
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
 			}},
 		}},
 	})
@@ -459,7 +907,7 @@ func TestSchedulerMarksExpiredGracePlanMissed(t *testing.T) {
 		t.Fatalf("run scheduler: %v", err)
 	}
 
-	waitForExecution(t, store, "missed-project", "missed-task", "expired-entry", state.AutomationExecutionMissed)
+	waitForExecution(t, store, "missed-project", "missed-task", expiredEntryID, state.AutomationExecutionMissed)
 	if runs := supervisor.StoreSnapshot().Runs; len(runs) != 0 {
 		t.Fatalf("run count = %d, want no command for an expired grace plan", len(runs))
 	}
@@ -525,8 +973,96 @@ func TestSchedulerFailsRecoveredAutomationExecutionWithoutRerunningIt(t *testing
 	if len(executions[0].ScriptResults) != 1 || executions[0].ScriptResults[0].ScriptID != run.ScriptID {
 		t.Fatalf("recovered script results = %#v, want recorded recovered script", executions[0].ScriptResults)
 	}
+	if executions[0].ScriptResults[0].Status != state.AutomationScriptFailed {
+		t.Fatalf("recovered script status = %q, want failed", executions[0].ScriptResults[0].Status)
+	}
 	if len(supervisor.StoreSnapshot().Runs) != 1 {
 		t.Fatalf("run count = %d, want no duplicate launch", len(supervisor.StoreSnapshot().Runs))
+	}
+}
+
+func TestSchedulerFailsOrphanedRecoveredAutomationExecution(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1,"projects":[]}`)); err != nil {
+		t.Fatalf("persist automation config: %v", err)
+	}
+	if _, claimed, err := store.ClaimAutomationExecution(1, state.AutomationExecution{
+		ID:          "orphaned-recovered-execution",
+		ProjectID:   "orphaned-project",
+		TaskID:      "orphaned-task",
+		PlanEntryID: "orphaned-entry",
+		Status:      state.AutomationExecutionRunning,
+	}); err != nil || !claimed {
+		t.Fatalf("claim orphaned execution: claimed=%t err=%v", claimed, err)
+	}
+
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("recover process supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("reconcile orphaned automation execution: %v", err)
+	}
+
+	executions := store.Automation().Executions
+	if len(executions) != 1 || executions[0].Status != state.AutomationExecutionFailed || executions[0].ActiveRunID != "" {
+		t.Fatalf("automation executions = %#v, want one failed orphaned execution", executions)
+	}
+	if len(supervisor.StoreSnapshot().Runs) != 0 {
+		t.Fatalf("run count = %d, want no duplicate launch", len(supervisor.StoreSnapshot().Runs))
+	}
+}
+
+func TestSchedulerKeepsInFlightExecutionDuringSameProcessReconcile(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := state.Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1,"projects":[]}`)); err != nil {
+		t.Fatalf("persist automation config: %v", err)
+	}
+	execution, claimed, err := store.ClaimAutomationExecution(1, state.AutomationExecution{
+		ID:          "in-flight-execution",
+		ProjectID:   "in-flight-project",
+		TaskID:      "in-flight-task",
+		PlanEntryID: "in-flight-entry",
+		Status:      state.AutomationExecutionRunning,
+	})
+	if err != nil || !claimed {
+		t.Fatalf("claim in-flight execution: claimed=%t err=%v", claimed, err)
+	}
+
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("recover process supervisor: %v", err)
+	}
+	runtime, err := New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+	runtime.executionMu.Lock()
+	runtime.inFlightExecutions[execution.ID] = struct{}{}
+	runtime.executionMu.Unlock()
+	t.Cleanup(func() {
+		runtime.finishExecution(execution.ID)
+	})
+
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatalf("reconcile in-flight execution: %v", err)
+	}
+
+	executions := store.Automation().Executions
+	if len(executions) != 1 || executions[0].Status != state.AutomationExecutionRunning {
+		t.Fatalf("automation executions = %#v, want retained in-flight execution", executions)
 	}
 }
 
@@ -560,22 +1096,25 @@ func TestSchedulerStopsWhenConfiguredOutputMatches(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
-				ID:        "output-task",
-				Name:      "Output task",
-				Enabled:   true,
-				ScriptIDs: []string{"output-script"},
+				ID:                       "output-task",
+				Name:                     "Output task",
+				Enabled:                  true,
+				ScriptIDs:                []string{"output-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{
+					ID:        "output-entry",
+					PlannedAt: time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano),
+				},
 				ExitConfigs: []ExitConfig{{
 					ScriptID:  "output-script",
 					Enabled:   true,
 					MatchText: "SERVICE_READY",
-				}},
-				DailyPlans: []DailyPlan{{
-					Date: time.Now().UTC().Format("2006-01-02"),
-					Entries: []PlanEntry{{
-						ID:        "output-entry",
-						PlannedAt: time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano),
-						Status:    "pending",
-					}},
 				}},
 			}},
 		}},
@@ -632,24 +1171,27 @@ func TestSchedulerSendsConfiguredInputSteps(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
-				ID:        "input-task",
-				Name:      "Input task",
-				Enabled:   true,
-				ScriptIDs: []string{"input-script"},
+				ID:                       "input-task",
+				Name:                     "Input task",
+				Enabled:                  true,
+				ScriptIDs:                []string{"input-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{
+					ID:        "input-entry",
+					PlannedAt: time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano),
+				},
 				InputConfigs: []InputConfig{{
 					ScriptID: "input-script",
 					Steps: []InputStep{{
 						Mode:    "delay",
 						Value:   "from-service",
 						DelayMS: 0,
-					}},
-				}},
-				DailyPlans: []DailyPlan{{
-					Date: time.Now().UTC().Format("2006-01-02"),
-					Entries: []PlanEntry{{
-						ID:        "input-entry",
-						PlannedAt: time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano),
-						Status:    "pending",
 					}},
 				}},
 			}},
@@ -711,11 +1253,22 @@ func TestSchedulerContinuesAfterContinuousScriptInput(t *testing.T) {
 				},
 			},
 			AutomationTasks: []TaskConfig{{
-				ID:                  "continuous-task",
-				Name:                "Continuous task",
-				Enabled:             true,
-				ScriptIDs:           []string{"continuous-script", "follower-script"},
-				ContinuousScriptIDs: []string{"continuous-script"},
+				ID:                       "continuous-task",
+				Name:                     "Continuous task",
+				Enabled:                  true,
+				ScriptIDs:                []string{"continuous-script", "follower-script"},
+				ContinuousScriptIDs:      []string{"continuous-script"},
+				ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+				Schedule: &ScheduleConfig{
+					Type:            "fixed",
+					StartTime:       "23:00",
+					DailyCount:      1,
+					IntervalMinutes: 1,
+				},
+				ManualRun: &ManualRunConfig{
+					ID:        "first-entry",
+					PlannedAt: now.Add(-time.Second).UTC().Format(time.RFC3339Nano),
+				},
 				InputConfigs: []InputConfig{{
 					ScriptID: "continuous-script",
 					Steps: []InputStep{{
@@ -723,21 +1276,6 @@ func TestSchedulerContinuesAfterContinuousScriptInput(t *testing.T) {
 						Value:   "from-service",
 						DelayMS: 0,
 					}},
-				}},
-				DailyPlans: []DailyPlan{{
-					Date: now.UTC().Format("2006-01-02"),
-					Entries: []PlanEntry{
-						{
-							ID:        "first-entry",
-							PlannedAt: now.Add(-time.Second).UTC().Format(time.RFC3339Nano),
-							Status:    "pending",
-						},
-						{
-							ID:        "second-entry",
-							PlannedAt: now.Add(time.Hour).UTC().Format(time.RFC3339Nano),
-							Status:    "pending",
-						},
-					},
 				}},
 			}},
 		}},
@@ -799,7 +1337,10 @@ func TestSchedulerContinuesAfterContinuousScriptInput(t *testing.T) {
 	}()
 
 	configValue.Revision = 2
-	configValue.Projects[0].AutomationTasks[0].DailyPlans[0].Entries[1].PlannedAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+	configValue.Projects[0].AutomationTasks[0].ManualRun = &ManualRunConfig{
+		ID:        "second-entry",
+		PlannedAt: time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano),
+	}
 	config, err = json.Marshal(configValue)
 	if err != nil {
 		t.Fatalf("marshal second config: %v", err)

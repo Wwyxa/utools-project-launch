@@ -163,6 +163,47 @@ func TestSupervisorReconcilesEndedRecoveredRun(t *testing.T) {
 	}
 }
 
+func TestSupervisorStopsLiveRecoveredAutomationRun(t *testing.T) {
+	store := openStore(t)
+	run := createActiveRun(t, store)
+	if _, err := store.UpdateRun(run.ID, func(current *state.Run) {
+		current.AutomationRunID = "recovered-automation-execution"
+	}); err != nil {
+		t.Fatalf("associate automation execution: %v", err)
+	}
+	terminated := false
+	supervisor := &Supervisor{
+		store: store,
+		identityMatches: func(pid int, expected string) (bool, error) {
+			return pid == run.PID && expected == run.ProcessIdentity, nil
+		},
+		terminateTree: func(pid int) error {
+			if pid != run.PID {
+				t.Fatalf("termination pid = %d, want %d", pid, run.PID)
+			}
+			terminated = true
+			return nil
+		},
+		processes: map[string]*managedProcess{
+			run.ID: {runID: run.ID, pid: run.PID, recovered: true},
+		},
+	}
+
+	recoveredRuns, err := supervisor.ReconcileRecoveredRuns()
+	if err != nil {
+		t.Fatalf("reconcile recovered automation run: %v", err)
+	}
+	if !terminated {
+		t.Fatal("live recovered automation process was not terminated")
+	}
+	if len(recoveredRuns) != 1 || recoveredRuns[0].ID != run.ID || recoveredRuns[0].Status != state.RunStatusExited {
+		t.Fatalf("recovered terminal runs = %#v, want exited automation run %q", recoveredRuns, run.ID)
+	}
+	if persisted, found := store.Run(run.ID); !found || persisted.Status != state.RunStatusExited {
+		t.Fatalf("persisted run = %#v, found=%t; want exited", persisted, found)
+	}
+}
+
 func TestSupervisorStopsRecoveredRunAndRecordsExit(t *testing.T) {
 	store := openStore(t)
 	run := createActiveRun(t, store)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,74 @@ func TestAutomationConfigurationPersistsAndRejectsStaleRevision(t *testing.T) {
 	persisted := reopened.Automation()
 	if persisted.Revision != 1 || !bytes.Equal(persisted.Config, config) {
 		t.Fatalf("reopened automation state = %#v, want persisted config", persisted)
+	}
+}
+
+func TestAutomationSubmissionsSurviveConfigurationReplacementAndRestart(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	manual := AutomationSubmission{
+		Kind:        AutomationSubmissionManual,
+		ProjectID:   "project",
+		TaskID:      "task",
+		PlanEntryID: "manual-entry",
+		PlannedAt:   "2026-08-15T10:00:00.000Z",
+	}
+	early := AutomationSubmission{
+		Kind:        AutomationSubmissionEarly,
+		ProjectID:   "project",
+		TaskID:      "task",
+		PlanEntryID: "early-entry",
+	}
+	if _, err := store.ReplaceAutomationWithSubmissions(
+		1,
+		json.RawMessage(`{"schemaVersion":1,"revision":1,"projects":[]}`),
+		[]AutomationSubmission{manual, early},
+	); err != nil {
+		t.Fatalf("persist automation submissions: %v", err)
+	}
+	if _, err := store.ReplaceAutomationWithSubmissions(
+		2,
+		json.RawMessage(`{"schemaVersion":1,"revision":2,"projects":[]}`),
+		nil,
+	); err != nil {
+		t.Fatalf("replace automation configuration without submissions: %v", err)
+	}
+
+	persisted := store.Automation()
+	if len(persisted.PendingSubmissions) != 2 {
+		t.Fatalf("pending submissions = %#v, want manual and early submissions", persisted.PendingSubmissions)
+	}
+	snapshot, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatalf("marshal automation snapshot: %v", err)
+	}
+	if strings.Contains(string(snapshot), "pendingSubmissions") || strings.Contains(string(snapshot), "manual-entry") {
+		t.Fatalf("automation snapshot exposes pending submissions: %s", snapshot)
+	}
+
+	reopened, err := Open(stateDir)
+	if err != nil {
+		t.Fatalf("reopen state: %v", err)
+	}
+	if got := reopened.Automation().PendingSubmissions; len(got) != 2 || got[0] != manual || got[1] != early {
+		t.Fatalf("reopened pending submissions = %#v, want %#v", got, []AutomationSubmission{manual, early})
+	}
+	if _, claimed, err := reopened.ClaimAutomationExecution(2, AutomationExecution{
+		ID:          "manual-execution",
+		ProjectID:   "project",
+		TaskID:      "task",
+		PlanEntryID: "manual-entry",
+		Status:      AutomationExecutionRunning,
+	}); err != nil || !claimed {
+		t.Fatalf("claim manual execution: claimed=%t err=%v", claimed, err)
+	}
+	remaining := reopened.Automation().PendingSubmissions
+	if len(remaining) != 1 || remaining[0] != early {
+		t.Fatalf("remaining submissions = %#v, want early submission", remaining)
 	}
 }
 
@@ -161,6 +230,146 @@ func TestReplaceAutomationPreservesExecutionClaimsAcrossRevisions(t *testing.T) 
 	}
 	if len(updated.Executions) != 1 || updated.Executions[0].ID != "execution-1" {
 		t.Fatalf("automation executions = %#v, want retained execution claim", updated.Executions)
+	}
+}
+
+func TestAutomationHistoryIsGloballyBounded(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1}`)); err != nil {
+		t.Fatalf("write automation config: %v", err)
+	}
+	for index := 0; index < MaxAutomationHistory+25; index++ {
+		projectID := fmt.Sprintf("project-%03d", index)
+		_, claimed, err := store.ClaimAutomationExecution(1, AutomationExecution{
+			ID:          fmt.Sprintf("execution-%03d", index),
+			ProjectID:   projectID,
+			TaskID:      "task",
+			PlanEntryID: "entry",
+			Status:      AutomationExecutionSkipped,
+		})
+		if err != nil || !claimed {
+			t.Fatalf("claim terminal execution %d: claimed=%t err=%v", index, claimed, err)
+		}
+	}
+
+	terminalCount := 0
+	for _, execution := range store.Automation().Executions {
+		if execution.Status != AutomationExecutionRunning {
+			terminalCount++
+		}
+	}
+	if terminalCount > MaxAutomationHistory {
+		t.Fatalf("terminal automation history = %d, want at most %d", terminalCount, MaxAutomationHistory)
+	}
+}
+
+func TestAutomationReconcileRemovesDeletedHistoryAndPendingSubmissionsButKeepsRunning(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1}`)); err != nil {
+		t.Fatalf("write initial automation config: %v", err)
+	}
+	if _, claimed, err := store.ClaimAutomationExecution(1, AutomationExecution{
+		ID:          "deleted-terminal",
+		ProjectID:   "deleted-project",
+		TaskID:      "deleted-task",
+		PlanEntryID: "terminal-entry",
+		Status:      AutomationExecutionSkipped,
+	}); err != nil || !claimed {
+		t.Fatalf("claim deleted terminal execution: claimed=%t err=%v", claimed, err)
+	}
+	if _, claimed, err := store.ClaimAutomationExecution(1, AutomationExecution{
+		ID:          "retained-running",
+		ProjectID:   "running-project",
+		TaskID:      "running-task",
+		PlanEntryID: "running-entry",
+		Status:      AutomationExecutionRunning,
+	}); err != nil || !claimed {
+		t.Fatalf("claim running execution: claimed=%t err=%v", claimed, err)
+	}
+	if _, err := store.ReplaceAutomationWithSubmissions(2, json.RawMessage(`{"schemaVersion":1,"revision":2}`), []AutomationSubmission{{
+		Kind:        AutomationSubmissionEarly,
+		ProjectID:   "deleted-project",
+		TaskID:      "deleted-task",
+		PlanEntryID: "pending-entry",
+	}}); err != nil {
+		t.Fatalf("replace automation with pending submission: %v", err)
+	}
+
+	if _, err := store.ReconcileAutomationPlans(2, nil, []AutomationPlanTask{{
+		ProjectID: "current-project",
+		TaskID:    "current-task",
+	}}, "2026-08-01"); err != nil {
+		t.Fatalf("reconcile deleted automation state: %v", err)
+	}
+	state := store.Automation()
+	if len(state.PendingSubmissions) != 0 {
+		t.Fatalf("pending submissions = %#v, want deleted submission removed", state.PendingSubmissions)
+	}
+	if len(state.Executions) != 1 || state.Executions[0].ID != "retained-running" {
+		t.Fatalf("executions = %#v, want only the running execution", state.Executions)
+	}
+}
+
+func TestReconcileAutomationPlansPersistsClaimedEntryStatusAcrossRestart(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1,"projects":[]}`)); err != nil {
+		t.Fatalf("write automation config: %v", err)
+	}
+
+	plans := []AutomationPlan{{
+		ProjectID: "project",
+		TaskID:    "task",
+		Date:      "2026-08-15",
+		Entries: []AutomationPlanEntry{{
+			ID:        "entry",
+			PlannedAt: "2026-08-15T09:00:00.000Z",
+			Status:    AutomationPlanEntryPending,
+		}},
+	}}
+	if _, err := store.ReconcileAutomationPlans(
+		1,
+		plans,
+		[]AutomationPlanTask{{ProjectID: "project", TaskID: "task"}},
+		"2026-08-08",
+	); err != nil {
+		t.Fatalf("reconcile automation plans: %v", err)
+	}
+	if _, claimed, err := store.ClaimAutomationExecution(1, AutomationExecution{
+		ID:          "execution",
+		ProjectID:   "project",
+		TaskID:      "task",
+		PlanEntryID: "entry",
+		PlannedAt:   "2026-08-15T09:00:00.000Z",
+		Status:      AutomationExecutionRunning,
+	}); err != nil || !claimed {
+		t.Fatalf("claim execution: claimed=%t err=%v", claimed, err)
+	}
+	if _, err := store.UpdateAutomationExecution("execution", func(execution *AutomationExecution) {
+		execution.Status = AutomationExecutionCompleted
+	}); err != nil {
+		t.Fatalf("complete execution: %v", err)
+	}
+
+	reopened, err := Open(stateDir)
+	if err != nil {
+		t.Fatalf("reopen state: %v", err)
+	}
+	persisted := reopened.Automation()
+	if len(persisted.Plans) != 1 || len(persisted.Plans[0].Entries) != 1 {
+		t.Fatalf("persisted plans = %#v", persisted.Plans)
+	}
+	if status := persisted.Plans[0].Entries[0].Status; status != AutomationPlanEntryCompleted {
+		t.Fatalf("persisted plan status = %q, want %q", status, AutomationPlanEntryCompleted)
 	}
 }
 

@@ -290,6 +290,19 @@ func (supervisor *Supervisor) ReconcileRecoveredRuns() ([]state.Run, error) {
 
 		matches, err := supervisor.identityMatches(run.PID, run.ProcessIdentity)
 		if err == nil && matches {
+			if run.AutomationRunID == "" {
+				continue
+			}
+			if terminateErr := supervisor.terminateTree(run.PID); terminateErr != nil {
+				reconciliationErr = errors.Join(reconciliationErr, fmt.Errorf("stop recovered automation run %q: %w", run.ID, terminateErr))
+				continue
+			}
+			updated, completeErr := supervisor.completeRecoveredStop(run, StopOptions{AutomationExitMatched: true})
+			if completeErr != nil {
+				reconciliationErr = errors.Join(reconciliationErr, completeErr)
+				continue
+			}
+			terminalRuns = append(terminalRuns, updated)
 			continue
 		}
 		updated, markErr := supervisor.markLost(run, "The persisted process identity could not be verified after service restart.")
@@ -343,7 +356,7 @@ func (supervisor *Supervisor) FindAutomationRun(automationRunID string) (state.R
 	if strings.TrimSpace(automationRunID) == "" {
 		return state.Run{}, false
 	}
-	for _, run := range supervisor.store.Snapshot().Runs {
+	for _, run := range supervisor.store.ActiveRuns() {
 		if run.AutomationRunID == automationRunID {
 			return run, true
 		}

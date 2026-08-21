@@ -24,6 +24,7 @@ const (
 	IdempotencyHeader     = "Idempotency-Key"
 	MaxRequestBodyBytes   = 64 * 1024
 	maxEventResponseBytes = 192 * 1024
+	maxSyncResponseBytes  = 512 * 1024
 	jsonContentType       = "application/json"
 	requestBodyMediaType  = "application/json"
 )
@@ -207,7 +208,7 @@ func (handler *Handler) healthResponse() healthResponse {
 func (handler *Handler) serviceSnapshot() serviceSnapshot {
 	return serviceSnapshot{
 		Snapshot:   handler.config.Supervisor.StoreSnapshot(),
-		Automation: handler.config.Supervisor.AutomationSnapshot(),
+		Automation: handler.config.Scheduler.AutomationSnapshot(),
 		Scheduler:  handler.config.Scheduler.Health(),
 	}
 }
@@ -220,11 +221,11 @@ func (handler *Handler) handleSync(responseWriter http.ResponseWriter, request *
 	}
 	events := handler.SupervisorEventsAfter(after)
 	snapshot := handler.serviceSnapshot()
-	handler.writeJSON(responseWriter, http.StatusOK, syncResponse{
+	handler.writeBoundedJSON(responseWriter, http.StatusOK, syncResponse{
 		Health: handler.healthResponse(),
 		State:  snapshot,
 		Events: events,
-	})
+	}, maxSyncResponseBytes)
 }
 
 func (handler *Handler) handleAutomationConfig(responseWriter http.ResponseWriter, request *http.Request) {
@@ -527,7 +528,8 @@ func (handler *Handler) readJSON(responseWriter http.ResponseWriter, request *ht
 			return nil, false
 		}
 		if errors.Is(err, io.EOF) {
-			return destination, true
+			handler.writeError(responseWriter, http.StatusBadRequest, "invalid_request", "The request body must contain one JSON value.")
+			return nil, false
 		}
 		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_request", "The request body must be valid JSON.")
 		return nil, false
@@ -586,4 +588,19 @@ func (handler *Handler) writeJSON(responseWriter http.ResponseWriter, status int
 	responseWriter.Header().Set("Content-Type", jsonContentType)
 	responseWriter.WriteHeader(status)
 	_ = json.NewEncoder(responseWriter).Encode(value)
+}
+
+func (handler *Handler) writeBoundedJSON(responseWriter http.ResponseWriter, status int, value any, maxBytes int) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		handler.writeError(responseWriter, http.StatusInternalServerError, "response_encoding_failed", "The service response could not be encoded.")
+		return
+	}
+	if maxBytes > 0 && len(encoded)+1 > maxBytes {
+		handler.writeError(responseWriter, http.StatusRequestEntityTooLarge, "response_too_large", "The service response exceeds the response size limit.")
+		return
+	}
+	responseWriter.Header().Set("Content-Type", jsonContentType)
+	responseWriter.WriteHeader(status)
+	_, _ = responseWriter.Write(append(encoded, '\n'))
 }

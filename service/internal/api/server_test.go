@@ -132,6 +132,109 @@ func TestSyncIncludesHealthStateAndEvents(t *testing.T) {
 	}
 }
 
+func TestJSONMutationRejectsEmptyBody(t *testing.T) {
+	store, err := state.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	schedulerRuntime, err := scheduler.New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+	handler, err := NewHandler(Config{
+		Token:           "test-token",
+		ProtocolVersion: state.ProtocolVersion,
+		ServiceVersion:  "test",
+		InstanceID:      "test-instance",
+		PID:             1,
+		ProcessIdentity: "test-identity",
+		StartedAt:       time.Now().UTC(),
+		Supervisor:      supervisor,
+		Scheduler:       schedulerRuntime,
+	})
+	if err != nil {
+		t.Fatalf("create handler: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/logs/clear", strings.NewReader(""))
+	request.Header.Set(AuthorizationHeader, "Bearer test-token")
+	request.Header.Set(ProtocolHeader, fmt.Sprint(state.ProtocolVersion))
+	request.Header.Set("Content-Type", jsonContentType)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("empty body status = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
+	}
+	var payload errorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode empty body error: %v", err)
+	}
+	if payload.Code != "invalid_request" {
+		t.Fatalf("empty body error code = %q, want invalid_request", payload.Code)
+	}
+}
+
+func TestSyncRejectsOversizedCompleteResponse(t *testing.T) {
+	store, err := state.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	for index := 0; index < state.MaxRunHistory; index++ {
+		runID := fmt.Sprintf("%032x", index+1)
+		if _, created, err := store.CreateRun(state.Run{
+			ID:        runID,
+			ProjectID: fmt.Sprintf("project-%03d", index),
+			ScriptID:  "script",
+			Command:   strings.Repeat("x", 4096),
+			Status:    state.RunStatusExited,
+		}, "sync-size-key-"+runID, "sync-size-fingerprint-"+runID); err != nil || !created {
+			t.Fatalf("create oversized sync run %d: created=%t err=%v", index, created, err)
+		}
+	}
+	supervisor, err := serviceprocess.NewSupervisor(store)
+	if err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	schedulerRuntime, err := scheduler.New(store, supervisor)
+	if err != nil {
+		t.Fatalf("create scheduler: %v", err)
+	}
+	handler, err := NewHandler(Config{
+		Token:           "test-token",
+		ProtocolVersion: state.ProtocolVersion,
+		ServiceVersion:  "test",
+		InstanceID:      "test-instance",
+		PID:             1,
+		ProcessIdentity: "test-identity",
+		StartedAt:       time.Now().UTC(),
+		Supervisor:      supervisor,
+		Scheduler:       schedulerRuntime,
+	})
+	if err != nil {
+		t.Fatalf("create handler: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/sync?after=0", nil)
+	request.Header.Set(AuthorizationHeader, "Bearer test-token")
+	request.Header.Set(ProtocolHeader, fmt.Sprint(state.ProtocolVersion))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized sync status = %d, want %d", response.Code, http.StatusRequestEntityTooLarge)
+	}
+	var payload errorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode oversized sync error: %v", err)
+	}
+	if payload.Code != "response_too_large" {
+		t.Fatalf("oversized sync error code = %q, want response_too_large", payload.Code)
+	}
+}
+
 func TestStartRunReturnsTypedConflictForActiveProjectScript(t *testing.T) {
 	store, err := state.Open(t.TempDir())
 	if err != nil {

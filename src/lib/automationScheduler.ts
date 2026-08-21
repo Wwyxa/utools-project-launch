@@ -37,7 +37,24 @@ export function minutesToTime(value: number): string {
 }
 
 export function plannedDateTime(date: string, minutes: number): string {
-  return `${date}T${minutesToTime(minutes)}:00`;
+  const normalizedMinutes = Math.max(0, Math.min(minutesPerDay - 1, Math.floor(minutes)));
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) {
+    return `${date}T${minutesToTime(normalizedMinutes)}:00`;
+  }
+  const localDate = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Math.floor(normalizedMinutes / 60),
+    normalizedMinutes % 60,
+    0,
+    0,
+  );
+  if (!Number.isFinite(localDate.getTime())) {
+    return `${date}T${minutesToTime(normalizedMinutes)}:00`;
+  }
+  return `${dateKey(localDate)}T${minutesToTime(localDate.getHours() * 60 + localDate.getMinutes())}:00`;
 }
 
 function seededRandom(seed: string): () => number {

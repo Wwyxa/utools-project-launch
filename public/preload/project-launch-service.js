@@ -849,6 +849,8 @@ async function requestProjectLaunchServiceSync(connection, after) {
     connection.token,
     "GET",
     `/v1/sync?after=${encodeURIComponent(String(after))}`,
+    undefined,
+    { maxResponseBytes: projectLaunchServiceSyncResponseLimitBytes },
   );
   if (response.statusCode === 404) {
     return null;
@@ -1104,9 +1106,38 @@ function projectLaunchServiceAutomationSnapshot(automation) {
             : [],
         }))
     : undefined;
+  const upcoming = Array.isArray(automation?.upcoming)
+    ? automation.upcoming
+        .filter(
+          (entry) =>
+            entry &&
+            typeof entry === "object" &&
+            !Array.isArray(entry) &&
+            typeof entry.projectId === "string" &&
+            typeof entry.taskId === "string" &&
+            typeof entry.planEntryId === "string" &&
+            typeof entry.plannedAt === "string" &&
+            Number.isFinite(Date.parse(entry.plannedAt)),
+        )
+        .map((entry) => ({
+          projectId: entry.projectId,
+          taskId: entry.taskId,
+          planEntryId: entry.planEntryId,
+          plannedAt: entry.plannedAt,
+        }))
+        .sort((left, right) => {
+          const plannedAtDifference = Date.parse(left.plannedAt) - Date.parse(right.plannedAt);
+          if (plannedAtDifference !== 0) return plannedAtDifference;
+          if (left.projectId !== right.projectId) return left.projectId.localeCompare(right.projectId);
+          if (left.taskId !== right.taskId) return left.taskId.localeCompare(right.taskId);
+          return left.planEntryId.localeCompare(right.planEntryId);
+        })
+        .slice(0, projectLaunchServiceUpcomingLimit)
+    : undefined;
   return {
     revision: Number.isSafeInteger(revision) && revision >= 0 ? revision : 0,
     ...(executions ? { executions } : {}),
+    ...(upcoming ? { upcoming } : {}),
   };
 }
 

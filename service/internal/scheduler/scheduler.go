@@ -8,15 +8,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	serviceprocess "project-launch-service/internal/process"
 	"project-launch-service/internal/state"
 )
 
-const SchemaVersion = 1
+const (
+	SchemaVersion             = 1
+	ScheduleAlgorithmVersion  = 1
+	materializedPlanLookahead = 1
+	materializedPlanRetention = 7
+	maxAutomationDailyEntries = 1440
+	maxAutomationUpcoming     = 100
+	minutesPerDay             = 24 * 60
+)
 
 type SchedulerState string
 
@@ -55,17 +66,36 @@ type ScriptConfig struct {
 }
 
 type TaskConfig struct {
-	ID                      string        `json:"id"`
-	Name                    string        `json:"name"`
-	Enabled                 bool          `json:"enabled"`
-	ScriptIDs               []string      `json:"scriptIds"`
-	ContinuousScriptIDs     []string      `json:"continuousScriptIds"`
-	MissedPolicy            string        `json:"missedPolicy"`
-	MissedGraceMinutes      int           `json:"missedGraceMinutes"`
-	MaxScriptRuntimeMinutes int           `json:"maxScriptRuntimeMinutes"`
-	InputConfigs            []InputConfig `json:"inputConfigs"`
-	ExitConfigs             []ExitConfig  `json:"exitConfigs"`
-	DailyPlans              []DailyPlan   `json:"dailyPlans"`
+	ID                       string           `json:"id"`
+	Name                     string           `json:"name"`
+	Enabled                  bool             `json:"enabled"`
+	ScriptIDs                []string         `json:"scriptIds"`
+	ContinuousScriptIDs      []string         `json:"continuousScriptIds"`
+	Schedule                 *ScheduleConfig  `json:"schedule,omitempty"`
+	ScheduleAlgorithmVersion int              `json:"scheduleAlgorithmVersion,omitempty"`
+	RunEarlyEntryID          string           `json:"runEarlyEntryId,omitempty"`
+	ManualRun                *ManualRunConfig `json:"manualRun,omitempty"`
+	MissedPolicy             string           `json:"missedPolicy"`
+	MissedGraceMinutes       int              `json:"missedGraceMinutes"`
+	MaxScriptRuntimeMinutes  int              `json:"maxScriptRuntimeMinutes"`
+	InputConfigs             []InputConfig    `json:"inputConfigs"`
+	ExitConfigs              []ExitConfig     `json:"exitConfigs"`
+}
+
+type ScheduleConfig struct {
+	Type               string `json:"type"`
+	StartTime          string `json:"startTime,omitempty"`
+	WindowStart        string `json:"windowStart,omitempty"`
+	WindowEnd          string `json:"windowEnd,omitempty"`
+	DailyCount         int    `json:"dailyCount"`
+	IntervalMinutes    int    `json:"intervalMinutes,omitempty"`
+	MinIntervalMinutes int    `json:"minIntervalMinutes,omitempty"`
+	MaxIntervalMinutes int    `json:"maxIntervalMinutes,omitempty"`
+}
+
+type ManualRunConfig struct {
+	ID        string `json:"id"`
+	PlannedAt string `json:"plannedAt"`
 }
 
 type InputConfig struct {
@@ -88,25 +118,15 @@ type ExitConfig struct {
 	MatchText string `json:"matchText"`
 }
 
-type DailyPlan struct {
-	Date    string      `json:"date"`
-	Entries []PlanEntry `json:"entries"`
-}
-
-type PlanEntry struct {
-	ID        string `json:"id"`
-	PlannedAt string `json:"plannedAt"`
-	Status    string `json:"status"`
-	RunEarly  bool   `json:"runEarly,omitempty"`
-}
-
 type Runtime struct {
-	store      *state.Store
-	supervisor *serviceprocess.Supervisor
-	replaceMu  sync.Mutex
-	healthMu   sync.RWMutex
-	health     SchedulerHealth
-	wake       chan struct{}
+	store              *state.Store
+	supervisor         *serviceprocess.Supervisor
+	replaceMu          sync.Mutex
+	executionMu        sync.Mutex
+	inFlightExecutions map[string]struct{}
+	healthMu           sync.RWMutex
+	health             SchedulerHealth
+	wake               chan struct{}
 }
 
 const (
@@ -130,9 +150,10 @@ func New(store *state.Store, supervisor *serviceprocess.Supervisor) (*Runtime, e
 	}
 
 	return &Runtime{
-		store:      store,
-		supervisor: supervisor,
-		wake:       make(chan struct{}, 1),
+		store:              store,
+		supervisor:         supervisor,
+		inFlightExecutions: make(map[string]struct{}),
+		wake:               make(chan struct{}, 1),
 		health: SchedulerHealth{
 			State: SchedulerStateRunning,
 		},
@@ -144,6 +165,30 @@ func (runtime *Runtime) Health() SchedulerHealth {
 	defer runtime.healthMu.RUnlock()
 
 	return runtime.health
+}
+
+func (runtime *Runtime) AutomationSnapshot() state.AutomationState {
+	automation := runtime.store.Automation()
+	if automation.Revision == 0 || len(automation.Config) == 0 {
+		automation.Plans = nil
+		return automation
+	}
+
+	config, err := decodeConfig(automation.Config)
+	if err != nil || config.Revision != automation.Revision {
+		automation.Plans = nil
+		return automation
+	}
+	plans := automation.Plans
+	if len(plans) == 0 {
+		fallbackPlans, _, _, materializeErr := materializedAutomationPlans(config, time.Now().UTC(), automation.PendingSubmissions)
+		if materializeErr == nil {
+			plans = fallbackPlans
+		}
+	}
+	automation.Upcoming = automationUpcomingEntries(config, plans, time.Now().UTC())
+	automation.Plans = nil
+	return automation
 }
 
 func (runtime *Runtime) ReplaceConfiguration(revision uint64, rawConfig json.RawMessage) (state.AutomationState, error) {
@@ -163,13 +208,43 @@ func (runtime *Runtime) ReplaceConfiguration(revision uint64, rawConfig json.Raw
 		return current, nil
 	}
 
-	updated, err := runtime.store.ReplaceAutomation(revision, rawConfig)
+	updated, err := runtime.store.ReplaceAutomationWithSubmissions(
+		revision,
+		rawConfig,
+		automationSubmissionsFromConfig(config),
+	)
 	if err != nil {
 		return state.AutomationState{}, err
 	}
 	runtime.clearHealthError()
 	runtime.signalWake()
 	return updated, nil
+}
+
+func automationSubmissionsFromConfig(config Config) []state.AutomationSubmission {
+	submissions := make([]state.AutomationSubmission, 0)
+	for _, project := range config.Projects {
+		for _, task := range project.AutomationTasks {
+			if task.ManualRun != nil {
+				submissions = append(submissions, state.AutomationSubmission{
+					Kind:        state.AutomationSubmissionManual,
+					ProjectID:   project.ID,
+					TaskID:      task.ID,
+					PlanEntryID: task.ManualRun.ID,
+					PlannedAt:   task.ManualRun.PlannedAt,
+				})
+			}
+			if task.RunEarlyEntryID != "" {
+				submissions = append(submissions, state.AutomationSubmission{
+					Kind:        state.AutomationSubmissionEarly,
+					ProjectID:   project.ID,
+					TaskID:      task.ID,
+					PlanEntryID: task.RunEarlyEntryID,
+				})
+			}
+		}
+	}
+	return submissions
 }
 
 func (runtime *Runtime) Run(ctx context.Context) {
@@ -242,6 +317,33 @@ func (runtime *Runtime) signalWake() {
 	}
 }
 
+func (runtime *Runtime) startExecution(
+	execution state.AutomationExecution,
+	project ProjectConfig,
+	task TaskConfig,
+	scripts map[string]ScriptConfig,
+) {
+	runtime.executionMu.Lock()
+	runtime.inFlightExecutions[execution.ID] = struct{}{}
+	runtime.executionMu.Unlock()
+
+	go runtime.execute(execution, project, task, scripts)
+}
+
+func (runtime *Runtime) executionInFlight(executionID string) bool {
+	runtime.executionMu.Lock()
+	defer runtime.executionMu.Unlock()
+
+	_, found := runtime.inFlightExecutions[executionID]
+	return found
+}
+
+func (runtime *Runtime) finishExecution(executionID string) {
+	runtime.executionMu.Lock()
+	delete(runtime.inFlightExecutions, executionID)
+	runtime.executionMu.Unlock()
+}
+
 func schedulerRetryDelay(failures int) time.Duration {
 	delay := schedulerRetryInitialDelay
 	for index := 1; index < failures && delay < schedulerRetryMaximumDelay; index++ {
@@ -261,9 +363,6 @@ func (runtime *Runtime) runOnce(ctx context.Context) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("reconcile recovered process state: %w", err)
 	}
-	if err := runtime.reconcileRecoveredAutomationExecutions(recoveredRuns); err != nil {
-		return 0, err
-	}
 
 	automation := runtime.store.Automation()
 	if automation.Revision == 0 {
@@ -282,57 +381,245 @@ func (runtime *Runtime) runOnce(ctx context.Context) (time.Duration, error) {
 	}
 
 	now := time.Now().UTC()
-	for _, project := range config.Projects {
+	automation, err = runtime.materializeAutomationPlans(automation.Revision, config, now, automation.PendingSubmissions)
+	if err != nil {
+		return 0, fmt.Errorf("materialize automation plans: %w", err)
+	}
+	if err := runtime.reconcileRecoveredAutomationExecutions(recoveredRuns); err != nil {
+		return 0, err
+	}
+	for _, scheduled := range automationPlanEntries(config, automation.Plans) {
+		project := scheduled.Project
+		task := scheduled.Task
+		entry := scheduled.Entry
+		if entry.Status != state.AutomationPlanEntryPending || (!task.Enabled && !entry.RunEarly) {
+			continue
+		}
+		plannedAt, err := time.Parse(time.RFC3339Nano, entry.PlannedAt)
+		if err != nil {
+			return 0, fmt.Errorf("parse planned time for %s/%s/%s: %w", project.ID, task.ID, entry.ID, err)
+		}
+		if plannedAt.After(now) && !entry.RunEarly {
+			continue
+		}
+		if !entry.RunEarly && shouldMarkMissed(task, plannedAt, now) {
+			if err := runtime.recordMissedExecution(automation.Revision, project, task, entry, now); err != nil {
+				return 0, err
+			}
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+
 		scripts := make(map[string]ScriptConfig, len(project.Scripts))
 		for _, script := range project.Scripts {
 			scripts[script.ID] = script
 		}
-		for _, task := range project.AutomationTasks {
-			for _, dailyPlan := range task.DailyPlans {
-				for _, entry := range dailyPlan.Entries {
-					if entry.Status != "pending" || (!task.Enabled && !entry.RunEarly) {
-						continue
-					}
-					plannedAt, err := time.Parse(time.RFC3339Nano, entry.PlannedAt)
-					if err != nil {
-						return 0, fmt.Errorf("parse planned time for %s/%s/%s: %w", project.ID, task.ID, entry.ID, err)
-					}
-					if plannedAt.After(now) && !entry.RunEarly {
-						continue
-					}
-					if !entry.RunEarly && shouldMarkMissed(task, plannedAt, now) {
-						if err := runtime.recordMissedExecution(automation.Revision, project, task, entry, now); err != nil {
-							return 0, err
-						}
-						continue
-					}
-					if err := ctx.Err(); err != nil {
-						return 0, err
-					}
-
-					execution, claimed, err := runtime.store.ClaimAutomationExecution(automation.Revision, state.AutomationExecution{
-						ID:                 executionID(project.ID, task.ID, entry.ID),
-						ProjectID:          project.ID,
-						TaskID:             task.ID,
-						PlanEntryID:        entry.ID,
-						PlannedAt:          entry.PlannedAt,
-						Status:             state.AutomationExecutionRunning,
-						CurrentScriptIndex: 0,
-						StartedAt:          time.Now().UTC().Format(time.RFC3339Nano),
-						ScriptResults:      []state.AutomationScriptResult{},
-					})
-					if err != nil {
-						return 0, fmt.Errorf("claim scheduled execution: %w", err)
-					}
-					if claimed {
-						go runtime.execute(execution, project, task, scripts)
-					}
-				}
-			}
+		execution, claimed, err := runtime.store.ClaimAutomationExecution(automation.Revision, state.AutomationExecution{
+			ID:                 executionID(project.ID, task.ID, entry.ID),
+			ProjectID:          project.ID,
+			TaskID:             task.ID,
+			PlanEntryID:        entry.ID,
+			PlannedAt:          entry.PlannedAt,
+			Status:             state.AutomationExecutionRunning,
+			CurrentScriptIndex: 0,
+			StartedAt:          time.Now().UTC().Format(time.RFC3339Nano),
+			ScriptResults:      []state.AutomationScriptResult{},
+		})
+		if err != nil {
+			return 0, fmt.Errorf("claim scheduled execution: %w", err)
+		}
+		if claimed {
+			runtime.startExecution(execution, project, task, scripts)
 		}
 	}
 
 	return runtime.nextWakeDelay(now, config), nil
+}
+
+type scheduledAutomationEntry struct {
+	Project ProjectConfig
+	Task    TaskConfig
+	Entry   state.AutomationPlanEntry
+}
+
+func (runtime *Runtime) materializeAutomationPlans(
+	revision uint64,
+	config Config,
+	now time.Time,
+	pendingSubmissions []state.AutomationSubmission,
+) (state.AutomationState, error) {
+	plans, tasks, retainAfter, err := materializedAutomationPlans(config, now, pendingSubmissions)
+	if err != nil {
+		return state.AutomationState{}, err
+	}
+	return runtime.store.ReconcileAutomationPlans(revision, plans, tasks, retainAfter)
+}
+
+func materializedAutomationPlans(
+	config Config,
+	now time.Time,
+	pendingSubmissions []state.AutomationSubmission,
+) ([]state.AutomationPlan, []state.AutomationPlanTask, string, error) {
+	nowLocal := now.In(time.Local)
+	submissions := append(automationSubmissionsFromConfig(config), pendingSubmissions...)
+	activeTasks := make([]state.AutomationPlanTask, 0)
+	plans := make([]state.AutomationPlan, 0)
+	for _, project := range config.Projects {
+		for _, task := range project.AutomationTasks {
+			activeTasks = append(activeTasks, state.AutomationPlanTask{ProjectID: project.ID, TaskID: task.ID})
+			for offset := 0; offset <= materializedPlanLookahead; offset++ {
+				date := nowLocal.AddDate(0, 0, offset).Format("2006-01-02")
+				plan, err := generateScheduleDailyPlan(task, date)
+				if err != nil {
+					return nil, nil, "", fmt.Errorf("materialize schedule for %s/%s: %w", project.ID, task.ID, err)
+				}
+				plan.ProjectID = project.ID
+				plans = append(plans, plan)
+			}
+			for _, submission := range submissions {
+				if submission.ProjectID != project.ID || submission.TaskID != task.ID {
+					continue
+				}
+				switch submission.Kind {
+				case state.AutomationSubmissionManual:
+					updatedPlans, err := appendManualAutomationPlan(plans, project.ID, task.ID, ManualRunConfig{
+						ID:        submission.PlanEntryID,
+						PlannedAt: submission.PlannedAt,
+					})
+					if err != nil {
+						return nil, nil, "", fmt.Errorf("materialize manual run for %s/%s: %w", project.ID, task.ID, err)
+					}
+					plans = updatedPlans
+				case state.AutomationSubmissionEarly:
+					markAutomationPlanEntryRunEarly(plans, project.ID, task.ID, submission.PlanEntryID)
+				}
+			}
+		}
+	}
+	retainAfter := nowLocal.AddDate(0, 0, -materializedPlanRetention).Format("2006-01-02")
+	return plans, activeTasks, retainAfter, nil
+}
+
+func appendManualAutomationPlan(
+	plans []state.AutomationPlan,
+	projectID string,
+	taskID string,
+	manualRun ManualRunConfig,
+) ([]state.AutomationPlan, error) {
+	plannedAt, err := time.Parse(time.RFC3339Nano, manualRun.PlannedAt)
+	if err != nil {
+		return nil, err
+	}
+	entry := state.AutomationPlanEntry{
+		ID:        manualRun.ID,
+		PlannedAt: manualRun.PlannedAt,
+		Status:    state.AutomationPlanEntryPending,
+		RunEarly:  true,
+	}
+	date := plannedAt.In(time.Local).Format("2006-01-02")
+	for planIndex := range plans {
+		plan := &plans[planIndex]
+		if plan.ProjectID != projectID || plan.TaskID != taskID || plan.Date != date {
+			continue
+		}
+		for entryIndex := range plan.Entries {
+			if plan.Entries[entryIndex].ID == entry.ID {
+				plan.Entries[entryIndex] = entry
+				return plans, nil
+			}
+		}
+		plan.Entries = append(plan.Entries, entry)
+		return plans, nil
+	}
+	return append(plans, state.AutomationPlan{
+		ProjectID: projectID,
+		TaskID:    taskID,
+		Date:      date,
+		Entries:   []state.AutomationPlanEntry{entry},
+	}), nil
+}
+
+func markAutomationPlanEntryRunEarly(plans []state.AutomationPlan, projectID string, taskID string, entryID string) {
+	for planIndex := range plans {
+		plan := &plans[planIndex]
+		if plan.ProjectID != projectID || plan.TaskID != taskID {
+			continue
+		}
+		for entryIndex := range plan.Entries {
+			if plan.Entries[entryIndex].ID == entryID {
+				plan.Entries[entryIndex].RunEarly = true
+				return
+			}
+		}
+	}
+}
+
+func automationPlanEntries(config Config, plans []state.AutomationPlan) []scheduledAutomationEntry {
+	projects := make(map[string]ProjectConfig, len(config.Projects))
+	tasks := make(map[string]TaskConfig)
+	for _, project := range config.Projects {
+		projects[project.ID] = project
+		for _, task := range project.AutomationTasks {
+			tasks[project.ID+"\x00"+task.ID] = task
+		}
+	}
+
+	entries := make([]scheduledAutomationEntry, 0)
+	for _, plan := range plans {
+		project, found := projects[plan.ProjectID]
+		if !found {
+			continue
+		}
+		task, found := tasks[plan.ProjectID+"\x00"+plan.TaskID]
+		if !found {
+			continue
+		}
+		for _, entry := range plan.Entries {
+			entries = append(entries, scheduledAutomationEntry{Project: project, Task: task, Entry: entry})
+		}
+	}
+	return entries
+}
+
+func automationUpcomingEntries(
+	config Config,
+	plans []state.AutomationPlan,
+	now time.Time,
+) []state.AutomationUpcoming {
+	upcoming := make([]state.AutomationUpcoming, 0)
+	for _, scheduled := range automationPlanEntries(config, plans) {
+		if !scheduled.Task.Enabled || scheduled.Entry.Status != state.AutomationPlanEntryPending {
+			continue
+		}
+		plannedAt, err := time.Parse(time.RFC3339Nano, scheduled.Entry.PlannedAt)
+		if err != nil || !plannedAt.After(now) {
+			continue
+		}
+		upcoming = append(upcoming, state.AutomationUpcoming{
+			ProjectID:   scheduled.Project.ID,
+			TaskID:      scheduled.Task.ID,
+			PlanEntryID: scheduled.Entry.ID,
+			PlannedAt:   scheduled.Entry.PlannedAt,
+		})
+	}
+	sort.Slice(upcoming, func(left, right int) bool {
+		if upcoming[left].PlannedAt != upcoming[right].PlannedAt {
+			return upcoming[left].PlannedAt < upcoming[right].PlannedAt
+		}
+		if upcoming[left].ProjectID != upcoming[right].ProjectID {
+			return upcoming[left].ProjectID < upcoming[right].ProjectID
+		}
+		if upcoming[left].TaskID != upcoming[right].TaskID {
+			return upcoming[left].TaskID < upcoming[right].TaskID
+		}
+		return upcoming[left].PlanEntryID < upcoming[right].PlanEntryID
+	})
+	if len(upcoming) > maxAutomationUpcoming {
+		upcoming = upcoming[:maxAutomationUpcoming]
+	}
+	return upcoming
 }
 
 func (runtime *Runtime) nextWakeDelay(now time.Time, config Config) time.Duration {
@@ -352,32 +639,36 @@ func (runtime *Runtime) nextWakeDelay(now time.Time, config Config) time.Duratio
 		}
 	}
 
-	for _, project := range config.Projects {
+	plans := automation.Plans
+	if len(plans) == 0 {
+		fallbackPlans, _, _, err := materializedAutomationPlans(config, now, automation.PendingSubmissions)
+		if err == nil {
+			plans = fallbackPlans
+		}
+	}
+	for _, scheduled := range automationPlanEntries(config, plans) {
+		project := scheduled.Project
+		task := scheduled.Task
+		entry := scheduled.Entry
 		if _, active := activeProjects[project.ID]; active {
 			continue
 		}
-		for _, task := range project.AutomationTasks {
-			for _, dailyPlan := range task.DailyPlans {
-				for _, entry := range dailyPlan.Entries {
-					if entry.Status != "pending" || (!task.Enabled && !entry.RunEarly) {
-						continue
-					}
-					if _, claimed := claimedEntries[executionID(project.ID, task.ID, entry.ID)]; claimed {
-						continue
-					}
-					plannedAt, err := time.Parse(time.RFC3339Nano, entry.PlannedAt)
-					if err != nil {
-						continue
-					}
-					if entry.RunEarly || !plannedAt.After(now) {
-						return schedulerRetryInitialDelay
-					}
-					hasFuturePlan = true
-					if candidate := plannedAt.Sub(now); candidate < delay {
-						delay = candidate
-					}
-				}
-			}
+		if entry.Status != state.AutomationPlanEntryPending || (!task.Enabled && !entry.RunEarly) {
+			continue
+		}
+		if _, claimed := claimedEntries[executionID(project.ID, task.ID, entry.ID)]; claimed {
+			continue
+		}
+		plannedAt, err := time.Parse(time.RFC3339Nano, entry.PlannedAt)
+		if err != nil {
+			continue
+		}
+		if entry.RunEarly || !plannedAt.After(now) {
+			return schedulerRetryInitialDelay
+		}
+		hasFuturePlan = true
+		if candidate := plannedAt.Sub(now); candidate < delay {
+			delay = candidate
 		}
 	}
 
@@ -443,36 +734,51 @@ func boundedSchedulerError(err error) string {
 }
 
 func (runtime *Runtime) reconcileRecoveredAutomationExecutions(recoveredRuns []state.Run) error {
-	if len(recoveredRuns) == 0 {
-		return nil
+	recoveredByExecution := make(map[string]state.Run, len(recoveredRuns))
+	for _, run := range recoveredRuns {
+		if run.AutomationRunID != "" {
+			recoveredByExecution[run.AutomationRunID] = run
+		}
 	}
 
-	for _, run := range recoveredRuns {
-		if run.AutomationRunID == "" {
+	for _, execution := range runtime.store.Automation().Executions {
+		if execution.Status != state.AutomationExecutionRunning {
 			continue
 		}
-		for _, execution := range runtime.store.Automation().Executions {
-			if execution.ID != run.AutomationRunID ||
-				execution.Status != state.AutomationExecutionRunning ||
-				execution.ActiveRunID != run.ID {
+		if run, active := runtime.supervisor.FindAutomationRun(execution.ID); active {
+			if execution.ActiveRunID == run.ID {
 				continue
 			}
-
-			result := scriptResult(run)
-			reason := "Project Launch Service restarted while this scheduled task was running, so it was not resumed to avoid duplicate execution."
-			if result.Reason == "" {
-				result.Reason = reason
-			}
 			if _, err := runtime.store.UpdateAutomationExecution(execution.ID, func(current *state.AutomationExecution) {
-				current.CurrentScriptIndex++
-				current.ActiveRunID = ""
-				current.ScriptResults = append(current.ScriptResults, result)
-				current.Status = state.AutomationExecutionFailed
-				current.Reason = reason
-				current.EndedAt = time.Now().UTC().Format(time.RFC3339Nano)
+				current.ActiveRunID = run.ID
 			}); err != nil {
-				return fmt.Errorf("reconcile recovered automation execution %q: %w", execution.ID, err)
+				return fmt.Errorf("restore active run for automation execution %q: %w", execution.ID, err)
 			}
+			continue
+		}
+		if runtime.executionInFlight(execution.ID) {
+			continue
+		}
+
+		run, recovered := recoveredByExecution[execution.ID]
+		reason := "Project Launch Service restarted before this scheduled task could be safely resumed, so it was not resumed to avoid duplicate execution."
+		if recovered {
+			reason = "Project Launch Service restarted while this scheduled task was running, so it was stopped and not resumed to avoid duplicate execution."
+		}
+		if _, err := runtime.store.UpdateAutomationExecution(execution.ID, func(current *state.AutomationExecution) {
+			current.ActiveRunID = ""
+			if recovered {
+				result := scriptResult(run)
+				result.Status = state.AutomationScriptFailed
+				result.Reason = reason
+				current.CurrentScriptIndex++
+				current.ScriptResults = append(current.ScriptResults, result)
+			}
+			current.Status = state.AutomationExecutionFailed
+			current.Reason = reason
+			current.EndedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		}); err != nil {
+			return fmt.Errorf("reconcile recovered automation execution %q: %w", execution.ID, err)
 		}
 	}
 
@@ -483,7 +789,7 @@ func (runtime *Runtime) recordMissedExecution(
 	revision uint64,
 	project ProjectConfig,
 	task TaskConfig,
-	entry PlanEntry,
+	entry state.AutomationPlanEntry,
 	now time.Time,
 ) error {
 	_, _, err := runtime.store.ClaimAutomationExecution(revision, state.AutomationExecution{
@@ -509,6 +815,8 @@ func (runtime *Runtime) execute(
 	task TaskConfig,
 	scripts map[string]ScriptConfig,
 ) {
+	defer runtime.finishExecution(execution.ID)
+
 	for index, scriptID := range task.ScriptIDs {
 		script, found := scripts[scriptID]
 		if !found {
@@ -888,6 +1196,15 @@ func validateConfig(config Config) error {
 			if task.MaxScriptRuntimeMinutes < 0 {
 				return fmt.Errorf("automation task %q has a negative script runtime limit", task.ID)
 			}
+			if task.ScheduleAlgorithmVersion != ScheduleAlgorithmVersion {
+				return fmt.Errorf("automation task %q has unsupported schedule algorithm version %d", task.ID, task.ScheduleAlgorithmVersion)
+			}
+			if err := validateScheduleConfig(task.Schedule); err != nil {
+				return fmt.Errorf("automation task %q has invalid schedule: %w", task.ID, err)
+			}
+			if err := validateManualRunConfig(task.ManualRun); err != nil {
+				return fmt.Errorf("automation task %q has invalid manual run: %w", task.ID, err)
+			}
 			selectedScriptIDs := make(map[string]struct{}, len(task.ScriptIDs))
 			for _, scriptID := range task.ScriptIDs {
 				selectedScriptIDs[scriptID] = struct{}{}
@@ -933,6 +1250,215 @@ func validateConfig(config Config) error {
 	}
 
 	return nil
+}
+
+func validateScheduleConfig(schedule *ScheduleConfig) error {
+	if schedule == nil {
+		return errors.New("schedule is required")
+	}
+	if schedule.DailyCount < 1 || schedule.DailyCount > maxAutomationDailyEntries {
+		return fmt.Errorf("daily count must be between 1 and %d", maxAutomationDailyEntries)
+	}
+
+	switch schedule.Type {
+	case "fixed":
+		startMinutes, err := parseScheduleTime(schedule.StartTime)
+		if err != nil {
+			return fmt.Errorf("fixed start time: %w", err)
+		}
+		if schedule.IntervalMinutes < 1 {
+			return errors.New("fixed interval must be positive")
+		}
+		if schedule.DailyCount > 1 && schedule.IntervalMinutes > (minutesPerDay-1-startMinutes)/(schedule.DailyCount-1) {
+			return errors.New("fixed schedule exceeds the day")
+		}
+	case "random":
+		windowStart, err := parseScheduleTime(schedule.WindowStart)
+		if err != nil {
+			return fmt.Errorf("random window start: %w", err)
+		}
+		windowEnd, err := parseScheduleTime(schedule.WindowEnd)
+		if err != nil {
+			return fmt.Errorf("random window end: %w", err)
+		}
+		if windowEnd <= windowStart {
+			return errors.New("random window must have a positive span")
+		}
+		if schedule.MinIntervalMinutes < 0 || schedule.MaxIntervalMinutes < schedule.MinIntervalMinutes {
+			return errors.New("random interval bounds are invalid")
+		}
+		span := windowEnd - windowStart
+		if schedule.DailyCount > 1 && schedule.MinIntervalMinutes > span/(schedule.DailyCount-1) {
+			return errors.New("random window cannot contain the requested minimum interval")
+		}
+	default:
+		return fmt.Errorf("unsupported schedule type %q", schedule.Type)
+	}
+
+	return nil
+}
+
+func validateManualRunConfig(manualRun *ManualRunConfig) error {
+	if manualRun == nil {
+		return nil
+	}
+	if strings.TrimSpace(manualRun.ID) == "" {
+		return errors.New("id is required")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, manualRun.PlannedAt); err != nil {
+		return fmt.Errorf("planned time must use RFC3339: %w", err)
+	}
+	return nil
+}
+
+func parseScheduleTime(value string) (int, error) {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) != 2 || len(parts[0]) < 1 || len(parts[0]) > 2 || len(parts[1]) != 2 {
+		return 0, errors.New("must use HH:mm")
+	}
+	hours, hourErr := strconv.Atoi(parts[0])
+	minutes, minuteErr := strconv.Atoi(parts[1])
+	if hourErr != nil || minuteErr != nil || hours < 0 || hours > 23 || minutes < 0 || minutes > 59 {
+		return 0, errors.New("must be within one day")
+	}
+	return hours*60 + minutes, nil
+}
+
+func generateScheduleDailyPlan(task TaskConfig, date string) (state.AutomationPlan, error) {
+	if err := validateScheduleConfig(task.Schedule); err != nil {
+		return state.AutomationPlan{}, err
+	}
+	if task.ScheduleAlgorithmVersion != ScheduleAlgorithmVersion {
+		return state.AutomationPlan{}, fmt.Errorf("unsupported schedule algorithm version %d", task.ScheduleAlgorithmVersion)
+	}
+
+	minutes, err := scheduleMinutes(task.ID, date, *task.Schedule)
+	if err != nil {
+		return state.AutomationPlan{}, err
+	}
+	plan := state.AutomationPlan{
+		TaskID:  task.ID,
+		Date:    date,
+		Entries: make([]state.AutomationPlanEntry, 0, len(minutes)),
+	}
+	for index, minute := range minutes {
+		plannedAt, err := scheduledTimestamp(date, minute)
+		if err != nil {
+			return state.AutomationPlan{}, err
+		}
+		plan.Entries = append(plan.Entries, state.AutomationPlanEntry{
+			ID:        schedulePlanEntryID(task.ID, date, task.ScheduleAlgorithmVersion, index),
+			PlannedAt: plannedAt,
+			Status:    state.AutomationPlanEntryPending,
+			RunEarly:  task.RunEarlyEntryID == schedulePlanEntryID(task.ID, date, task.ScheduleAlgorithmVersion, index),
+		})
+	}
+	return plan, nil
+}
+
+func scheduleMinutes(taskID string, date string, schedule ScheduleConfig) ([]int, error) {
+	switch schedule.Type {
+	case "fixed":
+		startMinutes, err := parseScheduleTime(schedule.StartTime)
+		if err != nil {
+			return nil, err
+		}
+		minutes := make([]int, schedule.DailyCount)
+		for index := range minutes {
+			minutes[index] = startMinutes + index*schedule.IntervalMinutes
+		}
+		return minutes, nil
+	case "random":
+		return randomScheduleMinutes(taskID, date, schedule)
+	default:
+		return nil, fmt.Errorf("unsupported schedule type %q", schedule.Type)
+	}
+}
+
+func randomScheduleMinutes(taskID string, date string, schedule ScheduleConfig) ([]int, error) {
+	startMinutes, err := parseScheduleTime(schedule.WindowStart)
+	if err != nil {
+		return nil, err
+	}
+	endMinutes, err := parseScheduleTime(schedule.WindowEnd)
+	if err != nil {
+		return nil, err
+	}
+	if schedule.DailyCount == 1 {
+		random := seededScheduleRandom(taskID + ":" + date + ":0")
+		return []int{startMinutes + int(random()*float64(maxInt(1, endMinutes-startMinutes+1)))}, nil
+	}
+
+	random := seededScheduleRandom(fmt.Sprintf("%s:%s:%d", taskID, date, schedule.DailyCount))
+	span := endMinutes - startMinutes
+	maximumInterval := minInt(schedule.MaxIntervalMinutes, span)
+	minimumTotalGap := (schedule.DailyCount - 1) * schedule.MinIntervalMinutes
+	maximumTotalGap := (schedule.DailyCount - 1) * maximumInterval
+	totalGap := minimumTotalGap + int(random()*float64(minInt(maximumTotalGap, span)-minimumTotalGap+1))
+	remainingExtra := totalGap - minimumTotalGap
+	intervalRange := maximumInterval - schedule.MinIntervalMinutes
+	gaps := make([]int, 0, schedule.DailyCount-1)
+	for index := 0; index < schedule.DailyCount-1; index++ {
+		remainingGaps := schedule.DailyCount - 1 - index
+		maximumExtraForGap := minInt(intervalRange, remainingExtra)
+		reservedExtra := maxInt(0, remainingExtra-(remainingGaps-1)*intervalRange)
+		extra := reservedExtra + int(random()*float64(maximumExtraForGap-reservedExtra+1))
+		gaps = append(gaps, schedule.MinIntervalMinutes+extra)
+		remainingExtra -= extra
+	}
+
+	minutes := make([]int, 0, schedule.DailyCount)
+	minutes = append(minutes, startMinutes+int(random()*float64(span-totalGap+1)))
+	for _, gap := range gaps {
+		minutes = append(minutes, minutes[len(minutes)-1]+gap)
+	}
+	return minutes, nil
+}
+
+func scheduledTimestamp(date string, minutes int) (string, error) {
+	day, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return "", fmt.Errorf("parse schedule date: %w", err)
+	}
+	if minutes < 0 || minutes >= minutesPerDay {
+		return "", errors.New("schedule minute is outside one day")
+	}
+	plannedAt := time.Date(day.Year(), day.Month(), day.Day(), minutes/60, minutes%60, 0, 0, time.Local)
+	return plannedAt.UTC().Format("2006-01-02T15:04:05.000Z"), nil
+}
+
+func schedulePlanEntryID(taskID string, date string, algorithmVersion int, index int) string {
+	return fmt.Sprintf("%s:%s:v%d:%d", taskID, date, algorithmVersion, index)
+}
+
+func seededScheduleRandom(seed string) func() float64 {
+	hash := uint32(2166136261)
+	for _, character := range utf16.Encode([]rune(seed)) {
+		hash ^= uint32(character)
+		hash *= 16777619
+	}
+
+	return func() float64 {
+		hash += 0x6d2b79f5
+		value := hash
+		value = (value ^ (value >> 15)) * (value | 1)
+		value ^= value + (value^(value>>7))*(value|61)
+		return float64(value^(value>>14)) / 4294967296
+	}
+}
+
+func minInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func maxInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func shouldMarkMissed(task TaskConfig, plannedAt time.Time, now time.Time) bool {

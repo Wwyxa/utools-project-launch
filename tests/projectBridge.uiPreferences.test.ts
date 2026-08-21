@@ -485,6 +485,151 @@ describe("browser UI preferences fallback", () => {
     expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
   });
 
+  it("sends a schedule-driven schema v1 automation configuration", async () => {
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 0,
+    };
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
+      async (config) => ({ accepted: true, revision: config.revision }),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      reconcileProjectLaunchService: async () => healthyStatus,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [
+      {
+        id: "legacy-schema-project",
+        name: "Legacy schema project",
+        path: "/workspace/legacy-schema-project",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.STOPPED,
+        scripts: [{ id: "legacy-schema-script", name: "dev", command: "echo legacy", status: "IDLE" }],
+        automationTasks: [
+          {
+            id: "legacy-schema-task",
+            name: "Legacy schema task",
+            enabled: true,
+            scriptIds: ["legacy-schema-script"],
+            schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+            missedPolicy: "grace-run",
+            missedGraceMinutes: 5,
+            notifyEnabled: false,
+            maxScriptRuntimeMinutes: 30,
+            inputConfigs: [],
+            exitConfigs: [],
+            dailyPlans: [
+              {
+                date: dateKey(),
+                entries: [{ id: "legacy-schema-entry", plannedAt: new Date().toISOString(), status: "pending" }],
+              },
+            ],
+            history: [],
+            createdAt: "2026-08-13T00:00:00.000Z",
+            updatedAt: "2026-08-13T00:00:00.000Z",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    await store.synchronizeProjectLaunchServiceAutomation();
+
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
+      expect.objectContaining({ schemaVersion: 1, revision: 1 }),
+    );
+    const task = syncProjectLaunchServiceAutomation.mock.calls[0]?.[0]?.projects[0]?.automationTasks[0];
+    expect(task).toMatchObject({
+      schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+      scheduleAlgorithmVersion: 1,
+    });
+    expect(task).not.toHaveProperty("dailyPlans");
+  });
+
+  it("includes a service manual run in the schema v1 payload", async () => {
+    const healthyStatus: ProjectLaunchServiceStatus = {
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      automationRevision: 0,
+    };
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
+      async (config) => ({ accepted: true, revision: config.revision }),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      reconcileProjectLaunchService: async () => healthyStatus,
+      syncProjectLaunchServiceAutomation,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project: Project = {
+      id: "legacy-manual-project",
+      name: "Legacy manual project",
+      path: "/workspace/legacy-manual-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [{ id: "legacy-manual-script", name: "dev", command: "echo legacy", status: "IDLE" }],
+      automationTasks: [
+        {
+          id: "legacy-manual-task",
+          name: "Legacy manual task",
+          enabled: false,
+          scriptIds: ["legacy-manual-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
+          missedGraceMinutes: 5,
+          notifyEnabled: false,
+          maxScriptRuntimeMinutes: 30,
+          inputConfigs: [],
+          exitConfigs: [],
+          dailyPlans: [],
+          history: [],
+          createdAt: "2026-08-15T00:00:00.000Z",
+          updatedAt: "2026-08-15T00:00:00.000Z",
+        },
+      ],
+      env: {},
+    };
+    window.projectBridge.reconcileProjectLaunchService = async () => healthyStatus;
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [project];
+
+    await expect(store.runAutomationTaskNow(project.id, "legacy-manual-task")).resolves.toBe(true);
+
+    const config = syncProjectLaunchServiceAutomation.mock.calls[0]?.[0];
+    expect(config?.schemaVersion).toBe(1);
+    if (!config || config.schemaVersion !== 1) {
+      throw new Error("expected a schema v1 automation configuration");
+    }
+    const task = config.projects[0]?.automationTasks[0];
+    expect(task?.manualRun).toMatchObject({ id: expect.any(String), plannedAt: expect.any(String) });
+    expect(task).not.toHaveProperty("dailyPlans");
+  });
+
   it("verifies an installed executable before enabling service mode", async () => {
     const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
     const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge["verifyProjectLaunchServiceInstall"]>();
@@ -774,20 +919,15 @@ describe("browser UI preferences fallback", () => {
       }).ok,
     ).toBe(true);
 
-    await vi.waitFor(() => {
-      expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          schemaVersion: 1,
-          revision: 1,
-          projects: [
-            expect.objectContaining({
-              id: "service-project",
-              automationTasks: [expect.objectContaining({ id: expect.any(String) })],
-            }),
-          ],
-        }),
-      );
+    await vi.waitFor(() => expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(1));
+    const taskConfig = syncProjectLaunchServiceAutomation.mock.calls[0]?.[0]?.projects[0]?.automationTasks[0];
+    expect(taskConfig).toMatchObject({
+      id: expect.any(String),
+      scheduleAlgorithmVersion: 1,
+      schedule: expect.objectContaining({ type: "fixed" }),
     });
+    expect(taskConfig).not.toHaveProperty("dailyPlans");
+    expect(store.projects[0]?.automationTasks?.[0]?.dailyPlans).toEqual([]);
   });
 
   it("blocks manual automation while the enabled Project Launch Service is unavailable", async () => {
@@ -855,7 +995,8 @@ describe("browser UI preferences fallback", () => {
     ).resolves.toBe(false);
 
     const task = store.projects[0]?.automationTasks?.[0];
-    expect(reconcileProjectLaunchService).toHaveBeenCalledTimes(2);
+    expect(reconcileProjectLaunchService).toHaveBeenCalledOnce();
+    expect(store.serviceAutomationTaskEntries(project.id, "unavailable-service-task")).toEqual([]);
     expect(task?.dailyPlans).toEqual([
       {
         date: dateKey(),
@@ -934,7 +1075,7 @@ describe("browser UI preferences fallback", () => {
 
     const entry = store.projects[0]?.automationTasks?.[0]?.dailyPlans[0]?.entries[0];
     expect(entry).toEqual({ id: "rejected-service-entry", plannedAt: futureAt, status: "pending" });
-    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(2);
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledOnce();
     expect(store.projectLaunchServiceStatus).toMatchObject({
       state: "unavailable",
       message: "service rejected manual automation",
@@ -1003,6 +1144,14 @@ describe("browser UI preferences fallback", () => {
     await expect(store.runAutomationTaskNow(project.id, "pending-service-automation-task")).resolves.toBe(false);
     await expect(firstSubmission).resolves.toBe(true);
     expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(1);
+    const config = syncProjectLaunchServiceAutomation.mock.calls[0]?.[0];
+    if (!config || config.schemaVersion !== 1) {
+      throw new Error("expected a schema v1 automation configuration");
+    }
+    expect(config.projects[0]?.automationTasks[0]?.manualRun).toMatchObject({
+      id: expect.any(String),
+      plannedAt: expect.any(String),
+    });
   });
 
   it("keeps the original plan time when submitting a service automation entry early", async () => {
@@ -1065,6 +1214,20 @@ describe("browser UI preferences fallback", () => {
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [project];
+    store.projectLaunchServiceStatus = {
+      ...healthyStatus,
+      automation: {
+        revision: 0,
+        upcoming: [
+          {
+            projectId: project.id,
+            taskId: "early-service-automation-task",
+            planEntryId: "early-service-entry",
+            plannedAt: futureAt,
+          },
+        ],
+      },
+    };
 
     await expect(
       store.runAutomationPlanEntryEarly(project.id, "early-service-automation-task", "early-service-entry"),
@@ -1074,17 +1237,12 @@ describe("browser UI preferences fallback", () => {
     expect(entry?.plannedAt).toBe(futureAt);
     expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
       expect.objectContaining({
+        schemaVersion: 1,
         projects: [
           expect.objectContaining({
             automationTasks: [
               expect.objectContaining({
-                dailyPlans: [
-                  expect.objectContaining({
-                    entries: [
-                      expect.objectContaining({ id: "early-service-entry", plannedAt: futureAt, runEarly: true }),
-                    ],
-                  }),
-                ],
+                runEarlyEntryId: "early-service-entry",
               }),
             ],
           }),
@@ -3242,6 +3400,7 @@ describe("store startup timing", () => {
       projectId: "automation-project",
       taskId: "automation-task",
       planEntryId: "automation-entry",
+      plannedAt: "2026-08-15T09:00:00.000Z",
       currentScriptIndex: 0,
       startedAt: "2026-08-15T09:00:01.000Z",
       scriptResults: [],
@@ -3251,7 +3410,18 @@ describe("store startup timing", () => {
       type: "service-state",
       status: {
         ...baseStatus,
-        automation: { revision: 4, executions: [{ ...execution, status: "running" }] },
+        automation: {
+          revision: 4,
+          upcoming: [
+            {
+              projectId: "automation-project",
+              taskId: "automation-task",
+              planEntryId: "service-upcoming-entry",
+              plannedAt: "2026-08-16T09:00:00.000Z",
+            },
+          ],
+          executions: [{ ...execution, status: "running" }],
+        },
       },
     });
 
@@ -3260,6 +3430,12 @@ describe("store startup timing", () => {
       runId: "automation-run",
     });
     expect(store.automationActiveProjectRuns["automation-project"]).toBe("automation-run");
+    expect(store.serviceAutomationTaskEntries("automation-project", "automation-task")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "automation-entry", status: "running" }),
+        expect.objectContaining({ id: "service-upcoming-entry", status: "pending" }),
+      ]),
+    );
 
     store.handleBridgeEvent({
       type: "service-state",

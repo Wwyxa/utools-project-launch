@@ -171,7 +171,7 @@ let runtimeReconciliationPromise: Promise<void> | null = null;
 let projectLaunchServiceAutomationRevision = 0;
 let projectLaunchServiceAutomationSyncPromise: Promise<void> | null = null;
 let projectLaunchServiceOwnershipHandoff = false;
-type ServiceAutomationSubmission = { entryId: string };
+type ServiceAutomationSubmission = { taskId: string; entryId: string; manualPlannedAt?: string };
 const serviceAutomationSubmissions = new Map<string, ServiceAutomationSubmission>();
 const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
 const gitStatusRefreshPromises = new Map<string, Promise<void>>();
@@ -187,17 +187,22 @@ const gitWorkspaceRefreshTokens = new Map<string, symbol>();
 const gitMutationVersions = new Map<string, number>();
 const gitRefMutationVersions = new Map<string, number>();
 
-function beginServiceAutomationSubmission(projectId: string) {
+function beginServiceAutomationSubmission(projectId: string, taskId: string) {
   if (serviceAutomationSubmissions.has(projectId)) {
     return false;
   }
-  serviceAutomationSubmissions.set(projectId, { entryId: "" });
+  serviceAutomationSubmissions.set(projectId, { taskId, entryId: "" });
   return true;
 }
 
-function updateServiceAutomationSubmission(projectId: string, entryId: string) {
-  if (serviceAutomationSubmissions.has(projectId)) {
-    serviceAutomationSubmissions.set(projectId, { entryId });
+function updateServiceAutomationSubmission(projectId: string, entryId: string, manualPlannedAt?: string) {
+  const submission = serviceAutomationSubmissions.get(projectId);
+  if (submission) {
+    serviceAutomationSubmissions.set(projectId, {
+      taskId: submission.taskId,
+      entryId,
+      ...(manualPlannedAt ? { manualPlannedAt } : {}),
+    });
   }
 }
 
@@ -912,44 +917,56 @@ function buildProjectLaunchServiceAutomationConfig(
   projects: Project[],
   revision: number,
 ): ProjectLaunchServiceAutomationConfig {
+  const projectConfigs = projects.map((project) => ({
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    env: { ...project.env },
+    scripts: project.scripts.map((script) => ({
+      id: script.id,
+      name: script.name,
+      command: script.command,
+      cwd: resolveScriptCwd(project.path, script.cwd),
+    })),
+    tasks: normalizeAutomationTasks(project.id, project.automationTasks),
+  }));
+
   return {
     schemaVersion: 1,
     revision,
-    projects: projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-      path: project.path,
-      env: { ...project.env },
-      scripts: project.scripts.map((script) => ({
-        id: script.id,
-        name: script.name,
-        command: script.command,
-        cwd: resolveScriptCwd(project.path, script.cwd),
-      })),
-      automationTasks: normalizeAutomationTasks(project.id, project.automationTasks).map((task) => ({
-        id: task.id,
-        name: task.name,
-        enabled: task.enabled,
-        scriptIds: [...task.scriptIds],
-        continuousScriptIds: [...(task.continuousScriptIds || [])],
-        missedPolicy: task.missedPolicy,
-        missedGraceMinutes: task.missedGraceMinutes,
-        maxScriptRuntimeMinutes: task.maxScriptRuntimeMinutes,
-        inputConfigs: task.inputConfigs.map((config) => ({
-          scriptId: config.scriptId,
-          steps: config.steps.map((step) => ({ ...step })),
-        })),
-        exitConfigs: task.exitConfigs.map((config) => ({ ...config })),
-        dailyPlans: task.dailyPlans.map((plan) => ({
-          date: plan.date,
-          entries: plan.entries.map((entry) => ({
-            id: entry.id,
-            plannedAt: new Date(entry.plannedAt).toISOString(),
-            status: entry.status,
-            ...(serviceAutomationSubmissions.get(project.id)?.entryId === entry.id ? { runEarly: true } : {}),
+    projects: projectConfigs.map(({ tasks, ...project }) => ({
+      ...project,
+      automationTasks: tasks.map((task) => {
+        const submission = serviceAutomationSubmissions.get(project.id);
+        const taskSubmission = submission?.taskId === task.id ? submission : undefined;
+        return {
+          id: task.id,
+          name: task.name,
+          enabled: task.enabled,
+          scriptIds: [...task.scriptIds],
+          continuousScriptIds: [...(task.continuousScriptIds || [])],
+          schedule: { ...task.schedule },
+          scheduleAlgorithmVersion: 1,
+          ...(taskSubmission?.entryId && taskSubmission.manualPlannedAt
+            ? {
+                manualRun: {
+                  id: taskSubmission.entryId,
+                  plannedAt: taskSubmission.manualPlannedAt,
+                },
+              }
+            : taskSubmission?.entryId
+              ? { runEarlyEntryId: taskSubmission.entryId }
+              : {}),
+          missedPolicy: task.missedPolicy,
+          missedGraceMinutes: task.missedGraceMinutes,
+          maxScriptRuntimeMinutes: task.maxScriptRuntimeMinutes,
+          inputConfigs: task.inputConfigs.map((config) => ({
+            scriptId: config.scriptId,
+            steps: config.steps.map((step) => ({ ...step })),
           })),
-        })),
-      })),
+          exitConfigs: task.exitConfigs.map((config) => ({ ...config })),
+        };
+      }),
     })),
   };
 }
@@ -1690,6 +1707,47 @@ export const useStore = defineStore("app", {
             script.runtimeOwner === "service" && (script.status === "RUNNING" || script.status === "STOPPING"),
         ),
       ),
+    serviceAutomationTaskEntries:
+      (state) =>
+      (projectId: string, taskId: string): ProjectAutomationPlanEntry[] | null => {
+        if (!state.projectLaunchServicePreferences.enabled) {
+          return null;
+        }
+        const automation = state.projectLaunchServiceStatus?.automation;
+        if (
+          state.projectLaunchServiceStatus?.state !== "healthy" ||
+          !state.projectLaunchServiceStatus.running ||
+          !automation
+        ) {
+          return [];
+        }
+
+        const entries = new Map<string, ProjectAutomationPlanEntry>();
+        for (const entry of automation.upcoming || []) {
+          if (entry.projectId === projectId && entry.taskId === taskId) {
+            entries.set(entry.planEntryId, {
+              id: entry.planEntryId,
+              plannedAt: entry.plannedAt,
+              status: "pending",
+            });
+          }
+        }
+        for (const execution of automation.executions || []) {
+          if (execution.projectId !== projectId || execution.taskId !== taskId || !execution.plannedAt) {
+            continue;
+          }
+          entries.set(execution.planEntryId, {
+            id: execution.planEntryId,
+            plannedAt: execution.plannedAt,
+            status: execution.status,
+            runId: execution.id,
+            reason: execution.reason,
+          });
+        }
+        return [...entries.values()].sort(
+          (left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime(),
+        );
+      },
     currentMessages: (state) => (state.locale === "zh-CN" ? "zh-CN" : "en-US"),
   },
 
@@ -1831,7 +1889,8 @@ export const useStore = defineStore("app", {
         if (!execution.id || !execution.projectId || !execution.taskId || !execution.planEntryId) {
           continue;
         }
-        if (serviceAutomationSubmissions.get(execution.projectId)?.entryId === execution.planEntryId) {
+        const submission = serviceAutomationSubmissions.get(execution.projectId);
+        if (submission?.taskId === execution.taskId && submission.entryId === execution.planEntryId) {
           releaseServiceAutomationSubmission(execution.projectId);
         }
         if (execution.status === "running") {
@@ -1842,13 +1901,15 @@ export const useStore = defineStore("app", {
         const entry = task?.dailyPlans
           .flatMap((plan) => plan.entries)
           .find((item) => item.id === execution.planEntryId);
-        if (!project || !task || !entry) {
+        if (!project || !task) {
           continue;
         }
 
-        entry.status = execution.status;
-        entry.runId = execution.id;
-        entry.reason = execution.reason || undefined;
+        if (entry) {
+          entry.status = execution.status;
+          entry.runId = execution.id;
+          entry.reason = execution.reason || undefined;
+        }
         if (execution.status === "running") {
           this.automationActiveProjectRuns[project.id] = execution.id;
           task.updatedAt = execution.startedAt || task.updatedAt;
@@ -1858,13 +1919,17 @@ export const useStore = defineStore("app", {
         if (this.automationActiveProjectRuns[project.id] === execution.id) {
           delete this.automationActiveProjectRuns[project.id];
         }
+        const plannedAt = execution.plannedAt || entry?.plannedAt;
+        if (!plannedAt) {
+          continue;
+        }
         const historyEntry: ProjectAutomationHistoryEntry = {
           id: execution.id,
           taskId: task.id,
           taskName: task.name,
           projectId: project.id,
           projectName: project.name,
-          plannedAt: entry.plannedAt,
+          plannedAt,
           startedAt: execution.startedAt,
           endedAt: execution.endedAt,
           status: execution.status,
@@ -4655,7 +4720,11 @@ export const useStore = defineStore("app", {
     },
     scheduleAutomationTimer() {
       clearAutomationSchedulerTimer();
-      if (projectLaunchServiceOwnershipHandoff || this.projectLaunchServicePreferences.enabled) {
+      if (projectLaunchServiceOwnershipHandoff) {
+        this.automationNextTimerAt = "";
+        return;
+      }
+      if (this.projectLaunchServicePreferences.enabled) {
         this.automationNextTimerAt = "";
         return;
       }
@@ -4977,7 +5046,7 @@ export const useStore = defineStore("app", {
       void this.persistProjects();
     },
     recomputeAutomationPlans(projectId?: string) {
-      if (projectLaunchServiceOwnershipHandoff) {
+      if (projectLaunchServiceOwnershipHandoff || this.projectLaunchServicePreferences.enabled) {
         return;
       }
       const today = dateKey();
@@ -4995,6 +5064,8 @@ export const useStore = defineStore("app", {
           });
         });
       if (this.projectLaunchServicePreferences.enabled) {
+        void this.synchronizeProjectLaunchServiceAutomationForUserAction();
+        this.scheduleAutomationTimer();
         void this.persistProjects();
         return;
       }
@@ -5032,7 +5103,9 @@ export const useStore = defineStore("app", {
       if (!validation.valid) {
         return { ok: false, message: validation.message };
       }
-      task.dailyPlans = [generateAutomationDailyPlan(task.id, task.schedule, dateKey())];
+      if (!this.projectLaunchServicePreferences.enabled) {
+        task.dailyPlans = [generateAutomationDailyPlan(task.id, task.schedule, dateKey())];
+      }
       project.automationTasks = [task, ...(project.automationTasks || [])];
       project.updatedAt = now;
       this.scheduleAutomationTimer();
@@ -5070,7 +5143,9 @@ export const useStore = defineStore("app", {
         return { ok: false, message: validation.message };
       }
 
-      task.dailyPlans = [generateAutomationDailyPlan(task.id, task.schedule, dateKey())];
+      if (!this.projectLaunchServicePreferences.enabled) {
+        task.dailyPlans = [generateAutomationDailyPlan(task.id, task.schedule, dateKey())];
+      }
       const sourceIndex = (project.automationTasks || []).findIndex((item) => item.id === taskId);
       project.automationTasks = [
         ...(project.automationTasks || []).slice(0, sourceIndex + 1),
@@ -5100,7 +5175,9 @@ export const useStore = defineStore("app", {
       if (!validation.valid) {
         return { ok: false, message: validation.message };
       }
-      if (patch.schedule || !nextTask.dailyPlans.some((plan) => plan.date === dateKey())) {
+      if (this.projectLaunchServicePreferences.enabled) {
+        nextTask.dailyPlans = [];
+      } else if (patch.schedule || !nextTask.dailyPlans.some((plan) => plan.date === dateKey())) {
         nextTask.dailyPlans = [generateAutomationDailyPlan(nextTask.id, nextTask.schedule, dateKey())];
       }
       Object.assign(task, nextTask);
@@ -5287,11 +5364,14 @@ export const useStore = defineStore("app", {
     async runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const task = project?.automationTasks?.find((item) => item.id === taskId);
-      const entry = task?.dailyPlans
+      const serviceEnabled = this.projectLaunchServicePreferences.enabled;
+      const localEntry = task?.dailyPlans
         .find((plan) => plan.date === dateKey())
         ?.entries.find((item) => item.id === entryId);
+      const entry = serviceEnabled
+        ? this.serviceAutomationTaskEntries(projectId, taskId)?.find((item) => item.id === entryId)
+        : localEntry;
       const plannedAtTime = entry ? new Date(entry.plannedAt).getTime() : Number.NaN;
-      const serviceEnabled = this.projectLaunchServicePreferences.enabled;
       if (
         !project ||
         !task ||
@@ -5308,7 +5388,7 @@ export const useStore = defineStore("app", {
       }
 
       if (serviceEnabled) {
-        if (!beginServiceAutomationSubmission(projectId)) {
+        if (!beginServiceAutomationSubmission(projectId, task.id)) {
           return false;
         }
         let accepted = false;
@@ -5318,11 +5398,8 @@ export const useStore = defineStore("app", {
           if (status.state !== "healthy" || !status.running) {
             return false;
           }
-          const previousReason = entry.reason;
-          entry.reason = "手动提前执行。";
           updateServiceAutomationSubmission(projectId, entry.id);
           if (!(await this.synchronizeProjectLaunchServiceAutomationForUserAction())) {
-            entry.reason = previousReason;
             return false;
           }
           accepted = true;
@@ -5353,7 +5430,7 @@ export const useStore = defineStore("app", {
         return false;
       }
 
-      if (serviceEnabled && !beginServiceAutomationSubmission(projectId)) {
+      if (serviceEnabled && !beginServiceAutomationSubmission(projectId, task.id)) {
         return false;
       }
       let acceptedServiceSubmission = false;
@@ -5364,6 +5441,13 @@ export const useStore = defineStore("app", {
           if (status.state !== "healthy" || !status.running) {
             return false;
           }
+          const plannedAt = new Date().toISOString();
+          updateServiceAutomationSubmission(projectId, `${task.id}-${plannedAt}-manual`, plannedAt);
+          if (!(await this.synchronizeProjectLaunchServiceAutomationForUserAction())) {
+            return false;
+          }
+          acceptedServiceSubmission = true;
+          return true;
         }
 
         const now = new Date();
@@ -5385,19 +5469,6 @@ export const useStore = defineStore("app", {
         todayPlan.entries = [...todayPlan.entries, manualEntry].sort(
           (left, right) => new Date(left.plannedAt).getTime() - new Date(right.plannedAt).getTime(),
         );
-        if (serviceEnabled) {
-          updateServiceAutomationSubmission(projectId, manualEntry.id);
-          if (!(await this.synchronizeProjectLaunchServiceAutomationForUserAction())) {
-            todayPlan.entries = todayPlan.entries.filter((entry) => entry.id !== manualEntry.id);
-            if (createdTodayPlan) {
-              task.dailyPlans = task.dailyPlans.filter((plan) => plan !== todayPlan);
-            }
-            return false;
-          }
-          acceptedServiceSubmission = true;
-          void this.persistProjects(false);
-          return true;
-        }
         void this.runAutomationTask(projectId, taskId, manualEntry.id);
         return true;
       } finally {

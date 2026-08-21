@@ -379,7 +379,8 @@ const sortedAutomationHistory = (history: ProjectAutomationHistoryEntry[]) =>
 const automationTasks = computed(() =>
   store.visibleProjects.flatMap((project) =>
     (project.automationTasks || []).map((task) => {
-      const entries = task.dailyPlans.flatMap((plan) => plan.entries);
+      const entries =
+        store.serviceAutomationTaskEntries(project.id, task.id) ?? task.dailyPlans.flatMap((plan) => plan.entries);
       const runningEntry = entries.find((entry) => entry.status === "running") || null;
       return {
         project,
