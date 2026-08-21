@@ -1694,16 +1694,16 @@ describe("Project Launch Service preload installation", () => {
         };
         request.end = () => {
           const payload =
-            options.path === "/v1/health"
+            options.path === "/v1/sync?after=0"
               ? {
-                  protocolVersion: 2,
-                  serviceVersion: "test",
-                  instanceId: "existing-service",
-                  pid: process.pid,
-                  processIdentity: "test-process",
-                }
-              : options.path === "/v1/state"
-                ? {
+                  health: {
+                    protocolVersion: 2,
+                    serviceVersion: "test",
+                    instanceId: "existing-service",
+                    pid: process.pid,
+                    processIdentity: "test-process",
+                  },
+                  state: {
                     runs: [],
                     latestCursor: 0,
                     earliestCursor: 0,
@@ -1721,19 +1721,28 @@ describe("Project Launch Service preload installation", () => {
                         },
                       ],
                     },
+                  },
+                  events: {
+                    events: [],
+                    latestCursor: 0,
+                    earliestCursor: 0,
+                    truncated: false,
+                    nextCursor: 0,
+                    hasMore: false,
+                  },
+                }
+              : options.path === `/v1/runs/${runID}/log?before=0`
+                ? {
+                    runId: runID,
+                    events: null,
+                    truncated: false,
+                    sizeBytes: 0,
+                    hasMore: false,
+                    nextOffset: 0,
                   }
-                : options.path === `/v1/runs/${runID}/log?before=0`
-                  ? {
-                      runId: runID,
-                      events: null,
-                      truncated: false,
-                      sizeBytes: 0,
-                      hasMore: false,
-                      nextOffset: 0,
-                    }
-                  : options.path === "/v1/logs/clear"
-                    ? { deletedCount: 1, releasedBytes: 128 }
-                    : null;
+                : options.path === "/v1/logs/clear"
+                  ? { deletedCount: 1, releasedBytes: 128 }
+                  : null;
           const response = new EventEmitter() as EventEmitter & { statusCode: number };
           response.statusCode = payload ? 200 : 404;
           queueMicrotask(() => {
@@ -1789,8 +1798,6 @@ describe("Project Launch Service preload installation", () => {
       });
       expect(requestedPaths).toEqual([
         "/v1/sync?after=0",
-        "/v1/health",
-        "/v1/state",
         `/v1/runs/${runID}/log?before=0`,
         "/v1/logs/clear",
         "/v1/logs/clear",

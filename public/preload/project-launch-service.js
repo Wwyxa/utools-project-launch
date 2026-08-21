@@ -852,9 +852,6 @@ async function requestProjectLaunchServiceSync(connection, after) {
     undefined,
     { maxResponseBytes: projectLaunchServiceSyncResponseLimitBytes },
   );
-  if (response.statusCode === 404) {
-    return null;
-  }
   if (response.statusCode !== 200) {
     throw projectLaunchServiceResponseError(response, "项目启动服务同步失败。");
   }
