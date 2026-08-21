@@ -2,7 +2,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { ChevronDown, RefreshCw } from "lucide-vue-next";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
-import { cn } from "../../lib/utils";
+import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
+import { cn, scrollToBoundary } from "../../lib/utils";
 
 export type ActionStatusState = "idle" | "loading" | "success" | "warning" | "error";
 export type ActionStatusEntry = { timestamp: string; message: string };
@@ -30,6 +31,7 @@ const emit = defineEmits<{
 
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const panelRef = ref<HTMLElement | null>(null);
+const entriesScrollRef = ref<HTMLElement | null>(null);
 const panelPosition = ref<FloatingPosition>({
   left: 8,
   top: 8,
@@ -89,6 +91,12 @@ const updatePanelPosition = async () => {
   await nextTick();
   await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
   positionPanelFromLayout();
+};
+
+const scrollEntriesToBottom = async () => {
+  await nextTick();
+  const scrollElement = getOverlayScrollbarScrollElements(entriesScrollRef.value)?.scrollOffsetElement;
+  if (scrollElement) scrollToBoundary(scrollElement, "bottom");
 };
 
 const toggleExpanded = () => {
@@ -159,7 +167,18 @@ watch(
 watch(
   () => props.expanded,
   (expanded) => {
-    if (expanded) void updatePanelPosition();
+    if (expanded) {
+      void updatePanelPosition();
+      void scrollEntriesToBottom();
+    }
+  },
+  { flush: "post" },
+);
+
+watch(
+  () => props.entries,
+  () => {
+    if (props.expanded) void scrollEntriesToBottom();
   },
   { flush: "post" },
 );
@@ -213,6 +232,7 @@ watch(
         @click.stop
       >
         <div
+          ref="entriesScrollRef"
           v-overlay-scrollbar
           class="themed-scrollbar max-h-32 overscroll-contain overflow-y-auto px-2 py-1.5 font-mono text-[9px] leading-4"
           aria-live="polite"
