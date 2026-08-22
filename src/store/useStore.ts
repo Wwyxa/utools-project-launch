@@ -107,6 +107,7 @@ import type {
   ProjectScriptDiscoverySource,
   ProjectScriptFormValue,
   TodoItem,
+  TinyCardActionTrigger,
 } from "../types";
 
 const bridge = getProjectBridge();
@@ -830,9 +831,7 @@ function normalizeAutomationTasks(projectId: string, value: unknown): ProjectAut
                 (id): id is string => typeof id === "string" && Boolean(id.trim()),
               ),
             ),
-          ].slice(
-            -AUTOMATION_HISTORY_LIMIT,
-          )
+          ].slice(-AUTOMATION_HISTORY_LIMIT)
         : [],
       createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : now,
       updatedAt: typeof candidate.updatedAt === "string" ? candidate.updatedAt : now,
@@ -2330,6 +2329,16 @@ export const useStore = defineStore("app", {
         return;
       }
       this.uiPreferences = nextPreferences;
+      bridge.saveUiPreferences(this.uiPreferences);
+    },
+    setTinyCardActionTrigger(trigger: TinyCardActionTrigger) {
+      if (this.uiPreferences.dashboard.tinyCardActionTrigger === trigger) {
+        return;
+      }
+      this.uiPreferences = normalizeUiPreferences({
+        ...this.uiPreferences,
+        dashboard: { tinyCardActionTrigger: trigger },
+      });
       bridge.saveUiPreferences(this.uiPreferences);
     },
     acknowledgeProjectDetailsTabReorderHint(version: number) {

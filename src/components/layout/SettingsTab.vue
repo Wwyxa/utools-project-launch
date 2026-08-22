@@ -9,9 +9,11 @@ import {
   FolderOpen,
   Github,
   Info,
+  Menu,
   Monitor,
   MonitorCog,
   Moon,
+  MousePointer2,
   RefreshCw,
   Plus,
   RotateCcw,
@@ -754,6 +756,31 @@ watch(
               <button type="button" @click="store.setTheme('auto')" :class="segmentButtonClass(store.theme === 'auto')">
                 <Monitor :size="16" />
                 {{ t.common.themeAuto }}
+              </button>
+            </div>
+          </div>
+          <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
+            <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.tinyCardActionTrigger }}</div>
+            <div
+              class="inline-flex max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
+              role="group"
+              :aria-label="t.settings.tinyCardActionTrigger"
+            >
+              <button
+                type="button"
+                @click="store.setTinyCardActionTrigger('hover')"
+                :class="segmentButtonClass(store.uiPreferences.dashboard.tinyCardActionTrigger === 'hover')"
+              >
+                <MousePointer2 :size="16" />
+                {{ t.settings.tinyCardActionTriggerHover }}
+              </button>
+              <button
+                type="button"
+                @click="store.setTinyCardActionTrigger('contextmenu')"
+                :class="segmentButtonClass(store.uiPreferences.dashboard.tinyCardActionTrigger === 'contextmenu')"
+              >
+                <Menu :size="16" />
+                {{ t.settings.tinyCardActionTriggerContextMenu }}
               </button>
             </div>
           </div>

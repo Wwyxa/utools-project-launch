@@ -129,6 +129,7 @@ function getDefaultUiPreferences() {
   return {
     schemaVersion: 1,
     projectDetails: { tabOrder: [...projectDetailsTabIds] },
+    dashboard: { tinyCardActionTrigger: "hover" },
     coachMarks: { projectDetailsTabReorder: 0 },
   };
 }
@@ -141,9 +142,11 @@ function normalizeProjectDetailsTabOrder(value) {
 function normalizeUiPreferences(value) {
   if (!value || typeof value !== "object" || value.schemaVersion !== 1) return getDefaultUiPreferences();
   const coachMarkVersion = value.coachMarks?.projectDetailsTabReorder;
+  const tinyCardActionTrigger = value.dashboard?.tinyCardActionTrigger;
   return {
     schemaVersion: 1,
     projectDetails: { tabOrder: normalizeProjectDetailsTabOrder(value.projectDetails?.tabOrder) },
+    dashboard: { tinyCardActionTrigger: tinyCardActionTrigger === "contextmenu" ? "contextmenu" : "hover" },
     coachMarks: {
       projectDetailsTabReorder: Number.isInteger(coachMarkVersion) && coachMarkVersion >= 0 ? coachMarkVersion : 0,
     },
@@ -175,14 +178,14 @@ function readUiPreferences() {
       }
       const legacyValue = window.utools.dbStorage.getItem(projectDetailsTabOrderStorageKey);
       const tabOrder = normalizeProjectDetailsTabOrder(legacyValue);
-      const preferences = {
+      const preferences = normalizeUiPreferences({
         schemaVersion: 1,
         projectDetails: { tabOrder },
         coachMarks: {
           projectDetailsTabReorder:
             Array.isArray(legacyValue) && tabOrder.some((id, index) => id !== projectDetailsTabIds[index]) ? 1 : 0,
         },
-      };
+      });
       saveUiPreferences(preferences);
       return preferences;
     }
@@ -200,14 +203,14 @@ function readUiPreferences() {
     const legacyRaw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
     const legacyValue = legacyRaw ? JSON.parse(legacyRaw) : null;
     const tabOrder = normalizeProjectDetailsTabOrder(legacyValue);
-    const preferences = {
+    const preferences = normalizeUiPreferences({
       schemaVersion: 1,
       projectDetails: { tabOrder },
       coachMarks: {
         projectDetailsTabReorder:
           Array.isArray(legacyValue) && tabOrder.some((id, index) => id !== projectDetailsTabIds[index]) ? 1 : 0,
       },
-    };
+    });
     saveUiPreferences(preferences);
     return preferences;
   } catch (error) {

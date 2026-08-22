@@ -442,6 +442,7 @@ const readStoredExternalApplicationPreferences = (): ExternalApplicationPreferen
 const defaultUiPreferences = (): UiPreferences => ({
   schemaVersion: 1,
   projectDetails: { tabOrder: [...projectDetailsTabIds] },
+  dashboard: { tinyCardActionTrigger: "hover" },
   coachMarks: { projectDetailsTabReorder: 0 },
 });
 
@@ -457,9 +458,11 @@ export const normalizeUiPreferences = (value: unknown): UiPreferences => {
   if (!value || typeof value !== "object" || (value as Partial<UiPreferences>).schemaVersion !== 1) return defaults;
   const candidate = value as Partial<UiPreferences>;
   const coachMarkVersion = candidate.coachMarks?.projectDetailsTabReorder;
+  const tinyCardActionTrigger = candidate.dashboard?.tinyCardActionTrigger;
   return {
     schemaVersion: 1,
     projectDetails: { tabOrder: normalizeProjectDetailsTabOrder(candidate.projectDetails?.tabOrder) },
+    dashboard: { tinyCardActionTrigger: tinyCardActionTrigger === "contextmenu" ? "contextmenu" : "hover" },
     coachMarks: {
       projectDetailsTabReorder:
         typeof coachMarkVersion === "number" && Number.isInteger(coachMarkVersion) && coachMarkVersion >= 0
@@ -510,14 +513,14 @@ const readStoredUiPreferences = (): UiPreferences => {
     const legacyRaw = window.localStorage?.getItem(projectDetailsTabOrderStorageKey);
     const legacyValue = legacyRaw ? JSON.parse(legacyRaw) : null;
     const tabOrder = normalizeProjectDetailsTabOrder(legacyValue);
-    const preferences: UiPreferences = {
+    const preferences = normalizeUiPreferences({
       schemaVersion: 1,
       projectDetails: { tabOrder },
       coachMarks: {
         projectDetailsTabReorder:
           Array.isArray(legacyValue) && tabOrder.some((id, index) => id !== projectDetailsTabIds[index]) ? 1 : 0,
       },
-    };
+    });
     writeStoredUiPreferences(preferences);
     return preferences;
   } catch {

@@ -62,11 +62,15 @@ export const PROJECT_DETAILS_TAB_IDS = ["info", "scripts", "automation", "files"
 export const PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION = 1;
 export const PROJECT_MAX_RELATED_PROJECTS = 5;
 export type ProjectDetailsTabId = (typeof PROJECT_DETAILS_TAB_IDS)[number];
+export type TinyCardActionTrigger = "hover" | "contextmenu";
 
 export interface UiPreferences {
   schemaVersion: 1;
   projectDetails: {
     tabOrder: ProjectDetailsTabId[];
+  };
+  dashboard: {
+    tinyCardActionTrigger: TinyCardActionTrigger;
   };
   coachMarks: {
     projectDetailsTabReorder: number;

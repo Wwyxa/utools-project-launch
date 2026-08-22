@@ -10,6 +10,8 @@ import {
   TerminalSquare,
   Trash2,
   ChevronDown,
+  ChevronRight,
+  AppWindow,
   GripVertical,
   Link2,
   FileDiff,
@@ -92,6 +94,11 @@ const emit = defineEmits<{
 const store = useStore();
 const t = useI18n();
 const tinyToolbarAlignRight = ref(false);
+const tinyCardContextMenu = ref<{ x: number; y: number } | null>(null);
+const tinyCardContextMenuRef = ref<HTMLElement | null>(null);
+const tinyCardApplicationMenu = ref<{ x: number; y: number } | null>(null);
+const tinyCardApplicationMenuRef = ref<HTMLElement | null>(null);
+let tinyCardApplicationMenuCloseTimer: number | null = null;
 const moreScriptsOpen = ref(false);
 const moreScriptsRef = ref<HTMLElement | null>(null);
 const scriptRowRef = ref<HTMLElement | null>(null);
@@ -116,6 +123,20 @@ const cardStatusLabel = computed(() => {
 const isTiny = computed(() => props.project.cardStyle === "tiny");
 const isUnavailable = computed(() => props.project.pathExists === false);
 const quickLink = computed(() => props.project.quickLink?.trim() || "");
+const enabledExternalApplications = computed(() =>
+  store.externalApplicationPreferences.applications.filter((application) => application.enabled),
+);
+const defaultExternalApplication = computed(
+  () =>
+    enabledExternalApplications.value.find(
+      (application) => application.id === store.externalApplicationPreferences.defaultApplicationId,
+    ) ||
+    enabledExternalApplications.value[0] ||
+    null,
+);
+const otherExternalApplications = computed(() =>
+  enabledExternalApplications.value.filter((application) => application.id !== defaultExternalApplication.value?.id),
+);
 const displayGroupLabel = computed(() => props.groupLabel?.trim() || props.project.group?.trim() || "");
 const activeScripts = computed(() =>
   props.project.scripts.filter((script) => script.status === "RUNNING" || script.status === "STOPPING"),
@@ -350,18 +371,49 @@ const handleCardSelect = () => {
   emit("select", props.project.id);
 };
 
+const clearTinyCardApplicationMenuClose = () => {
+  if (tinyCardApplicationMenuCloseTimer === null) return;
+  window.clearTimeout(tinyCardApplicationMenuCloseTimer);
+  tinyCardApplicationMenuCloseTimer = null;
+};
+
+const closeTinyCardApplicationMenu = () => {
+  clearTinyCardApplicationMenuClose();
+  tinyCardApplicationMenu.value = null;
+};
+
+const scheduleTinyCardApplicationMenuClose = () => {
+  clearTinyCardApplicationMenuClose();
+  tinyCardApplicationMenuCloseTimer = window.setTimeout(() => {
+    tinyCardApplicationMenuCloseTimer = null;
+    tinyCardApplicationMenu.value = null;
+  }, 120);
+};
+
+function closeTinyCardContextMenu() {
+  tinyCardContextMenu.value = null;
+  closeTinyCardApplicationMenu();
+  if (!moreScriptsOpen.value) {
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    document.removeEventListener("keydown", handleDocumentKeyDown);
+  }
+}
+
 const handleEdit = (event: MouseEvent) => {
   event.stopPropagation();
+  closeTinyCardContextMenu();
   store.openEditProjectForm(props.project.id);
 };
 
 const handleDuplicate = (event: MouseEvent) => {
   event.stopPropagation();
+  closeTinyCardContextMenu();
   store.openDuplicateProjectForm(props.project.id);
 };
 
 const handleOpenFolder = async (event: MouseEvent) => {
   event.stopPropagation();
+  closeTinyCardContextMenu();
   if (isUnavailable.value) {
     return;
   }
@@ -370,16 +422,21 @@ const handleOpenFolder = async (event: MouseEvent) => {
 
 const handleOpenTerminal = async (event: MouseEvent) => {
   event.stopPropagation();
+  closeTinyCardContextMenu();
   if (isUnavailable.value) {
     return;
   }
   await store.openProjectInTerminal(props.project.id);
 };
 
-const handleOpenEditor = (applicationId?: string) => store.openProjectInEditor(props.project.id, applicationId);
+const handleOpenEditor = async (applicationId?: string) => {
+  closeTinyCardContextMenu();
+  await store.openProjectInEditor(props.project.id, applicationId);
+};
 
 const handleOpenQuickLink = async (event: MouseEvent) => {
   event.stopPropagation();
+  closeTinyCardContextMenu();
   if (!quickLink.value) {
     return;
   }
@@ -405,10 +462,17 @@ const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: s
 };
 
 const handleDocumentPointerDown = (event: PointerEvent) => {
-  if (!moreScriptsRef.value?.contains(event.target as Node)) {
+  const target = event.target as Node;
+  const isWithinTinyCardMenu =
+    tinyCardContextMenuRef.value?.contains(target) || tinyCardApplicationMenuRef.value?.contains(target);
+  if (!moreScriptsRef.value?.contains(target)) {
     moreScriptsOpen.value = false;
   }
-  if (!moreScriptsOpen.value) {
+  if (!isWithinTinyCardMenu) {
+    tinyCardContextMenu.value = null;
+    closeTinyCardApplicationMenu();
+  }
+  if (!moreScriptsOpen.value && !tinyCardContextMenu.value && !tinyCardApplicationMenu.value) {
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     document.removeEventListener("keydown", handleDocumentKeyDown);
   }
@@ -417,6 +481,8 @@ const handleDocumentPointerDown = (event: PointerEvent) => {
 const handleDocumentKeyDown = (event: KeyboardEvent) => {
   if (event.key === "Escape") {
     moreScriptsOpen.value = false;
+    tinyCardContextMenu.value = null;
+    closeTinyCardApplicationMenu();
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     document.removeEventListener("keydown", handleDocumentKeyDown);
   }
@@ -424,11 +490,18 @@ const handleDocumentKeyDown = (event: KeyboardEvent) => {
 
 const closeMoreScripts = () => {
   moreScriptsOpen.value = false;
-  document.removeEventListener("pointerdown", handleDocumentPointerDown);
-  document.removeEventListener("keydown", handleDocumentKeyDown);
+  if (!tinyCardContextMenu.value && !tinyCardApplicationMenu.value) {
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    document.removeEventListener("keydown", handleDocumentKeyDown);
+  }
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (tinyCardContextMenu.value || tinyCardApplicationMenu.value) {
+    closeTinyCardContextMenu();
+    event.detail.handle();
+    return;
+  }
   if (!moreScriptsOpen.value) return;
   closeMoreScripts();
   event.detail.handle();
@@ -438,6 +511,7 @@ const toggleMoreScripts = (event: MouseEvent) => {
   event.stopPropagation();
   moreScriptsOpen.value = !moreScriptsOpen.value;
   if (moreScriptsOpen.value) {
+    closeTinyCardContextMenu();
     document.addEventListener("pointerdown", handleDocumentPointerDown);
     document.addEventListener("keydown", handleDocumentKeyDown);
   } else {
@@ -456,12 +530,68 @@ onBeforeUnmount(() => {
   scriptRowResizeObserver?.disconnect();
   window.removeEventListener("resize", scheduleVisibleScriptMeasure);
   closeMoreScripts();
+  closeTinyCardContextMenu();
   stopAppEscapeListener();
 });
 
 const handleDelete = (event: MouseEvent) => {
   event.stopPropagation();
+  closeTinyCardContextMenu();
   store.requestDeleteProject(props.project.id);
+};
+
+const handleTinyCardContextMenu = async (event: MouseEvent) => {
+  if (props.isSorting || store.uiPreferences.dashboard.tinyCardActionTrigger !== "contextmenu") {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  closeMoreScripts();
+  closeTinyCardApplicationMenu();
+  tinyCardContextMenu.value = { x: event.clientX, y: event.clientY };
+  await nextTick();
+
+  const menu = tinyCardContextMenuRef.value;
+  const position = tinyCardContextMenu.value;
+  if (!menu || !position) return;
+  const rect = menu.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const inset = 8;
+  tinyCardContextMenu.value = {
+    x: Math.max(inset, Math.min(position.x, viewportWidth - rect.width - inset)),
+    y: Math.max(inset, Math.min(position.y, viewportHeight - rect.height - inset)),
+  };
+  document.addEventListener("pointerdown", handleDocumentPointerDown);
+  document.addEventListener("keydown", handleDocumentKeyDown);
+};
+
+const openTinyCardApplicationMenu = async (event: MouseEvent | FocusEvent) => {
+  if (!tinyCardContextMenu.value || otherExternalApplications.value.length === 0) {
+    return;
+  }
+  clearTinyCardApplicationMenuClose();
+  const opener = event.currentTarget as HTMLElement | null;
+  if (!opener) return;
+
+  const openerRect = opener.getBoundingClientRect();
+  tinyCardApplicationMenu.value = { x: openerRect.right + 4, y: openerRect.top };
+  await nextTick();
+
+  const menu = tinyCardApplicationMenuRef.value;
+  if (!menu) return;
+  const menuRect = menu.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const inset = 8;
+  const left =
+    openerRect.right + menuRect.width + 4 <= viewportWidth - inset
+      ? openerRect.right + 4
+      : openerRect.left - menuRect.width - 4;
+  tinyCardApplicationMenu.value = {
+    x: Math.max(inset, Math.min(left, viewportWidth - menuRect.width - inset)),
+    y: Math.max(inset, Math.min(openerRect.top, viewportHeight - menuRect.height - inset)),
+  };
 };
 
 const updateTinyToolbarAlignment = (event: Event) => {
@@ -474,6 +604,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
   <div v-if="isTiny" class="group relative flex items-center">
     <div
       @click="handleCardSelect"
+      @contextmenu="handleTinyCardContextMenu"
       @pointerenter="updateTinyToolbarAlignment"
       @focusin="updateTinyToolbarAlignment"
       :class="
@@ -547,7 +678,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
         </template>
       </div>
       <div
-        v-if="!isSorting"
+        v-if="!isSorting && store.uiPreferences.dashboard.tinyCardActionTrigger === 'hover'"
         :class="
           cn(
             'absolute top-[calc(100%+0.25rem)] z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 dark:border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
@@ -953,4 +1084,112 @@ const updateTinyToolbarAlignment = (event: Event) => {
       "
     />
   </div>
+  <Teleport to="body">
+    <div
+      v-if="tinyCardContextMenu"
+      ref="tinyCardContextMenuRef"
+      class="tiny-card-context-menu fixed z-[75] w-fit max-w-[min(13rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-px shadow-2xl"
+      role="menu"
+      :aria-label="t.settings.tinyCardActionTrigger"
+      :style="{ left: `${tinyCardContextMenu.x}px`, top: `${tinyCardContextMenu.y}px` }"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <div v-overlay-scrollbar class="themed-scrollbar max-h-[calc(100vh-1.5rem)] overflow-y-auto">
+        <button
+          v-if="quickLink"
+          type="button"
+          role="menuitem"
+          class="mode-menu-item mode-menu-item--leading"
+          @click="handleOpenQuickLink"
+        >
+          <Link2 :size="14" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.projectActions.menuOpenQuickLink }}</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="mode-menu-item mode-menu-item--leading"
+          :disabled="isUnavailable"
+          @click="handleOpenTerminal"
+        >
+          <TerminalSquare :size="14" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.projectActions.menuOpenTerminal }}</span>
+        </button>
+        <button
+          v-if="defaultExternalApplication"
+          type="button"
+          role="menuitem"
+          class="mode-menu-item mode-menu-item--leading"
+          :disabled="isUnavailable"
+          @mouseenter="openTinyCardApplicationMenu"
+          @mouseleave="scheduleTinyCardApplicationMenuClose"
+          @focusin="openTinyCardApplicationMenu"
+          @click="handleOpenEditor(defaultExternalApplication.id)"
+          :title="defaultExternalApplication.name"
+        >
+          <AppWindow :size="14" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ defaultExternalApplication.name }}</span>
+          <ChevronRight v-if="otherExternalApplications.length > 0" :size="14" class="ml-auto shrink-0" />
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="mode-menu-item mode-menu-item--leading"
+          :disabled="isUnavailable"
+          @click="handleOpenFolder"
+        >
+          <FolderOpen :size="14" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.common.openFolder }}</span>
+        </button>
+        <div class="mx-0.5 my-px border-t border-border-subtle" role="separator" />
+        <button type="button" role="menuitem" class="mode-menu-item mode-menu-item--leading" @click="handleEdit">
+          <Pencil :size="14" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.projectActions.menuEditProject }}</span>
+        </button>
+        <button type="button" role="menuitem" class="mode-menu-item mode-menu-item--leading" @click="handleDuplicate">
+          <Copy :size="14" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.projectActions.menuDuplicateProject }}</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="mode-menu-item mode-menu-item--leading text-status-error hover:bg-status-error/10"
+          @click="handleDelete"
+        >
+          <Trash2 :size="14" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.projectActions.deleteProject }}</span>
+        </button>
+      </div>
+    </div>
+  </Teleport>
+  <Teleport to="body">
+    <div
+      v-if="tinyCardApplicationMenu"
+      ref="tinyCardApplicationMenuRef"
+      class="fixed z-[76] w-fit max-w-[min(13rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-px shadow-2xl"
+      role="menu"
+      :aria-label="t.projectActions.chooseApplication"
+      :style="{ left: `${tinyCardApplicationMenu.x}px`, top: `${tinyCardApplicationMenu.y}px` }"
+      @click.stop
+      @contextmenu.prevent
+      @mouseenter="clearTinyCardApplicationMenuClose"
+      @mouseleave="scheduleTinyCardApplicationMenuClose"
+      @focusin="clearTinyCardApplicationMenuClose"
+    >
+      <div v-overlay-scrollbar class="themed-scrollbar max-h-[calc(100vh-1.5rem)] overflow-y-auto">
+        <button
+          v-for="application in otherExternalApplications"
+          :key="application.id"
+          type="button"
+          role="menuitem"
+          class="mode-menu-item mode-menu-item--tiny-submenu"
+          :title="application.name"
+          @click="handleOpenEditor(application.id)"
+        >
+          <span class="min-w-0 truncate">{{ application.name }}</span>
+        </button>
+      </div>
+    </div>
+  </Teleport>
 </template>
