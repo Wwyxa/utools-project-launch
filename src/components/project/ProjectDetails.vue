@@ -188,6 +188,13 @@ const handleRelatedProjectsEscape = (event: AppEscapeRequestEvent) => {
   relatedProjectsOpen.value = false;
   event.detail.handle();
 };
+const handleRelatedProjectsFocusOut = (event: FocusEvent) => {
+  const nextTarget = event.relatedTarget;
+  if (nextTarget instanceof Node && (event.currentTarget as HTMLElement).contains(nextTarget)) {
+    return;
+  }
+  relatedProjectsOpen.value = false;
+};
 const clearGitToggleIdleTimer = () => {
   if (gitToggleIdleTimer !== null) {
     window.clearTimeout(gitToggleIdleTimer);
@@ -508,41 +515,47 @@ watch(
             <span class="truncate">{{ project.path }}</span>
           </div>
         </div>
-        <div v-if="relatedProjects.length > 0" class="relative shrink-0 self-center" @click.stop>
+        <div
+          v-if="relatedProjects.length > 0"
+          class="relative shrink-0 self-center"
+          @click.stop
+          @mouseenter="relatedProjectsOpen = true"
+          @mouseleave="relatedProjectsOpen = false"
+          @focusin="relatedProjectsOpen = true"
+          @focusout="handleRelatedProjectsFocusOut"
+        >
           <button
             type="button"
             class="group rounded-md p-1 text-primary/80 transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             :title="t.projectDetails.relatedProjects"
             :aria-label="t.projectDetails.relatedProjects"
             :aria-expanded="relatedProjectsOpen"
-            @click="relatedProjectsOpen = !relatedProjectsOpen"
           >
             <Network :size="17" class="transition-colors" />
           </button>
-          <div
-            v-if="relatedProjectsOpen"
-            class="absolute left-0 top-full z-40 mt-2 w-72 overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
-          >
-            <div
-              class="border-b border-border-subtle bg-surface-container-low px-3 py-2 text-xs font-semibold text-on-surface"
-            >
-              {{ t.projectDetails.relatedProjects }}
-            </div>
-            <div class="p-1">
-              <button
-                v-for="relatedProject in relatedProjects"
-                :key="relatedProject.id"
-                type="button"
-                class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface-container"
-                :title="relatedProject.path"
-                @click="handleRelatedProjectSelect(relatedProject.id)"
+          <div v-if="relatedProjectsOpen" class="absolute left-0 top-full z-40 w-72 pt-2">
+            <div class="overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl">
+              <div
+                class="border-b border-border-subtle bg-surface-container-low px-3 py-2 text-xs font-semibold text-on-surface"
               >
-                <Folder :size="15" class="shrink-0 text-primary" />
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-semibold text-on-surface">{{ relatedProject.name }}</span>
-                  <span class="block truncate text-[11px] text-on-surface-variant">{{ relatedProject.path }}</span>
-                </span>
-              </button>
+                {{ t.projectDetails.relatedProjects }}
+              </div>
+              <div class="p-1">
+                <button
+                  v-for="relatedProject in relatedProjects"
+                  :key="relatedProject.id"
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface-container"
+                  :title="relatedProject.path"
+                  @click="handleRelatedProjectSelect(relatedProject.id)"
+                >
+                  <Folder :size="15" class="shrink-0 text-primary" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-semibold text-on-surface">{{ relatedProject.name }}</span>
+                    <span class="block truncate text-[11px] text-on-surface-variant">{{ relatedProject.path }}</span>
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
