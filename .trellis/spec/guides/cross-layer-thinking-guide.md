@@ -52,6 +52,12 @@ For each arrow, ask:
 - Verify which process owns each storage API. In uTools, renderer `localStorage` is not evidence of host-process persistence; device-local preferences that must survive a complete uTools restart belong in `window.utools.dbStorage` unless a feature-specific spec requires another host-owned store.
 - When migrating storage, test the real read priority and recreate the preload/store with fresh renderer storage while retaining only the intended host storage. Reusing one in-memory storage object tests a round trip, not a restart.
 
+### Replayed Event And Notification Receipt Checks
+
+- When a service replays retained terminal events or full state snapshots, never use a capped UI history list as the only delivery de-duplication source.
+- Give each terminal effect a stable service identity, persist a bounded receipt with enough capacity for every event the service can replay, and update that receipt before sending the user-visible effect.
+- Test three boundaries: the same snapshot repeated in one renderer, the event evicted from presentation history, and a fresh renderer after host persistence is reloaded.
+
 ### Step 3: Define Contracts
 
 For each boundary:

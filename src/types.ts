@@ -583,6 +583,7 @@ export interface ProjectAutomationTask {
   exitConfigs: ProjectAutomationExitConfig[];
   dailyPlans: ProjectAutomationDailyPlan[];
   history: ProjectAutomationHistoryEntry[];
+  observedServiceExecutionIds?: string[];
   createdAt: string;
   updatedAt: string;
 }

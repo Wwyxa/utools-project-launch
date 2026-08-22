@@ -513,6 +513,7 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 
 - Trigger: automation task scheduling fields are edited in `AutomationTab.vue`, normalized in the Pinia store, persisted through browser fallback or uTools preload storage, then hydrated after plugin restart.
 - Trigger: generated plan entries are exposed for explicit early execution from both `AutomationTab.vue` and the Dashboard task overview.
+- Trigger: the Project Launch Service replays retained terminal automation executions in repeated status snapshots while the renderer is open or reconnecting.
 - This requires code-spec depth because task behavior depends on a persisted `ProjectAutomationTask` shape crossing `src/types.ts`, `src/store/useStore.ts`, `public/preload.js`, and storage compatibility checks.
 
 ### 2. Signatures
@@ -520,10 +521,12 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - `ProjectAutomationMissedPolicy = "grace-run" | "run-now" | "mark-missed"`.
 - `ProjectAutomationTask.missedPolicy: ProjectAutomationMissedPolicy`.
 - `ProjectAutomationTask.missedGraceMinutes: number`.
+- `ProjectAutomationTask.observedServiceExecutionIds?: string[]` retains the newest 20 terminal service execution ids that the renderer has observed.
 - Store action: `runAutomationTaskNow(projectId: string, taskId: string): boolean` creates a current-time pending entry and starts the existing automation execution flow.
 - Store action: `runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string): boolean` starts one already-generated future entry through the existing automation execution flow without creating a manual entry.
 - Store normalization: `normalizeAutomationTasks(projectId, value)` must fill missing legacy values with `missedPolicy: "grace-run"` and `missedGraceMinutes: 5`.
-- uTools preload persistence path: `toStoredProject(project).automationTasks[]` must preserve `missedPolicy`, `missedGraceMinutes`, `history`, `dailyPlans`, `inputConfigs`, and `exitConfigs`.
+- Store reconciliation path: `reconcileProjectLaunchServiceRuntime(status)` records an unseen terminal execution receipt before it sends a completion notification.
+- uTools preload persistence path: `toStoredProject(project).automationTasks[]` must preserve `missedPolicy`, `missedGraceMinutes`, `history`, `observedServiceExecutionIds`, `dailyPlans`, `inputConfigs`, and `exitConfigs`.
 
 ### 3. Contracts
 
@@ -545,6 +548,9 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - Dashboard missed-task ignore controls should call the store, preserve the original missed history row, and append a skipped/ignored history row so the task no longer appears as currently missed.
 - UI task running state must be derived from that task's own `dailyPlans[].entries[].status === "running"`, not from `automationActiveProjectRuns[projectId]`. The project-level active run map only prevents concurrent automation within a project.
 - Dashboard run-now buttons for sibling tasks should not silently disable because `automationActiveProjectRuns[projectId]` is set. Let the click reach `runAutomationTaskNow(...)`, then show the returned success/blocked feedback.
+- `history` is a capped presentation list, not a notification-delivery ledger. A terminal service execution may be evicted from `history` by newer local entries while the service still retains and replays it.
+- For every terminal service execution, test its stable `execution.id` against `observedServiceExecutionIds`. Add an unseen id to the receipt before sending a notification, keep the receipt capped to the service's per-task terminal retention, and persist it through the normal project storage path.
+- If an execution receipt is already present but its history row has been evicted, keep the plan-entry status authoritative and do not reconstruct the old history row or send another notification on every service poll.
 
 ### 4. Validation & Error Matrix
 
@@ -566,6 +572,9 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - Early-run completes before the original time -> the due scheduler ignores the completed/failed entry because it is no longer `pending`.
 - One task running in a project -> only that task displays `running`; sibling tasks continue showing their own latest history or pending state.
 - Same-project sibling run-now click while one task is active -> button remains clickable, `runAutomationTaskNow(...)` returns `false`, and the dashboard shows a blocked feedback message.
+- A completed service execution is replayed in an unchanged later snapshot -> its history may refresh while retained, but it must not send a second notification.
+- A completed service execution is absent from the capped task history but present in `observedServiceExecutionIds` -> do not append it again or notify again.
+- Plugin restart after the receipt was persisted -> the same retained terminal service execution does not notify again when the service state is reconciled.
 
 ### 5. Good/Base/Bad Cases
 
@@ -576,7 +585,10 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - Base: older stored tasks without missed-run fields load with the default grace policy.
 - Base: disabling scheduled execution still allows the user to explicitly run a generated future entry early.
 - Base: Dashboard next-run row opens project automation details, while its nested early-run control consumes the listed entry without navigating.
+- Good: a random task completes, records its execution id in the receipt, and sends one notification even though later service snapshots continue to contain that terminal execution.
+- Base: a legacy task without a receipt initializes an empty receipt; its next newly observed terminal service execution is persisted with the receipt.
 - Bad: adding fields only to `ProjectAutomationTask` and the Vue form while omitting `public/preload.js#toStoredProject`, because the setting works until plugin restart and then disappears.
+- Bad: using `task.history.find(...)` as the only service-notification de-duplication signal, because its 20-row display cap can evict a still-replayed service execution and trigger a notification every poll.
 - Bad: checking only the timer path and forgetting app startup/recompute, because overdue pending entries can remain stuck or run outside policy after sleep/resume.
 - Bad: implementing early execution by calling `runAutomationTaskNow(...)`, because that appends a separate current-time `manual` entry and leaves the selected future entry pending for a duplicate scheduled run.
 - Bad: gating Dashboard `nextEntry` with `task.enabled`, because disabled tasks may still have generated future entries that are valid explicit early-run targets.
@@ -588,6 +600,7 @@ Keep persisted project docs aligned with the shared `Project` shape whenever the
 - `npm run validate:project-storage` after adding, removing, or renaming persisted automation task fields.
 - `node --check public/preload.js` after changing preload storage normalization.
 - `npm run build` after changing Vue templates or scheduling state consumed by the UI.
+- `npx vitest run tests/projectBridge.uiPreferences.test.ts` must assert that a first terminal service execution writes `observedServiceExecutionIds`, then remains single-notification after 20 newer history rows evict it and the same status snapshot is replayed.
 - Manual smoke test in browser/uTools: create tasks for each missed policy, reload/open after the planned time, and verify the pending/history status matches the policy.
 - Manual smoke test in browser/uTools: run one of multiple future entries early, assert the selected entry is consumed with its original `plannedAt`, no `manual` entry is added, and the original due time does not trigger it again.
 - Manual smoke test in the Dashboard task overview: verify enabled and disabled tasks with future entries appear in the next-run list, the action button remains visible at narrow widths, and action clicks do not open project details.
@@ -664,6 +677,29 @@ nextEntry: findNextPendingEntry(task.dailyPlans);
 ```
 
 Derive Dashboard visibility from the generated entry state; let the scheduler check `enabled`, and let the store action enforce early-run validity and project concurrency.
+
+#### Wrong
+
+```ts
+const existingHistoryIndex = task.history.findIndex((entry) => entry.id === execution.id);
+if (existingHistoryIndex === -1) {
+  notifyAutomationTaskCompletion(task, execution.status, execution.reason || "");
+}
+```
+
+This treats a capped display list as a durable delivery receipt, so a retained service execution can notify again after its history row is evicted.
+
+#### Correct
+
+```ts
+const observed = task.observedServiceExecutionIds?.includes(execution.id) ?? false;
+if (!observed) {
+  task.observedServiceExecutionIds = [...(task.observedServiceExecutionIds || []), execution.id].slice(-20);
+  notifyAutomationTaskCompletion(task, execution.status, execution.reason || "");
+}
+```
+
+Persist the bounded receipt with the task configuration; repeated service snapshots then remain idempotent across history eviction and plugin restart.
 
 ## Scenario: Automation Process Result Recovery Boundary
 

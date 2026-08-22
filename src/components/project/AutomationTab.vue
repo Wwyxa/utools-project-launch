@@ -27,7 +27,7 @@ import type {
   ProjectAutomationSchedule,
   ProjectAutomationTask,
 } from "../../types";
-import { dateKey, generateAutomationDailyPlan, getNextAutomationPlanEntry } from "../../lib/automationScheduler";
+import { dateKey, generateAutomationDailyPlan } from "../../lib/automationScheduler";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -338,12 +338,6 @@ const taskPlan = (task: ProjectAutomationTask) => {
   );
 };
 
-const nextRun = (task: ProjectAutomationTask) => {
-  const entries = serviceTaskEntries(task);
-  return entries
-    ? getNextAutomationPlanEntry([{ date: today.value, entries }])?.plannedAt || ""
-    : getNextAutomationPlanEntry(task.dailyPlans)?.plannedAt || "";
-};
 const scriptName = (scriptId: string) =>
   props.project.scripts.find((script) => script.id === scriptId)?.name || scriptId;
 const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : t.value.common.never);
@@ -356,6 +350,11 @@ const taskHistory = (task: ProjectAutomationTask) =>
   [...task.history].sort((left, right) => historyTime(right) - historyTime(left));
 const historyDialogEntries = computed(() => (historyDialogTask.value ? taskHistory(historyDialogTask.value) : []));
 const latestHistory = (task: ProjectAutomationTask) => taskHistory(task)[0];
+const latestResultStatus = (task: ProjectAutomationTask) => latestHistory(task)?.status || "pending";
+const latestResultAt = (task: ProjectAutomationTask) => {
+  const history = latestHistory(task);
+  return history?.endedAt || history?.startedAt || history?.plannedAt || "";
+};
 const runningEntry = (task: ProjectAutomationTask) =>
   (serviceTaskEntries(task) ?? task.dailyPlans.flatMap((plan) => plan.entries)).find(
     (entry) => entry.status === "running",
@@ -610,12 +609,14 @@ const taskSummaryText = computed(() =>
               </button>
             </div>
           </div>
-          <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border-subtle pt-2 text-xs sm:grid-cols-3">
-            <div class="col-span-2 flex min-w-0 items-center gap-1.5 sm:col-span-1">
-              <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{ t.automation.nextRun }}</span>
-              <span class="truncate font-mono font-bold text-on-surface">{{ formatDateTime(nextRun(task)) }}</span>
-            </div>
+          <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border-subtle pt-2 text-xs">
             <div class="flex items-center gap-1.5">
+              <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{ t.automation.maxRuntime }}</span>
+              <span class="font-mono font-bold text-on-surface">
+                {{ formatMinutes(task.maxScriptRuntimeMinutes) }}
+              </span>
+            </div>
+            <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-right">
               <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{
                 t.automation.latestResult
               }}</span>
@@ -623,24 +624,17 @@ const taskSummaryText = computed(() =>
                 :class="
                   cn(
                     'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                    statusClass(taskCurrentStatus(task)),
+                    statusClass(latestResultStatus(task)),
                   )
                 "
               >
                 <span
-                  v-if="taskCurrentStatus(task) === 'running'"
+                  v-if="latestResultStatus(task) === 'running'"
                   class="h-1.5 w-1.5 rounded-full bg-status-info animate-pulse"
                 />
-                {{ statusLabel(taskCurrentStatus(task)) }}
+                {{ statusLabel(latestResultStatus(task)) }}
               </span>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{
-                t.automation.maxRuntime
-              }}</span>
-              <span class="font-mono font-bold text-on-surface">
-                {{ formatMinutes(task.maxScriptRuntimeMinutes) }}
-              </span>
+              <span class="whitespace-nowrap font-mono font-bold text-on-surface">{{ formatDateTime(latestResultAt(task)) }}</span>
             </div>
           </div>
           <div class="mt-2 flex flex-wrap items-center gap-1 border-t border-border-subtle pt-2">

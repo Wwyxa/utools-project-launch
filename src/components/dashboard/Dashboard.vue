@@ -379,6 +379,7 @@ const sortedAutomationHistory = (history: ProjectAutomationHistoryEntry[]) =>
 const automationTasks = computed(() =>
   store.visibleProjects.flatMap((project) =>
     (project.automationTasks || []).map((task) => {
+      const latestHistory = sortedAutomationHistory(task.history)[0];
       const entries =
         store.serviceAutomationTaskEntries(project.id, task.id) ?? task.dailyPlans.flatMap((plan) => plan.entries);
       const runningEntry = entries.find((entry) => entry.status === "running") || null;
@@ -386,8 +387,9 @@ const automationTasks = computed(() =>
         project,
         task,
         runningEntry,
-        currentStatus: runningEntry ? "running" : sortedAutomationHistory(task.history)[0]?.status || "pending",
-        latestHistory: sortedAutomationHistory(task.history)[0],
+        currentStatus: runningEntry ? "running" : latestHistory?.status || "pending",
+        latestHistory,
+        lastRunAt: latestHistory?.endedAt || latestHistory?.startedAt || latestHistory?.plannedAt || "",
         nextEntry:
           entries
             .filter((entry) => entry.status === "pending" && new Date(entry.plannedAt).getTime() > Date.now())
@@ -1159,29 +1161,26 @@ const handleProjectDragEnd = () => {
                       <div
                         v-for="item in group.tasks"
                         :key="`${item.project.id}-${item.task.id}-project`"
-                        class="flex cursor-pointer items-center justify-between gap-2 py-2 pl-1 text-xs transition-colors hover:bg-surface-container-low"
+                        class="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-2 pl-1 text-xs transition-colors hover:bg-surface-container-low"
                         role="button"
                         tabindex="0"
                         @click="openProjectAutomation(item.project.id)"
                         @keydown.enter.self="openProjectAutomation(item.project.id)"
                         @keydown.space.self.prevent="openProjectAutomation(item.project.id)"
                       >
-                        <span class="h-1 w-1 shrink-0 rounded-full bg-outline-variant" aria-hidden="true" />
-                        <span class="min-w-0 flex-1 truncate">
-                          <span class="font-semibold text-on-surface">{{ item.task.name }}</span>
-                          <span class="ml-1 text-[10px] text-on-surface-variant">
-                            ·
-                            {{
-                              formatAutomationDateTime(
-                                item.runningEntry?.plannedAt ||
-                                  item.nextEntry?.plannedAt ||
-                                  item.latestHistory?.endedAt ||
-                                  item.latestHistory?.plannedAt,
-                              )
-                            }}
+                        <div class="flex min-w-0 items-center gap-2">
+                          <span class="h-1 w-1 shrink-0 rounded-full bg-outline-variant" aria-hidden="true" />
+                          <span class="min-w-0 flex-1 truncate">
+                            <span class="font-semibold text-on-surface">{{ item.task.name }}</span>
                           </span>
-                        </span>
-                        <div class="flex shrink-0 items-center justify-end gap-1">
+                        </div>
+                        <div class="flex shrink-0 items-center justify-end gap-1.5">
+                          <span
+                            class="whitespace-nowrap font-mono text-[10px] text-on-surface-variant"
+                            :title="formatAutomationDateTime(item.lastRunAt)"
+                          >
+                            {{ formatAutomationDateTime(item.lastRunAt) }}
+                          </span>
                           <span
                             :class="
                               cn(

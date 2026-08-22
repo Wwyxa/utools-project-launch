@@ -186,6 +186,11 @@ function toStoredProject(project, index = 0) {
             ? Math.max(0, Math.floor(task.missedGraceMinutes))
             : 5,
           history: Array.isArray(task.history) ? task.history.slice(0, 20) : [],
+          observedServiceExecutionIds: Array.isArray(task.observedServiceExecutionIds)
+            ? Array.from(
+                new Set(task.observedServiceExecutionIds.filter((id) => typeof id === "string" && id.trim())),
+              ).slice(-20)
+            : [],
           dailyPlans: Array.isArray(task.dailyPlans) ? task.dailyPlans : [],
           inputConfigs: Array.isArray(task.inputConfigs) ? task.inputConfigs : [],
           exitConfigs: Array.isArray(task.exitConfigs) ? task.exitConfigs : [],

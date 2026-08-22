@@ -823,6 +823,17 @@ function normalizeAutomationTasks(projectId: string, value: unknown): ProjectAut
       exitConfigs: normalizeAutomationExitConfigs(candidate.exitConfigs),
       dailyPlans: normalizeAutomationDailyPlans(candidate.dailyPlans),
       history: normalizeAutomationHistory(candidate.history),
+      observedServiceExecutionIds: Array.isArray(candidate.observedServiceExecutionIds)
+        ? [
+            ...new Set(
+              candidate.observedServiceExecutionIds.filter(
+                (id): id is string => typeof id === "string" && Boolean(id.trim()),
+              ),
+            ),
+          ].slice(
+            -AUTOMATION_HISTORY_LIMIT,
+          )
+        : [],
       createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : now,
       updatedAt: typeof candidate.updatedAt === "string" ? candidate.updatedAt : now,
     };
@@ -1884,6 +1895,7 @@ export const useStore = defineStore("app", {
       }
 
       const serviceActiveAutomationRuns: Record<string, string> = {};
+      let serviceAutomationReceiptsChanged = false;
       const serviceExecutions = status.automation?.executions;
       for (const execution of serviceExecutions || []) {
         if (!execution.id || !execution.projectId || !execution.taskId || !execution.planEntryId) {
@@ -1940,15 +1952,29 @@ export const useStore = defineStore("app", {
           })),
         };
         const existingHistoryIndex = task.history.findIndex((item) => item.id === historyEntry.id);
+        const hasObservedServiceExecution = task.observedServiceExecutionIds?.includes(historyEntry.id) ?? false;
+        if (hasObservedServiceExecution && existingHistoryIndex === -1) {
+          continue;
+        }
         task.history = normalizeAutomationHistory(
           existingHistoryIndex === -1
             ? [historyEntry, ...task.history]
             : task.history.map((item, index) => (index === existingHistoryIndex ? historyEntry : item)),
         );
         task.updatedAt = execution.endedAt || execution.startedAt || task.updatedAt;
-        if (existingHistoryIndex === -1) {
+        if (!hasObservedServiceExecution) {
+          task.observedServiceExecutionIds = [...(task.observedServiceExecutionIds || []), historyEntry.id].slice(
+            -AUTOMATION_HISTORY_LIMIT,
+          );
+          serviceAutomationReceiptsChanged = true;
+        }
+        if (!hasObservedServiceExecution && existingHistoryIndex === -1) {
           notifyAutomationTaskCompletion(task, execution.status, execution.reason || "");
         }
+      }
+
+      if (serviceAutomationReceiptsChanged) {
+        void this.persistProjects(false);
       }
 
       if (Array.isArray(serviceExecutions)) {

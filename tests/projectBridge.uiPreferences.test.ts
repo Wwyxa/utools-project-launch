@@ -3338,6 +3338,7 @@ describe("store startup timing", () => {
 
   it("applies live service automation snapshots, history, and one completion notification", async () => {
     const showNotification = vi.fn();
+    const saveProjects = vi.fn<ProjectBridge["saveProjects"]>(async () => undefined);
     window.utools = {
       isDarkColors: () => false,
       onPluginEnter: () => undefined,
@@ -3347,6 +3348,7 @@ describe("store startup timing", () => {
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects: vi.fn(async () => []),
+      saveProjects,
       loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
     };
 
@@ -3476,6 +3478,10 @@ describe("store startup timing", () => {
     expect(task?.history).toHaveLength(1);
     expect(task?.history[0]).toMatchObject({ id: "automation-run", status: "completed" });
     expect(showNotification).toHaveBeenCalledWith("任务“Deploy task”已完成");
+    await vi.waitFor(() => expect(saveProjects).toHaveBeenCalledTimes(1));
+    expect(saveProjects.mock.calls[0]?.[0][0]?.automationTasks?.[0]?.observedServiceExecutionIds).toContain(
+      "automation-run",
+    );
 
     store.handleBridgeEvent({
       type: "service-state",
@@ -3497,6 +3503,58 @@ describe("store startup timing", () => {
                   endedAt: "2026-08-15T09:01:00.000Z",
                 },
               ],
+            },
+          ],
+        },
+      },
+    });
+
+    expect(showNotification).toHaveBeenCalledTimes(1);
+
+    task!.history = Array.from({ length: 20 }, (_, index) => ({
+      id: `local-history-${index}`,
+      taskId: "automation-task",
+      taskName: "Deploy task",
+      projectId: "automation-project",
+      projectName: "Automation project",
+      plannedAt: "2026-08-16T09:00:00.000Z",
+      endedAt: "2026-08-16T09:01:00.000Z",
+      status: "completed" as const,
+      scriptResults: [],
+    }));
+
+    store.handleBridgeEvent({
+      type: "service-state",
+      status: {
+        ...baseStatus,
+        automation: {
+          revision: 4,
+          executions: [
+            {
+              ...execution,
+              status: "completed",
+              currentScriptIndex: 1,
+              endedAt: "2026-08-15T09:01:00.000Z",
+              scriptResults: [],
+            },
+          ],
+        },
+      },
+    });
+
+    store.handleBridgeEvent({
+      type: "service-state",
+      status: {
+        ...baseStatus,
+        automation: {
+          revision: 4,
+          executions: [
+            {
+              ...execution,
+              status: "completed",
+              currentScriptIndex: 1,
+              endedAt: "2026-08-15T09:01:00.000Z",
+              scriptResults: [],
             },
           ],
         },
