@@ -119,6 +119,7 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 - `ProjectBridgeServiceStateEvent` is `{ type: "service-state"; status: ProjectLaunchServiceStatus; timestamp?: string }` and is delivered on the existing bridge event subscription.
 - `ProjectLaunchServiceStatus` may include `runs`, `events`, cursor/truncation metadata, `automation`, and `scheduler?: { state: "running" | "degraded"; lastRunAt?: string; lastSuccessAt?: string; lastError?: string }`.
 - `GET /v1/sync?after=<cursor>` returns `{ health, state, events }`: `health` has the same validated identity fields as `/v1/health`, `state` has the `/v1/state` snapshot shape, and `events` has the `/v1/events` cursor/truncation batch shape.
+- While a preload reconciliation returns a partial event batch, its `ProjectLaunchServiceStatus` exposes `eventsHasMore: true`; event-poll broadcasts carry the final snapshot only after that flag becomes false.
 - `GET /v1/health`, `GET /v1/state`, and `GET /v1/events?after=<cursor>` remain the compatibility sequence for a service that returns `404` for `/v1/sync`.
 - `Runtime.Run(ctx)` runs an iteration immediately, then waits on either the next computed deadline, a configuration wake signal, or context cancellation.
 - `POST /v1/runs` returns `409 { "code": "active_run_conflict" }` when an active run already owns the same `projectId` and `scriptId`.
@@ -129,6 +130,7 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 - `runId` is the stable logical identity and `runtimeOwner` disambiguates its implementation. PID is diagnostic/process-control data only and must not decide whether an event is current.
 - Preload generates a `runId` for every direct launch and emits it with `runtimeOwner: "preload"`. It normalizes service events and service runs with `runtimeOwner: "service"` before exposing them to the Store.
 - A live service poll requests authenticated `GET /v1/sync?after=<cursor>`. Any non-`200` response, including `404`, or a malformed combined payload is a scoped unavailable/incompatible failure, not a preload fallback.
+- `/v1/sync` obtains the state run snapshot and its event page from one state-store read lock, so a terminal run and its newly appended terminal event cannot be split by a process transition between two reads. When `events.hasMore` is true, preload advances the cursor and dispatches that page's process events, but defers the `service-state` snapshot until the final page; a renderer may retain an already-known matching service identity only until that buffered terminal sequence settles.
 - Keep the existing `750 ms` poll cadence for a healthy service. Advance the cursor from the returned batch, emit each normalized process event, then emit one `service-state` snapshot with `events: []`. Suppress that snapshot only when the batch is empty and the status signature is unchanged; an empty healthy poll must not create redundant Pinia work.
 - Explicit reconciliation may return service events in the snapshot. The Store reconciles the run/automation snapshot before replaying those events, and ignores a delayed event whose `runId` or owner differs from the current script identity.
 - An unavailable or incompatible service emits a scoped `service-state` failure. The Store retains already-known service-owned script identity instead of manufacturing an exit; enabled mode stays fail-closed and does not fall back to preload/renderer execution.
@@ -143,6 +145,7 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 - A terminal event arrives before its matching start/result identity -> keep it pending by `(projectId, scriptId, runId)` until that identity is known, then settle it once.
 - `/v1/sync` returns a non-`200` response or an invalid `{ health, state, events }` body -> emit an unavailable service state and retain existing service-owned runtime identity.
 - A healthy sync batch is empty and the status signature is unchanged -> do not emit `service-state`; a non-empty batch -> emit all process events and exactly one reconciliation snapshot.
+- A sync page has `hasMore=true` while the state reports a current run as terminal -> emit that page's process events without a `service-state` snapshot; emit the snapshot only after the final page so its later `stdout`/`exit` events retain the current identity.
 - A service poll/read fails while enabled -> emit `service-state` with `unavailable` or `incompatible`; preserve known service runs and block new delegated work.
 - An automation configuration replacement arrives while the scheduler is idle -> wake immediately instead of waiting for the old deadline; a recovered run remains eligible for the bounded `500 ms` reconciliation poll.
 - A scheduler iteration fails with a non-cancellation error -> `/v1/state.scheduler.state` becomes `degraded`; retry with bounded exponential backoff and continue serving future plans.
@@ -156,6 +159,7 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 
 - Good: a preload launch and a service launch both expose an owner-tagged `runId`; stop and input select the run using that identity even while a service PID is not yet available.
 - Good: a service task completes while the plugin is open; one sync response updates its plan entry, active-run guard, history, scheduler status, and ordered output without a Settings refresh.
+- Good: a one-shot service command exits after a large buffered output burst; paged sync delivers `started`, then later output/exit events before its terminal snapshot settles the run, while a different active service script remains running.
 - Good: an older service snapshot reports a terminal run and its subsequent ordered event batch starts a newer run; the newer run remains current after reconciliation.
 - Base: a current service returns one validated `{ health, state, events }` response for `/v1/sync`; preload advances the cursor and reconciles the snapshot before exposing events.
 - Base: a browser or legacy fixture omits `runId`; compatibility processing may use matching PID only, but new preload/service events must not omit runtime identity.
@@ -165,8 +169,8 @@ Keep ownership global and explicit: delegate only after healthy validation, othe
 
 ### 6. Tests Required
 
-- `npx vitest run tests/projectBridge.launchers.test.ts tests/projectBridge.uiPreferences.test.ts tests/projectRuntimeState.test.ts` must assert owner-tagged direct events, `/v1/sync` consumption, non-`200` synchronization failure without legacy fallback, unchanged-empty broadcast suppression, stale terminal-event rejection, snapshot/event ordering, duplicate cursor suppression, unavailable-service identity retention, handoff gating, `runEarlyEntryId` submission, PID-less service stop/input/reconcile, and active-run-conflict recovery.
-- `go -C service test ./internal/process/... ./internal/api/... ./internal/scheduler/...` must assert active-run conflict mapping, `/v1/sync` health/state/event serialization, configuration wake-up, idle deadline selection, future-plan `30s` recovery recheck, state serialization of scheduler health, non-cancellation scheduler recovery, bounded error text, and early-entry single claim behavior.
+- `npx vitest run tests/projectBridge.launchers.test.ts tests/projectBridge.uiPreferences.test.ts tests/projectRuntimeState.test.ts` must assert owner-tagged direct events, `/v1/sync` consumption, non-`200` synchronization failure without legacy fallback, unchanged-empty broadcast suppression, terminal snapshot replay for same-page and paged buffered output, stale terminal-event rejection, snapshot/event ordering, duplicate cursor suppression, unavailable-service identity retention, handoff gating, `runEarlyEntryId` submission, PID-less service stop/input/reconcile, and active-run-conflict recovery.
+- `go -C service test ./internal/state/... ./internal/process/... ./internal/api/... ./internal/scheduler/...` must assert active-run conflict mapping, atomic `/v1/sync` run-snapshot/event-page reads, health/state/event serialization, configuration wake-up, idle deadline selection, future-plan `30s` recovery recheck, state serialization of scheduler health, non-cancellation scheduler recovery, bounded error text, and early-entry single claim behavior.
 - `node --check public/preload.js` must pass after changing bridge polling, run normalization, or direct-process events.
 - `npm run lint` and `npm run build` must pass after changing shared runtime types, Store reconciliation, or service-state UI handling.
 

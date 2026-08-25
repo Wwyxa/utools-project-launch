@@ -1848,6 +1848,19 @@ export const useStore = defineStore("app", {
       const activeServiceRunIds = new Map<string, string>();
       const serviceScriptsAwaitingStart = new Set<string>();
       const lostServiceRunIds = new Set<string>();
+      const currentServiceRunIds = new Map<string, string>();
+      const replayableServiceEventRunIds = new Set(
+        (status.events || [])
+          .filter((event) => event.type !== "started" && Boolean(event.runId))
+          .map((event) => event.runId),
+      );
+      for (const project of this.projects) {
+        for (const script of project.scripts) {
+          if (script.runtimeOwner === "service" && script.runId) {
+            currentServiceRunIds.set(`${project.id}\u0000${script.id}`, script.runId);
+          }
+        }
+      }
       for (const run of status.runs || []) {
         if (!run.projectId || !run.scriptId || !run.id) {
           continue;
@@ -1871,17 +1884,24 @@ export const useStore = defineStore("app", {
 
         const scriptKey = `${run.projectId}\u0000${run.scriptId}`;
         const isActiveServiceRun = run.status === "starting" || run.status === "running" || run.status === "stopping";
+        const replayingTerminalRun =
+          !isActiveServiceRun &&
+          run.status !== "lost" &&
+          currentServiceRunIds.get(scriptKey) === run.id &&
+          (replayableServiceEventRunIds.has(run.id) || status.eventsHasMore === true);
         rememberRuntimeRun(
           pendingRuntimeTerminalEventKey(run.projectId, run.scriptId, run.id),
-          isActiveServiceRun ? "active" : "terminal",
+          isActiveServiceRun || replayingTerminalRun ? "active" : "terminal",
         );
-        if (isActiveServiceRun) {
+        if (isActiveServiceRun || replayingTerminalRun) {
           activeServiceRunIds.set(scriptKey, run.id);
-          const pid = run.pid;
-          script.status = run.status === "stopping" ? "STOPPING" : "RUNNING";
-          script.pid = typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? pid : undefined;
-          script.runId = run.id;
-          script.runtimeOwner = "service";
+          if (isActiveServiceRun) {
+            const pid = run.pid;
+            script.status = run.status === "stopping" ? "STOPPING" : "RUNNING";
+            script.pid = typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? pid : undefined;
+            script.runId = run.id;
+            script.runtimeOwner = "service";
+          }
         } else {
           script.status =
             run.status === "failed" ? "ERROR" : run.status === "stopped" || run.status === "lost" ? "STOPPED" : "IDLE";

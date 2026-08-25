@@ -1215,6 +1215,17 @@ func (store *Store) Snapshot() Snapshot {
 	store.mutex.RLock()
 	defer store.mutex.RUnlock()
 
+	return store.snapshotLocked()
+}
+
+func (store *Store) SnapshotAndEventsAfter(after uint64, maxBytes int) (Snapshot, EventBatch) {
+	store.mutex.RLock()
+	defer store.mutex.RUnlock()
+
+	return store.snapshotLocked(), store.eventsAfterLocked(after, maxBytes)
+}
+
+func (store *Store) snapshotLocked() Snapshot {
 	return Snapshot{
 		Runs:           cloneRuns(store.data.Runs),
 		LatestCursor:   latestCursor(store.data),
@@ -1386,6 +1397,10 @@ func (store *Store) eventsAfter(after uint64, maxBytes int) EventBatch {
 	store.mutex.RLock()
 	defer store.mutex.RUnlock()
 
+	return store.eventsAfterLocked(after, maxBytes)
+}
+
+func (store *Store) eventsAfterLocked(after uint64, maxBytes int) EventBatch {
 	earliest := earliestCursor(store.liveEvents)
 	batch := EventBatch{
 		LatestCursor:   latestCursor(store.data),

@@ -368,6 +368,10 @@ func (supervisor *Supervisor) StoreSnapshot() state.Snapshot {
 	return supervisor.store.Snapshot()
 }
 
+func (supervisor *Supervisor) StoreSnapshotAndEventsAfter(after uint64, maxBytes int) (state.Snapshot, state.EventBatch) {
+	return supervisor.store.SnapshotAndEventsAfter(after, maxBytes)
+}
+
 func (supervisor *Supervisor) EventsAfter(after uint64) state.EventBatch {
 	return supervisor.store.EventsAfter(after)
 }

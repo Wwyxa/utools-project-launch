@@ -298,6 +298,7 @@ export interface ProjectLaunchServiceStatus {
   activeRunCount?: number;
   runs?: ProjectLaunchServiceRun[];
   events?: ProjectLaunchServiceEvent[];
+  eventsHasMore?: boolean;
   latestCursor?: number;
   earliestCursor?: number;
   eventsTruncated?: boolean;

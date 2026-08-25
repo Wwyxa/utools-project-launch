@@ -1940,6 +1940,171 @@ describe("Project Launch Service preload installation", () => {
     }
   });
 
+  it("defers a service-state broadcast until the final event page", async () => {
+    vi.useFakeTimers();
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus; message?: string }> = [];
+    const requestedPaths: string[] = [];
+    const storage = new Map<string, unknown>([
+      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
+    ]);
+    const health = {
+      protocolVersion: 2,
+      serviceVersion: "test",
+      instanceId: "paged-service",
+      pid: process.pid,
+      processIdentity: "paged-process",
+    };
+    const state = {
+      runs: [
+        {
+          id: "11111111111111111111111111111111",
+          projectId: "paged-project",
+          scriptId: "one-shot-script",
+          label: "Paged project / one shot",
+          command: "echo paged",
+          cwd: "C:\\workspace",
+          pid: 8107,
+          status: "exited",
+          startedAt: "2026-08-25T09:00:00.000Z",
+          endedAt: "2026-08-25T09:00:01.000Z",
+          code: 0,
+        },
+      ],
+      latestCursor: 3,
+      earliestCursor: 1,
+      automation: { revision: 0, executions: [] },
+      scheduler: { state: "running" },
+    };
+    const http = {
+      request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
+        requestedPaths.push(options.path);
+        const request = new EventEmitter() as EventEmitter & {
+          destroy: (error?: Error) => void;
+          end: () => void;
+        };
+        request.destroy = (error) => {
+          if (error) queueMicrotask(() => request.emit("error", error));
+        };
+        request.end = () => {
+          const payload =
+            options.path === "/v1/sync?after=0"
+              ? {
+                  health,
+                  state,
+                  events: {
+                    events: [
+                      {
+                        cursor: 1,
+                        timestamp: "2026-08-25T09:00:00.000Z",
+                        type: "started",
+                        runId: "11111111111111111111111111111111",
+                        projectId: "paged-project",
+                        scriptId: "one-shot-script",
+                        pid: 8107,
+                      },
+                    ],
+                    latestCursor: 3,
+                    earliestCursor: 1,
+                    truncated: false,
+                    nextCursor: 1,
+                    hasMore: true,
+                  },
+                }
+              : options.path === "/v1/sync?after=1"
+                ? {
+                    health,
+                    state,
+                    events: {
+                      events: [
+                        {
+                          cursor: 2,
+                          timestamp: "2026-08-25T09:00:00.500Z",
+                          type: "stdout",
+                          runId: "11111111111111111111111111111111",
+                          projectId: "paged-project",
+                          scriptId: "one-shot-script",
+                          pid: 8107,
+                          message: "paged output",
+                        },
+                        {
+                          cursor: 3,
+                          timestamp: "2026-08-25T09:00:01.000Z",
+                          type: "exit",
+                          runId: "11111111111111111111111111111111",
+                          projectId: "paged-project",
+                          scriptId: "one-shot-script",
+                          pid: 8107,
+                          code: 0,
+                        },
+                      ],
+                      latestCursor: 3,
+                      earliestCursor: 1,
+                      truncated: false,
+                      nextCursor: 3,
+                      hasMore: false,
+                    },
+                  }
+                : null;
+          const response = new EventEmitter() as EventEmitter & { statusCode: number };
+          response.statusCode = payload ? 200 : 404;
+          queueMicrotask(() => {
+            callback(response);
+            response.emit("data", Buffer.from(JSON.stringify(payload || {})));
+            response.emit("end");
+          });
+        };
+        return request;
+      }),
+    };
+
+    try {
+      const bridge = loadPreloadBridge(
+        storage,
+        undefined,
+        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { http },
+        (detail) => {
+          if (detail && typeof detail === "object") {
+            emittedEvents.push(detail as { type?: string; status?: ProjectLaunchServiceStatus; message?: string });
+          }
+        },
+      );
+      const installed = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(installed.directoryPath, { recursive: true });
+      writeFileSync(installed.executablePath, binaryContents);
+      writeFileSync(join(installed.directoryPath, "token"), `${"a".repeat(64)}\n`);
+      writeFileSync(
+        join(installed.directoryPath, "discovery.json"),
+        JSON.stringify({
+          protocolVersion: 2,
+          serviceVersion: "test",
+          instanceId: "paged-service",
+          pid: process.pid,
+          processIdentity: "paged-process",
+          startedAt: new Date().toISOString(),
+          host: "127.0.0.1",
+          port: 3000,
+          tokenPath: join(installed.directoryPath, "token"),
+        }),
+      );
+
+      const reconciled = await bridge.reconcileProjectLaunchService();
+      expect(reconciled).toMatchObject({ eventsHasMore: true, events: [expect.objectContaining({ cursor: 1 })] });
+      expect(emittedEvents).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(requestedPaths).toEqual(["/v1/sync?after=0", "/v1/sync?after=1"]);
+      expect(emittedEvents.map((event) => event.type)).toEqual(["stdout", "exit", "service-state"]);
+      expect(emittedEvents[2]?.status).toMatchObject({ eventsHasMore: false, events: [] });
+      bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
+    } finally {
+      vi.useRealTimers();
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("suppresses unchanged empty service-state broadcasts", async () => {
     vi.useFakeTimers();
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
@@ -2791,6 +2956,262 @@ describe("store startup timing", () => {
     expect(store.scriptLogs["active-service-project"]?.["active-service-script"]).toContainEqual(
       expect.objectContaining({ message: "current run output" }),
     );
+  });
+
+  it("replays buffered output when a current service run is already terminal in the snapshot", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [
+      {
+        id: "buffered-service-project",
+        name: "Buffered service project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "one-shot-script",
+            name: "one shot",
+            command: "echo buffered",
+            status: "RUNNING",
+            pid: 8105,
+            runId: "buffered-service-run",
+            runtimeOwner: "service",
+          },
+          {
+            id: "long-running-script",
+            name: "long running",
+            command: "echo active",
+            status: "RUNNING",
+            pid: 8106,
+            runId: "active-service-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    store.reconcileProjectLaunchServiceRuntime({
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      runs: [
+        {
+          id: "buffered-service-run",
+          projectId: "buffered-service-project",
+          scriptId: "one-shot-script",
+          label: "Buffered service project / one shot",
+          command: "echo buffered",
+          cwd: "C:\\workspace",
+          pid: 8105,
+          status: "exited",
+          startedAt: "2026-08-25T09:00:00.000Z",
+          endedAt: "2026-08-25T09:00:01.000Z",
+          code: 0,
+        },
+        {
+          id: "active-service-run",
+          projectId: "buffered-service-project",
+          scriptId: "long-running-script",
+          label: "Buffered service project / long running",
+          command: "echo active",
+          cwd: "C:\\workspace",
+          pid: 8106,
+          status: "running",
+          startedAt: "2026-08-25T09:00:00.000Z",
+        },
+      ],
+      events: [
+        {
+          cursor: 96,
+          timestamp: "2026-08-25T09:00:00.500Z",
+          type: "stdout",
+          runId: "buffered-service-run",
+          projectId: "buffered-service-project",
+          scriptId: "one-shot-script",
+          pid: 8105,
+          message: "buffered output",
+        },
+        {
+          cursor: 97,
+          timestamp: "2026-08-25T09:00:01.000Z",
+          type: "exit",
+          runId: "buffered-service-run",
+          projectId: "buffered-service-project",
+          scriptId: "one-shot-script",
+          pid: 8105,
+          code: 0,
+        },
+      ],
+    });
+
+    expect(store.scriptLogs["buffered-service-project"]?.["one-shot-script"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "buffered output" }),
+        expect.objectContaining({ message: "exited with code 0" }),
+      ]),
+    );
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.projects[0]?.scripts[1]).toMatchObject({
+      status: "RUNNING",
+      runId: "active-service-run",
+      runtimeOwner: "service",
+    });
+  });
+
+  it("keeps a current service run until a later event page reaches its terminal event", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
+    store.projects = [
+      {
+        id: "paged-service-project",
+        name: "Paged service project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "one-shot-script",
+            name: "one shot",
+            command: "echo paged",
+            status: "RUNNING",
+            pid: 8107,
+            runId: "paged-service-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+      {
+        id: "other-active-service-project",
+        name: "Other active service project",
+        path: "C:\\workspace-other",
+        type: "Custom",
+        kind: "custom",
+        status: ProjectStatus.RUNNING,
+        scripts: [
+          {
+            id: "long-running-script",
+            name: "long running",
+            command: "echo active",
+            status: "RUNNING",
+            pid: 8108,
+            runId: "active-paged-service-run",
+            runtimeOwner: "service",
+          },
+        ],
+        env: {},
+      },
+    ];
+
+    store.reconcileProjectLaunchServiceRuntime({
+      state: "healthy",
+      installed: true,
+      running: true,
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      eventsHasMore: true,
+      runs: [
+        {
+          id: "paged-service-run",
+          projectId: "paged-service-project",
+          scriptId: "one-shot-script",
+          label: "Paged service project / one shot",
+          command: "echo paged",
+          cwd: "C:\\workspace",
+          pid: 8107,
+          status: "exited",
+          startedAt: "2026-08-25T09:00:00.000Z",
+          endedAt: "2026-08-25T09:00:01.000Z",
+          code: 0,
+        },
+        {
+          id: "active-paged-service-run",
+          projectId: "other-active-service-project",
+          scriptId: "long-running-script",
+          label: "Other active service project / long running",
+          command: "echo active",
+          cwd: "C:\\workspace-other",
+          pid: 8108,
+          status: "running",
+          startedAt: "2026-08-25T09:00:00.000Z",
+        },
+      ],
+      events: [
+        {
+          cursor: 98,
+          timestamp: "2026-08-25T09:00:00.000Z",
+          type: "started",
+          runId: "paged-service-run",
+          projectId: "paged-service-project",
+          scriptId: "one-shot-script",
+          pid: 8107,
+        },
+      ],
+    });
+
+    expect(store.projects[0]?.scripts[0]).toMatchObject({
+      status: "RUNNING",
+      runId: "paged-service-run",
+      runtimeOwner: "service",
+    });
+
+    store.handleBridgeEvent({
+      type: "stdout",
+      cursor: 99,
+      timestamp: "2026-08-25T09:00:00.500Z",
+      runId: "paged-service-run",
+      projectId: "paged-service-project",
+      scriptId: "one-shot-script",
+      pid: 8107,
+      runtimeOwner: "service",
+      message: "paged output",
+    });
+    store.handleBridgeEvent({
+      type: "exit",
+      cursor: 100,
+      timestamp: "2026-08-25T09:00:01.000Z",
+      runId: "paged-service-run",
+      projectId: "paged-service-project",
+      scriptId: "one-shot-script",
+      pid: 8107,
+      runtimeOwner: "service",
+      code: 0,
+    });
+
+    expect(store.scriptLogs["paged-service-project"]?.["one-shot-script"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "paged output" }),
+        expect.objectContaining({ message: "exited with code 0" }),
+      ]),
+    );
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.projects[1]?.scripts[0]).toMatchObject({
+      status: "RUNNING",
+      runId: "active-paged-service-run",
+      runtimeOwner: "service",
+    });
   });
 
   it("does not append duplicate service output for the same event cursor", async () => {

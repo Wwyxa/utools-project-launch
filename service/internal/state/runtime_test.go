@@ -458,6 +458,42 @@ func TestEventsAfterPageAdvancesCursorWithinResponseBudget(t *testing.T) {
 	}
 }
 
+func TestSnapshotAndEventsAfterKeepsTerminalRunAndExitTogether(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	closeStore(t, store)
+
+	const runID = "abababababababababababababababab"
+	if _, created, err := store.CreateRun(Run{
+		ID:        runID,
+		ProjectID: "project",
+		ScriptID:  "script",
+		Status:    RunStatusRunning,
+	}, "snapshot-idempotency", "snapshot-request"); err != nil || !created {
+		t.Fatalf("create run: created=%t err=%v", created, err)
+	}
+	exitCode := 0
+	if _, err := store.UpdateRunAndAppendEvent(runID, func(current *Run) {
+		current.Status = RunStatusExited
+		current.EndedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}, "exit", Event{Code: &exitCode}); err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+
+	snapshot, batch := store.SnapshotAndEventsAfter(0, 0)
+	if len(snapshot.Runs) != 1 || snapshot.Runs[0].ID != runID || snapshot.Runs[0].Status != RunStatusExited {
+		t.Fatalf("snapshot runs = %#v, want exited run %q", snapshot.Runs, runID)
+	}
+	if len(batch.Events) != 1 || batch.Events[0].RunID != runID || batch.Events[0].Type != "exit" {
+		t.Fatalf("event batch = %#v, want exit for run %q", batch.Events, runID)
+	}
+	if snapshot.LatestCursor != batch.LatestCursor || batch.NextCursor != snapshot.LatestCursor {
+		t.Fatalf("snapshot/event cursors = snapshot:%d batch:%#v, want one consistent read", snapshot.LatestCursor, batch)
+	}
+}
+
 func TestAutomationSnapshotSerializesEmptyScriptResultsAsArray(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

@@ -194,6 +194,10 @@ func (handler *Handler) SupervisorSnapshot() state.Snapshot {
 	return handler.config.Supervisor.StoreSnapshot()
 }
 
+func (handler *Handler) SupervisorSnapshotAndEventsAfter(after uint64) (state.Snapshot, state.EventBatch) {
+	return handler.config.Supervisor.StoreSnapshotAndEventsAfter(after, maxEventResponseBytes)
+}
+
 func (handler *Handler) healthResponse() healthResponse {
 	return healthResponse{
 		ProtocolVersion: handler.config.ProtocolVersion,
@@ -206,8 +210,12 @@ func (handler *Handler) healthResponse() healthResponse {
 }
 
 func (handler *Handler) serviceSnapshot() serviceSnapshot {
+	return handler.serviceSnapshotFrom(handler.config.Supervisor.StoreSnapshot())
+}
+
+func (handler *Handler) serviceSnapshotFrom(snapshot state.Snapshot) serviceSnapshot {
 	return serviceSnapshot{
-		Snapshot:   handler.config.Supervisor.StoreSnapshot(),
+		Snapshot:   snapshot,
 		Automation: handler.config.Scheduler.AutomationSnapshot(),
 		Scheduler:  handler.config.Scheduler.Health(),
 	}
@@ -219,8 +227,8 @@ func (handler *Handler) handleSync(responseWriter http.ResponseWriter, request *
 		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_cursor", "The event cursor must be a non-negative integer.")
 		return
 	}
-	events := handler.SupervisorEventsAfter(after)
-	snapshot := handler.serviceSnapshot()
+	stateSnapshot, events := handler.SupervisorSnapshotAndEventsAfter(after)
+	snapshot := handler.serviceSnapshotFrom(stateSnapshot)
 	handler.writeBoundedJSON(responseWriter, http.StatusOK, syncResponse{
 		Health: handler.healthResponse(),
 		State:  snapshot,

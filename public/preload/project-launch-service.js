@@ -1227,6 +1227,7 @@ async function readProjectLaunchServiceStatus(options = {}) {
     if (options.includeEvents === true && batch) {
       advanceProjectLaunchServiceEventCursor(batch);
       status.events = Array.isArray(batch.events) ? batch.events : [];
+      status.eventsHasMore = batch.hasMore === true;
       status.eventsTruncated = batch.truncated === true;
       status.latestCursor = batch.latestCursor || state.latestCursor || status.latestCursor || 0;
       status.earliestCursor = batch.earliestCursor || state.earliestCursor || status.earliestCursor || 0;
@@ -1411,7 +1412,7 @@ async function pollProjectLaunchServiceEvents(emitEvents = true) {
     if (emitEvents) {
       events.forEach((event) => emit(projectLaunchServiceEventToBridgeEvent(event)));
     }
-    if (emitEvents && shouldEmitProjectLaunchServiceState(snapshot, events.length)) {
+    if (emitEvents && batch?.hasMore !== true && shouldEmitProjectLaunchServiceState(snapshot, events.length)) {
       emit({ type: "service-state", status: snapshot, timestamp: new Date().toISOString() });
     }
     return batch?.hasMore === true;
