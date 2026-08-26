@@ -863,7 +863,7 @@ External JSON must pass through runtime validation before store merge.
 
 - `ProjectGitStash = { selector: string; baseHash: string; untrackedFilesHash: string | null }`.
 - `ProjectGitCommitSummary.stash?: ProjectGitStash`; `refNames` retains a `{ kind: "stash", name: selector }` presentation ref.
-- Store and bridge actions use `createGitStash(...)`, `applyGitStash(projectPath, selector)`, `popGitStash(projectPath, selector)`, and `dropGitStash(projectPath, selector)`.
+- `ProjectGitStashOptions = { scope?: "all" | "staged" | "unstaged"; includeUntracked?: boolean }`; store and bridge actions use `createGitStash(projectPath, message?, options?)` plus the existing Apply, Pop, and Drop selectors.
 - Detail readers accept the same optional metadata: `readGitCommitFiles(projectPath, commitHash, stash?: ProjectGitStash)` and `readGitCommitFileDiff(projectPath, commitHash, relativePath, stash?: ProjectGitStash)`.
 
 ### 3. Contracts
@@ -875,6 +875,7 @@ External JSON must pass through runtime validation before store merge.
 - Components select Apply, Pop, and Drop targets from `commit.stash.selector` first. Structured and legacy stash refs are presentation fallbacks only.
 - History expansion, tooltip fallback, right-side file preview, and AI diff context pass `commit.stash` to the detail readers. Ordinary commits omit it and retain the generic commit reader path.
 - For a stash detail reader, compare `baseHash` to the stash hash for tracked files. When `untrackedFilesHash` is non-null, append that root tree's `diff-tree --root` files and patches, and label its added files `UNTRACKED`.
+- Scope defaults to `all`; preload maps `staged` to `git stash push --staged` and `unstaged` to `git stash push --keep-index`. `includeUntracked` is ignored for `staged`, and empty requested scopes fail before writing.
 - Stash writes always refresh the full Git snapshot; Pop and Drop also refresh refs because selector indices can change.
 
 ### 4. Validation & Error Matrix
@@ -883,6 +884,7 @@ External JSON must pass through runtime validation before store merge.
 - Two stashes sharing one base -> expose `stash@{0}` and `stash@{1}` in stack order, each with the same `baseHash`.
 - A stash created with `--include-untracked` -> preserve a non-null `untrackedFilesHash` but display no `index on ...` or `untracked files on ...` helper rows.
 - A stash containing staged, tracked working-tree, and untracked changes -> file details include all three categories; the untracked entry has `status: "UNTRACKED"` and its single-file patch is non-empty.
+- Empty `staged` or `unstaged` scope -> failure without a new stash; omitted or invalid scope -> `all` behavior.
 - A stash whose base is HEAD -> history may begin with `stash@{0}`, but the structured HEAD ref remains attached to the real HEAD commit.
 - A stash detail reader invoked without metadata -> do not infer a stash from generic merge parents; keep the normal commit reader path so unrelated merge commits retain their established behavior.
 - A filtered-out stash base -> do not synthesize a dangling base lane outside the visible graph window.
@@ -900,6 +902,7 @@ External JSON must pass through runtime validation before store merge.
 ### 6. Tests Required
 
 - `npm run validate:git-commits` must create two stashes, assert both selectors/base hashes, assert the untracked parent is metadata rather than a visible helper commit, and verify staged/untracked file rows plus their individual patches for a historical stash.
+- The same validator must cover staged-only and unstaged-only writes, including index preservation and opted-in untracked files.
 - `npx vitest run src/lib/gitCommitGraph.test.ts` must cover a leading multi-stash stack whose first stash has `nodeLane > 0`.
 - Run `node --check public/preload.js`, `npm run lint`, and `npm run build` after changing the stash bridge, types, or renderer.
 

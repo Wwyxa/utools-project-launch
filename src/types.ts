@@ -673,7 +673,10 @@ export interface ProjectGitPushOptions {
   tagNames?: string[];
 }
 
+export type ProjectGitStashScope = "all" | "staged" | "unstaged";
+
 export interface ProjectGitStashOptions {
+  scope?: ProjectGitStashScope;
   includeUntracked?: boolean;
 }
 

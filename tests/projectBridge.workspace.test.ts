@@ -778,7 +778,10 @@ describe("browser Git workspace fallback", () => {
     const store = useStore();
     const changedProject = createProject("project-dashboard-changed", changedPath);
     const cleanProject = createProject("project-dashboard-clean", cleanPath);
-    const unavailableProject = { ...createProject("project-dashboard-unavailable", "C:\\missing-project"), pathExists: false };
+    const unavailableProject = {
+      ...createProject("project-dashboard-unavailable", "C:\\missing-project"),
+      pathExists: false,
+    };
     store.projects = [changedProject, cleanProject, unavailableProject];
 
     await store.refreshDashboardGitChangeCounts();
@@ -1699,16 +1702,19 @@ describe("browser Git workspace fallback", () => {
     await expect(store.createGitStash(project.id, "before refactor", { includeUntracked: true })).resolves.toEqual(
       success,
     );
+    await expect(store.createGitStash(project.id, "staged work", { scope: "staged" })).resolves.toEqual(success);
     await expect(store.applyGitStash(project.id, "stash@{0}")).resolves.toEqual(conflicted);
     await expect(store.popGitStash(project.id, "stash@{0}")).resolves.toEqual(success);
     await expect(store.dropGitStash(project.id, "stash@{0}")).resolves.toEqual(success);
 
     expect(createGitStash).toHaveBeenCalledWith(mainPath, "before refactor", { includeUntracked: true });
+    expect(createGitStash).toHaveBeenCalledWith(mainPath, "staged work", { scope: "staged" });
     expect(applyGitStash).toHaveBeenCalledWith(mainPath, "stash@{0}");
     expect(popGitStash).toHaveBeenCalledWith(mainPath, "stash@{0}");
     expect(dropGitStash).toHaveBeenCalledWith(mainPath, "stash@{0}");
-    expect(readGitSnapshot).toHaveBeenCalledTimes(4);
+    expect(readGitSnapshot).toHaveBeenCalledTimes(5);
     expect(readGitSnapshot.mock.calls.map(([repositoryPath]) => repositoryPath)).toEqual([
+      mainPath,
       mainPath,
       mainPath,
       mainPath,

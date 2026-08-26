@@ -21,6 +21,7 @@ import {
   type ProjectGitDiffScope,
   type ProjectGitFileChange,
   type ProjectGitRepositoryTarget,
+  type ProjectGitStashScope,
 } from "../../types";
 import {
   aiReasoningCopyText,
@@ -105,6 +106,7 @@ const moreMenuPosition = ref({ left: 8, top: 8 });
 const moreMenuRef = ref<HTMLElement | null>(null);
 const moreMenuOpener = ref<HTMLElement | null>(null);
 const stashDialogOpen = ref(false);
+const stashScope = ref<ProjectGitStashScope>("all");
 const stashMessage = ref("");
 const stashIncludeUntracked = ref(false);
 const stashMessageInputRef = ref<HTMLInputElement | null>(null);
@@ -158,7 +160,23 @@ const visibleWorktreeItems = computed(() =>
 );
 const isChangesWriteBusy = computed(() => Boolean(activeGitAction.value) || activeGitFileActions.value.length > 0);
 const isStashDialogBusy = computed(() => activeGitAction.value === "stash");
-const canCreateStash = computed(() => !props.disabled && !isChangesWriteBusy.value && files.value.length > 0);
+const stashFiles = (scope: ProjectGitStashScope) => {
+  if (scope === "staged") return stagedFiles.value;
+  if (scope === "unstaged") return stageableFiles.value;
+  return files.value;
+};
+const canCreateStash = (scope: ProjectGitStashScope) =>
+  !props.disabled && !isChangesWriteBusy.value && stashFiles(scope).length > 0;
+const stashActionTitle = (scope: ProjectGitStashScope) => {
+  if (scope === "staged") return t.value.git.stashStagedChanges;
+  if (scope === "unstaged") return t.value.git.stashUnstagedChanges;
+  return t.value.git.stashAllChanges;
+};
+const stashDialogDescription = computed(() => {
+  if (stashScope.value === "staged") return t.value.git.stashStagedDescription;
+  if (stashScope.value === "unstaged") return t.value.git.stashUnstagedDescription;
+  return t.value.git.stashAllDescription;
+});
 const composerCommitMessage = computed(() => (isAmendMode.value ? amendCommitMessage.value : props.commitMessage));
 const amendMessageChanged = computed(() => composerCommitMessage.value.trim() !== amendOriginalMessage.value);
 const canCommitStaged = computed(() => {
@@ -580,8 +598,9 @@ const closeStashDialog = (restoreFocus = true, force = false) => {
   if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
 };
 
-const openStashDialog = async (event: MouseEvent) => {
-  if (!canCreateStash.value) return;
+const openStashDialog = async (scope: ProjectGitStashScope, event: MouseEvent) => {
+  if (!canCreateStash(scope)) return;
+  stashScope.value = scope;
   stashDialogOpener.value = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   stashMessage.value = "";
   stashIncludeUntracked.value = false;
@@ -591,7 +610,7 @@ const openStashDialog = async (event: MouseEvent) => {
 };
 
 const handleCreateGitStash = async () => {
-  if (!canCreateStash.value) return;
+  if (!canCreateStash(stashScope.value)) return;
   let saved = false;
   emit("worktree-action-started");
   activeGitAction.value = "stash";
@@ -601,7 +620,10 @@ const handleCreateGitStash = async () => {
     const result = await store.createGitStash(
       props.projectId,
       stashMessage.value,
-      { includeUntracked: stashIncludeUntracked.value },
+      {
+        scope: stashScope.value,
+        includeUntracked: stashScope.value !== "staged" && stashIncludeUntracked.value,
+      },
       props.repositoryTarget,
     );
     if (!result) {
@@ -1011,11 +1033,11 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="git-section-action"
-            :disabled="!canCreateStash"
+            :disabled="!canCreateStash('all')"
             :aria-busy="isStashDialogBusy"
-            :title="t.git.stashChanges"
-            :aria-label="t.git.stashChanges"
-            @click="openStashDialog($event)"
+            :title="stashActionTitle('all')"
+            :aria-label="stashActionTitle('all')"
+            @click="openStashDialog('all', $event)"
           >
             <Archive :size="13" :class="isStashDialogBusy ? 'animate-pulse' : ''" />
           </button>
@@ -1156,6 +1178,17 @@ onBeforeUnmount(() => {
             <span class="min-w-0 truncate">{{ group.label }}</span>
           </button>
           <div class="flex shrink-0 items-center gap-px">
+            <button
+              type="button"
+              class="git-row-action"
+              :disabled="!canCreateStash(group.scope)"
+              :aria-busy="isStashDialogBusy && stashScope === group.scope"
+              :title="stashActionTitle(group.scope)"
+              :aria-label="stashActionTitle(group.scope)"
+              @click.stop="openStashDialog(group.scope, $event)"
+            >
+              <Archive :size="12" :class="isStashDialogBusy && stashScope === group.scope ? 'animate-pulse' : ''" />
+            </button>
             <button
               v-if="group.scope === 'staged' && group.files.length > 0"
               type="button"
@@ -1347,12 +1380,18 @@ onBeforeUnmount(() => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="git-stash-dialog-title"
+            aria-describedby="git-stash-dialog-description"
             @submit.prevent="handleCreateGitStash"
           >
             <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
-              <h3 id="git-stash-dialog-title" class="text-sm font-bold text-on-surface">{{ t.git.stashChanges }}</h3>
+              <h3 id="git-stash-dialog-title" class="text-sm font-bold text-on-surface">
+                {{ stashActionTitle(stashScope) }}
+              </h3>
             </div>
             <div class="space-y-3 px-4 py-3">
+              <p id="git-stash-dialog-description" class="text-xs leading-5 text-on-surface-variant">
+                {{ stashDialogDescription }}
+              </p>
               <label class="block text-xs font-bold text-on-surface">
                 <span>{{ t.git.stashMessage }}</span>
                 <input
@@ -1365,16 +1404,19 @@ onBeforeUnmount(() => {
                   :placeholder="t.git.stashMessagePlaceholder"
                 />
               </label>
-              <label class="flex items-center gap-2 text-xs font-medium text-on-surface">
-                <input
-                  v-model="stashIncludeUntracked"
-                  type="checkbox"
-                  class="accent-primary"
-                  :disabled="isStashDialogBusy"
-                />
-                <span>{{ t.git.stashIncludeUntracked }}</span>
-              </label>
-              <div class="flex justify-end gap-2 pt-1">
+              <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
+                <label
+                  v-if="stashScope !== 'staged'"
+                  class="mr-auto flex min-w-0 flex-1 items-center gap-2 text-xs font-medium text-on-surface"
+                >
+                  <input
+                    v-model="stashIncludeUntracked"
+                    type="checkbox"
+                    class="accent-primary"
+                    :disabled="isStashDialogBusy"
+                  />
+                  <span class="min-w-0 leading-4">{{ t.git.stashIncludeUntracked }}</span>
+                </label>
                 <button
                   type="button"
                   class="git-dialog-secondary"
@@ -1385,7 +1427,7 @@ onBeforeUnmount(() => {
                 </button>
                 <button type="submit" class="git-dialog-primary" :disabled="isStashDialogBusy">
                   <Archive :size="13" :class="isStashDialogBusy ? 'animate-pulse' : ''" />
-                  {{ isStashDialogBusy ? t.git.stashSaving : t.git.stashSave }}
+                  {{ isStashDialogBusy ? t.git.stashSaving : t.common.save }}
                 </button>
               </div>
             </div>

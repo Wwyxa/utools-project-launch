@@ -891,6 +891,39 @@ try {
   );
   assert.equal(await bridge.readGitTagInfo(projectRoot, "missing-tag"), null);
 
+  const stagedScopePath = path.join(projectRoot, "staged-scope.txt");
+  const retainedUnstagedScopePath = path.join(projectRoot, "retained-unstaged-scope.txt");
+  fs.writeFileSync(stagedScopePath, "staged scope\n");
+  fs.writeFileSync(retainedUnstagedScopePath, "retained unstaged scope\n");
+  runGit("add", "staged-scope.txt");
+  assert.equal(
+    (await bridge.createGitStash(projectRoot, "staged scope", { scope: "staged", includeUntracked: true })).ok,
+    true,
+  );
+  assert.equal(fs.existsSync(stagedScopePath), false);
+  assert.equal(fs.existsSync(retainedUnstagedScopePath), true);
+  assert.match(runGit("stash", "show", "--name-only", "stash@{0}"), /staged-scope\.txt/);
+  assert.equal((await bridge.dropGitStash(projectRoot, "stash@{0}")).ok, true);
+  runGit("reset", "--hard");
+  runGit("clean", "-fd");
+
+  fs.appendFileSync(path.join(projectRoot, "history.txt"), "keep staged scope\n");
+  runGit("add", "--", "history.txt");
+  fs.appendFileSync(path.join(projectRoot, "history.txt"), "save unstaged scope\n");
+  const unstagedScopeUntrackedPath = path.join(projectRoot, "unstaged-scope-untracked.txt");
+  fs.writeFileSync(unstagedScopeUntrackedPath, "unstaged scope untracked\n");
+  assert.equal(
+    (await bridge.createGitStash(projectRoot, "unstaged scope", { scope: "unstaged", includeUntracked: true })).ok,
+    true,
+  );
+  assert.match(runGit("diff", "--cached", "--", "history.txt"), /keep staged scope/);
+  assert.doesNotMatch(runGit("diff", "--", "history.txt"), /save unstaged scope/);
+  assert.equal(fs.existsSync(unstagedScopeUntrackedPath), false);
+  assert.match(runGit("stash", "show", "--name-only", "stash@{0}"), /history\.txt/);
+  assert.equal((await bridge.dropGitStash(projectRoot, "stash@{0}")).ok, true);
+  runGit("reset", "--hard");
+  runGit("clean", "-fd");
+
   const untrackedOnlyPath = path.join(projectRoot, "untracked-only.txt");
   fs.writeFileSync(untrackedOnlyPath, "untracked only\n");
   assert.equal((await bridge.createGitStash(projectRoot, "ignored untracked")).ok, false);

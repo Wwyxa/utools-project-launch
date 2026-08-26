@@ -2220,30 +2220,56 @@ function validateGitStashRef(repositoryPath, stashRef) {
     : "";
 }
 
+function normalizeGitStashScope(value) {
+  return value === "staged" || value === "unstaged" ? value : "all";
+}
+
 function createGitStash(projectPath, message, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   const stashMessage = typeof message === "string" ? message.trim() : "";
-  const includeUntracked = Boolean(options?.includeUntracked);
+  const stashScope = normalizeGitStashScope(options?.scope);
+  const includeUntracked = stashScope !== "staged" && Boolean(options?.includeUntracked);
   if (!repositoryPath) {
     return { ok: false, message: "未检测到 Git 仓库。" };
   }
 
-  const hasStashableChanges = readGitStatusEntries(repositoryPath).some(
-    (status) => includeUntracked || status.status !== "UNTRACKED",
-  );
+  const hasStashableChanges = readGitStatusEntries(repositoryPath).some((status) => {
+    if (stashScope === "staged") return status.staged;
+    if (stashScope === "unstaged") return status.unstaged && (includeUntracked || status.status !== "UNTRACKED");
+    return includeUntracked || status.status !== "UNTRACKED";
+  });
   if (!hasStashableChanges) {
     return {
       ok: false,
-      message: includeUntracked ? "当前没有可保存到 stash 的变更。" : "当前没有可保存到 stash 的已跟踪文件变更。",
+      message:
+        stashScope === "staged"
+          ? "当前没有已暂存的变更可保存到 stash。"
+          : stashScope === "unstaged"
+            ? includeUntracked
+              ? "当前没有可保存到 stash 的未暂存变更。"
+              : "当前没有可保存到 stash 的未暂存已跟踪文件变更。"
+            : includeUntracked
+              ? "当前没有可保存到 stash 的变更。"
+              : "当前没有可保存到 stash 的已跟踪文件变更。",
     };
   }
 
   const args = ["stash", "push"];
+  if (stashScope === "staged") args.push("--staged");
+  if (stashScope === "unstaged") args.push("--keep-index");
   if (includeUntracked) args.push("--include-untracked");
   if (stashMessage) args.push("--message", stashMessage);
   const result = runGitResult(repositoryPath, args);
   return result.status === 0
-    ? { ok: true, message: "已保存当前变更到 stash。" }
+    ? {
+        ok: true,
+        message:
+          stashScope === "staged"
+            ? "已保存已暂存变更到 stash。"
+            : stashScope === "unstaged"
+              ? "已保存未暂存变更到 stash。"
+              : "已保存当前变更到 stash。",
+      }
     : { ok: false, message: firstGitError(result, "保存到 stash 失败。") };
 }
 
