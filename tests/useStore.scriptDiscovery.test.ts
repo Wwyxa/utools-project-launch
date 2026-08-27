@@ -142,4 +142,32 @@ describe("project form script discovery", () => {
     expect(store.reorderProjectScripts(project.id, "first", "second")).toBe(true);
     expect(store.projects[0]?.scripts.map((script) => script.id)).toEqual(["second", "first"]);
   });
+
+  it("places a dashboard project after its drop target when moving down", async () => {
+    stubWindow();
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const projects: Project[] = ["first", "second", "third"].map((projectId) => ({
+      id: projectId,
+      name: projectId,
+      path: `/workspace/${projectId}`,
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [],
+      env: {},
+    }));
+    store.projects = projects;
+
+    await expect(
+      store.reorderProject(
+        "first",
+        "second",
+        projects.map((project) => project.id),
+        "after",
+      ),
+    ).resolves.toBe(true);
+    expect(store.projects.map((project) => project.id)).toEqual(["second", "first", "third"]);
+  });
 });

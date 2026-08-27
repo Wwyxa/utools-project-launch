@@ -3400,7 +3400,12 @@ export const useStore = defineStore("app", {
       await this.persistProjects();
       return true;
     },
-    async reorderProject(projectId: string, targetProjectId: string, scopeProjectIds?: string[]) {
+    async reorderProject(
+      projectId: string,
+      targetProjectId: string,
+      scopeProjectIds?: string[],
+      position: "before" | "after" = "before",
+    ) {
       if (projectId === targetProjectId) {
         return false;
       }
@@ -3443,7 +3448,7 @@ export const useStore = defineStore("app", {
 
         const [movedProject] = reorderedScopedProjects.splice(currentScopedIndex, 1);
         const nextTargetScopedIndex = reorderedScopedProjects.findIndex((item) => item.id === targetProjectId);
-        reorderedScopedProjects.splice(nextTargetScopedIndex, 0, movedProject);
+        reorderedScopedProjects.splice(nextTargetScopedIndex + (position === "after" ? 1 : 0), 0, movedProject);
 
         const scopedProjectIds = new Set(reorderedScopedProjects.map((item) => item.id));
         let scopedIndex = 0;
@@ -3469,7 +3474,7 @@ export const useStore = defineStore("app", {
 
       const [movedProject] = reorderedSectionProjects.splice(movedProjectIndex, 1);
       const nextTargetIndex = reorderedSectionProjects.findIndex((item) => item.id === targetProjectId);
-      reorderedSectionProjects.splice(nextTargetIndex, 0, movedProject);
+      reorderedSectionProjects.splice(nextTargetIndex + (position === "after" ? 1 : 0), 0, movedProject);
 
       let sectionIndex = 0;
       this.projects = this.projects.map((item) => {

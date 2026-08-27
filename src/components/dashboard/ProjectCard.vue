@@ -79,10 +79,14 @@ const recordProjectCardWidthMeasurement = (durationMs: number) => {
   }
 };
 
+defineOptions({ inheritAttrs: false });
+
 const props = defineProps<{
   project: Project;
   isSorting?: boolean;
   isDragging?: boolean;
+  isDragOver?: boolean;
+  dragOverPosition?: "before" | "after";
   showGroupBadge?: boolean;
   groupLabel?: string;
 }>();
@@ -601,7 +605,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
 </script>
 
 <template>
-  <div v-if="isTiny" class="group relative flex items-center">
+  <div v-if="isTiny" v-bind="$attrs" class="group relative flex items-center">
     <div
       @click="handleCardSelect"
       @contextmenu="handleTinyCardContextMenu"
@@ -615,6 +619,10 @@ const updateTinyToolbarAlignment = (event: Event) => {
             'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
           isDragging && 'opacity-55 scale-[0.99]',
           isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
+          isDragOver &&
+            (dragOverPosition === 'after'
+              ? 'bg-primary/10 ring-1 ring-inset ring-primary/35 after:absolute after:-bottom-2 after:inset-x-3 after:z-20 after:h-0.5 after:rounded-full after:bg-primary after:pointer-events-none'
+              : 'bg-primary/10 ring-1 ring-inset ring-primary/35 before:absolute before:-top-2 before:inset-x-3 before:z-20 before:h-0.5 before:rounded-full before:bg-primary before:pointer-events-none'),
         )
       "
     >
@@ -773,6 +781,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
   </div>
   <div
     v-else
+    v-bind="$attrs"
     @click="handleCardSelect"
     :class="
       cn(
@@ -781,6 +790,10 @@ const updateTinyToolbarAlignment = (event: Event) => {
           'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
         isDragging && 'opacity-55 scale-[0.99]',
         isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
+        isDragOver &&
+          (dragOverPosition === 'after'
+            ? 'bg-primary/10 ring-1 ring-inset ring-primary/35 after:absolute after:-bottom-2 after:inset-x-3 after:z-20 after:h-0.5 after:rounded-full after:bg-primary after:pointer-events-none'
+            : 'bg-primary/10 ring-1 ring-inset ring-primary/35 before:absolute before:-top-2 before:inset-x-3 before:z-20 before:h-0.5 before:rounded-full before:bg-primary before:pointer-events-none'),
       )
     "
   >

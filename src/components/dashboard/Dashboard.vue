@@ -54,6 +54,9 @@ const todoProjectMenuStyle = ref<Record<string, string>>({});
 const automationOverviewFeedback = ref("");
 const automationRunPendingTaskKeys = ref(new Set<string>());
 const draggingProjectId = ref<string | null>(null);
+type ProjectDropPosition = "before" | "after";
+const dragOverProjectId = ref<string | null>(null);
+const dragOverProjectPosition = ref<ProjectDropPosition | null>(null);
 const selectedProjectGroupKey = ref("all");
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
 let stopAppEscapeListener = () => {};
@@ -62,6 +65,16 @@ const isReturningToMountedDashboard = initialDashboardProjectCardsMounted;
 let projectCardMountFrame: number | null = null;
 let projectCardMountAfterPaintFrame: number | null = null;
 let projectCardMountGeneration = 0;
+
+const clearProjectDropTarget = () => {
+  dragOverProjectId.value = null;
+  dragOverProjectPosition.value = null;
+};
+
+const clearProjectDrag = () => {
+  draggingProjectId.value = null;
+  clearProjectDropTarget();
+};
 
 const cancelProjectCardMount = () => {
   projectCardMountGeneration += 1;
@@ -360,14 +373,14 @@ const handleRefreshAll = async () => {
 const toggleSortingProjects = () => {
   if (hasSortableProjects.value) {
     isSortingProjects.value = !isSortingProjects.value;
-    draggingProjectId.value = null;
+    clearProjectDrag();
   }
 };
 
 watch(visibleProjectIds, (projectIds) => {
   if (projectIds.length === 0) {
     isSortingProjects.value = false;
-    draggingProjectId.value = null;
+    clearProjectDrag();
   }
 });
 
@@ -640,13 +653,39 @@ const handleProjectDragStart = (event: DragEvent, projectId: string) => {
   }
 
   draggingProjectId.value = projectId;
+  clearProjectDropTarget();
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", projectId);
+  const transparentDragPreview = document.createElement("canvas");
+  transparentDragPreview.width = 1;
+  transparentDragPreview.height = 1;
+  event.dataTransfer.setDragImage?.(transparentDragPreview, 0, 0);
 };
 
-const handleProjectDragOver = (event: DragEvent) => {
+const projectDropPosition = (
+  projectId: string,
+  targetProjectId: string,
+  scopeProjectIds: string[],
+): ProjectDropPosition | null => {
+  const projectIndex = scopeProjectIds.indexOf(projectId);
+  const targetIndex = scopeProjectIds.indexOf(targetProjectId);
+  if (projectIndex < 0 || targetIndex < 0 || projectIndex === targetIndex) {
+    return null;
+  }
+
+  return projectIndex < targetIndex ? "after" : "before";
+};
+
+const handleProjectDragOver = (event: DragEvent, targetProjectId: string, scopeProjectIds: string[]) => {
   if (isSortingProjects.value && draggingProjectId.value) {
     event.preventDefault();
+    const position = projectDropPosition(draggingProjectId.value, targetProjectId, scopeProjectIds);
+    if (position) {
+      dragOverProjectId.value = targetProjectId;
+      dragOverProjectPosition.value = position;
+    } else {
+      clearProjectDropTarget();
+    }
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = "move";
     }
@@ -656,16 +695,20 @@ const handleProjectDragOver = (event: DragEvent) => {
 const handleProjectDrop = (event: DragEvent, targetProjectId: string, visibleProjectIds: string[]) => {
   event.preventDefault();
   const projectId = draggingProjectId.value || event.dataTransfer?.getData("text/plain") || "";
-  draggingProjectId.value = null;
-  if (!projectId || projectId === targetProjectId) {
+  const position =
+    dragOverProjectId.value === targetProjectId
+      ? dragOverProjectPosition.value
+      : projectDropPosition(projectId, targetProjectId, visibleProjectIds);
+  clearProjectDrag();
+  if (!projectId || !position) {
     return;
   }
 
-  void store.reorderProject(projectId, targetProjectId, visibleProjectIds);
+  void store.reorderProject(projectId, targetProjectId, visibleProjectIds, position);
 };
 
 const handleProjectDragEnd = () => {
-  draggingProjectId.value = null;
+  clearProjectDrag();
 };
 </script>
 
@@ -1330,11 +1373,13 @@ const handleProjectDragEnd = () => {
               :project="project"
               :is-sorting="isSortingProjects"
               :is-dragging="draggingProjectId === project.id"
+              :is-drag-over="dragOverProjectId === project.id"
+              :drag-over-position="dragOverProjectId === project.id ? dragOverProjectPosition || undefined : undefined"
               :show-group-badge="showProjectGroupBadge"
               :group-label="projectGroupName(project) || t.dashboard.ungroupedProjects"
               :draggable="isSortingProjects"
               @dragstart="handleProjectDragStart($event, project.id)"
-              @dragover="handleProjectDragOver"
+              @dragover="handleProjectDragOver($event, project.id, visibleProjectIds)"
               @drop="handleProjectDrop($event, project.id, visibleProjectIds)"
               @dragend="handleProjectDragEnd"
               @select="store.setSelectedProject"
@@ -1363,11 +1408,13 @@ const handleProjectDragEnd = () => {
             :project="project"
             :is-sorting="isSortingProjects"
             :is-dragging="draggingProjectId === project.id"
+            :is-drag-over="dragOverProjectId === project.id"
+            :drag-over-position="dragOverProjectId === project.id ? dragOverProjectPosition || undefined : undefined"
             :show-group-badge="showProjectGroupBadge"
             :group-label="projectGroupName(project) || t.dashboard.ungroupedProjects"
             :draggable="isSortingProjects"
             @dragstart="handleProjectDragStart($event, project.id)"
-            @dragover="handleProjectDragOver"
+            @dragover="handleProjectDragOver($event, project.id, visibleProjectIds)"
             @drop="handleProjectDrop($event, project.id, visibleProjectIds)"
             @dragend="handleProjectDragEnd"
             @select="store.setSelectedProject"
