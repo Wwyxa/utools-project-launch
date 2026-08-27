@@ -72,6 +72,19 @@ For the uTools preload boundary, failures must be surfaced through the existing 
 - Legacy bridge methods keep their existing empty fallback for browser/preload compatibility. Components and the
   Pinia Store must consume the typed result methods when failure versus empty affects state.
 
+### Convention: Background Git working-tree reads
+
+- Dashboard change badges use `readGitWorkingTreeSnapshotResult(...)` from the uTools preload runtime and can start
+  for every visible project during application startup.
+- `readGitWorkingTreeSnapshotResult(...)` must call `git status --porcelain=v1 -z --untracked-files=all`, so its
+  `files` array and dashboard badge count one actual untracked file per entry even when Git's configuration defaults
+  to directory-collapsed `normal` mode.
+- Do not recursively enumerate an untracked directory or synchronously read child files in JavaScript to manufacture
+  per-file additions; a large untracked directory would block the preload event loop and make the plugin unresponsive.
+- `scripts/validate-git-workspace.mjs` must configure `status.showUntrackedFiles=normal`, create an untracked
+  directory, and assert that the working-tree snapshot still returns its leaf files. Its parser-level assertion must
+  also confirm that a directory entry, if supplied, remains one entry rather than triggering a filesystem walk.
+
 ### Convention: Host command environment parity
 
 - Project command execution and environment-tool checks must use the same

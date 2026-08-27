@@ -329,7 +329,7 @@ async function importProjects() {
   }
 }
 
-function parseGitWorkingTreeFiles(repositoryPath, statusEntries, numstatOutput, cachedNumstatOutput) {
+function parseGitWorkingTreeFiles(statusEntries, numstatOutput, cachedNumstatOutput) {
   const fileMap = new Map();
 
   statusEntries.forEach((entry) => {
@@ -340,75 +340,19 @@ function parseGitWorkingTreeFiles(repositoryPath, statusEntries, numstatOutput, 
     const additions = pathStats?.additions ?? originalPathStats?.additions ?? 0;
     const deletions = pathStats?.deletions ?? originalPathStats?.deletions ?? 0;
 
-    // 如果路径以 / 结尾，说明是未跟踪的文件夹，需要展开
-    if (entry.path.endsWith("/") || entry.path.endsWith("\\")) {
-      const folderPath = path.join(repositoryPath, entry.path);
-      try {
-        // 递归读取文件夹下的所有文件
-        const expandedFiles = [];
-        function walkDir(dirPath, basePath) {
-          const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-          for (const ent of entries) {
-            const fullPath = path.join(dirPath, ent.name);
-            const relativePath = path.relative(repositoryPath, fullPath).replace(/\\/g, "/");
-            if (ent.isDirectory()) {
-              walkDir(fullPath, basePath);
-            } else if (ent.isFile()) {
-              // 计算新文件的行数作为 additions
-              let lineCount = 0;
-              try {
-                const content = fs.readFileSync(fullPath, "utf-8");
-                lineCount = content.split(/\r?\n/).length;
-              } catch (err) {
-                lineCount = 0;
-              }
-              expandedFiles.push({
-                path: relativePath,
-                originalPath: undefined,
-                additions: lineCount,
-                deletions: 0,
-                status: "UNTRACKED",
-                staged: false,
-                unstaged: true,
-              });
-            }
-          }
-        }
-        walkDir(folderPath, entry.path);
-        // 将展开的文件添加到 fileMap
-        expandedFiles.forEach((file) => {
-          fileMap.set(file.path, file);
-        });
-      } catch (err) {
-        // 如果读取失败，保留原始文件夹条目（稍后过滤）
-        fileMap.set(entry.path, {
-          path: entry.path,
-          originalPath: entry.originalPath,
-          additions,
-          deletions,
-          status: entry.status,
-          staged: entry.staged,
-          unstaged: entry.unstaged,
-        });
-      }
-    } else {
-      fileMap.set(entry.path, {
-        path: entry.path,
-        originalPath: entry.originalPath,
-        additions,
-        deletions,
-        status: entry.status,
-        staged: entry.staged,
-        unstaged: entry.unstaged,
-      });
-    }
+    fileMap.set(entry.path, {
+      path: entry.path,
+      originalPath: entry.originalPath,
+      additions,
+      deletions,
+      status: entry.status,
+      staged: entry.staged,
+      unstaged: entry.unstaged,
+    });
   });
 
   return {
-    files: Array.from(fileMap.values()).filter((file) => {
-      // 过滤掉文件夹条目（路径以 / 或 \ 结尾）
-      return !file.path.endsWith("/") && !file.path.endsWith("\\");
-    }),
+    files: Array.from(fileMap.values()),
     changeCount: fileMap.size,
   };
 }
@@ -428,7 +372,7 @@ async function readGitWorkingTreeDataResult(repositoryPath) {
   if (failedResult && !failedResult.ok) return failedResult;
   return {
     ok: true,
-    value: parseGitWorkingTreeFiles(repositoryPath, statusResult.value, numstatResult.value, cachedNumstatResult.value),
+    value: parseGitWorkingTreeFiles(statusResult.value, numstatResult.value, cachedNumstatResult.value),
   };
 }
 

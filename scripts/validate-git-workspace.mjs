@@ -344,6 +344,40 @@ try {
   fs.mkdirSync(path.join(projectRoot, "untracked directory"));
   fs.writeFileSync(path.join(projectRoot, "untracked directory", "one.txt"), "one\n");
   fs.writeFileSync(path.join(projectRoot, "untracked directory", "two.txt"), "two\n");
+  const collapsedUntrackedDirectorySnapshot = sandbox.parseGitWorkingTreeFiles(
+    [
+      {
+        statusCode: "??",
+        path: "untracked directory/",
+        status: "UNTRACKED",
+        staged: false,
+        unstaged: true,
+      },
+    ],
+    new Map(),
+    new Map(),
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(collapsedUntrackedDirectorySnapshot)), {
+    files: [
+      {
+        path: "untracked directory/",
+        additions: 0,
+        deletions: 0,
+        status: "UNTRACKED",
+        staged: false,
+        unstaged: true,
+      },
+    ],
+    changeCount: 1,
+  });
+  run(projectRoot, "config", "status.showUntrackedFiles", "normal");
+  const workingTreeResult = await sandbox.window.projectBridge.readGitWorkingTreeSnapshotResult(projectRoot);
+  assert.equal(workingTreeResult.ok, true);
+  const untrackedPaths = Array.from(workingTreeResult.value.files)
+    .filter((file) => file.status === "UNTRACKED")
+    .map((file) => file.path)
+    .sort();
+  assert.deepEqual(untrackedPaths, ["untracked directory/one.txt", "untracked directory/two.txt"]);
   fs.appendFileSync(path.join(directPath, "module.txt"), "dirty\n");
   fs.writeFileSync(path.join(directPath, "untracked.txt"), "new\n");
 

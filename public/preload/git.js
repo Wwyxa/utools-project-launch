@@ -1190,7 +1190,12 @@ async function readGitStatusEntriesAsync(repositoryPath) {
 }
 
 async function readGitStatusEntriesAsyncResult(repositoryPath) {
-  const statusResult = await runGitAsyncResult(repositoryPath, ["status", "--porcelain=v1", "-z"]);
+  const statusResult = await runGitAsyncResult(repositoryPath, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+  ]);
   if (!statusResult.ok) {
     return {
       ok: false,
