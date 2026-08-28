@@ -11,7 +11,7 @@ const file = (path: string, originalPath?: string): ProjectGitFileChange => ({
 });
 
 describe("buildCommitFileItems", () => {
-  it("normalizes paths, sorts directories before files, and compacts single-directory chains", () => {
+  it("normalizes paths, sorts directories before files, and compacts single-directory chains tightly", () => {
     const zetaFile = file("zeta\\deep\\only.ts");
     const srcParseFile = file("src\\utils\\parse.ts");
     const rootFile = file("README.md", "OLD_README.md");
@@ -29,7 +29,7 @@ describe("buildCommitFileItems", () => {
       {
         kind: "directory",
         key: "directory:root/a/b",
-        name: "root \\ a \\ b",
+        name: "root\\a\\b",
         path: "root/a/b",
         depth: 0,
         isExpanded: true,
@@ -57,7 +57,7 @@ describe("buildCommitFileItems", () => {
       {
         kind: "directory",
         key: "directory:zeta/deep",
-        name: "zeta \\ deep",
+        name: "zeta\\deep",
         path: "zeta/deep",
         depth: 0,
         isExpanded: true,
@@ -80,7 +80,7 @@ describe("buildCommitFileItems", () => {
       {
         kind: "directory",
         key: "directory:src/utils",
-        name: "src \\ utils",
+        name: "src\\utils",
         path: "src/utils",
         depth: 0,
         isExpanded: false,

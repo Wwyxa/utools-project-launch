@@ -71,7 +71,7 @@ export const buildCommitFileItems = (
       let compactDirectory = directory;
       while (compactDirectory.files.length === 0 && compactDirectory.directories.size === 1) {
         const [childName, childDirectory] = [...compactDirectory.directories.entries()][0]!;
-        compactName += ` \\ ${childName}`;
+        compactName += `\\${childName}`;
         compactPath = `${compactPath}/${childName}`;
         compactDirectory = childDirectory;
       }

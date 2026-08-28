@@ -1,3 +1,9 @@
+<script lang="ts">
+import type { CommitFileViewMode as RememberedWorktreeFileViewMode } from "../../lib/gitCommitFileTree";
+
+let rememberedWorktreeFileViewMode: RememberedWorktreeFileViewMode = "list";
+</script>
+
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
@@ -7,6 +13,9 @@ import {
   ChevronDown,
   ChevronRight,
   FileSearch,
+  Folder,
+  List,
+  ListTree,
   Minus,
   MoreHorizontal,
   Pencil,
@@ -30,6 +39,12 @@ import {
   createAiReasoningStreamState,
   hasAiReasoningDisplay,
 } from "../../lib/aiReasoning";
+import {
+  buildCommitFileItems,
+  normalizeCommitFilePath,
+  type CommitFileDisplayItem,
+  type CommitFileViewMode,
+} from "../../lib/gitCommitFileTree";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useStore } from "../../store/useStore";
@@ -91,6 +106,11 @@ const filesScrollRef = ref<HTMLDivElement | null>(null);
 const commitMessageTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const stagedGroupOpen = ref(true);
 const unstagedGroupOpen = ref(true);
+const worktreeFileViewMode = ref<CommitFileViewMode>(rememberedWorktreeFileViewMode);
+const collapsedWorktreeDirectories = ref<Record<WorktreeDiffScope, Record<string, boolean>>>({
+  staged: {},
+  unstaged: {},
+});
 const activeGitAction = ref("");
 const activeGitFileActions = ref<ActiveGitFileAction[]>([]);
 const commitMessageAiResult = ref(createAiReasoningStreamState());
@@ -120,6 +140,9 @@ const activeRepositoryContext = computed(() =>
 );
 const snapshot = computed(() => store.gitSnapshotForRepository(props.projectId, props.repositoryTarget));
 const files = computed(() => snapshot.value?.files || []);
+const worktreeFileViewModeLabel = computed(() =>
+  worktreeFileViewMode.value === "tree" ? "切换为平铺文件列表" : "切换为树形文件列表",
+);
 const headCommit = computed(
   () =>
     snapshot.value?.commits?.find((commit) => commit.refNames?.some((ref) => ref.kind === "head" && ref.head)) ??
@@ -153,9 +176,18 @@ const worktreeGroups = computed<WorktreeGroup[]>(() => [
     : []),
   { scope: "unstaged" as const, label: "更改", open: unstagedGroupOpen.value, files: stageableFiles.value },
 ]);
+const worktreeFileDisplayItems = (group: WorktreeGroup): CommitFileDisplayItem[] =>
+  buildCommitFileItems(group.files, {
+    mode: worktreeFileViewMode.value,
+    collapsedPaths: collapsedWorktreeDirectories.value[group.scope],
+  });
 const visibleWorktreeItems = computed(() =>
   worktreeGroups.value.flatMap((group) =>
-    group.open ? group.files.map((file) => ({ file, scope: group.scope })) : [],
+    group.open
+      ? worktreeFileDisplayItems(group).flatMap((item) =>
+          item.kind === "file" ? [{ file: item.file, scope: group.scope }] : [],
+        )
+      : [],
   ),
 );
 const isChangesWriteBusy = computed(() => Boolean(activeGitAction.value) || activeGitFileActions.value.length > 0);
@@ -919,6 +951,19 @@ const toggleGroup = (scope: WorktreeDiffScope) => {
   else unstagedGroupOpen.value = !unstagedGroupOpen.value;
 };
 
+const toggleWorktreeDirectory = (scope: WorktreeDiffScope, path: string) => {
+  const normalizedPath = normalizeCommitFilePath(path);
+  const collapsedPaths = { ...collapsedWorktreeDirectories.value[scope] };
+  if (collapsedPaths[normalizedPath] === false) delete collapsedPaths[normalizedPath];
+  else collapsedPaths[normalizedPath] = false;
+  collapsedWorktreeDirectories.value = { ...collapsedWorktreeDirectories.value, [scope]: collapsedPaths };
+};
+
+const toggleWorktreeFileViewMode = () => {
+  worktreeFileViewMode.value = worktreeFileViewMode.value === "tree" ? "list" : "tree";
+  rememberedWorktreeFileViewMode = worktreeFileViewMode.value;
+};
+
 const handleCommitMessageInput = (event: Event) => {
   setComposerCommitMessage((event.target as HTMLTextAreaElement).value);
   resizeCommitMessageTextarea();
@@ -958,6 +1003,7 @@ watch(
   () => activeRepositoryContext.value?.contextKey,
   () => {
     repositoryContextGeneration.value += 1;
+    collapsedWorktreeDirectories.value = { staged: {}, unstaged: {} };
     closeMoreMenu(false);
     leaveAmendMode(false);
     confirmationDialog.value = null;
@@ -1064,6 +1110,16 @@ onBeforeUnmount(() => {
             @click="handleCommitStaged"
           >
             <Check :size="13" :class="isCommitActionActive ? 'animate-pulse' : ''" :stroke-width="2.5" />
+          </button>
+          <button
+            type="button"
+            class="git-section-action"
+            :title="worktreeFileViewModeLabel"
+            :aria-label="worktreeFileViewModeLabel"
+            :aria-pressed="worktreeFileViewMode === 'tree'"
+            @click="toggleWorktreeFileViewMode"
+          >
+            <List v-if="worktreeFileViewMode === 'tree'" :size="13" /><ListTree v-else :size="13" />
           </button>
         </div>
       </Teleport>
@@ -1241,109 +1297,125 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <div v-if="group.open">
-          <div
-            v-for="file in group.files"
-            :key="`${group.scope}:${file.path}`"
-            :class="
-              cn(
-                'group relative grid min-h-[1.875rem] cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-t border-border-subtle px-2 py-0.5 transition-colors hover:bg-surface-container-low focus-within:bg-surface-container-low',
-                isWorktreeSelected(file.path, group.scope) &&
-                  'bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]',
-              )
-            "
-            :title="gitFileDisplayPath(file)"
-            @click="emit('select-file', { path: file.path, scope: group.scope })"
-          >
-            <div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
-              <span
-                :class="
-                  cn(
-                    'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
-                    file.status === 'ADDED' && 'text-status-running',
-                    file.status === 'DELETED' && 'text-status-error',
-                    file.status === 'RENAMED' && 'text-secondary',
-                    file.status === 'UNTRACKED' && 'text-primary',
-                    file.status === 'MODIFIED' && 'text-on-surface-variant',
-                  )
-                "
-                :title="fileLabel(file.status)"
-              >
-                {{ fileStatusCode(file.status) }}
-              </span>
-              <div class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden">
+          <template v-for="item in worktreeFileDisplayItems(group)" :key="`${group.scope}:${item.key}`">
+            <button
+              v-if="item.kind === 'directory'"
+              type="button"
+              class="flex min-h-[1.875rem] w-full items-center gap-1 border-t border-border-subtle px-2 py-0.5 text-left text-[10px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-low"
+              :style="{ paddingLeft: `${8 + item.depth * 14}px` }"
+              :title="item.path"
+              :aria-expanded="item.isExpanded"
+              @click.stop="toggleWorktreeDirectory(group.scope, item.path)"
+            >
+              <ChevronDown v-if="item.isExpanded" :size="13" /><ChevronRight v-else :size="13" /><Folder
+                :size="13"
+                class="text-primary/75"
+              /><span class="min-w-0 truncate font-mono">{{ item.name }}</span>
+            </button>
+            <div
+              v-else
+              :class="
+                cn(
+                  'group relative grid min-h-[1.875rem] cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-t border-border-subtle px-2 py-0.5 transition-colors hover:bg-surface-container-low focus-within:bg-surface-container-low',
+                  isWorktreeSelected(item.file.path, group.scope) &&
+                    'bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]',
+                )
+              "
+              :style="worktreeFileViewMode === 'tree' ? { paddingLeft: `${8 + (item.depth + 1) * 14}px` } : undefined"
+              :title="gitFileDisplayPath(item.file)"
+              @click="emit('select-file', { path: item.file.path, scope: group.scope })"
+            >
+              <div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
                 <span
                   :class="
                     cn(
-                      'max-w-full shrink-0 truncate font-mono text-[11px] font-bold leading-4',
-                      file.status === 'DELETED' ? 'text-on-surface-variant line-through' : 'text-on-surface',
+                      'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
+                      item.file.status === 'ADDED' && 'text-status-running',
+                      item.file.status === 'DELETED' && 'text-status-error',
+                      item.file.status === 'RENAMED' && 'text-secondary',
+                      item.file.status === 'UNTRACKED' && 'text-primary',
+                      item.file.status === 'MODIFIED' && 'text-on-surface-variant',
                     )
                   "
+                  :title="fileLabel(item.file.status)"
                 >
-                  {{ gitFileName(file) }}
+                  {{ fileStatusCode(item.file.status) }}
                 </span>
-                <span
-                  v-if="gitFileDirectory(file)"
-                  class="dark-readable-meta min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65"
+                <div class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden">
+                  <span
+                    :class="
+                      cn(
+                        'max-w-full shrink-0 truncate font-mono text-[11px] font-bold leading-4',
+                        item.file.status === 'DELETED' ? 'text-on-surface-variant line-through' : 'text-on-surface',
+                      )
+                    "
+                  >
+                    {{ gitFileName(item.file) }}
+                  </span>
+                  <span
+                    v-if="worktreeFileViewMode === 'list' && gitFileDirectory(item.file)"
+                    class="dark-readable-meta min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65"
+                  >
+                    {{ gitFileDirectory(item.file) }}
+                  </span>
+                </div>
+              </div>
+              <div class="flex shrink-0 items-center gap-1 text-[10px] font-bold leading-4">
+                <span v-if="item.file.additions > 0" class="text-status-running">+{{ item.file.additions }}</span>
+                <span v-if="item.file.deletions > 0" class="text-status-error">-{{ item.file.deletions }}</span>
+              </div>
+              <div
+                :class="
+                  cn(
+                    'absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-px rounded border border-border-subtle bg-surface-container-low px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                    isGitFileBusy(item.file) && 'opacity-100',
+                  )
+                "
+              >
+                <button
+                  type="button"
+                  class="git-row-action"
+                  :disabled="!canRunFileAction(item.file, group.scope === 'staged' ? 'unstage' : 'stage')"
+                  :aria-busy="isGitFileActionActive(group.scope === 'staged' ? 'unstage' : 'stage', item.file)"
+                  :title="
+                    group.scope === 'staged'
+                      ? `取消暂存：${gitFileDisplayPath(item.file)}`
+                      : `暂存文件：${gitFileDisplayPath(item.file)}`
+                  "
+                  :aria-label="group.scope === 'staged' ? '取消暂存文件' : '暂存文件'"
+                  @click.stop="runScopedPrimaryGitFileAction(item.file, group.scope)"
                 >
-                  {{ gitFileDirectory(file) }}
-                </span>
+                  <Minus
+                    v-if="group.scope === 'staged'"
+                    :size="12"
+                    :class="isGitFileActionActive('unstage', item.file) ? 'animate-pulse' : ''"
+                  />
+                  <Plus v-else :size="12" :class="isGitFileActionActive('stage', item.file) ? 'animate-pulse' : ''" />
+                </button>
+                <button
+                  type="button"
+                  class="git-row-action git-action-danger"
+                  :disabled="!canRunFileAction(item.file, 'discard')"
+                  :aria-busy="isGitFileActionActive('discard', item.file)"
+                  :title="`丢弃文件变更：${gitFileDisplayPath(item.file)}`"
+                  aria-label="丢弃文件变更"
+                  @click.stop="runGitFileAction('discard', item.file, group.scope)"
+                >
+                  <Undo :size="12" :class="isGitFileActionActive('discard', item.file) ? 'animate-pulse' : ''" />
+                </button>
+                <button
+                  type="button"
+                  class="git-row-action"
+                  :disabled="item.file.status === 'DELETED'"
+                  :title="item.file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
+                  :aria-label="item.file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
+                  @click.stop="requestOpenFile(item.file)"
+                >
+                  <FileSearch :size="12" />
+                </button>
               </div>
             </div>
-            <div class="flex shrink-0 items-center gap-1 text-[10px] font-bold leading-4">
-              <span v-if="file.additions > 0" class="text-status-running">+{{ file.additions }}</span>
-              <span v-if="file.deletions > 0" class="text-status-error">-{{ file.deletions }}</span>
-            </div>
-            <div
-              :class="
-                cn(
-                  'absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-px rounded border border-border-subtle bg-surface-container-low px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-                  isGitFileBusy(file) && 'opacity-100',
-                )
-              "
-            >
-              <button
-                type="button"
-                class="git-row-action"
-                :disabled="!canRunFileAction(file, group.scope === 'staged' ? 'unstage' : 'stage')"
-                :aria-busy="isGitFileActionActive(group.scope === 'staged' ? 'unstage' : 'stage', file)"
-                :title="
-                  group.scope === 'staged'
-                    ? `取消暂存：${gitFileDisplayPath(file)}`
-                    : `暂存文件：${gitFileDisplayPath(file)}`
-                "
-                :aria-label="group.scope === 'staged' ? '取消暂存文件' : '暂存文件'"
-                @click.stop="runScopedPrimaryGitFileAction(file, group.scope)"
-              >
-                <Minus
-                  v-if="group.scope === 'staged'"
-                  :size="12"
-                  :class="isGitFileActionActive('unstage', file) ? 'animate-pulse' : ''"
-                />
-                <Plus v-else :size="12" :class="isGitFileActionActive('stage', file) ? 'animate-pulse' : ''" />
-              </button>
-              <button
-                type="button"
-                class="git-row-action git-action-danger"
-                :disabled="!canRunFileAction(file, 'discard')"
-                :aria-busy="isGitFileActionActive('discard', file)"
-                :title="`丢弃文件变更：${gitFileDisplayPath(file)}`"
-                aria-label="丢弃文件变更"
-                @click.stop="runGitFileAction('discard', file, group.scope)"
-              >
-                <Undo :size="12" :class="isGitFileActionActive('discard', file) ? 'animate-pulse' : ''" />
-              </button>
-              <button
-                type="button"
-                class="git-row-action"
-                :disabled="file.status === 'DELETED'"
-                :title="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
-                :aria-label="file.status === 'DELETED' ? t.git.fileDeleted : t.git.openFile"
-                @click.stop="requestOpenFile(file)"
-              >
-                <FileSearch :size="12" />
-              </button>
-            </div>
-          </div>
+          </template>
           <div v-if="group.files.length === 0" class="px-3 py-2 text-[10px] text-on-surface-variant/70">暂无文件</div>
         </div>
       </section>
