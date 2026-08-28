@@ -441,9 +441,9 @@ const readStoredExternalApplicationPreferences = (): ExternalApplicationPreferen
 
 const defaultUiPreferences = (): UiPreferences => ({
   schemaVersion: 1,
-  projectDetails: { tabOrder: [...projectDetailsTabIds] },
+  projectDetails: { tabOrder: [...projectDetailsTabIds], defaultTab: "scripts" },
   dashboard: { tinyCardActionTrigger: "hover" },
-  coachMarks: { projectDetailsTabReorder: 0 },
+  coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
 });
 
 const normalizeProjectDetailsTabOrder = (value: unknown): ProjectDetailsTabId[] => {
@@ -453,20 +453,35 @@ const normalizeProjectDetailsTabOrder = (value: unknown): ProjectDetailsTabId[] 
   return [...new Set(knownIds), ...projectDetailsTabIds.filter((id) => !knownIds.includes(id))];
 };
 
+const normalizeProjectDetailsDefaultTab = (value: unknown): ProjectDetailsTabId =>
+  typeof value === "string" && projectDetailsTabIdSet.has(value as ProjectDetailsTabId)
+    ? (value as ProjectDetailsTabId)
+    : "scripts";
+
 export const normalizeUiPreferences = (value: unknown): UiPreferences => {
   const defaults = defaultUiPreferences();
   if (!value || typeof value !== "object" || (value as Partial<UiPreferences>).schemaVersion !== 1) return defaults;
   const candidate = value as Partial<UiPreferences>;
   const coachMarkVersion = candidate.coachMarks?.projectDetailsTabReorder;
+  const defaultCoachMarkVersion = candidate.coachMarks?.projectDetailsTabDefault;
   const tinyCardActionTrigger = candidate.dashboard?.tinyCardActionTrigger;
   return {
     schemaVersion: 1,
-    projectDetails: { tabOrder: normalizeProjectDetailsTabOrder(candidate.projectDetails?.tabOrder) },
+    projectDetails: {
+      tabOrder: normalizeProjectDetailsTabOrder(candidate.projectDetails?.tabOrder),
+      defaultTab: normalizeProjectDetailsDefaultTab(candidate.projectDetails?.defaultTab),
+    },
     dashboard: { tinyCardActionTrigger: tinyCardActionTrigger === "contextmenu" ? "contextmenu" : "hover" },
     coachMarks: {
       projectDetailsTabReorder:
         typeof coachMarkVersion === "number" && Number.isInteger(coachMarkVersion) && coachMarkVersion >= 0
           ? coachMarkVersion
+          : 0,
+      projectDetailsTabDefault:
+        typeof defaultCoachMarkVersion === "number" &&
+        Number.isInteger(defaultCoachMarkVersion) &&
+        defaultCoachMarkVersion >= 0
+          ? defaultCoachMarkVersion
           : 0,
     },
   };

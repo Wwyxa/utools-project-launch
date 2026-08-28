@@ -2340,12 +2340,23 @@ export const useStore = defineStore("app", {
     setProjectDetailsTabOrder(order: ProjectDetailsTabId[]) {
       const nextPreferences = normalizeUiPreferences({
         ...this.uiPreferences,
-        projectDetails: { tabOrder: order },
+        projectDetails: { ...this.uiPreferences.projectDetails, tabOrder: order },
       });
       const unchanged = nextPreferences.projectDetails.tabOrder.every(
         (id, index) => id === this.uiPreferences.projectDetails.tabOrder[index],
       );
       if (unchanged) {
+        return;
+      }
+      this.uiPreferences = nextPreferences;
+      bridge.saveUiPreferences(this.uiPreferences);
+    },
+    setProjectDetailsDefaultTab(tab: ProjectDetailsTabId) {
+      const nextPreferences = normalizeUiPreferences({
+        ...this.uiPreferences,
+        projectDetails: { ...this.uiPreferences.projectDetails, defaultTab: tab },
+      });
+      if (nextPreferences.projectDetails.defaultTab === this.uiPreferences.projectDetails.defaultTab) {
         return;
       }
       this.uiPreferences = nextPreferences;
@@ -2372,6 +2383,20 @@ export const useStore = defineStore("app", {
       this.uiPreferences = normalizeUiPreferences({
         ...this.uiPreferences,
         coachMarks: { ...this.uiPreferences.coachMarks, projectDetailsTabReorder: version },
+      });
+      bridge.saveUiPreferences(this.uiPreferences);
+    },
+    acknowledgeProjectDetailsTabDefaultHint(version: number) {
+      if (
+        !Number.isInteger(version) ||
+        version < 0 ||
+        this.uiPreferences.coachMarks.projectDetailsTabDefault >= version
+      ) {
+        return;
+      }
+      this.uiPreferences = normalizeUiPreferences({
+        ...this.uiPreferences,
+        coachMarks: { ...this.uiPreferences.coachMarks, projectDetailsTabDefault: version },
       });
       bridge.saveUiPreferences(this.uiPreferences);
     },

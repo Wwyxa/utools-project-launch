@@ -23,6 +23,7 @@ const uiPreferencesKey = "utools-project-launch.ui-preferences.v1";
 const legacyTabOrderKey = "utools-project-launch.project-details-tab-order.v1";
 const projectLaunchServicePreferencesKey = "utools-project-launch.project-launch-service.v1";
 const defaultTabOrder: ProjectDetailsTabId[] = ["info", "scripts", "automation", "files", "git", "memo"];
+const defaultOpenTab: ProjectDetailsTabId = "scripts";
 
 const loadPreloadBridge = (
   storage: Map<string, unknown>,
@@ -190,9 +191,9 @@ describe("browser UI preferences fallback", () => {
   it("returns and persists complete defaults without stored preferences", () => {
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
-      projectDetails: { tabOrder: defaultTabOrder },
+      projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 0 },
+      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
     });
     expect(JSON.parse(storage.get(uiPreferencesKey)!)).toMatchObject({ schemaVersion: 1 });
   });
@@ -216,17 +217,20 @@ describe("browser UI preferences fallback", () => {
       uiPreferencesKey,
       JSON.stringify({
         schemaVersion: 1,
-        projectDetails: { tabOrder: ["memo", "unknown", "memo", "info"] },
+        projectDetails: { tabOrder: ["memo", "unknown", "memo", "info"], defaultTab: "unknown" },
         dashboard: { tinyCardActionTrigger: "unsupported" },
-        coachMarks: { projectDetailsTabReorder: 1.5 },
+        coachMarks: { projectDetailsTabReorder: 1.5, projectDetailsTabDefault: 1.5 },
       }),
     );
 
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
-      projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"] },
+      projectDetails: {
+        tabOrder: ["memo", "info", "scripts", "automation", "files", "git"],
+        defaultTab: defaultOpenTab,
+      },
       dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 0 },
+      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
     });
   });
 
@@ -236,9 +240,9 @@ describe("browser UI preferences fallback", () => {
 
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
-      projectDetails: { tabOrder: defaultTabOrder },
+      projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 0 },
+      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
     });
   });
 
@@ -278,24 +282,29 @@ describe("browser UI preferences fallback", () => {
 
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
-      projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"] },
+      projectDetails: {
+        tabOrder: ["memo", "info", "scripts", "automation", "files", "git"],
+        defaultTab: defaultOpenTab,
+      },
       dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 1 },
+      coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 0 },
     });
   });
 
   it("round-trips normalized preferences and removes the legacy order", () => {
     getProjectBridge().saveUiPreferences({
       schemaVersion: 1,
-      projectDetails: { tabOrder: ["git", "git", "memo"] },
+      projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "contextmenu" },
-      coachMarks: { projectDetailsTabReorder: 2 },
+      coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
     });
 
     const preferences = getProjectBridge().loadUiPreferences();
     expect(preferences.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
+    expect(preferences.projectDetails.defaultTab).toBe("memo");
     expect(preferences.dashboard.tinyCardActionTrigger).toBe("contextmenu");
     expect(preferences.coachMarks.projectDetailsTabReorder).toBe(2);
+    expect(preferences.coachMarks.projectDetailsTabDefault).toBe(3);
     expect(storage.has(legacyTabOrderKey)).toBe(false);
   });
 
@@ -327,9 +336,9 @@ describe("browser UI preferences fallback", () => {
   it("loads once and persists only effective store changes", async () => {
     const initialPreferences: UiPreferences = {
       schemaVersion: 1,
-      projectDetails: { tabOrder: [...defaultTabOrder] },
+      projectDetails: { tabOrder: [...defaultTabOrder], defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 0 },
+      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
     };
     const loadUiPreferences = vi.fn(() => initialPreferences);
     const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
@@ -346,20 +355,31 @@ describe("browser UI preferences fallback", () => {
     store.setProjectDetailsTabOrder([...initialPreferences.projectDetails.tabOrder]);
     expect(saveUiPreferences).not.toHaveBeenCalled();
 
-    store.setProjectDetailsTabOrder(["scripts", "info", "automation", "files", "git", "memo"]);
+    store.setProjectDetailsDefaultTab("memo");
+    store.setProjectDetailsDefaultTab("memo");
+    expect(store.uiPreferences.projectDetails.defaultTab).toBe("memo");
     expect(saveUiPreferences).toHaveBeenCalledTimes(1);
+
+    store.setProjectDetailsTabOrder(["scripts", "info", "automation", "files", "git", "memo"]);
+    expect(store.uiPreferences.projectDetails.defaultTab).toBe("memo");
+    expect(saveUiPreferences).toHaveBeenCalledTimes(2);
 
     store.acknowledgeProjectDetailsTabReorderHint(1);
     store.acknowledgeProjectDetailsTabReorderHint(1);
     expect(store.uiPreferences.coachMarks.projectDetailsTabReorder).toBe(1);
-    expect(saveUiPreferences).toHaveBeenCalledTimes(2);
+    expect(saveUiPreferences).toHaveBeenCalledTimes(3);
+
+    store.acknowledgeProjectDetailsTabDefaultHint(1);
+    store.acknowledgeProjectDetailsTabDefaultHint(1);
+    expect(store.uiPreferences.coachMarks.projectDetailsTabDefault).toBe(1);
+    expect(saveUiPreferences).toHaveBeenCalledTimes(4);
 
     store.setTinyCardActionTrigger("hover");
-    expect(saveUiPreferences).toHaveBeenCalledTimes(2);
+    expect(saveUiPreferences).toHaveBeenCalledTimes(4);
 
     store.setTinyCardActionTrigger("contextmenu");
     expect(store.uiPreferences.dashboard.tinyCardActionTrigger).toBe("contextmenu");
-    expect(saveUiPreferences).toHaveBeenCalledTimes(3);
+    expect(saveUiPreferences).toHaveBeenCalledTimes(5);
   });
 
   it("verifies a manually placed Project Launch Service only during an explicit recheck", async () => {
@@ -4154,9 +4174,9 @@ describe("uTools preload UI preferences", () => {
         uiPreferencesKey,
         {
           schemaVersion: 1,
-          projectDetails: { tabOrder: ["memo", "unknown", "memo"] },
+          projectDetails: { tabOrder: ["memo", "unknown", "memo"], defaultTab: "unknown" },
           dashboard: { tinyCardActionTrigger: "unsupported" },
-          coachMarks: { projectDetailsTabReorder: 1 },
+          coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1.5 },
         },
       ],
       [legacyTabOrderKey, ["scripts", "info"]],
@@ -4172,17 +4192,21 @@ describe("uTools preload UI preferences", () => {
       "git",
     ]);
     expect(bridge.loadUiPreferences().dashboard.tinyCardActionTrigger).toBe("hover");
+    expect(bridge.loadUiPreferences().projectDetails.defaultTab).toBe(defaultOpenTab);
+    expect(bridge.loadUiPreferences().coachMarks.projectDetailsTabDefault).toBe(0);
     expect(storage.has(legacyTabOrderKey)).toBe(false);
 
     bridge.saveUiPreferences({
       schemaVersion: 1,
-      projectDetails: { tabOrder: ["git", "git", "memo"] },
+      projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "contextmenu" },
-      coachMarks: { projectDetailsTabReorder: 2 },
+      coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
     });
     const saved = storage.get(uiPreferencesKey) as UiPreferences;
     expect(saved.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
+    expect(saved.projectDetails.defaultTab).toBe("memo");
     expect(saved.dashboard.tinyCardActionTrigger).toBe("contextmenu");
+    expect(saved.coachMarks.projectDetailsTabDefault).toBe(3);
     expect(storage.has(legacyTabOrderKey)).toBe(false);
   });
 
@@ -4194,18 +4218,18 @@ describe("uTools preload UI preferences", () => {
 
     expect(loadPreloadBridge(storage).loadUiPreferences()).toEqual({
       schemaVersion: 1,
-      projectDetails: { tabOrder: defaultTabOrder },
+      projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 0 },
+      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
     });
   });
 
   it("keeps readable current preferences when legacy cleanup fails", () => {
     const preferences: UiPreferences = {
       schemaVersion: 1,
-      projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"] },
+      projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 1 },
+      coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1 },
     };
     const storage = new Map<string, unknown>([[uiPreferencesKey, preferences]]);
     const bridge = loadPreloadBridge(storage, () => {

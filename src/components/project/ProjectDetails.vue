@@ -7,6 +7,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GripHorizontal,
+  Star,
   Copy,
   Pencil,
   ArrowLeft,
@@ -16,7 +17,12 @@ import {
   TerminalSquare,
   Trash2,
 } from "lucide-vue-next";
-import { PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION, Project, ProjectStatus } from "../../types";
+import {
+  PROJECT_DETAILS_TAB_DEFAULT_COACH_MARK_VERSION,
+  PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION,
+  Project,
+  ProjectStatus,
+} from "../../types";
 import type { ProjectDetailsTabId } from "../../types";
 import { cn } from "../../lib/utils";
 import { formatRelativeTime } from "../../lib/time";
@@ -24,6 +30,7 @@ import { addAppEscapeRequestListener } from "../../lib/escape";
 import type { AppEscapeRequestEvent } from "../../lib/escape";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import { showActionStatus } from "../common/actionStatus";
 import ScriptsTab from "./ScriptsTab.vue";
 import { clearGitAiAnalysisSessionsForProject } from "../../lib/gitAiAnalysisSession";
 import GitTab from "./GitTab.vue";
@@ -53,7 +60,7 @@ type GitTabExpose = {
   isTopInfoCollapsed: boolean;
   toggleTopInfo: () => void;
 };
-const activeTab = ref<TabId>("scripts");
+const activeTab = ref<TabId>(store.uiPreferences.projectDetails.defaultTab);
 const tabOrder = ref<TabId[]>([...store.uiPreferences.projectDetails.tabOrder]);
 const draggedTab = ref<TabId | null>(null);
 const fileOpenRequest = ref("");
@@ -67,6 +74,9 @@ const relatedProjectsOpen = ref(false);
 const relatedProjects = computed(() => store.relatedProjectsFor(props.project.id));
 const showTabOrderHint = computed(
   () => store.uiPreferences.coachMarks.projectDetailsTabReorder < PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION,
+);
+const showDefaultTabHint = computed(
+  () => store.uiPreferences.coachMarks.projectDetailsTabDefault < PROJECT_DETAILS_TAB_DEFAULT_COACH_MARK_VERSION,
 );
 let tabLongPressTimer: number | null = null;
 let activeTabPointerId: number | null = null;
@@ -92,6 +102,7 @@ const tabLabels = computed<Record<TabId, string>>(() => ({
   memo: t.value.projectDetails.memo,
 }));
 const tabs = computed(() => tabOrder.value.map((id) => ({ id, label: tabLabels.value[id] })));
+const isDefaultTab = (tabId: TabId) => store.uiPreferences.projectDetails.defaultTab === tabId;
 
 const statusLabel = computed(() => {
   if (props.project.status === ProjectStatus.RUNNING) {
@@ -320,6 +331,18 @@ const handleTabClick = (tabId: TabId) => {
     return;
   }
   activeTab.value = tabId;
+};
+
+const handleTabContextMenu = (tabId: TabId) => {
+  const defaultTabChanged = !isDefaultTab(tabId);
+  store.setProjectDetailsDefaultTab(tabId);
+  store.acknowledgeProjectDetailsTabDefaultHint(PROJECT_DETAILS_TAB_DEFAULT_COACH_MARK_VERSION);
+  if (defaultTabChanged) {
+    showActionStatus({
+      state: "success",
+      message: t.value.projectDetails.defaultTabSet.replace("{tab}", tabLabels.value[tabId]),
+    });
+  }
 };
 
 const focusActiveTab = () => {
@@ -647,15 +670,25 @@ watch(
             data-project-tab
             @pointerdown="handleTabPointerDown($event, tab.id)"
             @click="handleTabClick(tab.id)"
+            @contextmenu.prevent="handleTabContextMenu(tab.id)"
             :class="
               cn(
                 'relative touch-none select-none whitespace-nowrap pb-1.5 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-default',
                 activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
                 draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
+                isDefaultTab(tab.id) && 'pr-2.5',
               )
             "
+            :title="isDefaultTab(tab.id) ? t.projectDetails.defaultTab : t.projectDetails.setDefaultTabHint"
           >
             {{ tab.label }}
+            <Star
+              v-if="isDefaultTab(tab.id)"
+              :size="8"
+              :stroke-width="2.25"
+              class="pointer-events-none absolute right-0 top-0 fill-current"
+              aria-hidden="true"
+            />
             <div v-if="activeTab === tab.id" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
           </button>
         </nav>
@@ -685,13 +718,25 @@ watch(
         </button>
       </div>
       <span
-        v-if="showTabOrderHint"
+        v-if="showTabOrderHint || showDefaultTabHint"
         role="note"
-        :aria-label="t.projectDetails.reorderTabsHint"
+        :aria-label="
+          [
+            showTabOrderHint ? t.projectDetails.reorderTabsHint : '',
+            showDefaultTabHint ? t.projectDetails.setDefaultTabHint : '',
+          ]
+            .filter(Boolean)
+            .join('；')
+        "
         class="pointer-events-none ml-2 inline-flex shrink-0 items-center gap-1 pb-1.5 text-[11px] font-medium text-on-surface-variant opacity-50 sm:ml-3"
       >
-        <GripHorizontal :size="12" :stroke-width="1.5" />
-        <span class="hidden whitespace-nowrap sm:inline">{{ t.projectDetails.reorderTabsHint }}</span>
+        <GripHorizontal v-if="showTabOrderHint" :size="12" :stroke-width="1.5" aria-hidden="true" />
+        <Star v-if="showDefaultTabHint" :size="11" :stroke-width="1.5" aria-hidden="true" />
+        <span class="hidden whitespace-nowrap sm:inline">
+          <span v-if="showTabOrderHint">{{ t.projectDetails.reorderTabsHint }}</span>
+          <span v-if="showTabOrderHint && showDefaultTabHint">；</span>
+          <span v-if="showDefaultTabHint">{{ t.projectDetails.setDefaultTabHint }}</span>
+        </span>
       </span>
     </div>
 

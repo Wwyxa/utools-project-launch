@@ -128,9 +128,9 @@ const projectDetailsTabIdSet = new Set(projectDetailsTabIds);
 function getDefaultUiPreferences() {
   return {
     schemaVersion: 1,
-    projectDetails: { tabOrder: [...projectDetailsTabIds] },
+    projectDetails: { tabOrder: [...projectDetailsTabIds], defaultTab: "scripts" },
     dashboard: { tinyCardActionTrigger: "hover" },
-    coachMarks: { projectDetailsTabReorder: 0 },
+    coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
   };
 }
 
@@ -139,16 +139,26 @@ function normalizeProjectDetailsTabOrder(value) {
   return [...new Set(knownIds), ...projectDetailsTabIds.filter((id) => !knownIds.includes(id))];
 }
 
+function normalizeProjectDetailsDefaultTab(value) {
+  return projectDetailsTabIdSet.has(value) ? value : "scripts";
+}
+
 function normalizeUiPreferences(value) {
   if (!value || typeof value !== "object" || value.schemaVersion !== 1) return getDefaultUiPreferences();
   const coachMarkVersion = value.coachMarks?.projectDetailsTabReorder;
+  const defaultCoachMarkVersion = value.coachMarks?.projectDetailsTabDefault;
   const tinyCardActionTrigger = value.dashboard?.tinyCardActionTrigger;
   return {
     schemaVersion: 1,
-    projectDetails: { tabOrder: normalizeProjectDetailsTabOrder(value.projectDetails?.tabOrder) },
+    projectDetails: {
+      tabOrder: normalizeProjectDetailsTabOrder(value.projectDetails?.tabOrder),
+      defaultTab: normalizeProjectDetailsDefaultTab(value.projectDetails?.defaultTab),
+    },
     dashboard: { tinyCardActionTrigger: tinyCardActionTrigger === "contextmenu" ? "contextmenu" : "hover" },
     coachMarks: {
       projectDetailsTabReorder: Number.isInteger(coachMarkVersion) && coachMarkVersion >= 0 ? coachMarkVersion : 0,
+      projectDetailsTabDefault:
+        Number.isInteger(defaultCoachMarkVersion) && defaultCoachMarkVersion >= 0 ? defaultCoachMarkVersion : 0,
     },
   };
 }
