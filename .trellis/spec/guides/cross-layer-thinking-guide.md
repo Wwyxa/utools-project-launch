@@ -52,6 +52,12 @@ For each arrow, ask:
 - Verify which process owns each storage API. In uTools, renderer `localStorage` is not evidence of host-process persistence; device-local preferences that must survive a complete uTools restart belong in `window.utools.dbStorage` unless a feature-specific spec requires another host-owned store.
 - When migrating storage, test the real read priority and recreate the preload/store with fresh renderer storage while retaining only the intended host storage. Reusing one in-memory storage object tests a round trip, not a restart.
 
+### Project Document Mutation Checks
+
+- For a partial update to a canonical per-project document, read the latest document, apply only the requested mutation, and write with that document's revision. Never pair a fresh revision with an earlier full-project snapshot.
+- A failed legacy migration may retain the current merged read result, but a canonical Agent write/read-back must not silently fall back to a same-id legacy record.
+- Inject a revision conflict after the initial read and assert that both the concurrent remote change and the local requested mutation survive the retry.
+
 ### Replayed Event And Notification Receipt Checks
 
 - When a service replays retained terminal events or full state snapshots, never use a capped UI history list as the only delivery de-duplication source.

@@ -5,6 +5,158 @@
   "pluginSetting": {
     "single": true
   },
+  "tools": {
+    "project_manager_list_projects": {
+      "description": "获取所有已保存项目的简要信息、当前实际分组和可用项目类型。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "project_manager_get_project": {
+      "description": "按项目 ID 获取一个项目的详细配置；环境变量仅返回键名。",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "项目 ID"
+          }
+        },
+        "required": ["projectId"]
+      }
+    },
+    "project_manager_upsert_project": {
+      "description": "创建或更新项目配置，不会创建或修改磁盘上的目录。省略 projectId 时创建，必须提供 name、path 和 type；提供 projectId 时仅更新给出的字段。env 按 key 新增或更新环境变量，removeEnvKeys 删除指定环境变量；项目详情始终只返回环境变量键名。",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "已有项目 ID；省略时创建项目"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "项目名称；创建时必填，更新时可选"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "项目目录的绝对路径；创建时必填，更新时可选"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "Node.js",
+              "Vue",
+              "React",
+              "Python",
+              "Go",
+              "Rust",
+              "Java",
+              "Docker",
+              "Database",
+              "Web",
+              "CLI",
+              "API",
+              "Package",
+              "AI",
+              "Executable",
+              "Custom"
+            ],
+            "description": "项目类型；创建时必填，更新时可选，必须从枚举值中选择"
+          },
+          "description": {
+            "type": "string",
+            "description": "可选的新项目说明；传入空字符串可清空"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": ["public", "private"],
+            "description": "可选的新项目可见性"
+          },
+          "group": {
+            "type": "string",
+            "description": "可选的新项目分组；使用 project_manager_list_projects 返回的 groups 中的值，空字符串可移出分组，也可创建新分组"
+          },
+          "quickLink": {
+            "type": "string",
+            "description": "可选的新快捷链接或路径；传入空字符串可清空"
+          },
+          "env": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": ["key", "value"]
+            },
+            "description": "要新增或更新的环境变量键值项。更新时按 key 合并，不会覆盖未提供的环境变量。"
+          },
+          "removeEnvKeys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "要删除的环境变量名；仅在更新已有项目时使用。"
+          }
+        }
+      }
+    },
+    "project_manager_upsert_script": {
+      "description": "创建或更新指定项目的可启动脚本。未提供 scriptId 时创建，必须提供 name 和 command；提供 scriptId 时仅更新给出的名称、命令、工作目录或备注，并保留脚本来源和运行状态。",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "要添加脚本的项目 ID"
+          },
+          "scriptId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "已有脚本 ID；省略时创建脚本"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "脚本显示名称；创建时必填，更新时可选"
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "description": "要执行的命令；创建时必填，更新时可选"
+          },
+          "cwd": {
+            "type": "string",
+            "description": "相对项目根目录的工作目录；创建时默认 .，更新时空字符串重置为 ."
+          },
+          "note": {
+            "type": "string",
+            "description": "可选的脚本说明"
+          }
+        },
+        "required": ["projectId"]
+      }
+    }
+  },
   "features": [
     {
       "code": "project-manager",

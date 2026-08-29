@@ -169,6 +169,9 @@ const automationMissedPolicies = new Set<ProjectAutomationMissedPolicy>(["grace-
 let projectConfigMessageClearTimer: number | null = null;
 let automationSchedulerTimer: number | null = null;
 let runtimeReconciliationPromise: Promise<void> | null = null;
+let projectCatalogReloadPromise: Promise<void> | null = null;
+let projectCatalogReloadQueued = false;
+let projectCatalogStorageSnapshot: Project[] = [];
 let projectLaunchServiceAutomationRevision = 0;
 let projectLaunchServiceAutomationSyncPromise: Promise<void> | null = null;
 let projectLaunchServiceOwnershipHandoff = false;
@@ -895,6 +898,14 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
+}
+
+function cloneProjectCatalogSnapshot(projects: Project[]): Project[] {
+  return JSON.parse(JSON.stringify(projects.map((project, index) => toPersistedProject(project, index)))) as Project[];
+}
+
+function setProjectCatalogStorageSnapshot(projects: Project[]): void {
+  projectCatalogStorageSnapshot = cloneProjectCatalogSnapshot(projects);
 }
 
 function isImportableProject(project: Project): boolean {
@@ -1762,6 +1773,77 @@ export const useStore = defineStore("app", {
   },
 
   actions: {
+    initializeProjectSessionState() {
+      this.projects.forEach((project) => {
+        this.memoContent[project.id] = project.memo || this.memoContent[project.id] || "";
+        this.todos[project.id] = project.todos || this.todos[project.id] || [];
+        this.logs[project.id] = this.logs[project.id] || [];
+        this.scriptLogs[project.id] = this.scriptLogs[project.id] || {};
+        this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
+      });
+    },
+    async reloadProjectsFromStorage() {
+      try {
+        const storedProjects = await bridge.loadProjects();
+        if (this.supportsBridge || storedProjects.length > 0) {
+          const previousProjectsById = new Map<string, Project>(
+            this.projects.map((project): [string, Project] => [project.id, project]),
+          );
+          this.projects = storedProjects.map((storedProject) => {
+            const nextProject = hydrateProject(storedProject);
+            const previousProject = previousProjectsById.get(nextProject.id);
+            if (!previousProject || previousProject.path !== nextProject.path) {
+              return nextProject;
+            }
+
+            const mergedProject = {
+              ...nextProject,
+              scripts: mergeScriptRuntimeState(nextProject.scripts, previousProject.scripts),
+              git: previousProject.git || nextProject.git,
+              gitLatestCommitAt: nextProject.gitLatestCommitAt || previousProject.gitLatestCommitAt,
+              pathExists: previousProject.pathExists,
+              unavailableReason: previousProject.unavailableReason,
+            };
+            return { ...mergedProject, status: deriveProjectStatus(mergedProject) };
+          });
+          this.selectedProjectId = this.projects.some(
+            (project) => project.id === this.selectedProjectId && isProjectVisibleOnCurrentDevice(project),
+          )
+            ? this.selectedProjectId
+            : null;
+        }
+
+        setProjectCatalogStorageSnapshot(storedProjects);
+        this.projectsLoaded = true;
+        this.initializeProjectSessionState();
+        await this.refreshProjectAvailability();
+        this.projectStorageMessage = "";
+      } catch (error) {
+        this.projectStorageMessage = "项目配置读取失败，已保留当前会话数据";
+      }
+    },
+    scheduleProjectCatalogReload() {
+      if (projectCatalogReloadPromise) {
+        projectCatalogReloadQueued = true;
+        return projectCatalogReloadPromise;
+      }
+
+      const reload = async () => {
+        do {
+          projectCatalogReloadQueued = false;
+          await this.reloadProjectsFromStorage();
+          await this.reconcileRuntimeProcessState();
+        } while (projectCatalogReloadQueued);
+      };
+      const sharedPromise = reload().finally(() => {
+        if (projectCatalogReloadPromise === sharedPromise) {
+          projectCatalogReloadPromise = null;
+          projectCatalogReloadQueued = false;
+        }
+      });
+      projectCatalogReloadPromise = sharedPromise;
+      return sharedPromise;
+    },
     async loadProjects() {
       const markStartupPhase = window.__utoolsProjectLaunchStartupTiming?.mark;
       markStartupPhase?.("projects-load-preferences-start");
@@ -1783,6 +1865,7 @@ export const useStore = defineStore("app", {
             ? this.selectedProjectId
             : null;
         }
+        setProjectCatalogStorageSnapshot(storedProjects);
       } catch (error) {
         this.projectStorageMessage = "项目配置读取失败，已保留当前会话数据";
       }
@@ -1791,13 +1874,7 @@ export const useStore = defineStore("app", {
       this.projectsLoaded = true;
 
       markStartupPhase?.("projects-load-state-setup-start");
-      this.projects.forEach((project) => {
-        this.memoContent[project.id] = project.memo || this.memoContent[project.id] || "";
-        this.todos[project.id] = project.todos || this.todos[project.id] || [];
-        this.logs[project.id] = this.logs[project.id] || [];
-        this.scriptLogs[project.id] = this.scriptLogs[project.id] || {};
-        this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
-      });
+      this.initializeProjectSessionState();
       markStartupPhase?.("projects-load-state-setup-complete");
 
       await waitForInitialPaint();
@@ -2045,14 +2122,18 @@ export const useStore = defineStore("app", {
         }
       }
     },
-    async persistProjects(synchronizeProjectLaunchService = true) {
+    async persistProjects(synchronizeProjectLaunchService = true, removedProjectIds: string[] = []) {
       try {
         const persistedProjects = this.projects.map((project, index) => {
           const persistedProject = toPersistedProject(project, index);
           project.sortOrder = persistedProject.sortOrder;
           return persistedProject;
         });
-        await bridge.saveProjects(persistedProjects);
+        await bridge.saveProjects(persistedProjects, {
+          baseProjects: cloneProjectCatalogSnapshot(projectCatalogStorageSnapshot),
+          removedProjectIds,
+        });
+        setProjectCatalogStorageSnapshot(persistedProjects);
         this.projectStorageMessage = "";
       } catch (error) {
         this.projectStorageMessage = "项目配置保存失败，请稍后重试";
@@ -3311,7 +3392,7 @@ export const useStore = defineStore("app", {
       }
 
       this.scheduleAutomationTimer();
-      await this.persistProjects();
+      await this.persistProjects(true, [projectId]);
       return true;
     },
     requestDeleteProject(projectId: string) {
@@ -3358,7 +3439,7 @@ export const useStore = defineStore("app", {
       }
     },
     async refreshProjects() {
-      await this.refreshProjectAvailability();
+      await this.reloadProjectsFromStorage();
       await this.refreshDashboardGitChangeCounts();
     },
     async refreshDashboardGitChangeCounts() {
@@ -5755,7 +5836,11 @@ export const useStore = defineStore("app", {
       this.advanceAutomationInputStep(context);
     },
     handleAutomationBridgeEvent(event: ProjectBridgeEvent) {
-      if (event.type === "service-state" || event.type === "service-download-progress") {
+      if (
+        event.type === "service-state" ||
+        event.type === "service-download-progress" ||
+        event.type === "projects-changed"
+      ) {
         return;
       }
       const context = automationScriptContexts.get(automationScriptContextKey(event.projectId, event.scriptId));
@@ -6441,6 +6526,10 @@ export const useStore = defineStore("app", {
       this.setProjectConfigMessage(`已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`);
     },
     handleBridgeEvent(event: ProjectBridgeEvent) {
+      if (event.type === "projects-changed") {
+        void this.scheduleProjectCatalogReload();
+        return;
+      }
       if (event.type === "service-state") {
         this.projectLaunchServiceStatus = event.status;
         this.reconcileProjectLaunchServiceRuntime(event.status);

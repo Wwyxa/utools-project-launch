@@ -21,6 +21,7 @@ const theme = computed(() => store.theme);
 const { globalActionStatus, isGlobalActionStatusExpanded } = useGlobalActionStatus(store);
 let pluginOutHookRegistered = false;
 let startupProjectLoadId = 0;
+let runtimeResumePromise: Promise<void> | null = null;
 
 const loadProjectsWithStartupTiming = () => {
   const startupTiming = window.__utoolsProjectLaunchStartupTiming;
@@ -53,6 +54,8 @@ const handlePluginEnter = async (action?: unknown) => {
   const searchText = extractPluginSearchText(action);
   if (!store.projectsLoaded) {
     await loadProjectsWithStartupTiming();
+  } else {
+    await store.reloadProjectsFromStorage();
   }
   void store.reconcileRuntimeProcessState();
   if (searchText) {
@@ -61,7 +64,15 @@ const handlePluginEnter = async (action?: unknown) => {
 };
 
 const handleRuntimeResume = () => {
-  void store.reconcileRuntimeProcessState();
+  if (runtimeResumePromise) {
+    return;
+  }
+  runtimeResumePromise = store
+    .reloadProjectsFromStorage()
+    .then(() => store.reconcileRuntimeProcessState())
+    .finally(() => {
+      runtimeResumePromise = null;
+    });
 };
 
 const handleVisibilityChange = () => {

@@ -296,6 +296,9 @@ function readProjectDocs() {
   }
 
   const result = window.utools.db.allDocs(projectDocPrefix);
+  if (result?.error) {
+    throw new Error(result.message || result.reason || "无法读取项目文档目录。");
+  }
   const rows = Array.isArray(result)
     ? result
     : Array.isArray(result?.rows)
@@ -314,11 +317,98 @@ function readProjectDocs() {
       }
       if (typeof docId === "string" && window.utools?.db?.get) {
         const doc = window.utools.db.get(docId);
-        return doc?.error ? null : doc;
+        if (doc?.error) {
+          if (isMissingProjectDocument(doc)) {
+            return null;
+          }
+          throw new Error(doc.message || `无法读取项目 ${docId}。`);
+        }
+        return doc;
       }
       return summary;
     })
     .filter((doc) => doc && typeof doc._id === "string" && doc._id.startsWith(projectDocPrefix));
+}
+
+const projectDocumentMutationMaxAttempts = 3;
+
+function normalizeProjectId(projectId) {
+  return typeof projectId === "string" ? projectId.trim() : "";
+}
+
+function hasProjectDocumentCatalog() {
+  return Boolean(window.utools?.db?.allDocs);
+}
+
+function supportsProjectDocumentWrites() {
+  return Boolean(window.utools?.db?.get && window.utools?.db?.put);
+}
+
+function hasStoredProjectSortOrder(project) {
+  const value = project?.sortOrder;
+  return value !== undefined && value !== null && value !== "" && Number.isFinite(Number(value));
+}
+
+function projectDocumentId(projectId) {
+  return `${projectDocPrefix}${projectId}`;
+}
+
+function isMissingProjectDocument(result) {
+  if (!result?.error) {
+    return false;
+  }
+  const message = [result.message, result.reason].filter((value) => typeof value === "string").join(" ");
+  return /(?:not[\s-]*found|missing)/i.test(message);
+}
+
+function readCurrentProjectDocument(projectId) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  const db = window.utools?.db;
+  if (!normalizedProjectId || !db?.get) {
+    return null;
+  }
+  const document = db.get(projectDocumentId(normalizedProjectId));
+  if (document?.error) {
+    if (isMissingProjectDocument(document)) {
+      return null;
+    }
+    throw new Error(document.message || `无法读取项目 ${normalizedProjectId} 的当前版本。`);
+  }
+  return document && typeof document === "object" ? document : null;
+}
+
+function createStoredProjectDocument(project, index = 0, options = {}) {
+  const storedProject = toStoredProject(project, index);
+  if (options.preserveMissingSortOrder) {
+    delete storedProject.sortOrder;
+  }
+  return toPlainJson({
+    _id: projectDocumentId(project.id),
+    schemaVersion,
+    updatedAt: new Date().toISOString(),
+    project: storedProject,
+  });
+}
+
+function projectDocumentWriteError(projectId, result) {
+  const detail = result?.message || result?.reason || "未知错误";
+  const error = new Error(`保存项目配置失败（${projectId}）：${detail}`);
+  error.isProjectDocumentWriteConflict = result?.error === "conflict" || /conflict/i.test(detail);
+  return error;
+}
+
+function isProjectDocumentWriteConflictError(error) {
+  return error?.isProjectDocumentWriteConflict === true;
+}
+
+function putProjectDocument(document, projectId) {
+  const result = window.utools?.db?.put?.(document);
+  if (result?.ok !== true) {
+    throw projectDocumentWriteError(projectId, result);
+  }
+  if (result.rev) {
+    document._rev = result.rev;
+  }
 }
 
 function normalizeStoredProjects(projects, fallbackIndexOffset = 0) {
@@ -354,7 +444,38 @@ function hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects) {
   );
 }
 
+function migrateMissingLegacyProjectDocuments(legacyProjects, docProjects) {
+  const documentProjectIds = new Set(
+    docProjects.map((project) => project?.id).filter((projectId) => typeof projectId === "string" && projectId),
+  );
+
+  legacyProjects.forEach((project, index) => {
+    if (!project?.id || documentProjectIds.has(project.id)) {
+      return;
+    }
+    for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
+      const current = readCurrentProjectDocument(project.id);
+      if (current) {
+        return;
+      }
+      const document = createStoredProjectDocument(project, index);
+      try {
+        putProjectDocument(document, project.id);
+        return;
+      } catch (error) {
+        if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
+          throw error;
+        }
+      }
+    }
+  });
+}
+
 function readProjects() {
+  if (!hasProjectDocumentCatalog()) {
+    return sortProjectsByStoredOrder(normalizeStoredProjects(readLegacyStoredProjects()));
+  }
+
   try {
     const docs = readProjectDocs();
     const docProjects = docs.map((doc) => doc.project).filter(Boolean);
@@ -363,64 +484,399 @@ function readProjects() {
 
     if (
       legacyProjects.length > 0 &&
-      window.utools?.db?.put &&
+      supportsProjectDocumentWrites() &&
       hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects)
     ) {
-      writeStoredProjects(mergedProjects);
+      try {
+        migrateMissingLegacyProjectDocuments(legacyProjects, docProjects);
+      } catch (error) {
+        logStorageError("migrate legacy projects to uTools db", error);
+      }
     }
     return mergedProjects;
   } catch (error) {
     logStorageError("read projects", error);
-    return sortProjectsByStoredOrder(normalizeStoredProjects(readLegacyStoredProjects()));
+    throw error;
   }
 }
 
-function writeStoredProjects(projects) {
-  if (window.utools?.db?.put) {
+function readCanonicalStoredProject(projectId) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  if (!normalizedProjectId) {
+    return null;
+  }
+
+  const document = readCurrentProjectDocument(normalizedProjectId);
+  if (document?.project) {
+    const project = toStoredProject(document.project);
+    return project.id === normalizedProjectId ? project : null;
+  }
+  return null;
+}
+
+function readLegacyStoredProject(projectId) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  if (!normalizedProjectId) {
+    return null;
+  }
+  const legacyProjects = readLegacyStoredProjects();
+  const legacyIndex = legacyProjects.findIndex((project) => project?.id === normalizedProjectId);
+  return legacyIndex >= 0 ? toStoredProject(legacyProjects[legacyIndex], legacyIndex) : null;
+}
+
+function readStoredProject(projectId) {
+  return readCanonicalStoredProject(projectId) || readLegacyStoredProject(projectId);
+}
+
+function readPersistedProject(projectId) {
+  return supportsProjectDocumentWrites() ? readCanonicalStoredProject(projectId) : readStoredProject(projectId);
+}
+
+function writeStoredProject(project) {
+  const normalizedProject = toStoredProject(project, resolveProjectSortOrder(project));
+  if (!normalizeProjectId(normalizedProject.id)) {
+    throw new Error("项目 ID 不能为空。");
+  }
+  if (supportsProjectDocumentWrites()) {
     try {
-      const existingDocs = readProjectDocs();
-      const existingByProjectId = new Map(existingDocs.map((doc) => [doc._id.replace(projectDocPrefix, ""), doc]));
-      const projectIds = new Set(projects.map((project) => project.id));
-
-      projects.forEach((project, index) => {
-        const existing = existingByProjectId.get(project.id);
-        const doc = toPlainJson({
-          _id: `${projectDocPrefix}${project.id}`,
-          schemaVersion,
-          updatedAt: new Date().toISOString(),
-          project: toStoredProject(project, index),
-        });
-        if (existing?._rev) {
-          doc._rev = existing._rev;
-        }
-        const result = window.utools.db.put(doc);
-        if (result?.error) {
-          throw new Error(result.message || String(result.error));
-        }
-
-        if (result?.ok && result.rev) {
-          doc._rev = result.rev;
-        }
+      const current = readCurrentProjectDocument(normalizedProject.id);
+      const document = createStoredProjectDocument(normalizedProject, resolveProjectSortOrder(normalizedProject), {
+        preserveMissingSortOrder:
+          Boolean(current) && !hasStoredProjectSortOrder(project) && !hasStoredProjectSortOrder(current.project),
       });
-
-      existingDocs.forEach((doc) => {
-        const projectId = doc._id.replace(projectDocPrefix, "");
-        if (!projectIds.has(projectId) && window.utools?.db?.remove) {
-          const result = window.utools.db.remove(doc);
-          if (result?.error) {
-            logStorageError(`remove project ${projectId}`, result.message || result.error);
-          }
-        }
-      });
+      if (current?._rev) {
+        document._rev = current._rev;
+      }
+      putProjectDocument(document, normalizedProject.id);
       return;
     } catch (error) {
-      logStorageError("save projects to uTools db", error);
-      writeLegacyStoredProjects(projects);
+      logStorageError("save project to uTools db", error);
+      throw error;
+    }
+  }
+
+  const projects = readProjects();
+  const projectIndex = projects.findIndex((candidate) => candidate.id === normalizedProject.id);
+  const nextProjects = projectIndex >= 0 ? [...projects] : [...projects, normalizedProject];
+  if (projectIndex >= 0) {
+    nextProjects[projectIndex] = normalizedProject;
+  }
+  writeStoredProjects(nextProjects);
+}
+
+function mutateStoredProject(projectId, mutateProject) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  if (!normalizedProjectId) {
+    throw new Error("项目 ID 不能为空。");
+  }
+  if (typeof mutateProject !== "function") {
+    throw new Error("项目更新函数无效。");
+  }
+
+  if (supportsProjectDocumentWrites()) {
+    try {
+      for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
+        const currentDocument = readCurrentProjectDocument(normalizedProjectId);
+        const preserveMissingSortOrder =
+          Boolean(currentDocument) && !hasStoredProjectSortOrder(currentDocument.project);
+        const currentProject = currentDocument?.project
+          ? toStoredProject(currentDocument.project)
+          : readLegacyStoredProject(normalizedProjectId);
+        if (!currentProject) {
+          return null;
+        }
+
+        const nextProject = mutateProject(toPlainJson(currentProject));
+        const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
+        if (normalizedProject.id !== normalizedProjectId) {
+          throw new Error("项目更新不能修改项目 ID。");
+        }
+
+        const document = createStoredProjectDocument(normalizedProject, resolveProjectSortOrder(normalizedProject), {
+          preserveMissingSortOrder,
+        });
+        if (currentDocument?._rev) {
+          document._rev = currentDocument._rev;
+        }
+        try {
+          putProjectDocument(document, normalizedProjectId);
+          return normalizedProject;
+        } catch (error) {
+          if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
+            throw error;
+          }
+        }
+      }
+    } catch (error) {
+      logStorageError("mutate project in uTools db", error);
+      throw error;
+    }
+  }
+
+  const currentProject = readStoredProject(normalizedProjectId);
+  if (!currentProject) {
+    return null;
+  }
+  const nextProject = mutateProject(toPlainJson(currentProject));
+  const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
+  if (normalizedProject.id !== normalizedProjectId) {
+    throw new Error("项目更新不能修改项目 ID。");
+  }
+  writeStoredProject(normalizedProject);
+  return normalizedProject;
+}
+
+function storedValueEquals(left, right) {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => storedValueEquals(item, right[index]))
+    );
+  }
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) => Object.prototype.hasOwnProperty.call(right, key) && storedValueEquals(left[key], right[key]),
+    )
+  );
+}
+
+function mergeStoredProjectEnvironment(baseEnvironment, nextEnvironment, currentEnvironment) {
+  const base = baseEnvironment && typeof baseEnvironment === "object" ? baseEnvironment : {};
+  const next = nextEnvironment && typeof nextEnvironment === "object" ? nextEnvironment : {};
+  const merged = { ...(currentEnvironment && typeof currentEnvironment === "object" ? currentEnvironment : {}) };
+  const keys = new Set([...Object.keys(base), ...Object.keys(next)]);
+
+  keys.forEach((key) => {
+    const hadBaseValue = Object.prototype.hasOwnProperty.call(base, key);
+    const hasNextValue = Object.prototype.hasOwnProperty.call(next, key);
+    if (!hadBaseValue && hasNextValue) {
+      if (Object.prototype.hasOwnProperty.call(merged, key) && !storedValueEquals(merged[key], next[key])) {
+        throw new Error(`项目环境变量已被其他窗口修改（${key}），请刷新后重试。`);
+      }
+      merged[key] = next[key];
       return;
+    }
+    if (hadBaseValue && !hasNextValue) {
+      if (Object.prototype.hasOwnProperty.call(merged, key) && !storedValueEquals(merged[key], base[key])) {
+        throw new Error(`项目环境变量已被其他窗口修改（${key}），请刷新后重试。`);
+      }
+      delete merged[key];
+      return;
+    }
+    if (!storedValueEquals(next[key], base[key])) {
+      merged[key] = next[key];
+    }
+  });
+
+  return merged;
+}
+
+function mergeStoredProjectScripts(baseScripts, nextScripts, currentScripts) {
+  const base = Array.isArray(baseScripts) ? baseScripts : [];
+  const next = Array.isArray(nextScripts) ? nextScripts : [];
+  const current = Array.isArray(currentScripts) ? currentScripts : [];
+  const baseById = new Map(base.map((script) => [script.id, script]));
+  const nextById = new Map(next.map((script) => [script.id, script]));
+  const mergedById = new Map(current.map((script) => [script.id, script]));
+
+  baseById.forEach((baseScript, scriptId) => {
+    const nextScript = nextById.get(scriptId);
+    if (!nextScript) {
+      const currentScript = mergedById.get(scriptId);
+      if (currentScript && !storedValueEquals(currentScript, baseScript)) {
+        throw new Error(`项目脚本已被其他窗口修改（${scriptId}），请刷新后重试。`);
+      }
+      mergedById.delete(scriptId);
+      return;
+    }
+    if (!storedValueEquals(nextScript, baseScript)) {
+      mergedById.set(scriptId, nextScript);
+    }
+  });
+  next.forEach((script) => {
+    if (!baseById.has(script.id)) {
+      const currentScript = mergedById.get(script.id);
+      if (currentScript && !storedValueEquals(currentScript, script)) {
+        throw new Error(`项目脚本已被其他窗口修改（${script.id}），请刷新后重试。`);
+      }
+      mergedById.set(script.id, script);
+    }
+  });
+
+  const orderedScripts = [];
+  const seenScriptIds = new Set();
+  [...next, ...current].forEach((script) => {
+    if (seenScriptIds.has(script.id)) {
+      return;
+    }
+    const mergedScript = mergedById.get(script.id);
+    if (!mergedScript) {
+      return;
+    }
+    seenScriptIds.add(script.id);
+    orderedScripts.push(mergedScript);
+  });
+  return orderedScripts;
+}
+
+function mergeStoredProjectCatalogChange(baseProject, nextProject, currentProject) {
+  const mergedProject = { ...currentProject };
+  let appliedLocalChange = false;
+  const ignoredFields = new Set(["id", "createdAt", "updatedAt", "lastUpdated"]);
+
+  Object.keys(nextProject).forEach((field) => {
+    if (ignoredFields.has(field) || storedValueEquals(nextProject[field], baseProject[field])) {
+      return;
+    }
+    if (field === "scripts") {
+      mergedProject.scripts = mergeStoredProjectScripts(
+        baseProject.scripts,
+        nextProject.scripts,
+        currentProject.scripts,
+      );
+      appliedLocalChange = true;
+      return;
+    }
+    if (field === "env") {
+      mergedProject.env = mergeStoredProjectEnvironment(baseProject.env, nextProject.env, currentProject.env);
+      appliedLocalChange = true;
+      return;
+    }
+    if (
+      !storedValueEquals(currentProject[field], baseProject[field]) &&
+      !storedValueEquals(currentProject[field], nextProject[field])
+    ) {
+      throw new Error(`项目配置已被其他窗口修改（${nextProject.id}），请刷新后重试。`);
+    }
+    mergedProject[field] = nextProject[field];
+    appliedLocalChange = true;
+  });
+
+  if (appliedLocalChange) {
+    mergedProject.updatedAt = nextProject.updatedAt || new Date().toISOString();
+    mergedProject.lastUpdated = nextProject.lastUpdated || currentProject.lastUpdated;
+  }
+  return mergedProject;
+}
+
+function writeStoredProjectCatalogEntry(project, baseProject, fallbackIndex) {
+  for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
+    const currentDocument = readCurrentProjectDocument(project.id);
+    if (!currentDocument && baseProject) {
+      throw new Error(`项目配置已被其他窗口删除（${project.id}），请刷新后重试。`);
+    }
+    const currentProject = currentDocument?.project ? toStoredProject(currentDocument.project, fallbackIndex) : null;
+    if (currentProject && !baseProject) {
+      throw new Error(`项目 ID 已存在（${project.id}），请刷新后重试。`);
+    }
+    const nextProject =
+      currentProject && baseProject ? mergeStoredProjectCatalogChange(baseProject, project, currentProject) : project;
+
+    if (currentProject && storedValueEquals(currentProject, nextProject)) {
+      return currentProject;
+    }
+
+    const document = createStoredProjectDocument(nextProject, fallbackIndex);
+    if (currentDocument?._rev) {
+      document._rev = currentDocument._rev;
+    }
+    try {
+      putProjectDocument(document, project.id);
+      return nextProject;
+    } catch (error) {
+      if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
+        throw error;
+      }
+    }
+  }
+  throw new Error(`保存项目配置失败（${project.id}）：无法完成并发写入。`);
+}
+
+function removeStoredProjectDocument(projectId) {
+  if (!window.utools?.db?.remove) {
+    throw new Error(`删除项目配置失败（${projectId}）：当前环境不支持删除项目文档。`);
+  }
+  for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
+    const current = readCurrentProjectDocument(projectId);
+    if (!current) {
+      return false;
+    }
+    const result = window.utools.db.remove(current);
+    if (result?.ok === true) {
+      return true;
+    }
+    const error = new Error(`删除项目配置失败（${projectId}）：${result?.message || "未知错误"}`);
+    error.isProjectDocumentWriteConflict = result?.error === "conflict" || /conflict/i.test(result?.message || "");
+    if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
+      throw error;
+    }
+  }
+  return false;
+}
+
+function normalizeProjectCatalogWriteOptions(options) {
+  const hasBaseProjects = Array.isArray(options?.baseProjects);
+  const baseProjects = hasBaseProjects ? options.baseProjects : [];
+  const removedProjectIds = Array.isArray(options?.removedProjectIds)
+    ? Array.from(new Set(options.removedProjectIds.map(normalizeProjectId).filter(Boolean)))
+    : [];
+  return { hasBaseProjects, baseProjects, removedProjectIds };
+}
+
+function writeStoredProjects(projects, options = {}) {
+  if (window.utools?.db?.put) {
+    if (!hasProjectDocumentCatalog() || !supportsProjectDocumentWrites()) {
+      throw new Error("无法读取项目文档目录，已取消保存以避免覆盖现有项目。");
+    }
+    try {
+      const { hasBaseProjects, baseProjects, removedProjectIds } = normalizeProjectCatalogWriteOptions(options);
+      const normalizedProjects = normalizeStoredProjects(projects);
+      const submittedProjectIds = new Set(normalizedProjects.map((project) => project.id));
+      const baseProjectsById = new Map(normalizeStoredProjects(baseProjects).map((project) => [project.id, project]));
+
+      // Fail before any write when the canonical catalog cannot be read.
+      const existingDocuments = readProjectDocs();
+      const existingProjectsById = new Map(
+        existingDocuments
+          .filter((document) => document?.project?.id)
+          .map((document, index) => [document.project.id, toStoredProject(document.project, index)]),
+      );
+      normalizedProjects.forEach((project, index) => {
+        const baseProject = hasBaseProjects
+          ? baseProjectsById.get(project.id) || null
+          : existingProjectsById.get(project.id) || null;
+        writeStoredProjectCatalogEntry(project, baseProject, index);
+      });
+      const deletionProjectIds = hasBaseProjects
+        ? removedProjectIds
+        : existingDocuments
+            .map((document) => normalizeProjectId(document?.project?.id))
+            .filter((projectId) => projectId && !submittedProjectIds.has(projectId));
+      deletionProjectIds.forEach((projectId) => {
+        if (!submittedProjectIds.has(projectId)) {
+          removeStoredProjectDocument(projectId);
+        }
+      });
+      return normalizedProjects;
+    } catch (error) {
+      logStorageError("save projects to uTools db", error);
+      throw error;
     }
   }
 
   writeLegacyStoredProjects(projects);
+  return normalizeStoredProjects(projects);
 }
 
 function pathExists(projectPath) {
@@ -773,4 +1229,3 @@ function writeProjectFile(projectPath, relativePath, content) {
   fs.writeFileSync(resolved.targetPath, String(content), "utf8");
   return { path: resolved.targetPath, relativePath: resolved.relativePath, savedAt: new Date().toISOString() };
 }
-

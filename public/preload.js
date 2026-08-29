@@ -10,6 +10,7 @@ const preloadModuleFiles = [
   "platform.js",
   "git.js",
   "projects.js",
+  "agent-tools.js",
   "git-diff.js",
   "processes.js",
   "bridge.js",

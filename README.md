@@ -57,6 +57,19 @@
 - **多轮修订**：可在已有分析结果上继续追问，线性版本回溯，不丢失历史版本。
 - 支持 uTools 内置模型、OpenAI 兼容接口、Anthropic 兼容接口。
 
+### AI Agent 工具
+
+uTools AI Agent 可直接查询和维护项目配置，无需打开插件界面：
+
+| 工具                             | 用途                                             |
+| -------------------------------- | ------------------------------------------------ |
+| `project_manager_list_projects`  | 获取所有项目的简要信息                           |
+| `project_manager_get_project`    | 获取一个项目的详细信息与脚本；环境变量仅返回键名 |
+| `project_manager_upsert_project` | 创建或局部更新项目配置与环境变量                 |
+| `project_manager_upsert_script`  | 向项目创建或局部更新启动脚本                     |
+
+这些工具复用插件既有的项目存储与规范化逻辑。`project_manager_list_projects` 同时返回当前实际使用的 `groups` 和受支持的 `projectTypes`；创建或编辑项目时应从 `projectTypes` 选择类型。`project_manager_upsert_project` 省略 `projectId` 时创建项目，提供 `projectId` 时更新已有项目；`env` 使用 `{ "key": "NAME", "value": "value" }` 项数组，按 `key` 新增或更新环境变量，`removeEnvKeys` 显式删除环境变量，详情查询不会返回变量值。`project_manager_upsert_script` 省略 `scriptId` 时创建脚本，提供 `scriptId` 时更新现有脚本。分组来自已保存项目的非空分组值，允许复用已有分组、创建新分组，或使用空字符串移出分组。
+
 ### 备忘与待办
 
 - 每个项目独立的 Markdown 备忘，支持渲染 / 编辑切换与自动保存。
@@ -215,7 +228,7 @@ dist/
 | `npm run validate:git-diff`           | 校验 Git diff 解析                                         |
 | `npm run validate:git-workspace`      | 校验 Git 工作区桥接(含单元测试)                            |
 | `npm run validate:project-files`      | 校验项目文件桥接                                           |
-| `npm run validate:project-storage`    | 校验项目存储兼容性                                         |
+| `npm run validate:project-storage`    | 校验项目存储兼容性和 AI Agent 工具持久化                   |
 | `npm run validate:process-results`    | 校验进程结果批次处理                                       |
 | `npm run benchmark:git-interactions`  | Git 交互性能基准测试                                       |
 | `npm run go:fmt`                      | 格式化可选项目启动服务源码                                 |

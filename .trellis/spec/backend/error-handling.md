@@ -323,6 +323,88 @@ If a backend is introduced later, document the exact error payload shape here be
 
 ---
 
+## Scenario: uTools Project Document Persistence
+
+### 1. Scope / Trigger
+
+- Trigger: a Store or registered Agent tool changes the project catalog through the preload storage boundary.
+
+### 2. Signatures
+
+- `readProjects(): Project[]`
+- `writeStoredProjects(projects, { baseProjects?, removedProjectIds? }): Project[]`
+- `readStoredProject(projectId): Project | null`
+- `readPersistedProject(projectId): Project | null`
+- `writeStoredProject(project): void`
+- `mutateStoredProject(projectId, mutateProject): Project | null`
+- `project_manager_create_project`, `project_manager_update_project`, and `project_manager_create_script` return success only after their target can be read again.
+
+### 3. Contracts
+
+- Canonical documents use `_id: "utools-project-launch/project/<projectId>"`. Updates obtain the current `_rev` through `db.get`; `allDocs` data can be stale.
+- With `window.utools.db.put`, only `{ ok: true }` is a successful write. `dbStorage` is a compatibility fallback only when the document API is unavailable, never after a document-write failure.
+- Agent creation uses the target document's `get -> put -> get` path. Agent updates and script creation use `mutateStoredProject`: read the latest target, apply only the requested mutation, then put with that document's `_rev`.
+- Retry only a bounded document-revision conflict by re-reading and reapplying the mutation. Do not refresh `_rev` onto a stale full project snapshot, which can overwrite concurrent scripts, environment values, or automation configuration.
+- Store catalog saves pass the last successfully loaded/saved project snapshot as `baseProjects`. For each submitted project, the preload layer applies only fields changed from that baseline to the latest canonical document; scripts merge by id and environment values merge by key.
+- Omitted documents are retained by default. Only `removedProjectIds` authorizes a canonical document removal, so a stale Store cannot delete an Agent-created project it has not loaded yet.
+- `sortOrder` remains per-project metadata, not a catalog document. Store saves persist the current project-array order; a single-document Agent mutation preserves a missing legacy `sortOrder` rather than normalizing it to `0` and moving the project.
+- When project document writes are available, Agent read-back uses `readPersistedProject` and accepts only the canonical document. A same-id legacy catalog entry must not mask a missing canonical read-back target.
+- Failed legacy-to-document migration logs the write failure but returns the already merged legacy and document catalog. Migration creates only missing legacy project documents and never rewrites the existing canonical catalog.
+- Callers return the re-read canonical project or script, never the input object.
+
+### 4. Validation & Error Matrix
+
+- Stale list revision -> write with the current `db.get` revision.
+- Revision conflict between read and put -> re-read, reapply the limited mutation, and preserve remote fields before retrying.
+- Failed, missing, or non-boolean-success `db.put` result -> throw a project-save error; do not report Agent success.
+- Successful write with an absent canonical read-back target -> throw a read-back error even if legacy storage still has that id.
+- Canonical catalog list read fails -> throw before Store replacement or full-catalog write; do not substitute a legacy-only or empty list.
+- Failed migration write -> retain the merged catalog in the current read result.
+- Remote project absent from a Store snapshot -> retain it unless its id is explicitly in `removedProjectIds`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: another writer adds an environment key or script between an Agent read and write; the Agent retries from the current document and both changes remain.
+- Good: an Agent adds a project or script after Store load; a later Store metadata save retains that project/script while applying its own changed field.
+- Good: an Agent update uses the latest document revision and remains visible after a fresh preload starts.
+- Base: a host without the document API uses legacy storage.
+- Bad: returning a newly constructed project or script after a rejected document write, or returning a stale legacy record after canonical read-back fails.
+- Bad: fetching a newer `_rev` and pairing it with an earlier full project snapshot, or treating every omitted project as an intentional deletion.
+
+### 6. Tests Required
+
+- `npm run validate:project-storage` covers Agent registration, rejected and non-boolean writes, current-revision writes, conflict retry with remote metadata/script preservation, canonical-only read-back, catalog baseline merging, explicit deletion, catalog-read failure, legacy-sort preservation, migration-failure read retention, direct-write I/O, and fresh-preload persistence.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+const project = readStoredProject(projectId);
+project.scripts.push(script);
+writeStoredProject(project);
+```
+
+This can pair a fresh revision with a stale project snapshot and overwrite a concurrent script.
+
+#### Correct
+
+```js
+mutateStoredProject(projectId, (project) => ({
+  ...project,
+  scripts: [...project.scripts, script],
+}));
+const storedProject = readPersistedProject(projectId);
+if (!storedProject) {
+  throw new Error("项目配置保存后无法重新读取，请重试。");
+}
+return { project: storedProject };
+```
+
+`writeStoredProjects`, `writeStoredProject`, and `mutateStoredProject` own database-result validation; the tool owns canonical read-back validation.
+
+---
+
 ## Common Mistakes
 
 - Swallowing a failure and leaving the project in a stale `RUNNING` state

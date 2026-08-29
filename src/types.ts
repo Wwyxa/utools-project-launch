@@ -1241,10 +1241,23 @@ export interface ProjectBridgeServiceDownloadProgressEvent {
   timestamp?: string;
 }
 
+export interface ProjectBridgeProjectsChangedEvent {
+  type: "projects-changed";
+  projectId: string;
+  source: "agent";
+  timestamp?: string;
+}
+
 export type ProjectBridgeEvent =
   | ProjectBridgeProcessEvent
   | ProjectBridgeServiceStateEvent
-  | ProjectBridgeServiceDownloadProgressEvent;
+  | ProjectBridgeServiceDownloadProgressEvent
+  | ProjectBridgeProjectsChangedEvent;
+
+export interface ProjectSaveProjectsOptions {
+  baseProjects?: Project[];
+  removedProjectIds?: string[];
+}
 
 export interface ProjectGitRemoteProgressEvent {
   type: "git-remote-progress";
@@ -1256,7 +1269,7 @@ export interface ProjectGitRemoteProgressEvent {
 export interface ProjectBridge {
   loadDeviceId(): string;
   loadProjects(): Promise<Project[]>;
-  saveProjects(projects: Project[]): Promise<void>;
+  saveProjects(projects: Project[], options?: ProjectSaveProjectsOptions): Promise<void>;
   loadUiPreferences(): UiPreferences;
   saveUiPreferences(preferences: UiPreferences): void;
   loadTerminalPreferences(): TerminalPreferences;

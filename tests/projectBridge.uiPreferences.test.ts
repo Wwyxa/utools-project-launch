@@ -4152,6 +4152,209 @@ describe("store startup timing", () => {
   });
 });
 
+describe("store project catalog refresh", () => {
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      navigator: { platform: "", userAgent: "vitest" },
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+      setTimeout,
+      clearTimeout,
+      projectBridge: undefined,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("reloads persisted projects during a manual refresh without resetting active scripts", async () => {
+    const activeProject: Project = {
+      id: "existing-project",
+      name: "Existing Project",
+      path: "C:/workspace/existing-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.RUNNING,
+      pathExists: true,
+      scripts: [
+        {
+          id: "existing-script",
+          name: "dev",
+          command: "npm run dev",
+          status: "RUNNING",
+          pid: 8080,
+          runId: "preload-run",
+          runtimeOwner: "preload",
+        },
+      ],
+      env: {},
+    };
+    const persistedProjects: Project[] = [
+      {
+        ...activeProject,
+        status: ProjectStatus.STOPPED,
+        scripts: [
+          { id: "existing-script", name: "dev", command: "npm run dev -- --host", status: "IDLE" },
+          { id: "agent-script", name: "test_tool", command: "echo tool", status: "IDLE" },
+        ],
+      },
+      {
+        id: "agent-created-project",
+        name: "Agent Created Project",
+        path: "C:/workspace/agent-created-project",
+        type: "Node.js",
+        kind: "node",
+        status: ProjectStatus.STOPPED,
+        scripts: [],
+        env: {},
+        memo: "Created by Agent",
+      },
+    ];
+    const loadProjects = vi.fn<ProjectBridge["loadProjects"]>(async () => persistedProjects);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects,
+      pathExists: vi.fn(async () => true),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [activeProject];
+    store.projectsLoaded = true;
+    store.selectedProjectId = activeProject.id;
+
+    store.handleBridgeEvent({
+      type: "projects-changed",
+      projectId: activeProject.id,
+      source: "agent",
+    });
+
+    await vi.waitFor(() => expect(store.projects).toHaveLength(2));
+
+    expect(store.projects.map((project) => project.id)).toEqual(["existing-project", "agent-created-project"]);
+    expect(store.selectedProjectId).toBe("existing-project");
+    expect(store.projects[0]?.scripts[0]).toMatchObject({
+      command: "npm run dev -- --host",
+      status: "RUNNING",
+      pid: 8080,
+      runId: "preload-run",
+      runtimeOwner: "preload",
+    });
+    expect(store.projects[0]?.scripts[1]).toMatchObject({ id: "agent-script", name: "test_tool" });
+    expect(store.memoContent["agent-created-project"]).toBe("Created by Agent");
+
+    const refreshDashboardGitChangeCounts = vi
+      .spyOn(store, "refreshDashboardGitChangeCounts")
+      .mockResolvedValue(undefined);
+    await store.refreshProjects();
+
+    expect(loadProjects).toHaveBeenCalledTimes(2);
+    expect(refreshDashboardGitChangeCounts).toHaveBeenCalledOnce();
+  });
+
+  it("coalesces Agent catalog events and runs one trailing reload for mid-flight changes", async () => {
+    const initialProject: Project = {
+      id: "coalesced-project",
+      name: "Initial Project",
+      path: "C:/workspace/coalesced-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [],
+      env: {},
+    };
+    const firstPersistedProjects: Project[] = [{ ...initialProject, name: "First Agent Change" }];
+    const finalPersistedProjects: Project[] = [{ ...initialProject, name: "Final Agent Change" }];
+    let resolveFirstReload: (projects: Project[]) => void = () => undefined;
+    let resolveTrailingReload: (projects: Project[]) => void = () => undefined;
+    const firstReload = new Promise<Project[]>((resolve) => {
+      resolveFirstReload = resolve;
+    });
+    const trailingReload = new Promise<Project[]>((resolve) => {
+      resolveTrailingReload = resolve;
+    });
+    const loadProjects = vi
+      .fn<ProjectBridge["loadProjects"]>()
+      .mockImplementationOnce(async () => firstReload)
+      .mockImplementationOnce(async () => trailingReload);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects,
+      pathExists: vi.fn(async () => true),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [initialProject];
+    store.projectsLoaded = true;
+    const reconcileRuntimeProcessState = vi.spyOn(store, "reconcileRuntimeProcessState").mockResolvedValue(undefined);
+
+    store.handleBridgeEvent({ type: "projects-changed", projectId: initialProject.id, source: "agent" });
+    store.handleBridgeEvent({ type: "projects-changed", projectId: initialProject.id, source: "agent" });
+    store.handleBridgeEvent({ type: "projects-changed", projectId: initialProject.id, source: "agent" });
+
+    expect(loadProjects).toHaveBeenCalledOnce();
+
+    resolveFirstReload(firstPersistedProjects);
+    await vi.waitFor(() => expect(loadProjects).toHaveBeenCalledTimes(2));
+
+    resolveTrailingReload(finalPersistedProjects);
+    await vi.waitFor(() => expect(store.projects[0]?.name).toBe("Final Agent Change"));
+    await vi.waitFor(() => expect(reconcileRuntimeProcessState).toHaveBeenCalledTimes(2));
+
+    expect(loadProjects).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes a loaded catalog baseline and explicit project deletions to persistence", async () => {
+    const persistedProject: Project = {
+      id: "persisted-baseline-project",
+      name: "Persisted Baseline Project",
+      path: "C:/workspace/persisted-baseline-project",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.STOPPED,
+      scripts: [],
+      env: {},
+      memo: "initial memo",
+    };
+    const saveProjects = vi.fn<ProjectBridge["saveProjects"]>(async () => undefined);
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn<ProjectBridge["loadProjects"]>(async () => [persistedProject]),
+      saveProjects,
+      pathExists: vi.fn(async () => true),
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    await store.reloadProjectsFromStorage();
+
+    store.projects[0]!.memo = "locally updated memo";
+    await store.persistProjects();
+
+    expect(saveProjects.mock.calls[0]?.[1]).toMatchObject({
+      baseProjects: [expect.objectContaining({ id: persistedProject.id, memo: "initial memo" })],
+      removedProjectIds: [],
+    });
+
+    await store.deleteProject(persistedProject.id);
+
+    expect(saveProjects.mock.calls[1]?.[0]).toEqual([]);
+    expect(saveProjects.mock.calls[1]?.[1]).toMatchObject({
+      removedProjectIds: [persistedProject.id],
+    });
+  });
+});
+
 describe("uTools preload UI preferences", () => {
   it.each([
     [defaultTabOrder, 0],

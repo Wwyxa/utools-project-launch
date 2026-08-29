@@ -222,6 +222,65 @@ If the app later talks to a real backend or file system adapter, keep the fetche
 
 The current uTools integration follows this rule: UI components call store actions, store actions call `src/lib/projectBridge.ts`, and the bridge delegates to `window.projectBridge` from `public/preload.js` when running inside uTools.
 
+## Scenario: External Project Catalog Synchronization
+
+### 1. Scope / Trigger
+
+- Trigger: an Agent changes the persisted project catalog while the plugin UI is open.
+
+### 2. Signatures
+
+- `ProjectBridgeEvent` member: `{ type: "projects-changed"; projectId: string; source: "agent"; timestamp?: string }`.
+- `notifyAgentProjectCatalogChanged(projectId)` and `reloadProjectsFromStorage(): Promise<void>`.
+
+### 3. Contracts
+
+- Emit `projects-changed` only after a successful persisted read-back. The Store treats it as a catalog invalidation and reloads through `bridge.loadProjects()`.
+- For unchanged project id and path, reloading accepts persisted metadata and scripts while retaining active runtime identity and the current Git snapshot. It does not write the reloaded catalog back.
+- The event is an immediate same-context optimization. Plugin entry, runtime resume, and dashboard refresh also reload persisted data; selection survives only while the project remains visible.
+
+### 4. Validation & Error Matrix
+
+- Same-context event -> new catalog data appears without reopening the plugin.
+- Different context or no event -> the next lifecycle/manual reload reads the catalog.
+- Reload failure -> retain the in-memory catalog; matching active scripts keep their runtime identity.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a new script appears while a running sibling retains its PID and stop control.
+- Base: the browser fallback uses the same reload action.
+- Bad: replacing active scripts with persisted `IDLE` values or waiting for a remount to load Agent changes.
+
+### 6. Tests Required
+
+- `npm run validate:project-storage` verifies successful Agent writes emit the event.
+- `npx vitest run tests/projectBridge.uiPreferences.test.ts` verifies catalog reload, selection retention, and active runtime preservation.
+- Run `npm run lint` and `npm run build` after changing the event or reload path.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+async refreshProjects() {
+  await this.refreshProjectAvailability();
+  await this.refreshDashboardGitChangeCounts();
+}
+```
+
+This refreshes only properties of the stale in-memory array, so externally persisted projects and scripts cannot appear.
+
+#### Correct
+
+```ts
+async refreshProjects() {
+  await this.reloadProjectsFromStorage();
+  await this.refreshDashboardGitChangeCounts();
+}
+```
+
+Reload the persistent catalog before derived dashboard state and preserve matching active runtime fields.
+
 ## Scenario: Project Script Runtime State Boundary
 
 ### 1. Scope / Trigger
