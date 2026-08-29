@@ -437,7 +437,7 @@ func (supervisor *Supervisor) streamOutput(run state.Run, managed *managedProces
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 4096), outputScannerBufferBytes)
 	for scanner.Scan() {
-		supervisor.appendEvent(run, eventType, state.Event{PID: managed.pid, Message: scanner.Text()})
+		supervisor.appendEvent(run, eventType, state.Event{PID: managed.pid, Message: decodeProcessOutput(scanner.Bytes())})
 	}
 	if err := scanner.Err(); err != nil {
 		supervisor.appendEvent(run, "error", state.Event{PID: managed.pid, Message: fmt.Sprintf("read %s: %v", eventType, err)})

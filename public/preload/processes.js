@@ -87,30 +87,34 @@ function runCommand(payload) {
     cwd: resolvedCwd,
   });
 
-  child.stdout?.on("data", (chunk) => {
+  const emitOutput = (type, decode, chunk) => {
+    const message = decode(chunk);
+    if (!message) {
+      return;
+    }
     emit({
-      type: "stdout",
+      type,
       projectId: payload.projectId,
       scriptId: payload.scriptId,
       pid: childPid,
       runId,
       runtimeOwner,
       automationRunId: payload.automationRunId,
-      message: decodeStdout(chunk),
+      message,
     });
+  };
+
+  const flushOutput = () => {
+    emitOutput("stdout", decodeStdout);
+    emitOutput("stderr", decodeStderr);
+  };
+
+  child.stdout?.on("data", (chunk) => {
+    emitOutput("stdout", decodeStdout, chunk);
   });
 
   child.stderr?.on("data", (chunk) => {
-    emit({
-      type: "stderr",
-      projectId: payload.projectId,
-      scriptId: payload.scriptId,
-      pid: childPid,
-      runId,
-      runtimeOwner,
-      automationRunId: payload.automationRunId,
-      message: decodeStderr(chunk),
-    });
+    emitOutput("stderr", decodeStderr, chunk);
   });
 
   child.on("error", (error) => {
@@ -119,6 +123,7 @@ function runCommand(payload) {
     }
 
     processSettled = true;
+    flushOutput();
     const automationExitMatched = childPid > 0 && automationExitMatchedProcesses.has(childPid);
     rememberCompletedProcessResult({
       error: error?.message || "command failed",
@@ -147,6 +152,7 @@ function runCommand(payload) {
     }
 
     processSettled = true;
+    flushOutput();
     const stoppedByUser = childPid > 0 ? userStoppedProcesses.delete(childPid) : false;
     const automationExitMatched = childPid > 0 && automationExitMatchedProcesses.has(childPid);
     rememberCompletedProcessResult({
@@ -365,4 +371,3 @@ async function sendProcessInput(pid, input, options = {}) {
 function stopAllProcesses() {
   Array.from(launchedProcessIds.values()).forEach((pid) => stopProcess(pid));
 }
-

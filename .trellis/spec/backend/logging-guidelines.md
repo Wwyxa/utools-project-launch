@@ -98,7 +98,7 @@ window.dispatchEvent(new CustomEvent("project-bridge-event", { detail }));
 - The Pinia store must preserve both a project-level aggregate log and a script-level log index keyed by `projectId` and `scriptId`.
 - The terminal UI should show script-level tabs only for scripts that have produced output in the current session. Do not show an aggregate "all" tab in the details runtime log.
 - Strip ANSI/control escape sequences at the store boundary before creating user-visible `LogEntry` rows.
-- On Windows, process output may arrive as GBK/GB18030. The preload bridge should fall back to GB18030 when UTF-8 decoding produces replacement characters.
+- On Windows, keep process output as bytes until decoding. Preserve valid UTF-8; otherwise fall back to GB18030/GBK. Preload must buffer incomplete records and flush at process end, while the service must decode raw output records before persistence.
 
 ### 4. Validation & Error Matrix
 
@@ -117,6 +117,7 @@ window.dispatchEvent(new CustomEvent("project-bridge-event", { detail }));
 - Type check the `ProjectBridgeEvent` handling path.
 - Build the frontend after changing log state shape or terminal props.
 - Manually verify two simultaneous scripts can be distinguished in the details terminal.
+- After changing Windows output decoding, run `npx vitest run tests/projectBridge.scriptDiscovery.test.ts`, `go -C service test ./internal/process/...`, `node --check public/preload.js`, and `npm run validate:process-results`.
 
 ### 7. Wrong vs Correct
 

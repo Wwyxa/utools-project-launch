@@ -27,7 +27,8 @@ function resolveWindowsDirectCommand(command) {
         resolve(command);
         return;
       }
-      const output = Buffer.isBuffer(stdout) ? createProcessOutputDecoder()(stdout) : String(stdout || "");
+      const decode = createProcessOutputDecoder();
+      const output = Buffer.isBuffer(stdout) ? decode(stdout) + decode() : String(stdout || "");
       const candidates = output
         .split(/\r?\n/)
         .map((candidate) => candidate.trim())
@@ -76,6 +77,11 @@ function runToolCommand(command, args, direct = false) {
       resolve(result);
     };
 
+    const flushOutput = () => {
+      stdout += decodeStdout();
+      stderr += decodeStderr();
+    };
+
     const start = async () => {
       try {
         const resolvedCommand = direct ? await resolveWindowsDirectCommand(command) : command;
@@ -113,9 +119,11 @@ function runToolCommand(command, args, direct = false) {
           stderr += decodeStderr(chunk);
         });
         child.on("error", (error) => {
+          flushOutput();
           finish({ error, stdout, stderr });
         });
         child.on("close", (status) => {
+          flushOutput();
           finish({
             status,
             stdout,
@@ -182,4 +190,3 @@ async function detectEnvironmentTool(request) {
     checkedAt,
   };
 }
-

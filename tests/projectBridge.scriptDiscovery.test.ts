@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProjectBridge } from "../src/types";
+import type { ProjectBridge, ProjectBridgeEvent } from "../src/types";
 
 const fixtureDirectories: string[] = [];
 
@@ -19,11 +19,20 @@ const loadPreloadBridge = (
     platform?: NodeJS.Platform;
     env?: NodeJS.ProcessEnv;
     moduleOverrides?: Record<string, unknown>;
+    onBridgeEvent?: (event: ProjectBridgeEvent) => void;
   } = {},
 ) => {
   const nodeRequire = createRequire(import.meta.url);
-  const sandboxWindow: { projectBridge?: ProjectBridge; dispatchEvent: () => void } = {
-    dispatchEvent: () => undefined,
+  const sandboxWindow: {
+    projectBridge?: ProjectBridge;
+    dispatchEvent: (event: { type?: string; detail?: unknown }) => boolean;
+  } = {
+    dispatchEvent: (event) => {
+      if (event.type === "project-bridge-event") {
+        options.onBridgeEvent?.(event.detail as ProjectBridgeEvent);
+      }
+      return true;
+    },
   };
   const sandbox = {
     require: (id: string) => (id === "electron" ? { shell: {} } : (options.moduleOverrides?.[id] ?? nodeRequire(id))),
@@ -36,7 +45,13 @@ const loadPreloadBridge = (
     Buffer,
     console,
     CustomEvent: class {
-      constructor(_type: string, _init: unknown) {}
+      type: string;
+      detail: unknown;
+
+      constructor(type: string, init?: { detail?: unknown }) {
+        this.type = type;
+        this.detail = init?.detail;
+      }
     },
     setTimeout,
     clearTimeout,
@@ -182,5 +197,57 @@ describe("project script discovery", () => {
         env: { ComSpec: "C:\\Windows\\System32\\cmd.exe", PROJECT_VALUE: "set" },
       }),
     );
+  });
+
+  it("decodes split GB18030 script output on Windows", () => {
+    let stdoutListener: ((chunk: Buffer) => void) | undefined;
+    let closeListener: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined;
+    const child = {
+      pid: 42,
+      stdout: {
+        on: vi.fn((event: string, listener: (chunk: Buffer) => void) => {
+          if (event === "data") stdoutListener = listener;
+        }),
+      },
+      stderr: { on: vi.fn() },
+      on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+        if (event === "close") {
+          closeListener = listener as (code: number | null, signal: NodeJS.Signals | null) => void;
+        }
+      }),
+    };
+    const spawn = vi.fn(() => child);
+    const nodeRequire = createRequire(import.meta.url);
+    const events: ProjectBridgeEvent[] = [];
+    const bridge = loadPreloadBridge({
+      platform: "win32",
+      env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" },
+      moduleOverrides: { child_process: { ...nodeRequire("child_process"), spawn } },
+      onBridgeEvent: (event) => events.push(event),
+    });
+
+    bridge.runCommand({
+      projectId: "project",
+      scriptId: "script",
+      command: "echo test111",
+      cwd: "C:\\project",
+      env: {},
+      label: "script",
+    });
+
+    const output = Buffer.from([
+      0x74, 0x65, 0x73, 0x74, 0x31, 0x31, 0x31, 0x20, 0xcf, 0xee, 0xc4, 0xbf, 0xc6, 0xf4, 0xb6, 0xaf, 0x0d, 0x0a,
+    ]);
+    stdoutListener?.(output.subarray(0, 9));
+    stdoutListener?.(output.subarray(9));
+    closeListener?.(0, null);
+
+    const stdoutMessages = events.reduce<string[]>((messages, event) => {
+      if (event.type === "stdout" && "message" in event) {
+        messages.push(event.message || "");
+      }
+      return messages;
+    }, []);
+    expect(stdoutMessages).toEqual(["test111 \u9879\u76ee\u542f\u52a8\r\n"]);
   });
 });

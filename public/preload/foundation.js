@@ -286,24 +286,80 @@ function createLegacyWindowsDecoder() {
     return null;
   }
 
+  for (const encoding of ["gb18030", "gbk"]) {
+    try {
+      return new TextDecoder(encoding);
+    } catch (error) {
+      // Older Electron runtimes may expose GBK without the GB18030 label.
+    }
+  }
+
+  return null;
+}
+
+function decodeProcessOutputLine(output, legacyWindowsDecoder) {
   try {
-    return new TextDecoder("gb18030");
+    return new TextDecoder("utf-8", { fatal: true }).decode(output);
   } catch (error) {
-    return null;
+    return legacyWindowsDecoder ? legacyWindowsDecoder.decode(output) : new TextDecoder("utf-8").decode(output);
   }
 }
 
-function createProcessOutputDecoder() {
-  const utf8Decoder = new TextDecoder("utf-8");
-  const legacyWindowsDecoder = createLegacyWindowsDecoder();
+function findProcessOutputLineEnd(output, flush) {
+  for (let index = 0; index < output.length; index += 1) {
+    if (output[index] === 0x0a) {
+      return index + 1;
+    }
+    if (output[index] !== 0x0d) {
+      continue;
+    }
+    if (index + 1 < output.length && output[index + 1] === 0x0a) {
+      return index + 2;
+    }
+    if (index + 1 < output.length || flush) {
+      return index + 1;
+    }
+    return 0;
+  }
+  return 0;
+}
 
+function createProcessOutputDecoder() {
+  const legacyWindowsDecoder = createLegacyWindowsDecoder();
+  if (!legacyWindowsDecoder) {
+    const utf8Decoder = new TextDecoder("utf-8");
+    return (chunk) =>
+      chunk === undefined || chunk === null ? utf8Decoder.decode() : utf8Decoder.decode(chunk, { stream: true });
+  }
+
+  let pendingOutput = new Uint8Array(0);
   return (chunk) => {
-    const utf8Text = utf8Decoder.decode(chunk, { stream: true });
-    if (!legacyWindowsDecoder || !utf8Text.includes("�")) {
-      return utf8Text;
+    const flush = chunk === undefined || chunk === null;
+    if (!flush) {
+      const output = typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk);
+      if (pendingOutput.length) {
+        const combinedOutput = new Uint8Array(pendingOutput.length + output.length);
+        combinedOutput.set(pendingOutput);
+        combinedOutput.set(output, pendingOutput.length);
+        pendingOutput = combinedOutput;
+      } else {
+        pendingOutput = output;
+      }
     }
 
-    return legacyWindowsDecoder.decode(chunk, { stream: true });
+    const lines = [];
+    let lineEnd = findProcessOutputLineEnd(pendingOutput, flush);
+    while (lineEnd > 0) {
+      lines.push(decodeProcessOutputLine(pendingOutput.subarray(0, lineEnd), legacyWindowsDecoder));
+      pendingOutput = pendingOutput.subarray(lineEnd);
+      lineEnd = findProcessOutputLineEnd(pendingOutput, flush);
+    }
+    if (flush && pendingOutput.length) {
+      lines.push(decodeProcessOutputLine(pendingOutput, legacyWindowsDecoder));
+      pendingOutput = new Uint8Array(0);
+    }
+
+    return lines.join("");
   };
 }
 

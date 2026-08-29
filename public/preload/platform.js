@@ -219,9 +219,8 @@ function findWindowsExecutable(kind) {
   if (direct) return direct;
   for (const command of candidate.commands) {
     try {
-      const output = createProcessOutputDecoder()(
-        execFileSync("where.exe", [command], { encoding: "buffer", timeout: 1500 }),
-      );
+      const decode = createProcessOutputDecoder();
+      const output = decode(execFileSync("where.exe", [command], { encoding: "buffer", timeout: 1500 })) + decode();
       const executable = output
         .split(/\r?\n/)
         .map((item) => item.trim())
@@ -237,9 +236,8 @@ function findWindowsExecutable(kind) {
 function findLinuxExecutable(kind) {
   for (const command of linuxExecutables[kind] || []) {
     try {
-      const output = createProcessOutputDecoder()(
-        execFileSync("which", [command], { encoding: "buffer", timeout: 1500 }),
-      );
+      const decode = createProcessOutputDecoder();
+      const output = decode(execFileSync("which", [command], { encoding: "buffer", timeout: 1500 })) + decode();
       const executable = output
         .split(/\r?\n/)
         .map((item) => item.trim())
@@ -435,4 +433,3 @@ async function openExternalApplication(payload) {
     code: !useNative && !application?.command?.trim() ? "invalid-custom-command" : "application-unavailable",
   };
 }
-
