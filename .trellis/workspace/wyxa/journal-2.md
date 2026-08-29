@@ -376,3 +376,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 75: 完成 Agent 项目管理 MCP 工具
+
+**Date**: 2026-08-29
+**Task**: 完成 Agent 项目管理 MCP 工具
+**Branch**: `master`
+
+### Summary
+
+实现并验证 Agent 项目管理 MCP 工具，覆盖项目和脚本 upsert、环境变量、持久化和 UI 同步及 uTools schema 兼容性。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `50f7472` | (see git log) |
+
+### Status
+
+[OK] **Completed**
