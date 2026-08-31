@@ -755,7 +755,7 @@ const fileIcon = computed(() => {
 
 - Tiny cards use a `flex-wrap gap-2` container, not a fixed-column grid. This lets cards pack tightly based on actual content width.
 - Each tiny card has `min-w-[8rem] max-w-[14rem]` for uniform but adaptive sizing.
-- Regular cards use full-width `repeat(auto-fit, minmax(16.5rem, 1fr))` grid tracks so the current two- or three-column layout absorbs spare row width instead of leaving a fixed-track gap on the right. Keep the 16.5rem floor so script controls and hover actions fit; keep footer metadata content-sized on the left and apply `ml-auto` to the fixed-width action group so Git counts do not crowd the action icons.
+- Regular cards use full-width `repeat(auto-fill, minmax(16.5rem, 1fr))` grid tracks so a filtered group with a short single row retains the normal card width instead of stretching its remaining cards. Keep the 16.5rem floor so script controls and hover actions fit; keep footer metadata content-sized on the left and apply `ml-auto` to the fixed-width action group so Git counts do not crowd the action icons.
 - When both sections exist, add a `border-b border-border-subtle` divider on the tiny section.
 
 **Hover Action Buttons**:
