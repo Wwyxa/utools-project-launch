@@ -44,7 +44,10 @@ import type {
 } from "../../types";
 import {
   collapseGitStashAuxiliaryCommits,
+  GIT_COMMIT_GRAPH_COLOR_INDEX,
   GIT_COMMIT_GRAPH_GEOMETRY,
+  GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES,
+  gitCommitGraphStrokeColor,
   isGitStashCommit,
   layoutGitCommitGraph,
   selectGitCommitGraphWindow,
@@ -524,9 +527,11 @@ const commitContextMenuMaxHeight = 240;
 const graphWindowOverscan = 256;
 const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
 const rowPitch = rowHeight + rowGap;
-const graphStrokeColors = ["#2563eb", "#d97706", "#db2777", "#0f766e", "#7c3aed"];
-const stashGraphColorIndex = 1;
-const graphStrokeColor = (index: number) => graphStrokeColors[index % graphStrokeColors.length] || graphStrokeColors[0];
+const currentBranchGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch;
+const baseGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.base;
+const upstreamGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.upstream;
+const stashGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.stash;
+const graphStrokeColor = gitCommitGraphStrokeColor;
 const graphNodeX = (lane: number) =>
   GIT_COMMIT_GRAPH_GEOMETRY.paddingX +
   lane * GIT_COMMIT_GRAPH_GEOMETRY.laneWidth +
@@ -561,26 +566,30 @@ const graphReferences = computed(() => {
   const currentSnapshot = snapshot.value;
   if (!currentSnapshot) return references;
   if (currentSnapshot.isDetachedHead) {
-    references.push({ identity: gitCommitRefIdentity("head", "HEAD"), name: "HEAD", colorIndex: 0 });
+    references.push({
+      identity: gitCommitRefIdentity("head", "HEAD"),
+      name: "HEAD",
+      colorIndex: currentBranchGraphColorIndex,
+    });
   } else if (currentSnapshot.branch) {
     references.push({
       identity: gitCommitRefIdentity("local", currentSnapshot.branch),
       name: currentSnapshot.branch,
-      colorIndex: 0,
+      colorIndex: currentBranchGraphColorIndex,
     });
   }
   if (currentSnapshot.upstream?.ref) {
     references.push({
       identity: gitCommitRefIdentity("remote", currentSnapshot.upstream.ref),
       name: currentSnapshot.upstream.ref,
-      colorIndex: 2,
+      colorIndex: upstreamGraphColorIndex,
     });
   }
   if (currentSnapshot.base?.ref) {
     references.push({
       identity: gitCommitRefIdentity("remote", currentSnapshot.base.ref),
       name: currentSnapshot.base.ref,
-      colorIndex: 1,
+      colorIndex: baseGraphColorIndex,
     });
   }
   return references.filter(
@@ -623,6 +632,7 @@ const graphLayout = computed(() =>
       commits.value.map((commit) => [commit.hash, expandedCommitFilesHeight(commit.hash)]),
     ),
     colorIndexByCommitHash: graphCommitColorByHash.value,
+    reservedColorIndexes: GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES,
   }),
 );
 const graphRows = computed(() => graphLayout.value.rows);

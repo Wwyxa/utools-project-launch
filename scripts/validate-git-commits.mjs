@@ -93,6 +93,26 @@ const createPreloadBridge = (childProcess = require("child_process")) => {
 const bridge = createPreloadBridge();
 
 try {
+  const baseProjectRoot = path.join(fixtureRoot, "branch-base");
+  const baseOriginRoot = path.join(fixtureRoot, "branch-base-origin.git");
+  initializeRepository(baseProjectRoot, "git-branch-base@example.invalid");
+  const baseBranch = runGitAt(baseProjectRoot, "branch", "--show-current").trim();
+  fs.writeFileSync(path.join(baseProjectRoot, "base.txt"), "base\n");
+  runGitAt(baseProjectRoot, "add", "--", "base.txt");
+  runGitAt(baseProjectRoot, "commit", "-m", "base commit");
+  execFileSync("git", ["init", "--bare", baseOriginRoot], { encoding: "utf8" });
+  runGitAt(baseProjectRoot, "remote", "add", "origin", baseOriginRoot);
+  runGitAt(baseProjectRoot, "push", "--set-upstream", "origin", baseBranch);
+  runGitAt(baseOriginRoot, "symbolic-ref", "HEAD", `refs/heads/${baseBranch}`);
+  runGitAt(baseProjectRoot, "fetch", "origin");
+  runGitAt(baseProjectRoot, "switch", "-c", "feature/base");
+  const baseSnapshot = await bridge.readGitStatusSnapshot(baseProjectRoot);
+  assert.equal(baseSnapshot.base?.ref, `origin/${baseBranch}`);
+  assert.equal(
+    runGitAt(baseProjectRoot, "config", "--get", "branch.feature/base.vscode-merge-base").trim(),
+    `origin/${baseBranch}`,
+  );
+
   initializeRepository(historyActionRoot, "git-history-actions@example.invalid");
   const historyActionBranch = runGitAt(historyActionRoot, "branch", "--show-current").trim();
   fs.writeFileSync(path.join(historyActionRoot, "base.txt"), "base\n");

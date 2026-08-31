@@ -128,3 +128,9 @@ Examples from the current codebase:
 - `src/store/useStore.ts` holds the current project list, logs, staged files, todos, and memo content
 - `src/components/project/ProjectDetails.vue` composes the tabbed project detail views
 - `src/components/terminal/Terminal.vue` renders the terminal log surface and scroll behavior
+
+### Convention: VS Code-Compatible Git History Base References
+
+`readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)` is the preload-side owner of `snapshot.base`. It accepts only verified remote branch references: first the `branch.<branch>.vscode-merge-base` setting, then a branch-creation reflog upstream, then a remote default branch. A discovered value is persisted to the same Git config key so later snapshots keep a stable base reference.
+
+Do not infer a base from an arbitrary local branch or from graph topology in Vue. A base equal to the current upstream is not a separate history reference. Validate this behavior with `npm run validate:git-commits`, including a feature branch created from a tracked remote default branch and an assertion for both `snapshot.base.ref` and the persisted configuration value.

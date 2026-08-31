@@ -435,6 +435,8 @@ Choose the primary label from the first graph-colored ref in priority order, the
 
 **Ref Color Identity Rule**: Map graph colors by `${kind}:${name}`, never bare name, so `local:main` and `tag:main` cannot share a color. Test same-name refs across kinds.
 
+**Graph Color Slot Rule**: Reserve color indexes `0` through `3` for current branch, base, upstream, and stash references. Pass those indexes to `layoutGitCommitGraph(...)` through `reservedColorIndexes`, then map ordinary lanes to a separate VS Code-style graph palette beginning at index `4`. Never apply `%` to one palette that contains both reference and ordinary-lane colors: once a second ordinary branch reaches index `5`, it can otherwise wrap to the current branch's blue and make distinct lanes indistinguishable. Test a graph with two additional parents and assert the lane at index `5` differs from the current branch color.
+
 **Compact Badge Geometry Rule**: Text refs are pills; icon-only history refs are centered `18px` squares with `border-radius: 50%`. Do not inherit row stretching, or they become ovals.
 
 ```ts

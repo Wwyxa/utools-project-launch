@@ -1432,6 +1432,10 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
     const commit = await runGitAsync(repositoryPath, ["rev-parse", "--verify", "--quiet", `${base.ref}^{commit}`]);
     return commit ? base : null;
   };
+  const rememberBase = async (base) => {
+    await runGitAsync(repositoryPath, ["config", `branch.${branch}.vscode-merge-base`, base.ref]);
+    return base;
+  };
 
   const configuredRef = String(
     (await runGitAsync(repositoryPath, ["config", "--get", `branch.${branch}.vscode-merge-base`])) || "",
@@ -1457,7 +1461,7 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
     const createdFrom = reflogEntries[0].match(/^branch: Created from (.+)$/)?.[1] || "";
     const reflogBase = await resolveBase(createdFrom);
     if (reflogBase) {
-      return reflogBase;
+      return rememberBase(reflogBase);
     }
     if (createdFrom && createdFrom !== "HEAD") {
       const createdBranchUpstream = String(
@@ -1469,7 +1473,7 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
       ).trim();
       const upstreamBase = await resolveBase(createdBranchUpstream);
       if (upstreamBase) {
-        return upstreamBase;
+        return rememberBase(upstreamBase);
       }
     }
   }
@@ -1485,7 +1489,7 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
     ).trim();
     const defaultBase = await resolveBase(defaultRemoteRef);
     if (defaultBase) {
-      return defaultBase;
+      return rememberBase(defaultBase);
     }
   }
 

@@ -9,6 +9,31 @@ export const GIT_COMMIT_GRAPH_GEOMETRY = {
   rowGap: 1,
 } as const;
 
+export const GIT_COMMIT_GRAPH_COLOR_INDEX = {
+  currentBranch: 0,
+  base: 1,
+  upstream: 2,
+  stash: 3,
+} as const;
+
+export const GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES = Object.values(GIT_COMMIT_GRAPH_COLOR_INDEX);
+
+const graphReferenceStrokeColors: Readonly<Record<number, string>> = {
+  [GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch]: "#2563eb",
+  [GIT_COMMIT_GRAPH_COLOR_INDEX.base]: "#d97706",
+  [GIT_COMMIT_GRAPH_COLOR_INDEX.upstream]: "#db2777",
+  [GIT_COMMIT_GRAPH_COLOR_INDEX.stash]: "#0f766e",
+};
+const graphBranchStrokeColors = ["#ffb000", "#dc267f", "#994f00", "#40b0a6", "#b66dff"];
+
+export const gitCommitGraphStrokeColor = (colorIndex: number) => {
+  const normalizedColorIndex = Number.isInteger(colorIndex) && colorIndex >= 0 ? colorIndex : 0;
+  const referenceColor = graphReferenceStrokeColors[normalizedColorIndex];
+  if (referenceColor) return referenceColor;
+  const branchColorIndex = normalizedColorIndex - GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES.length;
+  return graphBranchStrokeColors[branchColorIndex % graphBranchStrokeColors.length] || graphBranchStrokeColors[0];
+};
+
 export interface GitCommitGraphLane {
   id: string;
   colorIndex: number;
@@ -62,6 +87,8 @@ export interface GitCommitGraphLayoutOptions {
   expandedRowHeights?: Readonly<Record<string, number>>;
   /** Explicit graph colors for current, upstream, or base reference commits. */
   colorIndexByCommitHash?: Readonly<Record<string, number>>;
+  /** Color slots reserved for semantic reference roles before assigning ordinary lanes. */
+  reservedColorIndexes?: readonly number[];
 }
 
 export interface GitCommitGraphLayout {
@@ -196,7 +223,7 @@ export const layoutGitCommitGraph = (
   let previousOutputLanes: GitCommitGraphLane[] = [];
   let nextColorIndex = 0;
   const reservedColorIndexes = new Set<number>();
-  for (const colorIndex of Object.values(options.colorIndexByCommitHash ?? {})) {
+  for (const colorIndex of [...(options.reservedColorIndexes ?? []), ...Object.values(options.colorIndexByCommitHash ?? {})]) {
     const reservedColorIndex = validGraphColorIndex(colorIndex);
     if (reservedColorIndex !== undefined) reservedColorIndexes.add(reservedColorIndex);
   }

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { ProjectGitCommitSummary } from "../src/types";
 import {
   collapseGitStashAuxiliaryCommits,
+  GIT_COMMIT_GRAPH_COLOR_INDEX,
   GIT_COMMIT_GRAPH_GEOMETRY,
+  GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES,
+  gitCommitGraphStrokeColor,
   isGitStashCommit,
   layoutGitCommitGraph,
   selectGitCommitGraphWindow,
@@ -306,6 +309,43 @@ describe("layoutGitCommitGraph", () => {
     expect(rowFor(layout, "ahead").nodeColorIndex).toBe(1);
     expect(rowFor(layout, "main").nodeColorIndex).toBe(0);
     expect(rowFor(layout, "main").segments.map((segment) => segment.colorIndex)).toEqual([1, 0]);
+  });
+
+  it("keeps ordinary branch lanes out of reserved reference colors", () => {
+    const layout = layoutGitCommitGraph(
+      [
+        commit("head", ["main", "feature-a", "feature-b"]),
+        commit("main"),
+        commit("feature-a"),
+        commit("feature-b"),
+      ],
+      {
+        colorIndexByCommitHash: { head: GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch },
+        reservedColorIndexes: GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES,
+      },
+    );
+
+    const lanes = rowFor(layout, "head").outputLanes;
+    expect(lanes.map((lane) => ({ id: lane.id, colorIndex: lane.colorIndex }))).toEqual([
+      { id: "main", colorIndex: GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch },
+      { id: "feature-a", colorIndex: 4 },
+      { id: "feature-b", colorIndex: 5 },
+    ]);
+    expect(gitCommitGraphStrokeColor(lanes[2]?.colorIndex ?? -1)).toBe("#dc267f");
+    expect(gitCommitGraphStrokeColor(lanes[2]?.colorIndex ?? -1)).not.toBe(
+      gitCommitGraphStrokeColor(GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch),
+    );
+  });
+
+  it("uses VS Code-aligned colors for explicit branch and mainline refs", () => {
+    const layout = layoutGitCommitGraph(
+      [commit("feature", ["main"]), commit("main", ["root"]), commit("root")],
+      { colorIndexByCommitHash: { feature: 0, main: 1 } },
+    );
+
+    expect(rowFor(layout, "feature").nodeColorIndex).toBe(0);
+    expect(rowFor(layout, "main").nodeColorIndex).toBe(1);
+    expect(rowFor(layout, "main").segments.map((segment) => segment.colorIndex)).toEqual([0, 1]);
   });
 
   it("uses expanded heights for later row and segment coordinates", () => {
