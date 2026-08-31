@@ -504,7 +504,7 @@ onBeforeUnmount(() => {
           <span class="text-xs font-semibold text-on-surface">{{ t.terminal.title }}</span>
         </div>
         <div class="h-4 w-px bg-border-subtle" />
-        <div class="flex items-center gap-1 overflow-x-auto min-w-0">
+        <div class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           <div
             v-for="target in logTargets"
             :key="target.id"
@@ -548,6 +548,9 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-1.5">
         <button
           @click="scrollToTop"
           class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
@@ -586,9 +589,6 @@ onBeforeUnmount(() => {
         >
           <History :size="12" />
         </button>
-      </div>
-
-      <div class="flex items-center gap-2 shrink-0">
         <div class="relative">
           <Search :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60" />
           <input

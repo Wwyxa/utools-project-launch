@@ -126,6 +126,27 @@ const handleDocumentPointerDown = (event: PointerEvent) => {
   }
 };
 
+const isTextEntryTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+
+const handleSearchShortcut = (event: KeyboardEvent) => {
+  if (
+    event.defaultPrevented ||
+    event.key.toLowerCase() !== "f" ||
+    (!event.ctrlKey && !event.metaKey) ||
+    event.altKey ||
+    event.shiftKey ||
+    store.projectFormOpen ||
+    store.pendingDeleteProject ||
+    isTextEntryTarget(event.target)
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  void expandSearch();
+};
+
 const closeTodoProjectPicker = () => {
   todoProjectPickerOpen.value = false;
   todoProjectQuery.value = "";
@@ -186,6 +207,7 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
 
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+  window.addEventListener("keydown", handleSearchShortcut);
 });
 
 onUnmounted(() => {
@@ -193,6 +215,7 @@ onUnmounted(() => {
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
   document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
   window.removeEventListener("resize", positionTodoProjectMenu);
+  window.removeEventListener("keydown", handleSearchShortcut);
   stopAppEscapeListener();
 });
 

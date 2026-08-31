@@ -82,13 +82,13 @@ watch(
         @click.self="cancel"
       >
         <div
-          class="w-[min(24rem,92vw)] overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
+          class="flex max-h-[calc(100vh-2.5rem)] w-[min(24rem,92vw)] flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
           role="dialog"
           aria-modal="true"
           aria-labelledby="action-dialog-title"
           @click.stop
         >
-          <div class="border-b border-border-subtle bg-surface-container-low px-4 py-3">
+          <div class="shrink-0 border-b border-border-subtle bg-surface-container-low px-4 py-3">
             <div class="flex items-center gap-3">
               <div
                 :class="
@@ -107,52 +107,52 @@ watch(
               <h3 id="action-dialog-title" class="min-w-0 text-sm font-bold text-on-surface">{{ title }}</h3>
             </div>
           </div>
-          <div class="px-4 py-3">
+          <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-3">
             <p class="text-xs leading-5 text-on-surface-variant">{{ message }}</p>
             <p
               v-if="detail"
-              class="mt-3 break-all rounded border border-border-subtle bg-surface-container-low px-2 py-2 font-mono text-[11px] font-bold text-on-surface-variant"
+              class="mt-3 whitespace-pre-wrap break-words rounded border border-border-subtle bg-surface-container-low px-2 py-2 font-mono text-[11px] font-bold text-on-surface-variant"
             >
               {{ detail }}
             </p>
-            <div class="mt-4 flex justify-end gap-2">
-              <button
-                v-if="showCancel"
-                type="button"
-                class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
-                :disabled="busy"
-                @click="cancel"
-              >
-                {{ cancelLabel || t.common.cancel }}
-              </button>
-              <button
-                v-if="secondaryLabel"
-                type="button"
-                class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
-                :disabled="busy"
-                @click="emit('secondary')"
-              >
-                {{ secondaryLabel }}
-              </button>
-              <button
-                ref="primaryButtonRef"
-                type="button"
-                :class="
-                  cn(
-                    'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors disabled:cursor-wait disabled:opacity-70',
-                    tone === 'warning'
-                      ? 'border-primary/30 bg-primary text-on-primary hover:bg-primary/90'
-                      : 'border-status-error/30 bg-status-error text-on-error hover:bg-status-error/90',
-                  )
-                "
-                :disabled="busy"
-                @click="emit('primary')"
-              >
-                <Trash2 v-if="icon === 'trash'" :size="13" />
-                <Undo v-else-if="icon === 'undo'" :size="13" />
-                {{ busy ? busyLabel || primaryLabel : primaryLabel }}
-              </button>
-            </div>
+          </div>
+          <div class="flex shrink-0 justify-end gap-2 border-t border-border-subtle px-4 py-3">
+            <button
+              v-if="showCancel"
+              type="button"
+              class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+              :disabled="busy"
+              @click="cancel"
+            >
+              {{ cancelLabel || t.common.cancel }}
+            </button>
+            <button
+              v-if="secondaryLabel"
+              type="button"
+              class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+              :disabled="busy"
+              @click="emit('secondary')"
+            >
+              {{ secondaryLabel }}
+            </button>
+            <button
+              ref="primaryButtonRef"
+              type="button"
+              :class="
+                cn(
+                  'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors disabled:cursor-wait disabled:opacity-70',
+                  tone === 'warning'
+                    ? 'border-primary/30 bg-primary text-on-primary hover:bg-primary/90'
+                    : 'border-status-error/30 bg-status-error text-on-error hover:bg-status-error/90',
+                )
+              "
+              :disabled="busy"
+              @click="emit('primary')"
+            >
+              <Trash2 v-if="icon === 'trash'" :size="13" />
+              <Undo v-else-if="icon === 'undo'" :size="13" />
+              {{ busy ? busyLabel || primaryLabel : primaryLabel }}
+            </button>
           </div>
         </div>
       </div>
