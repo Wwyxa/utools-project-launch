@@ -4,6 +4,7 @@ import {
   normalizeBuiltinEnvironmentToolOverride,
   normalizeCustomEnvironmentTool,
 } from "./environmentTools";
+import { BUILTIN_ICON_PACK_ID, normalizeIconPackId } from "./fileIconTheme";
 import type {
   DefaultTerminalKind,
   AiAnalyzePayload,
@@ -48,6 +49,10 @@ import type {
   ProjectFileWriteResult,
   ProjectPathInspection,
   ProjectDetailsTabId,
+  IconPackLoadResult,
+  IconPackRemoveResult,
+  IconPackStatus,
+  IconPackUpdateResult,
   ProjectLaunchServicePreferences,
   ProjectLaunchServiceLogClearResult,
   ProjectLaunchServiceLogClearScope,
@@ -122,7 +127,6 @@ const environmentToolKeys = new Set<EnvironmentToolKey>([
 ]);
 const projectDetailsTabIds: ProjectDetailsTabId[] = [...PROJECT_DETAILS_TAB_IDS];
 const projectDetailsTabIdSet = new Set<ProjectDetailsTabId>(projectDetailsTabIds);
-
 const isTerminalKind = (kind: unknown): kind is DefaultTerminalKind =>
   typeof kind === "string" && terminalKinds.has(kind as DefaultTerminalKind);
 const isEditorKind = (kind: unknown): kind is ExternalApplicationKind =>
@@ -441,9 +445,26 @@ const readStoredExternalApplicationPreferences = (): ExternalApplicationPreferen
 
 const defaultUiPreferences = (): UiPreferences => ({
   schemaVersion: 1,
+  iconPackId: BUILTIN_ICON_PACK_ID,
   projectDetails: { tabOrder: [...projectDetailsTabIds], defaultTab: "scripts" },
   dashboard: { tinyCardActionTrigger: "hover" },
   coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
+});
+
+const browserIconPackLoadResult = (): IconPackLoadResult => ({
+  ok: false,
+  manifest: null,
+  state: "unavailable",
+  message: "浏览器预览无法加载外部图标包。",
+});
+
+const browserIconPackStatus = (): IconPackStatus => ({
+  selectedPackId: readStoredUiPreferences().iconPackId,
+  installedPackId: null,
+  installedVersion: null,
+  state: "unavailable",
+  active: false,
+  message: "浏览器预览无法使用外部图标包。请在 uTools 中安装。",
 });
 
 const normalizeProjectDetailsTabOrder = (value: unknown): ProjectDetailsTabId[] => {
@@ -467,6 +488,7 @@ export const normalizeUiPreferences = (value: unknown): UiPreferences => {
   const tinyCardActionTrigger = candidate.dashboard?.tinyCardActionTrigger;
   return {
     schemaVersion: 1,
+    iconPackId: normalizeIconPackId(candidate.iconPackId),
     projectDetails: {
       tabOrder: normalizeProjectDetailsTabOrder(candidate.projectDetails?.tabOrder),
       defaultTab: normalizeProjectDetailsDefaultTab(candidate.projectDetails?.defaultTab),
@@ -756,6 +778,30 @@ const fallbackBridge: ProjectBridge = {
   },
   saveUiPreferences(preferences) {
     writeStoredUiPreferences(preferences);
+  },
+  async loadInstalledIconPack() {
+    return browserIconPackLoadResult();
+  },
+  async getIconPackStatus() {
+    return browserIconPackStatus();
+  },
+  async checkIconPackUpdate(): Promise<IconPackUpdateResult> {
+    return { ok: false, updateAvailable: false, message: "浏览器预览无法检查外部图标包更新。" };
+  },
+  async downloadIconPack() {
+    return browserIconPackLoadResult();
+  },
+  async verifyIconPackInstall() {
+    return browserIconPackLoadResult();
+  },
+  async removeIconPack(): Promise<IconPackRemoveResult> {
+    return { ok: false, status: browserIconPackStatus(), message: "浏览器预览无法移除外部图标包。" };
+  },
+  async openIconPackDirectory() {
+    return undefined;
+  },
+  async openIconPackReleases() {
+    await fallbackBridge.openPath("https://github.com/Wwyxa/utools-project-launch/releases");
   },
   loadProjectLaunchServicePreferences() {
     return readStoredProjectLaunchServicePreferences();

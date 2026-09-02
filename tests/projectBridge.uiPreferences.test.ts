@@ -191,6 +191,7 @@ describe("browser UI preferences fallback", () => {
   it("returns and persists complete defaults without stored preferences", () => {
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
@@ -225,6 +226,7 @@ describe("browser UI preferences fallback", () => {
 
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: {
         tabOrder: ["memo", "info", "scripts", "automation", "files", "git"],
         defaultTab: defaultOpenTab,
@@ -240,6 +242,7 @@ describe("browser UI preferences fallback", () => {
 
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
@@ -282,6 +285,7 @@ describe("browser UI preferences fallback", () => {
 
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: {
         tabOrder: ["memo", "info", "scripts", "automation", "files", "git"],
         defaultTab: defaultOpenTab,
@@ -294,6 +298,7 @@ describe("browser UI preferences fallback", () => {
   it("round-trips normalized preferences and removes the legacy order", () => {
     getProjectBridge().saveUiPreferences({
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "contextmenu" },
       coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
@@ -336,6 +341,7 @@ describe("browser UI preferences fallback", () => {
   it("loads once and persists only effective store changes", async () => {
     const initialPreferences: UiPreferences = {
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: { tabOrder: [...defaultTabOrder], defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
@@ -4401,6 +4407,7 @@ describe("uTools preload UI preferences", () => {
 
     bridge.saveUiPreferences({
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "contextmenu" },
       coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
@@ -4421,6 +4428,7 @@ describe("uTools preload UI preferences", () => {
 
     expect(loadPreloadBridge(storage).loadUiPreferences()).toEqual({
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
@@ -4430,6 +4438,7 @@ describe("uTools preload UI preferences", () => {
   it("keeps readable current preferences when legacy cleanup fails", () => {
     const preferences: UiPreferences = {
       schemaVersion: 1,
+      iconPackId: "builtin",
       projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1 },

@@ -152,6 +152,7 @@ const updateTheme = () => {
   } else {
     document.documentElement.classList.remove("dark");
   }
+  store.setIconPackColorMode(isDark ? "dark" : "light");
 };
 
 watch(theme, updateTheme);

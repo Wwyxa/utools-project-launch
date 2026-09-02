@@ -36,6 +36,7 @@ import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../l
 import ActionDialog from "../common/ActionDialog.vue";
 import { showActionStatus } from "../common/actionStatus";
 import { getProjectBridge } from "../../lib/projectBridge";
+import { VSCODE_ICON_PACK_ID } from "../../lib/fileIconTheme";
 import {
   formatEnvironmentArguments,
   parseEnvironmentArguments,
@@ -46,6 +47,7 @@ import type {
   DefaultTerminalKind,
   EnvironmentToolKey,
   ExternalApplication,
+  IconPackId,
   ProjectLaunchServiceLogRetentionPolicy,
 } from "../../types";
 
@@ -85,6 +87,8 @@ const logRetentionFeedback = ref("");
 const logRetentionFeedbackTone = ref<"success" | "error">("success");
 const logRetentionClearOpen = ref(false);
 const logRetentionClearBusy = ref(false);
+const iconPackAction = ref<"install" | "verify" | "remove" | null>(null);
+const iconPackSelectingId = ref<IconPackId | null>(null);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 let stopAppEscapeListener = () => {};
 
@@ -168,6 +172,27 @@ const aiConfigReady = computed(() => {
   );
 });
 const projectLaunchServiceStatus = computed(() => store.projectLaunchServiceStatus);
+const iconPackStatus = computed(() => store.iconPackStatus);
+const iconPackBusy = computed(() => Boolean(iconPackAction.value || iconPackSelectingId.value));
+const iconPackInstallLabel = computed(() =>
+  iconPackStatus.value?.installedPackId ? t.value.settings.iconPackUpdate : t.value.settings.iconPackInstall,
+);
+const iconPackStatusLabel = computed(() => {
+  const status = iconPackStatus.value;
+  if (status?.updateAvailable) return t.value.settings.iconPackUpdateAvailable;
+  if (status?.state === "installed" && status.active) return t.value.settings.iconPackActive;
+  if (status?.state === "installed") return t.value.settings.iconPackInstalled;
+  if (status?.state === "invalid") return t.value.settings.iconPackInvalid;
+  return t.value.settings.iconPackUnavailable;
+});
+const iconPackStatusClass = computed(() => {
+  const status = iconPackStatus.value;
+  if (status?.updateAvailable) return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+  if (status?.state === "installed" && status.active)
+    return "border-status-running/30 bg-status-running/10 text-status-running";
+  if (status?.state === "invalid") return "border-status-error/30 bg-status-error/10 text-status-error";
+  return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+});
 const projectLaunchServiceBusy = computed(
   () =>
     projectLaunchServiceStatus.value?.state === "starting" ||
@@ -313,6 +338,90 @@ const handleTestAi = async () => {
 
 const handleOpenGithubRepository = async () => {
   await getProjectBridge().openPath(githubRepositoryUrl);
+};
+
+const handleInstallIconPack = async () => {
+  if (iconPackBusy.value) return;
+  iconPackAction.value = "install";
+  showActionStatus({ state: "loading", message: t.value.settings.iconPackInstalling });
+  try {
+    const result = await store.installIconPack();
+    showActionStatus({
+      state: result.ok ? "success" : "error",
+      message: result.ok
+        ? t.value.settings.iconPackInstallSuccess
+        : result.message || t.value.settings.iconPackInstallError,
+    });
+  } catch (error) {
+    showActionStatus({
+      state: "error",
+      message: error instanceof Error ? error.message : t.value.settings.iconPackInstallError,
+    });
+  } finally {
+    iconPackAction.value = null;
+  }
+};
+
+const handleVerifyIconPackInstall = async () => {
+  if (iconPackBusy.value) return;
+  iconPackAction.value = "verify";
+  showActionStatus({ state: "loading", message: t.value.settings.iconPackVerifying });
+  try {
+    const result = await store.verifyIconPackInstall();
+    showActionStatus({
+      state: result.ok ? "success" : "error",
+      message: result.ok
+        ? t.value.settings.iconPackVerifySuccess
+        : result.message || t.value.settings.iconPackVerifyError,
+    });
+  } catch (error) {
+    showActionStatus({
+      state: "error",
+      message: error instanceof Error ? error.message : t.value.settings.iconPackVerifyError,
+    });
+  } finally {
+    iconPackAction.value = null;
+  }
+};
+
+const handleSelectIconPack = async (packId: IconPackId) => {
+  if (iconPackBusy.value || (packId === VSCODE_ICON_PACK_ID && iconPackStatus.value?.installedPackId !== packId))
+    return;
+  iconPackSelectingId.value = packId;
+  try {
+    const result = await store.setIconPack(packId);
+    if (packId !== "builtin" && !result.ok) {
+      showActionStatus({ state: "error", message: result.message || t.value.settings.iconPackUnavailable });
+    }
+  } catch (error) {
+    showActionStatus({
+      state: "error",
+      message: error instanceof Error ? error.message : t.value.settings.iconPackUnavailable,
+    });
+  } finally {
+    iconPackSelectingId.value = null;
+  }
+};
+
+const handleRemoveIconPack = async () => {
+  if (iconPackBusy.value || !iconPackStatus.value?.installedPackId) return;
+  iconPackAction.value = "remove";
+  try {
+    const result = await store.removeIconPack();
+    showActionStatus({
+      state: result.ok ? "success" : "error",
+      message: result.ok
+        ? t.value.settings.iconPackRemoveSuccess
+        : result.message || t.value.settings.iconPackRemoveError,
+    });
+  } catch (error) {
+    showActionStatus({
+      state: "error",
+      message: error instanceof Error ? error.message : t.value.settings.iconPackRemoveError,
+    });
+  } finally {
+    iconPackAction.value = null;
+  }
 };
 
 const handleDownloadProjectLaunchService = async () => {
@@ -782,6 +891,100 @@ watch(
                 <Menu :size="16" />
                 {{ t.settings.tinyCardActionTriggerContextMenu }}
               </button>
+            </div>
+          </div>
+          <div class="grid items-start gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
+            <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.iconPack }}</div>
+            <div class="min-w-0 space-y-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <span :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', iconPackStatusClass)">
+                  {{ iconPackStatusLabel }}
+                </span>
+                <span class="min-w-0 flex-1 text-[11px] leading-4 text-on-surface-variant">{{
+                  t.settings.iconPackHint
+                }}</span>
+                <span
+                  v-if="iconPackStatus?.installedVersion"
+                  class="shrink-0 rounded border border-border-subtle bg-surface-container-low px-1.5 py-0.5 text-[10px] font-semibold text-on-surface-variant"
+                >
+                  {{ t.settings.iconPackVersion }} {{ iconPackStatus.installedVersion }}
+                </span>
+              </div>
+              <div class="grid min-w-0 gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.8fr)]">
+                <div class="flex min-w-0 flex-wrap items-start gap-1.5" role="group" :aria-label="t.settings.iconPack">
+                  <button
+                    type="button"
+                    :class="segmentButtonClass(store.uiPreferences.iconPackId === 'builtin')"
+                    :disabled="iconPackBusy"
+                    @click="handleSelectIconPack('builtin')"
+                  >
+                    <RotateCcw :size="14" />
+                    {{ t.settings.iconPackUseBuiltin }}
+                  </button>
+                  <button
+                    type="button"
+                    :class="segmentButtonClass(store.uiPreferences.iconPackId === VSCODE_ICON_PACK_ID)"
+                    :disabled="iconPackBusy || iconPackStatus?.installedPackId !== VSCODE_ICON_PACK_ID"
+                    @click="handleSelectIconPack(VSCODE_ICON_PACK_ID)"
+                  >
+                    <ShieldCheck :size="14" />
+                    {{ t.settings.iconPackActivate }}
+                  </button>
+                </div>
+                <div class="flex min-w-0 flex-wrap content-start gap-1.5">
+                  <button
+                    type="button"
+                    :class="serviceActionButtonClass('primary')"
+                    :disabled="iconPackBusy"
+                    :aria-busy="iconPackAction === 'install'"
+                    @click="handleInstallIconPack"
+                  >
+                    <RefreshCw v-if="iconPackAction === 'install'" :size="13" class="animate-spin" />
+                    <Download v-else :size="13" />
+                    {{ iconPackAction === "install" ? t.settings.iconPackInstalling : iconPackInstallLabel }}
+                  </button>
+                  <button
+                    type="button"
+                    :class="serviceActionButtonClass()"
+                    :disabled="iconPackBusy"
+                    :aria-busy="iconPackAction === 'verify'"
+                    @click="handleVerifyIconPackInstall"
+                  >
+                    <RefreshCw v-if="iconPackAction === 'verify'" :size="13" class="animate-spin" />
+                    <ShieldCheck v-else :size="13" />
+                    {{ iconPackAction === "verify" ? t.settings.iconPackVerifying : t.settings.iconPackVerify }}
+                  </button>
+                  <button
+                    type="button"
+                    :class="serviceActionButtonClass()"
+                    :disabled="iconPackBusy"
+                    @click="store.openIconPackDirectory()"
+                  >
+                    <FolderOpen :size="13" />
+                    {{ t.settings.iconPackOpenDirectory }}
+                  </button>
+                  <button
+                    type="button"
+                    :class="serviceActionButtonClass()"
+                    :disabled="iconPackBusy"
+                    @click="store.openIconPackReleases()"
+                  >
+                    <Github :size="13" />
+                    {{ t.settings.iconPackOpenReleases }}
+                  </button>
+                  <button
+                    v-if="iconPackStatus?.installedPackId === VSCODE_ICON_PACK_ID"
+                    type="button"
+                    :class="serviceActionButtonClass('danger')"
+                    :disabled="iconPackBusy"
+                    :aria-busy="iconPackAction === 'remove'"
+                    @click="handleRemoveIconPack"
+                  >
+                    <Trash2 :size="13" />
+                    {{ iconPackAction === "remove" ? t.settings.iconPackRemoving : t.settings.iconPackRemove }}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

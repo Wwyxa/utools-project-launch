@@ -18,7 +18,6 @@ import {
   CloudDownload,
   Copy,
   Filter,
-  Folder,
   GitBranch,
   GitCommitHorizontal,
   Github,
@@ -80,6 +79,7 @@ import { getProjectBridge } from "../../lib/projectBridge";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import ActionDialog from "../common/ActionDialog.vue";
+import FileIcon from "../common/FileIcon.vue";
 
 defineOptions({ inheritAttrs: false });
 
@@ -421,6 +421,20 @@ const isCommitDirectoryExpanded = (hash: string, path: string) =>
 const gitFileDisplayPath = (file: ProjectGitFileChange) =>
   file.originalPath && file.originalPath !== file.path ? `${file.originalPath} -> ${file.path}` : file.path;
 const gitFileName = (file: ProjectGitFileChange) => file.path.split(/[\\/]/).filter(Boolean).pop() || file.path;
+const gitFileStatusCode = (status: ProjectGitFileChange["status"]) => {
+  if (status === "ADDED") return "A";
+  if (status === "DELETED") return "D";
+  if (status === "RENAMED") return "R";
+  if (status === "UNTRACKED") return "U";
+  return "M";
+};
+const gitFileStatusLabel = (status: ProjectGitFileChange["status"]) => {
+  if (status === "ADDED") return t.value.git.added;
+  if (status === "DELETED") return t.value.git.deleted;
+  if (status === "RENAMED") return t.value.git.renamed;
+  if (status === "UNTRACKED") return t.value.git.untracked;
+  return t.value.git.modified;
+};
 const gitFileDirectory = (file: ProjectGitFileChange) =>
   file.path.split(/[\\/]/).filter(Boolean).slice(0, -1).join("/");
 const toggleCommitDirectory = (hash: string, path: string) => {
@@ -2434,14 +2448,19 @@ onBeforeUnmount(() => {
                       :aria-expanded="item.isExpanded"
                       @click.stop="toggleCommitDirectory(row.commit.hash, item.path)"
                     >
-                      <ChevronDown v-if="item.isExpanded" :size="13" /><ChevronRight v-else :size="13" /><Folder
-                        :size="13"
+                      <ChevronDown v-if="item.isExpanded" :size="13" /><ChevronRight v-else :size="13" />
+                      <FileIcon
+                        :name="item.name"
+                        :path="item.path"
+                        kind="directory"
+                        :expanded="item.isExpanded"
+                        fallback-policy="omit"
                         class="text-primary/75"
                       /><span class="min-w-0 truncate font-mono">{{ item.name }}</span></button
                     ><button
                       v-else
                       type="button"
-                      class="group grid min-h-6 w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-left hover:bg-surface-container-high"
+                      class="group grid min-h-6 w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-left hover:bg-surface-container-high"
                       :style="
                         commitFileViewMode === 'tree' ? { paddingLeft: `${6 + (item.depth + 1) * 14}px` } : undefined
                       "
@@ -2454,28 +2473,44 @@ onBeforeUnmount(() => {
                         })
                       "
                     >
-                      <span
-                        class="flex h-4 w-4 items-center justify-center rounded-[3px] bg-surface-container-highest font-mono text-[9px] font-black text-on-surface-variant"
-                        >{{ item.file.status.slice(0, 1) }}</span
-                      ><span class="flex min-w-0 items-baseline gap-1 overflow-hidden"
-                        ><span
-                          :class="
-                            cn(
-                              'shrink-0 truncate font-mono text-[11px] font-semibold',
-                              item.file.status === 'DELETED' && 'text-on-surface-variant line-through',
-                            )
-                          "
-                          >{{ gitFileName(item.file) }}</span
-                        ><span
-                          v-if="commitFileViewMode === 'list' && gitFileDirectory(item.file)"
-                          class="dark-readable-meta min-w-0 truncate text-[10px] text-on-surface-variant/75"
-                          >{{ gitFileDirectory(item.file) }}</span
-                        ></span
-                      ><span class="whitespace-nowrap font-mono text-[9px] font-semibold"
+                      <div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                        <FileIcon
+                          :name="gitFileName(item.file)"
+                          :path="item.file.path"
+                          kind="file"
+                          fallback-policy="omit"
+                          class="-translate-y-px"
+                        /><span class="flex min-w-0 items-baseline gap-1 overflow-hidden"
+                          ><span
+                            class="min-w-0 shrink-0 truncate font-mono text-[11px] font-semibold"
+                            :class="item.file.status === 'DELETED' && 'text-on-surface-variant line-through'"
+                            >{{ gitFileName(item.file) }}</span
+                          ><span
+                            v-if="commitFileViewMode === 'list' && gitFileDirectory(item.file)"
+                            class="dark-readable-meta min-w-0 truncate text-[10px] text-on-surface-variant/75"
+                            >{{ gitFileDirectory(item.file) }}</span
+                          ></span
+                        >
+                      </div>
+                      <span class="whitespace-nowrap font-mono text-[9px] font-semibold"
                         ><span v-if="item.file.additions" class="text-status-running">+{{ item.file.additions }}</span
                         ><span v-if="item.file.deletions" class="ml-1 text-status-error"
                           >-{{ item.file.deletions }}</span
                         ></span
+                      ><span
+                        :class="
+                          cn(
+                            'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
+                            item.file.status === 'ADDED' && 'text-status-running',
+                            item.file.status === 'DELETED' && 'text-status-error',
+                            item.file.status === 'RENAMED' && 'text-secondary',
+                            item.file.status === 'UNTRACKED' && 'text-primary',
+                            item.file.status === 'MODIFIED' && 'text-on-surface-variant',
+                          )
+                        "
+                        :title="gitFileStatusLabel(item.file.status)"
+                        :aria-label="gitFileStatusLabel(item.file.status)"
+                        >{{ gitFileStatusCode(item.file.status) }}</span
                       >
                     </button></template
                   >

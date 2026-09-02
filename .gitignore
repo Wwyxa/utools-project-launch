@@ -2,6 +2,7 @@ node_modules/
 build/
 dist/
 coverage/
+/icon-packs/vscode-icons-derived/icon-pack-release/
 .DS_Store
 *.log
 .env*
