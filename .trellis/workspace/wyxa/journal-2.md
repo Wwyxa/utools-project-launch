@@ -397,3 +397,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 76: External icon pack support
+<!-- trellis-session: v=2 fp=be580cf32b08a74e -->
+
+**Date**: 2026-09-02
+**Task**: External icon pack support
+**Branch**: `feature/external-icon-pack`
+
+### Summary
+
+Implemented the optional vscode-icons derived pack, including generated assets, manifest validation, preload installation and persistence, global icon resolution, settings controls, release workflow, attribution, and focused tests. Aligned commit file icons and finalized the independent icon-pack release tag format.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `82ee16e` | feat(icon-pack): 添加可独立发布的外部图标包 |
+
+### Status
+
+[OK] **Completed**

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 75
-- **Last Active**: 2026-08-29
+- **Total Sessions**: 76
+- **Last Active**: 2026-09-02
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~399 | Active |
+| `journal-2.md` | ~421 | Active |
 | `journal-1.md` | ~1977 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 76 | 2026-09-02 | External icon pack support | `82ee16e` | `feature/external-icon-pack` |
 | 75 | 2026-08-29 | 完成 Agent 项目管理 MCP 工具 | `50f7472` | `master` |
 | 74 | 2026-08-17 | 优化项目启动服务资源开销 | `78b0be6` | `feat/go-service` |
 | 73 | 2026-08-17 | 完善项目启动服务日志保留与历史查看 | `9b07bd7` | `feat/go-service` |
