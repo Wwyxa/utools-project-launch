@@ -66,7 +66,8 @@ const projectLaunchServiceSyncResponseLimitBytes = 512 * 1024;
 const projectLaunchServiceRunLogResponseLimitBytes = 8 * 1024 * 1024;
 const projectLaunchServiceUpcomingLimit = 100;
 const projectLaunchServiceDownloadRedirectLimit = 3;
-const projectLaunchServiceReleaseApiUrl = "https://api.github.com/repos/Wwyxa/utools-project-launch/releases/latest";
+const projectLaunchServiceReleaseApiUrl =
+  "https://api.github.com/repos/Wwyxa/utools-project-launch/releases?per_page=30";
 const projectLaunchServiceAllowedDownloadHosts = new Set([
   "github.com",
   "api.github.com",

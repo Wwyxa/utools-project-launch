@@ -177,9 +177,7 @@ function projectLaunchServiceReleaseAsset(release, assetName) {
     typeof asset.browser_download_url !== "string" ||
     !isAllowedProjectLaunchServiceUrl(asset.browser_download_url)
   ) {
-    const error = new Error(`当前发布未提供兼容的项目启动服务文件：${assetName}`);
-    error.code = "asset-not-found";
-    throw error;
+    return null;
   }
   if (Number.isFinite(asset.size) && asset.size > projectLaunchServiceExecutableLimitBytes) {
     const error = new Error("项目启动服务文件超过 12 MiB 大小限制。");
@@ -312,24 +310,48 @@ async function fetchProjectLaunchServiceRelease() {
   const releaseContents = await fetchProjectLaunchServiceBytes(projectLaunchServiceReleaseApiUrl, {
     maxBytes: projectLaunchServiceMetadataLimitBytes,
   });
-  let release;
+  let releases;
   try {
-    release = JSON.parse(releaseContents.toString("utf8"));
+    releases = JSON.parse(releaseContents.toString("utf8"));
   } catch (error) {
     const parseError = new Error("GitHub Release 响应不是有效 JSON。");
     parseError.code = "invalid-release-metadata";
     throw parseError;
   }
-  const binaryAsset = projectLaunchServiceReleaseAsset(release, projectLaunchServiceTarget().assetName);
-  const checksumAsset = projectLaunchServiceReleaseAsset(release, "checksums.txt");
-  const checksumContents = await fetchProjectLaunchServiceBytes(checksumAsset.browser_download_url, {
-    maxBytes: projectLaunchServiceMetadataLimitBytes,
+  if (!Array.isArray(releases)) {
+    releases = releases && typeof releases === "object" ? [releases] : null;
+  }
+  if (!Array.isArray(releases)) {
+    const metadataError = new Error("GitHub Release 响应格式无效。");
+    metadataError.code = "invalid-release-metadata";
+    throw metadataError;
+  }
+
+  const candidates = releases.filter((release) => !release?.draft && !release?.prerelease);
+  candidates.sort((left, right) => {
+    const leftDate = Date.parse(left?.published_at || left?.created_at || "");
+    const rightDate = Date.parse(right?.published_at || right?.created_at || "");
+    return (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
   });
-  return {
-    release,
-    binaryAsset,
-    expectedHash: projectLaunchServiceChecksum(checksumContents.toString("utf8"), binaryAsset.name),
-  };
+
+  const assetName = projectLaunchServiceTarget().assetName;
+  for (const release of candidates) {
+    const binaryAsset = projectLaunchServiceReleaseAsset(release, assetName);
+    const checksumAsset = projectLaunchServiceReleaseAsset(release, "checksums.txt");
+    if (!binaryAsset || !checksumAsset) continue;
+    const checksumContents = await fetchProjectLaunchServiceBytes(checksumAsset.browser_download_url, {
+      maxBytes: projectLaunchServiceMetadataLimitBytes,
+    });
+    return {
+      release,
+      binaryAsset,
+      expectedHash: projectLaunchServiceChecksum(checksumContents.toString("utf8"), binaryAsset.name),
+    };
+  }
+
+  const assetError = new Error(`当前发布未提供兼容的项目启动服务文件：${assetName}`);
+  assetError.code = "asset-not-found";
+  throw assetError;
 }
 
 function projectLaunchServiceReleaseVersion(release) {
