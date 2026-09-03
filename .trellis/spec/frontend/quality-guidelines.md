@@ -6,14 +6,13 @@
 
 ## Overview
 
-Frontend quality is enforced mostly through TypeScript checks and the current component conventions.
+Frontend quality is enforced by the Vitest suite, TypeScript checks, the production build, and the current component conventions.
 
 The repo currently exposes:
 
+- `npm test` -> complete Vitest plugin test suite
 - `npm run lint` -> `tsc --noEmit`
 - `npm run build` -> Vite production build
-
-There is no dedicated test runner configured yet, so the quality baseline is type safety, build success, and layout sanity checks in the browser.
 
 ---
 
@@ -44,8 +43,10 @@ There is no dedicated test runner configured yet, so the quality baseline is typ
 
 Minimum checks for frontend changes today:
 
+- run `npm test`
 - run `npm run lint`
 - run `npm run build`
+- run `node --check public/preload.js` when changing preload code
 - for inline Git diff highlights, test a paired line with an insertion or deletion on only one side; the unchanged side must not suppress the other side's mark. Also cover indentation-only pairs and whitespace-only lines where one side is empty; changed spaces/tabs must receive character-level background highlights without replacing the source characters with visible glyphs.
 - for unequal Git diff blocks, compute inline ranges across the complete old/new block before rendering rows. Formatting-only compression or expansion must leave shared code tokens such as `type`, `Boolean`, `default`, and `true` outside non-empty character ranges; only changed spaces, tabs, indentation, and line-break boundaries may receive whitespace-only marks. Real token replacements must remain highlighted.
 - for Git diff hunk navigation, test three hunk headers that fit in one scrollport; next/previous must progress `1/3 -> 2/3 -> 3/3 -> 2/3` even when `scrollTop` remains unchanged. In a scrollable full-file diff, also verify that the final change block remains active at the bottom when it cannot align with the scrollport top. In unified and side-by-side layouts, calculate the target from the block and scroll-container rectangles; do not use `offsetTop` across a toolbar or Teleport boundary.
@@ -54,7 +55,7 @@ Minimum checks for frontend changes today:
 - verify that normal readiness logs remain neutral/success-toned while real errors stay red
 - for interactive hover previews in dense panels, verify the cold-open delay, immediate warm switching, tab switching/unmount cleanup, Markdown rendering, stable panel-edge anchoring, full viewport bounds, and cleanup after every layout-changing section collapse in a compact window
 
-If a test runner is added later, prefer focused component or store tests around the project shell and store mutations first.
+Keep tests focused on pure helpers, bridge contracts, store mutations, and other behavior that can be verified without a browser harness.
 
 ---
 

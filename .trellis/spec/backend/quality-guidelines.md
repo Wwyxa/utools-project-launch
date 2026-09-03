@@ -39,8 +39,10 @@ The frontend and service have separate validation surfaces. A successful Vite bu
 
 Minimum plugin validation is:
 
+- `npm test`
 - `npm run lint`
 - `npm run build`
+- `node --check public/preload.js` when changing preload code
 
 Minimum service validation is:
 

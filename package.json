@@ -10,6 +10,7 @@
     "go:vet": "go -C service vet ./...",
     "go:test": "go -C service test ./...",
     "go:build": "node scripts/build-project-launch-service.mjs",
+    "test": "vitest run",
     "test:git-diff": "vitest run tests/gitDiff.test.ts",
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",

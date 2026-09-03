@@ -145,6 +145,7 @@ http://localhost:3421
 ## 构建
 
 ```bash
+npm test
 npm run lint
 npm run build
 ```
@@ -225,6 +226,7 @@ dist/
 
 | 命令                                  | 说明                                                       |
 | ------------------------------------- | ---------------------------------------------------------- |
+| `npm test`                            | 运行全部插件 Vitest 测试                                   |
 | `npm run dev`                         | 启动 Vite 开发服务，默认端口 `3421`                        |
 | `npm run build`                       | 构建 uTools 插件产物到 `dist/`                             |
 | `npm run preview`                     | 本地预览构建结果                                           |
@@ -238,8 +240,8 @@ dist/
 | `npm run validate:project-files`      | 校验项目文件桥接                                           |
 | `npm run validate:project-storage`    | 校验项目存储兼容性和 AI Agent 工具持久化                   |
 | `npm run validate:process-results`    | 校验进程结果批次处理                                       |
-| `npm run icon-pack:build`             | 从 vscode-icons 上游资源生成项目图标包和 Release 资产       |
-| `npm run icon-pack:validate`          | 校验图标包清单、资源、许可证通知和 SHA-256                  |
+| `npm run icon-pack:build`             | 从 vscode-icons 上游资源生成项目图标包和 Release 资产      |
+| `npm run icon-pack:validate`          | 校验图标包清单、资源、许可证通知和 SHA-256                 |
 | `npm run benchmark:git-interactions`  | Git 交互性能基准测试                                       |
 | `npm run go:fmt`                      | 格式化可选项目启动服务源码                                 |
 | `npm run go:vet`                      | 校验可选项目启动服务                                       |
@@ -274,7 +276,7 @@ service/                      # 可选的 Project Launch Service Go 运行时
 └── internal/                  # API、进程、调度、状态与平台实现
 
 .github/workflows/
-├── service-ci.yml             # 服务格式、静态检查、测试与六目标构建
+├── service-ci.yml             # 插件与服务格式、静态检查、测试及构建
 └── service-release.yml        # service-v* 标签发布与校验和资产上传
 
 tests/                        # Vitest 单元测试
@@ -313,7 +315,7 @@ scripts/                      # 校验与基准脚本
   npm run lint
   npm run build
   ```
-- **测试**：新增或修改逻辑时尽量补充对应单元测试(位于 `tests/`)。目前项目没有统一的 `npm test` 全量命令，相关测试分散在 `test:git-diff`、`validate:git-workspace` 等脚本中；涉及对应模块的改动请运行相关测试，至少确保没有破坏现有测试。
+- **测试**：新增或修改逻辑时尽量补充对应单元测试(位于 `tests/`)。使用 `npm test` 运行全部插件 Vitest 测试；涉及对应模块的改动也请运行相关定向测试或校验脚本，至少确保没有破坏现有测试。
 - **描述**：PR 描述中说明改动目的、影响范围，如有截图或复现步骤更佳。
 
 ## 适合谁
