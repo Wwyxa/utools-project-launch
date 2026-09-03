@@ -388,10 +388,10 @@ describe("browser UI preferences fallback", () => {
     expect(saveUiPreferences).toHaveBeenCalledTimes(5);
   });
 
-  it("verifies a manually placed Project Launch Service only during an explicit recheck", async () => {
-    const installedStatus: ProjectLaunchServiceStatus = {
-      state: "installed",
-      installed: true,
+  it("verifies a manually placed Project Launch Service during an explicit recheck even when it is not yet detected", async () => {
+    const missingStatus: ProjectLaunchServiceStatus = {
+      state: "not-installed",
+      installed: false,
       running: false,
       platform: "windows",
       architecture: "amd64",
@@ -400,8 +400,9 @@ describe("browser UI preferences fallback", () => {
       executablePath: "C:\\service\\project-launch-service.exe",
       releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
     };
+    const installedStatus: ProjectLaunchServiceStatus = { ...missingStatus, state: "installed", installed: true };
     const getProjectLaunchServiceStatus = vi.fn<ProjectBridge["getProjectLaunchServiceStatus"]>(
-      async () => installedStatus,
+      async () => missingStatus,
     );
     const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge["verifyProjectLaunchServiceInstall"]>(
       async () => installedStatus,
@@ -2230,17 +2231,20 @@ describe("Project Launch Service preload installation", () => {
     }
   });
 
-  it("records a manually placed executable after explicit verification", async () => {
+  it("records a manually placed release asset after explicit verification", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     try {
       const bridge = createBridge(serviceRoot);
       const installed = await bridge.getProjectLaunchServiceStatus();
       mkdirSync(installed.directoryPath, { recursive: true });
-      writeFileSync(installed.executablePath, binaryContents);
+      const releaseAssetPath = join(installed.directoryPath, installed.expectedAssetName);
+      writeFileSync(releaseAssetPath, binaryContents);
 
       const verified = await bridge.verifyProjectLaunchServiceInstall();
 
       expect(verified).toMatchObject({ state: "installed", installed: true, running: false });
+      expect(readFileSync(installed.executablePath)).toEqual(binaryContents);
+      expect(() => readFileSync(releaseAssetPath)).toThrow();
       expect(JSON.parse(readFileSync(join(installed.directoryPath, "install.json"), "utf8"))).toEqual({
         schemaVersion: 1,
         assetName: installed.expectedAssetName,

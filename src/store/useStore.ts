@@ -2266,7 +2266,7 @@ export const useStore = defineStore("app", {
         ? await bridge.reconcileProjectLaunchService()
         : await bridge.getProjectLaunchServiceStatus();
       this.projectLaunchServiceStatus =
-        verifyManualInstall && !serviceEnabled && status.installed && !status.running
+        verifyManualInstall && !serviceEnabled && !status.running
           ? await bridge.verifyProjectLaunchServiceInstall()
           : status;
       if (this.projectLaunchServicePreferences.enabled) {

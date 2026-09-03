@@ -268,17 +268,35 @@ function verifyProjectLaunchServiceManually() {
   const directoryPath = projectLaunchServiceDirectoryPath();
   const metadataPath = projectLaunchServiceInstallMetadataPath();
   const metadataPartialPath = `${metadataPath}.partial`;
+  const executablePath = projectLaunchServiceExecutablePath();
+  const target = projectLaunchServiceTarget();
+  const releaseAssetPath = target.assetName ? path.join(directoryPath, target.assetName) : "";
   if (
     !isPathWithin(directoryPath, metadataPath) ||
     !isPathWithin(directoryPath, metadataPartialPath) ||
-    !isPathWithin(directoryPath, projectLaunchServiceExecutablePath())
+    !isPathWithin(directoryPath, executablePath) ||
+    (releaseAssetPath && !isPathWithin(directoryPath, releaseAssetPath))
   ) {
     throw new Error("项目启动服务安装路径无效。");
   }
 
+  let sourcePath = "";
+  for (const candidatePath of [executablePath, releaseAssetPath]) {
+    if (!candidatePath || sourcePath) continue;
+    try {
+      const stats = fs.lstatSync(candidatePath);
+      if (stats.isFile() && !stats.isSymbolicLink()) sourcePath = candidatePath;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  if (!sourcePath) {
+    throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请先放置可执行文件后重试。");
+  }
+
   let contents;
   try {
-    contents = fs.readFileSync(projectLaunchServiceExecutablePath());
+    contents = fs.readFileSync(sourcePath);
   } catch (error) {
     throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请先放置可执行文件后重试。");
   }
@@ -291,8 +309,14 @@ function verifyProjectLaunchServiceManually() {
   const installMetadata = projectLaunchServiceInstallMetadata(
     crypto.createHash("sha256").update(contents).digest("hex"),
   );
+  let movedReleaseAsset = false;
   try {
     fs.mkdirSync(directoryPath, { recursive: true });
+    if (sourcePath !== executablePath) {
+      fs.renameSync(sourcePath, executablePath);
+      movedReleaseAsset = true;
+    }
+    if (process.platform !== "win32") fs.chmodSync(executablePath, 0o755);
     fs.writeFileSync(metadataPartialPath, `${JSON.stringify(installMetadata)}\n`, { mode: 0o600 });
     fs.renameSync(metadataPartialPath, metadataPath);
   } catch (error) {
@@ -301,6 +325,13 @@ function verifyProjectLaunchServiceManually() {
     } catch (cleanupError) {
       if (cleanupError?.code !== "ENOENT")
         console.warn("[utools-project-launch] failed to clean service metadata partial file");
+    }
+    if (movedReleaseAsset) {
+      try {
+        fs.renameSync(executablePath, sourcePath);
+      } catch (restoreError) {
+        console.warn("[utools-project-launch] failed to restore manually placed service asset");
+      }
     }
     throw error;
   }
