@@ -436,10 +436,10 @@ Keep only the visible tooltip reactive and use the bounded session for cross-hov
 ### 3. Contracts
 
 - `relativePaths` is the exact set selected by the UI when `options.all` is missing or false.
-- `options.all === true` means preload must ignore UI pagination/stale rendered file limits and collect the complete current Git status directly from `git status --porcelain=v1 -z`.
+- `options.all === true` means preload must ignore UI pagination/stale rendered file limits and collect current Git status directly.
 - Stage-all filters live status entries to files with unstaged work, including untracked files.
 - Unstage-all filters live status entries to files with staged work.
-- Discard-all filters live status entries to all changed paths, then applies the existing discard behavior per path.
+- Batch writes use bounded argv pathspec chunks. On a partial failure, `count`/`paths` contain only completed logical files; discard uses `--untracked-files=all` and never recursively deletes directories.
 - Components should still pass the visible paths for context/count fallback, but preload owns all-mode completeness.
 - Git write actions must show a loading toast before the bridge call and keep success/warning/error feedback visible after the status refresh starts.
 
@@ -448,8 +448,7 @@ Keep only the visible tooltip reactive and use the bounded session for cross-hov
 - Missing Git repository -> return `{ ok: false, message: "未检测到 Git 仓库。" }`.
 - `options.all !== true` and `relativePaths` is empty -> return a zero-count failure message for that operation.
 - `options.all === true` and no matching live status entries -> return a zero-count failure message for that operation.
-- Git command failure -> return `{ ok: false, count, paths, message }` using the first Git error text.
-- Discard failure after partial success -> return the underlying failure with `count`/`paths` for completed paths and a message noting the partial count.
+- Git command failure -> return `{ ok: false, count, paths, message }` using the first Git error text; a failed chunk must not claim the full requested path list.
 - Status refresh after a successful write -> bump the project Git mutation version and refresh status so UI rows reflect the new staged/unstaged state.
 
 ### 5. Good/Base/Bad Cases
@@ -465,9 +464,7 @@ Keep only the visible tooltip reactive and use the bounded session for cross-hov
 - `npm run lint` to verify `src/types.ts`, store actions, fallback bridge, and component calls agree on the bulk action options signature.
 - `npm run build` to verify Vue templates and bridge consumers compile.
 - `node --check public/preload.js` after changing preload Git action code.
-- Manual smoke test with more than 80 changed files: click stage-all and assert the toast count equals the full live Git status count.
-- Manual smoke test for unstage-all after stage-all: assert all staged files return to unstaged and the toast count is complete.
-- Manual smoke test for selected/single-file operations: assert they do not unexpectedly expand to all files.
+- `npm run validate:git-bulk-actions` covers chunking, partial results, and mixed-status discard safety.
 
 ### 7. Wrong vs Correct
 

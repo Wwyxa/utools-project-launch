@@ -1663,6 +1663,67 @@ describe("browser Git workspace fallback", () => {
     pendingWorkspace.resolve(currentWorkspace);
   });
 
+  it("uses working-tree snapshots for discard writes, including failed bulk discards", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const mainPath = "C:\\project";
+    const success = { ok: true, message: "discarded" };
+    const failure = { ok: false, count: 0, paths: [], message: "discard failed" };
+    const discardGitFile = vi.fn<ProjectBridge["discardGitFile"]>(async () => success);
+    const discardGitFiles = vi.fn<ProjectBridge["discardGitFiles"]>(async () => failure);
+    const readGitWorkingTreeSnapshot = vi
+      .fn<ProjectBridge["readGitWorkingTreeSnapshot"]>()
+      .mockResolvedValueOnce(workingTreeSnapshot(mainPath, []))
+      .mockResolvedValueOnce(
+        workingTreeSnapshot(mainPath, [
+          { path: "remaining.txt", additions: 1, deletions: 0, status: "UNTRACKED", staged: false, unstaged: true },
+        ]),
+      );
+    const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>();
+    const readGitSnapshot = vi.fn<ProjectBridge["readGitSnapshot"]>();
+    const readGitCommits = vi.fn<ProjectBridge["readGitCommits"]>();
+    const readGitWorkspaceSnapshot = vi.fn<ProjectBridge["readGitWorkspaceSnapshot"]>(async () =>
+      workspaceSnapshot(mainPath, "2026-08-01T10:00:00.000Z"),
+    );
+    window.projectBridge = {
+      ...getProjectBridge(),
+      discardGitFile,
+      discardGitFiles,
+      readGitWorkingTreeSnapshot,
+      readGitStatusSnapshot,
+      readGitSnapshot,
+      readGitCommits,
+      readGitWorkspaceSnapshot,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-discard-writes", mainPath);
+    project.git = gitSnapshot(mainPath, "main");
+    store.projects = [project];
+
+    await expect(store.discardGitFile(project.id, "discarded.txt")).resolves.toEqual(success);
+    await expect(store.discardGitFiles(project.id, ["remaining.txt"], { all: true })).resolves.toEqual(failure);
+
+    expect(discardGitFile).toHaveBeenCalledWith(mainPath, "discarded.txt");
+    expect(discardGitFiles).toHaveBeenCalledWith(mainPath, ["remaining.txt"], { all: true });
+    expect(readGitWorkingTreeSnapshot).toHaveBeenCalledTimes(2);
+    expect(readGitWorkingTreeSnapshot.mock.calls.map(([repositoryPath]) => repositoryPath)).toEqual([
+      mainPath,
+      mainPath,
+    ]);
+    expect(readGitStatusSnapshot).not.toHaveBeenCalled();
+    expect(readGitSnapshot).not.toHaveBeenCalled();
+    expect(readGitCommits).not.toHaveBeenCalled();
+    expect(project.git?.files).toEqual([
+      { path: "remaining.txt", additions: 1, deletions: 0, status: "UNTRACKED", staged: false, unstaged: true },
+    ]);
+  });
+
   it("routes stash writes through full snapshots and refreshes after a failed apply", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },

@@ -22,6 +22,7 @@
     "validate:git-commits": "node scripts/validate-git-commits.mjs",
     "validate:git-diff": "node scripts/validate-git-diff.mjs",
     "validate:git-workspace": "vitest run tests/projectBridge.workspace.test.ts && node scripts/validate-git-workspace.mjs",
+    "validate:git-bulk-actions": "node scripts/validate-git-bulk-actions.mjs",
     "validate:project-files": "node scripts/validate-project-files.mjs",
     "validate:project-storage": "node scripts/validate-project-storage-compat.mjs",
     "validate:process-results": "node scripts/validate-process-result-batches.mjs",

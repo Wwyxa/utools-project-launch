@@ -4544,7 +4544,7 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.discardGitFile(context.repositoryPath, relativePath),
-        { refresh: "full" },
+        { refresh: "working-tree", refreshOnFailure: true },
       );
     },
     async stageGitFiles(
@@ -4557,7 +4557,7 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.stageGitFiles(context.repositoryPath, relativePaths, options),
-        { refresh: "working-tree" },
+        { refresh: "working-tree", refreshOnFailure: true },
       );
     },
     async unstageGitFiles(
@@ -4570,7 +4570,7 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.unstageGitFiles(context.repositoryPath, relativePaths, options),
-        { refresh: "working-tree" },
+        { refresh: "working-tree", refreshOnFailure: true },
       );
     },
     async discardGitFiles(
@@ -4583,7 +4583,7 @@ export const useStore = defineStore("app", {
         projectId,
         target,
         (context) => bridge.discardGitFiles(context.repositoryPath, relativePaths, options),
-        { refresh: "full" },
+        { refresh: "working-tree", refreshOnFailure: true },
       );
     },
     async commitGitStaged(

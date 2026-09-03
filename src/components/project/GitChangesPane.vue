@@ -552,6 +552,18 @@ const requestDiscardGitFile = (file: ProjectGitFileChange, scope: WorktreeDiffSc
   };
 };
 
+const discardAllDetailPreviewLimit = 50;
+
+const buildDiscardAllDetail = () => {
+  const displayPaths = discardableFiles.value.map(gitFileDisplayPath);
+  if (displayPaths.length <= discardAllDetailPreviewLimit) {
+    return displayPaths.join("\n");
+  }
+  return `${displayPaths.slice(0, discardAllDetailPreviewLimit).join("\n")}\n…其余 ${
+    displayPaths.length - discardAllDetailPreviewLimit
+  } 个文件已省略`;
+};
+
 const requestDiscardAllGitFiles = () => {
   if (
     props.disabled ||
@@ -565,7 +577,7 @@ const requestDiscardAllGitFiles = () => {
     icon: "trash",
     title: "丢弃全部文件变更",
     message: `此操作会还原 ${discardableFiles.value.length} 个 changed 文件在工作区与暂存区中的本地变更。`,
-    detail: discardableFiles.value.map(gitFileDisplayPath).join("\n"),
+    detail: buildDiscardAllDetail(),
     confirmLabel: "丢弃全部",
     cancelLabel: t.value.common.cancel,
     onConfirm: () => executeBulkGitFileAction("discard"),

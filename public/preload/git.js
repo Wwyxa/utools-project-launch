@@ -1163,8 +1163,13 @@ function parseGitStatusRecord(statusCode, filePath, originalPath = "") {
   };
 }
 
-function readGitStatusEntries(repositoryPath) {
-  const statusOutput = runGit(repositoryPath, ["status", "--porcelain=v1", "-z"]);
+function readGitStatusEntries(repositoryPath, options = {}) {
+  const statusOutput = runGit(repositoryPath, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    ...(options.untrackedFilesAll ? ["--untracked-files=all"] : []),
+  ]);
   if (!statusOutput) {
     return [];
   }
@@ -1760,9 +1765,17 @@ function resolveGitFilePath(repositoryPath, relativePath) {
   return resolved;
 }
 
+function normalizeGitStatusPath(filePath) {
+  return String(filePath || "")
+    .replace(/\\/g, "/")
+    .replace(/[\\/]+$/, "");
+}
+
 function getGitFileStatus(repositoryPath, relativePath) {
-  const normalizedPath = String(relativePath || "").replace(/\\/g, "/");
-  return readGitStatusEntries(repositoryPath).find((entry) => entry.path === normalizedPath) || null;
+  const normalizedPath = normalizeGitStatusPath(relativePath);
+  return (
+    readGitStatusEntries(repositoryPath).find((entry) => normalizeGitStatusPath(entry.path) === normalizedPath) || null
+  );
 }
 
 function gitFileActionPaths(repositoryPath, status, fallbackPath) {
@@ -1770,36 +1783,113 @@ function gitFileActionPaths(repositoryPath, status, fallbackPath) {
   return paths.map((filePath) => resolveGitFilePath(repositoryPath, filePath).relativePath);
 }
 
+function createGitStatusEntryLookup(statusEntries) {
+  const statusByPath = new Map();
+  statusEntries.forEach((entry) => {
+    const entryPath = normalizeGitStatusPath(entry.path);
+    statusByPath.set(entryPath, entry);
+    if (entry.originalPath) {
+      const originalPath = normalizeGitStatusPath(entry.originalPath);
+      if (!statusByPath.has(originalPath)) statusByPath.set(originalPath, entry);
+    }
+  });
+  return statusByPath;
+}
+
 function uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus) {
   const actionPaths = new Set();
   const displayPaths = [];
+  const actionGroups = [];
   const requestedPaths = Array.isArray(relativePaths) ? relativePaths : [];
+  const statusByPath = createGitStatusEntryLookup(readGitStatusEntries(repositoryPath));
 
   requestedPaths.forEach((relativePath) => {
     const resolved = resolveGitFilePath(repositoryPath, relativePath);
-    const status = getGitFileStatus(repositoryPath, resolved.relativePath);
+    const status = statusByPath.get(resolved.relativePath) || null;
     if (!filterStatus(status, resolved.relativePath)) {
       return;
     }
-    gitFileActionPaths(repositoryPath, status, resolved.relativePath).forEach((filePath) => actionPaths.add(filePath));
+    const fileActionPaths = gitFileActionPaths(repositoryPath, status, resolved.relativePath);
+    fileActionPaths.forEach((filePath) => actionPaths.add(filePath));
+    actionGroups.push({ displayPath: resolved.relativePath, actionPaths: fileActionPaths });
     displayPaths.push(resolved.relativePath);
   });
 
-  return { actionPaths: Array.from(actionPaths), displayPaths: Array.from(new Set(displayPaths)) };
+  return {
+    actionPaths: Array.from(actionPaths),
+    displayPaths: Array.from(new Set(displayPaths)),
+    actionGroups,
+  };
 }
 
 function allGitActionPaths(repositoryPath, filterStatus) {
   const actionPaths = new Set();
   const displayPaths = [];
+  const actionGroups = [];
   readGitStatusEntries(repositoryPath).forEach((status) => {
     if (!filterStatus(status, status.path)) {
       return;
     }
-    gitFileActionPaths(repositoryPath, status, status.path).forEach((filePath) => actionPaths.add(filePath));
+    const fileActionPaths = gitFileActionPaths(repositoryPath, status, status.path);
+    fileActionPaths.forEach((filePath) => actionPaths.add(filePath));
+    actionGroups.push({ displayPath: status.path, actionPaths: fileActionPaths });
     displayPaths.push(status.path);
   });
 
-  return { actionPaths: Array.from(actionPaths), displayPaths: Array.from(new Set(displayPaths)) };
+  return {
+    actionPaths: Array.from(actionPaths),
+    displayPaths: Array.from(new Set(displayPaths)),
+    actionGroups,
+  };
+}
+
+const gitPathspecChunkMaxCount = 200;
+const gitPathspecChunkMaxChars = 16000;
+
+function chunkGitPathspecs(paths) {
+  const chunks = [];
+  let currentChunk = [];
+  let currentChars = 0;
+  paths.forEach((itemPath) => {
+    const itemChars = itemPath.length + 1;
+    if (
+      currentChunk.length > 0 &&
+      (currentChunk.length + 1 > gitPathspecChunkMaxCount || currentChars + itemChars > gitPathspecChunkMaxChars)
+    ) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentChars = 0;
+    }
+    currentChunk.push(itemPath);
+    currentChars += itemChars;
+  });
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+  return chunks;
+}
+
+function runGitPathspecChunks(repositoryPath, prefixArgs, paths) {
+  const completedPaths = [];
+  for (const chunk of chunkGitPathspecs(paths)) {
+    const result = runGitResult(repositoryPath, [...prefixArgs, "--", ...chunk]);
+    if (result.status !== 0) {
+      return { failure: result, completedPaths };
+    }
+    completedPaths.push(...chunk);
+  }
+  return { failure: null, completedPaths };
+}
+
+function completedGitActionDisplayPaths(actionGroups, completedPaths) {
+  const completedPathSet = new Set(completedPaths);
+  return Array.from(
+    new Set(
+      actionGroups
+        .filter((group) => group.actionPaths.every((filePath) => completedPathSet.has(filePath)))
+        .map((group) => group.displayPath),
+    ),
+  );
 }
 
 function readGitWorktreeStatus(repositoryPath) {
@@ -1927,7 +2017,14 @@ function discardGitFile(projectPath, relativePath) {
       (status.statusCode[0] === "A" && !fileExistsInHead(repositoryPath, resolved.relativePath))
     ) {
       if (status.staged) {
-        runGitResult(repositoryPath, ["reset", "-q", "HEAD", "--", resolved.relativePath]);
+        const reset = runGitResult(repositoryPath, ["reset", "-q", "HEAD", "--", resolved.relativePath]);
+        if (reset.status !== 0) {
+          return {
+            ok: false,
+            path: resolved.relativePath,
+            message: firstGitError(reset, "丢弃文件变更失败。"),
+          };
+        }
       }
       removeGitWorktreePath(resolved.targetPath);
       return { ok: true, path: resolved.relativePath, message: "已丢弃该文件变更。" };
@@ -1952,22 +2049,29 @@ function stageGitFiles(projectPath, relativePaths, options = {}) {
   try {
     const filterStatus = (status) =>
       Boolean(status && (status.unstaged || (!status.staged && status.unstaged !== false)));
-    const { actionPaths, displayPaths } =
+    const { actionPaths, displayPaths, actionGroups } =
       options?.all === true
         ? allGitActionPaths(repositoryPath, filterStatus)
         : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
     if (actionPaths.length === 0) {
       return { ok: false, count: 0, paths: [], message: "没有可暂存的文件变更。" };
     }
-    const result = runGitResult(repositoryPath, ["add", "--", ...actionPaths]);
-    return result.status === 0
-      ? { ok: true, count: displayPaths.length, paths: displayPaths, message: `已暂存 ${displayPaths.length} 个文件。` }
-      : {
-          ok: false,
-          count: displayPaths.length,
-          paths: displayPaths,
-          message: firstGitError(result, "批量暂存失败。"),
-        };
+    const { failure, completedPaths } = runGitPathspecChunks(repositoryPath, ["add"], actionPaths);
+    if (failure) {
+      const completedDisplayPaths = completedGitActionDisplayPaths(actionGroups, completedPaths);
+      return {
+        ok: false,
+        count: completedDisplayPaths.length,
+        paths: completedDisplayPaths,
+        message: firstGitError(failure, "批量暂存失败。"),
+      };
+    }
+    return {
+      ok: true,
+      count: displayPaths.length,
+      paths: displayPaths,
+      message: `已暂存 ${displayPaths.length} 个文件。`,
+    };
   } catch (error) {
     return { ok: false, message: error?.message || "批量暂存失败。" };
   }
@@ -1981,27 +2085,29 @@ function unstageGitFiles(projectPath, relativePaths, options = {}) {
 
   try {
     const filterStatus = (status) => Boolean(status?.staged);
-    const { actionPaths, displayPaths } =
+    const { actionPaths, displayPaths, actionGroups } =
       options?.all === true
         ? allGitActionPaths(repositoryPath, filterStatus)
         : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
     if (actionPaths.length === 0) {
       return { ok: false, count: 0, paths: [], message: "没有可取消暂存的文件。" };
     }
-    const result = runGitResult(repositoryPath, ["reset", "-q", "HEAD", "--", ...actionPaths]);
-    return result.status === 0
-      ? {
-          ok: true,
-          count: displayPaths.length,
-          paths: displayPaths,
-          message: `已取消暂存 ${displayPaths.length} 个文件。`,
-        }
-      : {
-          ok: false,
-          count: displayPaths.length,
-          paths: displayPaths,
-          message: firstGitError(result, "批量取消暂存失败。"),
-        };
+    const { failure, completedPaths } = runGitPathspecChunks(repositoryPath, ["reset", "-q", "HEAD"], actionPaths);
+    if (failure) {
+      const completedDisplayPaths = completedGitActionDisplayPaths(actionGroups, completedPaths);
+      return {
+        ok: false,
+        count: completedDisplayPaths.length,
+        paths: completedDisplayPaths,
+        message: firstGitError(failure, "批量取消暂存失败。"),
+      };
+    }
+    return {
+      ok: true,
+      count: displayPaths.length,
+      paths: displayPaths,
+      message: `已取消暂存 ${displayPaths.length} 个文件。`,
+    };
   } catch (error) {
     return { ok: false, message: error?.message || "批量取消暂存失败。" };
   }
@@ -2012,39 +2118,105 @@ function discardGitFiles(projectPath, relativePaths, options = {}) {
   if (!repositoryPath) {
     return { ok: false, message: "未检测到 Git 仓库。" };
   }
-  const requestedPaths =
-    options?.all === true
-      ? allGitActionPaths(repositoryPath, (status) => Boolean(status)).displayPaths
-      : Array.isArray(relativePaths)
-        ? Array.from(new Set(relativePaths))
-        : [];
-  if (requestedPaths.length === 0) {
-    return { ok: false, count: 0, paths: [], message: "没有可丢弃的文件变更。" };
-  }
 
-  const succeededPaths = [];
-  for (const relativePath of requestedPaths) {
-    const result = discardGitFile(projectPath, relativePath);
-    if (!result.ok) {
+  try {
+    // --untracked-files=all mirrors the working-tree snapshot that feeds the UI,
+    // so "discard all" covers every file the change list promised (untracked
+    // directories are otherwise collapsed into non-actionable `dir/` entries).
+    const statusEntries = readGitStatusEntries(repositoryPath, { untrackedFilesAll: true });
+    const statusByPath = createGitStatusEntryLookup(statusEntries);
+    const requestedPaths =
+      options?.all === true
+        ? statusEntries.map((entry) => entry.path)
+        : Array.isArray(relativePaths)
+          ? Array.from(new Set(relativePaths))
+          : [];
+    if (requestedPaths.length === 0) {
+      return { ok: false, count: 0, paths: [], message: "没有可丢弃的文件变更。" };
+    }
+
+    const resetPaths = new Set();
+    const restorePaths = new Set();
+    const removeTargetPaths = [];
+    const displayPathSet = new Set();
+    const displayPaths = [];
+    for (const requestedPath of requestedPaths) {
+      const resolved = resolveGitFilePath(repositoryPath, requestedPath);
+      const status = statusByPath.get(resolved.relativePath) || null;
+      if (!status) {
+        continue;
+      }
+      if (!displayPathSet.has(resolved.relativePath)) {
+        displayPathSet.add(resolved.relativePath);
+        displayPaths.push(resolved.relativePath);
+      }
+      if (status.status === "UNTRACKED" || status.statusCode[0] === "A") {
+        if (status.staged) {
+          resetPaths.add(resolved.relativePath);
+        }
+        removeTargetPaths.push(resolved.targetPath);
+      } else {
+        (status.originalPath ? [status.originalPath, status.path] : [resolved.relativePath]).forEach((actionPath) =>
+          restorePaths.add(actionPath),
+        );
+      }
+    }
+
+    if (displayPaths.length === 0) {
+      return { ok: false, count: 0, paths: [], message: "没有可丢弃的文件变更。" };
+    }
+
+    let failure = null;
+    let failureMessage = "";
+    if (resetPaths.size > 0) {
+      failure = runGitPathspecChunks(repositoryPath, ["reset", "-q", "HEAD"], Array.from(resetPaths)).failure;
+      if (failure) {
+        failureMessage = firstGitError(failure, "批量丢弃文件变更失败。");
+      }
+    }
+    if (!failure && restorePaths.size > 0) {
+      failure = runGitPathspecChunks(
+        repositoryPath,
+        ["restore", "--staged", "--worktree"],
+        Array.from(restorePaths),
+      ).failure;
+      if (failure) {
+        failureMessage = firstGitError(failure, "批量丢弃文件变更失败。");
+      }
+    }
+    if (!failure) {
+      try {
+        removeTargetPaths.forEach((targetPath) => removeGitWorktreePath(targetPath));
+      } catch (error) {
+        failureMessage = error?.message || "批量丢弃文件变更失败。";
+        failure = {};
+      }
+    }
+    if (failure) {
+      const remainingPaths = new Set();
+      readGitStatusEntries(repositoryPath, { untrackedFilesAll: true }).forEach((entry) => {
+        remainingPaths.add(normalizeGitStatusPath(entry.path));
+        if (entry.originalPath) remainingPaths.add(normalizeGitStatusPath(entry.originalPath));
+      });
+      const discardedPaths = displayPaths.filter((displayPath) => !remainingPaths.has(displayPath));
       return {
-        ...result,
-        count: succeededPaths.length,
-        paths: succeededPaths,
+        ok: false,
+        count: discardedPaths.length,
+        paths: discardedPaths,
         message:
-          succeededPaths.length > 0 ? `${result.message}（已先丢弃 ${succeededPaths.length} 个文件）` : result.message,
+          discardedPaths.length > 0 ? `${failureMessage}（已先丢弃 ${discardedPaths.length} 个文件）` : failureMessage,
       };
     }
-    if (result.path) {
-      succeededPaths.push(result.path);
-    }
-  }
 
-  return {
-    ok: true,
-    count: succeededPaths.length,
-    paths: succeededPaths,
-    message: succeededPaths.length > 0 ? `已丢弃 ${succeededPaths.length} 个文件变更。` : "没有可丢弃的文件变更。",
-  };
+    return {
+      ok: true,
+      count: displayPaths.length,
+      paths: displayPaths,
+      message: `已丢弃 ${displayPaths.length} 个文件变更。`,
+    };
+  } catch (error) {
+    return { ok: false, message: error?.message || "批量丢弃文件变更失败。" };
+  }
 }
 
 function readAttachedGitHead(repositoryPath) {

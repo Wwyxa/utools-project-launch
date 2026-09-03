@@ -1707,9 +1707,9 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - `ProjectBridge.stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
 - `ProjectBridge.unstageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
 - `ProjectBridge.discardGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>`
-- `ProjectBridge.stageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>`
-- `ProjectBridge.unstageGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>`
-- `ProjectBridge.discardGitFiles(projectPath: string, relativePaths: string[]): Promise<ProjectGitActionResult>`
+- `ProjectBridge.stageGitFiles(projectPath: string, relativePaths: string[], options?: { all?: boolean }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.unstageGitFiles(projectPath: string, relativePaths: string[], options?: { all?: boolean }): Promise<ProjectGitActionResult>`
+- `ProjectBridge.discardGitFiles(projectPath: string, relativePaths: string[], options?: { all?: boolean }): Promise<ProjectGitActionResult>`
 - `ProjectBridge.commitGitStaged(projectPath: string, message: string): Promise<ProjectGitActionResult>`
 - `ProjectBridge.switchGitBranch(projectPath: string, branchName: string, options?: { force?: boolean }): Promise<ProjectGitActionResult>`
 - `ProjectBridge.checkoutGitCommit(projectPath: string, commitHash: string, options?: { force?: boolean; preferredBranch?: string; detach?: boolean }): Promise<ProjectGitActionResult>`
@@ -1724,10 +1724,10 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 
 - Components call store actions such as `store.stageGitFile(project.id, file.path)`, never `window.projectBridge` directly.
 - Store actions resolve the project id to the project path, call the bridge, and choose the lightest post-write refresh that preserves correctness.
-- Stage/unstage single-file and batch actions should bump the Git mutation version and await `readGitWorkingTreeSnapshot(project.path)` after successful writes. Fresh porcelain and staged/unstaged numstat output remain authoritative for rename, untracked, partial-stage, batch, and concurrent working-tree changes; the Store replaces only files and status metadata while retaining the current branch, HEAD, refs, remotes, upstream, and commits. A detached snapshot keeps its `detached HEAD @ <hash> ·` status prefix.
-- The working-tree reader may do root discovery, NUL-delimited porcelain, and unstaged/staged numstat reads, but must not issue commit, ref, branch, remote, or upstream reads on the stage/unstage foreground path.
-- Start forced workspace inventory after an index-only write without awaiting it. `refreshGitWorkspace` catches its own bridge failures and accepts results only while its force token and project path remain current, so background inventory cannot create an unhandled rejection or replace newer data.
-- Commit, branch switch, checkout, and discard actions can change HEAD, refs, or file contents beyond index-only state; refresh `readGitSnapshot(project.path, { limit: 80, skip: 0 })` after successful results.
+- File writes refresh `readGitWorkingTreeSnapshot(project.path)`; batch writes and discard also use `refreshOnFailure: true` so partial failures cannot leave stale rows. Discard must not reload commit history.
+- The working-tree reader may do root discovery, NUL-delimited porcelain, and unstaged/staged numstat reads, but must not issue commit, ref, branch, remote, or upstream reads on a file-write foreground path.
+- Start forced workspace inventory after a file write without awaiting it. `refreshGitWorkspace` catches its own bridge failures and accepts results only while its force token and project path remain current, so background inventory cannot create an unhandled rejection or replace newer data.
+- Reserve `readGitSnapshot(project.path, { limit: 80, skip: 0 })` for writes that update history or refs, including commit, stash, branch switch, checkout, and ref mutations.
 - Create/rename/delete branch, create tag, tracking checkout, branch switch, and commit checkout are ref mutations. Route them through `runAuthorizedGitWrite` with `{ refresh: "full", refs: true }` so every related repository snapshot and stale ref request is invalidated.
 - Full, status, and working-tree refreshes may overlap. The store must track mutation/ref versions so a stale full refresh does not overwrite newer status/files, and the working-tree coordinator must check its own token after the bridge await. Clearing coordination on project replacement must reject an A -> B -> A old response even when the context key later matches again.
 - Every automatic GitTab missing-snapshot path, including its workspace inventory watcher, calls `refreshGitSnapshot` without `force` so it joins the Store's context-scoped initial request. `refreshActiveRepository` is the manual path and remains forced.
@@ -1758,7 +1758,8 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - Missing Git repository -> bridge returns `{ ok: false, message: "未检测到 Git 仓库。" }` or an empty snapshot.
 - Empty commit message -> bridge returns `{ ok: false, message: "请先填写 commit message。" }`.
 - Commit with no staged diff -> bridge returns `{ ok: false, message: "没有 staged 变更可提交。" }`.
-- Discard untracked directory or non-file path -> bridge returns a failure message asking the user to handle it in the file system.
+- Discard directory/non-file paths or a staged-new file whose reset fails -> return an error without deleting the worktree file.
+- Batch file action fails after an earlier chunk -> refresh the working-tree snapshot and keep the result as an error with only completed paths/count.
 - Branch switch with uncommitted changes and no force option -> bridge returns `{ ok: false, message: "当前工作区存在未提交变更..." }` and does not run `git switch`.
 - Dirty ref-changing checkout without force -> bridge also returns `blockReason: "dirty-worktree"`; no branch/tag mutation occurs before confirmation.
 - Branch switch with uncommitted changes after app confirmation -> UI calls `switchGitBranch(..., { force: true })`; preload runs `git switch --discard-changes -- <branch>`, returns `{ ok: true, branch }` on success, and the store refreshes the snapshot.
@@ -1798,8 +1799,8 @@ Keep Git diff reads behind the store action and make visible worktree scope expl
 - `npm run type-check` should verify bridge contracts across `src/types.ts`, fallback bridge, store actions, and components.
 - `npm run build` should verify the Git tab template compiles.
 - `npm run validate:git-commits` should verify structured refs and every branch/tag mutation against a real temporary repository.
-- `npx vitest run src/lib/projectBridge.workspace.test.ts` should verify exact repository routing, one shared parent/GitTab/workspace initial snapshot with a forced manual refresh, foreground working-tree-only stage/unstage calls, background inventory completion, stale-target/mutation/project-reset rejection, detached status preservation, and ref invalidation for the new store actions.
-- `npm run validate:git-commits` must also assert that working-tree snapshots preserve staged renames, nested untracked files, and partial staging.
+- `npm run validate:git-workspace` should verify working-tree-only stage/unstage/discard refreshes.
+- `npm run validate:git-bulk-actions` should verify chunking and partial batch results.
 - Manual uTools smoke test: stage, unstage, discard a single file after confirmation, commit staged changes, and confirm each successful action refreshes the snapshot.
 - Manual uTools smoke test: attempt branch switching with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-switches and refreshes branch/files/graph. Then switch on a clean worktree and verify the branch and graph refresh.
 - Manual uTools smoke test: attempt commit checkout with uncommitted changes and verify the danger confirmation appears; cancel keeps the worktree unchanged, confirm force-checks out the selected commit and refreshes detached HEAD/current commit state. Then checkout a clean selected commit and verify detached HEAD/current commit state is visible.
