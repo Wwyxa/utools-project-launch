@@ -64,9 +64,93 @@ export const PROJECT_DETAILS_TAB_DEFAULT_COACH_MARK_VERSION = 1;
 export const PROJECT_MAX_RELATED_PROJECTS = 5;
 export type ProjectDetailsTabId = (typeof PROJECT_DETAILS_TAB_IDS)[number];
 export type TinyCardActionTrigger = "hover" | "contextmenu";
+export type IconPackId = "builtin" | "vscode-icons-derived";
+export type IconPackColorMode = "light" | "dark";
+export type IconPackFallbackPolicy = "lucide" | "omit";
+
+export interface IconPackIconVariant {
+  dark: string;
+  light?: string;
+}
+
+export interface IconPackMappings {
+  fileNames: Record<string, IconPackIconVariant>;
+  fileSuffixes: Record<string, IconPackIconVariant>;
+  folderNames: Record<string, IconPackIconVariant>;
+  folderNamesExpanded: Record<string, IconPackIconVariant>;
+  defaults: {
+    file: IconPackIconVariant;
+    folder: IconPackIconVariant;
+    folderExpanded: IconPackIconVariant;
+  };
+}
+
+export interface IconPackAsset {
+  format: "svg" | "png";
+  encoding: "base64";
+  data: string;
+}
+
+export interface IconPackNotice {
+  id: string;
+  license: string;
+  text: string;
+  appliesTo: string;
+}
+
+export interface IconPackManifest {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  version: string;
+  minHostVersion?: string;
+  source: {
+    repository: string;
+    version: string;
+    url: string;
+  };
+  mappings: IconPackMappings;
+  assets: Record<string, IconPackAsset>;
+  notices: IconPackNotice[];
+}
+
+export type IconPackStatusState = "installed" | "unavailable" | "invalid";
+
+export interface IconPackStatus {
+  selectedPackId: IconPackId;
+  installedPackId: IconPackId | null;
+  installedVersion: string | null;
+  state: IconPackStatusState;
+  active: boolean;
+  message?: string;
+  updateAvailable?: boolean;
+  latestVersion?: string;
+}
+
+export interface IconPackLoadResult {
+  ok: boolean;
+  manifest: IconPackManifest | null;
+  state: "loaded" | IconPackStatusState;
+  message?: string;
+}
+
+export interface IconPackUpdateResult {
+  ok: boolean;
+  updateAvailable: boolean;
+  latestVersion?: string;
+  assetName?: string;
+  message?: string;
+}
+
+export interface IconPackRemoveResult {
+  ok: boolean;
+  status: IconPackStatus;
+  message?: string;
+}
 
 export interface UiPreferences {
   schemaVersion: 1;
+  iconPackId: IconPackId;
   projectDetails: {
     tabOrder: ProjectDetailsTabId[];
     defaultTab: ProjectDetailsTabId;
@@ -1272,6 +1356,14 @@ export interface ProjectBridge {
   saveProjects(projects: Project[], options?: ProjectSaveProjectsOptions): Promise<void>;
   loadUiPreferences(): UiPreferences;
   saveUiPreferences(preferences: UiPreferences): void;
+  loadInstalledIconPack(): Promise<IconPackLoadResult>;
+  getIconPackStatus(): Promise<IconPackStatus>;
+  checkIconPackUpdate(): Promise<IconPackUpdateResult>;
+  downloadIconPack(): Promise<IconPackLoadResult>;
+  verifyIconPackInstall(): Promise<IconPackLoadResult>;
+  removeIconPack(): Promise<IconPackRemoveResult>;
+  openIconPackDirectory(): Promise<void>;
+  openIconPackReleases(): Promise<void>;
   loadTerminalPreferences(): TerminalPreferences;
   saveTerminalPreferences(preferences: TerminalPreferences): void;
   loadExternalApplicationPreferences(): ExternalApplicationPreferences;

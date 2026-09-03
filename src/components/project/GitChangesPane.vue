@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronRight,
   FileSearch,
-  Folder,
   List,
   ListTree,
   Minus,
@@ -50,6 +49,7 @@ import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../l
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import ActionDialog from "../common/ActionDialog.vue";
+import FileIcon from "../common/FileIcon.vue";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitFeedbackState = Exclude<AiState, "idle">;
@@ -1307,16 +1307,22 @@ onBeforeUnmount(() => {
               :aria-expanded="item.isExpanded"
               @click.stop="toggleWorktreeDirectory(group.scope, item.path)"
             >
-              <ChevronDown v-if="item.isExpanded" :size="13" /><ChevronRight v-else :size="13" /><Folder
-                :size="13"
+              <ChevronDown v-if="item.isExpanded" :size="13" /><ChevronRight v-else :size="13" />
+              <FileIcon
+                :name="item.name"
+                :path="item.path"
+                kind="directory"
+                :expanded="item.isExpanded"
+                fallback-policy="omit"
                 class="text-primary/75"
-              /><span class="min-w-0 truncate font-mono">{{ item.name }}</span>
+              />
+              <span class="min-w-0 truncate font-mono">{{ item.name }}</span>
             </button>
             <div
               v-else
               :class="
                 cn(
-                  'group relative grid min-h-[1.875rem] cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-t border-border-subtle px-2 py-0.5 transition-colors hover:bg-surface-container-low focus-within:bg-surface-container-low',
+                  'group relative grid min-h-[1.875rem] cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 border-t border-border-subtle px-2 py-0.5 transition-colors hover:bg-surface-container-low focus-within:bg-surface-container-low',
                   isWorktreeSelected(item.file.path, group.scope) &&
                     'bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]',
                 )
@@ -1326,21 +1332,7 @@ onBeforeUnmount(() => {
               @click="emit('select-file', { path: item.file.path, scope: group.scope })"
             >
               <div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                <span
-                  :class="
-                    cn(
-                      'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
-                      item.file.status === 'ADDED' && 'text-status-running',
-                      item.file.status === 'DELETED' && 'text-status-error',
-                      item.file.status === 'RENAMED' && 'text-secondary',
-                      item.file.status === 'UNTRACKED' && 'text-primary',
-                      item.file.status === 'MODIFIED' && 'text-on-surface-variant',
-                    )
-                  "
-                  :title="fileLabel(item.file.status)"
-                >
-                  {{ fileStatusCode(item.file.status) }}
-                </span>
+                <FileIcon :name="gitFileName(item.file)" :path="item.file.path" kind="file" fallback-policy="omit" />
                 <div class="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden">
                   <span
                     :class="
@@ -1364,10 +1356,26 @@ onBeforeUnmount(() => {
                 <span v-if="item.file.additions > 0" class="text-status-running">+{{ item.file.additions }}</span>
                 <span v-if="item.file.deletions > 0" class="text-status-error">-{{ item.file.deletions }}</span>
               </div>
+              <span
+                :class="
+                  cn(
+                    'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
+                    item.file.status === 'ADDED' && 'text-status-running',
+                    item.file.status === 'DELETED' && 'text-status-error',
+                    item.file.status === 'RENAMED' && 'text-secondary',
+                    item.file.status === 'UNTRACKED' && 'text-primary',
+                    item.file.status === 'MODIFIED' && 'text-on-surface-variant',
+                  )
+                "
+                :title="fileLabel(item.file.status)"
+                :aria-label="fileLabel(item.file.status)"
+              >
+                {{ fileStatusCode(item.file.status) }}
+              </span>
               <div
                 :class="
                   cn(
-                    'absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-px rounded border border-border-subtle bg-surface-container-low px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                    'absolute right-6 top-1/2 flex -translate-y-1/2 items-center gap-px rounded border border-border-subtle bg-surface-container-low px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
                     isGitFileBusy(item.file) && 'opacity-100',
                   )
                 "

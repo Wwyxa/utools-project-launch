@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Check shared icon-pack and ProjectBridge type contracts."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Check frontend fallback behavior, build, and accessibility quality."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check preload validation, download limits, atomic install, and rollback."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check renderer, preload, storage, and release data flow."}

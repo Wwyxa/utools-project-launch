@@ -1,0 +1,94 @@
+name: Release External Icon Pack
+
+on:
+  push:
+    tags:
+      - "icon-pack-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing icon-pack release tag (icon-pack-v*)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish icon-pack release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve release tag
+        id: release-tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$DISPATCH_TAG"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+
+          case "$tag" in
+            icon-pack-v*) ;;
+            *)
+              echo "Release tags must follow the icon-pack-v* convention."
+              exit 1
+              ;;
+          esac
+
+          tag_version="${tag#icon-pack-v}"
+          if [[ ! "$tag_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+            echo "Icon-pack tags must include a semantic icon-pack version after icon-pack-v."
+            exit 1
+          fi
+
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$tag_version" >> "$GITHUB_OUTPUT"
+
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release-tag.outputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Build and validate icon-pack assets
+        env:
+          RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
+          ICON_PACK_VERSION: ${{ steps.release-tag.outputs.version }}
+        shell: bash
+        run: |
+          npm ci
+          npm run icon-pack:build
+          npm run icon-pack:validate
+
+          tag_version="${RELEASE_TAG#icon-pack-v}"
+          expected_asset="utools-project-launch-vscode-icons-derived-${tag_version}.iconpack.json.gz"
+          test -f "icon-packs/vscode-icons-derived/icon-pack-release/${expected_asset}"
+
+      - name: Publish or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
+        shell: bash
+        run: |
+          release_assets=(
+            icon-packs/vscode-icons-derived/icon-pack-release/*.iconpack.json.gz
+            icon-packs/vscode-icons-derived/icon-pack-release/checksums.txt
+            icon-packs/vscode-icons-derived/icon-pack-release/LICENSES-vscode-icons.txt
+          )
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${release_assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${release_assets[@]}" \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi

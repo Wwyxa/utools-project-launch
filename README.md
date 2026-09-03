@@ -42,6 +42,15 @@
 - 文本预览：代码高亮、Markdown 渲染(含本地图片)、图片查看。
 - 轻量编辑：行号开关、查找/替换、未保存内容保护。
 
+### 可选：外部文件图标包
+
+- 设置页提供一个全局的 `vscode-icons` 衍生图标包。它按需从独立 GitHub Release 下载，默认不安装、不联网，也不进入主插件构建产物。
+- 点击“安装图标包”后，插件会限制下载地址、校验 SHA-256、验证清单和资源，再将压缩包原子安装到 `~/.utools-project-launch/icon-packs/`。安装完成后仍需手动选择“启用外部图标”。
+- 图标包在项目文件树、Git 工作区文件列表和 Git 提交文件列表中使用同一套文件名、扩展名、目录和展开目录匹配；切换回内置图标或移除包都会保留 Lucide 回退，不能用的包不会清空任何视图。
+- 图标包只包含数据和内联 SVG/PNG，不执行 VS Code 扩展代码，也不会把上游扩展代码带入运行时。更新、移除和切换都必须由设置页按钮显式触发。
+- 该衍生包保留完整的上游通知：`vscode-icons` 源代码使用 MIT，图标资产使用 CC BY-SA 4.0，品牌图标可能适用其自身版权或商标许可。完整通知随源目录和 Release 资产 `LICENSES-vscode-icons.txt` 一起发布，不能只依赖 README 摘要。
+- 仓库中的 `icon-packs/vscode-icons-derived/manifest.json` 和 `icon-packs/vscode-icons-derived/icons/` 是构建脚本根据上游资源自动生成的源包，不需要手动维护。清单的 `source.version` 自动读取 `references/vscode-icons/package.json`（当前为 `12.19.0`），`manifest.version` 是独立的图标包版本；本地构建可通过 `ICON_PACK_VERSION` 指定版本，Release workflow 会从 `icon-pack-v<图标包版本>` 标签自动注入该值。更新上游参考目录和图标包版本后再次运行 `npm run icon-pack:build` 和 `npm run icon-pack:validate` 即可同步，最终压缩包不会进入主插件。
+
 ### Git 工作区
 
 - 仓库列表统一展示**主仓库**、**linked worktree** 与已检出 **submodule**，支持 Git 环境继承(Git 钩子可正常执行)。
@@ -150,7 +159,6 @@ dist/
 ├── plugin.json
 ├── preload.js
 ├── logo.png
-├── logo.svg
 └── assets/
 ```
 
@@ -230,6 +238,8 @@ dist/
 | `npm run validate:project-files`      | 校验项目文件桥接                                           |
 | `npm run validate:project-storage`    | 校验项目存储兼容性和 AI Agent 工具持久化                   |
 | `npm run validate:process-results`    | 校验进程结果批次处理                                       |
+| `npm run icon-pack:build`             | 从 vscode-icons 上游资源生成项目图标包和 Release 资产       |
+| `npm run icon-pack:validate`          | 校验图标包清单、资源、许可证通知和 SHA-256                  |
 | `npm run benchmark:git-interactions`  | Git 交互性能基准测试                                       |
 | `npm run go:fmt`                      | 格式化可选项目启动服务源码                                 |
 | `npm run go:vet`                      | 校验可选项目启动服务                                       |
@@ -256,8 +266,7 @@ public/
 ├── plugin.json               # uTools 插件配置
 ├── preload.js                # uTools CommonJS preload 入口加载器
 ├── preload/                  # 按职责拆分的 preload 运行时模块
-├── logo.png
-└── logo.svg
+└── logo.png
 
 service/                      # 可选的 Project Launch Service Go 运行时
 ├── bin/                       # 本地构建输出（已忽略）
@@ -271,6 +280,8 @@ service/                      # 可选的 Project Launch Service Go 运行时
 tests/                        # Vitest 单元测试
 scripts/                      # 校验与基准脚本
 ```
+
+图标包的项目源资源位于 `icon-packs/vscode-icons-derived/`，独立发布输出位于被忽略的 `icon-packs/vscode-icons-derived/icon-pack-release/`；它们都不会被 Vite 复制到 `dist/`。发布使用 `.github/workflows/icon-pack-release.yml`，标签格式为 `icon-pack-v<图标包版本>`，与项目插件和 Project Launch Service 的发布流程分开。
 
 ## 数据与权限说明
 

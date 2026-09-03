@@ -21,6 +21,7 @@ import {
 import { createGitRepositoryContextKey, resolveProjectGitRepositoryContext } from "../lib/gitRepositoryTarget";
 import { normalizeProjectRelations, resolveProjectRelatedProjectIds } from "../lib/projectRelations";
 import { deriveProjectStatus, mergeScriptRuntimeState } from "../lib/projectRuntimeState";
+import { BUILTIN_ICON_PACK_ID } from "../lib/fileIconTheme";
 import {
   DEFAULT_AI_PROMPT_MODES,
   PROJECT_MAX_RELATED_PROJECTS,
@@ -91,6 +92,12 @@ import type {
   ProjectIconKey,
   ProjectKind,
   ProjectDetailsTabId,
+  IconPackLoadResult,
+  IconPackColorMode,
+  IconPackManifest,
+  IconPackRemoveResult,
+  IconPackStatus,
+  IconPackUpdateResult,
   ProjectLaunchServicePreferences,
   ProjectLaunchServiceAutomationConfig,
   ProjectLaunchServiceEvent,
@@ -1604,6 +1611,7 @@ export const useStore = defineStore("app", {
     locale: "zh-CN" as Locale,
     activeTab: "projects" as "projects" | "settings" | "environment",
     theme: "auto" as "light" | "dark" | "auto",
+    iconPackColorMode: "light" as IconPackColorMode,
     terminalPreferences: bridge.loadTerminalPreferences(),
     externalApplicationPreferences: bridge.loadExternalApplicationPreferences(),
     environmentPreferences: bridge.loadEnvironmentPreferences(),
@@ -1640,6 +1648,9 @@ export const useStore = defineStore("app", {
     projectFormDraft: createBlankProjectForm() as ProjectFormValue,
     pendingDeleteProjectId: null as string | null,
     uiPreferences: bridge.loadUiPreferences(),
+    activeIconPack: null as IconPackManifest | null,
+    iconPackStatus: null as IconPackStatus | null,
+    iconPackMessage: "",
     projects: supportsRealProjectBridge() ? [] : demoProjects,
     selectedProjectId: null as string | null,
     automationActiveProjectRuns: {} as Record<string, string>,
@@ -1852,6 +1863,7 @@ export const useStore = defineStore("app", {
       this.environmentPreferences = bridge.loadEnvironmentPreferences();
       this.projectLaunchServicePreferences = bridge.loadProjectLaunchServicePreferences();
       this.aiPreferences = bridge.loadAiPreferences();
+      const iconPackLoad = this.loadIconPack();
       markStartupPhase?.("projects-load-preferences-complete");
 
       markStartupPhase?.("projects-load-storage-hydration-start");
@@ -1881,6 +1893,7 @@ export const useStore = defineStore("app", {
       markStartupPhase?.("projects-load-path-availability-start");
       await this.refreshProjectAvailability();
       markStartupPhase?.("projects-load-path-availability-complete");
+      await iconPackLoad;
 
       this.projectLaunchServiceStatus = this.projectLaunchServicePreferences.enabled
         ? await bridge.reconcileProjectLaunchService()
@@ -2172,6 +2185,79 @@ export const useStore = defineStore("app", {
     setTheme(theme: "light" | "dark" | "auto") {
       this.theme = theme;
     },
+    setIconPackColorMode(colorMode: IconPackColorMode) {
+      this.iconPackColorMode = colorMode;
+    },
+    async loadIconPack(): Promise<IconPackLoadResult> {
+      try {
+        const result = await bridge.loadInstalledIconPack();
+        const selectedPackId = this.uiPreferences.iconPackId;
+        this.activeIconPack = result.ok && result.manifest?.id === selectedPackId ? result.manifest : null;
+        const status = await bridge.getIconPackStatus();
+        this.iconPackStatus = {
+          ...status,
+          selectedPackId,
+          active: Boolean(this.activeIconPack),
+        };
+        this.iconPackMessage = result.ok ? "" : result.message || "";
+        return result;
+      } catch (error) {
+        this.activeIconPack = null;
+        this.iconPackStatus = {
+          selectedPackId: this.uiPreferences.iconPackId,
+          installedPackId: null,
+          installedVersion: null,
+          state: "unavailable",
+          active: false,
+        };
+        this.iconPackMessage = "外部图标包不可用，已使用内置图标。";
+        return {
+          ok: false,
+          manifest: null,
+          state: "unavailable",
+          message: this.iconPackMessage,
+        };
+      }
+    },
+    async setIconPack(packId: string): Promise<IconPackLoadResult> {
+      const nextPreferences = normalizeUiPreferences({ ...this.uiPreferences, iconPackId: packId });
+      if (nextPreferences.iconPackId !== this.uiPreferences.iconPackId) {
+        this.uiPreferences = nextPreferences;
+        bridge.saveUiPreferences(this.uiPreferences);
+      }
+      return this.loadIconPack();
+    },
+    async checkIconPackUpdate(): Promise<IconPackUpdateResult> {
+      const result = await bridge.checkIconPackUpdate();
+      if (this.iconPackStatus) {
+        this.iconPackStatus = {
+          ...this.iconPackStatus,
+          updateAvailable: result.ok ? result.updateAvailable : false,
+          latestVersion: result.latestVersion,
+        };
+      }
+      this.iconPackMessage = result.ok ? result.message || "" : result.message || "外部图标包更新检查失败。";
+      return result;
+    },
+    async installIconPack(): Promise<IconPackLoadResult> {
+      const result = await bridge.downloadIconPack();
+      await this.loadIconPack();
+      this.iconPackMessage = result.ok ? "" : result.message || "外部图标包安装失败。";
+      return result;
+    },
+    async verifyIconPackInstall(): Promise<IconPackLoadResult> {
+      const result = await bridge.verifyIconPackInstall();
+      await this.loadIconPack();
+      this.iconPackMessage = result.ok ? "" : result.message || "外部图标包验证失败。";
+      return result;
+    },
+    async removeIconPack(): Promise<IconPackRemoveResult> {
+      const result = await bridge.removeIconPack();
+      this.uiPreferences = normalizeUiPreferences(bridge.loadUiPreferences());
+      await this.loadIconPack();
+      this.iconPackMessage = result.ok ? "" : result.message || "外部图标包移除失败。";
+      return result;
+    },
     async refreshProjectLaunchServiceStatus(verifyManualInstall = false) {
       const serviceEnabled = this.projectLaunchServicePreferences.enabled;
       const status = serviceEnabled
@@ -2243,6 +2329,12 @@ export const useStore = defineStore("app", {
     },
     async openProjectLaunchServiceReleases() {
       await bridge.openProjectLaunchServiceReleases();
+    },
+    async openIconPackDirectory() {
+      await bridge.openIconPackDirectory();
+    },
+    async openIconPackReleases() {
+      await bridge.openIconPackReleases();
     },
     async synchronizeProjectLaunchServiceAutomation() {
       const status = await bridge.reconcileProjectLaunchService();

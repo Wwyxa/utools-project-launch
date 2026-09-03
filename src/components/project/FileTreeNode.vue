@@ -1,20 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import {
-  Binary,
-  Braces,
-  ChevronRight,
-  File,
-  FileCode,
-  FileImage,
-  FileJson,
-  FileText,
-  FileTerminal,
-  Folder,
-  Package,
-} from "lucide-vue-next";
+import { ChevronRight } from "lucide-vue-next";
 import { cn } from "../../lib/utils";
 import type { ProjectFileTreeEntry } from "../../types";
+import FileIcon from "../common/FileIcon.vue";
 
 export interface TreeNode extends ProjectFileTreeEntry {
   children?: TreeNode[];
@@ -73,25 +62,6 @@ const isCreatingInside = computed(
     props.node.kind === "directory" &&
     normalizedRelativePath(props.inlineEdit.parentRelativePath) === normalizedRelativePath(props.node.relativePath),
 );
-
-const fileIcon = computed(() => {
-  if (props.node.kind === "directory") {
-    return Folder;
-  }
-
-  const extension = props.node.extension.toLowerCase().replace(/^\./, "");
-  const name = props.node.name.toLowerCase();
-  if (["package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"].includes(name)) return Package;
-  if (["json", "jsonc"].includes(extension)) return FileJson;
-  if (["md", "markdown", "txt", "log"].includes(extension)) return FileText;
-  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"].includes(extension)) return FileImage;
-  if (["sh", "bash", "ps1", "bat", "cmd"].includes(extension)) return FileTerminal;
-  if (["lock", "bin", "exe", "dll"].includes(extension)) return Binary;
-  if (["css", "scss", "less", "html", "xml", "vue"].includes(extension)) return Braces;
-  if (["js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "go", "rs", "java", "c", "cpp", "h", "hpp"].includes(extension))
-    return FileCode;
-  return File;
-});
 
 const fileIconClass = computed(() => {
   if (props.node.kind === "directory") return "text-primary";
@@ -169,7 +139,14 @@ watch([isRenaming, isCreatingInside], ([renaming, creating]) => {
         :class="cn('shrink-0 transition-transform', node.expanded ? 'rotate-90' : '')"
       />
       <span v-else class="w-[13px] shrink-0" />
-      <component :is="fileIcon" :size="14" :class="cn('shrink-0', isSelected ? 'text-primary' : fileIconClass)" />
+      <FileIcon
+        :name="node.name"
+        :path="node.relativePath"
+        :kind="node.kind"
+        :expanded="Boolean(node.expanded)"
+        fallback-policy="lucide"
+        :class="isSelected ? 'text-primary' : fileIconClass"
+      />
       <span class="truncate font-medium">{{ node.name }}</span>
       <span v-if="node.loading" class="ml-auto shrink-0 skeleton h-2.5 w-10" />
     </button>

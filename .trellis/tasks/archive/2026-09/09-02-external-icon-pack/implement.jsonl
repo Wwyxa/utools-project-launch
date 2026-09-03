@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Shared typed contracts and validation at the ProjectBridge boundary."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend build, accessibility, fallback, and validation requirements."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Preload trust-boundary, persistence, and failure handling patterns."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer data-flow and persistence checks for the icon-pack contract."}

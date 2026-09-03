@@ -124,10 +124,14 @@ function readExternalApplicationPreferences() {
 
 const projectDetailsTabIds = ["info", "scripts", "automation", "files", "git", "memo"];
 const projectDetailsTabIdSet = new Set(projectDetailsTabIds);
+function normalizeStoredIconPackId(value) {
+  return value === "vscode-icons-derived" ? value : "builtin";
+}
 
 function getDefaultUiPreferences() {
   return {
     schemaVersion: 1,
+    iconPackId: "builtin",
     projectDetails: { tabOrder: [...projectDetailsTabIds], defaultTab: "scripts" },
     dashboard: { tinyCardActionTrigger: "hover" },
     coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
@@ -150,6 +154,7 @@ function normalizeUiPreferences(value) {
   const tinyCardActionTrigger = value.dashboard?.tinyCardActionTrigger;
   return {
     schemaVersion: 1,
+    iconPackId: normalizeStoredIconPackId(value.iconPackId),
     projectDetails: {
       tabOrder: normalizeProjectDetailsTabOrder(value.projectDetails?.tabOrder),
       defaultTab: normalizeProjectDetailsDefaultTab(value.projectDetails?.defaultTab),
