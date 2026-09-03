@@ -35,7 +35,8 @@ const iconPackIdPattern = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 const iconPackSvgPattern = /<svg(?:\s|>)/i;
 const iconPackUnsafeSvgPattern =
   /<!doctype|<!entity|<\/?(?:script|iframe|object|embed)\b|\bon[a-z][\w-]*\s*=|javascript\s*:|\b(?:href|xlink:href|src)\s*=\s*["']?(?:https?:|ftp:|file:|data:|\/\/|\\\\)|url\(\s*["']?(?:https?:|ftp:|file:|data:|\/\/|\\\\)/i;
-const iconPackSafeEmbeddedPngPattern = /((?:href|xlink:href|src)\s*=\s*["'])data:image\/png;base64,[A-Za-z0-9+/]+={0,2}(["'])/gi;
+const iconPackSafeEmbeddedPngPattern =
+  /((?:href|xlink:href|src)\s*=\s*["'])data:image\/png;base64,[A-Za-z0-9+/]+={0,2}(["'])/gi;
 let iconPackDownloadPromise = null;
 
 function iconPackError(message, code) {
@@ -239,11 +240,11 @@ function iconPackManifestIsCompatible(manifest) {
 function iconPackManifestIsOfficial(manifest, version = "") {
   return Boolean(
     manifest &&
-      manifest.id === iconPackId &&
-      manifest.source.repository === iconPackSourceRepository &&
-      manifest.source.url === iconPackSourceUrl &&
-      (!version || manifest.version === version) &&
-      iconPackManifestIsCompatible(manifest),
+    manifest.id === iconPackId &&
+    manifest.source.repository === iconPackSourceRepository &&
+    manifest.source.url === iconPackSourceUrl &&
+    (!version || manifest.version === version) &&
+    iconPackManifestIsCompatible(manifest),
   );
 }
 
@@ -508,7 +509,11 @@ function fetchIconPackBytes(url, options = {}, redirectCount = 0) {
             return;
           }
           chunks.push(buffer);
-          if (typeof options.onProgress === "function" && Number.isFinite(progressTotalBytes) && progressTotalBytes > 0) {
+          if (
+            typeof options.onProgress === "function" &&
+            Number.isFinite(progressTotalBytes) &&
+            progressTotalBytes > 0
+          ) {
             options.onProgress(totalBytes, progressTotalBytes);
           }
         });
@@ -532,7 +537,9 @@ function iconPackReleaseVersion(tagName) {
 }
 
 function iconPackReleaseAsset(release, assetName, maxBytes) {
-  const asset = Array.isArray(release?.assets) ? release.assets.find((candidate) => candidate?.name === assetName) : null;
+  const asset = Array.isArray(release?.assets)
+    ? release.assets.find((candidate) => candidate?.name === assetName)
+    : null;
   if (
     !asset ||
     typeof asset.browser_download_url !== "string" ||
@@ -654,7 +661,8 @@ function installIconPackBytes(contents, expectedHash, manifest, assetName) {
     throw iconPackError("外部图标包压缩文件超过大小限制。", "response-too-large");
   }
   const actualHash = crypto.createHash("sha256").update(contents).digest("hex");
-  if (actualHash !== expectedHash.toLowerCase()) throw iconPackError("外部图标包校验失败，文件未安装。", "checksum-mismatch");
+  if (actualHash !== expectedHash.toLowerCase())
+    throw iconPackError("外部图标包校验失败，文件未安装。", "checksum-mismatch");
   if (!manifest || manifest.id !== iconPackId || !assetName) {
     throw iconPackError("外部图标包内容无效，文件未安装。", "invalid-manifest");
   }
@@ -721,8 +729,29 @@ async function downloadIconPackInternal() {
   const current = await loadInstalledIconPack();
   try {
     const release = await fetchIconPackRelease();
+    let lastProgress = -1;
+    const reportProgress = (receivedBytes, totalBytes) => {
+      if (!Number.isFinite(totalBytes) || totalBytes <= 0) return;
+      const percent = Math.max(0, Math.min(100, Math.floor((receivedBytes / totalBytes) * 100)));
+      if (percent === lastProgress) return;
+      lastProgress = percent;
+      window.dispatchEvent(
+        new CustomEvent("project-bridge-event", {
+          detail: {
+            type: "icon-pack-download-progress",
+            receivedBytes: Math.max(0, Math.floor(receivedBytes)),
+            totalBytes: Math.floor(totalBytes),
+            percent,
+            timestamp: new Date().toISOString(),
+          },
+        }),
+      );
+    };
+    reportProgress(0, release.packageAsset.size);
     const contents = await fetchIconPackBytes(release.packageAsset.browser_download_url, {
       maxBytes: iconPackCompressedLimitBytes,
+      totalBytes: release.packageAsset.size,
+      onProgress: reportProgress,
     });
     if (crypto.createHash("sha256").update(contents).digest("hex") !== release.expectedHash) {
       throw iconPackError("外部图标包校验失败，文件未安装。", "checksum-mismatch");

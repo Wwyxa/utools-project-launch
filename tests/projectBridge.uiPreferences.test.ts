@@ -2680,6 +2680,34 @@ describe("store startup timing", () => {
     expect(activeActionStatus.value?.message).toBe("Downloading and installing (75%)");
   });
 
+  it("surfaces icon-pack download percentage progress through the global action status", async () => {
+    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
+
+    const { useStore } = await import("../src/store/useStore");
+    const { activeActionStatus } = await import("../src/components/common/actionStatus");
+    setActivePinia(createPinia());
+    const store = useStore();
+
+    store.handleBridgeEvent({
+      type: "icon-pack-download-progress",
+      receivedBytes: 42,
+      totalBytes: 100,
+      percent: 42,
+    });
+
+    expect(activeActionStatus.value).toMatchObject({ state: "loading", message: "正在下载图标包（42%）" });
+
+    store.setLocale("en-US");
+    store.handleBridgeEvent({
+      type: "icon-pack-download-progress",
+      receivedBytes: 75,
+      totalBytes: 100,
+      percent: 75,
+    });
+
+    expect(activeActionStatus.value?.message).toBe("Downloading icon pack (75%)");
+  });
+
   it("ignores terminal events from an older script run", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 

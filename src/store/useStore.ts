@@ -270,6 +270,8 @@ const launchMessage = (locale: Locale, code: string, target: string) => {
 };
 const projectLaunchServiceDownloadProgressMessage = (locale: Locale, percent: number) =>
   locale === "zh-CN" ? `正在下载并安装（${percent}%）` : `Downloading and installing (${percent}%)`;
+const iconPackDownloadProgressMessage = (locale: Locale, percent: number) =>
+  locale === "zh-CN" ? `正在下载图标包（${percent}%）` : `Downloading icon pack (${percent}%)`;
 const resolvedExternalApplicationName = (
   applications: readonly ExternalApplication[],
   applicationId: string | undefined,
@@ -5931,6 +5933,7 @@ export const useStore = defineStore("app", {
       if (
         event.type === "service-state" ||
         event.type === "service-download-progress" ||
+        event.type === "icon-pack-download-progress" ||
         event.type === "projects-changed"
       ) {
         return;
@@ -6633,6 +6636,16 @@ export const useStore = defineStore("app", {
           showActionStatus({
             state: "loading",
             message: projectLaunchServiceDownloadProgressMessage(this.locale, percent),
+          });
+        }
+        return;
+      }
+      if (event.type === "icon-pack-download-progress") {
+        if (Number.isFinite(event.percent)) {
+          const percent = Math.max(0, Math.min(100, Math.floor(event.percent)));
+          showActionStatus({
+            state: "loading",
+            message: iconPackDownloadProgressMessage(this.locale, percent),
           });
         }
         return;

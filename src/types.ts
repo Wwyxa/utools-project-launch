@@ -1325,6 +1325,14 @@ export interface ProjectBridgeServiceDownloadProgressEvent {
   timestamp?: string;
 }
 
+export interface ProjectBridgeIconPackDownloadProgressEvent {
+  type: "icon-pack-download-progress";
+  receivedBytes: number;
+  totalBytes: number;
+  percent: number;
+  timestamp?: string;
+}
+
 export interface ProjectBridgeProjectsChangedEvent {
   type: "projects-changed";
   projectId: string;
@@ -1336,6 +1344,7 @@ export type ProjectBridgeEvent =
   | ProjectBridgeProcessEvent
   | ProjectBridgeServiceStateEvent
   | ProjectBridgeServiceDownloadProgressEvent
+  | ProjectBridgeIconPackDownloadProgressEvent
   | ProjectBridgeProjectsChangedEvent;
 
 export interface ProjectSaveProjectsOptions {

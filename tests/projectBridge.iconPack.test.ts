@@ -21,7 +21,8 @@ const defaultUiPreferences: UiPreferences = {
 };
 
 const createManifest = (version: string): IconPackManifest => {
-  const svg = (label: string) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><title>${label}</title></svg>`).toString("base64");
+  const svg = (label: string) =>
+    Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><title>${label}</title></svg>`).toString("base64");
   return {
     schemaVersion: 1,
     id: "vscode-icons-derived",
@@ -86,7 +87,7 @@ const createReleaseResponses = (
   ];
 };
 
-const createHttpsMock = (responses: Array<{ contents?: Buffer; location?: string }>) => ({
+const createHttpsMock = (responses: Array<{ contents?: Buffer; location?: string; chunkSize?: number }>) => ({
   get: vi.fn((_options: unknown, callback: (response: EventEmitter) => void) => {
     const next = responses.shift();
     if (!next) throw new Error("unexpected icon-pack request");
@@ -109,7 +110,11 @@ const createHttpsMock = (responses: Array<{ contents?: Buffer; location?: string
       response.destroy = () => undefined;
       callback(response);
       if (next.contents) {
-        response.emit("data", next.contents);
+        const chunkSize =
+          Number.isInteger(next.chunkSize) && next.chunkSize > 0 ? next.chunkSize : next.contents.length;
+        for (let offset = 0; offset < next.contents.length; offset += chunkSize) {
+          response.emit("data", next.contents.subarray(offset, offset + chunkSize));
+        }
         response.emit("end");
       }
     });
@@ -121,6 +126,7 @@ const loadPreloadBridge = (
   storage: Map<string, unknown>,
   httpsMock: unknown,
   environment: NodeJS.ProcessEnv = {},
+  onEvent?: (detail: unknown) => void,
 ): ProjectBridge => {
   const nodeRequire = createRequire(import.meta.url);
   class SandboxCustomEvent {
@@ -134,8 +140,14 @@ const loadPreloadBridge = (
   }
   const sandboxWindow: {
     projectBridge?: ProjectBridge;
-    utools: { dbStorage: { getItem: (key: string) => unknown; setItem: (key: string, value: unknown) => void; removeItem: (key: string) => void } };
-    dispatchEvent: () => boolean;
+    utools: {
+      dbStorage: {
+        getItem: (key: string) => unknown;
+        setItem: (key: string, value: unknown) => void;
+        removeItem: (key: string) => void;
+      };
+    };
+    dispatchEvent: (event: SandboxCustomEvent) => boolean;
   } = {
     utools: {
       dbStorage: {
@@ -144,11 +156,13 @@ const loadPreloadBridge = (
         removeItem: (key: string) => storage.delete(key),
       },
     },
-    dispatchEvent: () => true,
+    dispatchEvent: (event: SandboxCustomEvent) => {
+      onEvent?.(event.detail);
+      return true;
+    },
   };
   const sandbox = {
-    require: (id: string) =>
-      id === "https" ? httpsMock : id === "electron" ? { shell: {} } : nodeRequire(id),
+    require: (id: string) => (id === "https" ? httpsMock : id === "electron" ? { shell: {} } : nodeRequire(id)),
     process: {
       platform: process.platform,
       arch: process.arch,
@@ -225,22 +239,18 @@ describe("uTools icon-pack preload", () => {
     const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-icon-pack-"));
     try {
       const manifest = createManifest("1.0.0");
-      const bridge = loadPreloadBridge(
-        new Map(),
-        createHttpsMock(createReleaseResponses(manifest)),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
-      );
+      const bridge = loadPreloadBridge(new Map(), createHttpsMock(createReleaseResponses(manifest)), {
+        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+      });
 
       expect(await bridge.getIconPackStatus()).toMatchObject({ state: "unavailable", active: false });
       expect(await bridge.downloadIconPack()).toMatchObject({ ok: true, state: "loaded", manifest });
       expect(await bridge.loadInstalledIconPack()).toMatchObject({ ok: true, manifest });
 
       const storage = new Map<string, unknown>([[uiPreferencesKey, defaultUiPreferences]]);
-      const activeBridge = loadPreloadBridge(
-        storage,
-        createHttpsMock([]),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
-      );
+      const activeBridge = loadPreloadBridge(storage, createHttpsMock([]), {
+        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+      });
       activeBridge.saveUiPreferences({ ...defaultUiPreferences, iconPackId: "vscode-icons-derived" });
       expect(await activeBridge.getIconPackStatus()).toMatchObject({
         state: "installed",
@@ -251,6 +261,65 @@ describe("uTools icon-pack preload", () => {
       expect(removeResult).toMatchObject({ ok: true, status: { state: "unavailable", active: false } });
       expect(activeBridge.loadUiPreferences().iconPackId).toBe("builtin");
       expect(existsSync(join(applicationDirectory, "icon-packs", "vscode-icons-derived"))).toBe(false);
+    } finally {
+      rmSync(applicationDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("emits percentage progress while downloading the icon pack", async () => {
+    const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-icon-pack-"));
+    try {
+      const manifest = createManifest("1.0.0");
+      const responses = createReleaseResponses(manifest);
+      const packageBytes = responses[2]?.contents;
+      if (!packageBytes) throw new Error("missing test package bytes");
+      const downloadResponses = responses.map((response, index) =>
+        index === 2 ? { ...response, chunkSize: Math.ceil(packageBytes.length / 2) } : response,
+      );
+      const progressEvents: Array<{
+        type?: string;
+        percent?: number;
+        receivedBytes?: number;
+        totalBytes?: number;
+      }> = [];
+      const bridge = loadPreloadBridge(
+        new Map(),
+        createHttpsMock(downloadResponses),
+        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
+        (detail) => {
+          if (detail && typeof detail === "object") {
+            progressEvents.push(
+              detail as { type?: string; percent?: number; receivedBytes?: number; totalBytes?: number },
+            );
+          }
+        },
+      );
+
+      await bridge.downloadIconPack();
+
+      expect(progressEvents.filter((event) => event.type === "icon-pack-download-progress")).toEqual([
+        {
+          type: "icon-pack-download-progress",
+          receivedBytes: 0,
+          totalBytes: packageBytes.length,
+          percent: 0,
+          timestamp: expect.any(String),
+        },
+        {
+          type: "icon-pack-download-progress",
+          receivedBytes: Math.ceil(packageBytes.length / 2),
+          totalBytes: packageBytes.length,
+          percent: Math.floor((Math.ceil(packageBytes.length / 2) / packageBytes.length) * 100),
+          timestamp: expect.any(String),
+        },
+        {
+          type: "icon-pack-download-progress",
+          receivedBytes: packageBytes.length,
+          totalBytes: packageBytes.length,
+          percent: 100,
+          timestamp: expect.any(String),
+        },
+      ]);
     } finally {
       rmSync(applicationDirectory, { recursive: true, force: true });
     }
@@ -295,11 +364,9 @@ describe("uTools icon-pack preload", () => {
       const firstManifest = createManifest("1.0.0");
       const secondManifest = createManifest("2.0.0");
       const storage = new Map<string, unknown>();
-      const bridge = loadPreloadBridge(
-        storage,
-        createHttpsMock(createReleaseResponses(firstManifest)),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
-      );
+      const bridge = loadPreloadBridge(storage, createHttpsMock(createReleaseResponses(firstManifest)), {
+        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+      });
       expect((await bridge.downloadIconPack()).ok).toBe(true);
 
       const secondPackage = gzipSync(Buffer.from(JSON.stringify(secondManifest)));
@@ -322,11 +389,9 @@ describe("uTools icon-pack preload", () => {
       const firstManifest = createManifest("1.0.0");
       const secondManifest = createManifest("2.0.0");
       const storage = new Map<string, unknown>();
-      const bridge = loadPreloadBridge(
-        storage,
-        createHttpsMock(createReleaseResponses(firstManifest)),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
-      );
+      const bridge = loadPreloadBridge(storage, createHttpsMock(createReleaseResponses(firstManifest)), {
+        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+      });
       expect((await bridge.downloadIconPack()).ok).toBe(true);
 
       const invalidPackage = gzipSync(Buffer.from("not-json"));
@@ -350,11 +415,9 @@ describe("uTools icon-pack preload", () => {
     const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-icon-pack-"));
     try {
       const manifest = createManifest("1.0.0");
-      const bridge = loadPreloadBridge(
-        new Map(),
-        createHttpsMock(createReleaseResponses(manifest)),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
-      );
+      const bridge = loadPreloadBridge(new Map(), createHttpsMock(createReleaseResponses(manifest)), {
+        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+      });
       expect((await bridge.downloadIconPack()).ok).toBe(true);
 
       const metadataPath = join(applicationDirectory, "icon-packs", "vscode-icons-derived", "install.json");
@@ -377,11 +440,9 @@ describe("uTools icon-pack preload", () => {
     try {
       const manifest = createManifest("1.0.0");
       manifest.mappings.fileNames = { "nested/readme.md": { dark: "file" } };
-      const bridge = loadPreloadBridge(
-        new Map(),
-        createHttpsMock(createReleaseResponses(manifest)),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
-      );
+      const bridge = loadPreloadBridge(new Map(), createHttpsMock(createReleaseResponses(manifest)), {
+        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+      });
 
       await expect(bridge.downloadIconPack()).resolves.toMatchObject({
         ok: false,
@@ -398,11 +459,9 @@ describe("uTools icon-pack preload", () => {
     const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-icon-pack-"));
     try {
       writeFileSync(join(applicationDirectory, "icon-packs"), "not a directory");
-      const bridge = loadPreloadBridge(
-        new Map(),
-        createHttpsMock([]),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
-      );
+      const bridge = loadPreloadBridge(new Map(), createHttpsMock([]), {
+        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+      });
 
       await expect(bridge.getIconPackStatus()).resolves.toMatchObject({
         state: "invalid",
