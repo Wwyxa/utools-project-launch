@@ -91,6 +91,11 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   );
   const fs = {
     ...nodeRequire("fs"),
+    readFileSync: (target: string, ...args: unknown[]) =>
+      nodeRequire("fs").readFileSync(
+        platform === "win32" && target.startsWith("public\\preload\\") ? target.replaceAll("\\", "/") : target,
+        ...args,
+      ),
     statSync: (target: string) => {
       if (fixture.directories?.includes(target)) return { isDirectory: () => true, isFile: () => false };
       if (fixture.files?.includes(target)) return { isDirectory: () => false, isFile: () => true };
