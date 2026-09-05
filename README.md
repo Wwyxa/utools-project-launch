@@ -133,3 +133,6 @@ npm run build
 ```
 
 涉及项目启动服务时，请同时运行 `npm run go:fmt`、`npm run go:vet` 和 `npm run go:test`。
+
+## 社区
+- 感谢 [LinuxDo](https://linux.do) 社区的支持
