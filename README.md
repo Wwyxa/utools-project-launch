@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" alt="开发工作台 Logo" width="180" />
+  <img src="docs/logo.svg" alt="开发工作台 Logo" width="180" />
 </p>
 
 <h1 align="center">开发工作台</h1>

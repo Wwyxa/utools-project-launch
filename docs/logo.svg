@@ -1,0 +1,377 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1160" height="1160" viewBox="0 0 1160 1160"
+     fill="none">
+  <title>代码文件夹与播放按钮</title>
+  <desc>立体蓝色文件夹，内含代码面板、任务文档和分支卡片，右下角为绿色播放按钮。</desc>
+
+  <defs>
+    <!-- 文件夹背板 -->
+    <linearGradient id="backEdge" x1="55" y1="300" x2="395" y2="910"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#719FFF"/>
+      <stop offset=".36" stop-color="#13BFFF"/>
+      <stop offset="1" stop-color="#083ACD"/>
+    </linearGradient>
+    <linearGradient id="backFill" x1="103" y1="341" x2="505" y2="855"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#214FF5"/>
+      <stop offset=".55" stop-color="#0731CD"/>
+      <stop offset="1" stop-color="#061A84"/>
+    </linearGradient>
+
+    <!-- 文档 -->
+    <linearGradient id="paper" x1="479" y1="20" x2="675" y2="527"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset=".36" stop-color="#F3F3F9"/>
+      <stop offset=".75" stop-color="#DCDDED"/>
+      <stop offset="1" stop-color="#BBC2DC"/>
+    </linearGradient>
+    <linearGradient id="paperLine" x1="0" y1="0" x2="200" y2="230"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CDD0E2"/>
+      <stop offset="1" stop-color="#A9B1CE"/>
+    </linearGradient>
+    <linearGradient id="checkGreen" x1="437" y1="73" x2="490" y2="145"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#46DF91"/>
+      <stop offset="1" stop-color="#00B780"/>
+    </linearGradient>
+
+    <!-- 分支卡片 -->
+    <linearGradient id="branchCard" x1="934" y1="139" x2="781" y2="511"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2D70D5"/>
+      <stop offset=".5" stop-color="#164EB8"/>
+      <stop offset="1" stop-color="#052B89"/>
+    </linearGradient>
+
+    <!-- 代码窗口 -->
+    <linearGradient id="windowEdge" x1="244" y1="170" x2="530" y2="630"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#65739F"/>
+      <stop offset=".44" stop-color="#46537E"/>
+      <stop offset="1" stop-color="#202D54"/>
+    </linearGradient>
+    <linearGradient id="windowFill" x1="446" y1="208" x2="281" y2="655"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2B344E"/>
+      <stop offset=".5" stop-color="#1A233B"/>
+      <stop offset="1" stop-color="#090F22"/>
+    </linearGradient>
+    <linearGradient id="red" x1="240" y1="224" x2="274" y2="266"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF727E"/>
+      <stop offset="1" stop-color="#FF475C"/>
+    </linearGradient>
+    <linearGradient id="yellow" x1="0" y1="0" x2="0" y2="45"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFDE59"/>
+      <stop offset="1" stop-color="#FFC532"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="0" y2="50"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#65E58E"/>
+      <stop offset="1" stop-color="#23CC82"/>
+    </linearGradient>
+
+    <!-- 文件夹正面 -->
+    <linearGradient id="folderRim" x1="320" y1="462" x2="624" y2="1119"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B6F4F8"/>
+      <stop offset=".24" stop-color="#69DFFF"/>
+      <stop offset=".58" stop-color="#159AFF"/>
+      <stop offset="1" stop-color="#0645E2"/>
+    </linearGradient>
+    <linearGradient id="folderFace" x1="245" y1="540" x2="821" y2="1150"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10C4F1"/>
+      <stop offset=".3" stop-color="#128FFF"/>
+      <stop offset=".67" stop-color="#0B4AF5"/>
+      <stop offset="1" stop-color="#082DB7"/>
+    </linearGradient>
+    <linearGradient id="folderLight" x1="645" y1="466" x2="628" y2="940"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6AE0FB" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#34A7FF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="folderBottom" x1="217" y1="1025" x2="789" y2="1157"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0045F7"/>
+      <stop offset="1" stop-color="#0927AC"/>
+    </linearGradient>
+
+    <!-- 白色图标 -->
+    <linearGradient id="whiteIcon" x1="433" y1="720" x2="582" y2="1003"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCE3FA"/>
+    </linearGradient>
+
+    <!-- 播放按钮 -->
+    <linearGradient id="playRim" x1="805" y1="775" x2="1073" y2="1105"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B0F275"/>
+      <stop offset=".33" stop-color="#47CE82"/>
+      <stop offset=".65" stop-color="#00AB91"/>
+      <stop offset="1" stop-color="#008D91"/>
+    </linearGradient>
+    <linearGradient id="playFace" x1="832" y1="782" x2="1064" y2="1100"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#79DC6A"/>
+      <stop offset=".3" stop-color="#2BC184"/>
+      <stop offset=".65" stop-color="#00A485"/>
+      <stop offset="1" stop-color="#008D92"/>
+    </linearGradient>
+    <linearGradient id="playWhite" x1="872" y1="851" x2="984" y2="1004"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F3F5F7"/>
+    </linearGradient>
+
+    <filter id="cardShadow" x="-25%" y="-25%" width="160%" height="165%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12"
+                    flood-color="#001653" flood-opacity=".24"/>
+    </filter>
+    <filter id="iconShadow" x="-30%" y="-25%" width="170%" height="170%">
+      <feDropShadow dx="5" dy="10" stdDeviation="7"
+                    flood-color="#003AB7" flood-opacity=".32"/>
+    </filter>
+    <filter id="branchShadow" x="-30%" y="-30%" width="170%" height="175%">
+      <feDropShadow dx="3" dy="6" stdDeviation="4"
+                    flood-color="#002166" flood-opacity=".3"/>
+    </filter>
+    <filter id="triangleShadow" x="-40%" y="-30%" width="190%" height="185%">
+      <feDropShadow dx="9" dy="13" stdDeviation="10"
+                    flood-color="#00584D" flood-opacity=".32"/>
+    </filter>
+
+    <clipPath id="folderClip">
+      <path d="M129 609
+               L574 579
+               Q613 577 641 558
+               L746 485
+               Q775 464 813 461
+               L1034 440
+               Q1071 436 1091 458
+               Q1107 475 1100 509
+               L1026 1044
+               Q1015 1133 923 1134
+               L220 1134
+               Q121 1137 100 1042
+               L38 718
+               Q26 666 58 636
+               Q83 612 129 609Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- 后方文件夹 -->
+  <path d="M70 595L43 423
+           Q34 371 67 333
+           Q102 291 153 291
+           L508 288
+           Q572 288 590 355
+           L665 815L114 860Z"
+        fill="url(#backEdge)" stroke="#A4C9FF" stroke-width="1.5"/>
+  <path d="M99 590L73 418
+           Q64 373 95 338
+           Q121 306 165 303
+           L504 304
+           Q555 306 571 365
+           L640 811L130 839Z"
+        fill="url(#backFill)"/>
+
+  <!-- 右后方分支卡片 -->
+  <path d="M724 271L844 141
+           Q875 101 915 125
+           L1096 244
+           Q1140 272 1122 319
+           L966 557
+           Q944 591 904 578
+           L725 482
+           Q689 459 700 416Z"
+        fill="url(#branchCard)"
+        stroke="#8BAEDC" stroke-width="2"/>
+
+  <g filter="url(#branchShadow)"
+     stroke="#F3FCFF" stroke-width="19"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M874 376L907 265M886 379L952 335"/>
+    <circle cx="914" cy="243" r="21" fill="#1750B8"/>
+    <circle cx="971" cy="320" r="21" fill="#164BB0"/>
+    <circle cx="870" cy="390" r="21" fill="#103F9E"/>
+  </g>
+
+  <!-- 白色任务文档 -->
+  <path d="M350 186L379 49
+           Q387 14 419 6
+           Q433 2 452 8
+           L768 83
+           Q822 96 818 150
+           L743 486
+           Q734 527 691 524
+           L370 456
+           Q319 445 328 399Z"
+        fill="url(#paper)" stroke="#FFFFFF" stroke-width="2"
+        filter="url(#cardShadow)"/>
+  <path d="M359 182L386 51
+           Q395 13 431 12
+           Q443 12 457 16
+           L768 90
+           Q808 100 811 138"
+        stroke="#FFFFFF" stroke-opacity=".8" stroke-width="3"/>
+
+  <circle cx="465" cy="108" r="40" fill="url(#checkGreen)"/>
+  <path d="M449 105L459 118L483 100"
+        stroke="#FFFFFF" stroke-width="11"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g transform="translate(535 104) rotate(14)">
+    <rect width="225" height="29" rx="14.5" fill="#C4C8DE"/>
+    <rect x="3" y="73" width="174" height="29" rx="14.5"
+          fill="url(#paperLine)"/>
+    <rect x="2" y="146" width="192" height="27" rx="13.5"
+          fill="#B7BED5"/>
+  </g>
+  <circle cx="444" cy="193" r="29" fill="#C5CAE0"/>
+  <circle cx="425" cy="270" r="28" fill="#BCC3DA"/>
+
+  <!-- 深色代码面板外框 -->
+  <path d="M138 585L174 242
+           Q178 198 211 176
+           Q235 159 266 167
+           L672 261
+           Q747 279 743 347
+           L714 602L138 633Z"
+        fill="url(#windowEdge)" stroke="#8B97B9"
+        stroke-opacity=".7" stroke-width="1.5"/>
+
+  <path d="M153 591L189 250
+           Q192 211 220 191
+           Q240 177 267 185
+           L665 277
+           Q729 292 725 351
+           L697 592L153 619Z"
+        fill="url(#windowFill)"/>
+
+  <!-- 窗口控制点 -->
+  <circle cx="257.5" cy="244.5" r="22" fill="url(#red)"/>
+  <g transform="translate(299 235)">
+    <circle cx="22" cy="22" r="22" fill="url(#yellow)"/>
+  </g>
+  <g transform="translate(362 247)">
+    <circle cx="22" cy="22" r="22" fill="url(#green)"/>
+  </g>
+
+  <!-- 代码行 -->
+  <g transform="translate(264 318) rotate(13)">
+    <rect width="212" height="29" rx="14.5" fill="#25CC80"/>
+    <rect x="5" y="61" width="283" height="29" rx="14.5"
+          fill="#259FFF"/>
+    <rect x="10" y="122" width="138" height="29" rx="14.5"
+          fill="#FFCE36"/>
+    <rect x="16" y="184" width="256" height="29" rx="14.5"
+          fill="#505F90"/>
+    <rect x="20" y="243" width="177" height="27" rx="13.5"
+          fill="#37466E"/>
+  </g>
+
+  <!-- 文件夹正面浅色厚边 -->
+  <path d="M118 586L573 557
+           Q609 556 636 538
+           L741 465
+           Q773 442 812 438
+           L1034 417
+           Q1070 413 1091 440
+           Q1108 458 1103 490
+           L1030 1047
+           Q1019 1136 927 1136
+           L219 1136
+           Q119 1138 98 1046
+           L18 716
+           Q4 662 34 626
+           Q61 591 118 586Z"
+        fill="url(#folderRim)" stroke="#C1F6FF"
+        stroke-opacity=".8" stroke-width="1.4"/>
+
+  <!-- 文件夹主体 -->
+  <path d="M129 609L574 579
+           Q613 577 641 558
+           L746 485
+           Q775 464 813 461
+           L1034 440
+           Q1071 436 1091 458
+           Q1107 475 1100 509
+           L1026 1044
+           Q1015 1133 923 1134
+           L220 1134
+           Q121 1137 100 1042
+           L38 718
+           Q26 666 58 636
+           Q83 612 129 609Z"
+        fill="url(#folderFace)"/>
+
+  <g clip-path="url(#folderClip)">
+    <!-- 上半部柔和反光 -->
+    <path d="M22 607L1130 412L1092 597
+             L118 1029L20 751Z"
+          fill="url(#folderLight)"/>
+    <!-- 底部厚度 -->
+    <path d="M78 997
+             Q117 1056 187 1053
+             L583 1049
+             Q665 1051 733 998
+             L1050 792
+             L1030 1158H102Z"
+          fill="url(#folderBottom)" opacity=".48"/>
+  </g>
+
+  <!-- 代码符号的柔和投影及白色立体表面 -->
+  <g filter="url(#iconShadow)"
+     stroke="url(#whiteIcon)" stroke-width="49"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M371 760L286 839
+             Q277 847 287 855L369 919"/>
+    <path d="M532 701L454 975"/>
+    <path d="M611 764L692 832
+             Q705 842 691 854L614 919"/>
+  </g>
+
+  <!-- 图标下沿高光 -->
+  <g stroke="#FFFFFF" stroke-opacity=".5" stroke-width="3"
+     stroke-linecap="round">
+    <path d="M263 833Q251 855 272 874L352 936
+             Q371 950 386 932"/>
+    <path d="M432 970Q426 990 447 997
+             Q466 1004 476 983"/>
+    <path d="M594 918Q595 937 612 940
+             Q624 942 635 932L706 868
+             Q728 848 716 828"/>
+  </g>
+
+  <!-- 绿色播放按钮外圈 -->
+  <path d="M1135 917
+           C1126 814 1047 737 946 737
+           C834 735 741 822 734 934
+           C726 1054 808 1147 919 1151
+           C1036 1157 1147 1057 1135 917Z"
+        fill="url(#playRim)" stroke="#95DFC1"
+        stroke-opacity=".65" stroke-width="1.5"/>
+
+  <!-- 播放按钮主体 -->
+  <path d="M1133 928
+           C1129 829 1053 754 952 752
+           C845 749 754 835 748 942
+           C742 1053 820 1147 927 1148
+           C1040 1150 1139 1057 1133 928Z"
+        fill="url(#playFace)"/>
+
+  <!-- 播放三角 -->
+  <path d="M865 866
+           C865 844 883 833 902 846
+           L1007 915
+           C1026 928 1026 948 1007 961
+           L904 1033
+           C885 1047 866 1036 866 1015Z"
+        fill="url(#playWhite)" filter="url(#triangleShadow)"/>
+</svg>
