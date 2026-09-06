@@ -333,18 +333,6 @@
   background: color-mix(in srgb, var(--scrollbar-thumb) 68%, transparent);
 }
 
-.toolbar-search {
-  background: var(--toolbar-control-bg);
-  border: 1px solid var(--color-border-subtle);
-  color: var(--color-on-surface);
-  outline: none;
-}
-
-.toolbar-search:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
-}
-
 .toolbar-icon-button {
   background: var(--toolbar-control-bg);
   border: 1px solid var(--color-border-subtle);

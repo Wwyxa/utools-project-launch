@@ -11,6 +11,9 @@ declare global {
       isDarkColors(): boolean;
       onPluginEnter(callback: (action?: unknown) => void): void;
       onPluginOut?(callback: (isKill?: boolean) => void): void;
+      setSubInput?(onChange: (details: { text: string }) => void, placeholder?: string, isFocus?: boolean): boolean;
+      removeSubInput?(): boolean;
+      subInputFocus?(): boolean;
       outPlugin(isKill?: boolean): boolean;
       showNotification?(message: string): void;
       showOpenDialog?(options: unknown): Promise<string[] | { filePaths?: string[] } | null>;

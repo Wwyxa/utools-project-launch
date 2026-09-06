@@ -26,6 +26,7 @@
 1. 打开“开发工作台”，添加项目目录并选择项目类型。
 2. 手动添加启动脚本，或从 `package.json`、`Makefile` 自动发现可用命令。
 3. 从首页运行脚本、打开项目，或进入项目详情使用 Git、文件、备忘和自动任务等工具。
+4. 在 uTools 顶部搜索框中按项目名称、路径或类型筛选首页项目；首页不再显示单独的搜索按钮。
 
 在 uTools 中可通过 `开发工作台`、`工作台`、`Dev Workbench` 或 `PM` 唤起插件。
 
@@ -135,4 +136,5 @@ npm run build
 涉及项目启动服务时，请同时运行 `npm run go:fmt`、`npm run go:vet` 和 `npm run go:test`。
 
 ## 社区
+
 - 感谢 [LinuxDo](https://linux.do) 社区的支持

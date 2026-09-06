@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useStore } from "./store/useStore";
 import { useGlobalActionStatus } from "./composables/useGlobalActionStatus";
 import Dashboard from "./components/dashboard/Dashboard.vue";
@@ -19,6 +19,7 @@ const selectedProject = computed(() => store.selectedProject);
 const activeTab = computed(() => store.activeTab);
 const theme = computed(() => store.theme);
 const { globalActionStatus, isGlobalActionStatusExpanded } = useGlobalActionStatus(store);
+const pluginSearchQuery = ref("");
 let pluginOutHookRegistered = false;
 let startupProjectLoadId = 0;
 let runtimeResumePromise: Promise<void> | null = null;
@@ -50,8 +51,25 @@ const extractPluginSearchText = (action: unknown): string => {
   return values.find((value): value is string => typeof value === "string")?.trim() || "";
 };
 
+const configurePluginSearchInput = () => {
+  window.utools?.setSubInput?.(
+    ({ text }) => {
+      pluginSearchQuery.value = text;
+    },
+    storeMessages.value.common.search,
+    true,
+  );
+};
+
+const clearPluginSearchInput = () => {
+  pluginSearchQuery.value = "";
+  window.utools?.removeSubInput?.();
+};
+
 const handlePluginEnter = async (action?: unknown) => {
   const searchText = extractPluginSearchText(action);
+  pluginSearchQuery.value = "";
+  configurePluginSearchInput();
   if (!store.projectsLoaded) {
     await loadProjectsWithStartupTiming();
   } else {
@@ -88,6 +106,25 @@ const handleBridgeEvent = (event: Event) => {
 
 const isTextEntryTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+
+const handleSearchShortcut = (event: KeyboardEvent) => {
+  if (
+    event.defaultPrevented ||
+    event.key.toLowerCase() !== "f" ||
+    (!event.ctrlKey && !event.metaKey) ||
+    event.altKey ||
+    event.shiftKey ||
+    store.projectFormOpen ||
+    store.pendingDeleteProject ||
+    isTextEntryTarget(event.target) ||
+    typeof window.utools?.subInputFocus !== "function"
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  window.utools.subInputFocus();
+};
 
 const consumeEscape = (event: KeyboardEvent) => {
   event.preventDefault();
@@ -159,6 +196,7 @@ watch(theme, updateTheme);
 
 onMounted(() => {
   updateTheme();
+  configurePluginSearchInput();
   void loadProjectsWithStartupTiming();
   window.utools?.onPluginEnter?.((action) => {
     updateTheme();
@@ -166,6 +204,7 @@ onMounted(() => {
   });
   if (!pluginOutHookRegistered) {
     window.utools?.onPluginOut?.((isKill) => {
+      clearPluginSearchInput();
       if (isKill === true) {
         window.projectBridge?.stopAllProcesses?.();
       }
@@ -175,6 +214,7 @@ onMounted(() => {
   window.addEventListener("project-bridge-event", handleBridgeEvent);
   window.addEventListener("focus", handleRuntimeResume);
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  window.addEventListener("keydown", handleSearchShortcut);
   window.addEventListener("keydown", handleGlobalEscape, true);
   window.addEventListener("keyup", handleGlobalEscape, true);
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", updateTheme);
@@ -184,6 +224,7 @@ onUnmounted(() => {
   window.removeEventListener("project-bridge-event", handleBridgeEvent);
   window.removeEventListener("focus", handleRuntimeResume);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
+  window.removeEventListener("keydown", handleSearchShortcut);
   window.removeEventListener("keydown", handleGlobalEscape, true);
   window.removeEventListener("keyup", handleGlobalEscape, true);
   window.matchMedia("(prefers-color-scheme: dark)").removeEventListener("change", updateTheme);
@@ -203,7 +244,7 @@ onUnmounted(() => {
                 key="dashboard"
                 class="themed-scrollbar h-full overflow-y-auto"
               >
-                <Dashboard />
+                <Dashboard :search-query="pluginSearchQuery" />
               </div>
               <div v-else key="details" class="h-full overflow-hidden">
                 <ProjectDetails v-if="selectedProject" :project="selectedProject" />

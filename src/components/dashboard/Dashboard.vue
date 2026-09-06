@@ -28,15 +28,13 @@ import type { TodoItem } from "../../types";
 
 const store = useStore();
 const t = useI18n();
+const props = defineProps<{
+  searchQuery: string;
+}>();
 const PROJECT_STATUS_FEEDBACK_MIN_DURATION_MS = 200;
 const AUTOMATION_RUN_FEEDBACK_MIN_DURATION_MS = 400;
 let initialDashboardProjectCardsMounted = false;
 
-const searchQuery = ref("");
-const isSearchExpanded = ref(false);
-const searchInput = ref<HTMLInputElement | null>(null);
-const searchButton = ref<HTMLButtonElement | null>(null);
-const searchRegion = ref<HTMLElement | null>(null);
 const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
 const automationOverviewOpen = ref(false);
@@ -58,7 +56,7 @@ type ProjectDropPosition = "before" | "after";
 const dragOverProjectId = ref<string | null>(null);
 const dragOverProjectPosition = ref<ProjectDropPosition | null>(null);
 const selectedProjectGroupKey = ref("all");
-const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
+const normalizedSearchQuery = computed(() => props.searchQuery.trim().toLowerCase());
 let stopAppEscapeListener = () => {};
 const projectCardsMounted = ref(false);
 const isReturningToMountedDashboard = initialDashboardProjectCardsMounted;
@@ -103,49 +101,6 @@ const projectMatchesSearch = (project: Project, query: string) =>
   project.name.toLowerCase().includes(query) ||
   project.path.toLowerCase().includes(query) ||
   project.type.toLowerCase().includes(query);
-
-const expandSearch = async () => {
-  isSearchExpanded.value = true;
-  document.addEventListener("pointerdown", handleDocumentPointerDown);
-  await nextTick();
-  searchInput.value?.focus();
-};
-
-const collapseSearch = async (restoreFocus = true) => {
-  isSearchExpanded.value = false;
-  document.removeEventListener("pointerdown", handleDocumentPointerDown);
-  await nextTick();
-  if (restoreFocus) {
-    searchButton.value?.focus();
-  }
-};
-
-const handleDocumentPointerDown = (event: PointerEvent) => {
-  if (!searchRegion.value?.contains(event.target as Node)) {
-    void collapseSearch(false);
-  }
-};
-
-const isTextEntryTarget = (target: EventTarget | null) =>
-  target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
-
-const handleSearchShortcut = (event: KeyboardEvent) => {
-  if (
-    event.defaultPrevented ||
-    event.key.toLowerCase() !== "f" ||
-    (!event.ctrlKey && !event.metaKey) ||
-    event.altKey ||
-    event.shiftKey ||
-    store.projectFormOpen ||
-    store.pendingDeleteProject ||
-    isTextEntryTarget(event.target)
-  ) {
-    return;
-  }
-
-  event.preventDefault();
-  void expandSearch();
-};
 
 const closeTodoProjectPicker = () => {
   todoProjectPickerOpen.value = false;
@@ -198,24 +153,16 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
     event.detail.handle();
     return;
   }
-
-  if (isSearchExpanded.value) {
-    void collapseSearch();
-    event.detail.handle();
-  }
 };
 
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
-  window.addEventListener("keydown", handleSearchShortcut);
 });
 
 onUnmounted(() => {
   cancelProjectCardMount();
-  document.removeEventListener("pointerdown", handleDocumentPointerDown);
   document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
   window.removeEventListener("resize", positionTodoProjectMenu);
-  window.removeEventListener("keydown", handleSearchShortcut);
   stopAppEscapeListener();
 });
 
@@ -769,136 +716,86 @@ const handleProjectDragEnd = () => {
             </button>
           </div>
         </div>
-        <div class="dashboard-action-region relative h-8 w-max shrink-0">
-          <div
-            ref="searchRegion"
-            :class="
-              cn(
-                'dashboard-search-layer absolute inset-0 transition-[opacity,translate] duration-150 ease-out',
-                isSearchExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0',
-              )
-            "
-            :aria-hidden="!isSearchExpanded"
-            :inert="!isSearchExpanded"
-          >
+        <div class="dashboard-action-region h-8 w-max shrink-0">
+          <div class="dashboard-action-row flex h-8 w-max items-center justify-end gap-2">
             <button
-              type="button"
-              class="absolute left-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-              :title="t.common.close"
-              :aria-label="t.common.close"
-              @click="collapseSearch()"
+              @click="toggleTodoOverview"
+              :class="
+                cn(
+                  'toolbar-icon-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 transition-colors',
+                  todoOverviewOpen && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
+                )
+              "
+              :title="t.dashboard.todoOverview"
+              :aria-label="t.dashboard.todoOverview"
+              :aria-pressed="todoOverviewOpen"
             >
-              <Search :size="16" />
+              <CheckSquare :size="16" />
+              <span class="text-xs font-semibold">{{ openTodoCount }}</span>
             </button>
-            <input
-              ref="searchInput"
-              v-model="searchQuery"
-              type="search"
-              :placeholder="t.common.search"
-              :aria-label="t.common.search"
-              class="toolbar-search h-8 w-full rounded-lg pl-10 pr-3 text-sm"
-            />
-          </div>
-          <div
-            :class="
-              cn(
-                'dashboard-actions-layer transition-[opacity,translate] duration-150 ease-out',
-                isSearchExpanded ? 'pointer-events-none -translate-x-1 opacity-0' : 'translate-x-0 opacity-100',
-              )
-            "
-            :aria-hidden="isSearchExpanded"
-            :inert="isSearchExpanded"
-          >
-            <div class="dashboard-action-row flex h-8 w-max items-center justify-end gap-2">
-              <button
-                ref="searchButton"
-                type="button"
-                class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors"
-                :title="t.common.search"
-                :aria-label="t.common.search"
-                @click="expandSearch"
-              >
-                <Search :size="18" />
-              </button>
-              <button
-                @click="toggleTodoOverview"
-                :class="
-                  cn(
-                    'toolbar-icon-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 transition-colors',
-                    todoOverviewOpen && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
-                  )
-                "
-                :title="t.dashboard.todoOverview"
-                :aria-label="t.dashboard.todoOverview"
-                :aria-pressed="todoOverviewOpen"
-              >
-                <CheckSquare :size="16" />
-                <span class="text-xs font-semibold">{{ openTodoCount }}</span>
-              </button>
-              <button
-                @click="toggleAutomationOverview"
-                :class="
-                  cn(
-                    'toolbar-icon-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 transition-colors',
-                    automationOverviewOpen && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
-                  )
-                "
-                :title="t.automation.overview"
-                :aria-label="t.automation.overview"
-                :aria-pressed="automationOverviewOpen"
-              >
-                <CalendarClock :size="16" />
-                <span class="text-xs font-semibold">{{ automationSummary.enabled }}/{{ automationSummary.total }}</span>
-              </button>
-              <button
-                @click="store.setActiveTab('environment')"
-                class="toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors"
-                :title="t.environment.title"
-                :aria-label="t.environment.title"
-              >
-                <MonitorCog :size="18" />
-              </button>
-              <button
-                @click="store.setActiveTab('settings')"
-                class="toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors"
-                :title="t.sidebar.settings"
-                :aria-label="t.sidebar.settings"
-              >
-                <Settings :size="18" />
-              </button>
-              <button
-                v-if="hasSortableProjects"
-                @click="toggleSortingProjects"
-                :class="
-                  cn(
-                    'toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors',
-                    isSortingProjects && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
-                  )
-                "
-                :title="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
-                :aria-label="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
-                :aria-pressed="isSortingProjects"
-              >
-                <ArrowUpDown :size="18" />
-              </button>
-              <button
-                @click="handleRefreshAll"
-                :disabled="isRefreshingProjects"
-                class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-wait disabled:border-primary/35 disabled:bg-primary/10 disabled:text-primary disabled:opacity-90"
-                :title="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
-                :aria-label="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
-              >
-                <RefreshCw :size="18" />
-              </button>
-              <button
-                @click="store.openCreateProjectForm"
-                class="toolbar-primary-button flex shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors"
-                :title="t.dashboard.createHint"
-                :aria-label="t.dashboard.createHint"
-              >
-                <Plus :size="18" />
-              </button>
-            </div>
+            <button
+              @click="toggleAutomationOverview"
+              :class="
+                cn(
+                  'toolbar-icon-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 transition-colors',
+                  automationOverviewOpen && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
+                )
+              "
+              :title="t.automation.overview"
+              :aria-label="t.automation.overview"
+              :aria-pressed="automationOverviewOpen"
+            >
+              <CalendarClock :size="16" />
+              <span class="text-xs font-semibold">{{ automationSummary.enabled }}/{{ automationSummary.total }}</span>
+            </button>
+            <button
+              @click="store.setActiveTab('environment')"
+              class="toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors"
+              :title="t.environment.title"
+              :aria-label="t.environment.title"
+            >
+              <MonitorCog :size="18" />
+            </button>
+            <button
+              @click="store.setActiveTab('settings')"
+              class="toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors"
+              :title="t.sidebar.settings"
+              :aria-label="t.sidebar.settings"
+            >
+              <Settings :size="18" />
+            </button>
+            <button
+              v-if="hasSortableProjects"
+              @click="toggleSortingProjects"
+              :class="
+                cn(
+                  'toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors',
+                  isSortingProjects && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
+                )
+              "
+              :title="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
+              :aria-label="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
+              :aria-pressed="isSortingProjects"
+            >
+              <ArrowUpDown :size="18" />
+            </button>
+            <button
+              @click="handleRefreshAll"
+              :disabled="isRefreshingProjects"
+              class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-wait disabled:border-primary/35 disabled:bg-primary/10 disabled:text-primary disabled:opacity-90"
+              :title="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
+              :aria-label="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
+            >
+              <RefreshCw :size="18" />
+            </button>
+            <button
+              @click="store.openCreateProjectForm"
+              class="toolbar-primary-button flex shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors"
+              :title="t.dashboard.createHint"
+              :aria-label="t.dashboard.createHint"
+            >
+              <Plus :size="18" />
+            </button>
           </div>
         </div>
       </div>
