@@ -47,6 +47,7 @@ const messages = {
       notChecked: "未检测",
       tool: "工具",
       version: "版本",
+      extractVersion: "提取版本号",
       path: "路径",
     },
     dashboard: {
@@ -617,6 +618,7 @@ const messages = {
       notChecked: "Not checked",
       tool: "Tool",
       version: "Version",
+      extractVersion: "Extract version",
       path: "Path",
     },
     dashboard: {

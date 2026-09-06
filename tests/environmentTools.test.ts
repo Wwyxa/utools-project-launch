@@ -8,11 +8,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getProjectBridge } from "../src/lib/projectBridge";
 import {
   environmentToolRequest,
+  extractEnvironmentVersion,
   formatEnvironmentArguments,
   parseEnvironmentArguments,
   validateCustomEnvironmentToolInput,
 } from "../src/lib/environmentTools";
-import type { EnvironmentPreferences, EnvironmentToolRequest, EnvironmentToolResult, ProjectBridge } from "../src/types";
+import type {
+  EnvironmentPreferences,
+  EnvironmentToolRequest,
+  EnvironmentToolResult,
+  ProjectBridge,
+} from "../src/types";
 
 const deferred = <T>() => {
   let resolve: (value: T) => void = () => undefined;
@@ -67,6 +73,32 @@ describe("environment tools", () => {
     expect(
       validateCustomEnvironmentToolInput({ name: "Bad", command: "java & whoami", versionArgs: [] }).errors,
     ).toEqual({ command: "unsafe" });
+  });
+
+  it.each([
+    ["PowerShell 7.6.5", "7.6.5"],
+    [
+      "ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "9.0.1-full_build-www.gyan.dev",
+    ],
+    ["uv 0.12.9 (9f9286029 2026-09-01 x86_64-pc-windows-msvc)", "0.12.9"],
+    ["1.136.1", "1.136.1"],
+    ["Docker version 29.2.1, build a5c7197", "29.2.1"],
+    ["git version 2.55.0.windows.5", "2.55.0.windows.5"],
+    ["go version go1.27.1 windows/amd64", "go1.27.1"],
+    ["Python 3.14.5", "3.14.5"],
+    ["v24.15.0", "v24.15.0"],
+    [
+      "Current Scoop version:\nb588a06e (HEAD -> master, tag: v0.5.3, origin/master, origin/HEAD) chore(release): Bump to version 0.5.3 (resync) (#6436)",
+      "v0.5.3",
+    ],
+  ])("extracts a version from %s", (output, expected) => {
+    expect(extractEnvironmentVersion(output)).toBe(expected);
+  });
+
+  it("keeps output unchanged when no reliable version token exists", () => {
+    const output = "Current Scoop version:\ncommit not available";
+    expect(extractEnvironmentVersion(output)).toBe(output);
   });
 
   it("normalizes old preferences, preserves an explicit empty built-in list, and filters invalid custom tools", () => {
@@ -327,7 +359,7 @@ describe("environment tools", () => {
   });
 
   it("passes built-in Windows environment commands to cmd without POSIX quotes", async () => {
-    const outputs = ["v22.0.0\r\n", "C:\\Program Files\\nodejs\\node.exe\r\n"];
+    const outputs = ["v22.0.0\r\nbuild metadata\r\n", "C:\\Program Files\\nodejs\\node.exe\r\n"];
     let invocationIndex = 0;
     const spawn = vi.fn(() => {
       const output = outputs[invocationIndex++]!;
@@ -376,7 +408,7 @@ describe("environment tools", () => {
 
     await expect(preloadBridge.detectEnvironmentTool({ kind: "builtin", key: "node" })).resolves.toMatchObject({
       status: "available",
-      version: "v22.0.0",
+      version: "v22.0.0\r\nbuild metadata",
       executablePath: "C:\\Program Files\\nodejs\\node.exe",
     });
     expect(spawn).toHaveBeenNthCalledWith(

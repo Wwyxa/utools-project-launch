@@ -2,6 +2,7 @@
 type EnvironmentColumnWidths = [number, number, number];
 
 let rememberedEnvironmentColumnWidths: EnvironmentColumnWidths | null = null;
+let rememberedShowVersionOnly = true;
 </script>
 
 <script setup lang="ts">
@@ -9,6 +10,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowLeft, CheckCircle2, CircleAlert, CircleHelp, RefreshCw, Settings } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import { extractEnvironmentVersion } from "../../lib/environmentTools";
 import { cn } from "../../lib/utils";
 import type { EnvironmentToolResult } from "../../types";
 
@@ -150,7 +152,19 @@ const enabledDefinitions = computed(() => [
     .map((tool) => ({ key: tool.id, name: tool.name, command: tool.command })),
 ]);
 const resultByKey = computed(() => new Map(store.environmentResults.map((result) => [result.key, result])));
+const showVersionOnly = ref(rememberedShowVersionOnly);
 const isRefreshing = (key: string) => store.environmentRefreshingKeys[key] === true;
+
+const toggleVersionOnly = () => {
+  showVersionOnly.value = !showVersionOnly.value;
+  rememberedShowVersionOnly = showVersionOnly.value;
+};
+
+const displayedVersion = (result?: EnvironmentToolResult) => {
+  const output = result?.version?.trim();
+  if (!output) return "-";
+  return showVersionOnly.value ? extractEnvironmentVersion(output) : output;
+};
 
 const statusClass = (key: string, result?: EnvironmentToolResult) =>
   cn(
@@ -217,6 +231,36 @@ onBeforeUnmount(() => stopColumnResize());
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="showVersionOnly"
+          class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          :title="t.environment.extractVersion"
+          :aria-label="t.environment.extractVersion"
+          @click="toggleVersionOnly"
+        >
+          <span class="hidden sm:inline">{{ t.environment.extractVersion }}</span>
+          <span
+            :class="
+              cn(
+                'flex h-3.5 w-6 items-center overflow-hidden rounded-full border px-0.5 transition-colors',
+                showVersionOnly
+                  ? 'justify-end border-primary bg-primary/20'
+                  : 'justify-start border-border-subtle bg-surface-container-high',
+              )
+            "
+          >
+            <span
+              :class="
+                cn(
+                  'h-2.5 w-2.5 shrink-0 rounded-full transition-colors',
+                  showVersionOnly ? 'bg-primary' : 'bg-on-surface-variant',
+                )
+              "
+            />
+          </span>
+        </button>
         <button
           type="button"
           @click="store.setActiveTab('settings')"
@@ -325,8 +369,17 @@ onBeforeUnmount(() => stopColumnResize());
           >
             <span class="text-on-surface-variant md:hidden">{{ t.environment.version }}</span>
             <span v-if="isRefreshing(tool.key) && !resultByKey.get(tool.key)" class="skeleton h-3 w-20" />
-            <span v-else class="block truncate font-mono text-on-surface" :title="resultByKey.get(tool.key)?.version">
-              {{ resultByKey.get(tool.key)?.version || "-" }}
+            <span
+              v-else
+              :class="[
+                'block font-mono leading-4 text-on-surface',
+                showVersionOnly
+                  ? 'truncate'
+                  : 'themed-scrollbar max-h-12 overflow-y-auto whitespace-pre-wrap break-words',
+              ]"
+              :title="displayedVersion(resultByKey.get(tool.key))"
+            >
+              {{ displayedVersion(resultByKey.get(tool.key)) }}
             </span>
           </div>
           <div

@@ -178,14 +178,15 @@ async function detectEnvironmentTool(request) {
   }
   const [pathCommand, ...pathArgs] = builtin?.pathArgs || [process.platform === "win32" ? "where" : "which", command];
   const pathResult = await runToolCommand(pathCommand, pathArgs, direct);
+  const versionOutput = [versionResult.stdout, versionResult.stderr]
+    .map((output) => String(output || "").trim())
+    .filter(Boolean)
+    .join("\n");
   return {
     key,
     name,
     status: "available",
-    version:
-      String(versionResult.stdout || versionResult.stderr || "")
-        .trim()
-        .split(/\r?\n/)[0] || "OK",
+    version: versionOutput || "OK",
     executablePath: pathResult.status === 0 ? firstExecutablePath(pathResult.stdout) : "",
     checkedAt,
   };

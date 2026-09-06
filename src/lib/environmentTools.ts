@@ -20,6 +20,13 @@ export const BUILTIN_ENVIRONMENT_TOOLS: EnvironmentToolDefinition[] = [
 ];
 
 const shellOperatorPattern = /[|&;<>`\r\n\u0000-\u001f\u007f]|\$\(|\$\{/;
+const environmentVersionTokenSource =
+  "(?:v|go)?\\d+(?:\\.(?:\\d+|[A-Za-z][A-Za-z0-9_-]*))+(?:[-+][A-Za-z0-9][A-Za-z0-9._-]*)?";
+const environmentVersionTagPattern = new RegExp(`\\btag\\s*:\\s*(${environmentVersionTokenSource})`, "i");
+const environmentVersionLabelPattern = new RegExp(
+  `\\b(?:version|ver|release)\\b\\s*(?:[:=]\\s*)?(${environmentVersionTokenSource})`,
+  "i",
+);
 
 export interface CustomEnvironmentToolInput {
   name: string;
@@ -95,6 +102,25 @@ export function parseEnvironmentArguments(value: string): string[] | null {
 
 export function formatEnvironmentArguments(argumentsList: string[]): string {
   return argumentsList.map((argument) => (/\s|["'\\]/.test(argument) ? JSON.stringify(argument) : argument)).join(" ");
+}
+
+export function extractEnvironmentVersion(value: string): string {
+  const output = value.trim();
+  if (!output) return "";
+
+  const taggedVersion = environmentVersionTagPattern.exec(output)?.[1];
+  if (taggedVersion) return taggedVersion;
+
+  const labeledVersion = environmentVersionLabelPattern.exec(output)?.[1];
+  if (labeledVersion) return labeledVersion;
+
+  const tokenPattern = new RegExp(`(?:^|[^A-Za-z0-9_.-])(${environmentVersionTokenSource})(?![A-Za-z0-9_.-])`, "i");
+  for (const line of output.split(/\r?\n/)) {
+    const versionToken = tokenPattern.exec(line)?.[1];
+    if (versionToken) return versionToken;
+  }
+
+  return output;
 }
 
 export function normalizeCustomEnvironmentTool(value: unknown): CustomEnvironmentTool | null {

@@ -1049,7 +1049,8 @@ Require a user-selected scope and keep every process lookup asynchronous.
 - Built-in tools keep shell-backed execution for terminal PATH compatibility: Windows uses `shell: true`; macOS/Linux uses the user's shell with `-lc` / `-ilc` and quotes each hard-coded token.
 - Custom tools and built-in overrides never enter the general shell-backed trusted built-in path. Native commands use direct executable/argv spawning. On Windows, extensionless commands are resolved with `where.exe`; `.com` / `.exe` stay direct, while `.bat` / `.cmd` use explicit `cmd.exe /d /c <resolved-path> <args...>` only after rejecting `" & | < > ^ % ! ( )` from the resolved shim path and arguments. Path lookup uses `where` on Windows or `which` elsewhere and also runs directly.
 - Vue event bindings must call `store.refreshEnvironmentTools()` explicitly. A bare `@click="store.refreshEnvironmentTools"` forwards `MouseEvent` as the optional `targetKeys` argument and fails before refresh state can be published.
-- Every command keeps the 5-second timeout and shared output decoding. Detection checks version first, then path; the version is the first stdout line or, when stdout is empty, the first stderr line.
+- Every command keeps the 5-second timeout and shared output decoding. Detection checks version first, then path; `EnvironmentToolResult.version` contains trimmed non-empty stdout followed by stderr, or `OK` when successful output is empty.
+- Renderer display uses `extractEnvironmentVersion(output)`: prefer `tag:`, then `version` / `ver` / `release`, then the first reliable version token per line; preserve `v` / `go` prefixes and distribution suffixes, and fall back to the original output. The version-only switch is module-scoped session state like column widths; full-output mode is capped at three lines with an inner scrollbar.
 - Pinia runs at most four single-tool bridge promises concurrently. Each result is upserted immediately when it settles; one rejection becomes that tool's typed error result and does not stop sibling workers.
 - Per-key request generations protect overlapping refreshes and configuration changes. A queued item must revalidate its generation and request snapshot before starting; a settled item must repeat both checks before writing. Editing, disabling, deleting, saving/restoring a built-in override, or re-enabling a tool invalidates its generation, clears its result, and prevents stale queued commands from executing.
 - Manual refresh keeps previous values visible while `environmentRefreshingKeys[key]` is true. Initial detection shows a skeleton only for keys that have no previous result. Global `environmentRefreshing` remains true until every overlapping refresh batch has settled.
@@ -1062,7 +1063,7 @@ Require a user-selected scope and keep every process lookup asynchronous.
 - Unknown or unsafe built-in override -> drop it during persistence normalization; reject it again at renderer request construction and preload execution without spawning.
 - Built-in npm/pnpm shim available only through the user's terminal shell -> shell-backed built-in detection resolves it.
 - Custom command missing from PATH -> return `missing` for that key; sibling tools continue and publish independently.
-- Windows `code` resolves to `code.cmd` -> launch the resolved shim through restricted `cmd.exe`, return the first version line, and report `code.cmd` as the executable path.
+- Windows `code` resolves to `code.cmd` -> launch the resolved shim through restricted `cmd.exe` and report `code.cmd` as the executable path.
 - Windows shim argument contains `%PATH%`, `!value!`, `^`, parentheses, quotes, or command operators -> return a typed failure before starting `cmd.exe`.
 - Refresh button click -> invoke the Store action with no argument; never treat the framework event object as a key collection.
 - Command hangs -> kill after 5 seconds and return a timeout failure result for that key.
@@ -1083,7 +1084,7 @@ Require a user-selected scope and keep every process lookup asynchronous.
 
 ### 6. Tests Required
 
-- `npx vitest run src/lib/environmentTools.test.ts` must assert quoted argument round-trips, shell-operator rejection, legacy/explicit-empty preference normalization, a four-request concurrency ceiling, out-of-order immediate publication, failure isolation, edit/disable/delete late-result rejection, queued invalidation before bridge invocation, and newer-refresh precedence.
+- `npx vitest run src/lib/environmentTools.test.ts` must cover argument validation, preference normalization, four-request concurrency, immediate publication, failure isolation, stale-request rejection, newer-refresh precedence, version extraction variants, and complete preload stdout.
 - Run `npm run lint`, `npm run type-check`, `node --check public/preload.js`, and `npm run build` after changing this boundary.
 - Browser smoke: add/edit/toggle/delete a custom tool, reload to verify persistence, and confirm preview results settle per card without horizontal overflow.
 - Browser smoke: click refresh and assert at least one card's `checkedAt` changes; this catches accidental event forwarding into `targetKeys`.
