@@ -1,0 +1,8837 @@
+{
+  "schemaVersion": 1,
+  "id": "vscode-icons-derived",
+  "name": "vscode-icons (derived)",
+  "version": "1.0.0",
+  "minHostVersion": "1",
+  "source": {
+    "repository": "vscode-icons/vscode-icons",
+    "version": "12.19.0",
+    "url": "https://github.com/vscode-icons/vscode-icons"
+  },
+  "defaults": {
+    "file": "default_file.svg",
+    "folder": "default_folder.svg"
+  },
+  "rules": [
+    {
+      "icon": "file_type_aikido.svg",
+      "fileNames": [
+        ".aikido"
+      ]
+    },
+    {
+      "icon": "file_type_allcontributors.svg",
+      "fileNames": [
+        ".all-contributorsrc"
+      ]
+    },
+    {
+      "icon": "file_type_angular.svg",
+      "fileNames": [
+        ".angular-cli.json",
+        ".angular.json",
+        "angular-cli.json",
+        "angular.json"
+      ]
+    },
+    {
+      "icon": "file_type_appsemble.svg",
+      "fileNames": [
+        ".appsemblerc.yaml",
+        "app-definition.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_appveyor.svg",
+      "fileNames": [
+        ".appveyor.yml",
+        "appveyor.yml"
+      ]
+    },
+    {
+      "icon": "file_type_attw.svg",
+      "fileNames": [
+        ".attw.json"
+      ]
+    },
+    {
+      "icon": "file_type_babel.svg",
+      "light": "file_type_light_babel.svg",
+      "fileNames": [
+        ".babelignore",
+        ".babelrc",
+        ".babelrc.cjs",
+        ".babelrc.js",
+        ".babelrc.json",
+        ".babelrc.mjs",
+        "babel.config.cjs",
+        "babel.config.js",
+        "babel.config.json",
+        "babel.config.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_shell.svg",
+      "fileNames": [
+        ".bash_aliases",
+        ".bash_profile",
+        ".bashrc",
+        ".profile",
+        ".zprofile",
+        ".zshrc"
+      ],
+      "fileSuffixes": [
+        ".bash",
+        ".fish",
+        ".ksh",
+        ".sh",
+        ".zsh"
+      ]
+    },
+    {
+      "icon": "file_type_bazel_ignore.svg",
+      "fileNames": [
+        ".bazelignore"
+      ]
+    },
+    {
+      "icon": "file_type_bazel.svg",
+      "fileNames": [
+        ".bazelrc",
+        "bazel.bazelrc",
+        "bazel.rc",
+        "build.bazel"
+      ],
+      "fileSuffixes": [
+        ".bazel",
+        ".bzl"
+      ]
+    },
+    {
+      "icon": "file_type_bazel_version.svg",
+      "fileNames": [
+        ".bazelversion"
+      ]
+    },
+    {
+      "icon": "file_type_biome.svg",
+      "fileNames": [
+        ".biome.json",
+        ".biome.jsonc",
+        "biome.json",
+        "biome.jsonc"
+      ]
+    },
+    {
+      "icon": "file_type_bithound.svg",
+      "fileNames": [
+        ".bithoundrc"
+      ]
+    },
+    {
+      "icon": "file_type_darcs.svg",
+      "fileNames": [
+        ".boringignore"
+      ]
+    },
+    {
+      "icon": "file_type_bower.svg",
+      "fileNames": [
+        ".bowerrc",
+        "bower.json"
+      ]
+    },
+    {
+      "icon": "file_type_brew.svg",
+      "fileNames": [
+        ".brewfile",
+        "brewfile"
+      ]
+    },
+    {
+      "icon": "file_type_browserslist.svg",
+      "fileNames": [
+        ".browserslistrc",
+        "browserslist"
+      ]
+    },
+    {
+      "icon": "file_type_buckbuild.svg",
+      "fileNames": [
+        ".buckconfig",
+        ".buckconfig.local",
+        ".buckjavaargs",
+        "buck"
+      ]
+    },
+    {
+      "icon": "file_type_bun.svg",
+      "fileNames": [
+        ".bun-version",
+        ".bunfig.toml",
+        "bun.lock",
+        "bun.lockb"
+      ],
+      "fileSuffixes": [
+        ".lockb"
+      ]
+    },
+    {
+      "icon": "file_type_bundlemon.svg",
+      "fileNames": [
+        ".bundlemonrc",
+        ".bundlemonrc.cjs",
+        ".bundlemonrc.js",
+        ".bundlemonrc.json",
+        ".bundlemonrc.mjs",
+        ".bundlemonrc.yaml",
+        ".bundlemonrc.yml",
+        "bundlemon.config.cjs",
+        "bundlemon.config.js",
+        "bundlemon.config.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_bazaar.svg",
+      "fileNames": [
+        ".bzrignore"
+      ]
+    },
+    {
+      "icon": "file_type_cloudfoundry.svg",
+      "light": "file_type_light_cloudfoundry.svg",
+      "fileNames": [
+        ".cfignore"
+      ]
+    },
+    {
+      "icon": "file_type_changie.svg",
+      "fileNames": [
+        ".changie.yaml",
+        ".changie.yml"
+      ]
+    },
+    {
+      "icon": "file_type_clangd.svg",
+      "fileNames": [
+        ".clangd"
+      ]
+    },
+    {
+      "icon": "file_type_codacy.svg",
+      "light": "file_type_light_codacy.svg",
+      "fileNames": [
+        ".codacy.yaml",
+        ".codacy.yml"
+      ]
+    },
+    {
+      "icon": "file_type_codeclimate.svg",
+      "light": "file_type_light_codeclimate.svg",
+      "fileNames": [
+        ".codeclimate.yml"
+      ]
+    },
+    {
+      "icon": "file_type_codecov.svg",
+      "fileNames": [
+        ".codecov.yml",
+        "codecov.yml"
+      ]
+    },
+    {
+      "icon": "file_type_coderabbit.svg",
+      "fileNames": [
+        ".coderabbit.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_coffeelint.svg",
+      "fileNames": [
+        ".coffeelintignore",
+        "coffeelint.json"
+      ]
+    },
+    {
+      "icon": "file_type_commitlint.svg",
+      "fileNames": [
+        ".commitlintrc",
+        ".commitlintrc.cjs",
+        ".commitlintrc.cts",
+        ".commitlintrc.js",
+        ".commitlintrc.json",
+        ".commitlintrc.mjs",
+        ".commitlintrc.ts",
+        ".commitlintrc.yaml",
+        ".commitlintrc.yml",
+        "commitlint.config.cjs",
+        "commitlint.config.cts",
+        "commitlint.config.js",
+        "commitlint.config.mjs",
+        "commitlint.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_conda.svg",
+      "fileNames": [
+        ".condarc"
+      ]
+    },
+    {
+      "icon": "file_type_codekit.svg",
+      "fileNames": [
+        ".config.codekit",
+        ".config.codekit2",
+        ".config.codekit3",
+        "config.codekit",
+        "config.codekit2",
+        "config.codekit3"
+      ],
+      "fileSuffixes": [
+        ".kit"
+      ]
+    },
+    {
+      "icon": "file_type_coverage.svg",
+      "fileNames": [
+        ".coverage",
+        "lcov.info"
+      ],
+      "fileSuffixes": [
+        ".lcov"
+      ]
+    },
+    {
+      "icon": "file_type_coveralls.svg",
+      "fileNames": [
+        ".coveralls.yml"
+      ]
+    },
+    {
+      "icon": "file_type_craco.svg",
+      "fileNames": [
+        ".cracorc",
+        ".cracorc.js",
+        ".cracorc.ts",
+        "craco.config.cjs",
+        "craco.config.js",
+        "craco.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_cspell.svg",
+      "fileNames": [
+        ".cspell.config.cjs",
+        ".cspell.config.cts",
+        ".cspell.config.js",
+        ".cspell.config.json",
+        ".cspell.config.jsonc",
+        ".cspell.config.mjs",
+        ".cspell.config.mts",
+        ".cspell.config.toml",
+        ".cspell.config.ts",
+        ".cspell.config.yaml",
+        ".cspell.config.yml",
+        ".cspell.json",
+        ".cspell.jsonc",
+        ".cspell.yaml",
+        ".cspell.yml",
+        "cspell.config.cjs",
+        "cspell.config.cts",
+        "cspell.config.js",
+        "cspell.config.json",
+        "cspell.config.jsonc",
+        "cspell.config.mjs",
+        "cspell.config.mts",
+        "cspell.config.toml",
+        "cspell.config.ts",
+        "cspell.config.yaml",
+        "cspell.config.yml",
+        "cspell.json",
+        "cspell.jsonc",
+        "cspell.yaml",
+        "cspell.yml"
+      ]
+    },
+    {
+      "icon": "file_type_csscomb.svg",
+      "fileNames": [
+        ".csscomb.json"
+      ]
+    },
+    {
+      "icon": "file_type_csslint.svg",
+      "fileNames": [
+        ".csslintrc"
+      ]
+    },
+    {
+      "icon": "file_type_cursorrules.svg",
+      "fileNames": [
+        ".cursorignore",
+        ".cursorindexingignore",
+        ".cursorrules"
+      ]
+    },
+    {
+      "icon": "file_type_cvs.svg",
+      "fileNames": [
+        ".cvsignore"
+      ]
+    },
+    {
+      "icon": "file_type_commitizen.svg",
+      "fileNames": [
+        ".cz.json",
+        ".czrc"
+      ]
+    },
+    {
+      "icon": "file_type_dbt.svg",
+      "fileNames": [
+        ".dbtignore",
+        "dbt_cloud.yml",
+        "dbt_project.yml"
+      ]
+    },
+    {
+      "icon": "file_type_deepsource.svg",
+      "light": "file_type_light_deepsource.svg",
+      "fileNames": [
+        ".deepsource.toml"
+      ]
+    },
+    {
+      "icon": "file_type_denoify.svg",
+      "fileNames": [
+        ".denoifyrc",
+        "denoify.config.js",
+        "denoify.config.json"
+      ]
+    },
+    {
+      "icon": "file_type_devcontainer.svg",
+      "fileNames": [
+        ".devcontainer.json",
+        "devcontainer.json"
+      ]
+    },
+    {
+      "icon": "file_type_docker.svg",
+      "fileNames": [
+        ".dockerignore",
+        "compose.yaml",
+        "compose.yml",
+        "docker-cloud.yaml",
+        "docker-cloud.yml",
+        "docker-compose.ci-build.yaml",
+        "docker-compose.ci-build.yml",
+        "docker-compose.debug.yaml",
+        "docker-compose.debug.yml",
+        "docker-compose.override.yaml",
+        "docker-compose.override.yml",
+        "docker-compose.vs.debug.yaml",
+        "docker-compose.vs.debug.yml",
+        "docker-compose.vs.release.yaml",
+        "docker-compose.vs.release.yml",
+        "docker-compose.yaml",
+        "docker-compose.yml",
+        "dockerfile",
+        "dockerfile.dev",
+        "dockerfile.prod",
+        "dockerfile.test"
+      ]
+    },
+    {
+      "icon": "file_type_docz.svg",
+      "fileNames": [
+        ".docz.js",
+        ".docz.json",
+        ".doczrc",
+        "docz.config.js",
+        "docz.config.json",
+        "docz.js",
+        "docz.json",
+        "doczrc.js",
+        "doczrc.json"
+      ]
+    },
+    {
+      "icon": "file_type_dojo.svg",
+      "fileNames": [
+        ".dojorc"
+      ]
+    },
+    {
+      "icon": "file_type_drone.svg",
+      "light": "file_type_light_drone.svg",
+      "fileNames": [
+        ".drone.yml",
+        ".drone.yml.sig"
+      ]
+    },
+    {
+      "icon": "file_type_dvc.svg",
+      "fileNames": [
+        ".dvc",
+        ".dvcignore",
+        "dvc.lock",
+        "dvc.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_earthly.svg",
+      "fileNames": [
+        ".earthlyignore",
+        "earthfile"
+      ],
+      "fileSuffixes": [
+        ".earthfile"
+      ]
+    },
+    {
+      "icon": "file_type_editorconfig.svg",
+      "fileNames": [
+        ".editorconfig"
+      ]
+    },
+    {
+      "icon": "file_type_eleventy.svg",
+      "light": "file_type_light_eleventy.svg",
+      "fileNames": [
+        ".eleventy.js",
+        ".eleventyignore",
+        "eleventy.config.cjs",
+        "eleventy.config.js",
+        "eleventy.config.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_erlang.svg",
+      "fileNames": [
+        ".emakerfile",
+        "emakefile"
+      ],
+      "fileSuffixes": [
+        ".erl"
+      ]
+    },
+    {
+      "icon": "file_type_ember.svg",
+      "fileNames": [
+        ".ember-cli"
+      ]
+    },
+    {
+      "icon": "file_type_direnv.svg",
+      "fileNames": [
+        ".envrc"
+      ]
+    },
+    {
+      "icon": "file_type_eslint.svg",
+      "fileNames": [
+        ".eslintcache",
+        ".eslintignore",
+        ".eslintrc",
+        ".eslintrc.cjs",
+        ".eslintrc.cts",
+        ".eslintrc.js",
+        ".eslintrc.json",
+        ".eslintrc.mjs",
+        ".eslintrc.mts",
+        ".eslintrc.ts",
+        ".eslintrc.yaml",
+        ".eslintrc.yml",
+        "eslint.config.cjs",
+        "eslint.config.cts",
+        "eslint.config.js",
+        "eslint.config.mjs",
+        "eslint.config.mts",
+        "eslint.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_fantasticon.svg",
+      "fileNames": [
+        ".fantasticonrc",
+        ".fantasticonrc.js",
+        ".fantasticonrc.json",
+        "fantasticonrc",
+        "fantasticonrc.js",
+        "fantasticonrc.json"
+      ]
+    },
+    {
+      "icon": "file_type_fauna.svg",
+      "fileNames": [
+        ".faunarc"
+      ],
+      "fileSuffixes": [
+        ".fql"
+      ]
+    },
+    {
+      "icon": "file_type_firebase.svg",
+      "fileNames": [
+        ".firebaserc"
+      ]
+    },
+    {
+      "icon": "file_type_floobits.svg",
+      "fileNames": [
+        ".flooignore"
+      ]
+    },
+    {
+      "icon": "file_type_flow.svg",
+      "fileNames": [
+        ".flowconfig"
+      ],
+      "fileSuffixes": [
+        ".js.flow"
+      ]
+    },
+    {
+      "icon": "file_type_flutter.svg",
+      "fileNames": [
+        ".flutter-plugins",
+        ".flutter-plugins-dependencies",
+        ".metadata"
+      ]
+    },
+    {
+      "icon": "file_type_fnox.svg",
+      "fileNames": [
+        ".fnox.local.toml",
+        ".fnox.toml",
+        "fnox.local.toml",
+        "fnox.toml"
+      ]
+    },
+    {
+      "icon": "file_type_fossa.svg",
+      "fileNames": [
+        ".fossaignore"
+      ]
+    },
+    {
+      "icon": "file_type_frontcommerce.svg",
+      "fileNames": [
+        ".front-commerce.js",
+        "front-commerce.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_gcloud.svg",
+      "fileNames": [
+        ".gcloudignore"
+      ]
+    },
+    {
+      "icon": "file_type_git.svg",
+      "fileNames": [
+        ".git",
+        ".git-blame-ignore-revs",
+        ".gitattributes",
+        ".gitconfig",
+        ".gitignore",
+        ".gitkeep",
+        ".gitmessage",
+        ".gitmodules",
+        ".issuetracker",
+        ".mailmap"
+      ],
+      "fileSuffixes": [
+        ".git"
+      ]
+    },
+    {
+      "icon": "file_type_gitlab.svg",
+      "fileNames": [
+        ".gitlab-ci.yml"
+      ]
+    },
+    {
+      "icon": "file_type_gitpod.svg",
+      "fileNames": [
+        ".gitpod.yaml",
+        ".gitpod.yml",
+        "gitpod.yaml",
+        "gitpod.yml"
+      ]
+    },
+    {
+      "icon": "file_type_glitter.svg",
+      "fileNames": [
+        ".glitterrc"
+      ]
+    },
+    {
+      "icon": "file_type_graphql.svg",
+      "fileNames": [
+        ".gqlconfig"
+      ],
+      "fileSuffixes": [
+        ".gql"
+      ]
+    },
+    {
+      "icon": "file_type_graphql_config.svg",
+      "fileNames": [
+        ".graphqlconfig",
+        ".graphqlconfig.yaml",
+        ".graphqlconfig.yml"
+      ]
+    },
+    {
+      "icon": "file_type_vim.svg",
+      "fileNames": [
+        ".gvimrc",
+        ".vimrc"
+      ],
+      "fileSuffixes": [
+        ".vim"
+      ]
+    },
+    {
+      "icon": "file_type_mercurial.svg",
+      "fileNames": [
+        ".hgignore"
+      ]
+    },
+    {
+      "icon": "file_type_histoire.svg",
+      "fileNames": [
+        ".histoire.js",
+        ".histoire.ts",
+        "histoire.config.js",
+        "histoire.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_htmlhint.svg",
+      "fileNames": [
+        ".htmlhintrc"
+      ]
+    },
+    {
+      "icon": "file_type_htmlvalidate.svg",
+      "fileNames": [
+        ".htmlvalidate.cjs",
+        ".htmlvalidate.js",
+        ".htmlvalidate.json",
+        ".htmlvalidateignore"
+      ]
+    },
+    {
+      "icon": "file_type_hugo.svg",
+      "fileNames": [
+        ".hugo_build.lock",
+        "hugo.json",
+        "hugo.toml",
+        "hugo.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_husky.svg",
+      "fileNames": [
+        ".huskyrc",
+        ".huskyrc.js",
+        ".huskyrc.json",
+        ".huskyrc.yaml",
+        ".huskyrc.yml",
+        "husky.config.js"
+      ]
+    },
+    {
+      "icon": "file_type_imgbot.svg",
+      "fileNames": [
+        ".imgbotconfig"
+      ]
+    },
+    {
+      "icon": "file_type_nsri-integrity.svg",
+      "fileNames": [
+        ".integrity.json"
+      ]
+    },
+    {
+      "icon": "file_type_s-lang.svg",
+      "fileNames": [
+        ".isisrc",
+        ".jedrc",
+        ".slshrc"
+      ],
+      "fileSuffixes": [
+        ".sl"
+      ]
+    },
+    {
+      "icon": "file_type_pug.svg",
+      "fileNames": [
+        ".jade-lint.json",
+        ".jade-lintrc",
+        ".pug-lintrc",
+        ".pug-lintrc.js",
+        ".pug-lintrc.json"
+      ],
+      "fileSuffixes": [
+        ".pug"
+      ]
+    },
+    {
+      "icon": "file_type_jest.svg",
+      "fileNames": [
+        ".jestrc",
+        ".jestrc.js",
+        ".jestrc.json",
+        "jest.config.babel.js",
+        "jest.config.base.cjs",
+        "jest.config.base.cts",
+        "jest.config.base.js",
+        "jest.config.base.json",
+        "jest.config.base.mjs",
+        "jest.config.base.mts",
+        "jest.config.base.ts",
+        "jest.config.cjs",
+        "jest.config.common.cjs",
+        "jest.config.common.cts",
+        "jest.config.common.js",
+        "jest.config.common.json",
+        "jest.config.common.mjs",
+        "jest.config.common.mts",
+        "jest.config.common.ts",
+        "jest.config.cts",
+        "jest.config.e2e.cjs",
+        "jest.config.e2e.cts",
+        "jest.config.e2e.js",
+        "jest.config.e2e.json",
+        "jest.config.e2e.mjs",
+        "jest.config.e2e.mts",
+        "jest.config.e2e.ts",
+        "jest.config.int.cjs",
+        "jest.config.int.cts",
+        "jest.config.int.js",
+        "jest.config.int.json",
+        "jest.config.int.mjs",
+        "jest.config.int.mts",
+        "jest.config.int.ts",
+        "jest.config.integration.cjs",
+        "jest.config.integration.cts",
+        "jest.config.integration.js",
+        "jest.config.integration.json",
+        "jest.config.integration.mjs",
+        "jest.config.integration.mts",
+        "jest.config.integration.ts",
+        "jest.config.js",
+        "jest.config.json",
+        "jest.config.mjs",
+        "jest.config.mts",
+        "jest.config.ts",
+        "jest.config.unit.cjs",
+        "jest.config.unit.cts",
+        "jest.config.unit.js",
+        "jest.config.unit.json",
+        "jest.config.unit.mjs",
+        "jest.config.unit.mts",
+        "jest.config.unit.ts",
+        "jest.json"
+      ]
+    },
+    {
+      "icon": "file_type_jpm.svg",
+      "fileNames": [
+        ".jpmignore"
+      ]
+    },
+    {
+      "icon": "file_type_jsbeautify.svg",
+      "fileNames": [
+        ".jsbeautify",
+        ".jsbeautifyrc",
+        "jsbeautify",
+        "jsbeautifyrc"
+      ]
+    },
+    {
+      "icon": "file_type_jscpd.svg",
+      "fileNames": [
+        ".jscpd.json",
+        "jscpd-report.html",
+        "jscpd-report.json",
+        "jscpd-report.xml"
+      ]
+    },
+    {
+      "icon": "file_type_jshint.svg",
+      "fileNames": [
+        ".jshintignore",
+        ".jshintrc"
+      ]
+    },
+    {
+      "icon": "file_type_kitchenci.svg",
+      "fileNames": [
+        ".kitchen.yml",
+        "kitchen.yml"
+      ]
+    },
+    {
+      "icon": "file_type_kite.svg",
+      "light": "file_type_light_kite.svg",
+      "fileNames": [
+        ".kiteignore"
+      ]
+    },
+    {
+      "icon": "file_type_knip.svg",
+      "fileNames": [
+        ".knip.json",
+        ".knip.jsonc",
+        "knip.config.js",
+        "knip.config.ts",
+        "knip.js",
+        "knip.json",
+        "knip.jsonc",
+        "knip.ts"
+      ]
+    },
+    {
+      "icon": "file_type_kodiak.svg",
+      "fileNames": [
+        ".kodiak.toml"
+      ]
+    },
+    {
+      "icon": "file_type_lefthook.svg",
+      "fileNames": [
+        ".lefthook-local.json",
+        ".lefthook-local.toml",
+        ".lefthook-local.yaml",
+        ".lefthook-local.yml",
+        ".lefthook.json",
+        ".lefthook.toml",
+        ".lefthook.yaml",
+        ".lefthook.yml",
+        "lefthook-local.json",
+        "lefthook-local.toml",
+        "lefthook-local.yaml",
+        "lefthook-local.yml",
+        "lefthook.json",
+        "lefthook.toml",
+        "lefthook.yaml",
+        "lefthook.yml"
+      ]
+    },
+    {
+      "icon": "file_type_liara.svg",
+      "fileNames": [
+        ".liaraignore",
+        "liara.json"
+      ]
+    },
+    {
+      "icon": "file_type_licensebat.svg",
+      "fileNames": [
+        ".licrc"
+      ]
+    },
+    {
+      "icon": "file_type_lighthouse.svg",
+      "fileNames": [
+        ".lighthouserc.cjs",
+        ".lighthouserc.js",
+        ".lighthouserc.json",
+        ".lighthouserc.yaml",
+        ".lighthouserc.yml",
+        "budget.json",
+        "budgets.json"
+      ]
+    },
+    {
+      "icon": "file_type_lintstagedrc.svg",
+      "fileNames": [
+        ".lintstagedrc",
+        ".lintstagedrc.cjs",
+        ".lintstagedrc.cts",
+        ".lintstagedrc.js",
+        ".lintstagedrc.json",
+        ".lintstagedrc.mjs",
+        ".lintstagedrc.mts",
+        ".lintstagedrc.ts",
+        ".lintstagedrc.yaml",
+        ".lintstagedrc.yml",
+        "lint-staged.config.cjs",
+        "lint-staged.config.cts",
+        "lint-staged.config.js",
+        "lint-staged.config.mjs",
+        "lint-staged.config.mts",
+        "lint-staged.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_lychee.svg",
+      "fileNames": [
+        ".lycheeignore",
+        "lychee.toml"
+      ]
+    },
+    {
+      "icon": "file_type_madge.svg",
+      "fileNames": [
+        ".madgerc"
+      ]
+    },
+    {
+      "icon": "file_type_markdownlint.svg",
+      "fileNames": [
+        ".markdownlint-cli2.cjs",
+        ".markdownlint-cli2.json",
+        ".markdownlint-cli2.jsonc",
+        ".markdownlint-cli2.yaml",
+        ".markdownlint-cli2.yml",
+        ".markdownlint.cjs",
+        ".markdownlint.json",
+        ".markdownlint.jsonc",
+        ".markdownlint.yaml",
+        ".markdownlint.yml",
+        ".markdownlintrc"
+      ]
+    },
+    {
+      "icon": "file_type_markdownlint_ignore.svg",
+      "fileNames": [
+        ".markdownlintignore"
+      ]
+    },
+    {
+      "icon": "file_type_markuplint.svg",
+      "light": "file_type_light_markuplint.svg",
+      "fileNames": [
+        ".markuplintrc",
+        ".markuplintrc.cjs",
+        ".markuplintrc.js",
+        ".markuplintrc.json",
+        ".markuplintrc.mjs",
+        ".markuplintrc.ts",
+        ".markuplintrc.yaml",
+        ".markuplintrc.yml",
+        "markuplint.config.cjs",
+        "markuplint.config.js",
+        "markuplint.config.json",
+        "markuplint.config.mjs",
+        "markuplint.config.ts",
+        "markuplint.config.yaml",
+        "markuplint.config.yml"
+      ]
+    },
+    {
+      "icon": "file_type_mdxlint.svg",
+      "fileNames": [
+        ".mdxlintignore",
+        ".mdxlintrc",
+        ".mdxlintrc.cjs",
+        ".mdxlintrc.js",
+        ".mdxlintrc.json",
+        ".mdxlintrc.mjs",
+        ".mdxlintrc.yaml",
+        ".mdxlintrc.yml"
+      ]
+    },
+    {
+      "icon": "file_type_ocaml.svg",
+      "fileNames": [
+        ".merlin"
+      ],
+      "fileSuffixes": [
+        ".ml"
+      ]
+    },
+    {
+      "icon": "file_type_mise.svg",
+      "fileNames": [
+        ".mise.local.toml",
+        ".mise.toml",
+        "mise.local.toml",
+        "mise.toml"
+      ]
+    },
+    {
+      "icon": "file_type_mocha.svg",
+      "fileNames": [
+        ".mocharc.cjs",
+        ".mocharc.js",
+        ".mocharc.json",
+        ".mocharc.jsonc",
+        ".mocharc.mjs",
+        ".mocharc.yaml",
+        ".mocharc.yml",
+        "mocha.opts"
+      ]
+    },
+    {
+      "icon": "file_type_modernizr.svg",
+      "fileNames": [
+        ".modernizr.js",
+        ".modernizrrc.js",
+        "modernizr",
+        "modernizr.js",
+        "modernizrrc.js"
+      ]
+    },
+    {
+      "icon": "file_type_monotone.svg",
+      "fileNames": [
+        ".mtn-ignore"
+      ]
+    },
+    {
+      "icon": "file_type_mypy.svg",
+      "light": "file_type_light_mypy.svg",
+      "fileNames": [
+        ".mypy.ini",
+        "mypy.ini"
+      ]
+    },
+    {
+      "icon": "file_type_nanostaged.svg",
+      "fileNames": [
+        ".nano-staged.cjs",
+        ".nano-staged.js",
+        ".nano-staged.json",
+        ".nano-staged.mjs",
+        ".nanostagedrc",
+        "nano-staged.cjs",
+        "nano-staged.js",
+        "nano-staged.json",
+        "nano-staged.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_nestjs.svg",
+      "fileNames": [
+        ".nest-cli.json",
+        ".nestconfig.json",
+        "nest-cli.json",
+        "nestconfig.json"
+      ]
+    },
+    {
+      "icon": "file_type_nextflow.svg",
+      "fileNames": [
+        ".nf"
+      ]
+    },
+    {
+      "icon": "file_type_nitro.svg",
+      "fileNames": [
+        ".nitrorc",
+        "nitro.cjs",
+        "nitro.config.cjs",
+        "nitro.config.cts",
+        "nitro.config.js",
+        "nitro.config.json",
+        "nitro.config.json5",
+        "nitro.config.jsonc",
+        "nitro.config.mjs",
+        "nitro.config.mts",
+        "nitro.config.toml",
+        "nitro.config.ts",
+        "nitro.config.yaml",
+        "nitro.config.yml",
+        "nitro.cts",
+        "nitro.js",
+        "nitro.json",
+        "nitro.json5",
+        "nitro.jsonc",
+        "nitro.mjs",
+        "nitro.mts",
+        "nitro.toml",
+        "nitro.ts",
+        "nitro.yaml",
+        "nitro.yml"
+      ]
+    },
+    {
+      "icon": "file_type_node.svg",
+      "fileNames": [
+        ".node-version",
+        ".nvmrc",
+        "node.config.json"
+      ]
+    },
+    {
+      "icon": "file_type_jekyll.svg",
+      "fileNames": [
+        ".nojekyll"
+      ],
+      "fileSuffixes": [
+        ".jekyll"
+      ]
+    },
+    {
+      "icon": "file_type_vercel.svg",
+      "light": "file_type_light_vercel.svg",
+      "fileNames": [
+        ".nowignore",
+        ".vercel.approvers",
+        ".vercelignore",
+        "now.json",
+        "vercel.cjs",
+        "vercel.js",
+        "vercel.json",
+        "vercel.mjs",
+        "vercel.mts",
+        "vercel.ts"
+      ]
+    },
+    {
+      "icon": "file_type_npm.svg",
+      "fileNames": [
+        ".npmignore",
+        ".npmrc",
+        ".package-lock.json",
+        "npm-shrinkwrap.json",
+        "package-lock.json",
+        "package.json"
+      ]
+    },
+    {
+      "icon": "file_type_npmpackagejsonlint.svg",
+      "fileNames": [
+        ".npmpackagejsonlintignore",
+        ".npmpackagejsonlintrc",
+        ".npmpackagejsonlintrc.cjs",
+        ".npmpackagejsonlintrc.js",
+        ".npmpackagejsonlintrc.json",
+        ".npmpackagejsonlintrc.mjs",
+        ".npmpackagejsonlintrc.yaml",
+        ".npmpackagejsonlintrc.yml",
+        "npmpackagejsonlint.config.cjs",
+        "npmpackagejsonlint.config.js",
+        "npmpackagejsonlint.config.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_nsri.svg",
+      "fileNames": [
+        ".nsriignore",
+        ".nsrirc",
+        ".nsrirc.js",
+        ".nsrirc.json",
+        ".nsrirc.yaml",
+        ".nsrirc.yml",
+        "nsri.config.js"
+      ]
+    },
+    {
+      "icon": "file_type_nuxt.svg",
+      "fileNames": [
+        ".nuxtignore",
+        ".nuxtrc",
+        "nuxt.config.js",
+        "nuxt.config.mjs",
+        "nuxt.config.ts",
+        "nuxt.js",
+        "nuxt.mjs",
+        "nuxt.ts"
+      ]
+    },
+    {
+      "icon": "file_type_nx.svg",
+      "light": "file_type_light_nx.svg",
+      "fileNames": [
+        ".nxignore",
+        "nx.json"
+      ]
+    },
+    {
+      "icon": "file_type_nyc.svg",
+      "fileNames": [
+        ".nycrc",
+        ".nycrc.json"
+      ]
+    },
+    {
+      "icon": "file_type_objidconfig.svg",
+      "light": "file_type_light_objidconfig.svg",
+      "fileNames": [
+        ".objidconfig"
+      ]
+    },
+    {
+      "icon": "file_type_opentofu.svg",
+      "fileNames": [
+        ".opentofu-version"
+      ],
+      "fileSuffixes": [
+        ".tofu",
+        ".tofu.json",
+        ".tofutest.hcl",
+        ".tofutest.json"
+      ]
+    },
+    {
+      "icon": "file_type_oxc.svg",
+      "light": "file_type_light_oxc.svg",
+      "fileNames": [
+        ".oxfmtrc.json",
+        ".oxfmtrc.jsonc",
+        ".oxlintignore",
+        ".oxlintrc.json",
+        ".oxlintrc.jsonc",
+        "oxfmt.config.mts",
+        "oxfmt.config.ts",
+        "oxlint.config.mts",
+        "oxlint.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_helix.svg",
+      "fileNames": [
+        ".p4ignore"
+      ]
+    },
+    {
+      "icon": "file_type_flutter_package.svg",
+      "fileNames": [
+        ".packages",
+        "pubspec.lock",
+        "pubspec.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_packship.svg",
+      "light": "file_type_light_packship.svg",
+      "fileNames": [
+        ".packshiprc",
+        ".packshiprc.js",
+        ".packshiprc.json",
+        ".packshiprc.ts",
+        "packship.config.js",
+        "packship.config.json",
+        "packship.config.mjs",
+        "packship.config.mts",
+        "packship.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_parcel.svg",
+      "fileNames": [
+        ".parcelrc"
+      ]
+    },
+    {
+      "icon": "file_type_pythonconfig.svg",
+      "fileNames": [
+        ".pdbrc",
+        ".pdbrc.py",
+        ".python_history",
+        "conf.py",
+        "config.py",
+        "settings.py",
+        "setup.py"
+      ]
+    },
+    {
+      "icon": "file_type_pdm.svg",
+      "fileNames": [
+        ".pdm-python",
+        "pdm.lock",
+        "pdm.toml"
+      ]
+    },
+    {
+      "icon": "file_type_phpcsfixer.svg",
+      "fileNames": [
+        ".php_cs",
+        ".php_cs.dist",
+        ".php-cs-fixer.dist.php",
+        ".php-cs-fixer.php"
+      ]
+    },
+    {
+      "icon": "file_type_php.svg",
+      "fileNames": [
+        ".php-version",
+        "artisan"
+      ],
+      "fileSuffixes": [
+        ".aw",
+        ".ctp",
+        ".inc",
+        ".module",
+        ".phar",
+        ".php",
+        ".php1",
+        ".php2",
+        ".php3",
+        ".php4",
+        ".php5",
+        ".php6",
+        ".php7",
+        ".php8",
+        ".phps",
+        ".phpsa",
+        ".phpt",
+        ".phtml",
+        ".theme"
+      ]
+    },
+    {
+      "icon": "file_type_phraseapp.svg",
+      "fileNames": [
+        ".phraseapp.yml"
+      ]
+    },
+    {
+      "icon": "file_type_pnpm.svg",
+      "light": "file_type_light_pnpm.svg",
+      "fileNames": [
+        ".pnpmfile.cjs",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "pnpmfile.js"
+      ]
+    },
+    {
+      "icon": "file_type_postcssconfig.svg",
+      "fileNames": [
+        ".postcssrc",
+        ".postcssrc.cjs",
+        ".postcssrc.cts",
+        ".postcssrc.js",
+        ".postcssrc.json",
+        ".postcssrc.mjs",
+        ".postcssrc.mts",
+        ".postcssrc.ts",
+        ".postcssrc.yaml",
+        ".postcssrc.yml",
+        "postcss.config.cjs",
+        "postcss.config.cts",
+        "postcss.config.js",
+        "postcss.config.mjs",
+        "postcss.config.mts",
+        "postcss.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_precommit.svg",
+      "fileNames": [
+        ".pre-commit-config.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_prettier.svg",
+      "light": "file_type_light_prettier.svg",
+      "fileNames": [
+        ".prettierignore",
+        ".prettierrc",
+        ".prettierrc.cjs",
+        ".prettierrc.cts",
+        ".prettierrc.js",
+        ".prettierrc.json",
+        ".prettierrc.json5",
+        ".prettierrc.mjs",
+        ".prettierrc.mts",
+        ".prettierrc.toml",
+        ".prettierrc.ts",
+        ".prettierrc.yaml",
+        ".prettierrc.yml",
+        "prettier.config.cjs",
+        "prettier.config.coffee",
+        "prettier.config.cts",
+        "prettier.config.js",
+        "prettier.config.mjs",
+        "prettier.config.mts",
+        "prettier.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_dartlang_ignore.svg",
+      "fileNames": [
+        ".pubignore"
+      ]
+    },
+    {
+      "icon": "file_type_pytest.svg",
+      "fileNames": [
+        ".pytest.ini",
+        ".pytest.toml",
+        "pytest.ini",
+        "pytest.toml"
+      ]
+    },
+    {
+      "icon": "file_type_python.svg",
+      "fileNames": [
+        ".python-version",
+        "pipfile",
+        "pipfile.lock",
+        "setup.cfg"
+      ],
+      "fileSuffixes": [
+        ".cpy",
+        ".ipy",
+        ".pxd",
+        ".pxi",
+        ".py",
+        ".pyc",
+        ".pyd",
+        ".pyi",
+        ".pyo",
+        ".pyw",
+        ".pyx",
+        ".rpy"
+      ]
+    },
+    {
+      "icon": "file_type_pyup.svg",
+      "fileNames": [
+        ".pyup",
+        ".pyup.yml"
+      ]
+    },
+    {
+      "icon": "file_type_quokka.svg",
+      "fileNames": [
+        ".quokka"
+      ]
+    },
+    {
+      "icon": "file_type_readthedocs.svg",
+      "fileNames": [
+        ".readthedocs.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_rehype.svg",
+      "light": "file_type_light_rehype.svg",
+      "fileNames": [
+        ".rehypeignore",
+        ".rehyperc",
+        ".rehyperc.cjs",
+        ".rehyperc.js",
+        ".rehyperc.json",
+        ".rehyperc.mjs",
+        ".rehyperc.yaml",
+        ".rehyperc.yml"
+      ]
+    },
+    {
+      "icon": "file_type_semanticrelease.svg",
+      "light": "file_type_light_semanticrelease.svg",
+      "fileNames": [
+        ".releaserc",
+        ".releaserc.cjs",
+        ".releaserc.js",
+        ".releaserc.json",
+        ".releaserc.mjs",
+        ".releaserc.ts",
+        ".releaserc.yaml",
+        ".releaserc.yml",
+        "release.config.cjs",
+        "release.config.js",
+        "release.config.mjs",
+        "release.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_remark.svg",
+      "light": "file_type_light_remark.svg",
+      "fileNames": [
+        ".remarkignore",
+        ".remarkrc",
+        ".remarkrc.cjs",
+        ".remarkrc.js",
+        ".remarkrc.json",
+        ".remarkrc.mjs",
+        ".remarkrc.yaml",
+        ".remarkrc.yml"
+      ]
+    },
+    {
+      "icon": "file_type_renovate.svg",
+      "fileNames": [
+        ".renovaterc",
+        ".renovaterc.json",
+        "renovate.json",
+        "renovate.json5"
+      ]
+    },
+    {
+      "icon": "file_type_replit.svg",
+      "fileNames": [
+        ".replit",
+        "replit.nix"
+      ]
+    },
+    {
+      "icon": "file_type_retext.svg",
+      "light": "file_type_light_retext.svg",
+      "fileNames": [
+        ".retextignore",
+        ".retextrc",
+        ".retextrc.cjs",
+        ".retextrc.js",
+        ".retextrc.json",
+        ".retextrc.mjs",
+        ".retextrc.yaml",
+        ".retextrc.yml"
+      ]
+    },
+    {
+      "icon": "file_type_rspec.svg",
+      "fileNames": [
+        ".rspec"
+      ]
+    },
+    {
+      "icon": "file_type_rubocop.svg",
+      "light": "file_type_light_rubocop.svg",
+      "fileNames": [
+        ".rubocop_todo.yml",
+        ".rubocop.yml"
+      ]
+    },
+    {
+      "icon": "file_type_ruby.svg",
+      "fileNames": [
+        ".ruby-version",
+        "config.ru"
+      ],
+      "fileSuffixes": [
+        ".builder",
+        ".erb",
+        ".gemspec",
+        ".jbuilder",
+        ".prawn",
+        ".rabl",
+        ".rake",
+        ".rb",
+        ".rbs",
+        ".rbw",
+        ".rjs",
+        ".rsel",
+        ".ru",
+        ".rxml",
+        ".thor"
+      ]
+    },
+    {
+      "icon": "file_type_ruff.svg",
+      "fileNames": [
+        ".ruff.toml",
+        "ruff.toml"
+      ]
+    },
+    {
+      "icon": "file_type_sails.svg",
+      "fileNames": [
+        ".sailsrc"
+      ]
+    },
+    {
+      "icon": "file_type_sapphire_framework_cli.svg",
+      "fileNames": [
+        ".sapphirerc",
+        ".sapphirerc.json",
+        ".sapphirerc.yml"
+      ]
+    },
+    {
+      "icon": "file_type_sentry.svg",
+      "fileNames": [
+        ".sentryclirc"
+      ]
+    },
+    {
+      "icon": "file_type_sequelize.svg",
+      "fileNames": [
+        ".sequelizerc",
+        ".sequelizerc.js",
+        ".sequelizerc.json"
+      ]
+    },
+    {
+      "icon": "file_type_shellcheck.svg",
+      "fileNames": [
+        ".shellcheckrc"
+      ]
+    },
+    {
+      "icon": "file_type_snyk.svg",
+      "fileNames": [
+        ".snyk"
+      ]
+    },
+    {
+      "icon": "file_type_solidarity.svg",
+      "fileNames": [
+        ".solidarity",
+        ".solidarity.json"
+      ]
+    },
+    {
+      "icon": "file_type_stackblitz.svg",
+      "fileNames": [
+        ".stackblitzrc"
+      ]
+    },
+    {
+      "icon": "file_type_stryker.svg",
+      "fileNames": [
+        ".stryker.conf.cjs",
+        ".stryker.conf.conf",
+        ".stryker.conf.js",
+        ".stryker.conf.json",
+        ".stryker.conf.mjs",
+        ".stryker.config.cjs",
+        ".stryker.config.conf",
+        ".stryker.config.js",
+        ".stryker.config.json",
+        ".stryker.config.mjs",
+        "stryker-config.cjs",
+        "stryker-config.conf",
+        "stryker-config.js",
+        "stryker-config.json",
+        "stryker-config.mjs",
+        "stryker.conf.cjs",
+        "stryker.conf.conf",
+        "stryker.conf.js",
+        "stryker.conf.json",
+        "stryker.conf.mjs",
+        "stryker.config.cjs",
+        "stryker.config.conf",
+        "stryker.config.js",
+        "stryker.config.json",
+        "stryker.config.mjs",
+        "stryker4s.cjs",
+        "stryker4s.conf",
+        "stryker4s.js",
+        "stryker4s.json",
+        "stryker4s.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_styleci.svg",
+      "fileNames": [
+        ".styleci.yml"
+      ]
+    },
+    {
+      "icon": "file_type_stylelint.svg",
+      "light": "file_type_light_stylelint.svg",
+      "fileNames": [
+        ".stylelintcache",
+        ".stylelintignore",
+        ".stylelintrc",
+        ".stylelintrc.cjs",
+        ".stylelintrc.js",
+        ".stylelintrc.json",
+        ".stylelintrc.mjs",
+        ".stylelintrc.ts",
+        ".stylelintrc.yaml",
+        ".stylelintrc.yml",
+        "stylelint.config.cjs",
+        "stylelint.config.js",
+        "stylelint.config.json",
+        "stylelint.config.mjs",
+        "stylelint.config.ts",
+        "stylelint.config.yaml",
+        "stylelint.config.yml"
+      ]
+    },
+    {
+      "icon": "file_type_stylish_haskell.svg",
+      "fileNames": [
+        ".stylish-haskell.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_subversion.svg",
+      "fileNames": [
+        ".svnignore"
+      ]
+    },
+    {
+      "icon": "file_type_swc.svg",
+      "fileNames": [
+        ".swcrc"
+      ]
+    },
+    {
+      "icon": "file_type_swift.svg",
+      "fileNames": [
+        ".swift-version",
+        "package.pins"
+      ],
+      "fileSuffixes": [
+        ".swift"
+      ]
+    },
+    {
+      "icon": "file_type_syncpack.svg",
+      "fileNames": [
+        ".syncpackrc",
+        ".syncpackrc.cjs",
+        ".syncpackrc.js",
+        ".syncpackrc.json",
+        ".syncpackrc.mjs",
+        ".syncpackrc.ts",
+        ".syncpackrc.yaml",
+        ".syncpackrc.yml",
+        "syncpack.config.cjs",
+        "syncpack.config.js",
+        "syncpack.config.mjs",
+        "syncpack.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_tailwind.svg",
+      "fileNames": [
+        ".tailwind.cjs",
+        ".tailwind.coffee",
+        ".tailwind.js",
+        ".tailwind.json",
+        ".tailwind.mjs",
+        ".tailwind.ts",
+        ".tailwindrc.cjs",
+        ".tailwindrc.coffee",
+        ".tailwindrc.js",
+        ".tailwindrc.json",
+        ".tailwindrc.mjs",
+        ".tailwindrc.ts",
+        "tailwind.cjs",
+        "tailwind.coffee",
+        "tailwind.config.cjs",
+        "tailwind.config.coffee",
+        "tailwind.config.js",
+        "tailwind.config.json",
+        "tailwind.config.mjs",
+        "tailwind.config.ts",
+        "tailwind.js",
+        "tailwind.json",
+        "tailwind.mjs",
+        "tailwind.ts"
+      ],
+      "fileSuffixes": [
+        ".css"
+      ]
+    },
+    {
+      "icon": "file_type_taplo.svg",
+      "fileNames": [
+        ".taplo.toml",
+        "taplo.toml"
+      ]
+    },
+    {
+      "icon": "file_type_tauri.svg",
+      "fileNames": [
+        ".taurignore",
+        "tauri.conf.json"
+      ]
+    },
+    {
+      "icon": "file_type_testcafe.svg",
+      "light": "file_type_light_testcafe.svg",
+      "fileNames": [
+        ".testcaferc.json"
+      ]
+    },
+    {
+      "icon": "file_type_textlint.svg",
+      "fileNames": [
+        ".textlintignore",
+        ".textlintrc",
+        ".textlintrc.cjs",
+        ".textlintrc.js",
+        ".textlintrc.json",
+        ".textlintrc.yaml",
+        ".textlintrc.yml"
+      ]
+    },
+    {
+      "icon": "file_type_tfs.svg",
+      "fileNames": [
+        ".tfignore"
+      ]
+    },
+    {
+      "icon": "file_type_tiltfile.svg",
+      "fileNames": [
+        ".tiltignore",
+        "tiltfile"
+      ]
+    },
+    {
+      "icon": "file_type_tmux.svg",
+      "light": "file_type_light_tmux.svg",
+      "fileNames": [
+        ".tmux.conf"
+      ]
+    },
+    {
+      "icon": "file_type_config.svg",
+      "light": "file_type_light_config.svg",
+      "fileNames": [
+        ".tool-versions"
+      ],
+      "fileSuffixes": [
+        ".plist",
+        ".properties"
+      ]
+    },
+    {
+      "icon": "file_type_travis.svg",
+      "fileNames": [
+        ".travis.yml"
+      ]
+    },
+    {
+      "icon": "file_type_trivy.svg",
+      "light": "file_type_light_trivy.svg",
+      "fileNames": [
+        ".trivyignore",
+        "trivy.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_unibeautify.svg",
+      "light": "file_type_light_unibeautify.svg",
+      "fileNames": [
+        ".unibeautifyrc",
+        ".unibeautifyrc.js",
+        ".unibeautifyrc.json",
+        ".unibeautifyrc.yaml",
+        ".unibeautifyrc.yml",
+        "unibeautify.config.js"
+      ]
+    },
+    {
+      "icon": "file_type_vale.svg",
+      "fileNames": [
+        ".vale.ini"
+      ]
+    },
+    {
+      "icon": "file_type_vscode_test.svg",
+      "fileNames": [
+        ".vscode-test.js",
+        ".vscode-test.json",
+        ".vscode-test.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_vscode.svg",
+      "fileNames": [
+        ".vscodeignore",
+        "launch.json",
+        "tasks.json",
+        "vscodeignore.json"
+      ],
+      "fileSuffixes": [
+        ".code-snippets",
+        ".code-workspace"
+      ]
+    },
+    {
+      "icon": "file_type_azurepipelines.svg",
+      "fileNames": [
+        ".vsts-ci.yml",
+        "azure-pipelines.yml"
+      ],
+      "fileSuffixes": [
+        ".azure-pipelines.yml"
+      ]
+    },
+    {
+      "icon": "file_type_vue.svg",
+      "fileNames": [
+        ".vue-cli-rc"
+      ],
+      "fileSuffixes": [
+        ".vue",
+        ".vue2",
+        ".vue3",
+        ".vuerc",
+        ".vues",
+        ".vuex"
+      ]
+    },
+    {
+      "icon": "file_type_vueconfig.svg",
+      "fileNames": [
+        ".vuerc",
+        "vue.config.cjs",
+        "vue.config.js",
+        "vue.config.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_wallaby.svg",
+      "fileNames": [
+        ".wallaby.coffee",
+        ".wallaby.conf.coffee",
+        ".wallaby.conf.js",
+        ".wallaby.conf.json",
+        ".wallaby.conf.ts",
+        ".wallaby.js",
+        ".wallaby.json",
+        ".wallaby.ts",
+        "wallaby.coffee",
+        "wallaby.conf.coffee",
+        "wallaby.conf.js",
+        "wallaby.conf.json",
+        "wallaby.conf.ts",
+        "wallaby.js",
+        "wallaby.json",
+        "wallaby.ts"
+      ]
+    },
+    {
+      "icon": "file_type_watchmanconfig.svg",
+      "fileNames": [
+        ".watchmanconfig"
+      ]
+    },
+    {
+      "icon": "file_type_weblate.svg",
+      "fileNames": [
+        ".weblate",
+        ".weblate.ini",
+        "weblate",
+        "weblate.ini"
+      ]
+    },
+    {
+      "icon": "file_type_xcode.svg",
+      "fileNames": [
+        ".xcode-version"
+      ],
+      "fileSuffixes": [
+        ".xcodeproj"
+      ]
+    },
+    {
+      "icon": "file_type_xorg.svg",
+      "light": "file_type_light_xorg.svg",
+      "fileNames": [
+        ".xcompose"
+      ],
+      "fileSuffixes": [
+        ".xcompose"
+      ]
+    },
+    {
+      "icon": "file_type_xo.svg",
+      "fileNames": [
+        ".xo-config",
+        ".xo-config.cjs",
+        ".xo-config.js",
+        ".xo-config.json",
+        "xo.config.cjs",
+        "xo.config.cts",
+        "xo.config.js",
+        "xo.config.mjs",
+        "xo.config.mts",
+        "xo.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_yamllint.svg",
+      "fileNames": [
+        ".yamllint"
+      ]
+    },
+    {
+      "icon": "file_type_yarn.svg",
+      "fileNames": [
+        ".yarn-integrity",
+        ".yarn-metadata.json",
+        ".yarn-state.yml",
+        ".yarnclean",
+        ".yarnignore",
+        ".yarnrc",
+        ".yarnrc.yml",
+        "yarn.lock"
+      ]
+    },
+    {
+      "icon": "file_type_yandex.svg",
+      "fileNames": [
+        ".yaspeller.json",
+        ".yaspellerrc"
+      ]
+    },
+    {
+      "icon": "file_type_yeoman.svg",
+      "fileNames": [
+        ".yo-rc.json"
+      ]
+    },
+    {
+      "icon": "file_type_agents.svg",
+      "light": "file_type_light_agents.svg",
+      "fileNames": [
+        "agents.md"
+      ]
+    },
+    {
+      "icon": "file_type_alchemy.svg",
+      "fileNames": [
+        "alchemy.run.js",
+        "alchemy.run.mjs",
+        "alchemy.run.mts",
+        "alchemy.run.ts"
+      ]
+    },
+    {
+      "icon": "file_type_allure.svg",
+      "fileNames": [
+        "allurerc.cjs",
+        "allurerc.js",
+        "allurerc.json",
+        "allurerc.mjs",
+        "allurerc.yaml",
+        "allurerc.yml"
+      ]
+    },
+    {
+      "icon": "file_type_antlers_html.svg",
+      "fileNames": [
+        "antlers.html"
+      ]
+    },
+    {
+      "icon": "file_type_api_extractor.svg",
+      "fileNames": [
+        "api-extractor-base.json",
+        "api-extractor.json"
+      ]
+    },
+    {
+      "icon": "file_type_expo.svg",
+      "light": "file_type_light_expo.svg",
+      "fileNames": [
+        "app.config.js",
+        "app.config.json",
+        "app.config.json5",
+        "app.json",
+        "eas.json"
+      ]
+    },
+    {
+      "icon": "file_type_debian.svg",
+      "fileNames": [
+        "aptfile"
+      ],
+      "fileSuffixes": [
+        ".deb"
+      ]
+    },
+    {
+      "icon": "file_type_assembly_script.svg",
+      "fileNames": [
+        "asconfig.json"
+      ]
+    },
+    {
+      "icon": "file_type_astroconfig.svg",
+      "light": "file_type_light_astroconfig.svg",
+      "fileNames": [
+        "astro.config.cjs",
+        "astro.config.cts",
+        "astro.config.js",
+        "astro.config.mjs",
+        "astro.config.mts",
+        "astro.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_asyncapi.svg",
+      "fileNames": [
+        "asyncapi.json",
+        "asyncapi.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_aurelia.svg",
+      "fileNames": [
+        "aurelia.json"
+      ]
+    },
+    {
+      "icon": "file_type_behat.svg",
+      "light": "file_type_light_behat.svg",
+      "fileNames": [
+        "behat.dist.php",
+        "behat.dist.yaml",
+        "behat.dist.yml",
+        "behat.php",
+        "behat.yaml",
+        "behat.yaml.dist",
+        "behat.yml",
+        "behat.yml.dist"
+      ]
+    },
+    {
+      "icon": "file_type_chef.svg",
+      "fileNames": [
+        "berksfile",
+        "berksfile.lock",
+        "chefignore",
+        "policyfile.lock.json",
+        "policyfile.rb"
+      ]
+    },
+    {
+      "icon": "file_type_bitbucketpipeline.svg",
+      "fileNames": [
+        "bitbucket-pipelines.yml"
+      ]
+    },
+    {
+      "icon": "file_type_ninja.svg",
+      "fileNames": [
+        "build.ninja"
+      ]
+    },
+    {
+      "icon": "file_type_bunfig.svg",
+      "fileNames": [
+        "bunfig.toml"
+      ]
+    },
+    {
+      "icon": "file_type_caddy.svg",
+      "fileNames": [
+        "caddyfile"
+      ]
+    },
+    {
+      "icon": "file_type_capacitor.svg",
+      "fileNames": [
+        "capacitor.config.json",
+        "capacitor.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_cargo.svg",
+      "fileNames": [
+        "cargo.lock",
+        "cargo.toml"
+      ]
+    },
+    {
+      "icon": "file_type_helm.svg",
+      "fileNames": [
+        "chart.lock",
+        "chart.yaml"
+      ],
+      "fileSuffixes": [
+        ".helm.tpl"
+      ]
+    },
+    {
+      "icon": "file_type_haxecheckstyle.svg",
+      "fileNames": [
+        "checkstyle.json"
+      ]
+    },
+    {
+      "icon": "file_type_circleci.svg",
+      "light": "file_type_light_circleci.svg",
+      "fileNames": [
+        "circle.yml"
+      ]
+    },
+    {
+      "icon": "file_type_claude.svg",
+      "fileNames": [
+        "claude.local.md",
+        "claude.md"
+      ]
+    },
+    {
+      "icon": "file_type_cmake.svg",
+      "fileNames": [
+        "cmakecache.txt",
+        "cmakelists.txt"
+      ],
+      "fileSuffixes": [
+        ".cmake"
+      ]
+    },
+    {
+      "icon": "file_type_datadog.svg",
+      "fileNames": [
+        "code-security.datadog.yaml",
+        "code-security.datadog.yml",
+        "datadog-ci.json",
+        "repository.datadog.yaml",
+        "repository.datadog.yml",
+        "service.datadog.yaml",
+        "static-analysis.datadog.yaml",
+        "static-analysis.datadog.yml"
+      ]
+    },
+    {
+      "icon": "file_type_codemagic.svg",
+      "fileNames": [
+        "codemagic.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_codeowners.svg",
+      "light": "file_type_light_codeowners.svg",
+      "fileNames": [
+        "codeowners"
+      ]
+    },
+    {
+      "icon": "file_type_shadcn.svg",
+      "light": "file_type_light_shadcn.svg",
+      "fileNames": [
+        "components.json"
+      ]
+    },
+    {
+      "icon": "file_type_composer.svg",
+      "fileNames": [
+        "composer.json",
+        "composer.lock"
+      ]
+    },
+    {
+      "icon": "file_type_conan.svg",
+      "fileNames": [
+        "conanfile.py",
+        "conanfile.txt"
+      ]
+    },
+    {
+      "icon": "file_type_context7.svg",
+      "fileNames": [
+        "context7.json"
+      ]
+    },
+    {
+      "icon": "file_type_convex.svg",
+      "fileNames": [
+        "convex.config.js",
+        "convex.config.ts",
+        "convex.json"
+      ]
+    },
+    {
+      "icon": "file_type_copilot.svg",
+      "light": "file_type_light_copilot.svg",
+      "fileNames": [
+        "copilot-instructions.md",
+        "github-copilot.xml"
+      ],
+      "fileSuffixes": [
+        ".instructions.md"
+      ]
+    },
+    {
+      "icon": "file_type_license.svg",
+      "fileNames": [
+        "copying",
+        "copying.lesser",
+        "copying.lesser.md",
+        "copying.lesser.rst",
+        "copying.lesser.txt",
+        "copying.md",
+        "copying.rst",
+        "copying.txt",
+        "licence",
+        "licence.md",
+        "licence.rst",
+        "licence.txt",
+        "license",
+        "license-agpl",
+        "license-agpl.md",
+        "license-agpl.rst",
+        "license-agpl.txt",
+        "license-apache",
+        "license-apache.md",
+        "license-apache.rst",
+        "license-apache.txt",
+        "license-gpl",
+        "license-gpl.md",
+        "license-gpl.rst",
+        "license-gpl.txt",
+        "license-mit",
+        "license-mit.md",
+        "license-mit.rst",
+        "license-mit.txt",
+        "license.md",
+        "license.rst",
+        "license.txt"
+      ],
+      "fileSuffixes": [
+        ".enc",
+        ".lic",
+        ".license"
+      ]
+    },
+    {
+      "icon": "file_type_crowdin.svg",
+      "fileNames": [
+        "crowdin.yml"
+      ]
+    },
+    {
+      "icon": "file_type_cypress.svg",
+      "light": "file_type_light_cypress.svg",
+      "fileNames": [
+        "cypress.config.cjs",
+        "cypress.config.js",
+        "cypress.config.mjs",
+        "cypress.config.ts",
+        "cypress.env.json",
+        "cypress.json"
+      ]
+    },
+    {
+      "icon": "file_type_databricks.svg",
+      "fileNames": [
+        "databricks.yaml",
+        "databricks.yml"
+      ]
+    },
+    {
+      "icon": "file_type_dbt_bouncer.svg",
+      "fileNames": [
+        "dbt-bouncer.toml",
+        "dbt-bouncer.yaml",
+        "dbt-bouncer.yml"
+      ]
+    },
+    {
+      "icon": "file_type_deno.svg",
+      "fileNames": [
+        "deno.json",
+        "deno.jsonc",
+        "deno.lock"
+      ]
+    },
+    {
+      "icon": "file_type_dependabot.svg",
+      "fileNames": [
+        "dependabot.yaml",
+        "dependabot.yml"
+      ]
+    },
+    {
+      "icon": "file_type_dependencies.svg",
+      "fileNames": [
+        "dependencies.yml"
+      ]
+    },
+    {
+      "icon": "file_type_devenv.svg",
+      "light": "file_type_light_devenv.svg",
+      "fileNames": [
+        "devenv.lock",
+        "devenv.nix",
+        "devenv.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_devvit.svg",
+      "fileNames": [
+        "devvit.config.cjs",
+        "devvit.config.dev.cjs",
+        "devvit.config.dev.js",
+        "devvit.config.dev.mjs",
+        "devvit.config.dev.mts",
+        "devvit.config.dev.ts",
+        "devvit.config.js",
+        "devvit.config.mjs",
+        "devvit.config.mts",
+        "devvit.config.prod.cjs",
+        "devvit.config.prod.js",
+        "devvit.config.prod.mjs",
+        "devvit.config.prod.mts",
+        "devvit.config.prod.ts",
+        "devvit.config.test.cjs",
+        "devvit.config.test.js",
+        "devvit.config.test.mjs",
+        "devvit.config.test.mts",
+        "devvit.config.test.ts",
+        "devvit.config.ts",
+        "devvit.dev.json",
+        "devvit.json",
+        "devvit.prod.json",
+        "devvit.test.json"
+      ]
+    },
+    {
+      "icon": "file_type_dockertest.svg",
+      "fileNames": [
+        "docker-compose.test.yml"
+      ]
+    },
+    {
+      "icon": "file_type_docusaurus.svg",
+      "fileNames": [
+        "docusaurus.config.cjs",
+        "docusaurus.config.cts",
+        "docusaurus.config.js",
+        "docusaurus.config.mjs",
+        "docusaurus.config.mts",
+        "docusaurus.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_doppler.svg",
+      "fileNames": [
+        "doppler-template.yaml",
+        "doppler.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_doxyfile.svg",
+      "fileNames": [
+        "doxyfile"
+      ],
+      "fileSuffixes": [
+        ".doxyfile"
+      ]
+    },
+    {
+      "icon": "file_type_drizzle_orm.svg",
+      "light": "file_type_light_drizzle_orm.svg",
+      "fileNames": [
+        "drizzle.config.js",
+        "drizzle.config.json",
+        "drizzle.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_dune.svg",
+      "fileNames": [
+        "dune",
+        "dune-project",
+        "dune-workspace"
+      ]
+    },
+    {
+      "icon": "file_type_pm2.svg",
+      "fileNames": [
+        "ecosystem.config.cjs",
+        "ecosystem.config.js",
+        "ecosystem.config.json",
+        "ecosystem.config.yaml",
+        "ecosystem.config.yml"
+      ]
+    },
+    {
+      "icon": "file_type_elm.svg",
+      "fileNames": [
+        "elm-package.json"
+      ],
+      "fileSuffixes": [
+        ".elm"
+      ]
+    },
+    {
+      "icon": "file_type_esbuild.svg",
+      "fileNames": [
+        "esbuild.cjs",
+        "esbuild.config.cjs",
+        "esbuild.config.js",
+        "esbuild.config.mjs",
+        "esbuild.config.ts",
+        "esbuild.js",
+        "esbuild.mjs",
+        "esbuild.ts"
+      ]
+    },
+    {
+      "icon": "file_type_maven.svg",
+      "fileNames": [
+        "extensions.xml",
+        "maven.config",
+        "pom.xml",
+        "settings.xml"
+      ]
+    },
+    {
+      "icon": "file_type_fastly.svg",
+      "fileNames": [
+        "fastly.toml"
+      ]
+    },
+    {
+      "icon": "file_type_favicon.svg",
+      "fileNames": [
+        "favicon.ico"
+      ]
+    },
+    {
+      "icon": "file_type_firebasehosting.svg",
+      "light": "file_type_light_firebasehosting.svg",
+      "fileNames": [
+        "firebase.json"
+      ]
+    },
+    {
+      "icon": "file_type_firestore.svg",
+      "fileNames": [
+        "firestore.indexes.json",
+        "firestore.rules"
+      ]
+    },
+    {
+      "icon": "file_type_nix.svg",
+      "fileNames": [
+        "flake.lock"
+      ],
+      "fileSuffixes": [
+        ".nix"
+      ]
+    },
+    {
+      "icon": "file_type_flareact.svg",
+      "fileNames": [
+        "flareact.config.js"
+      ]
+    },
+    {
+      "icon": "file_type_fleet.svg",
+      "fileNames": [
+        "fleet.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_flyio.svg",
+      "fileNames": [
+        "fly.toml"
+      ]
+    },
+    {
+      "icon": "file_type_electron.svg",
+      "fileNames": [
+        "forge.config.js",
+        "forge.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_formkit.svg",
+      "fileNames": [
+        "formkit.config.cjs",
+        "formkit.config.js",
+        "formkit.config.mjs",
+        "formkit.config.ts",
+        "formkit.theme.cjs",
+        "formkit.theme.js",
+        "formkit.theme.mjs",
+        "formkit.theme.ts"
+      ]
+    },
+    {
+      "icon": "file_type_funding.svg",
+      "fileNames": [
+        "funding.yml"
+      ]
+    },
+    {
+      "icon": "file_type_fusebox.svg",
+      "fileNames": [
+        "fuse.js"
+      ]
+    },
+    {
+      "icon": "file_type_gatsby.svg",
+      "fileNames": [
+        "gatsby-browser.js",
+        "gatsby-browser.ts",
+        "gatsby-browser.tsx",
+        "gatsby-config.js",
+        "gatsby-config.mjs",
+        "gatsby-config.ts",
+        "gatsby-node.js",
+        "gatsby-node.mjs",
+        "gatsby-node.ts",
+        "gatsby-ssr.js",
+        "gatsby-ssr.ts",
+        "gatsby-ssr.tsx"
+      ]
+    },
+    {
+      "icon": "file_type_bundler.svg",
+      "fileNames": [
+        "gemfile",
+        "gemfile.lock"
+      ],
+      "fileSuffixes": [
+        ".gemfile",
+        ".gemfile.lock"
+      ]
+    },
+    {
+      "icon": "file_type_gemini.svg",
+      "fileNames": [
+        "gemini.md"
+      ]
+    },
+    {
+      "icon": "file_type_gleamconfig.svg",
+      "fileNames": [
+        "gleam.toml"
+      ]
+    },
+    {
+      "icon": "file_type_glide.svg",
+      "fileNames": [
+        "glide.yml"
+      ]
+    },
+    {
+      "icon": "file_type_go_package.svg",
+      "fileNames": [
+        "go.mod",
+        "go.sum"
+      ],
+      "fileSuffixes": [
+        ".mod"
+      ]
+    },
+    {
+      "icon": "file_type_go_work.svg",
+      "fileNames": [
+        "go.work",
+        "go.work.sum"
+      ],
+      "fileSuffixes": [
+        ".work"
+      ]
+    },
+    {
+      "icon": "file_type_greenkeeper.svg",
+      "fileNames": [
+        "greenkeeper.json"
+      ]
+    },
+    {
+      "icon": "file_type_gridsome.svg",
+      "fileNames": [
+        "gridsome.client.js",
+        "gridsome.client.ts",
+        "gridsome.config.js",
+        "gridsome.config.ts",
+        "gridsome.server.js",
+        "gridsome.server.ts"
+      ]
+    },
+    {
+      "icon": "file_type_grok.svg",
+      "light": "file_type_light_grok.svg",
+      "fileNames": [
+        "grok.md"
+      ]
+    },
+    {
+      "icon": "file_type_grunt.svg",
+      "fileNames": [
+        "gruntfile.babel.cjs",
+        "gruntfile.babel.coffee",
+        "gruntfile.babel.js",
+        "gruntfile.babel.ts",
+        "gruntfile.cjs",
+        "gruntfile.coffee",
+        "gruntfile.js",
+        "gruntfile.ts"
+      ]
+    },
+    {
+      "icon": "file_type_gulp.svg",
+      "fileNames": [
+        "gulpfile.babel.coffee",
+        "gulpfile.babel.js",
+        "gulpfile.babel.mjs",
+        "gulpfile.babel.ts",
+        "gulpfile.coffee",
+        "gulpfile.esm.coffee",
+        "gulpfile.esm.js",
+        "gulpfile.esm.mjs",
+        "gulpfile.esm.ts",
+        "gulpfile.js",
+        "gulpfile.mjs",
+        "gulpfile.ts"
+      ]
+    },
+    {
+      "icon": "file_type_hardhat.svg",
+      "fileNames": [
+        "hardhat.config.cjs",
+        "hardhat.config.js",
+        "hardhat.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_haxe.svg",
+      "fileNames": [
+        "haxelib.json"
+      ],
+      "fileSuffixes": [
+        ".haxe"
+      ]
+    },
+    {
+      "icon": "file_type_horusec.svg",
+      "fileNames": [
+        "horusec-config.json"
+      ]
+    },
+    {
+      "icon": "file_type_humanstxt.svg",
+      "fileNames": [
+        "humans.txt"
+      ]
+    },
+    {
+      "icon": "file_type_fossil.svg",
+      "fileNames": [
+        "ignore-glob"
+      ]
+    },
+    {
+      "icon": "file_type_lime.svg",
+      "fileNames": [
+        "include.xml"
+      ],
+      "fileSuffixes": [
+        ".hxp"
+      ]
+    },
+    {
+      "icon": "file_type_ionic.svg",
+      "fileNames": [
+        "ionic.config.json",
+        "ionic.project"
+      ]
+    },
+    {
+      "icon": "file_type_jake.svg",
+      "fileNames": [
+        "jakefile",
+        "jakefile.js"
+      ]
+    },
+    {
+      "icon": "file_type_jasmine.svg",
+      "fileNames": [
+        "jasmine.json"
+      ]
+    },
+    {
+      "icon": "file_type_jsconfig.svg",
+      "light": "file_type_light_jsconfig.svg",
+      "fileNames": [
+        "jsconfig.json"
+      ]
+    },
+    {
+      "icon": "file_type_jsr.svg",
+      "fileNames": [
+        "jsr.json",
+        "jsr.jsonc"
+      ]
+    },
+    {
+      "icon": "file_type_just.svg",
+      "fileNames": [
+        "justfile"
+      ]
+    },
+    {
+      "icon": "file_type_karma.svg",
+      "fileNames": [
+        "karma.conf.coffee",
+        "karma.conf.js",
+        "karma.conf.ts"
+      ]
+    },
+    {
+      "icon": "file_type_knex.svg",
+      "fileNames": [
+        "knexfile.coffee",
+        "knexfile.eg",
+        "knexfile.js",
+        "knexfile.ls",
+        "knexfile.ts"
+      ]
+    },
+    {
+      "icon": "file_type_leanconfig.svg",
+      "light": "file_type_light_leanconfig.svg",
+      "fileNames": [
+        "lake-manifest.json",
+        "lakefile.lean",
+        "lakefile.toml",
+        "lean-toolchain"
+      ]
+    },
+    {
+      "icon": "file_type_language_configuration.svg",
+      "fileNames": [
+        "language-configuration.json"
+      ],
+      "fileSuffixes": [
+        ".language-configuration.json"
+      ]
+    },
+    {
+      "icon": "file_type_layout.svg",
+      "fileNames": [
+        "layout.htm",
+        "layout.html"
+      ],
+      "fileSuffixes": [
+        ".layout.htm",
+        ".layout.html",
+        ".master"
+      ]
+    },
+    {
+      "icon": "file_type_lerna.svg",
+      "light": "file_type_light_lerna.svg",
+      "fileNames": [
+        "lerna.json"
+      ]
+    },
+    {
+      "icon": "file_type_livekit.svg",
+      "light": "file_type_light_livekit.svg",
+      "fileNames": [
+        "livekit.toml",
+        "livekit.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_mailing.svg",
+      "light": "file_type_light_mailing.svg",
+      "fileNames": [
+        "mailing.config.json"
+      ]
+    },
+    {
+      "icon": "file_type_manifest.svg",
+      "fileNames": [
+        "manifest"
+      ]
+    },
+    {
+      "icon": "file_type_manifest_bak.svg",
+      "fileNames": [
+        "manifest.bak"
+      ]
+    },
+    {
+      "icon": "file_type_manifest_skip.svg",
+      "fileNames": [
+        "manifest.skip"
+      ]
+    },
+    {
+      "icon": "file_type_master-co.svg",
+      "fileNames": [
+        "master.css.js",
+        "master.css.json",
+        "master.css.mjs",
+        "master.css.ts",
+        "master.js",
+        "master.json",
+        "master.mjs",
+        "master.ts"
+      ]
+    },
+    {
+      "icon": "file_type_mcp.svg",
+      "light": "file_type_light_mcp.svg",
+      "fileNames": [
+        "mcp.json"
+      ]
+    },
+    {
+      "icon": "file_type_mdx-components.svg",
+      "light": "file_type_light_mdx-components.svg",
+      "fileNames": [
+        "mdx-components.cjs",
+        "mdx-components.cts",
+        "mdx-components.js",
+        "mdx-components.jsx",
+        "mdx-components.mjs",
+        "mdx-components.mts",
+        "mdx-components.ts",
+        "mdx-components.tsx"
+      ]
+    },
+    {
+      "icon": "file_type_meson.svg",
+      "fileNames": [
+        "meson.build"
+      ]
+    },
+    {
+      "icon": "file_type_metro.svg",
+      "fileNames": [
+        "metro.cjs",
+        "metro.config.cjs",
+        "metro.config.cts",
+        "metro.config.js",
+        "metro.config.json",
+        "metro.config.mjs",
+        "metro.config.mts",
+        "metro.config.ts",
+        "metro.cts",
+        "metro.js",
+        "metro.json",
+        "metro.mjs",
+        "metro.mts",
+        "metro.ts"
+      ]
+    },
+    {
+      "icon": "file_type_turbo.svg",
+      "light": "file_type_light_turbo.svg",
+      "fileNames": [
+        "microfrontends.json",
+        "microfrontends.jsonc",
+        "turbo.json",
+        "turbo.jsonc"
+      ]
+    },
+    {
+      "icon": "file_type_mikro_orm.svg",
+      "light": "file_type_light_mikro_orm.svg",
+      "fileNames": [
+        "mikro-orm.config.js",
+        "mikro-orm.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_msw.svg",
+      "fileNames": [
+        "mockserviceworker.js"
+      ]
+    },
+    {
+      "icon": "file_type_modernjs.svg",
+      "fileNames": [
+        "modern.config.js",
+        "modern.config.mjs",
+        "modern.config.ts",
+        "modern.runtime.js",
+        "modern.runtime.mjs",
+        "modern.runtime.ts",
+        "modern.server.js",
+        "modern.server.mjs",
+        "modern.server.ts"
+      ]
+    },
+    {
+      "icon": "file_type_moleculer.svg",
+      "fileNames": [
+        "moleculer.config.js",
+        "moleculer.config.json",
+        "moleculer.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_motif.svg",
+      "fileNames": [
+        "motif.json"
+      ]
+    },
+    {
+      "icon": "file_type_netlify.svg",
+      "light": "file_type_light_netlify.svg",
+      "fileNames": [
+        "netlify.toml"
+      ]
+    },
+    {
+      "icon": "file_type_next.svg",
+      "light": "file_type_light_next.svg",
+      "fileNames": [
+        "next.config.cjs",
+        "next.config.js",
+        "next.config.mjs",
+        "next.config.mts",
+        "next.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_ng_tailwind.svg",
+      "fileNames": [
+        "ng-tailwind.js"
+      ]
+    },
+    {
+      "icon": "file_type_nginx.svg",
+      "fileNames": [
+        "nginx.conf"
+      ],
+      "fileSuffixes": [
+        ".nginx"
+      ]
+    },
+    {
+      "icon": "file_type_nodemon.svg",
+      "fileNames": [
+        "nodemon.json"
+      ]
+    },
+    {
+      "icon": "file_type_ocx.svg",
+      "fileNames": [
+        "ocx.lock",
+        "ocx.toml"
+      ]
+    },
+    {
+      "icon": "file_type_opencode.svg",
+      "light": "file_type_light_opencode.svg",
+      "fileNames": [
+        "opencode.json",
+        "opencode.jsonc"
+      ]
+    },
+    {
+      "icon": "file_type_orval.svg",
+      "fileNames": [
+        "orval.config.js",
+        "orval.config.mjs",
+        "orval.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_paket.svg",
+      "fileNames": [
+        "paket.dependencies",
+        "paket.local",
+        "paket.lock",
+        "paket.references",
+        "paket.template"
+      ],
+      "fileSuffixes": [
+        ".paket.references",
+        ".paket.template"
+      ]
+    },
+    {
+      "icon": "file_type_pandacss.svg",
+      "fileNames": [
+        "panda.config.js",
+        "panda.config.mjs",
+        "panda.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_peeky.svg",
+      "fileNames": [
+        "peeky.config.js",
+        "peeky.config.mjs",
+        "peeky.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_phpstan.svg",
+      "fileNames": [
+        "phpstan.dist.neon",
+        "phpstan.neon"
+      ]
+    },
+    {
+      "icon": "file_type_phpunit.svg",
+      "fileNames": [
+        "phpunit",
+        "phpunit.xml",
+        "phpunit.xml.dist"
+      ]
+    },
+    {
+      "icon": "file_type_pixi.svg",
+      "fileNames": [
+        "pixi.lock",
+        "pixi.toml"
+      ]
+    },
+    {
+      "icon": "file_type_platformio.svg",
+      "fileNames": [
+        "platformio.ini"
+      ],
+      "fileSuffixes": [
+        ".dbgasm"
+      ]
+    },
+    {
+      "icon": "file_type_playwright.svg",
+      "fileNames": [
+        "playwright.config.cjs",
+        "playwright.config.cts",
+        "playwright.config.js",
+        "playwright.config.mjs",
+        "playwright.config.mts",
+        "playwright.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_poetry.svg",
+      "fileNames": [
+        "poetry.lock"
+      ]
+    },
+    {
+      "icon": "file_type_preact.svg",
+      "fileNames": [
+        "preact.config.js"
+      ]
+    },
+    {
+      "icon": "file_type_prefect.svg",
+      "light": "file_type_light_prefect.svg",
+      "fileNames": [
+        "prefect.toml"
+      ]
+    },
+    {
+      "icon": "file_type_prismaconfig.svg",
+      "fileNames": [
+        "prisma.cjs",
+        "prisma.config.cjs",
+        "prisma.config.cts",
+        "prisma.config.js",
+        "prisma.config.mjs",
+        "prisma.config.mts",
+        "prisma.config.ts",
+        "prisma.cts",
+        "prisma.js",
+        "prisma.mjs",
+        "prisma.mts",
+        "prisma.ts"
+      ]
+    },
+    {
+      "icon": "file_type_procfile.svg",
+      "fileNames": [
+        "procfile"
+      ]
+    },
+    {
+      "icon": "file_type_protractor.svg",
+      "fileNames": [
+        "protractor.conf.coffee",
+        "protractor.conf.js",
+        "protractor.conf.ts"
+      ]
+    },
+    {
+      "icon": "file_type_publiccode.svg",
+      "fileNames": [
+        "publiccode.yml"
+      ]
+    },
+    {
+      "icon": "file_type_pulumi.svg",
+      "fileNames": [
+        "pulumi.dev.yaml",
+        "pulumi.dev.yml",
+        "pulumi.prod.yaml",
+        "pulumi.prod.yml",
+        "pulumi.yaml",
+        "pulumi.yml"
+      ]
+    },
+    {
+      "icon": "file_type_purgecss.svg",
+      "fileNames": [
+        "purgecss.config.js"
+      ]
+    },
+    {
+      "icon": "file_type_pytyped.svg",
+      "fileNames": [
+        "py.typed"
+      ]
+    },
+    {
+      "icon": "file_type_pypi.svg",
+      "fileNames": [
+        "pyproject.toml"
+      ]
+    },
+    {
+      "icon": "file_type_qmldir.svg",
+      "fileNames": [
+        "qmldir"
+      ]
+    },
+    {
+      "icon": "file_type_qrc.svg",
+      "fileNames": [
+        "qrc"
+      ]
+    },
+    {
+      "icon": "file_type_quasar.svg",
+      "light": "file_type_light_quasar.svg",
+      "fileNames": [
+        "quasar.conf.js",
+        "quasar.config.cjs",
+        "quasar.config.js",
+        "quasar.config.mjs",
+        "quasar.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_railway.svg",
+      "light": "file_type_light_railway.svg",
+      "fileNames": [
+        "railway.json",
+        "railway.toml"
+      ]
+    },
+    {
+      "icon": "file_type_rake.svg",
+      "fileNames": [
+        "rakefile"
+      ]
+    },
+    {
+      "icon": "file_type_razzle.svg",
+      "light": "file_type_light_razzle.svg",
+      "fileNames": [
+        "razzle.config.js"
+      ]
+    },
+    {
+      "icon": "file_type_reactrouter.svg",
+      "light": "file_type_light_reactrouter.svg",
+      "fileNames": [
+        "react-router.config.js",
+        "react-router.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_render.svg",
+      "light": "file_type_light_render.svg",
+      "fileNames": [
+        "render.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_pip.svg",
+      "fileNames": [
+        "requirements-dev.txt",
+        "requirements-prod.txt",
+        "requirements-test.txt",
+        "requirements.txt"
+      ]
+    },
+    {
+      "icon": "file_type_robots.svg",
+      "fileNames": [
+        "robots.txt"
+      ]
+    },
+    {
+      "icon": "file_type_rolldown.svg",
+      "light": "file_type_light_rolldown.svg",
+      "fileNames": [
+        "rolldown.config.cjs",
+        "rolldown.config.coffee",
+        "rolldown.config.common.cjs",
+        "rolldown.config.common.coffee",
+        "rolldown.config.common.cts",
+        "rolldown.config.common.js",
+        "rolldown.config.common.mjs",
+        "rolldown.config.common.mts",
+        "rolldown.config.common.ts",
+        "rolldown.config.cts",
+        "rolldown.config.dev.cjs",
+        "rolldown.config.dev.coffee",
+        "rolldown.config.dev.cts",
+        "rolldown.config.dev.js",
+        "rolldown.config.dev.mjs",
+        "rolldown.config.dev.mts",
+        "rolldown.config.dev.ts",
+        "rolldown.config.js",
+        "rolldown.config.mjs",
+        "rolldown.config.mts",
+        "rolldown.config.prod.cjs",
+        "rolldown.config.prod.coffee",
+        "rolldown.config.prod.cts",
+        "rolldown.config.prod.js",
+        "rolldown.config.prod.mjs",
+        "rolldown.config.prod.mts",
+        "rolldown.config.prod.ts",
+        "rolldown.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_rollup.svg",
+      "fileNames": [
+        "rollup.config.cjs",
+        "rollup.config.coffee",
+        "rollup.config.common.cjs",
+        "rollup.config.common.coffee",
+        "rollup.config.common.js",
+        "rollup.config.common.mjs",
+        "rollup.config.common.ts",
+        "rollup.config.dev.cjs",
+        "rollup.config.dev.coffee",
+        "rollup.config.dev.js",
+        "rollup.config.dev.mjs",
+        "rollup.config.dev.ts",
+        "rollup.config.js",
+        "rollup.config.mjs",
+        "rollup.config.prod.cjs",
+        "rollup.config.prod.coffee",
+        "rollup.config.prod.js",
+        "rollup.config.prod.mjs",
+        "rollup.config.prod.ts",
+        "rollup.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_rome.svg",
+      "light": "file_type_light_rome.svg",
+      "fileNames": [
+        "rome.json"
+      ]
+    },
+    {
+      "icon": "file_type_rust_toolchain.svg",
+      "light": "file_type_light_rust_toolchain.svg",
+      "fileNames": [
+        "rust-toolchain",
+        "rust-toolchain.toml"
+      ]
+    },
+    {
+      "icon": "file_type_seedkit.svg",
+      "fileNames": [
+        "seedkit.config.js",
+        "seedkit.config.mjs",
+        "seedkit.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_serverless.svg",
+      "fileNames": [
+        "serverless.js",
+        "serverless.json",
+        "serverless.ts",
+        "serverless.yml"
+      ]
+    },
+    {
+      "icon": "file_type_shuttle.svg",
+      "fileNames": [
+        "shuttle.toml"
+      ]
+    },
+    {
+      "icon": "file_type_sitemap.svg",
+      "fileNames": [
+        "sitemap.atom",
+        "sitemap.rss",
+        "sitemap.txt",
+        "sitemap.xml"
+      ]
+    },
+    {
+      "icon": "file_type_skill.svg",
+      "light": "file_type_light_skill.svg",
+      "fileNames": [
+        "skill.md"
+      ]
+    },
+    {
+      "icon": "file_type_slashup.svg",
+      "fileNames": [
+        "slash-up.config.js"
+      ]
+    },
+    {
+      "icon": "file_type_smithery.svg",
+      "fileNames": [
+        "smithery.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_snapcraft.svg",
+      "fileNames": [
+        "snapcraft.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_snaplet.svg",
+      "fileNames": [
+        "snaplet.config.js",
+        "snaplet.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_spin.svg",
+      "light": "file_type_light_spin.svg",
+      "fileNames": [
+        "spin.toml"
+      ]
+    },
+    {
+      "icon": "file_type_sst.svg",
+      "fileNames": [
+        "sst-env.d.ts",
+        "sst-env.js",
+        "sst-env.ts",
+        "sst.config.d.ts",
+        "sst.config.js",
+        "sst.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_firebasestorage.svg",
+      "fileNames": [
+        "storage.rules"
+      ]
+    },
+    {
+      "icon": "file_type_eas-metadata.svg",
+      "light": "file_type_light_eas-metadata.svg",
+      "fileNames": [
+        "store.config.json"
+      ]
+    },
+    {
+      "icon": "file_type_svelteconfig.svg",
+      "fileNames": [
+        "svelte.config.js",
+        "svelte.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_svgo.svg",
+      "fileNames": [
+        "svgo.config.cjs",
+        "svgo.config.js",
+        "svgo.config.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_symfony.svg",
+      "light": "file_type_light_symfony.svg",
+      "fileNames": [
+        "symfony.lock"
+      ]
+    },
+    {
+      "icon": "file_type_tamagui.svg",
+      "fileNames": [
+        "tamagui.cjs",
+        "tamagui.config.cjs",
+        "tamagui.config.cts",
+        "tamagui.config.js",
+        "tamagui.config.mjs",
+        "tamagui.config.mts",
+        "tamagui.config.ts",
+        "tamagui.cts",
+        "tamagui.js",
+        "tamagui.mjs",
+        "tamagui.mts",
+        "tamagui.ts"
+      ]
+    },
+    {
+      "icon": "file_type_taskfile.svg",
+      "fileNames": [
+        "taskfile.dist.yaml",
+        "taskfile.dist.yml",
+        "taskfile.yaml",
+        "taskfile.yml"
+      ]
+    },
+    {
+      "icon": "file_type_testplane.svg",
+      "fileNames": [
+        "testplane.conf.cjs",
+        "testplane.conf.cts",
+        "testplane.conf.js",
+        "testplane.conf.ts",
+        "testplane.config.cjs",
+        "testplane.config.cts",
+        "testplane.config.js",
+        "testplane.config.ts"
+      ],
+      "fileSuffixes": [
+        ".testplane.cjs",
+        ".testplane.cts",
+        ".testplane.js",
+        ".testplane.jsx",
+        ".testplane.ts",
+        ".testplane.tsx"
+      ]
+    },
+    {
+      "icon": "file_type_tox.svg",
+      "fileNames": [
+        "tox.ini"
+      ]
+    },
+    {
+      "icon": "file_type_truffle.svg",
+      "fileNames": [
+        "truffle-config.js",
+        "truffle-config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_trunk.svg",
+      "fileNames": [
+        "trunk.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_tsconfig.svg",
+      "fileNames": [
+        "tsconfig.app.json",
+        "tsconfig.base.json",
+        "tsconfig.build.json",
+        "tsconfig.cjs.json",
+        "tsconfig.common.json",
+        "tsconfig.debug.json",
+        "tsconfig.dev.json",
+        "tsconfig.development.json",
+        "tsconfig.e2e.json",
+        "tsconfig.eslint.json",
+        "tsconfig.esm.json",
+        "tsconfig.json",
+        "tsconfig.lib.json",
+        "tsconfig.lib.prod.json",
+        "tsconfig.mjs.json",
+        "tsconfig.node.json",
+        "tsconfig.prod.json",
+        "tsconfig.production.json",
+        "tsconfig.release.json",
+        "tsconfig.server.json",
+        "tsconfig.spec.json",
+        "tsconfig.staging.json",
+        "tsconfig.test.json",
+        "tsconfig.types.json"
+      ]
+    },
+    {
+      "icon": "file_type_tsdoc.svg",
+      "fileNames": [
+        "tsdoc.json"
+      ]
+    },
+    {
+      "icon": "file_type_tsdown.svg",
+      "fileNames": [
+        "tsdown.config.cjs",
+        "tsdown.config.cts",
+        "tsdown.config.js",
+        "tsdown.config.json",
+        "tsdown.config.mjs",
+        "tsdown.config.mts",
+        "tsdown.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_tslint.svg",
+      "fileNames": [
+        "tslint.json",
+        "tslint.yaml",
+        "tslint.yml"
+      ]
+    },
+    {
+      "icon": "file_type_ty.svg",
+      "fileNames": [
+        "ty.toml"
+      ]
+    },
+    {
+      "icon": "file_type_typedoc.svg",
+      "fileNames": [
+        "typedoc.cjs",
+        "typedoc.config.cjs",
+        "typedoc.config.js",
+        "typedoc.config.json",
+        "typedoc.config.jsonc",
+        "typedoc.config.mjs",
+        "typedoc.js",
+        "typedoc.json",
+        "typedoc.jsonc",
+        "typedoc.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_unlicense.svg",
+      "fileNames": [
+        "unlicence",
+        "unlicence.md",
+        "unlicence.txt",
+        "unlicense",
+        "unlicense.md",
+        "unlicense.txt"
+      ]
+    },
+    {
+      "icon": "file_type_unocss.svg",
+      "fileNames": [
+        "uno.config.js",
+        "uno.config.mjs",
+        "uno.config.mts",
+        "uno.config.ts",
+        "unocss.config.js",
+        "unocss.config.mjs",
+        "unocss.config.mts",
+        "unocss.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_uv.svg",
+      "fileNames": [
+        "uv.lock",
+        "uv.toml"
+      ]
+    },
+    {
+      "icon": "file_type_vagrant.svg",
+      "fileNames": [
+        "vagrantfile"
+      ]
+    },
+    {
+      "icon": "file_type_vapor.svg",
+      "fileNames": [
+        "vapor.yml"
+      ]
+    },
+    {
+      "icon": "file_type_vite.svg",
+      "light": "file_type_light_vite.svg",
+      "fileNames": [
+        "vite.config.cjs",
+        "vite.config.cts",
+        "vite.config.js",
+        "vite.config.mjs",
+        "vite.config.mts",
+        "vite.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_vitest.svg",
+      "light": "file_type_light_vitest.svg",
+      "fileNames": [
+        "vitest.config.cjs",
+        "vitest.config.cts",
+        "vitest.config.js",
+        "vitest.config.mjs",
+        "vitest.config.mts",
+        "vitest.config.ts",
+        "vitest.projects.cjs",
+        "vitest.projects.cts",
+        "vitest.projects.js",
+        "vitest.projects.json",
+        "vitest.projects.mjs",
+        "vitest.projects.mts",
+        "vitest.projects.ts",
+        "vitest.workspace.cjs",
+        "vitest.workspace.cts",
+        "vitest.workspace.js",
+        "vitest.workspace.json",
+        "vitest.workspace.mjs",
+        "vitest.workspace.mts",
+        "vitest.workspace.ts"
+      ],
+      "fileSuffixes": [
+        ".vitest-snap"
+      ]
+    },
+    {
+      "icon": "file_type_wally.svg",
+      "fileNames": [
+        "wally.lock",
+        "wally.toml"
+      ]
+    },
+    {
+      "icon": "file_type_warp.svg",
+      "light": "file_type_light_warp.svg",
+      "fileNames": [
+        "warp.md"
+      ]
+    },
+    {
+      "icon": "file_type_wdio.svg",
+      "fileNames": [
+        "wdio.cjs",
+        "wdio.conf.cjs",
+        "wdio.conf.cts",
+        "wdio.conf.js",
+        "wdio.conf.json",
+        "wdio.conf.mjs",
+        "wdio.conf.mts",
+        "wdio.conf.ts",
+        "wdio.cts",
+        "wdio.js",
+        "wdio.json",
+        "wdio.mjs",
+        "wdio.mts",
+        "wdio.ts"
+      ]
+    },
+    {
+      "icon": "file_type_webpack.svg",
+      "fileNames": [
+        "webpack.base.conf.cjs",
+        "webpack.base.conf.coffee",
+        "webpack.base.conf.js",
+        "webpack.base.conf.mjs",
+        "webpack.base.conf.ts",
+        "webpack.common.cjs",
+        "webpack.common.coffee",
+        "webpack.common.js",
+        "webpack.common.mjs",
+        "webpack.common.ts",
+        "webpack.config.babel.cjs",
+        "webpack.config.babel.coffee",
+        "webpack.config.babel.js",
+        "webpack.config.babel.mjs",
+        "webpack.config.babel.ts",
+        "webpack.config.base.babel.cjs",
+        "webpack.config.base.babel.coffee",
+        "webpack.config.base.babel.js",
+        "webpack.config.base.babel.mjs",
+        "webpack.config.base.babel.ts",
+        "webpack.config.base.cjs",
+        "webpack.config.base.coffee",
+        "webpack.config.base.js",
+        "webpack.config.base.mjs",
+        "webpack.config.base.ts",
+        "webpack.config.build.cjs",
+        "webpack.config.build.coffee",
+        "webpack.config.build.js",
+        "webpack.config.build.mjs",
+        "webpack.config.build.ts",
+        "webpack.config.cjs",
+        "webpack.config.coffee",
+        "webpack.config.common.babel.cjs",
+        "webpack.config.common.babel.coffee",
+        "webpack.config.common.babel.js",
+        "webpack.config.common.babel.mjs",
+        "webpack.config.common.babel.ts",
+        "webpack.config.common.cjs",
+        "webpack.config.common.coffee",
+        "webpack.config.common.js",
+        "webpack.config.common.mjs",
+        "webpack.config.common.ts",
+        "webpack.config.dev.babel.cjs",
+        "webpack.config.dev.babel.coffee",
+        "webpack.config.dev.babel.js",
+        "webpack.config.dev.babel.mjs",
+        "webpack.config.dev.babel.ts",
+        "webpack.config.dev.cjs",
+        "webpack.config.dev.coffee",
+        "webpack.config.dev.js",
+        "webpack.config.dev.mjs",
+        "webpack.config.dev.ts",
+        "webpack.config.development.babel.cjs",
+        "webpack.config.development.babel.coffee",
+        "webpack.config.development.babel.js",
+        "webpack.config.development.babel.mjs",
+        "webpack.config.development.babel.ts",
+        "webpack.config.development.cjs",
+        "webpack.config.development.coffee",
+        "webpack.config.development.js",
+        "webpack.config.development.mjs",
+        "webpack.config.development.ts",
+        "webpack.config.js",
+        "webpack.config.mjs",
+        "webpack.config.prod.babel.cjs",
+        "webpack.config.prod.babel.coffee",
+        "webpack.config.prod.babel.js",
+        "webpack.config.prod.babel.mjs",
+        "webpack.config.prod.babel.ts",
+        "webpack.config.prod.cjs",
+        "webpack.config.prod.coffee",
+        "webpack.config.prod.js",
+        "webpack.config.prod.mjs",
+        "webpack.config.prod.ts",
+        "webpack.config.production.babel.cjs",
+        "webpack.config.production.babel.coffee",
+        "webpack.config.production.babel.js",
+        "webpack.config.production.babel.mjs",
+        "webpack.config.production.babel.ts",
+        "webpack.config.production.cjs",
+        "webpack.config.production.coffee",
+        "webpack.config.production.js",
+        "webpack.config.production.mjs",
+        "webpack.config.production.ts",
+        "webpack.config.staging.babel.cjs",
+        "webpack.config.staging.babel.coffee",
+        "webpack.config.staging.babel.js",
+        "webpack.config.staging.babel.mjs",
+        "webpack.config.staging.babel.ts",
+        "webpack.config.staging.cjs",
+        "webpack.config.staging.coffee",
+        "webpack.config.staging.js",
+        "webpack.config.staging.mjs",
+        "webpack.config.staging.ts",
+        "webpack.config.test.babel.cjs",
+        "webpack.config.test.babel.coffee",
+        "webpack.config.test.babel.js",
+        "webpack.config.test.babel.mjs",
+        "webpack.config.test.babel.ts",
+        "webpack.config.test.cjs",
+        "webpack.config.test.coffee",
+        "webpack.config.test.js",
+        "webpack.config.test.mjs",
+        "webpack.config.test.ts",
+        "webpack.config.ts",
+        "webpack.dev.cjs",
+        "webpack.dev.coffee",
+        "webpack.dev.conf.cjs",
+        "webpack.dev.conf.coffee",
+        "webpack.dev.conf.js",
+        "webpack.dev.conf.mjs",
+        "webpack.dev.conf.ts",
+        "webpack.dev.js",
+        "webpack.dev.mjs",
+        "webpack.dev.ts",
+        "webpack.local.cjs",
+        "webpack.local.coffee",
+        "webpack.local.js",
+        "webpack.local.mjs",
+        "webpack.local.ts",
+        "webpack.main.config.cjs",
+        "webpack.main.config.coffee",
+        "webpack.main.config.js",
+        "webpack.main.config.mjs",
+        "webpack.main.config.ts",
+        "webpack.mix.cjs",
+        "webpack.mix.coffee",
+        "webpack.mix.js",
+        "webpack.mix.mjs",
+        "webpack.mix.ts",
+        "webpack.plugins.cjs",
+        "webpack.plugins.coffee",
+        "webpack.plugins.js",
+        "webpack.plugins.mjs",
+        "webpack.plugins.ts",
+        "webpack.prod.cjs",
+        "webpack.prod.coffee",
+        "webpack.prod.conf.cjs",
+        "webpack.prod.conf.coffee",
+        "webpack.prod.conf.js",
+        "webpack.prod.conf.mjs",
+        "webpack.prod.conf.ts",
+        "webpack.prod.js",
+        "webpack.prod.mjs",
+        "webpack.prod.ts",
+        "webpack.renderer.config.cjs",
+        "webpack.renderer.config.coffee",
+        "webpack.renderer.config.js",
+        "webpack.renderer.config.mjs",
+        "webpack.renderer.config.ts",
+        "webpack.rules.cjs",
+        "webpack.rules.coffee",
+        "webpack.rules.js",
+        "webpack.rules.mjs",
+        "webpack.rules.ts",
+        "webpack.test.conf.cjs",
+        "webpack.test.conf.coffee",
+        "webpack.test.conf.js",
+        "webpack.test.conf.mjs",
+        "webpack.test.conf.ts"
+      ]
+    },
+    {
+      "icon": "file_type_wercker.svg",
+      "fileNames": [
+        "wercker.yml"
+      ]
+    },
+    {
+      "icon": "file_type_werf.svg",
+      "fileNames": [
+        "werf-giterminism.yaml",
+        "werf-includes.yaml",
+        "werf.yaml"
+      ]
+    },
+    {
+      "icon": "file_type_windi.svg",
+      "fileNames": [
+        "windi.config.js",
+        "windi.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_wpml.svg",
+      "fileNames": [
+        "wpml-config.xml"
+      ]
+    },
+    {
+      "icon": "file_type_cloudflare.svg",
+      "fileNames": [
+        "wrangler.json",
+        "wrangler.jsonc",
+        "wrangler.toml"
+      ]
+    },
+    {
+      "icon": "file_type_wxt.svg",
+      "fileNames": [
+        "wxt.config.cjs",
+        "wxt.config.cts",
+        "wxt.config.js",
+        "wxt.config.mjs",
+        "wxt.config.mts",
+        "wxt.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_zizmor.svg",
+      "fileNames": [
+        "zizmor.yaml",
+        "zizmor.yml"
+      ]
+    },
+    {
+      "icon": "file_type_mojo.svg",
+      "fileSuffixes": [
+        ".🔥",
+        ".mojo"
+      ]
+    },
+    {
+      "icon": "file_type_video.svg",
+      "fileSuffixes": [
+        ".3g2",
+        ".3gp",
+        ".amv",
+        ".asf",
+        ".avi",
+        ".divx",
+        ".f4a",
+        ".f4b",
+        ".f4p",
+        ".f4v",
+        ".flv",
+        ".m2v",
+        ".m4v",
+        ".mk3d",
+        ".mkv",
+        ".mov",
+        ".mp2",
+        ".mp4",
+        ".mpe",
+        ".mpeg",
+        ".mpeg2",
+        ".mpg",
+        ".mpv",
+        ".nsv",
+        ".ogv",
+        ".qt",
+        ".rm",
+        ".rmvb",
+        ".svi",
+        ".vob",
+        ".webm",
+        ".wmv"
+      ]
+    },
+    {
+      "icon": "file_type_informix.svg",
+      "fileSuffixes": [
+        ".4gl"
+      ]
+    },
+    {
+      "icon": "file_type_zip.svg",
+      "fileSuffixes": [
+        ".7z",
+        ".br",
+        ".bz",
+        ".bz2",
+        ".bzip2",
+        ".gz",
+        ".rar",
+        ".tar",
+        ".tgz",
+        ".whl",
+        ".xz",
+        ".zip",
+        ".zipx"
+      ]
+    },
+    {
+      "icon": "file_type_binary.svg",
+      "fileSuffixes": [
+        ".a",
+        ".app",
+        ".bin",
+        ".cma",
+        ".cmi",
+        ".cmo",
+        ".cmx",
+        ".cmxa",
+        ".dll",
+        ".exe",
+        ".hl",
+        ".ilk",
+        ".lib",
+        ".n",
+        ".ndll",
+        ".o",
+        ".obj",
+        ".pdb",
+        ".scpt",
+        ".scptd",
+        ".so"
+      ]
+    },
+    {
+      "icon": "file_type_audio.svg",
+      "fileSuffixes": [
+        ".aac",
+        ".act",
+        ".aiff",
+        ".amr",
+        ".ape",
+        ".au",
+        ".dct",
+        ".dss",
+        ".dvf",
+        ".flac",
+        ".gsm",
+        ".iklax",
+        ".ivs",
+        ".m4a",
+        ".m4b",
+        ".m4p",
+        ".mmf",
+        ".mogg",
+        ".mp3",
+        ".mpc",
+        ".msv",
+        ".oga",
+        ".ogg",
+        ".opus",
+        ".ra",
+        ".raw",
+        ".tta",
+        ".vox",
+        ".wav",
+        ".wma"
+      ]
+    },
+    {
+      "icon": "file_type_access.svg",
+      "fileSuffixes": [
+        ".accda",
+        ".accdb",
+        ".accdc",
+        ".accde",
+        ".accdp",
+        ".accdr",
+        ".accdt",
+        ".accdu",
+        ".ade",
+        ".adp",
+        ".laccdb",
+        ".ldb",
+        ".mam",
+        ".maq",
+        ".mdb",
+        ".mdw"
+      ]
+    },
+    {
+      "icon": "file_type_css.svg",
+      "fileSuffixes": [
+        ".acss",
+        ".ccss",
+        ".mcss",
+        ".nss",
+        ".postcss"
+      ]
+    },
+    {
+      "icon": "file_type_ada.svg",
+      "light": "file_type_light_ada.svg",
+      "fileSuffixes": [
+        ".ada"
+      ]
+    },
+    {
+      "icon": "file_type_asciidoc.svg",
+      "fileSuffixes": [
+        ".adoc"
+      ]
+    },
+    {
+      "icon": "file_type_affinity.svg",
+      "fileSuffixes": [
+        ".af",
+        ".aftemplate"
+      ]
+    },
+    {
+      "icon": "file_type_affinitydesigner.svg",
+      "fileSuffixes": [
+        ".afdesign",
+        ".affinitydesigner"
+      ]
+    },
+    {
+      "icon": "file_type_hunspell.svg",
+      "fileSuffixes": [
+        ".aff"
+      ]
+    },
+    {
+      "icon": "file_type_affectscript.svg",
+      "fileSuffixes": [
+        ".affect"
+      ]
+    },
+    {
+      "icon": "file_type_affinityphoto.svg",
+      "fileSuffixes": [
+        ".affinityphoto",
+        ".afphoto"
+      ]
+    },
+    {
+      "icon": "file_type_affinitypublisher.svg",
+      "fileSuffixes": [
+        ".affinitypublisher",
+        ".afpub"
+      ]
+    },
+    {
+      "icon": "file_type_agda.svg",
+      "light": "file_type_light_agda.svg",
+      "fileSuffixes": [
+        ".agda"
+      ]
+    },
+    {
+      "icon": "file_type_autohotkey.svg",
+      "fileSuffixes": [
+        ".ahk"
+      ]
+    },
+    {
+      "icon": "file_type_ai.svg",
+      "fileSuffixes": [
+        ".ai"
+      ]
+    },
+    {
+      "icon": "file_type_al.svg",
+      "fileSuffixes": [
+        ".al"
+      ]
+    },
+    {
+      "icon": "file_type_alloy.svg",
+      "fileSuffixes": [
+        ".alloy"
+      ]
+    },
+    {
+      "icon": "file_type_gnu.svg",
+      "fileSuffixes": [
+        ".am",
+        ".ld",
+        ".m4",
+        ".makefile",
+        ".mk"
+      ]
+    },
+    {
+      "icon": "file_type_ansible.svg",
+      "fileSuffixes": [
+        ".ansible"
+      ]
+    },
+    {
+      "icon": "file_type_anyscript.svg",
+      "fileSuffixes": [
+        ".any"
+      ]
+    },
+    {
+      "icon": "file_type_goctl.svg",
+      "fileSuffixes": [
+        ".api"
+      ]
+    },
+    {
+      "icon": "file_type_apib.svg",
+      "fileSuffixes": [
+        ".apib"
+      ]
+    },
+    {
+      "icon": "file_type_apl.svg",
+      "light": "file_type_light_apl.svg",
+      "fileSuffixes": [
+        ".apl"
+      ]
+    },
+    {
+      "icon": "file_type_applescript.svg",
+      "fileSuffixes": [
+        ".applescript"
+      ]
+    },
+    {
+      "icon": "file_type_pyret.svg",
+      "fileSuffixes": [
+        ".arr"
+      ]
+    },
+    {
+      "icon": "file_type_actionscript.svg",
+      "fileSuffixes": [
+        ".as"
+      ]
+    },
+    {
+      "icon": "file_type_azurestreamanalytics.svg",
+      "fileSuffixes": [
+        ".asaql"
+      ]
+    },
+    {
+      "icon": "file_type_aspx.svg",
+      "fileSuffixes": [
+        ".ascx",
+        ".aspx"
+      ]
+    },
+    {
+      "icon": "file_type_aseprite.svg",
+      "fileSuffixes": [
+        ".ase",
+        ".aseprite"
+      ]
+    },
+    {
+      "icon": "file_type_assembly.svg",
+      "fileSuffixes": [
+        ".asm",
+        ".s"
+      ]
+    },
+    {
+      "icon": "file_type_asp.svg",
+      "fileSuffixes": [
+        ".asp"
+      ]
+    },
+    {
+      "icon": "file_type_astro.svg",
+      "light": "file_type_light_astro.svg",
+      "fileSuffixes": [
+        ".astro"
+      ]
+    },
+    {
+      "icon": "file_type_atom.svg",
+      "fileSuffixes": [
+        ".atom"
+      ]
+    },
+    {
+      "icon": "file_type_ats.svg",
+      "fileSuffixes": [
+        ".ats"
+      ]
+    },
+    {
+      "icon": "file_type_autoit.svg",
+      "fileSuffixes": [
+        ".au3"
+      ]
+    },
+    {
+      "icon": "file_type_avro.svg",
+      "fileSuffixes": [
+        ".avcs"
+      ]
+    },
+    {
+      "icon": "file_type_avif.svg",
+      "fileSuffixes": [
+        ".avif"
+      ]
+    },
+    {
+      "icon": "file_type_awk.svg",
+      "fileSuffixes": [
+        ".awk"
+      ]
+    },
+    {
+      "icon": "file_type_xaml.svg",
+      "fileSuffixes": [
+        ".axaml",
+        ".xaml"
+      ]
+    },
+    {
+      "icon": "file_type_azure.svg",
+      "fileSuffixes": [
+        ".azcli"
+      ]
+    },
+    {
+      "icon": "file_type_bak.svg",
+      "fileSuffixes": [
+        ".back",
+        ".backup",
+        ".bak"
+      ]
+    },
+    {
+      "icon": "file_type_ballerina.svg",
+      "fileSuffixes": [
+        ".bal"
+      ]
+    },
+    {
+      "icon": "file_type_bat.svg",
+      "fileSuffixes": [
+        ".bat"
+      ]
+    },
+    {
+      "icon": "file_type_bats.svg",
+      "fileSuffixes": [
+        ".bats"
+      ]
+    },
+    {
+      "icon": "file_type_blitzbasic.svg",
+      "fileSuffixes": [
+        ".bb",
+        ".blitzbasic"
+      ]
+    },
+    {
+      "icon": "file_type_outlook.svg",
+      "fileSuffixes": [
+        ".bcmx",
+        ".msg",
+        ".oft",
+        ".otm",
+        ".pst"
+      ]
+    },
+    {
+      "icon": "file_type_befunge.svg",
+      "fileSuffixes": [
+        ".bf"
+      ]
+    },
+    {
+      "icon": "file_type_tex.svg",
+      "light": "file_type_light_tex.svg",
+      "fileSuffixes": [
+        ".bib",
+        ".dtx",
+        ".sty",
+        ".tex",
+        ".texi",
+        ".tikz"
+      ]
+    },
+    {
+      "icon": "file_type_bicep.svg",
+      "fileSuffixes": [
+        ".bicep"
+      ]
+    },
+    {
+      "icon": "file_type_biml.svg",
+      "fileSuffixes": [
+        ".biml"
+      ]
+    },
+    {
+      "icon": "file_type_yacc.svg",
+      "fileSuffixes": [
+        ".bison"
+      ]
+    },
+    {
+      "icon": "file_type_blade.svg",
+      "fileSuffixes": [
+        ".blade.php"
+      ]
+    },
+    {
+      "icon": "file_type_blender.svg",
+      "fileSuffixes": [
+        ".blend"
+      ]
+    },
+    {
+      "icon": "file_type_image.svg",
+      "fileSuffixes": [
+        ".bmp",
+        ".gif",
+        ".heic",
+        ".icns",
+        ".ico",
+        ".jpeg",
+        ".jpg",
+        ".png",
+        ".tiff",
+        ".webp"
+      ]
+    },
+    {
+      "icon": "file_type_bolt.svg",
+      "fileSuffixes": [
+        ".bolt"
+      ]
+    },
+    {
+      "icon": "file_type_bruno.svg",
+      "fileSuffixes": [
+        ".bru"
+      ]
+    },
+    {
+      "icon": "file_type_bosque.svg",
+      "fileSuffixes": [
+        ".bsq"
+      ]
+    },
+    {
+      "icon": "file_type_buf.svg",
+      "fileSuffixes": [
+        ".buf.gen.yaml",
+        ".buf.gen.yml",
+        ".buf.work.yaml",
+        ".buf.work.yml",
+        ".buf.yaml",
+        ".buf.yml"
+      ]
+    },
+    {
+      "icon": "file_type_c.svg",
+      "fileSuffixes": [
+        ".c"
+      ]
+    },
+    {
+      "icon": "file_type_c3.svg",
+      "fileSuffixes": [
+        ".c3"
+      ]
+    },
+    {
+      "icon": "file_type_cabal.svg",
+      "fileSuffixes": [
+        ".cabal"
+      ]
+    },
+    {
+      "icon": "file_type_cairo.svg",
+      "fileSuffixes": [
+        ".cairo"
+      ]
+    },
+    {
+      "icon": "file_type_cake.svg",
+      "fileSuffixes": [
+        ".cake"
+      ]
+    },
+    {
+      "icon": "file_type_c_al.svg",
+      "fileSuffixes": [
+        ".cal"
+      ]
+    },
+    {
+      "icon": "file_type_capnp.svg",
+      "fileSuffixes": [
+        ".capnp"
+      ]
+    },
+    {
+      "icon": "file_type_casc.svg",
+      "fileSuffixes": [
+        ".casc"
+      ]
+    },
+    {
+      "icon": "file_type_cobol.svg",
+      "fileSuffixes": [
+        ".cbl"
+      ]
+    },
+    {
+      "icon": "file_type_cddl.svg",
+      "fileSuffixes": [
+        ".cddl"
+      ]
+    },
+    {
+      "icon": "file_type_cert.svg",
+      "fileSuffixes": [
+        ".cer",
+        ".crl",
+        ".crt",
+        ".csr",
+        ".der",
+        ".p12",
+        ".p7b",
+        ".p7r",
+        ".pfx",
+        ".src",
+        ".sst",
+        ".stl"
+      ]
+    },
+    {
+      "icon": "file_type_ceylon.svg",
+      "fileSuffixes": [
+        ".ceylon"
+      ]
+    },
+    {
+      "icon": "file_type_cfc.svg",
+      "fileSuffixes": [
+        ".cfc"
+      ]
+    },
+    {
+      "icon": "file_type_cfm.svg",
+      "fileSuffixes": [
+        ".cfm"
+      ]
+    },
+    {
+      "icon": "file_type_cf.svg",
+      "fileSuffixes": [
+        ".cfml",
+        ".lucee"
+      ]
+    },
+    {
+      "icon": "file_type_circom.svg",
+      "fileSuffixes": [
+        ".circom"
+      ]
+    },
+    {
+      "icon": "file_type_cangjie.svg",
+      "fileSuffixes": [
+        ".cj"
+      ]
+    },
+    {
+      "icon": "file_type_clojure.svg",
+      "fileSuffixes": [
+        ".cjm",
+        ".cljc",
+        ".clojure"
+      ]
+    },
+    {
+      "icon": "file_type_js.svg",
+      "light": "file_type_light_js.svg",
+      "fileSuffixes": [
+        ".cjs",
+        ".es",
+        ".es6",
+        ".jake",
+        ".js",
+        ".jsm",
+        ".mjs",
+        ".pac",
+        ".sjs",
+        ".ssjs",
+        ".xsjs",
+        ".xsjslib"
+      ]
+    },
+    {
+      "icon": "file_type_jsmap.svg",
+      "light": "file_type_light_jsmap.svg",
+      "fileSuffixes": [
+        ".cjs.map",
+        ".js.map",
+        ".mjs.map"
+      ]
+    },
+    {
+      "icon": "file_type_chef_cookbook.svg",
+      "fileSuffixes": [
+        ".ckbk"
+      ]
+    },
+    {
+      "icon": "file_type_opencl.svg",
+      "fileSuffixes": [
+        ".cl",
+        ".opencl"
+      ]
+    },
+    {
+      "icon": "file_type_class.svg",
+      "fileSuffixes": [
+        ".class"
+      ]
+    },
+    {
+      "icon": "file_type_clojurescript.svg",
+      "fileSuffixes": [
+        ".cljs",
+        ".clojurescript"
+      ]
+    },
+    {
+      "icon": "file_type_vba.svg",
+      "fileSuffixes": [
+        ".cls"
+      ]
+    },
+    {
+      "icon": "file_type_search_result.svg",
+      "fileSuffixes": [
+        ".code-search"
+      ]
+    },
+    {
+      "icon": "file_type_coffeescript.svg",
+      "fileSuffixes": [
+        ".coffee"
+      ]
+    },
+    {
+      "icon": "file_type_confluence.svg",
+      "fileSuffixes": [
+        ".confluence"
+      ]
+    },
+    {
+      "icon": "file_type_cpp.svg",
+      "fileSuffixes": [
+        ".cpp"
+      ]
+    },
+    {
+      "icon": "file_type_crystal.svg",
+      "light": "file_type_light_crystal.svg",
+      "fileSuffixes": [
+        ".cr"
+      ]
+    },
+    {
+      "icon": "file_type_lync.svg",
+      "fileSuffixes": [
+        ".crec",
+        ".ocrec"
+      ]
+    },
+    {
+      "icon": "file_type_csharp.svg",
+      "fileSuffixes": [
+        ".cs",
+        ".csx"
+      ]
+    },
+    {
+      "icon": "file_type_razor.svg",
+      "fileSuffixes": [
+        ".cshtml"
+      ]
+    },
+    {
+      "icon": "file_type_csproj.svg",
+      "fileSuffixes": [
+        ".csproj"
+      ]
+    },
+    {
+      "icon": "file_type_cssmap.svg",
+      "fileSuffixes": [
+        ".css.map"
+      ]
+    },
+    {
+      "icon": "file_type_vanilla_extract.svg",
+      "fileSuffixes": [
+        ".css.ts"
+      ]
+    },
+    {
+      "icon": "file_type_text.svg",
+      "fileSuffixes": [
+        ".csv",
+        ".tsv",
+        ".txt"
+      ]
+    },
+    {
+      "icon": "file_type_typescript.svg",
+      "fileSuffixes": [
+        ".cts",
+        ".mts",
+        ".ts"
+      ]
+    },
+    {
+      "icon": "file_type_cuda.svg",
+      "fileSuffixes": [
+        ".cu"
+      ]
+    },
+    {
+      "icon": "file_type_cue.svg",
+      "light": "file_type_light_cue.svg",
+      "fileSuffixes": [
+        ".cue"
+      ]
+    },
+    {
+      "icon": "file_type_cypress_spec.svg",
+      "light": "file_type_light_cypress_spec.svg",
+      "fileSuffixes": [
+        ".cy.cjs",
+        ".cy.coffee",
+        ".cy.js",
+        ".cy.jsx",
+        ".cy.mjs",
+        ".cy.ts",
+        ".cy.tsx"
+      ]
+    },
+    {
+      "icon": "file_type_neo4j.svg",
+      "light": "file_type_light_neo4j.svg",
+      "fileSuffixes": [
+        ".cypher"
+      ]
+    },
+    {
+      "icon": "file_type_dlang.svg",
+      "fileSuffixes": [
+        ".d"
+      ]
+    },
+    {
+      "icon": "file_type_typescriptdef.svg",
+      "fileSuffixes": [
+        ".d.cts",
+        ".d.mts",
+        ".d.ts"
+      ]
+    },
+    {
+      "icon": "file_type_dal.svg",
+      "fileSuffixes": [
+        ".dal"
+      ]
+    },
+    {
+      "icon": "file_type_dartlang.svg",
+      "fileSuffixes": [
+        ".dart"
+      ]
+    },
+    {
+      "icon": "file_type_db.svg",
+      "light": "file_type_light_db.svg",
+      "fileSuffixes": [
+        ".db"
+      ]
+    },
+    {
+      "icon": "file_type_sqlite.svg",
+      "fileSuffixes": [
+        ".db3",
+        ".sqlite",
+        ".sqlite3"
+      ]
+    },
+    {
+      "icon": "file_type_dbml.svg",
+      "fileSuffixes": [
+        ".dbml"
+      ]
+    },
+    {
+      "icon": "file_type_plsql.svg",
+      "fileSuffixes": [
+        ".ddl"
+      ]
+    },
+    {
+      "icon": "file_type_dhall.svg",
+      "light": "file_type_light_dhall.svg",
+      "fileSuffixes": [
+        ".dhall"
+      ]
+    },
+    {
+      "icon": "file_type_polyglot.svg",
+      "fileSuffixes": [
+        ".dib"
+      ]
+    },
+    {
+      "icon": "file_type_diff.svg",
+      "fileSuffixes": [
+        ".diff"
+      ]
+    },
+    {
+      "icon": "file_type_drawio.svg",
+      "fileSuffixes": [
+        ".dio",
+        ".dio.png",
+        ".dio.svg",
+        ".drawio",
+        ".drawio.png",
+        ".drawio.svg"
+      ]
+    },
+    {
+      "icon": "file_type_django.svg",
+      "fileSuffixes": [
+        ".djt"
+      ]
+    },
+    {
+      "icon": "file_type_stata.svg",
+      "fileSuffixes": [
+        ".do",
+        ".dta"
+      ]
+    },
+    {
+      "icon": "file_type_word.svg",
+      "fileSuffixes": [
+        ".doc",
+        ".docm",
+        ".docx",
+        ".dot",
+        ".dotm",
+        ".dotx",
+        ".wll"
+      ]
+    },
+    {
+      "icon": "file_type_doxygen.svg",
+      "fileSuffixes": [
+        ".dox"
+      ]
+    },
+    {
+      "icon": "file_type_drools.svg",
+      "fileSuffixes": [
+        ".drl"
+      ]
+    },
+    {
+      "icon": "file_type_dtd.svg",
+      "fileSuffixes": [
+        ".dtd"
+      ]
+    },
+    {
+      "icon": "file_type_duckdb.svg",
+      "light": "file_type_light_duckdb.svg",
+      "fileSuffixes": [
+        ".duckdb"
+      ]
+    },
+    {
+      "icon": "file_type_dustjs.svg",
+      "fileSuffixes": [
+        ".dust"
+      ]
+    },
+    {
+      "icon": "file_type_dylan.svg",
+      "fileSuffixes": [
+        ".dylan"
+      ]
+    },
+    {
+      "icon": "file_type_testts.svg",
+      "fileSuffixes": [
+        ".e2e-spec.mts",
+        ".e2e-spec.ts",
+        ".e2e-spec.tsx",
+        ".e2e-test.mts",
+        ".e2e-test.ts",
+        ".e2e-test.tsx",
+        ".spec.mts",
+        ".spec.ts",
+        ".spec.tsx",
+        ".test-d.mts",
+        ".test-d.ts",
+        ".test-d.tsx",
+        ".test.mts",
+        ".test.ts",
+        ".test.tsx"
+      ]
+    },
+    {
+      "icon": "file_type_docpad.svg",
+      "light": "file_type_light_docpad.svg",
+      "fileSuffixes": [
+        ".eco"
+      ]
+    },
+    {
+      "icon": "file_type_edge.svg",
+      "fileSuffixes": [
+        ".edge"
+      ]
+    },
+    {
+      "icon": "file_type_eex.svg",
+      "fileSuffixes": [
+        ".eex",
+        ".heex",
+        ".html-heex",
+        ".phoenix-heex"
+      ]
+    },
+    {
+      "icon": "file_type_ejs.svg",
+      "fileSuffixes": [
+        ".ejs"
+      ]
+    },
+    {
+      "icon": "file_type_hygen.svg",
+      "fileSuffixes": [
+        ".ejs.t"
+      ]
+    },
+    {
+      "icon": "file_type_emacs.svg",
+      "fileSuffixes": [
+        ".el",
+        ".elc"
+      ]
+    },
+    {
+      "icon": "file_type_ensime.svg",
+      "fileSuffixes": [
+        ".ensime"
+      ]
+    },
+    {
+      "icon": "file_type_dotenv.svg",
+      "fileSuffixes": [
+        ".env"
+      ]
+    },
+    {
+      "icon": "file_type_font.svg",
+      "light": "file_type_light_font.svg",
+      "fileSuffixes": [
+        ".eot",
+        ".pfa",
+        ".pfb",
+        ".sfd",
+        ".ttf",
+        ".woff",
+        ".woff2"
+      ]
+    },
+    {
+      "icon": "file_type_mojolicious.svg",
+      "fileSuffixes": [
+        ".ep"
+      ]
+    },
+    {
+      "icon": "file_type_eps.svg",
+      "fileSuffixes": [
+        ".eps"
+      ]
+    },
+    {
+      "icon": "file_type_epub.svg",
+      "fileSuffixes": [
+        ".epub"
+      ]
+    },
+    {
+      "icon": "file_type_skipper.svg",
+      "fileSuffixes": [
+        ".eskip"
+      ]
+    },
+    {
+      "icon": "file_type_elixir.svg",
+      "fileSuffixes": [
+        ".ex"
+      ]
+    },
+    {
+      "icon": "file_type_excalidraw.svg",
+      "fileSuffixes": [
+        ".excalidraw",
+        ".excalidraw.json",
+        ".excalidraw.png",
+        ".excalidraw.svg"
+      ]
+    },
+    {
+      "icon": "file_type_tcl.svg",
+      "fileSuffixes": [
+        ".exp",
+        ".tcl"
+      ]
+    },
+    {
+      "icon": "file_type_fortran.svg",
+      "fileSuffixes": [
+        ".f"
+      ]
+    },
+    {
+      "icon": "file_type_falcon.svg",
+      "fileSuffixes": [
+        ".falcon"
+      ]
+    },
+    {
+      "icon": "file_type_fitbit.svg",
+      "fileSuffixes": [
+        ".fba"
+      ]
+    },
+    {
+      "icon": "file_type_flatbuffers.svg",
+      "fileSuffixes": [
+        ".fbs"
+      ]
+    },
+    {
+      "icon": "file_type_fbx.svg",
+      "fileSuffixes": [
+        ".fbx"
+      ]
+    },
+    {
+      "icon": "file_type_cucumber.svg",
+      "fileSuffixes": [
+        ".feature"
+      ]
+    },
+    {
+      "icon": "file_type_matlab.svg",
+      "fileSuffixes": [
+        ".fig",
+        ".mat",
+        ".mex",
+        ".mexn",
+        ".mexrs6",
+        ".mn",
+        ".mum",
+        ".mx",
+        ".mx3",
+        ".rwd",
+        ".slddc",
+        ".slx",
+        ".smv",
+        ".xvc"
+      ]
+    },
+    {
+      "icon": "file_type_fla.svg",
+      "light": "file_type_light_fla.svg",
+      "fileSuffixes": [
+        ".fla"
+      ]
+    },
+    {
+      "icon": "file_type_lex.svg",
+      "fileSuffixes": [
+        ".flex"
+      ]
+    },
+    {
+      "icon": "file_type_libreoffice_calc.svg",
+      "fileSuffixes": [
+        ".fods",
+        ".ods",
+        ".ots"
+      ]
+    },
+    {
+      "icon": "file_type_powershell_format.svg",
+      "fileSuffixes": [
+        ".format.ps1xml"
+      ]
+    },
+    {
+      "icon": "file_type_flowgorithm.svg",
+      "fileSuffixes": [
+        ".fprg"
+      ]
+    },
+    {
+      "icon": "file_type_dartlang_generated.svg",
+      "fileSuffixes": [
+        ".freezed.dart",
+        ".g.dart"
+      ]
+    },
+    {
+      "icon": "file_type_fsharp.svg",
+      "fileSuffixes": [
+        ".fs"
+      ]
+    },
+    {
+      "icon": "file_type_fsproj.svg",
+      "fileSuffixes": [
+        ".fsproj"
+      ]
+    },
+    {
+      "icon": "file_type_fthtml.svg",
+      "fileSuffixes": [
+        ".fthtml"
+      ]
+    },
+    {
+      "icon": "file_type_freemarker.svg",
+      "fileSuffixes": [
+        ".ftl"
+      ]
+    },
+    {
+      "icon": "file_type_fritzing.svg",
+      "fileSuffixes": [
+        ".fz",
+        ".fzb",
+        ".fzbz",
+        ".fzp",
+        ".fzpz",
+        ".fzz"
+      ]
+    },
+    {
+      "icon": "file_type_antlr.svg",
+      "fileSuffixes": [
+        ".g4"
+      ]
+    },
+    {
+      "icon": "file_type_gcode.svg",
+      "fileSuffixes": [
+        ".gcode"
+      ]
+    },
+    {
+      "icon": "file_type_gdscript.svg",
+      "fileSuffixes": [
+        ".gd"
+      ]
+    },
+    {
+      "icon": "file_type_gduid.svg",
+      "fileSuffixes": [
+        ".gd.uid"
+      ]
+    },
+    {
+      "icon": "file_type_genstat.svg",
+      "fileSuffixes": [
+        ".gen"
+      ]
+    },
+    {
+      "icon": "file_type_geojson.svg",
+      "fileSuffixes": [
+        ".geojson"
+      ]
+    },
+    {
+      "icon": "file_type_glimmer.svg",
+      "fileSuffixes": [
+        ".gjs"
+      ]
+    },
+    {
+      "icon": "file_type_gltf.svg",
+      "fileSuffixes": [
+        ".glb",
+        ".gltf"
+      ]
+    },
+    {
+      "icon": "file_type_gleam.svg",
+      "fileSuffixes": [
+        ".gleam"
+      ]
+    },
+    {
+      "icon": "file_type_glsl.svg",
+      "fileSuffixes": [
+        ".glsl"
+      ]
+    },
+    {
+      "icon": "file_type_glyphs.svg",
+      "fileSuffixes": [
+        ".glyphs"
+      ]
+    },
+    {
+      "icon": "file_type_gamemaker81.svg",
+      "fileSuffixes": [
+        ".gml"
+      ]
+    },
+    {
+      "icon": "file_type_gamemaker.svg",
+      "fileSuffixes": [
+        ".gmx"
+      ]
+    },
+    {
+      "icon": "file_type_go.svg",
+      "fileSuffixes": [
+        ".go"
+      ]
+    },
+    {
+      "icon": "file_type_godot.svg",
+      "fileSuffixes": [
+        ".godot"
+      ]
+    },
+    {
+      "icon": "file_type_gnuplot.svg",
+      "fileSuffixes": [
+        ".gp"
+      ]
+    },
+    {
+      "icon": "file_type_gpg.svg",
+      "fileSuffixes": [
+        ".gpg",
+        ".pgp"
+      ]
+    },
+    {
+      "icon": "file_type_grain.svg",
+      "fileSuffixes": [
+        ".gr"
+      ]
+    },
+    {
+      "icon": "file_type_gradle.svg",
+      "light": "file_type_light_gradle.svg",
+      "fileSuffixes": [
+        ".gradle",
+        ".gradle.kts"
+      ]
+    },
+    {
+      "icon": "file_type_grit.svg",
+      "fileSuffixes": [
+        ".grit"
+      ]
+    },
+    {
+      "icon": "file_type_groovy.svg",
+      "fileSuffixes": [
+        ".groovy"
+      ]
+    },
+    {
+      "icon": "file_type_appscript.svg",
+      "fileSuffixes": [
+        ".gs"
+      ]
+    },
+    {
+      "icon": "file_type_galen.svg",
+      "fileSuffixes": [
+        ".gspec"
+      ]
+    },
+    {
+      "icon": "file_type_graphviz.svg",
+      "fileSuffixes": [
+        ".gv"
+      ]
+    },
+    {
+      "icon": "file_type_cheader.svg",
+      "fileSuffixes": [
+        ".h"
+      ]
+    },
+    {
+      "icon": "file_type_cppheader.svg",
+      "fileSuffixes": [
+        ".h++",
+        ".hh",
+        ".hpp",
+        ".hxx"
+      ]
+    },
+    {
+      "icon": "file_type_haml.svg",
+      "fileSuffixes": [
+        ".haml"
+      ]
+    },
+    {
+      "icon": "file_type_pddl_happenings.svg",
+      "fileSuffixes": [
+        ".happenings"
+      ]
+    },
+    {
+      "icon": "file_type_handlebars.svg",
+      "fileSuffixes": [
+        ".hbs"
+      ]
+    },
+    {
+      "icon": "file_type_hashicorp.svg",
+      "light": "file_type_light_hashicorp.svg",
+      "fileSuffixes": [
+        ".hcl",
+        ".hcl2",
+        ".sentinel"
+      ]
+    },
+    {
+      "icon": "file_type_hjson.svg",
+      "light": "file_type_light_hjson.svg",
+      "fileSuffixes": [
+        ".hjson"
+      ]
+    },
+    {
+      "icon": "file_type_hlsl.svg",
+      "fileSuffixes": [
+        ".hlsl"
+      ]
+    },
+    {
+      "icon": "file_type_host.svg",
+      "fileSuffixes": [
+        ".hosts"
+      ]
+    },
+    {
+      "icon": "file_type_haskell.svg",
+      "fileSuffixes": [
+        ".hs",
+        ".lhs"
+      ]
+    },
+    {
+      "icon": "file_type_apache.svg",
+      "fileSuffixes": [
+        ".htaccess"
+      ]
+    },
+    {
+      "icon": "file_type_html.svg",
+      "fileSuffixes": [
+        ".html"
+      ]
+    },
+    {
+      "icon": "file_type_stencil.svg",
+      "fileSuffixes": [
+        ".html.stencil",
+        ".stencil"
+      ]
+    },
+    {
+      "icon": "file_type_http.svg",
+      "fileSuffixes": [
+        ".http"
+      ]
+    },
+    {
+      "icon": "file_type_huff.svg",
+      "light": "file_type_light_huff.svg",
+      "fileSuffixes": [
+        ".huff"
+      ]
+    },
+    {
+      "icon": "file_type_hurl.svg",
+      "fileSuffixes": [
+        ".hurl"
+      ]
+    },
+    {
+      "icon": "file_type_haxedevelop.svg",
+      "fileSuffixes": [
+        ".hxproj"
+      ]
+    },
+    {
+      "icon": "file_type_hy.svg",
+      "fileSuffixes": [
+        ".hy"
+      ]
+    },
+    {
+      "icon": "file_type_hypr.svg",
+      "fileSuffixes": [
+        ".hypr"
+      ]
+    },
+    {
+      "icon": "file_type_idrisbin.svg",
+      "fileSuffixes": [
+        ".ibc"
+      ]
+    },
+    {
+      "icon": "file_type_slice.svg",
+      "fileSuffixes": [
+        ".ice"
+      ]
+    },
+    {
+      "icon": "file_type_icl.svg",
+      "fileSuffixes": [
+        ".icl"
+      ]
+    },
+    {
+      "icon": "file_type_iodine.svg",
+      "fileSuffixes": [
+        ".id"
+      ]
+    },
+    {
+      "icon": "file_type_idris.svg",
+      "fileSuffixes": [
+        ".idr",
+        ".lidr"
+      ]
+    },
+    {
+      "icon": "file_type_imba.svg",
+      "fileSuffixes": [
+        ".imba",
+        ".imba2"
+      ]
+    },
+    {
+      "icon": "file_type_jetbrains.svg",
+      "fileSuffixes": [
+        ".iml"
+      ]
+    },
+    {
+      "icon": "file_type_inc.svg",
+      "fileSuffixes": [
+        ".include"
+      ]
+    },
+    {
+      "icon": "file_type_infopath.svg",
+      "fileSuffixes": [
+        ".infopathxml",
+        ".xsf",
+        ".xsn",
+        ".xtp2"
+      ]
+    },
+    {
+      "icon": "file_type_ini.svg",
+      "light": "file_type_light_ini.svg",
+      "fileSuffixes": [
+        ".ini"
+      ]
+    },
+    {
+      "icon": "file_type_ink.svg",
+      "fileSuffixes": [
+        ".ink"
+      ]
+    },
+    {
+      "icon": "file_type_arduino.svg",
+      "fileSuffixes": [
+        ".ino"
+      ]
+    },
+    {
+      "icon": "file_type_io.svg",
+      "light": "file_type_light_io.svg",
+      "fileSuffixes": [
+        ".io"
+      ]
+    },
+    {
+      "icon": "file_type_idrispkg.svg",
+      "fileSuffixes": [
+        ".ipkg"
+      ]
+    },
+    {
+      "icon": "file_type_jupyter.svg",
+      "fileSuffixes": [
+        ".ipynb"
+      ]
+    },
+    {
+      "icon": "file_type_innosetup.svg",
+      "fileSuffixes": [
+        ".iss"
+      ]
+    },
+    {
+      "icon": "file_type_plantuml.svg",
+      "fileSuffixes": [
+        ".iuml",
+        ".plantuml",
+        ".pu",
+        ".puml"
+      ]
+    },
+    {
+      "icon": "file_type_janet.svg",
+      "fileSuffixes": [
+        ".janet"
+      ]
+    },
+    {
+      "icon": "file_type_jar.svg",
+      "fileSuffixes": [
+        ".jar"
+      ]
+    },
+    {
+      "icon": "file_type_java.svg",
+      "fileSuffixes": [
+        ".java"
+      ]
+    },
+    {
+      "icon": "file_type_jenkins.svg",
+      "fileSuffixes": [
+        ".jenkins"
+      ]
+    },
+    {
+      "icon": "file_type_jest_snapshot.svg",
+      "fileSuffixes": [
+        ".jest-snap"
+      ]
+    },
+    {
+      "icon": "file_type_jinja.svg",
+      "fileSuffixes": [
+        ".jinja"
+      ]
+    },
+    {
+      "icon": "file_type_julia.svg",
+      "fileSuffixes": [
+        ".jl"
+      ]
+    },
+    {
+      "icon": "file_type_json.svg",
+      "light": "file_type_light_json.svg",
+      "fileSuffixes": [
+        ".json",
+        ".json-tmlanguage",
+        ".jsonc",
+        ".jsonl",
+        ".ndjson"
+      ]
+    },
+    {
+      "icon": "file_type_jsonld.svg",
+      "light": "file_type_light_jsonld.svg",
+      "fileSuffixes": [
+        ".json-ld",
+        ".jsonld"
+      ]
+    },
+    {
+      "icon": "file_type_json5.svg",
+      "light": "file_type_light_json5.svg",
+      "fileSuffixes": [
+        ".json5"
+      ]
+    },
+    {
+      "icon": "file_type_jsonnet.svg",
+      "fileSuffixes": [
+        ".jsonnet"
+      ]
+    },
+    {
+      "icon": "file_type_jsp.svg",
+      "fileSuffixes": [
+        ".jsp"
+      ]
+    },
+    {
+      "icon": "file_type_jss.svg",
+      "fileSuffixes": [
+        ".jss"
+      ]
+    },
+    {
+      "icon": "file_type_reactjs.svg",
+      "fileSuffixes": [
+        ".jsx"
+      ]
+    },
+    {
+      "icon": "file_type_juice.svg",
+      "fileSuffixes": [
+        ".juice"
+      ]
+    },
+    {
+      "icon": "file_type_k.svg",
+      "fileSuffixes": [
+        ".k"
+      ]
+    },
+    {
+      "icon": "file_type_key.svg",
+      "fileSuffixes": [
+        ".key",
+        ".pem"
+      ]
+    },
+    {
+      "icon": "file_type_krita.svg",
+      "fileSuffixes": [
+        ".kra"
+      ]
+    },
+    {
+      "icon": "file_type_kos.svg",
+      "fileSuffixes": [
+        ".ks"
+      ]
+    },
+    {
+      "icon": "file_type_kotlin.svg",
+      "fileSuffixes": [
+        ".kt",
+        ".ktm"
+      ]
+    },
+    {
+      "icon": "file_type_kusto.svg",
+      "fileSuffixes": [
+        ".kusto"
+      ]
+    },
+    {
+      "icon": "file_type_kivy.svg",
+      "fileSuffixes": [
+        ".kv"
+      ]
+    },
+    {
+      "icon": "file_type_lark.svg",
+      "light": "file_type_light_lark.svg",
+      "fileSuffixes": [
+        ".lark"
+      ]
+    },
+    {
+      "icon": "file_type_latino.svg",
+      "fileSuffixes": [
+        ".lat"
+      ]
+    },
+    {
+      "icon": "file_type_lean.svg",
+      "light": "file_type_light_lean.svg",
+      "fileSuffixes": [
+        ".lean"
+      ]
+    },
+    {
+      "icon": "file_type_lemon.svg",
+      "fileSuffixes": [
+        ".lemon"
+      ]
+    },
+    {
+      "icon": "file_type_less.svg",
+      "fileSuffixes": [
+        ".less"
+      ]
+    },
+    {
+      "icon": "file_type_systemd.svg",
+      "light": "file_type_light_systemd.svg",
+      "fileSuffixes": [
+        ".link"
+      ]
+    },
+    {
+      "icon": "file_type_liquid.svg",
+      "fileSuffixes": [
+        ".liquid"
+      ]
+    },
+    {
+      "icon": "file_type_lisp.svg",
+      "fileSuffixes": [
+        ".lisp"
+      ]
+    },
+    {
+      "icon": "file_type_lnk.svg",
+      "fileSuffixes": [
+        ".lnk"
+      ]
+    },
+    {
+      "icon": "file_type_log.svg",
+      "fileSuffixes": [
+        ".log",
+        ".tlg"
+      ]
+    },
+    {
+      "icon": "file_type_lolcode.svg",
+      "fileSuffixes": [
+        ".lol"
+      ]
+    },
+    {
+      "icon": "file_type_livescript.svg",
+      "fileSuffixes": [
+        ".ls"
+      ]
+    },
+    {
+      "icon": "file_type_lsl.svg",
+      "fileSuffixes": [
+        ".lsl"
+      ]
+    },
+    {
+      "icon": "file_type_lua.svg",
+      "fileSuffixes": [
+        ".lua"
+      ]
+    },
+    {
+      "icon": "file_type_luau.svg",
+      "fileSuffixes": [
+        ".luau"
+      ]
+    },
+    {
+      "icon": "file_type_lilypond.svg",
+      "fileSuffixes": [
+        ".ly"
+      ]
+    },
+    {
+      "icon": "file_type_objectivec.svg",
+      "fileSuffixes": [
+        ".m"
+      ]
+    },
+    {
+      "icon": "file_type_map.svg",
+      "fileSuffixes": [
+        ".map"
+      ]
+    },
+    {
+      "icon": "file_type_markdown.svg",
+      "fileSuffixes": [
+        ".markdown",
+        ".md",
+        ".mdown",
+        ".mkd"
+      ]
+    },
+    {
+      "icon": "file_type_marko.svg",
+      "fileSuffixes": [
+        ".marko"
+      ]
+    },
+    {
+      "icon": "file_type_markojs.svg",
+      "fileSuffixes": [
+        ".marko.js"
+      ]
+    },
+    {
+      "icon": "file_type_minecraft.svg",
+      "fileSuffixes": [
+        ".mca",
+        ".mcfunction",
+        ".mcmeta"
+      ]
+    },
+    {
+      "icon": "file_type_mdx.svg",
+      "light": "file_type_light_mdx.svg",
+      "fileSuffixes": [
+        ".mdx"
+      ]
+    },
+    {
+      "icon": "file_type_mediawiki.svg",
+      "fileSuffixes": [
+        ".mediawiki"
+      ]
+    },
+    {
+      "icon": "file_type_maya.svg",
+      "fileSuffixes": [
+        ".mel"
+      ]
+    },
+    {
+      "icon": "file_type_mermaid.svg",
+      "fileSuffixes": [
+        ".mermaid",
+        ".mmd"
+      ]
+    },
+    {
+      "icon": "file_type_metal.svg",
+      "fileSuffixes": [
+        ".metal"
+      ]
+    },
+    {
+      "icon": "file_type_mjml.svg",
+      "fileSuffixes": [
+        ".mjml"
+      ]
+    },
+    {
+      "icon": "file_type_ocaml_intf.svg",
+      "fileSuffixes": [
+        ".mli"
+      ]
+    },
+    {
+      "icon": "file_type_objectivecpp.svg",
+      "fileSuffixes": [
+        ".mm"
+      ]
+    },
+    {
+      "icon": "file_type_poedit.svg",
+      "fileSuffixes": [
+        ".mo",
+        ".po"
+      ]
+    },
+    {
+      "icon": "file_type_mongo.svg",
+      "fileSuffixes": [
+        ".mongo"
+      ]
+    },
+    {
+      "icon": "file_type_mondoo.svg",
+      "fileSuffixes": [
+        ".mql.yaml",
+        ".mql.yml"
+      ]
+    },
+    {
+      "icon": "file_type_maxscript.svg",
+      "fileSuffixes": [
+        ".ms"
+      ]
+    },
+    {
+      "icon": "file_type_mson.svg",
+      "fileSuffixes": [
+        ".mson"
+      ]
+    },
+    {
+      "icon": "file_type_mustache.svg",
+      "light": "file_type_light_mustache.svg",
+      "fileSuffixes": [
+        ".mst",
+        ".mustache"
+      ]
+    },
+    {
+      "icon": "file_type_mivascript.svg",
+      "fileSuffixes": [
+        ".mv"
+      ]
+    },
+    {
+      "icon": "file_type_mvtjs.svg",
+      "fileSuffixes": [
+        ".mvt"
+      ]
+    },
+    {
+      "icon": "file_type_n64.svg",
+      "fileSuffixes": [
+        ".n64",
+        ".nrm",
+        ".z64"
+      ]
+    },
+    {
+      "icon": "file_type_ndst.svg",
+      "fileSuffixes": [
+        ".ndst.json",
+        ".ndst.yaml",
+        ".ndst.yml"
+      ]
+    },
+    {
+      "icon": "file_type_nearly.svg",
+      "fileSuffixes": [
+        ".ne"
+      ]
+    },
+    {
+      "icon": "file_type_nim.svg",
+      "fileSuffixes": [
+        ".nim"
+      ]
+    },
+    {
+      "icon": "file_type_nimble.svg",
+      "fileSuffixes": [
+        ".nimble"
+      ]
+    },
+    {
+      "icon": "file_type_nunjucks.svg",
+      "fileSuffixes": [
+        ".njs",
+        ".nunj",
+        ".nunjucks"
+      ]
+    },
+    {
+      "icon": "file_type_njsproj.svg",
+      "fileSuffixes": [
+        ".njsproj"
+      ]
+    },
+    {
+      "icon": "file_type_noc.svg",
+      "fileSuffixes": [
+        ".noc"
+      ]
+    },
+    {
+      "icon": "file_type_numpy.svg",
+      "fileSuffixes": [
+        ".npy",
+        ".npz"
+      ]
+    },
+    {
+      "icon": "file_type_nsi.svg",
+      "fileSuffixes": [
+        ".nsi"
+      ]
+    },
+    {
+      "icon": "file_type_nushell.svg",
+      "fileSuffixes": [
+        ".nu"
+      ]
+    },
+    {
+      "icon": "file_type_nuget.svg",
+      "fileSuffixes": [
+        ".nupkg",
+        ".nuspec",
+        ".psmdcp",
+        ".snupkg"
+      ]
+    },
+    {
+      "icon": "file_type_squirrel.svg",
+      "fileSuffixes": [
+        ".nut"
+      ]
+    },
+    {
+      "icon": "file_type_ogone.svg",
+      "fileSuffixes": [
+        ".o3"
+      ]
+    },
+    {
+      "icon": "file_type_libreoffice_base.svg",
+      "fileSuffixes": [
+        ".odb",
+        ".otb"
+      ]
+    },
+    {
+      "icon": "file_type_libreoffice_math.svg",
+      "fileSuffixes": [
+        ".odf",
+        ".otf"
+      ]
+    },
+    {
+      "icon": "file_type_libreoffice_draw.svg",
+      "fileSuffixes": [
+        ".odg",
+        ".otg"
+      ]
+    },
+    {
+      "icon": "file_type_libreoffice_impress.svg",
+      "fileSuffixes": [
+        ".odp",
+        ".otp"
+      ]
+    },
+    {
+      "icon": "file_type_libreoffice_writer.svg",
+      "fileSuffixes": [
+        ".odt",
+        ".ott"
+      ]
+    },
+    {
+      "icon": "file_type_onenote.svg",
+      "fileSuffixes": [
+        ".one",
+        ".onepkg",
+        ".onetoc",
+        ".onetoc2",
+        ".sig"
+      ]
+    },
+    {
+      "icon": "file_type_opam.svg",
+      "fileSuffixes": [
+        ".opam"
+      ]
+    },
+    {
+      "icon": "file_type_org.svg",
+      "fileSuffixes": [
+        ".org"
+      ]
+    },
+    {
+      "icon": "file_type_ovpn.svg",
+      "fileSuffixes": [
+        ".ovpn"
+      ]
+    },
+    {
+      "icon": "file_type_pawn.svg",
+      "fileSuffixes": [
+        ".p",
+        ".pwn",
+        ".sma"
+      ]
+    },
+    {
+      "icon": "file_type_powerpoint.svg",
+      "fileSuffixes": [
+        ".pa",
+        ".pot",
+        ".potm",
+        ".potx",
+        ".ppa",
+        ".ppam",
+        ".pps",
+        ".ppsm",
+        ".ppsx",
+        ".ppt",
+        ".pptm",
+        ".pptx",
+        ".sldm",
+        ".sldx"
+      ]
+    },
+    {
+      "icon": "file_type_parquet.svg",
+      "fileSuffixes": [
+        ".parquet"
+      ]
+    },
+    {
+      "icon": "file_type_delphi.svg",
+      "fileSuffixes": [
+        ".pas"
+      ]
+    },
+    {
+      "icon": "file_type_patch.svg",
+      "fileSuffixes": [
+        ".patch"
+      ]
+    },
+    {
+      "icon": "file_type_powerbi.svg",
+      "fileSuffixes": [
+        ".pbinb",
+        ".pbix"
+      ]
+    },
+    {
+      "icon": "file_type_pcl.svg",
+      "light": "file_type_light_pcl.svg",
+      "fileSuffixes": [
+        ".pcd"
+      ]
+    },
+    {
+      "icon": "file_type_plsql_package.svg",
+      "fileSuffixes": [
+        ".pck"
+      ]
+    },
+    {
+      "icon": "file_type_postcss.svg",
+      "fileSuffixes": [
+        ".pcss"
+      ]
+    },
+    {
+      "icon": "file_type_pddl.svg",
+      "fileSuffixes": [
+        ".pddl"
+      ]
+    },
+    {
+      "icon": "file_type_processinglang.svg",
+      "fileSuffixes": [
+        ".pde"
+      ]
+    },
+    {
+      "icon": "file_type_pdf.svg",
+      "fileSuffixes": [
+        ".pdf"
+      ]
+    },
+    {
+      "icon": "file_type_xml.svg",
+      "fileSuffixes": [
+        ".pex",
+        ".tmlanguage",
+        ".xml"
+      ]
+    },
+    {
+      "icon": "file_type_pgsql.svg",
+      "fileSuffixes": [
+        ".pgsql"
+      ]
+    },
+    {
+      "icon": "file_type_pine.svg",
+      "fileSuffixes": [
+        ".pine"
+      ]
+    },
+    {
+      "icon": "file_type_pipeline.svg",
+      "fileSuffixes": [
+        ".pipeline"
+      ]
+    },
+    {
+      "icon": "file_type_plsql_package_body.svg",
+      "fileSuffixes": [
+        ".pkb"
+      ]
+    },
+    {
+      "icon": "file_type_package.svg",
+      "fileSuffixes": [
+        ".pkg"
+      ]
+    },
+    {
+      "icon": "file_type_plsql_package_header.svg",
+      "fileSuffixes": [
+        ".pkh"
+      ]
+    },
+    {
+      "icon": "file_type_plsql_package_spec.svg",
+      "fileSuffixes": [
+        ".pks"
+      ]
+    },
+    {
+      "icon": "file_type_perl.svg",
+      "fileSuffixes": [
+        ".pl"
+      ]
+    },
+    {
+      "icon": "file_type_perl6.svg",
+      "fileSuffixes": [
+        ".pl6"
+      ]
+    },
+    {
+      "icon": "file_type_pddl_plan.svg",
+      "fileSuffixes": [
+        ".plan"
+      ]
+    },
+    {
+      "icon": "file_type_polymer.svg",
+      "fileSuffixes": [
+        ".polymer"
+      ]
+    },
+    {
+      "icon": "file_type_poml.svg",
+      "fileSuffixes": [
+        ".poml"
+      ]
+    },
+    {
+      "icon": "file_type_pony.svg",
+      "fileSuffixes": [
+        ".pony"
+      ]
+    },
+    {
+      "icon": "file_type_postman.svg",
+      "fileSuffixes": [
+        ".postman_collection.json",
+        ".postman_environment.json",
+        ".postman_globals.json"
+      ]
+    },
+    {
+      "icon": "file_type_puppet.svg",
+      "fileSuffixes": [
+        ".pp"
+      ]
+    },
+    {
+      "icon": "file_type_mlang.svg",
+      "light": "file_type_light_mlang.svg",
+      "fileSuffixes": [
+        ".pq"
+      ]
+    },
+    {
+      "icon": "file_type_harbour.svg",
+      "fileSuffixes": [
+        ".prg"
+      ]
+    },
+    {
+      "icon": "file_type_prisma.svg",
+      "light": "file_type_light_prisma.svg",
+      "fileSuffixes": [
+        ".prisma"
+      ]
+    },
+    {
+      "icon": "file_type_prolog.svg",
+      "fileSuffixes": [
+        ".pro"
+      ]
+    },
+    {
+      "icon": "file_type_protobuf.svg",
+      "fileSuffixes": [
+        ".proto"
+      ]
+    },
+    {
+      "icon": "file_type_advpl.svg",
+      "fileSuffixes": [
+        ".prw"
+      ]
+    },
+    {
+      "icon": "file_type_postscript.svg",
+      "fileSuffixes": [
+        ".ps"
+      ]
+    },
+    {
+      "icon": "file_type_powershell.svg",
+      "fileSuffixes": [
+        ".ps1"
+      ]
+    },
+    {
+      "icon": "file_type_photoshop.svg",
+      "fileSuffixes": [
+        ".psd"
+      ]
+    },
+    {
+      "icon": "file_type_powershell_psd.svg",
+      "fileSuffixes": [
+        ".psd1"
+      ]
+    },
+    {
+      "icon": "file_type_powershell_psm.svg",
+      "fileSuffixes": [
+        ".psm1"
+      ]
+    },
+    {
+      "icon": "file_type_publisher.svg",
+      "fileSuffixes": [
+        ".pub",
+        ".puz"
+      ]
+    },
+    {
+      "icon": "file_type_purescript.svg",
+      "light": "file_type_light_purescript.svg",
+      "fileSuffixes": [
+        ".purs"
+      ]
+    },
+    {
+      "icon": "file_type_pythowo.svg",
+      "fileSuffixes": [
+        ".pyowo"
+      ]
+    },
+    {
+      "icon": "file_type_pyscript.svg",
+      "fileSuffixes": [
+        ".pyscript"
+      ]
+    },
+    {
+      "icon": "file_type_q.svg",
+      "fileSuffixes": [
+        ".q"
+      ]
+    },
+    {
+      "icon": "file_type_qbs.svg",
+      "fileSuffixes": [
+        ".qbs"
+      ]
+    },
+    {
+      "icon": "file_type_quarkdown.svg",
+      "light": "file_type_light_quarkdown.svg",
+      "fileSuffixes": [
+        ".qd"
+      ]
+    },
+    {
+      "icon": "file_type_codeql.svg",
+      "fileSuffixes": [
+        ".ql"
+      ]
+    },
+    {
+      "icon": "file_type_qml.svg",
+      "fileSuffixes": [
+        ".qml"
+      ]
+    },
+    {
+      "icon": "file_type_qsharp.svg",
+      "fileSuffixes": [
+        ".qs"
+      ]
+    },
+    {
+      "icon": "file_type_qlikview.svg",
+      "fileSuffixes": [
+        ".qvd",
+        ".qvs",
+        ".qvw"
+      ]
+    },
+    {
+      "icon": "file_type_r.svg",
+      "fileSuffixes": [
+        ".r"
+      ]
+    },
+    {
+      "icon": "file_type_raku.svg",
+      "light": "file_type_light_raku.svg",
+      "fileSuffixes": [
+        ".raku"
+      ]
+    },
+    {
+      "icon": "file_type_raml.svg",
+      "fileSuffixes": [
+        ".raml"
+      ]
+    },
+    {
+      "icon": "file_type_ra_syntax_tree.svg",
+      "fileSuffixes": [
+        ".rast"
+      ]
+    },
+    {
+      "icon": "file_type_reason.svg",
+      "fileSuffixes": [
+        ".re"
+      ]
+    },
+    {
+      "icon": "file_type_red.svg",
+      "fileSuffixes": [
+        ".red"
+      ]
+    },
+    {
+      "icon": "file_type_registry.svg",
+      "fileSuffixes": [
+        ".reg"
+      ]
+    },
+    {
+      "icon": "file_type_rego.svg",
+      "fileSuffixes": [
+        ".rego"
+      ]
+    },
+    {
+      "icon": "file_type_rescript.svg",
+      "fileSuffixes": [
+        ".res"
+      ]
+    },
+    {
+      "icon": "file_type_design_tokens.svg",
+      "fileSuffixes": [
+        ".resolver.json",
+        ".resolver.json5",
+        ".resolver.jsonc",
+        ".tokens.json",
+        ".tokens.json5",
+        ".tokens.jsonc"
+      ]
+    },
+    {
+      "icon": "file_type_rexx.svg",
+      "fileSuffixes": [
+        ".rex"
+      ]
+    },
+    {
+      "icon": "file_type_ripple.svg",
+      "fileSuffixes": [
+        ".ripple"
+      ]
+    },
+    {
+      "icon": "file_type_racket.svg",
+      "fileSuffixes": [
+        ".rkt"
+      ]
+    },
+    {
+      "icon": "file_type_rmd.svg",
+      "fileSuffixes": [
+        ".rmd"
+      ]
+    },
+    {
+      "icon": "file_type_rnc.svg",
+      "fileSuffixes": [
+        ".rnc"
+      ]
+    },
+    {
+      "icon": "file_type_robotframework.svg",
+      "fileSuffixes": [
+        ".robot"
+      ]
+    },
+    {
+      "icon": "file_type_ron.svg",
+      "fileSuffixes": [
+        ".ron"
+      ]
+    },
+    {
+      "icon": "file_type_rproj.svg",
+      "fileSuffixes": [
+        ".rproj"
+      ]
+    },
+    {
+      "icon": "file_type_sparql.svg",
+      "fileSuffixes": [
+        ".rq"
+      ]
+    },
+    {
+      "icon": "file_type_rust.svg",
+      "light": "file_type_light_rust.svg",
+      "fileSuffixes": [
+        ".rs"
+      ]
+    },
+    {
+      "icon": "file_type_rss.svg",
+      "fileSuffixes": [
+        ".rss"
+      ]
+    },
+    {
+      "icon": "file_type_rest.svg",
+      "fileSuffixes": [
+        ".rst"
+      ]
+    },
+    {
+      "icon": "file_type_reacttemplate.svg",
+      "fileSuffixes": [
+        ".rt"
+      ]
+    },
+    {
+      "icon": "file_type_prometheus.svg",
+      "fileSuffixes": [
+        ".rules"
+      ]
+    },
+    {
+      "icon": "file_type_safetensors.svg",
+      "light": "file_type_light_safetensors.svg",
+      "fileSuffixes": [
+        ".safetensors"
+      ]
+    },
+    {
+      "icon": "file_type_san.svg",
+      "fileSuffixes": [
+        ".san"
+      ]
+    },
+    {
+      "icon": "file_type_sas.svg",
+      "fileSuffixes": [
+        ".sas"
+      ]
+    },
+    {
+      "icon": "file_type_sass.svg",
+      "fileSuffixes": [
+        ".sass"
+      ]
+    },
+    {
+      "icon": "file_type_sbt.svg",
+      "fileSuffixes": [
+        ".sbt"
+      ]
+    },
+    {
+      "icon": "file_type_openscad.svg",
+      "fileSuffixes": [
+        ".scad"
+      ]
+    },
+    {
+      "icon": "file_type_scala.svg",
+      "fileSuffixes": [
+        ".scala"
+      ]
+    },
+    {
+      "icon": "file_type_scilab.svg",
+      "fileSuffixes": [
+        ".sce"
+      ]
+    },
+    {
+      "icon": "file_type_json_schema.svg",
+      "light": "file_type_light_json_schema.svg",
+      "fileSuffixes": [
+        ".schema.json"
+      ]
+    },
+    {
+      "icon": "file_type_scss.svg",
+      "fileSuffixes": [
+        ".scss",
+        ".scssm"
+      ]
+    },
+    {
+      "icon": "file_type_sdlang.svg",
+      "fileSuffixes": [
+        ".sdl"
+      ]
+    },
+    {
+      "icon": "file_type_shaderlab.svg",
+      "light": "file_type_light_shaderlab.svg",
+      "fileSuffixes": [
+        ".shader",
+        ".unity"
+      ]
+    },
+    {
+      "icon": "file_type_sketch.svg",
+      "fileSuffixes": [
+        ".sketch"
+      ]
+    },
+    {
+      "icon": "file_type_slang.svg",
+      "fileSuffixes": [
+        ".slang"
+      ]
+    },
+    {
+      "icon": "file_type_slim.svg",
+      "fileSuffixes": [
+        ".slim"
+      ]
+    },
+    {
+      "icon": "file_type_slint.svg",
+      "fileSuffixes": [
+        ".slint"
+      ]
+    },
+    {
+      "icon": "file_type_sln.svg",
+      "fileSuffixes": [
+        ".sln",
+        ".slnf",
+        ".slnx"
+      ]
+    },
+    {
+      "icon": "file_type_saltstack.svg",
+      "fileSuffixes": [
+        ".sls"
+      ]
+    },
+    {
+      "icon": "file_type_snakemake.svg",
+      "fileSuffixes": [
+        ".smk"
+      ]
+    },
+    {
+      "icon": "file_type_sino.svg",
+      "fileSuffixes": [
+        ".sn"
+      ]
+    },
+    {
+      "icon": "file_type_snort.svg",
+      "fileSuffixes": [
+        ".snort"
+      ]
+    },
+    {
+      "icon": "file_type_solidity.svg",
+      "light": "file_type_light_solidity.svg",
+      "fileSuffixes": [
+        ".sol"
+      ]
+    },
+    {
+      "icon": "file_type_spacengine.svg",
+      "fileSuffixes": [
+        ".spe"
+      ]
+    },
+    {
+      "icon": "file_type_testjs.svg",
+      "light": "file_type_light_testjs.svg",
+      "fileSuffixes": [
+        ".spec.js",
+        ".spec.jsx",
+        ".spec.mjs",
+        ".test.js",
+        ".test.jsx",
+        ".test.mjs"
+      ]
+    },
+    {
+      "icon": "file_type_sqf.svg",
+      "fileSuffixes": [
+        ".sqf"
+      ]
+    },
+    {
+      "icon": "file_type_sql.svg",
+      "fileSuffixes": [
+        ".sql"
+      ]
+    },
+    {
+      "icon": "file_type_silverstripe.svg",
+      "fileSuffixes": [
+        ".ss"
+      ]
+    },
+    {
+      "icon": "file_type_sss.svg",
+      "fileSuffixes": [
+        ".sss"
+      ]
+    },
+    {
+      "icon": "file_type_stylable.svg",
+      "fileSuffixes": [
+        ".st.css"
+      ]
+    },
+    {
+      "icon": "file_type_stan.svg",
+      "fileSuffixes": [
+        ".stan"
+      ]
+    },
+    {
+      "icon": "file_type_storybook.svg",
+      "fileSuffixes": [
+        ".stories.js",
+        ".stories.jsx",
+        ".stories.mdx",
+        ".stories.svelte",
+        ".stories.ts",
+        ".stories.tsx",
+        ".story.js",
+        ".story.jsx",
+        ".story.mdx",
+        ".story.svelte",
+        ".story.ts",
+        ".story.tsx"
+      ]
+    },
+    {
+      "icon": "file_type_storyboard.svg",
+      "fileSuffixes": [
+        ".storyboard"
+      ]
+    },
+    {
+      "icon": "file_type_locale.svg",
+      "fileSuffixes": [
+        ".strings"
+      ]
+    },
+    {
+      "icon": "file_type_stylus.svg",
+      "light": "file_type_light_stylus.svg",
+      "fileSuffixes": [
+        ".styl"
+      ]
+    },
+    {
+      "icon": "file_type_styled.svg",
+      "fileSuffixes": [
+        ".styled"
+      ]
+    },
+    {
+      "icon": "file_type_sublime.svg",
+      "fileSuffixes": [
+        ".sublime-project"
+      ]
+    },
+    {
+      "icon": "file_type_systemverilog.svg",
+      "light": "file_type_light_systemverilog.svg",
+      "fileSuffixes": [
+        ".sv"
+      ]
+    },
+    {
+      "icon": "file_type_svelte.svg",
+      "fileSuffixes": [
+        ".svelte"
+      ]
+    },
+    {
+      "icon": "file_type_svg.svg",
+      "fileSuffixes": [
+        ".svg"
+      ]
+    },
+    {
+      "icon": "file_type_swagger.svg",
+      "fileSuffixes": [
+        ".swagger"
+      ]
+    },
+    {
+      "icon": "file_type_flash.svg",
+      "fileSuffixes": [
+        ".swc",
+        ".swf"
+      ]
+    },
+    {
+      "icon": "file_type_swig.svg",
+      "fileSuffixes": [
+        ".swig"
+      ]
+    },
+    {
+      "icon": "file_type_siyuan.svg",
+      "fileSuffixes": [
+        ".sy"
+      ]
+    },
+    {
+      "icon": "file_type_riot.svg",
+      "fileSuffixes": [
+        ".tag"
+      ]
+    },
+    {
+      "icon": "file_type_teal.svg",
+      "fileSuffixes": [
+        ".teal"
+      ]
+    },
+    {
+      "icon": "file_type_templ.svg",
+      "fileSuffixes": [
+        ".templ"
+      ]
+    },
+    {
+      "icon": "file_type_tera.svg",
+      "fileSuffixes": [
+        ".tera"
+      ]
+    },
+    {
+      "icon": "file_type_textile.svg",
+      "fileSuffixes": [
+        ".textile"
+      ]
+    },
+    {
+      "icon": "file_type_terraform.svg",
+      "fileSuffixes": [
+        ".tf",
+        ".tf.json",
+        ".tfstate",
+        ".tfvars"
+      ]
+    },
+    {
+      "icon": "file_type_openHAB.svg",
+      "light": "file_type_light_openHAB.svg",
+      "fileSuffixes": [
+        ".things"
+      ]
+    },
+    {
+      "icon": "file_type_tm.svg",
+      "light": "file_type_light_tm.svg",
+      "fileSuffixes": [
+        ".tm",
+        ".tm.hcl"
+      ]
+    },
+    {
+      "icon": "file_type_todo.svg",
+      "light": "file_type_light_todo.svg",
+      "fileSuffixes": [
+        ".todo"
+      ]
+    },
+    {
+      "icon": "file_type_toit.svg",
+      "light": "file_type_light_toit.svg",
+      "fileSuffixes": [
+        ".toit"
+      ]
+    },
+    {
+      "icon": "file_type_toml.svg",
+      "light": "file_type_light_toml.svg",
+      "fileSuffixes": [
+        ".toml"
+      ]
+    },
+    {
+      "icon": "file_type_toon.svg",
+      "light": "file_type_light_toon.svg",
+      "fileSuffixes": [
+        ".toon"
+      ]
+    },
+    {
+      "icon": "file_type_thinkscript.svg",
+      "fileSuffixes": [
+        ".tosts"
+      ]
+    },
+    {
+      "icon": "file_type_smarty.svg",
+      "fileSuffixes": [
+        ".tpl"
+      ]
+    },
+    {
+      "icon": "file_type_tree.svg",
+      "light": "file_type_light_tree.svg",
+      "fileSuffixes": [
+        ".tree"
+      ]
+    },
+    {
+      "icon": "file_type_tres.svg",
+      "fileSuffixes": [
+        ".tres"
+      ]
+    },
+    {
+      "icon": "file_type_tsbuildinfo.svg",
+      "fileSuffixes": [
+        ".tsbuildinfo"
+      ]
+    },
+    {
+      "icon": "file_type_tscn.svg",
+      "fileSuffixes": [
+        ".tscn"
+      ]
+    },
+    {
+      "icon": "file_type_test.svg",
+      "fileSuffixes": [
+        ".tst"
+      ]
+    },
+    {
+      "icon": "file_type_reactts.svg",
+      "fileSuffixes": [
+        ".tsx"
+      ]
+    },
+    {
+      "icon": "file_type_t4tt.svg",
+      "fileSuffixes": [
+        ".tt"
+      ]
+    },
+    {
+      "icon": "file_type_tt.svg",
+      "fileSuffixes": [
+        ".tt2",
+        ".tt3"
+      ]
+    },
+    {
+      "icon": "file_type_ttcn.svg",
+      "fileSuffixes": [
+        ".ttcn3"
+      ]
+    },
+    {
+      "icon": "file_type_tuc.svg",
+      "fileSuffixes": [
+        ".tuc"
+      ]
+    },
+    {
+      "icon": "file_type_twig.svg",
+      "fileSuffixes": [
+        ".twig"
+      ]
+    },
+    {
+      "icon": "file_type_powershell_types.svg",
+      "fileSuffixes": [
+        ".types.ps1xml"
+      ]
+    },
+    {
+      "icon": "file_type_typo3.svg",
+      "fileSuffixes": [
+        ".typoscript"
+      ]
+    },
+    {
+      "icon": "file_type_unison.svg",
+      "fileSuffixes": [
+        ".u"
+      ]
+    },
+    {
+      "icon": "file_type_uiua.svg",
+      "fileSuffixes": [
+        ".ua"
+      ]
+    },
+    {
+      "icon": "file_type_vlang.svg",
+      "fileSuffixes": [
+        ".v"
+      ]
+    },
+    {
+      "icon": "file_type_vala.svg",
+      "fileSuffixes": [
+        ".vala"
+      ]
+    },
+    {
+      "icon": "file_type_vapi.svg",
+      "fileSuffixes": [
+        ".vapi"
+      ]
+    },
+    {
+      "icon": "file_type_vash.svg",
+      "light": "file_type_light_vash.svg",
+      "fileSuffixes": [
+        ".vash"
+      ]
+    },
+    {
+      "icon": "file_type_vb.svg",
+      "fileSuffixes": [
+        ".vb"
+      ]
+    },
+    {
+      "icon": "file_type_vbhtml.svg",
+      "fileSuffixes": [
+        ".vbhtml"
+      ]
+    },
+    {
+      "icon": "file_type_vbproj.svg",
+      "fileSuffixes": [
+        ".vbproj"
+      ]
+    },
+    {
+      "icon": "file_type_vcxproj.svg",
+      "fileSuffixes": [
+        ".vcxproj"
+      ]
+    },
+    {
+      "icon": "file_type_vento.svg",
+      "fileSuffixes": [
+        ".vento",
+        ".vto"
+      ]
+    },
+    {
+      "icon": "file_type_vhdl.svg",
+      "fileSuffixes": [
+        ".vhdl"
+      ]
+    },
+    {
+      "icon": "file_type_velocity.svg",
+      "fileSuffixes": [
+        ".vm"
+      ]
+    },
+    {
+      "icon": "file_type_volt.svg",
+      "fileSuffixes": [
+        ".volt"
+      ]
+    },
+    {
+      "icon": "file_type_vroom.svg",
+      "fileSuffixes": [
+        ".vroom"
+      ]
+    },
+    {
+      "icon": "file_type_vsix.svg",
+      "light": "file_type_light_vsix.svg",
+      "fileSuffixes": [
+        ".vsix"
+      ]
+    },
+    {
+      "icon": "file_type_vsixmanifest.svg",
+      "light": "file_type_light_vsixmanifest.svg",
+      "fileSuffixes": [
+        ".vsixmanifest"
+      ]
+    },
+    {
+      "icon": "file_type_vvvvvv.svg",
+      "fileSuffixes": [
+        ".vvvvvv"
+      ]
+    },
+    {
+      "icon": "file_type_vyper.svg",
+      "fileSuffixes": [
+        ".vy",
+        ".vyi"
+      ]
+    },
+    {
+      "icon": "file_type_progress.svg",
+      "fileSuffixes": [
+        ".w"
+      ]
+    },
+    {
+      "icon": "file_type_wit.svg",
+      "fileSuffixes": [
+        ".wai",
+        ".wit"
+      ]
+    },
+    {
+      "icon": "file_type_wasm.svg",
+      "fileSuffixes": [
+        ".wasm",
+        ".wast",
+        ".wast.js",
+        ".wat",
+        ".witx",
+        ".wsm"
+      ]
+    },
+    {
+      "icon": "file_type_wasp.svg",
+      "fileSuffixes": [
+        ".wasp",
+        ".wasp.ts"
+      ]
+    },
+    {
+      "icon": "file_type_wesl.svg",
+      "light": "file_type_light_wesl.svg",
+      "fileSuffixes": [
+        ".wesl"
+      ]
+    },
+    {
+      "icon": "file_type_wgsl.svg",
+      "fileSuffixes": [
+        ".wgsl"
+      ]
+    },
+    {
+      "icon": "file_type_wikitext.svg",
+      "fileSuffixes": [
+        ".wikitext",
+        ".wt"
+      ]
+    },
+    {
+      "icon": "file_type_wolfram.svg",
+      "fileSuffixes": [
+        ".wl"
+      ]
+    },
+    {
+      "icon": "file_type_script.svg",
+      "fileSuffixes": [
+        ".wsf"
+      ]
+    },
+    {
+      "icon": "file_type_wurst.svg",
+      "fileSuffixes": [
+        ".wurst"
+      ]
+    },
+    {
+      "icon": "file_type_wxml.svg",
+      "fileSuffixes": [
+        ".wxml"
+      ]
+    },
+    {
+      "icon": "file_type_wxss.svg",
+      "fileSuffixes": [
+        ".wxss"
+      ]
+    },
+    {
+      "icon": "file_type_wenyan.svg",
+      "fileSuffixes": [
+        ".wy"
+      ]
+    },
+    {
+      "icon": "file_type_gimp.svg",
+      "fileSuffixes": [
+        ".xcf"
+      ]
+    },
+    {
+      "icon": "file_type_xfl.svg",
+      "light": "file_type_light_xfl.svg",
+      "fileSuffixes": [
+        ".xfl"
+      ]
+    },
+    {
+      "icon": "file_type_xib.svg",
+      "fileSuffixes": [
+        ".xib"
+      ]
+    },
+    {
+      "icon": "file_type_xliff.svg",
+      "fileSuffixes": [
+        ".xlf",
+        ".xliff"
+      ]
+    },
+    {
+      "icon": "file_type_excel.svg",
+      "fileSuffixes": [
+        ".xls",
+        ".xlsb",
+        ".xlsm",
+        ".xlsx"
+      ]
+    },
+    {
+      "icon": "file_type_xmake.svg",
+      "fileSuffixes": [
+        ".xmake.lua"
+      ]
+    },
+    {
+      "icon": "file_type_xquery.svg",
+      "fileSuffixes": [
+        ".xquery"
+      ]
+    },
+    {
+      "icon": "file_type_xsl.svg",
+      "fileSuffixes": [
+        ".xsl"
+      ]
+    },
+    {
+      "icon": "file_type_yaml.svg",
+      "light": "file_type_light_yaml.svg",
+      "fileSuffixes": [
+        ".yaml",
+        ".yaml-tmlanguage",
+        ".yml"
+      ]
+    },
+    {
+      "icon": "file_type_yang.svg",
+      "fileSuffixes": [
+        ".yang"
+      ]
+    },
+    {
+      "icon": "file_type_gamemaker2.svg",
+      "light": "file_type_light_gamemaker2.svg",
+      "fileSuffixes": [
+        ".yy",
+        ".yyp"
+      ]
+    },
+    {
+      "icon": "file_type_zig.svg",
+      "fileSuffixes": [
+        ".zig"
+      ]
+    },
+    {
+      "icon": "folder_type_controller.svg",
+      "folderNames": [
+        "__controller__",
+        "__controllers__",
+        "__handler__",
+        "__handlers__",
+        ".controllers",
+        ".handler",
+        ".handlers",
+        "controller",
+        "controllers",
+        "handler",
+        "handlers"
+      ]
+    },
+    {
+      "icon": "folder_type_library.svg",
+      "folderNames": [
+        "__lib__",
+        "__libs__",
+        ".lib",
+        ".libs",
+        "lib",
+        "libraries",
+        "library",
+        "libs"
+      ]
+    },
+    {
+      "icon": "folder_type_mock.svg",
+      "folderNames": [
+        "__mocks__",
+        ".mocks",
+        "mocks"
+      ]
+    },
+    {
+      "icon": "folder_type_python.svg",
+      "folderNames": [
+        "__pycache__",
+        ".venv",
+        ".virtualenv"
+      ]
+    },
+    {
+      "icon": "folder_type_shared.svg",
+      "folderNames": [
+        "__share__",
+        "__shared__",
+        ".share",
+        ".shared",
+        "share",
+        "shared"
+      ]
+    },
+    {
+      "icon": "folder_type_src.svg",
+      "folderNames": [
+        "__src__",
+        "source",
+        "sources",
+        "src"
+      ]
+    },
+    {
+      "icon": "folder_type_story.svg",
+      "folderNames": [
+        "__stories__",
+        ".storybook",
+        "stories",
+        "story"
+      ]
+    },
+    {
+      "icon": "folder_type_test.svg",
+      "folderNames": [
+        "__test__",
+        "__tests__",
+        ".spec",
+        ".specs",
+        ".test",
+        ".tests",
+        "integration",
+        "spec",
+        "specs",
+        "test",
+        "tests"
+      ]
+    },
+    {
+      "icon": "folder_type_css.svg",
+      "folderNames": [
+        "_css",
+        "css"
+      ]
+    },
+    {
+      "icon": "folder_type_include.svg",
+      "folderNames": [
+        "_inc",
+        "_incl",
+        "_include",
+        "_includes",
+        ".inc",
+        ".incl",
+        ".include",
+        ".includes",
+        "inc",
+        "incl",
+        "include",
+        "includes"
+      ]
+    },
+    {
+      "icon": "folder_type_view.svg",
+      "folderNames": [
+        "_layout",
+        "_layouts",
+        "_page",
+        "_pages",
+        "_view",
+        "_views",
+        "html",
+        "layout",
+        "layouts",
+        "page",
+        "pages",
+        "view",
+        "views"
+      ]
+    },
+    {
+      "icon": "folder_type_less.svg",
+      "folderNames": [
+        "_less",
+        "less"
+      ]
+    },
+    {
+      "icon": "folder_type_locale.svg",
+      "folderNames": [
+        "_locale",
+        "_locales",
+        "g11n",
+        "globalization",
+        "i18n",
+        "internationalization",
+        "l10n",
+        "lang",
+        "language",
+        "languages",
+        "locale",
+        "locales",
+        "localization"
+      ]
+    },
+    {
+      "icon": "folder_type_route.svg",
+      "folderNames": [
+        "_route",
+        "_routes",
+        "route",
+        "router",
+        "routers",
+        "routes"
+      ]
+    },
+    {
+      "icon": "folder_type_sass.svg",
+      "light": "folder_type_light_sass.svg",
+      "folderNames": [
+        "_sass",
+        "_scss",
+        "sass",
+        "scss"
+      ]
+    },
+    {
+      "icon": "folder_type_angular.svg",
+      "folderNames": [
+        ".angular"
+      ]
+    },
+    {
+      "icon": "folder_type_api.svg",
+      "folderNames": [
+        ".api",
+        ".apis",
+        "api",
+        "apis"
+      ]
+    },
+    {
+      "icon": "folder_type_app.svg",
+      "folderNames": [
+        ".app",
+        "app",
+        "application",
+        "applications",
+        "apps"
+      ]
+    },
+    {
+      "icon": "folder_type_asset.svg",
+      "folderNames": [
+        ".assets",
+        "assets"
+      ]
+    },
+    {
+      "icon": "folder_type_astro.svg",
+      "folderNames": [
+        ".astro"
+      ]
+    },
+    {
+      "icon": "folder_type_audio.svg",
+      "folderNames": [
+        ".audio",
+        ".audios",
+        ".sound",
+        ".sounds",
+        "audio",
+        "audios",
+        "sound",
+        "sounds"
+      ]
+    },
+    {
+      "icon": "folder_type_aws.svg",
+      "folderNames": [
+        ".aws",
+        "aws"
+      ]
+    },
+    {
+      "icon": "folder_type_azure.svg",
+      "folderNames": [
+        ".azure",
+        "azure"
+      ]
+    },
+    {
+      "icon": "folder_type_azurepipelines.svg",
+      "folderNames": [
+        ".azure-pipelines",
+        ".azuredevops",
+        ".vsts",
+        "azure-pipelines"
+      ]
+    },
+    {
+      "icon": "folder_type_binary.svg",
+      "folderNames": [
+        ".bin",
+        "bin"
+      ]
+    },
+    {
+      "icon": "folder_type_blueprint.svg",
+      "folderNames": [
+        ".blueprint",
+        ".blueprints",
+        "blueprint",
+        "blueprints"
+      ]
+    },
+    {
+      "icon": "folder_type_bot.svg",
+      "folderNames": [
+        ".bot",
+        "bot"
+      ]
+    },
+    {
+      "icon": "folder_type_dist.svg",
+      "folderNames": [
+        ".build",
+        ".dist",
+        "build",
+        "builds",
+        "dist",
+        "dists",
+        "export",
+        "exports",
+        "out",
+        "outs",
+        "release",
+        "releases",
+        "target",
+        "targets"
+      ]
+    },
+    {
+      "icon": "folder_type_buildkite.svg",
+      "folderNames": [
+        ".buildkite"
+      ]
+    },
+    {
+      "icon": "folder_type_cake.svg",
+      "folderNames": [
+        ".cake",
+        "cake"
+      ]
+    },
+    {
+      "icon": "folder_type_cargo.svg",
+      "folderNames": [
+        ".cargo",
+        "cargo",
+        "crates"
+      ]
+    },
+    {
+      "icon": "folder_type_certificate.svg",
+      "folderNames": [
+        ".certificates",
+        "certificates",
+        "certs",
+        "certs."
+      ]
+    },
+    {
+      "icon": "folder_type_changesets.svg",
+      "folderNames": [
+        ".changeset"
+      ]
+    },
+    {
+      "icon": "folder_type_chef.svg",
+      "folderNames": [
+        ".chef",
+        "chef"
+      ]
+    },
+    {
+      "icon": "folder_type_circleci.svg",
+      "folderNames": [
+        ".circleci"
+      ]
+    },
+    {
+      "icon": "folder_type_claude.svg",
+      "folderNames": [
+        ".claude"
+      ]
+    },
+    {
+      "icon": "folder_type_cloudflare.svg",
+      "folderNames": [
+        ".cloudflare",
+        "cloudflare"
+      ]
+    },
+    {
+      "icon": "folder_type_cmake.svg",
+      "folderNames": [
+        ".cmake",
+        "cmake"
+      ]
+    },
+    {
+      "icon": "folder_type_component.svg",
+      "folderNames": [
+        ".components",
+        "component",
+        "components",
+        "gui",
+        "src-ui",
+        "ui",
+        "widgets"
+      ]
+    },
+    {
+      "icon": "folder_type_composer.svg",
+      "folderNames": [
+        ".composer",
+        "composer"
+      ]
+    },
+    {
+      "icon": "folder_type_config.svg",
+      "folderNames": [
+        ".conf",
+        ".config",
+        ".configs",
+        ".configuration",
+        ".configurations",
+        ".ini",
+        ".initializers",
+        ".setting",
+        ".settings",
+        "conf",
+        "config",
+        "configs",
+        "configuration",
+        "configurations",
+        "ini",
+        "initializers",
+        "setting",
+        "settings"
+      ]
+    },
+    {
+      "icon": "folder_type_cursor.svg",
+      "light": "folder_type_light_cursor.svg",
+      "folderNames": [
+        ".cursor"
+      ]
+    },
+    {
+      "icon": "folder_type_dapr.svg",
+      "folderNames": [
+        ".dapr",
+        "dapr"
+      ]
+    },
+    {
+      "icon": "folder_type_dart.svg",
+      "folderNames": [
+        ".dart_tool",
+        "dart"
+      ]
+    },
+    {
+      "icon": "folder_type_databricks.svg",
+      "folderNames": [
+        ".databricks"
+      ]
+    },
+    {
+      "icon": "folder_type_datadog.svg",
+      "folderNames": [
+        ".datadog",
+        "datadog"
+      ]
+    },
+    {
+      "icon": "folder_type_dependabot.svg",
+      "folderNames": [
+        ".dependabot"
+      ]
+    },
+    {
+      "icon": "folder_type_devcontainer.svg",
+      "folderNames": [
+        ".devcontainer"
+      ]
+    },
+    {
+      "icon": "folder_type_devenv.svg",
+      "light": "folder_type_light_devenv.svg",
+      "folderNames": [
+        ".devenv"
+      ]
+    },
+    {
+      "icon": "folder_type_docker.svg",
+      "folderNames": [
+        ".docker",
+        "docker"
+      ]
+    },
+    {
+      "icon": "folder_type_elasticbeanstalk.svg",
+      "folderNames": [
+        ".ebextensions",
+        ".elasticbeanstalk"
+      ]
+    },
+    {
+      "icon": "folder_type_model.svg",
+      "folderNames": [
+        ".entities",
+        ".model",
+        ".models",
+        "entities",
+        "model",
+        "models"
+      ]
+    },
+    {
+      "icon": "folder_type_expo.svg",
+      "light": "folder_type_light_expo.svg",
+      "folderNames": [
+        ".expo",
+        ".expo-shared"
+      ]
+    },
+    {
+      "icon": "folder_type_plugin.svg",
+      "folderNames": [
+        ".extension",
+        ".extensions",
+        ".plugin",
+        ".plugins",
+        "extension",
+        "extensions",
+        "plugin",
+        "plugins"
+      ]
+    },
+    {
+      "icon": "folder_type_images.svg",
+      "folderNames": [
+        ".fig",
+        ".figs",
+        ".img",
+        ".imgs",
+        "ico",
+        "icon",
+        "icons",
+        "image",
+        "images",
+        "img",
+        "imgs",
+        "screenshot",
+        "screenshots",
+        "svg",
+        "texture",
+        "textures"
+      ]
+    },
+    {
+      "icon": "folder_type_frontcommerce.svg",
+      "folderNames": [
+        ".front-commerce"
+      ]
+    },
+    {
+      "icon": "folder_type_gcp.svg",
+      "folderNames": [
+        ".gcp",
+        "gcp"
+      ]
+    },
+    {
+      "icon": "folder_type_gemini.svg",
+      "folderNames": [
+        ".gemini"
+      ]
+    },
+    {
+      "icon": "folder_type_git.svg",
+      "folderNames": [
+        ".git",
+        ".submodules",
+        "submodules"
+      ]
+    },
+    {
+      "icon": "folder_type_github.svg",
+      "folderNames": [
+        ".github"
+      ]
+    },
+    {
+      "icon": "folder_type_gitlab.svg",
+      "folderNames": [
+        ".gitlab"
+      ]
+    },
+    {
+      "icon": "folder_type_godot.svg",
+      "folderNames": [
+        ".godot",
+        "godot"
+      ]
+    },
+    {
+      "icon": "folder_type_gradle.svg",
+      "light": "folder_type_light_gradle.svg",
+      "folderNames": [
+        ".gradle",
+        "gradle"
+      ]
+    },
+    {
+      "icon": "folder_type_grok.svg",
+      "folderNames": [
+        ".grok"
+      ]
+    },
+    {
+      "icon": "folder_type_haxelib.svg",
+      "folderNames": [
+        ".haxelib",
+        "haxe_libraries"
+      ]
+    },
+    {
+      "icon": "folder_type_helper.svg",
+      "folderNames": [
+        ".helper",
+        ".helpers",
+        "helper",
+        "helpers"
+      ]
+    },
+    {
+      "icon": "folder_type_histoire.svg",
+      "folderNames": [
+        ".histoire"
+      ]
+    },
+    {
+      "icon": "folder_type_hook.svg",
+      "folderNames": [
+        ".hook",
+        ".hooks",
+        "hook",
+        "hooks"
+      ]
+    },
+    {
+      "icon": "folder_type_husky.svg",
+      "folderNames": [
+        ".husky"
+      ]
+    },
+    {
+      "icon": "folder_type_idea.svg",
+      "folderNames": [
+        ".idea"
+      ]
+    },
+    {
+      "icon": "folder_type_junie.svg",
+      "folderNames": [
+        ".junie"
+      ]
+    },
+    {
+      "icon": "folder_type_kubernetes.svg",
+      "folderNames": [
+        ".k8s",
+        ".kube",
+        ".kuber",
+        ".kubernetes",
+        "k8s",
+        "kube",
+        "kuber",
+        "kubernetes"
+      ]
+    },
+    {
+      "icon": "folder_type_kiro.svg",
+      "folderNames": [
+        ".kiro"
+      ]
+    },
+    {
+      "icon": "folder_type_kotlin.svg",
+      "folderNames": [
+        ".kotlin",
+        "kotlin"
+      ]
+    },
+    {
+      "icon": "folder_type_memcached.svg",
+      "folderNames": [
+        ".memcached",
+        "memcached"
+      ]
+    },
+    {
+      "icon": "folder_type_meteor.svg",
+      "light": "folder_type_light_meteor.svg",
+      "folderNames": [
+        ".meteor"
+      ]
+    },
+    {
+      "icon": "folder_type_minecraft.svg",
+      "folderNames": [
+        ".minecraft"
+      ]
+    },
+    {
+      "icon": "folder_type_mjml.svg",
+      "folderNames": [
+        ".mjml",
+        "mjml"
+      ]
+    },
+    {
+      "icon": "folder_type_mobile.svg",
+      "folderNames": [
+        ".mobile",
+        ".mobiles",
+        "mobile",
+        "mobiles"
+      ]
+    },
+    {
+      "icon": "folder_type_maven.svg",
+      "folderNames": [
+        ".mvn"
+      ]
+    },
+    {
+      "icon": "folder_type_mypy.svg",
+      "light": "folder_type_light_mypy.svg",
+      "folderNames": [
+        ".mypy_cache"
+      ]
+    },
+    {
+      "icon": "folder_type_next.svg",
+      "folderNames": [
+        ".next"
+      ]
+    },
+    {
+      "icon": "folder_type_nix.svg",
+      "folderNames": [
+        ".niv",
+        ".nix",
+        "niv",
+        "nix"
+      ]
+    },
+    {
+      "icon": "folder_type_nuget.svg",
+      "folderNames": [
+        ".nuget"
+      ]
+    },
+    {
+      "icon": "folder_type_nuxt.svg",
+      "folderNames": [
+        ".nuxt",
+        "nuxt"
+      ]
+    },
+    {
+      "icon": "folder_type_package.svg",
+      "folderNames": [
+        ".package",
+        ".packages",
+        "package",
+        "packages",
+        "pkg"
+      ]
+    },
+    {
+      "icon": "folder_type_paket.svg",
+      "folderNames": [
+        ".paket"
+      ]
+    },
+    {
+      "icon": "folder_type_platformio.svg",
+      "folderNames": [
+        ".pio",
+        ".pioenvs"
+      ]
+    },
+    {
+      "icon": "folder_type_private.svg",
+      "folderNames": [
+        ".private",
+        "private"
+      ]
+    },
+    {
+      "icon": "folder_type_public.svg",
+      "folderNames": [
+        ".public",
+        "public"
+      ]
+    },
+    {
+      "icon": "folder_type_pytest.svg",
+      "folderNames": [
+        ".pytest_cache"
+      ]
+    },
+    {
+      "icon": "folder_type_seedkit.svg",
+      "folderNames": [
+        ".seedkit",
+        "seedkit"
+      ]
+    },
+    {
+      "icon": "folder_type_snaplet.svg",
+      "folderNames": [
+        ".snaplet"
+      ]
+    },
+    {
+      "icon": "folder_type_spin.svg",
+      "folderNames": [
+        ".spin"
+      ]
+    },
+    {
+      "icon": "folder_type_svelte.svg",
+      "folderNames": [
+        ".svelte-kit",
+        "svelte"
+      ]
+    },
+    {
+      "icon": "folder_type_telegram.svg",
+      "folderNames": [
+        ".telegram",
+        "telegram",
+        "telegramdesktop"
+      ]
+    },
+    {
+      "icon": "folder_type_temp.svg",
+      "folderNames": [
+        ".temp",
+        ".tmp",
+        "temp",
+        "tmp"
+      ]
+    },
+    {
+      "icon": "folder_type_template.svg",
+      "folderNames": [
+        ".template",
+        ".templates",
+        "template",
+        "templates"
+      ]
+    },
+    {
+      "icon": "folder_type_tools.svg",
+      "folderNames": [
+        ".tools",
+        "tool",
+        "tooling",
+        "tools",
+        "util",
+        "utilities",
+        "utils"
+      ]
+    },
+    {
+      "icon": "folder_type_travis.svg",
+      "folderNames": [
+        ".travis"
+      ]
+    },
+    {
+      "icon": "folder_type_trellis.svg",
+      "folderNames": [
+        ".trellis"
+      ]
+    },
+    {
+      "icon": "folder_type_trunk.svg",
+      "folderNames": [
+        ".trunk"
+      ]
+    },
+    {
+      "icon": "folder_type_turbo.svg",
+      "folderNames": [
+        ".turbo"
+      ]
+    },
+    {
+      "icon": "folder_type_vagrant.svg",
+      "folderNames": [
+        ".vagrant",
+        "vagrant"
+      ]
+    },
+    {
+      "icon": "folder_type_vercel.svg",
+      "folderNames": [
+        ".vercel"
+      ]
+    },
+    {
+      "icon": "folder_type_video.svg",
+      "folderNames": [
+        ".video",
+        ".videos",
+        "video",
+        "videos"
+      ]
+    },
+    {
+      "icon": "folder_type_vitepress.svg",
+      "folderNames": [
+        ".vitepress"
+      ]
+    },
+    {
+      "icon": "folder_type_vs.svg",
+      "folderNames": [
+        ".vs"
+      ]
+    },
+    {
+      "icon": "folder_type_vscode.svg",
+      "folderNames": [
+        ".vscode",
+        "vscode"
+      ]
+    },
+    {
+      "icon": "folder_type_vscode_test.svg",
+      "folderNames": [
+        ".vscode-test"
+      ]
+    },
+    {
+      "icon": "folder_type_wasp.svg",
+      "folderNames": [
+        ".wasp"
+      ]
+    },
+    {
+      "icon": "folder_type_www.svg",
+      "folderNames": [
+        ".web",
+        "web",
+        "www",
+        "wwwroot"
+      ]
+    },
+    {
+      "icon": "folder_type_webpack.svg",
+      "folderNames": [
+        ".webpack",
+        "webpack"
+      ]
+    },
+    {
+      "icon": "folder_type_windsurf.svg",
+      "folderNames": [
+        ".windsurf"
+      ]
+    },
+    {
+      "icon": "folder_type_yarn.svg",
+      "folderNames": [
+        ".yarn"
+      ]
+    },
+    {
+      "icon": "folder_type_zcode.svg",
+      "folderNames": [
+        ".zcode"
+      ]
+    },
+    {
+      "icon": "folder_type_zed.svg",
+      "light": "folder_type_light_zed.svg",
+      "folderNames": [
+        ".zed"
+      ]
+    },
+    {
+      "icon": "folder_type_typings.svg",
+      "folderNames": [
+        "@types",
+        "types",
+        "typings"
+      ]
+    },
+    {
+      "icon": "folder_type_android.svg",
+      "folderNames": [
+        "android"
+      ]
+    },
+    {
+      "icon": "folder_type_apache.svg",
+      "folderNames": [
+        "apache",
+        "apache2",
+        "httpd"
+      ]
+    },
+    {
+      "icon": "folder_type_arangodb.svg",
+      "folderNames": [
+        "arango",
+        "arangodb"
+      ]
+    },
+    {
+      "icon": "folder_type_aurelia.svg",
+      "folderNames": [
+        "aurelia_project"
+      ]
+    },
+    {
+      "icon": "folder_type_bloc.svg",
+      "folderNames": [
+        "bloc",
+        "blocs"
+      ]
+    },
+    {
+      "icon": "folder_type_bower.svg",
+      "folderNames": [
+        "bower_components"
+      ]
+    },
+    {
+      "icon": "folder_type_cli.svg",
+      "folderNames": [
+        "cli",
+        "cmd",
+        "command",
+        "commandline",
+        "commands",
+        "console"
+      ]
+    },
+    {
+      "icon": "folder_type_client.svg",
+      "folderNames": [
+        "client",
+        "clients"
+      ]
+    },
+    {
+      "icon": "folder_type_common.svg",
+      "folderNames": [
+        "common"
+      ]
+    },
+    {
+      "icon": "folder_type_nginx.svg",
+      "folderNames": [
+        "conf.d",
+        "nginx"
+      ]
+    },
+    {
+      "icon": "folder_type_coverage.svg",
+      "folderNames": [
+        "coverage"
+      ]
+    },
+    {
+      "icon": "folder_type_cubit.svg",
+      "folderNames": [
+        "cubit",
+        "cubits"
+      ]
+    },
+    {
+      "icon": "folder_type_cypress.svg",
+      "light": "folder_type_light_cypress.svg",
+      "folderNames": [
+        "cypress"
+      ]
+    },
+    {
+      "icon": "folder_type_macos.svg",
+      "folderNames": [
+        "darwin",
+        "macos"
+      ]
+    },
+    {
+      "icon": "folder_type_db.svg",
+      "folderNames": [
+        "data",
+        "database",
+        "db",
+        "repo",
+        "repositories",
+        "repository",
+        "sql",
+        "storage",
+        "storages",
+        "store",
+        "stores"
+      ]
+    },
+    {
+      "icon": "folder_type_debian.svg",
+      "folderNames": [
+        "deb",
+        "debian"
+      ]
+    },
+    {
+      "icon": "folder_type_docs.svg",
+      "folderNames": [
+        "doc",
+        "docs",
+        "document",
+        "documents"
+      ]
+    },
+    {
+      "icon": "folder_type_e2e.svg",
+      "folderNames": [
+        "e2e"
+      ]
+    },
+    {
+      "icon": "folder_type_electron.svg",
+      "light": "folder_type_light_electron.svg",
+      "folderNames": [
+        "electron"
+      ]
+    },
+    {
+      "icon": "folder_type_environments.svg",
+      "folderNames": [
+        "environments"
+      ]
+    },
+    {
+      "icon": "folder_type_notification.svg",
+      "folderNames": [
+        "event",
+        "events",
+        "notification",
+        "notifications"
+      ]
+    },
+    {
+      "icon": "folder_type_favicon.svg",
+      "folderNames": [
+        "favicon",
+        "favicons"
+      ]
+    },
+    {
+      "icon": "folder_type_flow.svg",
+      "folderNames": [
+        "flow",
+        "flow-typed"
+      ]
+    },
+    {
+      "icon": "folder_type_flutter.svg",
+      "folderNames": [
+        "flutter"
+      ]
+    },
+    {
+      "icon": "folder_type_fonts.svg",
+      "light": "folder_type_light_fonts.svg",
+      "folderNames": [
+        "fnt",
+        "font",
+        "fonts",
+        "webfonts"
+      ]
+    },
+    {
+      "icon": "folder_type_graphql.svg",
+      "folderNames": [
+        "graphql"
+      ]
+    },
+    {
+      "icon": "folder_type_grunt.svg",
+      "folderNames": [
+        "grunt"
+      ]
+    },
+    {
+      "icon": "folder_type_gulp.svg",
+      "folderNames": [
+        "gulp",
+        "gulpfile.babel.coffee",
+        "gulpfile.babel.js",
+        "gulpfile.babel.ts",
+        "gulpfile.coffee",
+        "gulpfile.js",
+        "gulpfile.ts"
+      ]
+    },
+    {
+      "icon": "folder_type_interfaces.svg",
+      "folderNames": [
+        "interface",
+        "interfaces"
+      ]
+    },
+    {
+      "icon": "folder_type_ios.svg",
+      "folderNames": [
+        "ios"
+      ]
+    },
+    {
+      "icon": "folder_type_js.svg",
+      "folderNames": [
+        "js"
+      ]
+    },
+    {
+      "icon": "folder_type_json.svg",
+      "folderNames": [
+        "json"
+      ]
+    },
+    {
+      "icon": "folder_type_linux.svg",
+      "folderNames": [
+        "linux"
+      ]
+    },
+    {
+      "icon": "folder_type_log.svg",
+      "folderNames": [
+        "log",
+        "logger",
+        "loggers",
+        "logging",
+        "logs"
+      ]
+    },
+    {
+      "icon": "folder_type_mariadb.svg",
+      "folderNames": [
+        "maria",
+        "mariadb"
+      ]
+    },
+    {
+      "icon": "folder_type_mediawiki.svg",
+      "folderNames": [
+        "mediawiki"
+      ]
+    },
+    {
+      "icon": "folder_type_middleware.svg",
+      "folderNames": [
+        "middleware",
+        "middlewares"
+      ]
+    },
+    {
+      "icon": "folder_type_minikube.svg",
+      "folderNames": [
+        "minik8s",
+        "minikube",
+        "minikuber"
+      ]
+    },
+    {
+      "icon": "folder_type_module.svg",
+      "folderNames": [
+        "modules"
+      ]
+    },
+    {
+      "icon": "folder_type_mojo.svg",
+      "folderNames": [
+        "mojo"
+      ]
+    },
+    {
+      "icon": "folder_type_mongodb.svg",
+      "folderNames": [
+        "mongo",
+        "mongodb"
+      ]
+    },
+    {
+      "icon": "folder_type_mysql.svg",
+      "light": "folder_type_light_mysql.svg",
+      "folderNames": [
+        "mysql",
+        "mysqldb"
+      ]
+    },
+    {
+      "icon": "folder_type_netlify.svg",
+      "folderNames": [
+        "netlify"
+      ]
+    },
+    {
+      "icon": "folder_type_node.svg",
+      "light": "folder_type_light_node.svg",
+      "folderNames": [
+        "node_modules"
+      ]
+    },
+    {
+      "icon": "folder_type_notebooks.svg",
+      "folderNames": [
+        "notebook",
+        "notebooks"
+      ]
+    },
+    {
+      "icon": "folder_type_php.svg",
+      "folderNames": [
+        "php"
+      ]
+    },
+    {
+      "icon": "folder_type_prisma.svg",
+      "folderNames": [
+        "prisma"
+      ]
+    },
+    {
+      "icon": "folder_type_ravendb.svg",
+      "folderNames": [
+        "ravendb"
+      ]
+    },
+    {
+      "icon": "folder_type_redis.svg",
+      "folderNames": [
+        "redis"
+      ]
+    },
+    {
+      "icon": "folder_type_redux.svg",
+      "light": "folder_type_light_redux.svg",
+      "folderNames": [
+        "redux"
+      ]
+    },
+    {
+      "icon": "folder_type_script.svg",
+      "folderNames": [
+        "script",
+        "scripts"
+      ]
+    },
+    {
+      "icon": "folder_type_server.svg",
+      "folderNames": [
+        "server"
+      ]
+    },
+    {
+      "icon": "folder_type_services.svg",
+      "folderNames": [
+        "service",
+        "services"
+      ]
+    },
+    {
+      "icon": "folder_type_tauri.svg",
+      "folderNames": [
+        "src-tauri"
+      ]
+    },
+    {
+      "icon": "folder_type_sso.svg",
+      "folderNames": [
+        "sso"
+      ]
+    },
+    {
+      "icon": "folder_type_style.svg",
+      "folderNames": [
+        "style",
+        "styles"
+      ]
+    },
+    {
+      "icon": "folder_type_supabase.svg",
+      "folderNames": [
+        "supabase"
+      ]
+    },
+    {
+      "icon": "folder_type_swagger.svg",
+      "folderNames": [
+        "swagger"
+      ]
+    },
+    {
+      "icon": "folder_type_theme.svg",
+      "folderNames": [
+        "theme",
+        "themes"
+      ]
+    },
+    {
+      "icon": "folder_type_typescript.svg",
+      "folderNames": [
+        "ts",
+        "typescript"
+      ]
+    },
+    {
+      "icon": "folder_type_wasm.svg",
+      "folderNames": [
+        "wasm",
+        "webassembly"
+      ]
+    },
+    {
+      "icon": "folder_type_windows.svg",
+      "folderNames": [
+        "win32",
+        "windows"
+      ]
+    },
+    {
+      "icon": "folder_type_wit.svg",
+      "folderNames": [
+        "wit"
+      ]
+    }
+  ],
+  "notices": [
+    {
+      "id": "vscode-icons-source",
+      "license": "MIT",
+      "text": "See LICENSES/LICENSE-MIT.txt for the complete upstream source license.",
+      "appliesTo": "vscode-icons source code and project derivation"
+    },
+    {
+      "id": "vscode-icons-assets",
+      "license": "CC BY-SA 4.0",
+      "text": "See LICENSES/NOTICE-ICON-ASSETS-CC-BY-SA-4.0.txt for attribution and asset licensing context.",
+      "appliesTo": "icon assets"
+    },
+    {
+      "id": "vscode-icons-branded-assets",
+      "license": "varies",
+      "text": "Branded icons may have their own copyright or trademark licenses.",
+      "appliesTo": "branded icon assets"
+    }
+  ]
+}

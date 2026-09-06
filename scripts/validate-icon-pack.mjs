@@ -1,15 +1,12 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { compileIconPackSource } from "./icon-pack-source.mjs";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const schemaVersion = 1;
-const packId = "vscode-icons-derived";
-const sourceDir = join(rootDir, "icon-packs", packId);
-const releaseDir = join(sourceDir, "icon-pack-release");
-const sourceManifestPath = join(sourceDir, "manifest.json");
+const packsDir = join(rootDir, "icon-packs");
 const compressedLimitBytes = 32 * 1024 * 1024;
 const decompressedLimitBytes = 128 * 1024 * 1024;
 const assetLimitBytes = 4 * 1024 * 1024;
@@ -20,13 +17,16 @@ const assetIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const iconPackVersionPattern = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
 const unsafeSvgPattern =
   /<!doctype|<!entity|<\/?(?:script|iframe|object|embed)\b|\bon[a-z][\w-]*\s*=|javascript\s*:|\b(?:href|xlink:href|src)\s*=\s*["']?(?:https?:|ftp:|file:|data:|\/\/|\\\\)|url\(\s*["']?(?:https?:|ftp:|file:|data:|\/\/|\\\\)/i;
-const safeEmbeddedPngPattern = /((?:href|xlink:href|src)\s*=\s*["'])data:image\/png;base64,[A-Za-z0-9+/]+={0,2}(["'])/gi;
+const safeEmbeddedPngPattern =
+  /((?:href|xlink:href|src)\s*=\s*["'])data:image\/png;base64,[A-Za-z0-9+/]+={0,2}(["'])/gi;
 const svgPattern = /<svg(?:\s|>)/i;
+
 const fail = (message) => {
   throw new Error(`[icon-pack] ${message}`);
 };
-
 const isRecord = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+const sortRecord = (record) =>
+  Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)));
 const assertString = (value, label) => {
   if (typeof value !== "string" || !value.trim()) fail(`${label} is missing`);
   return value.trim();
@@ -80,30 +80,30 @@ const mappingReferences = (manifest) => {
   ];
   return variants.flatMap((variant) => [variant.dark, ...(variant.light ? [variant.light] : [])]);
 };
-const assertSourceAsset = (assetId, asset) => {
+
+const assertSourceAsset = (packDir, assetId, asset) => {
   if (!isRecord(asset) || asset.format !== "svg" || asset.encoding !== "path" || typeof asset.path !== "string") {
     fail(`source asset '${assetId}' is invalid`);
   }
   const normalizedPath = asset.path.replace(/\\/g, "/");
-  if (!normalizedPath.startsWith("icons/") || normalizedPath.includes("../") || normalizedPath.endsWith("/")) {
-    fail(`source asset '${assetId}' path is unsafe`);
-  }
-  const assetPath = join(sourceDir, normalizedPath);
+  if (normalizedPath !== `icons/${assetId}` || normalizedPath.includes("../"))
+    fail(`source asset '${assetId}' path is invalid`);
+  const assetPath = join(packDir, normalizedPath);
+  if (!existsSync(assetPath)) fail(`source asset '${assetId}' is missing`);
   const assetStat = lstatSync(assetPath);
-  if (!assetStat.isFile() || assetStat.isSymbolicLink()) {
-    fail(`source asset '${assetId}' must be a regular file`);
-  }
+  if (!assetStat.isFile() || assetStat.isSymbolicLink()) fail(`source asset '${assetId}' must be a regular file`);
   const contents = readFileSync(assetPath);
-  if (contents.length === 0 || contents.length > assetLimitBytes || !svgPattern.test(contents.toString("utf8"))) {
+  const text = contents.toString("utf8");
+  if (contents.length === 0 || contents.length > assetLimitBytes || !svgPattern.test(text)) {
     fail(`source asset '${assetId}' content is invalid`);
   }
-  const svgText = contents.toString("utf8");
-  if (unsafeSvgPattern.test(svgText.replace(safeEmbeddedPngPattern, "$1$2"))) {
+  if (unsafeSvgPattern.test(text.replace(safeEmbeddedPngPattern, "$1$2"))) {
     fail(`source asset '${assetId}' contains unsafe SVG content`);
   }
+  return contents.length;
 };
 const assertReleaseAsset = (assetId, asset) => {
-  if (!isRecord(asset) || (asset.format !== "svg" && asset.format !== "png") || asset.encoding !== "base64") {
+  if (!isRecord(asset) || asset.format !== "svg" || asset.encoding !== "base64") {
     fail(`release asset '${assetId}' is invalid`);
   }
   if (
@@ -116,21 +116,19 @@ const assertReleaseAsset = (assetId, asset) => {
     fail(`release asset '${assetId}' data is invalid`);
   }
   const bytes = Buffer.from(asset.data, "base64");
-  if (bytes.length === 0) fail(`release asset '${assetId}' is empty`);
-  if (asset.format === "png") {
-    if (!bytes.subarray(0, 8).equals(Buffer.from("\x89PNG\r\n\x1a\n", "binary"))) {
-      fail(`release asset '${assetId}' is not a PNG`);
-    }
-    return;
-  }
   const contents = bytes.toString("utf8");
-  if (!svgPattern.test(contents) || unsafeSvgPattern.test(contents.replace(safeEmbeddedPngPattern, "$1$2"))) {
+  if (
+    bytes.length === 0 ||
+    !svgPattern.test(contents) ||
+    unsafeSvgPattern.test(contents.replace(safeEmbeddedPngPattern, "$1$2"))
+  ) {
     fail(`release asset '${assetId}' contains unsafe SVG`);
   }
+  return bytes.length;
 };
-const assertManifest = (manifest, { release }) => {
-  if (!isRecord(manifest) || manifest.schemaVersion !== schemaVersion || manifest.id !== packId) {
-    fail(`${release ? "release" : "source"} manifest identity is invalid`);
+const assertManifest = (packDir, packId, manifest, { release }) => {
+  if (!isRecord(manifest) || manifest.schemaVersion !== 1 || manifest.id !== packId) {
+    fail(`${packId} ${release ? "release" : "source"} manifest identity is invalid`);
   }
   assertString(manifest.name, "manifest name");
   const version = assertString(manifest.version, "manifest version");
@@ -140,7 +138,7 @@ const assertManifest = (manifest, { release }) => {
   assertString(manifest.source.version, "source version");
   assertSourceUrl(assertString(manifest.source.url, "source URL"));
   assertMappings(manifest);
-  if (!Array.isArray(manifest.notices) || manifest.notices.length < 3 || manifest.notices.length > 256) {
+  if (!Array.isArray(manifest.notices) || manifest.notices.length === 0 || manifest.notices.length > 256) {
     fail("license notices are incomplete");
   }
   for (const notice of manifest.notices) {
@@ -156,13 +154,8 @@ const assertManifest = (manifest, { release }) => {
   let totalAssetBytes = 0;
   for (const assetId of assetIds) {
     if (!assetIdPattern.test(assetId)) fail(`asset '${assetId}' has an invalid id`);
-    if (release) {
-      assertReleaseAsset(assetId, manifest.assets[assetId]);
-      totalAssetBytes += manifest.assets[assetId].data.length;
-    } else {
-      assertSourceAsset(assetId, manifest.assets[assetId]);
-      totalAssetBytes += readFileSync(join(sourceDir, manifest.assets[assetId].path)).length;
-    }
+    if (release) totalAssetBytes += assertReleaseAsset(assetId, manifest.assets[assetId]);
+    else totalAssetBytes += assertSourceAsset(packDir, assetId, manifest.assets[assetId]);
     if (totalAssetBytes > totalAssetLimitBytes) fail("total asset size exceeds the allowed limit");
   }
   for (const assetId of mappingReferences(manifest)) {
@@ -171,56 +164,83 @@ const assertManifest = (manifest, { release }) => {
   return version;
 };
 
-if (!existsSync(sourceManifestPath)) fail("source manifest is missing; run npm run icon-pack:build first");
-const sourceManifest = JSON.parse(readFileSync(sourceManifestPath, "utf8"));
-const sourceVersion = assertManifest(sourceManifest, { release: false });
-if (new Set(Object.keys(sourceManifest.assets || {})).size < 1000) {
-  fail(`expected the complete icon set, found only ${Object.keys(sourceManifest.assets).length} assets`);
-}
-for (const noticeFile of ["LICENSE-MIT.txt", "NOTICE-ICON-ASSETS-CC-BY-SA-4.0.txt", "UPSTREAM-README.md"]) {
-  if (!existsSync(join(sourceDir, "LICENSES", noticeFile))) fail(`notice file '${noticeFile}' is missing`);
-}
-const noticeText = readFileSync(join(sourceDir, "LICENSES", "NOTICE-ICON-ASSETS-CC-BY-SA-4.0.txt"), "utf8");
-if (!/vscode-icons|MIT|CC BY-SA 4\.0|branded/i.test(noticeText)) fail("icon asset attribution is incomplete");
-const releaseLicensePath = join(releaseDir, "LICENSES-vscode-icons.txt");
-if (!existsSync(releaseLicensePath)) fail("release license notice is missing");
-const releaseLicenseText = readFileSync(releaseLicensePath, "utf8");
-for (const noticeFile of ["LICENSE-MIT.txt", "NOTICE-ICON-ASSETS-CC-BY-SA-4.0.txt", "UPSTREAM-README.md"]) {
-  const noticeContents = readFileSync(join(sourceDir, "LICENSES", noticeFile), "utf8");
-  if (!releaseLicenseText.includes(noticeContents)) fail(`release license notice omits '${noticeFile}'`);
-}
-const releaseFiles = existsSync(releaseDir) ? readdirSync(releaseDir).filter((name) => name.endsWith(".iconpack.json.gz")) : [];
-if (releaseFiles.length !== 1) fail("expected exactly one compressed release asset");
-const releasePath = join(releaseDir, releaseFiles[0]);
-const releaseBytes = readFileSync(releasePath);
-if (releaseBytes.length === 0 || releaseBytes.length > compressedLimitBytes) fail("compressed release exceeds the allowed limit");
-const checksumLine = readFileSync(join(releaseDir, "checksums.txt"), "utf8").trim();
-const checksumMatch = checksumLine.match(/^([0-9a-f]{64})\s+(.+)$/i);
-if (!checksumMatch || checksumMatch[2] !== releaseFiles[0]) fail("checksums.txt is invalid");
-if (createHash("sha256").update(releaseBytes).digest("hex") !== checksumMatch[1].toLowerCase()) fail("release checksum mismatch");
-let decompressedBytes;
-try {
-  decompressedBytes = gunzipSync(releaseBytes);
-} catch {
-  fail("release asset is not valid gzip data");
-}
-if (decompressedBytes.length === 0 || decompressedBytes.length > decompressedLimitBytes) {
-  fail("decompressed release exceeds the allowed limit");
-}
-let releaseManifest;
-try {
-  releaseManifest = JSON.parse(decompressedBytes.toString("utf8"));
-} catch {
-  fail("release asset does not contain valid JSON");
-}
-const releaseVersion = assertManifest(releaseManifest, { release: true });
-if (releaseVersion !== sourceVersion) fail("source and release versions do not match");
-const expectedAssetName = `utools-project-launch-${packId}-${sourceVersion}.iconpack.json.gz`;
-if (releaseFiles[0] !== expectedAssetName) fail("release asset name does not match the manifest version");
-const sourceMetadata = JSON.stringify({ ...sourceManifest, assets: {} });
-const releaseMetadata = JSON.stringify({ ...releaseManifest, assets: {} });
-if (sourceMetadata !== releaseMetadata) fail("release metadata does not match the source manifest");
-if (JSON.stringify(releaseManifest).includes("references/")) fail("release manifest leaks references/ paths");
-console.info(
-  `[icon-pack] valid: ${Object.keys(sourceManifest.assets).length} source assets, ${Object.keys(releaseManifest.assets).length} release assets`,
-);
+const validatePack = (packDir) => {
+  const packId = basename(packDir);
+  const sourcePath = join(packDir, "source.json");
+  const manifestPath = join(packDir, "manifest.json");
+  const releaseDir = join(packDir, "icon-pack-release");
+  if (!existsSync(manifestPath)) fail(`${packId} manifest is missing; run npm run icon-pack:build first`);
+  const source = JSON.parse(readFileSync(sourcePath, "utf8"));
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  if (source.assets !== undefined) fail(`${packId} source.json must not contain generated assets`);
+  const sourceVersion = assertManifest(packDir, packId, manifest, { release: false });
+  const compiledSource = compileIconPackSource(source, packId, manifest.version);
+  const expectedManifest = {
+    ...compiledSource,
+    mappings: {
+      ...compiledSource.mappings,
+      fileNames: sortRecord(compiledSource.mappings.fileNames),
+      fileSuffixes: sortRecord(compiledSource.mappings.fileSuffixes),
+      folderNames: sortRecord(compiledSource.mappings.folderNames),
+      folderNamesExpanded: sortRecord(compiledSource.mappings.folderNamesExpanded),
+    },
+  };
+  if (JSON.stringify(expectedManifest) !== JSON.stringify({ ...manifest, assets: undefined })) {
+    fail(`${packId} manifest metadata does not match source.json; run npm run icon-pack:build`);
+  }
+
+  const licensesDir = join(packDir, "LICENSES");
+  const licenseFiles = existsSync(licensesDir)
+    ? readdirSync(licensesDir, { withFileTypes: true }).filter((entry) => entry.isFile() && !entry.isSymbolicLink())
+    : [];
+  if (licenseFiles.length === 0) fail(`${packId} has no license files`);
+  const releaseLicensePath = join(releaseDir, `LICENSES-${packId}.txt`);
+  if (!existsSync(releaseLicensePath)) fail(`${packId} release license notice is missing`);
+  const releaseLicenseText = readFileSync(releaseLicensePath, "utf8");
+  for (const entry of licenseFiles) {
+    if (!releaseLicenseText.includes(readFileSync(join(licensesDir, entry.name), "utf8"))) {
+      fail(`${packId} release license notice omits '${entry.name}'`);
+    }
+  }
+
+  const releaseFiles = existsSync(releaseDir)
+    ? readdirSync(releaseDir).filter((name) => name.endsWith(".iconpack.json.gz"))
+    : [];
+  if (releaseFiles.length !== 1) fail(`${packId} must have exactly one compressed release asset`);
+  const expectedAssetName = `utools-project-launch-${packId}-${sourceVersion}.iconpack.json.gz`;
+  if (releaseFiles[0] !== expectedAssetName) fail(`${packId} release asset name does not match its version`);
+  const releaseBytes = readFileSync(join(releaseDir, releaseFiles[0]));
+  if (releaseBytes.length === 0 || releaseBytes.length > compressedLimitBytes)
+    fail(`${packId} compressed release exceeds the limit`);
+  const checksumMatch = readFileSync(join(releaseDir, "checksums.txt"), "utf8")
+    .trim()
+    .match(/^([0-9a-f]{64})\s+(.+)$/i);
+  if (!checksumMatch || checksumMatch[2] !== releaseFiles[0]) fail(`${packId} checksums.txt is invalid`);
+  if (createHash("sha256").update(releaseBytes).digest("hex") !== checksumMatch[1].toLowerCase()) {
+    fail(`${packId} release checksum mismatch`);
+  }
+  let decompressedBytes;
+  try {
+    decompressedBytes = gunzipSync(releaseBytes);
+  } catch {
+    fail(`${packId} release asset is not valid gzip data`);
+  }
+  if (decompressedBytes.length === 0 || decompressedBytes.length > decompressedLimitBytes) {
+    fail(`${packId} decompressed release exceeds the limit`);
+  }
+  const releaseManifest = JSON.parse(decompressedBytes.toString("utf8"));
+  const releaseVersion = assertManifest(packDir, packId, releaseManifest, { release: true });
+  if (releaseVersion !== sourceVersion) fail(`${packId} source and release versions do not match`);
+  if (JSON.stringify({ ...manifest, assets: {} }) !== JSON.stringify({ ...releaseManifest, assets: {} })) {
+    fail(`${packId} release metadata does not match the source manifest`);
+  }
+  if (JSON.stringify(releaseManifest).includes("references/"))
+    fail(`${packId} release manifest leaks references paths`);
+  console.info(`[icon-pack] ${packId}: valid ${Object.keys(manifest.assets).length} source and release assets`);
+};
+
+const packDirectories = readdirSync(packsDir, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && existsSync(join(packsDir, entry.name, "source.json")))
+  .map((entry) => join(packsDir, entry.name));
+if (packDirectories.length === 0) fail("no icon-packs/*/source.json files found");
+for (const packDir of packDirectories) validatePack(packDir);

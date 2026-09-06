@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>folder_type_z</title>
+
+  <path
+    d="M27.5,5.5H18.2L16.1,9.7H4.4V26.5H29.6V5.5Zm0,4.2H19.3l1.1-2.1h7.1Z"
+    fill="#626262"
+  />
+
+  <rect
+    x="11.5"
+    y="11.5"
+    width="19"
+    height="19"
+    rx="2.8"
+    fill="#2c2c2c"
+    stroke="#fff"
+    stroke-width=".5"
+  />
+
+  <g fill="#fff">
+    <path
+      d="M14.8 15.4H21.25L20.49 16.46
+         Q20.16 17 19.62 17H14.8Z"
+    />
+    <path d="M22.2 15.4H27.4L19.6 26.4H14.5Z"/>
+    <path
+      d="M22.2 24.8H27.1V26.4H20.65L21.42 25.34
+         Q21.78 24.8 22.2 24.8Z"
+    />
+  </g>
+</svg>

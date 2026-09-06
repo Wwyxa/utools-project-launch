@@ -9,6 +9,26 @@
     "version": "12.19.0",
     "url": "https://github.com/vscode-icons/vscode-icons"
   },
+  "notices": [
+    {
+      "id": "vscode-icons-source",
+      "license": "MIT",
+      "text": "See LICENSES/LICENSE-MIT.txt for the complete upstream source license.",
+      "appliesTo": "vscode-icons source code and project derivation"
+    },
+    {
+      "id": "vscode-icons-assets",
+      "license": "CC BY-SA 4.0",
+      "text": "See LICENSES/NOTICE-ICON-ASSETS-CC-BY-SA-4.0.txt for attribution and asset licensing context.",
+      "appliesTo": "icon assets"
+    },
+    {
+      "id": "vscode-icons-branded-assets",
+      "license": "varies",
+      "text": "Branded icons may have their own copyright or trademark licenses.",
+      "appliesTo": "branded icon assets"
+    }
+  ],
   "mappings": {
     "fileNames": {
       ".aikido": {
@@ -9117,6 +9137,9 @@
       ".travis": {
         "dark": "folder_type_travis.svg"
       },
+      ".trellis": {
+        "dark": "folder_type_trellis.svg"
+      },
       ".trunk": {
         "dark": "folder_type_trunk.svg"
       },
@@ -9170,6 +9193,9 @@
       },
       ".yarn": {
         "dark": "folder_type_yarn.svg"
+      },
+      ".zcode": {
+        "dark": "folder_type_zcode.svg"
       },
       ".zed": {
         "dark": "folder_type_zed.svg",
@@ -10621,6 +10647,9 @@
       ".travis": {
         "dark": "folder_type_travis_opened.svg"
       },
+      ".trellis": {
+        "dark": "folder_type_trellis_opened.svg"
+      },
       ".trunk": {
         "dark": "folder_type_trunk_opened.svg"
       },
@@ -10674,6 +10703,9 @@
       },
       ".yarn": {
         "dark": "folder_type_yarn_opened.svg"
+      },
+      ".zcode": {
+        "dark": "folder_type_zcode_opened.svg"
       },
       ".zed": {
         "dark": "folder_type_zed_opened.svg",
@@ -19285,6 +19317,16 @@
       "encoding": "path",
       "path": "icons/folder_type_travis.svg"
     },
+    "folder_type_trellis_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_trellis_opened.svg"
+    },
+    "folder_type_trellis.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_trellis.svg"
+    },
     "folder_type_trunk_opened.svg": {
       "format": "svg",
       "encoding": "path",
@@ -19545,6 +19587,16 @@
       "encoding": "path",
       "path": "icons/folder_type_yarn.svg"
     },
+    "folder_type_zcode_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_zcode_opened.svg"
+    },
+    "folder_type_zcode.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_zcode.svg"
+    },
     "folder_type_zed_opened.svg": {
       "format": "svg",
       "encoding": "path",
@@ -19555,25 +19607,5 @@
       "encoding": "path",
       "path": "icons/folder_type_zed.svg"
     }
-  },
-  "notices": [
-    {
-      "id": "vscode-icons-source",
-      "license": "MIT",
-      "text": "See LICENSES/LICENSE-MIT.txt for the complete upstream source license.",
-      "appliesTo": "vscode-icons source code and project derivation"
-    },
-    {
-      "id": "vscode-icons-assets",
-      "license": "CC BY-SA 4.0",
-      "text": "See LICENSES/NOTICE-ICON-ASSETS-CC-BY-SA-4.0.txt for attribution and asset licensing context.",
-      "appliesTo": "icon assets"
-    },
-    {
-      "id": "vscode-icons-branded-assets",
-      "license": "varies",
-      "text": "Branded icons may have their own copyright or trademark licenses.",
-      "appliesTo": "branded icon assets"
-    }
-  ]
+  }
 }

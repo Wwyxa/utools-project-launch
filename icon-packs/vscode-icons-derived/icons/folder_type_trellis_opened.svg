@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>folder_type_green_leaf_opened</title>
+
+  <defs>
+    <linearGradient
+      id="green-leaf-opened-left"
+      x1="28" y1="40" x2="49" y2="182"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#0fda91"/>
+      <stop offset="1" stop-color="#078d4b"/>
+    </linearGradient>
+    <linearGradient
+      id="green-leaf-opened-center"
+      x1="99" y1="0" x2="99" y2="184"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#16a34a"/>
+      <stop offset="1" stop-color="#3bce76"/>
+    </linearGradient>
+    <linearGradient
+      id="green-leaf-opened-right"
+      x1="75" y1="152" x2="189" y2="143"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#08a66b"/>
+      <stop offset="1" stop-color="#4ade80"/>
+    </linearGradient>
+  </defs>
+
+  <path
+    d="M27.4,5.5H18.2L16.1,9.7H4.3v4H.5L4.3,26.5H29.5V5.5ZM20.2,7.6h7.1V9.7H19.2Zm5.5,6.1H6.6V11.8H27.4v7.626Z"
+    fill="#43875b"
+  />
+
+  <g transform="translate(12.1 10.1) scale(.1)">
+    <path
+      d="M11 40
+         C37 45 59 52 78 71
+         C101 96 108 141 98 185
+         C63 190 30 177 14 151
+         C-4 124 -3 82 11 40Z"
+      fill="url(#green-leaf-opened-left)"
+    />
+    <path
+      d="M137 0
+         C153 33 157 66 144 99
+         C136 126 112 162 81 186
+         C58 171 44 147 43 116
+         C42 83 52 53 76 31
+         C93 16 115 6 137 0Z"
+      fill="url(#green-leaf-opened-center)"
+    />
+    <path
+      d="M189 104
+         C154 94 128 94 108 108
+         C84 124 70 151 73 185
+         C99 196 127 194 148 180
+         C173 164 185 136 189 104Z"
+      fill="url(#green-leaf-opened-right)"
+    />
+  </g>
+</svg>
