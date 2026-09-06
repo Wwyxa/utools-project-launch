@@ -62,7 +62,7 @@ languages.forEach(([name, language]) => {
 export const markdown: MarkdownIt = new MarkdownIt({
   breaks: true,
   linkify: true,
-  html: false,
+  html: true,
   highlight: (source, language): string => {
     const normalizedLanguage = language === "sh" ? "bash" : language;
     if (normalizedLanguage && hljs.getLanguage(normalizedLanguage)) {
@@ -71,6 +71,11 @@ export const markdown: MarkdownIt = new MarkdownIt({
     return `<pre class="hljs"><code>${markdown.utils.escapeHtml(source)}</code></pre>`;
   },
 });
+
+markdown.renderer.rules.html_block = (tokens, index, _options, environment: MarkdownRenderEnvironment) =>
+  sanitizeMarkdownHtml(tokens[index].content, environment);
+markdown.renderer.rules.html_inline = (tokens, index, _options, environment: MarkdownRenderEnvironment) =>
+  sanitizeMarkdownHtml(tokens[index].content, environment);
 
 export type MarkdownImageResolution =
   | { status: "ready"; src: string }
@@ -89,6 +94,115 @@ interface MarkdownDocumentParts {
   body: string;
   frontMatter?: string;
 }
+
+type MarkdownHtmlAttributes = Map<string, string>;
+
+const markdownHtmlTagPattern = /<(\/?)([a-z][\w:-]*)([^<>]*?)(\/?)>/gi;
+const markdownHtmlAttributePattern = /([a-z][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/gi;
+const markdownHtmlAllowedTags = new Set([
+  "br",
+  "details",
+  "div",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "img",
+  "p",
+  "summary",
+]);
+const markdownHtmlVoidTags = new Set(["br", "img"]);
+const markdownHtmlAlignments = new Set(["left", "center", "right", "justify"]);
+const markdownHtmlDimensionsPattern = /^\d+(?:\.\d+)?(?:%|px)?$/;
+
+const readMarkdownHtmlAttributes = (source: string): MarkdownHtmlAttributes => {
+  const attributes: MarkdownHtmlAttributes = new Map();
+  for (const match of source.matchAll(markdownHtmlAttributePattern)) {
+    const name = match[1].toLowerCase();
+    if (!attributes.has(name)) {
+      attributes.set(name, match[2] ?? match[3] ?? match[4] ?? "");
+    }
+  }
+  return attributes;
+};
+
+const renderMarkdownHtmlAttribute = (name: string, value: string) => ` ${name}="${markdown.utils.escapeHtml(value)}"`;
+
+const renderMarkdownImageFallback = (
+  alt: string,
+  resolution: MarkdownImageResolution,
+  environment: MarkdownRenderEnvironment,
+) => {
+  const fallbackText =
+    ("message" in resolution ? resolution.message : undefined) ||
+    environment.imageOptions?.imageFallbackText ||
+    "Image unavailable";
+  return `<span class="markdown-image-fallback markdown-image-fallback-${resolution.status}" role="img" aria-label="${markdown.utils.escapeHtml(
+    alt,
+  )}">${markdown.utils.escapeHtml(fallbackText)}</span>`;
+};
+
+const renderMarkdownHtmlImage = (attributes: MarkdownHtmlAttributes, environment: MarkdownRenderEnvironment) => {
+  const source = attributes.get("src") || "";
+  const alt = attributes.get("alt") || source;
+  const normalizedSource = source ? markdown.normalizeLink(source) : "";
+  if (!normalizedSource || !markdown.validateLink(normalizedSource)) {
+    return renderMarkdownImageFallback(attributes.get("alt") || "Image", { status: "blocked" }, environment);
+  }
+
+  const resolution = environment.imageOptions?.resolveImage?.(source);
+  if (resolution && resolution.status !== "ready") {
+    return renderMarkdownImageFallback(alt, resolution, environment);
+  }
+
+  const renderedAttributes = new Map(attributes);
+  renderedAttributes.set("src", resolution?.status === "ready" ? resolution.src : normalizedSource);
+  const outputAttributes = ["src", "alt", "title", "width", "height"]
+    .filter((name) => renderedAttributes.has(name))
+    .filter(
+      (name) =>
+        !["width", "height"].includes(name) || markdownHtmlDimensionsPattern.test(renderedAttributes.get(name) || ""),
+    )
+    .map((name) => renderMarkdownHtmlAttribute(name, renderedAttributes.get(name) || ""))
+    .join("");
+  return `<img${outputAttributes}>`;
+};
+
+const renderMarkdownHtmlTag = (match: RegExpMatchArray, environment: MarkdownRenderEnvironment) => {
+  const isClosingTag = match[1] === "/";
+  const tagName = match[2].toLowerCase();
+  if (!markdownHtmlAllowedTags.has(tagName)) return "";
+  if (isClosingTag) return markdownHtmlVoidTags.has(tagName) ? "" : `</${tagName}>`;
+
+  const attributes = readMarkdownHtmlAttributes(match[3]);
+  if (tagName === "img") return renderMarkdownHtmlImage(attributes, environment);
+  if (tagName === "br") return "<br>";
+
+  const renderedAttributes: string[] = [];
+  const alignment = attributes.get("align")?.toLowerCase();
+  if (alignment && markdownHtmlAlignments.has(alignment)) {
+    renderedAttributes.push(` class="markdown-align-${alignment}"`);
+  }
+  if (tagName === "details" && attributes.has("open")) {
+    renderedAttributes.push(" open");
+  }
+  return `<${tagName}${renderedAttributes.join("")}>`;
+};
+
+const sanitizeMarkdownHtml = (content: string, environment: MarkdownRenderEnvironment) => {
+  let rendered = "";
+  let cursor = 0;
+  for (const match of content.matchAll(markdownHtmlTagPattern)) {
+    const index = match.index ?? 0;
+    rendered += markdown.utils.escapeHtml(content.slice(cursor, index));
+    rendered += renderMarkdownHtmlTag(match, environment);
+    cursor = index + match[0].length;
+  }
+  rendered += markdown.utils.escapeHtml(content.slice(cursor));
+  return rendered;
+};
 
 const splitMarkdownDocument = (content: string): MarkdownDocumentParts => {
   const normalizedContent = content.startsWith("\uFEFF") ? content.slice(1) : content;
@@ -128,10 +242,7 @@ markdown.renderer.rules.image = (tokens, index, options, environment: MarkdownRe
   }
 
   const alt = token.content || token.attrGet("alt") || source;
-  const fallbackText = resolution.message || environment.imageOptions?.imageFallbackText || "Image unavailable";
-  return `<span class="markdown-image-fallback markdown-image-fallback-${resolution.status}" role="img" aria-label="${markdown.utils.escapeHtml(
-    alt,
-  )}">${markdown.utils.escapeHtml(fallbackText)}</span>`;
+  return renderMarkdownImageFallback(alt, resolution, environment);
 };
 
 const collectImageSourcesFromTokens = (tokens: Token[], sources: string[]) => {
@@ -142,6 +253,13 @@ const collectImageSourcesFromTokens = (tokens: Token[], sources: string[]) => {
     }
     if (token.children) {
       collectImageSourcesFromTokens(token.children, sources);
+    }
+    if (token.type === "html_block" || token.type === "html_inline") {
+      for (const match of token.content.matchAll(markdownHtmlTagPattern)) {
+        if (match[1] === "/" || match[2].toLowerCase() !== "img") continue;
+        const source = readMarkdownHtmlAttributes(match[3]).get("src");
+        if (source) sources.push(source);
+      }
     }
   }
 };

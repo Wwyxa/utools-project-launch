@@ -1036,6 +1036,41 @@
   margin: 0.42rem 0;
 }
 
+.memo-rendered .markdown-align-left {
+  text-align: left;
+}
+
+.memo-rendered .markdown-align-center {
+  text-align: center;
+}
+
+.memo-rendered .markdown-align-center > img {
+  display: block;
+  margin-inline: auto;
+}
+
+.memo-rendered .markdown-align-right {
+  text-align: right;
+}
+
+.memo-rendered .markdown-align-justify {
+  text-align: justify;
+}
+
+.memo-rendered details {
+  margin: 0.65rem 0;
+}
+
+.memo-rendered details > summary {
+  cursor: pointer;
+  color: var(--color-on-surface);
+  font-weight: 700;
+}
+
+.memo-rendered details > summary::marker {
+  color: var(--color-primary);
+}
+
 .memo-rendered img {
   max-width: 100%;
   height: auto;
