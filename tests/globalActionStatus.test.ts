@@ -3,6 +3,7 @@ import {
   activeActionStatus,
   completeActionProgress,
   dismissActionStatus,
+  setActionStatusHovered,
   showActionProgress,
   showActionStatus,
 } from "../src/components/common/actionStatus";
@@ -15,6 +16,7 @@ describe("global action status", () => {
   });
 
   afterEach(() => {
+    setActionStatusHovered(false);
     dismissActionStatus();
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -82,6 +84,32 @@ describe("global action status", () => {
         expect.objectContaining({ message: "正在同步配置..." }),
       ],
     });
+  });
+
+  it("keeps a completed status visible while hovered and dismisses it after leaving", () => {
+    vi.useFakeTimers();
+    showActionStatus({ state: "success", message: "远端同步完成", dismissAfterMs: 100 });
+
+    setActionStatusHovered(true);
+    vi.advanceTimersByTime(100);
+    expect(activeActionStatus.value?.message).toBe("远端同步完成");
+
+    setActionStatusHovered(false);
+    expect(activeActionStatus.value).toBeNull();
+  });
+
+  it("keeps a completed progress status visible while hovered", () => {
+    vi.useFakeTimers();
+    const operationId = "hovered-progress";
+    showActionProgress({ operationId, state: "loading", message: "正在刷新项目..." });
+    setActionStatusHovered(true);
+
+    completeActionProgress("success", "项目刷新完成。", operationId);
+    vi.advanceTimersByTime(10_000);
+    expect(activeActionStatus.value?.message).toBe("项目刷新完成。");
+
+    setActionStatusHovered(false);
+    expect(activeActionStatus.value).toBeNull();
   });
 
   it("does not let an older progress operation replace a newer one", () => {

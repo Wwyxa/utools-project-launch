@@ -29,6 +29,8 @@ const defaultDismissAfterMs = {
 
 const currentActionStatus = shallowRef<ActionStatus | null>(null);
 let dismissTimer: number | null = null;
+let dismissDeadline: number | null = null;
+let isActionStatusHovered = false;
 let nextActionStatusId = 0;
 
 export const activeActionStatus = readonly(currentActionStatus);
@@ -38,6 +40,29 @@ const cancelDismissTimer = () => {
     window.clearTimeout(dismissTimer);
     dismissTimer = null;
   }
+};
+
+const scheduleDismissTimer = (statusId: number) => {
+  cancelDismissTimer();
+  if (isActionStatusHovered || dismissDeadline === null) return;
+
+  const remainingMs = dismissDeadline - Date.now();
+  if (remainingMs <= 0) {
+    if (currentActionStatus.value?.id === statusId) {
+      currentActionStatus.value = null;
+      dismissDeadline = null;
+    }
+    return;
+  }
+
+  dismissTimer = window.setTimeout(() => {
+    dismissTimer = null;
+    if (isActionStatusHovered) return;
+    if (currentActionStatus.value?.id === statusId) {
+      currentActionStatus.value = null;
+      dismissDeadline = null;
+    }
+  }, remainingMs);
 };
 
 const resolveDismissAfterMs = (input: ActionStatusInput) => {
@@ -69,16 +94,12 @@ const setActionStatus = (input: ActionStatusInput, operationId?: string) => {
     entries: input.entries?.slice(-20).map((entry) => ({ ...entry })) || [],
   };
 
-  if (dismissAfterMs === null) {
+  dismissDeadline = dismissAfterMs === null ? null : Date.now() + dismissAfterMs;
+  if (dismissDeadline === null) {
     return id;
   }
 
-  dismissTimer = window.setTimeout(() => {
-    if (currentActionStatus.value?.id === id) {
-      currentActionStatus.value = null;
-    }
-    dismissTimer = null;
-  }, dismissAfterMs);
+  scheduleDismissTimer(id);
   return id;
 };
 
@@ -98,10 +119,22 @@ export const completeActionProgress = (
   return showActionProgress({ state, message, operationId, entries: status.entries });
 };
 
+export const setActionStatusHovered = (hovered: boolean) => {
+  isActionStatusHovered = hovered;
+  if (hovered) {
+    cancelDismissTimer();
+    return;
+  }
+
+  const status = currentActionStatus.value;
+  if (status) scheduleDismissTimer(status.id);
+};
+
 export const dismissActionStatus = (statusId?: number) => {
   if (statusId !== undefined && currentActionStatus.value?.id !== statusId) {
     return;
   }
   cancelDismissTimer();
+  dismissDeadline = null;
   currentActionStatus.value = null;
 };

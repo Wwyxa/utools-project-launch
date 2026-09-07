@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { ChevronDown, RefreshCw } from "lucide-vue-next";
+import { setActionStatusHovered } from "./actionStatus";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary } from "../../lib/utils";
@@ -124,6 +125,16 @@ const handleViewportScroll = (event: Event) => {
   if (panel && event.composedPath().includes(panel)) return;
   close();
 };
+const isActionStatusTarget = (target: EventTarget | null) => {
+  return target instanceof Node && Boolean(triggerRef.value?.contains(target) || panelRef.value?.contains(target));
+};
+const handlePointerEnter = () => {
+  setActionStatusHovered(true);
+};
+const handlePointerLeave = (event: PointerEvent) => {
+  if (isActionStatusTarget(event.relatedTarget)) return;
+  setActionStatusHovered(false);
+};
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (!props.expanded || event.detail.handled) return;
   close();
@@ -144,6 +155,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  setActionStatusHovered(false);
   panelResizeObserver?.disconnect();
   panelResizeObserver = null;
   stopAppEscapeListener();
@@ -202,6 +214,8 @@ watch(
     :aria-label="hasDetails ? '展开或收起操作进度' : message"
     :aria-expanded="hasDetails ? expanded : undefined"
     :disabled="!hasDetails"
+    @pointerenter="handlePointerEnter"
+    @pointerleave="handlePointerLeave"
     @click.stop="toggleExpanded"
   >
     <RefreshCw v-if="state === 'loading'" :size="12" class="shrink-0 animate-spin" aria-hidden="true" />
@@ -229,6 +243,8 @@ watch(
         }"
         role="dialog"
         aria-label="操作进度"
+        @pointerenter="handlePointerEnter"
+        @pointerleave="handlePointerLeave"
         @click.stop
       >
         <div
