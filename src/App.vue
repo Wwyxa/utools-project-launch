@@ -17,6 +17,7 @@ const store = useStore();
 const storeMessages = useI18n();
 const selectedProject = computed(() => store.selectedProject);
 const activeTab = computed(() => store.activeTab);
+const isDashboard = computed(() => activeTab.value === "projects" && !store.selectedProjectId);
 const theme = computed(() => store.theme);
 const { globalActionStatus, isGlobalActionStatusExpanded } = useGlobalActionStatus(store);
 const pluginSearchQuery = ref("");
@@ -66,10 +67,19 @@ const clearPluginSearchInput = () => {
   window.utools?.removeSubInput?.();
 };
 
+const syncPluginSearchInput = () => {
+  if (isDashboard.value) {
+    configurePluginSearchInput();
+    return;
+  }
+
+  clearPluginSearchInput();
+};
+
 const handlePluginEnter = async (action?: unknown) => {
   const searchText = extractPluginSearchText(action);
   pluginSearchQuery.value = "";
-  configurePluginSearchInput();
+  syncPluginSearchInput();
   if (!store.projectsLoaded) {
     await loadProjectsWithStartupTiming();
   } else {
@@ -109,6 +119,7 @@ const isTextEntryTarget = (target: EventTarget | null) =>
 
 const handleSearchShortcut = (event: KeyboardEvent) => {
   if (
+    !isDashboard.value ||
     event.defaultPrevented ||
     event.key.toLowerCase() !== "f" ||
     (!event.ctrlKey && !event.metaKey) ||
@@ -193,10 +204,11 @@ const updateTheme = () => {
 };
 
 watch(theme, updateTheme);
+watch(isDashboard, syncPluginSearchInput);
 
 onMounted(() => {
   updateTheme();
-  configurePluginSearchInput();
+  syncPluginSearchInput();
   void loadProjectsWithStartupTiming();
   window.utools?.onPluginEnter?.((action) => {
     updateTheme();
@@ -221,6 +233,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  clearPluginSearchInput();
   window.removeEventListener("project-bridge-event", handleBridgeEvent);
   window.removeEventListener("focus", handleRuntimeResume);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
