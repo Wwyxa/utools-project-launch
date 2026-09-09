@@ -91,6 +91,13 @@ describe("work activity Store", () => {
     store.returnFromWorkActivity();
     expect(store.activeTab).toBe("projects");
     expect(store.selectedProjectId).toBe(alpha.id);
+
+    store.openProjectGit(alpha.id, "abc123");
+    expect(store.projectDetailsTabRequest).toMatchObject({
+      tab: "git",
+      commitHash: "abc123",
+    });
+    expect(store.selectedProjectId).toBe(alpha.id);
   });
 
   it("ignores a stale report after the selected project set changes", async () => {

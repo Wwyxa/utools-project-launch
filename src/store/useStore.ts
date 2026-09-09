@@ -1669,7 +1669,12 @@ export const useStore = defineStore("app", {
     workActivityReturnProjectId: null as string | null,
     automationActiveProjectRuns: {} as Record<string, string>,
     automationNextTimerAt: "",
-    projectDetailsTabRequest: null as { projectId: string; tab: "automation" | "memo"; requestedAt: number } | null,
+    projectDetailsTabRequest: null as {
+      projectId: string;
+      tab: "automation" | "git" | "memo";
+      requestedAt: number;
+      commitHash?: string;
+    } | null,
     logs: {
       "project-node-1": [
         { timestamp: "10:42:01", message: "> npm run dev", type: "INFO" },
@@ -5600,6 +5605,11 @@ export const useStore = defineStore("app", {
       this.selectedProjectId = projectId;
       this.activeTab = "projects";
       this.projectDetailsTabRequest = { projectId, tab: "memo", requestedAt: Date.now() };
+    },
+    openProjectGit(projectId: string, commitHash?: string) {
+      this.selectedProjectId = projectId;
+      this.activeTab = "projects";
+      this.projectDetailsTabRequest = { projectId, tab: "git", requestedAt: Date.now(), commitHash };
     },
     finishAutomationPlanEntry(
       project: Project,

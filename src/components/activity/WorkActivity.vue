@@ -7,6 +7,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FolderGit2,
+  GitCommitHorizontal,
   RefreshCw,
   Users,
 } from "lucide-vue-next";
@@ -18,15 +20,20 @@ import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../l
 import type { ProjectGitActivityDayReport } from "../../types";
 
 type ActivityRangeMode = "rolling" | "year";
+const currentAuthorSelection = "current";
 
 const store = useStore();
 const t = useI18n();
 const rangeMode = ref<ActivityRangeMode>("rolling");
 const selectedYear = ref(new Date().getFullYear());
-const selectedAuthorId = ref("");
+const selectedAuthorId = ref(currentAuthorSelection);
 const selectedDate = ref("");
 const projectScopeOpen = ref(false);
 const authorPickerOpen = ref(false);
+const projectScopeTriggerRef = ref<HTMLElement | null>(null);
+const authorPickerTriggerRef = ref<HTMLElement | null>(null);
+const projectScopeMenuPosition = ref({ right: 8, top: 8 });
+const authorPickerMenuPosition = ref({ right: 8, top: 8 });
 const dayDetails = ref<ProjectGitActivityDayReport | null>(null);
 const dayDetailsLoading = ref(false);
 const dayDetailsMessage = ref("");
@@ -56,12 +63,24 @@ const authors = computed(() => {
     (left, right) => right.commits - left.commits || left.name.localeCompare(right.name),
   );
 });
+const currentAuthorIds = computed(
+  () => new Set(readyRepositories.value.map((repository) => repository.currentAuthorId).filter(Boolean)),
+);
+const currentAuthors = computed(() => authors.value.filter((author) => currentAuthorIds.value.has(author.id)));
 const selectedAuthor = computed(() => authors.value.find((author) => author.id === selectedAuthorId.value) || null);
+const selectedAuthorLabel = computed(() => {
+  if (selectedAuthorId.value !== currentAuthorSelection)
+    return selectedAuthor.value?.name || t.value.activity.allAuthors;
+  if (currentAuthors.value.length === 1) return `${currentAuthors.value[0].name} (${t.value.activity.currentUser})`;
+  return t.value.activity.currentUser;
+});
 const countsByDate = computed(() => {
   const counts = new Map<string, number>();
   readyRepositories.value.forEach((repository) => {
     repository.daily.forEach((day) => {
-      const commits = selectedAuthorId.value ? day.authors[selectedAuthorId.value] || 0 : day.commits;
+      const authorId =
+        selectedAuthorId.value === currentAuthorSelection ? repository.currentAuthorId : selectedAuthorId.value;
+      const commits = authorId ? day.authors[authorId] || 0 : selectedAuthorId.value ? 0 : day.commits;
       if (commits > 0) counts.set(day.date, (counts.get(day.date) || 0) + commits);
     });
   });
@@ -113,6 +132,9 @@ const cellLabel = (date: string, commits: number) =>
 const projectNamesForPaths = (projectPaths: string[]) =>
   projectPaths.map((projectPath) => projectsByPath.value.get(projectPath)?.name || projectPath).join(" · ");
 
+const projectForPaths = (projectPaths: string[]) =>
+  projectPaths.map((projectPath) => projectsByPath.value.get(projectPath)).find(Boolean);
+
 const formatCommitTime = (value: string) =>
   new Intl.DateTimeFormat(store.locale, {
     month: "short",
@@ -143,7 +165,11 @@ const loadDayDetails = async (append = false) => {
   try {
     const report = await store.readGitActivityDay({
       date,
-      authorId: selectedAuthorId.value || undefined,
+      authorId:
+        selectedAuthorId.value && selectedAuthorId.value !== currentAuthorSelection
+          ? selectedAuthorId.value
+          : undefined,
+      currentUserOnly: selectedAuthorId.value === currentAuthorSelection,
       limit: 50,
       skip,
     });
@@ -197,6 +223,35 @@ const selectAuthor = (authorId: string) => {
   void loadDayDetails();
 };
 
+const isCurrentAuthor = (authorId: string) => currentAuthorIds.value.has(authorId);
+const isAuthorSelected = (authorId: string) =>
+  selectedAuthorId.value === authorId ||
+  (selectedAuthorId.value === currentAuthorSelection && isCurrentAuthor(authorId));
+
+const positionDropdown = (trigger: HTMLElement, target: { value: { right: number; top: number } }) => {
+  const rect = trigger.getBoundingClientRect();
+  target.value = {
+    right: Math.max(8, (document.documentElement.clientWidth || window.innerWidth) - rect.right),
+    top: rect.bottom + 6,
+  };
+};
+
+const toggleProjectScope = () => {
+  authorPickerOpen.value = false;
+  projectScopeOpen.value = !projectScopeOpen.value;
+  if (projectScopeOpen.value && projectScopeTriggerRef.value) {
+    positionDropdown(projectScopeTriggerRef.value, projectScopeMenuPosition);
+  }
+};
+
+const toggleAuthorPicker = () => {
+  projectScopeOpen.value = false;
+  authorPickerOpen.value = !authorPickerOpen.value;
+  if (authorPickerOpen.value && authorPickerTriggerRef.value) {
+    positionDropdown(authorPickerTriggerRef.value, authorPickerMenuPosition);
+  }
+};
+
 const setProjectSelected = (projectId: string, selected: boolean) => {
   const projectIds = new Set(store.workActivitySelectedProjectIds);
   if (selected) {
@@ -206,7 +261,7 @@ const setProjectSelected = (projectId: string, selected: boolean) => {
   }
   store.setWorkActivityProjectIds([...projectIds]);
   selectedDate.value = "";
-  selectedAuthorId.value = "";
+  selectedAuthorId.value = currentAuthorSelection;
   resetDayDetails();
   loadActivity();
 };
@@ -214,7 +269,7 @@ const setProjectSelected = (projectId: string, selected: boolean) => {
 const selectAllProjects = () => {
   store.setWorkActivityProjectIds(store.workActivitySelectableProjects.map((project) => project.id));
   selectedDate.value = "";
-  selectedAuthorId.value = "";
+  selectedAuthorId.value = currentAuthorSelection;
   resetDayDetails();
   loadActivity();
 };
@@ -222,13 +277,38 @@ const selectAllProjects = () => {
 const clearProjects = () => {
   store.setWorkActivityProjectIds([]);
   selectedDate.value = "";
-  selectedAuthorId.value = "";
+  selectedAuthorId.value = currentAuthorSelection;
   resetDayDetails();
 };
 
 const selectCell = (date: string) => {
   selectedDate.value = date;
   void loadDayDetails();
+};
+
+const openCommitInGit = (projectPaths: string[], commitHash: string) => {
+  const project = projectForPaths(projectPaths);
+  if (project) store.openProjectGit(project.id, commitHash);
+};
+
+const handleWindowPointerDown = (event: PointerEvent) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (!projectScopeTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-project-menu]")) {
+    projectScopeOpen.value = false;
+  }
+  if (!authorPickerTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-author-menu]")) {
+    authorPickerOpen.value = false;
+  }
+};
+
+const handleViewportChange = () => {
+  if (projectScopeOpen.value && projectScopeTriggerRef.value) {
+    positionDropdown(projectScopeTriggerRef.value, projectScopeMenuPosition);
+  }
+  if (authorPickerOpen.value && authorPickerTriggerRef.value) {
+    positionDropdown(authorPickerTriggerRef.value, authorPickerMenuPosition);
+  }
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
@@ -246,7 +326,7 @@ watch(
   () => `${rangeMode.value}:${selectedYear.value}`,
   () => {
     selectedDate.value = "";
-    selectedAuthorId.value = "";
+    selectedAuthorId.value = currentAuthorSelection;
     loadActivity();
   },
   { immediate: true },
@@ -260,10 +340,16 @@ watch(countsByDate, (counts) => {
 
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+  window.addEventListener("pointerdown", handleWindowPointerDown);
+  window.addEventListener("resize", handleViewportChange);
+  window.addEventListener("scroll", handleViewportChange, true);
 });
 
 onBeforeUnmount(() => {
   stopAppEscapeListener();
+  window.removeEventListener("pointerdown", handleWindowPointerDown);
+  window.removeEventListener("resize", handleViewportChange);
+  window.removeEventListener("scroll", handleViewportChange, true);
 });
 </script>
 
@@ -323,14 +409,20 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div
-          v-if="rangeMode === 'year'"
-          class="flex h-7 items-center rounded-lg border border-border-subtle bg-surface"
+          :class="
+            cn(
+              'flex h-7 items-center rounded-lg border border-border-subtle bg-surface',
+              rangeMode !== 'year' && 'invisible pointer-events-none',
+            )
+          "
+          :aria-hidden="rangeMode !== 'year'"
         >
           <button
             type="button"
             class="flex h-full w-7 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant"
             :title="t.activity.previousYear"
             :aria-label="t.activity.previousYear"
+            :disabled="rangeMode !== 'year'"
             @click="selectPreviousYear"
           >
             <ChevronLeft :size="15" />
@@ -341,26 +433,12 @@ onBeforeUnmount(() => {
             class="flex h-full w-7 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-variant"
             :title="t.activity.nextYear"
             :aria-label="t.activity.nextYear"
+            :disabled="rangeMode !== 'year'"
             @click="selectNextYear"
           >
             <ChevronRight :size="15" />
           </button>
         </div>
-        <button
-          type="button"
-          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-          :aria-expanded="projectScopeOpen"
-          @click="
-            projectScopeOpen = !projectScopeOpen;
-            authorPickerOpen = false;
-          "
-        >
-          <Users :size="14" />
-          <span>{{
-            t.activity.projectsSelected.replace("{count}", String(store.workActivitySelectedProjectIds.length))
-          }}</span>
-          <ChevronDown :size="14" :class="projectScopeOpen && 'rotate-180'" />
-        </button>
         <button
           type="button"
           class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant disabled:cursor-wait disabled:opacity-60"
@@ -371,49 +449,71 @@ onBeforeUnmount(() => {
         >
           <RefreshCw :size="15" :class="store.workActivityLoading && 'animate-spin'" />
         </button>
+        <button
+          ref="projectScopeTriggerRef"
+          type="button"
+          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          :aria-expanded="projectScopeOpen"
+          @click="toggleProjectScope"
+        >
+          <FolderGit2 :size="14" />
+          <span>{{
+            t.activity.projectsSelected.replace("{count}", String(store.workActivitySelectedProjectIds.length))
+          }}</span>
+          <ChevronDown :size="14" :class="projectScopeOpen && 'rotate-180'" />
+        </button>
       </div>
     </header>
 
-    <section v-if="projectScopeOpen" class="mb-3 border-y border-border-subtle bg-surface-container-low px-2 py-2">
-      <div class="mb-2 flex items-center justify-between gap-2">
-        <span class="text-xs font-bold text-on-surface-variant">{{ t.activity.projectScope }}</span>
-        <div class="flex items-center gap-1">
-          <button
-            type="button"
-            class="rounded px-1.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/10"
-            @click="selectAllProjects"
-          >
-            {{ t.activity.selectAll }}
-          </button>
-          <button
-            type="button"
-            class="rounded px-1.5 py-1 text-[11px] font-bold text-on-surface-variant hover:bg-surface-variant"
-            @click="clearProjects"
-          >
-            {{ t.activity.clearSelection }}
-          </button>
-        </div>
-      </div>
-      <div v-overlay-scrollbar class="themed-scrollbar grid max-h-48 gap-1 overflow-y-auto pr-1 sm:grid-cols-2">
-        <label
-          v-for="project in store.workActivitySelectableProjects"
-          :key="project.id"
-          class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-xs text-on-surface-variant transition-colors hover:bg-surface-variant"
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="projectScopeOpen"
+          data-work-activity-project-menu
+          class="fixed z-50 w-max min-w-64 max-w-[min(32rem,calc(100vw-1rem))] rounded-lg border border-border-subtle bg-surface p-1.5 shadow-xl"
+          :style="{ right: `${projectScopeMenuPosition.right}px`, top: `${projectScopeMenuPosition.top}px` }"
         >
-          <input
-            type="checkbox"
-            class="h-3.5 w-3.5 shrink-0 accent-[var(--color-primary)]"
-            :checked="selectedProjectIds.has(project.id)"
-            @change="setProjectSelected(project.id, ($event.target as HTMLInputElement).checked)"
-          />
-          <span class="min-w-0 truncate font-semibold text-on-surface">{{ project.name }}</span>
-          <span class="min-w-0 truncate text-[10px] text-on-surface-variant">{{ project.path }}</span>
-        </label>
-      </div>
-      <p v-if="store.workActivitySelectableProjects.length === 0" class="py-2 text-xs text-on-surface-variant">
-        {{ t.activity.noProjects }}
-      </p>
-    </section>
+          <div class="mb-1 flex items-center justify-between gap-4 px-1">
+            <span class="text-xs font-bold text-on-surface-variant">{{ t.activity.projectScope }}</span>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                class="rounded px-1.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/10"
+                @click="selectAllProjects"
+              >
+                {{ t.activity.selectAll }}
+              </button>
+              <button
+                type="button"
+                class="rounded px-1.5 py-1 text-[11px] font-bold text-on-surface-variant hover:bg-surface-variant"
+                @click="clearProjects"
+              >
+                {{ t.activity.clearSelection }}
+              </button>
+            </div>
+          </div>
+          <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto">
+            <label
+              v-for="project in store.workActivitySelectableProjects"
+              :key="project.id"
+              class="flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-xs text-on-surface-variant transition-colors hover:bg-surface-variant"
+            >
+              <input
+                type="checkbox"
+                class="h-3.5 w-3.5 shrink-0 accent-[var(--color-primary)]"
+                :checked="selectedProjectIds.has(project.id)"
+                @change="setProjectSelected(project.id, ($event.target as HTMLInputElement).checked)"
+              />
+              <span class="max-w-40 truncate font-semibold text-on-surface">{{ project.name }}</span>
+              <span class="max-w-64 truncate text-[10px] text-on-surface-variant">{{ project.path }}</span>
+            </label>
+          </div>
+          <p v-if="store.workActivitySelectableProjects.length === 0" class="px-2 py-2 text-xs text-on-surface-variant">
+            {{ t.activity.noProjects }}
+          </p>
+        </div>
+      </Transition>
+    </Teleport>
 
     <section class="mb-3 grid gap-2 sm:grid-cols-3" :aria-busy="store.workActivityLoading">
       <div class="rounded-lg border border-border-subtle bg-surface px-3 py-2 shadow-sm">
@@ -436,63 +536,77 @@ onBeforeUnmount(() => {
           <CalendarDays :size="16" class="shrink-0 text-primary" />
           <h3 class="text-sm font-bold text-on-surface">{{ t.activity.heatmap }}</h3>
         </div>
-        <div class="relative">
+        <div>
           <button
+            ref="authorPickerTriggerRef"
             type="button"
             class="inline-flex h-7 max-w-[15rem] items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
             :aria-expanded="authorPickerOpen"
-            @click="
-              authorPickerOpen = !authorPickerOpen;
-              projectScopeOpen = false;
-            "
+            @click="toggleAuthorPicker"
           >
             <Users :size="14" class="shrink-0 text-on-surface-variant" />
-            <span class="truncate">{{ selectedAuthor?.name || t.activity.allAuthors }}</span>
+            <span class="truncate">{{ selectedAuthorLabel }}</span>
             <ChevronDown :size="14" class="shrink-0" :class="authorPickerOpen && 'rotate-180'" />
           </button>
         </div>
       </div>
 
-      <div v-if="authorPickerOpen" class="mb-3 border border-border-subtle bg-surface-container-low p-1 shadow-sm">
-        <div v-overlay-scrollbar class="themed-scrollbar max-h-48 overflow-y-auto">
-          <button
-            type="button"
-            :class="
-              cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                !selectedAuthorId ? 'bg-primary/10 text-primary' : 'text-on-surface-variant hover:bg-surface-variant',
-              )
-            "
-            @click="selectAuthor('')"
+      <Teleport to="body">
+        <Transition name="fade">
+          <div
+            v-if="authorPickerOpen"
+            data-work-activity-author-menu
+            class="fixed z-50 w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface p-1 shadow-xl"
+            :style="{ right: `${authorPickerMenuPosition.right}px`, top: `${authorPickerMenuPosition.top}px` }"
           >
-            <Check v-if="!selectedAuthorId" :size="14" class="shrink-0" />
-            <span v-else class="w-3.5 shrink-0" />
-            <span class="min-w-0 flex-1 truncate font-semibold">{{ t.activity.allAuthors }}</span>
-            <span class="tabular-nums text-[10px]">{{
-              readyRepositories.reduce((total, repository) => total + repository.totalCommits, 0)
-            }}</span>
-          </button>
-          <button
-            v-for="author in authors"
-            :key="author.id"
-            type="button"
-            :class="
-              cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                selectedAuthorId === author.id
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-on-surface-variant hover:bg-surface-variant',
-              )
-            "
-            @click="selectAuthor(author.id)"
-          >
-            <Check v-if="selectedAuthorId === author.id" :size="14" class="shrink-0" />
-            <span v-else class="w-3.5 shrink-0" />
-            <span class="min-w-0 flex-1 truncate font-semibold">{{ author.name }}</span>
-            <span class="tabular-nums text-[10px]">{{ author.commits }}</span>
-          </button>
-        </div>
-      </div>
+            <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto">
+              <button
+                type="button"
+                :class="
+                  cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                    !selectedAuthorId
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-on-surface-variant hover:bg-surface-variant',
+                  )
+                "
+                @click="selectAuthor('')"
+              >
+                <Check v-if="!selectedAuthorId" :size="14" class="shrink-0" />
+                <span v-else class="w-3.5 shrink-0" />
+                <span class="truncate font-semibold">{{ t.activity.allAuthors }}</span>
+                <span class="tabular-nums text-[10px]">{{
+                  readyRepositories.reduce((total, repository) => total + repository.totalCommits, 0)
+                }}</span>
+              </button>
+              <button
+                v-for="author in authors"
+                :key="author.id"
+                type="button"
+                :class="
+                  cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                    isAuthorSelected(author.id)
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-on-surface-variant hover:bg-surface-variant',
+                  )
+                "
+                @click="selectAuthor(isCurrentAuthor(author.id) ? currentAuthorSelection : author.id)"
+              >
+                <Check v-if="isAuthorSelected(author.id)" :size="14" class="shrink-0" />
+                <span v-else class="w-3.5 shrink-0" />
+                <span class="font-semibold">{{ author.name }}</span>
+                <span
+                  v-if="isCurrentAuthor(author.id)"
+                  class="rounded bg-primary/10 px-1 py-0.5 text-[9px] font-bold text-primary"
+                  >{{ t.activity.currentUser }}</span
+                >
+                <span class="tabular-nums text-[10px]">{{ author.commits }}</span>
+              </button>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
 
       <div v-if="store.workActivityLoading" class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-2" aria-busy="true">
         <div class="grid grid-rows-7 gap-1 pt-5">
@@ -600,6 +714,16 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <span class="shrink-0 font-mono text-[10px] font-bold text-primary">{{ commit.hash.slice(0, 8) }}</span>
+          <button
+            v-if="projectForPaths(commit.projectPaths)"
+            type="button"
+            class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+            :title="t.activity.openInGit"
+            :aria-label="t.activity.openInGit"
+            @click="openCommitInGit(commit.projectPaths, commit.hash)"
+          >
+            <GitCommitHorizontal :size="15" />
+          </button>
         </div>
       </div>
       <button

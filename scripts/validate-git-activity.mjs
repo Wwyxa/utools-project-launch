@@ -122,6 +122,7 @@ try {
   assert.equal(repository.totalCommits, 2);
   assert.equal(repository.activeDays, 2);
   assert.equal(repository.authors.length, 2);
+  assert.equal(repository.currentAuthorId, "email:git-activity-validation@example.invalid");
   assert.equal(repository.daily.find((day) => day.date === localDate(firstDate))?.commits, 1);
   assert.equal(repository.daily.find((day) => day.date === localDate(secondDate))?.commits, 1);
 
@@ -183,6 +184,23 @@ try {
   assert.equal(personalAuthorPage.totalCommits, 2);
   assert.deepEqual(
     Array.from(personalAuthorPage.commits).map((commit) => commit.message),
+    ["fourth activity", "third activity"],
+  );
+
+  const unmatchedCurrentUserPage = await bridge.readGitActivityDay([projectRoot], {
+    date: localDate(thirdDate),
+    currentUserOnly: true,
+  });
+  assert.equal(unmatchedCurrentUserPage.totalCommits, 0);
+
+  runGit(projectRoot, ["config", "user.email", "alex.personal@example.invalid"]);
+  const currentUserPage = await bridge.readGitActivityDay([projectRoot], {
+    date: localDate(thirdDate),
+    currentUserOnly: true,
+  });
+  assert.equal(currentUserPage.currentUserOnly, true);
+  assert.deepEqual(
+    Array.from(currentUserPage.commits).map((commit) => commit.message),
     ["fourth activity", "third activity"],
   );
 

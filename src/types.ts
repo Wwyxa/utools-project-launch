@@ -860,6 +860,7 @@ export interface ProjectGitActivityRepository {
   repositoryPath: string;
   projectPaths: string[];
   state: ProjectGitActivityRepositoryState;
+  currentAuthorId?: string;
   totalCommits: number;
   activeDays: number;
   daily: ProjectGitActivityDay[];
@@ -877,6 +878,7 @@ export interface ProjectGitActivityReport {
 export interface ProjectGitActivityDayOptions {
   date: string;
   authorId?: string;
+  currentUserOnly?: boolean;
   limit?: number;
   skip?: number;
   force?: boolean;
@@ -895,6 +897,7 @@ export interface ProjectGitActivityCommit {
 export interface ProjectGitActivityDayReport {
   date: string;
   authorId?: string;
+  currentUserOnly?: boolean;
   totalCommits: number;
   hasMore: boolean;
   commits: ProjectGitActivityCommit[];

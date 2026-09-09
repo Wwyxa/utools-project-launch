@@ -717,6 +717,20 @@ function cloneGitActivityRepositoryData(data) {
   };
 }
 
+async function resolveGitActivityCurrentAuthorId(repositoryPath) {
+  const emailResult = await runGitWorkspaceCommand(repositoryPath, ["config", "--get", "user.email"]);
+  const email = String(emailResult.stdout || "")
+    .trim()
+    .toLocaleLowerCase();
+  if (emailResult.status === 0 && email && !/\s/.test(email)) return `email:${email}`;
+
+  const nameResult = await runGitWorkspaceCommand(repositoryPath, ["config", "--get", "user.name"]);
+  const name = String(nameResult.stdout || "")
+    .trim()
+    .toLocaleLowerCase();
+  return nameResult.status === 0 && name ? `name:${name}` : "";
+}
+
 function gitActivityDayCacheKey(repositoryPath, date) {
   return `${normalizeGitActivityRepositoryKey(repositoryPath)}::${date}`;
 }
@@ -802,6 +816,7 @@ function normalizeGitActivityDayPageOptions(options = {}) {
   return {
     date,
     authorId: normalizeGitActivityAuthorId(options.authorId),
+    currentUserOnly: options.currentUserOnly === true,
     limit,
     skip,
     force: options.force === true,
@@ -940,18 +955,21 @@ async function readGitActivityRepositoryData(repositoryPath, range) {
     totalCommits += 1;
   };
 
-  const result = await runGitWorkspaceCommand(
-    repositoryPath,
-    [
-      "--no-optional-locks",
-      "log",
-      "--exclude=refs/stash",
-      "--all",
-      "--date=iso-strict",
-      `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%s%x00`,
-    ],
-    { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
-  );
+  const [result, currentAuthorId] = await Promise.all([
+    runGitWorkspaceCommand(
+      repositoryPath,
+      [
+        "--no-optional-locks",
+        "log",
+        "--exclude=refs/stash",
+        "--all",
+        "--date=iso-strict",
+        `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%s%x00`,
+      ],
+      { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
+    ),
+    resolveGitActivityCurrentAuthorId(repositoryPath),
+  ]);
   if (result.status !== 0) return createGitActivityReadFailure(repositoryPath, result);
 
   detailRecordsByDate.forEach((details, date) => {
@@ -965,6 +983,7 @@ async function readGitActivityRepositoryData(repositoryPath, range) {
   return {
     repositoryPath,
     state: "ready",
+    currentAuthorId: currentAuthorId || undefined,
     totalCommits,
     activeDays: daily.length,
     daily,
@@ -1120,10 +1139,13 @@ async function readGitActivityDay(projectPaths, options = {}) {
   const failedRepositories = failures.map((entry) => entry.result);
   await runGitWorkspaceWorkerPool(
     groups.map((group) => async () => {
+      const authorId = page.currentUserOnly
+        ? await resolveGitActivityCurrentAuthorId(group.repositoryPath)
+        : page.authorId;
       const data = await readGitActivityDayRepositoryData(
         group.repositoryPath,
         page.date,
-        page.authorId,
+        authorId || (page.currentUserOnly ? "missing-current-user" : ""),
         pageCapacity,
         page.force,
       );
@@ -1149,6 +1171,7 @@ async function readGitActivityDay(projectPaths, options = {}) {
   return {
     date: page.date,
     authorId: page.authorId || undefined,
+    currentUserOnly: page.currentUserOnly || undefined,
     totalCommits,
     hasMore: totalCommits > page.skip + commits.length,
     commits,
