@@ -59,6 +59,10 @@ import type {
   ProjectAutomationScriptResult,
   ProjectAutomationTask,
   ProjectGitActionResult,
+  ProjectGitActivityDayOptions,
+  ProjectGitActivityDayReport,
+  ProjectGitActivityOptions,
+  ProjectGitActivityReport,
   ProjectGitCommitPage,
   ProjectGitCommitMessageDiffResult,
   ProjectGitPushOptions,
@@ -1611,7 +1615,7 @@ function createBlankProjectForm(): ProjectFormValue {
 export const useStore = defineStore("app", {
   state: () => ({
     locale: "zh-CN" as Locale,
-    activeTab: "projects" as "projects" | "settings" | "environment",
+    activeTab: "projects" as "projects" | "settings" | "environment" | "activity",
     theme: "auto" as "light" | "dark" | "auto",
     iconPackColorMode: "light" as IconPackColorMode,
     terminalPreferences: bridge.loadTerminalPreferences(),
@@ -1655,6 +1659,14 @@ export const useStore = defineStore("app", {
     iconPackMessage: "",
     projects: supportsRealProjectBridge() ? [] : demoProjects,
     selectedProjectId: null as string | null,
+    workActivitySelectedProjectIds: [] as string[],
+    workActivityUnavailableProjectIds: [] as string[],
+    workActivityReport: null as ProjectGitActivityReport | null,
+    workActivityLoading: false,
+    workActivityMessage: "",
+    workActivityRequestGeneration: 0,
+    workActivityDayRequestGeneration: 0,
+    workActivityReturnProjectId: null as string | null,
     automationActiveProjectRuns: {} as Record<string, string>,
     automationNextTimerAt: "",
     projectDetailsTabRequest: null as { projectId: string; tab: "automation" | "memo"; requestedAt: number } | null,
@@ -1721,6 +1733,17 @@ export const useStore = defineStore("app", {
       state.projects.filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false),
     unavailableProjects: (state): Project[] =>
       state.projects.filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists === false),
+    workActivitySelectableProjects: (state): Project[] => {
+      const unavailableIds = new Set(state.workActivityUnavailableProjectIds);
+      return state.projects.filter(
+        (project) =>
+          isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false && !unavailableIds.has(project.id),
+      );
+    },
+    workActivitySelectedProjects(): Project[] {
+      const selectedIds = new Set(this.workActivitySelectedProjectIds);
+      return this.workActivitySelectableProjects.filter((project) => selectedIds.has(project.id));
+    },
     selectedProject: (state): Project | undefined =>
       state.projects.find((project) => project.id === state.selectedProjectId),
     relatedProjectsFor:
@@ -3063,9 +3086,108 @@ export const useStore = defineStore("app", {
         this.aiAnalyzing = false;
       }
     },
-    setActiveTab(tab: "projects" | "settings" | "environment") {
+    setActiveTab(tab: "projects" | "settings" | "environment" | "activity") {
       this.activeTab = tab;
       this.selectedProjectId = null;
+    },
+    openWorkActivity(projectId?: string) {
+      const selectableProjectIds = this.workActivitySelectableProjects.map((project) => project.id);
+      const selectableIds = new Set(selectableProjectIds);
+      const selectedProjectIds = projectId && selectableIds.has(projectId) ? [projectId] : selectableProjectIds;
+      if (this.activeTab !== "activity") {
+        this.workActivityReturnProjectId = this.selectedProjectId;
+      }
+      this.workActivitySelectedProjectIds = selectedProjectIds;
+      this.workActivityReport = null;
+      this.workActivityMessage = "";
+      this.workActivityRequestGeneration += 1;
+      this.workActivityDayRequestGeneration += 1;
+      this.activeTab = "activity";
+      this.selectedProjectId = null;
+    },
+    returnFromWorkActivity() {
+      const returnProjectId = this.workActivityReturnProjectId;
+      this.workActivityReturnProjectId = null;
+      this.workActivityDayRequestGeneration += 1;
+      this.activeTab = "projects";
+      this.selectedProjectId = this.projects.some(
+        (project) => project.id === returnProjectId && isProjectVisibleOnCurrentDevice(project),
+      )
+        ? returnProjectId
+        : null;
+    },
+    setWorkActivityProjectIds(projectIds: string[]) {
+      const selectableIds = new Set(this.workActivitySelectableProjects.map((project) => project.id));
+      this.workActivitySelectedProjectIds = [...new Set(projectIds)].filter((projectId) =>
+        selectableIds.has(projectId),
+      );
+      this.workActivityReport = null;
+      this.workActivityMessage = "";
+      this.workActivityRequestGeneration += 1;
+      this.workActivityDayRequestGeneration += 1;
+    },
+    async loadGitActivity(options: ProjectGitActivityOptions) {
+      const requestGeneration = ++this.workActivityRequestGeneration;
+      const selectedProjects = this.workActivitySelectedProjects;
+      this.workActivityLoading = true;
+      this.workActivityMessage = "";
+      if (selectedProjects.length === 0) {
+        this.workActivityReport = {
+          startDate: options.startDate,
+          endDate: options.endDate,
+          repositories: [],
+          lastRefreshedAt: new Date().toISOString(),
+        };
+        this.workActivityLoading = false;
+        return;
+      }
+
+      try {
+        const report = await bridge.readGitActivity(
+          selectedProjects.map((project) => project.path),
+          options,
+        );
+        if (requestGeneration !== this.workActivityRequestGeneration) return;
+
+        this.workActivityReport = report;
+        const unavailablePaths = new Set(
+          report.repositories
+            .filter((repository) => repository.state === "not-a-repository")
+            .flatMap((repository) => repository.projectPaths),
+        );
+        const unavailableIds = new Set(this.workActivityUnavailableProjectIds);
+        this.availableProjects.forEach((project) => {
+          if (unavailablePaths.has(project.path)) unavailableIds.add(project.id);
+        });
+        this.workActivityUnavailableProjectIds = [...unavailableIds];
+        const selectableIds = new Set(this.workActivitySelectableProjects.map((project) => project.id));
+        this.workActivitySelectedProjectIds = this.workActivitySelectedProjectIds.filter((projectId) =>
+          selectableIds.has(projectId),
+        );
+        const failedCount = report.repositories.filter((repository) => repository.state === "failed").length;
+        if (failedCount > 0) {
+          this.workActivityMessage = `有 ${failedCount} 个 Git 仓库未能完成活动统计。`;
+        }
+      } catch (error) {
+        if (requestGeneration !== this.workActivityRequestGeneration) return;
+        this.workActivityReport = null;
+        this.workActivityMessage = error instanceof Error ? error.message : "读取 Git 活动记录失败。";
+      } finally {
+        if (requestGeneration === this.workActivityRequestGeneration) {
+          this.workActivityLoading = false;
+        }
+      }
+    },
+    async readGitActivityDay(options: ProjectGitActivityDayOptions): Promise<ProjectGitActivityDayReport | null> {
+      const requestGeneration = ++this.workActivityDayRequestGeneration;
+      const selectedProjects = this.workActivitySelectedProjects;
+      if (selectedProjects.length === 0) return null;
+
+      const report = await bridge.readGitActivityDay(
+        selectedProjects.map((project) => project.path),
+        options,
+      );
+      return requestGeneration === this.workActivityDayRequestGeneration ? report : null;
     },
     setSelectedProject(id: string | null) {
       this.selectedProjectId = id;
@@ -3410,6 +3532,9 @@ export const useStore = defineStore("app", {
       project.status = deriveProjectStatus(project);
 
       if (existingProject && existingProject.path !== project.path) {
+        this.workActivityUnavailableProjectIds = this.workActivityUnavailableProjectIds.filter(
+          (unavailableProjectId) => unavailableProjectId !== projectId,
+        );
         clearGitRepositoryCoordination(projectId);
         clearGitRepositoryRecord(this.gitRepositorySnapshots, projectId);
         clearGitRepositoryRecord(this.gitRepositoryRefreshing, projectId);
@@ -3462,6 +3587,12 @@ export const useStore = defineStore("app", {
       delete this.todos[projectId];
       delete this.memoContent[projectId];
       delete this.automationActiveProjectRuns[projectId];
+      this.workActivitySelectedProjectIds = this.workActivitySelectedProjectIds.filter(
+        (selectedProjectId) => selectedProjectId !== projectId,
+      );
+      this.workActivityUnavailableProjectIds = this.workActivityUnavailableProjectIds.filter(
+        (unavailableProjectId) => unavailableProjectId !== projectId,
+      );
       delete this.gitWorkspaces[projectId];
       delete this.gitWorkspaceRefreshing[projectId];
       clearGitRepositoryCoordination(projectId);
@@ -4425,6 +4556,9 @@ export const useStore = defineStore("app", {
         if (this.projects.find((item) => item.id === projectId)?.path !== projectPath) return null;
         if (!result.ok) return result;
 
+        this.workActivityUnavailableProjectIds = this.workActivityUnavailableProjectIds.filter(
+          (unavailableProjectId) => unavailableProjectId !== projectId,
+        );
         clearGitRepositoryCoordination(projectId, true);
         bumpGitRefMutationVersion(projectId);
         clearGitRepositoryRecord(this.gitRepositorySnapshots, projectId);

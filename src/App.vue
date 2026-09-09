@@ -9,6 +9,7 @@ import ActionDialog from "./components/common/ActionDialog.vue";
 import ActionStatusPopover from "./components/common/ActionStatusPopover.vue";
 import SettingsTab from "./components/layout/SettingsTab.vue";
 import EnvironmentTab from "./components/environment/EnvironmentTab.vue";
+import WorkActivity from "./components/activity/WorkActivity.vue";
 import { useI18n } from "./lib/i18n";
 import { requestAppEscape } from "./lib/escape";
 import type { ProjectBridgeEvent } from "./types";
@@ -177,6 +178,11 @@ const handleGlobalEscape = (event: KeyboardEvent) => {
     return;
   }
 
+  if (store.activeTab === "activity") {
+    store.returnFromWorkActivity();
+    return;
+  }
+
   if (store.activeTab === "settings" || store.activeTab === "environment") {
     store.setActiveTab("projects");
     return;
@@ -269,6 +275,9 @@ onUnmounted(() => {
           </div>
           <div v-else-if="activeTab === 'environment'" key="environment" class="h-full overflow-hidden">
             <EnvironmentTab />
+          </div>
+          <div v-else-if="activeTab === 'activity'" key="activity" class="h-full overflow-hidden">
+            <WorkActivity />
           </div>
         </Transition>
       </main>

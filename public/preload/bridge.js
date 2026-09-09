@@ -82,6 +82,8 @@ window.projectBridge = {
   readGitWorkingTreeSnapshotResult,
   readGitCommits,
   readGitCommitsResult,
+  readGitActivity,
+  readGitActivityDay,
   readGitFileDiff,
   readGitCommitFileDiff,
   readGitCommitFiles,

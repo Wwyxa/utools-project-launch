@@ -15,6 +15,7 @@ import {
   GripVertical,
   Link2,
   FileDiff,
+  CalendarDays,
 } from "lucide-vue-next";
 import {
   PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT,
@@ -447,6 +448,13 @@ const handleOpenQuickLink = async (event: MouseEvent) => {
   await store.openProjectQuickLink(props.project.id);
 };
 
+const handleOpenWorkActivity = (event: MouseEvent) => {
+  event.stopPropagation();
+  closeTinyCardContextMenu();
+  if (isUnavailable.value) return;
+  store.openWorkActivity(props.project.id);
+};
+
 const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: string) => {
   event.stopPropagation();
   if (isUnavailable.value) {
@@ -737,6 +745,17 @@ const updateTinyToolbarAlignment = (event: Event) => {
         </button>
         <button
           v-if="!isSorting"
+          type="button"
+          @click.stop="handleOpenWorkActivity"
+          class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
+          :disabled="isUnavailable"
+          :title="t.activity.title"
+          :aria-label="t.activity.title"
+        >
+          <CalendarDays :size="13" />
+        </button>
+        <button
+          v-if="!isSorting"
           @click.stop="handleEdit"
           class="p-0.5 text-on-surface-variant/70 dark:text-on-surface-variant hover:text-primary rounded hover:bg-on-surface/5 dark:hover:bg-surface-container-high transition-colors"
           :title="t.common.edit"
@@ -1018,7 +1037,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
         <div
           :class="
             cn(
-              'ml-auto flex w-[8.125rem] shrink-0 items-center justify-end gap-0.5 transition-all',
+              'ml-auto flex w-[9.5rem] shrink-0 items-center justify-end gap-0.5 transition-all',
               isSorting
                 ? 'opacity-100'
                 : 'pointer-events-none opacity-0 translate-y-1 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0',
@@ -1053,6 +1072,15 @@ const updateTinyToolbarAlignment = (event: Event) => {
               :aria-label="t.common.openFolder"
             >
               <FolderOpen :size="14" />
+            </button>
+            <button
+              @click="handleOpenWorkActivity"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary dark:text-on-surface-variant dark:hover:bg-surface-container-high"
+              :disabled="isUnavailable"
+              :title="t.activity.title"
+              :aria-label="t.activity.title"
+            >
+              <CalendarDays :size="14" />
             </button>
             <button
               @click="handleEdit"
@@ -1154,6 +1182,16 @@ const updateTinyToolbarAlignment = (event: Event) => {
         >
           <FolderOpen :size="14" class="shrink-0" />
           <span class="min-w-0 truncate">{{ t.common.openFolder }}</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="mode-menu-item mode-menu-item--leading"
+          :disabled="isUnavailable"
+          @click="handleOpenWorkActivity"
+        >
+          <CalendarDays :size="14" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.activity.title }}</span>
         </button>
         <div class="mx-0.5 my-px border-t border-border-subtle" role="separator" />
         <button type="button" role="menuitem" class="mode-menu-item mode-menu-item--leading" @click="handleEdit">

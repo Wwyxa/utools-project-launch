@@ -17,6 +17,7 @@ import {
   Network,
   TerminalSquare,
   Trash2,
+  CalendarDays,
 } from "lucide-vue-next";
 import {
   PROJECT_DETAILS_TAB_DEFAULT_COACH_MARK_VERSION,
@@ -166,6 +167,7 @@ const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleOpenQuickLink = () => store.openProjectQuickLink(props.project.id);
 const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
 const handleOpenEditor = (applicationId?: string) => store.openProjectInEditor(props.project.id, applicationId);
+const handleOpenWorkActivity = () => store.openWorkActivity(props.project.id);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
 const handleDuplicate = () => store.openDuplicateProjectForm(props.project.id);
 const handleBack = () => store.setSelectedProject(null);
@@ -636,6 +638,16 @@ watch(
           :aria-label="t.projectDetails.openProject"
         >
           <FolderOpen :size="16" class="group-hover:text-primary" />
+        </button>
+        <button
+          type="button"
+          @click="handleOpenWorkActivity"
+          :disabled="isUnavailable"
+          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm disabled:opacity-50"
+          :title="t.activity.title"
+          :aria-label="t.activity.title"
+        >
+          <CalendarDays :size="16" class="group-hover:text-primary" />
         </button>
         <button
           type="button"

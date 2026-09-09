@@ -1519,6 +1519,73 @@ assertPathWithinRoot(rootPath, targetPath);
 
 Validate both lexical and canonical boundaries, and reject direct link mutation before using the resolved target.
 
+## Scenario: Work Activity Heatmap
+
+### 1. Scope / Trigger
+
+- Trigger: the standalone Work Activity page aggregates local Git author activity across selected projects and renders a GitHub-style day heatmap plus lazy day details.
+- This crosses `WorkActivity.vue`, Pinia, `ProjectBridge`, and the uTools preload Git boundary. It must not use the Project Launch Service or fetch remote refs.
+
+### 2. Signatures
+
+- `ProjectBridge.readGitActivity(projectPaths, { startDate, endDate, force? }): Promise<ProjectGitActivityReport>`.
+- `ProjectBridge.readGitActivityDay(projectPaths, { date, authorId?, limit?, skip?, force? }): Promise<ProjectGitActivityDayReport>`.
+- Store actions: `openWorkActivity(projectId?)`, `setWorkActivityProjectIds(projectIds)`, `loadGitActivity(options)`, and `readGitActivityDay(options)`.
+- `ProjectGitActivityReport.repositories[]` carries the normalized `repositoryPath`, all associated `projectPaths`, state, per-day author counts, and aggregate author totals.
+
+### 3. Contracts
+
+- Preload resolves every selected project to its Git root, groups duplicate project paths by that root, and reads each root at most once per request. It reads only locally visible refs with `git log --all --exclude=refs/stash`; the Git revision walk deduplicates commits shared by multiple refs.
+- Heatmap dates are derived from Git author timestamps (`%aI`) converted to the device's local date. Do not substitute a `git log --since` boundary for this filter, because its revision-date semantics can omit an author-date entry that belongs to the displayed local day.
+- The preload streams lightweight commit records while aggregating, limits repository workers to four, uses a bounded five-minute repository cache, and keeps a bounded day-detail cache. Day commit details load only after a day is selected and page at 50 rows by default.
+- Author filtering recomputes the heatmap from received per-day author counts. It must not launch a new full Git aggregation request merely because the author picker changed.
+- Store request generations reject stale aggregate and day-detail responses. A failed repository remains an explicit failure and must never be presented as zero activity; a confirmed `not-a-repository` result is removed from the selectable/default project scope.
+- `workActivityUnavailableProjectIds` is a session discovery cache, not permanent project metadata. Clear its matching id after successful `initializeGitRepository`, after an existing project's path changes, and when the project is deleted so a new repository/path can be discovered on its next activity read.
+
+### 4. Validation & Error Matrix
+
+- Several selected project paths resolve to one Git root -> return one repository report with every source project path and count each commit once.
+- Empty or unborn repository -> return a ready report with zero days and zero commits.
+- Non-Git project -> return `state: "not-a-repository"`; remove it from the selectable/default scope without showing it as a failed zero-activity repository.
+- Git executable unavailable, command failure, or timeout -> return `state: "failed"` with a user-facing message while sibling repositories remain visible.
+- Older aggregate/day request settles after scope, range, or author state changes -> discard it instead of replacing the current display.
+- A formerly non-Git project is initialized or moved to a new path -> clear its cached unavailable id so its next activity read probes Git again.
+
+### 5. Good/Base/Bad Cases
+
+- Good: two launcher entries inside the same repository yield one heatmap contribution, while the day detail identifies both associated project names.
+- Good: a manually refreshed report bypasses the settled repository cache, while concurrent identical reads share the in-flight work.
+- Base: browser preview returns an empty typed report and keeps the page usable without Node or Git access.
+- Bad: treat `refs/stash` as ordinary work activity, scan the same root once per launcher card, or pass every complete commit object into the renderer.
+- Bad: leave a `not-a-repository` id in `workActivityUnavailableProjectIds` after the project has successfully run Git initialization.
+
+### 6. Tests Required
+
+- `npm run validate:git-activity` must use a temporary repository to assert Git-root grouping, ref deduplication, stash exclusion, local-date aggregation, cache bypass, and globally paged day details.
+- `npx vitest run tests/gitActivity.test.ts tests/workActivity.test.ts` must cover rolling/year heatmap cells, default scope pruning, stale aggregate rejection, detail-navigation restoration, and cached non-Git invalidation after Git initialization.
+- Run `npm run lint`, `node --check public/preload.js`, and `npm run build` after changing this bridge, Store, or page contract.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+store.workActivityUnavailableProjectIds.push(projectId);
+// The project remains excluded even after `git init` succeeds.
+```
+
+#### Correct
+
+```ts
+if (result.ok) {
+  store.workActivityUnavailableProjectIds = store.workActivityUnavailableProjectIds.filter(
+    (unavailableProjectId) => unavailableProjectId !== projectId,
+  );
+}
+```
+
+Keep non-Git discovery cached only for the current project path and invalidate it when the Store changes that path's Git capability.
+
 ## Scenario: Git History Pagination
 
 ### 1. Scope / Trigger

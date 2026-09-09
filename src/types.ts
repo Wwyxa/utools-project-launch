@@ -836,6 +836,72 @@ export type ProjectGitReadResult<T> =
   | { ok: true; value: T }
   | { ok: false; value: T | null; failure: ProjectGitReadFailure };
 
+export interface ProjectGitActivityOptions {
+  startDate: string;
+  endDate: string;
+  force?: boolean;
+}
+
+export interface ProjectGitActivityDay {
+  date: string;
+  commits: number;
+  authors: Record<string, number>;
+}
+
+export interface ProjectGitActivityAuthor {
+  id: string;
+  name: string;
+  commits: number;
+}
+
+export type ProjectGitActivityRepositoryState = "ready" | "not-a-repository" | "failed";
+
+export interface ProjectGitActivityRepository {
+  repositoryPath: string;
+  projectPaths: string[];
+  state: ProjectGitActivityRepositoryState;
+  totalCommits: number;
+  activeDays: number;
+  daily: ProjectGitActivityDay[];
+  authors: ProjectGitActivityAuthor[];
+  message?: string;
+}
+
+export interface ProjectGitActivityReport {
+  startDate: string;
+  endDate: string;
+  repositories: ProjectGitActivityRepository[];
+  lastRefreshedAt: string;
+}
+
+export interface ProjectGitActivityDayOptions {
+  date: string;
+  authorId?: string;
+  limit?: number;
+  skip?: number;
+  force?: boolean;
+}
+
+export interface ProjectGitActivityCommit {
+  hash: string;
+  message: string;
+  author: string;
+  authorId: string;
+  date: string;
+  repositoryPath: string;
+  projectPaths: string[];
+}
+
+export interface ProjectGitActivityDayReport {
+  date: string;
+  authorId?: string;
+  totalCommits: number;
+  hasMore: boolean;
+  commits: ProjectGitActivityCommit[];
+  failedRepositories: ProjectGitActivityRepository[];
+  lastRefreshedAt: string;
+}
+
 export interface ProjectGitSnapshot {
   branch: string;
   headHash?: string;
@@ -1444,6 +1510,11 @@ export interface ProjectBridge {
     projectPath: string,
     options?: { limit?: number; skip?: number },
   ): Promise<ProjectGitReadResult<ProjectBridgeGitCommitPage>>;
+  readGitActivity(projectPaths: string[], options: ProjectGitActivityOptions): Promise<ProjectGitActivityReport>;
+  readGitActivityDay(
+    projectPaths: string[],
+    options: ProjectGitActivityDayOptions,
+  ): Promise<ProjectGitActivityDayReport>;
   readGitFileDiff(
     projectPath: string,
     relativePath: string,

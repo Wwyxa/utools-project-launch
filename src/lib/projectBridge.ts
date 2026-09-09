@@ -30,6 +30,10 @@ import type {
   ProjectGitActionResult,
   ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
+  ProjectGitActivityOptions,
+  ProjectGitActivityReport,
+  ProjectGitActivityDayOptions,
+  ProjectGitActivityDayReport,
   ProjectGitCommitMessageDiffResult,
   ProjectBridgePackageScript,
   ProjectScriptDiscoveryResult,
@@ -1069,6 +1073,31 @@ const fallbackBridge: ProjectBridge = {
         },
       };
     }
+  },
+  async readGitActivity(
+    _projectPaths: string[],
+    options: ProjectGitActivityOptions,
+  ): Promise<ProjectGitActivityReport> {
+    return {
+      startDate: options.startDate,
+      endDate: options.endDate,
+      repositories: [],
+      lastRefreshedAt: new Date().toISOString(),
+    };
+  },
+  async readGitActivityDay(
+    _projectPaths: string[],
+    options: ProjectGitActivityDayOptions,
+  ): Promise<ProjectGitActivityDayReport> {
+    return {
+      date: options.date,
+      authorId: options.authorId,
+      totalCommits: 0,
+      hasMore: false,
+      commits: [],
+      failedRepositories: [],
+      lastRefreshedAt: new Date().toISOString(),
+    };
   },
   async readGitFileDiff(projectPath: string, relativePath: string, options?: ProjectGitFileDiffOptions) {
     const scope = options?.scope === "staged" || options?.scope === "unstaged" ? options.scope : "combined";
