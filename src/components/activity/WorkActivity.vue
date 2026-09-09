@@ -24,8 +24,18 @@ const currentAuthorSelection = "current";
 
 const store = useStore();
 const t = useI18n();
-const rangeMode = ref<ActivityRangeMode>("rolling");
-const selectedYear = ref(new Date().getFullYear());
+const rangeMode = computed({
+  get: () => store.workActivityRangeMode,
+  set: (mode: ActivityRangeMode) => {
+    store.workActivityRangeMode = mode;
+  },
+});
+const selectedYear = computed({
+  get: () => store.workActivitySelectedYear,
+  set: (year: number) => {
+    store.workActivitySelectedYear = year;
+  },
+});
 const selectedAuthorId = ref(currentAuthorSelection);
 const selectedDate = ref("");
 const projectScopeOpen = ref(false);
@@ -332,11 +342,15 @@ watch(
   { immediate: true },
 );
 
-watch(countsByDate, (counts) => {
-  if (selectedDate.value && counts.has(selectedDate.value)) return;
-  selectedDate.value = [...counts.keys()].at(-1) || "";
-  void loadDayDetails();
-});
+watch(
+  countsByDate,
+  (counts) => {
+    if (selectedDate.value && counts.has(selectedDate.value)) return;
+    selectedDate.value = [...counts.keys()].at(-1) || "";
+    void loadDayDetails();
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
@@ -608,7 +622,11 @@ onBeforeUnmount(() => {
         </Transition>
       </Teleport>
 
-      <div v-if="store.workActivityLoading" class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-2" aria-busy="true">
+      <div
+        v-if="store.workActivityLoading && !store.workActivityReport"
+        class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-2"
+        aria-busy="true"
+      >
         <div class="grid grid-rows-7 gap-1 pt-5">
           <span v-for="index in 7" :key="index" class="skeleton h-3 w-3" />
         </div>

@@ -44,8 +44,65 @@ const activityReport = (repositoryPath: string, projectPaths: string[], state: "
 
 describe("work activity Store", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.resetModules();
+  });
+
+  it("reuses one report on reopen, deduplicates loading, and retains stale content on refresh failure", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
+    const pending = createDeferred<ProjectGitActivityReport>();
+    const readGitActivity = vi.fn<ProjectBridge["readGitActivity"]>().mockReturnValueOnce(pending.promise);
+    window.projectBridge = { ...getProjectBridge(), readGitActivity };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const alpha = createProject("alpha", "C:\\alpha");
+    store.projects = [alpha];
+    const options = { startDate: "2026-01-01", endDate: "2026-12-31" };
+    store.openWorkActivity();
+    const initialLoad = store.loadGitActivity(options);
+    store.returnFromWorkActivity();
+    store.openWorkActivity();
+    await store.loadGitActivity(options);
+    expect(readGitActivity).toHaveBeenCalledTimes(1);
+    pending.resolve(activityReport(alpha.path, [alpha.path], "ready"));
+    await initialLoad;
+    const report = store.workActivityReport;
+    store.returnFromWorkActivity();
+    store.openWorkActivity();
+    expect(store.workActivityReport).toBe(report);
+    await store.loadGitActivity(options);
+    expect(readGitActivity).toHaveBeenCalledTimes(1);
+
+    readGitActivity.mockRejectedValueOnce(new Error("offline"));
+    await store.loadGitActivity({ ...options, force: true });
+    expect(readGitActivity).toHaveBeenCalledTimes(2);
+    expect(store.workActivityReport).toBe(report);
+    expect(store.workActivityMessage).toBe("offline");
+    expect(store.workActivityLoading).toBe(false);
+
+    readGitActivity.mockResolvedValue(activityReport(alpha.path, [alpha.path], "ready"));
+    await store.loadGitActivity(options);
+    expect(readGitActivity).toHaveBeenCalledTimes(3);
+    clock.mockReturnValue(1000 + 5 * 60 * 1000);
+    await store.loadGitActivity(options);
+    expect(readGitActivity).toHaveBeenCalledTimes(4);
+
+    const nextRange = createDeferred<ProjectGitActivityReport>();
+    readGitActivity.mockReturnValueOnce(nextRange.promise);
+    const rangeLoad = store.loadGitActivity({ startDate: "2025-01-01", endDate: "2025-12-31" });
+    expect(store.workActivityReport).toBeNull();
+    store.setWorkActivityProjectIds([]);
+    expect(store.workActivityLoading).toBe(false);
+    nextRange.resolve(activityReport(alpha.path, [alpha.path], "ready"));
+    await rangeLoad;
+    expect(store.workActivityReport).toBeNull();
   });
 
   it("uses all available projects by default, removes non-Git projects, and restores detail navigation", async () => {

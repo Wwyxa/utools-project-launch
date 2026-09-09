@@ -1663,6 +1663,11 @@ export const useStore = defineStore("app", {
     workActivityUnavailableProjectIds: [] as string[],
     workActivityReport: null as ProjectGitActivityReport | null,
     workActivityLoading: false,
+    workActivityRangeMode: "rolling" as "rolling" | "year",
+    workActivitySelectedYear: new Date().getFullYear(),
+    workActivityReportKey: "",
+    workActivityReportExpiresAt: 0,
+    workActivityPendingKey: "",
     workActivityMessage: "",
     workActivityRequestGeneration: 0,
     workActivityDayRequestGeneration: 0,
@@ -3102,10 +3107,7 @@ export const useStore = defineStore("app", {
       if (this.activeTab !== "activity") {
         this.workActivityReturnProjectId = this.selectedProjectId;
       }
-      this.workActivitySelectedProjectIds = selectedProjectIds;
-      this.workActivityReport = null;
-      this.workActivityMessage = "";
-      this.workActivityRequestGeneration += 1;
+      this.setWorkActivityProjectIds(selectedProjectIds);
       this.workActivityDayRequestGeneration += 1;
       this.activeTab = "activity";
       this.selectedProjectId = null;
@@ -3123,17 +3125,36 @@ export const useStore = defineStore("app", {
     },
     setWorkActivityProjectIds(projectIds: string[]) {
       const selectableIds = new Set(this.workActivitySelectableProjects.map((project) => project.id));
-      this.workActivitySelectedProjectIds = [...new Set(projectIds)].filter((projectId) =>
-        selectableIds.has(projectId),
-      );
+      const selectedIds = [...new Set(projectIds)].filter((projectId) => selectableIds.has(projectId));
+      if (JSON.stringify([...selectedIds].sort()) === JSON.stringify([...this.workActivitySelectedProjectIds].sort()))
+        return;
+      this.workActivitySelectedProjectIds = selectedIds;
       this.workActivityReport = null;
+      this.workActivityReportKey = "";
+      this.workActivityReportExpiresAt = 0;
+      this.workActivityPendingKey = "";
+      this.workActivityLoading = false;
       this.workActivityMessage = "";
       this.workActivityRequestGeneration += 1;
       this.workActivityDayRequestGeneration += 1;
     },
     async loadGitActivity(options: ProjectGitActivityOptions) {
-      const requestGeneration = ++this.workActivityRequestGeneration;
       const selectedProjects = this.workActivitySelectedProjects;
+      const requestKey = JSON.stringify([
+        selectedProjects.map((project) => project.path).sort(),
+        options.startDate,
+        options.endDate,
+      ]);
+      if (!options.force) {
+        if (this.workActivityLoading && this.workActivityPendingKey === requestKey) return;
+        if (this.workActivityReportKey === requestKey && Date.now() < this.workActivityReportExpiresAt) return;
+      }
+      const requestGeneration = ++this.workActivityRequestGeneration;
+      if (this.workActivityReportKey !== requestKey) {
+        this.workActivityReport = null;
+        this.workActivityReportKey = "";
+      }
+      this.workActivityPendingKey = requestKey;
       this.workActivityLoading = true;
       this.workActivityMessage = "";
       if (selectedProjects.length === 0) {
@@ -3144,6 +3165,7 @@ export const useStore = defineStore("app", {
           lastRefreshedAt: new Date().toISOString(),
         };
         this.workActivityLoading = false;
+        this.workActivityPendingKey = "";
         return;
       }
 
@@ -3169,17 +3191,24 @@ export const useStore = defineStore("app", {
         this.workActivitySelectedProjectIds = this.workActivitySelectedProjectIds.filter((projectId) =>
           selectableIds.has(projectId),
         );
+        this.workActivityReportKey = JSON.stringify([
+          this.workActivitySelectedProjects.map((project) => project.path).sort(),
+          options.startDate,
+          options.endDate,
+        ]);
         const failedCount = report.repositories.filter((repository) => repository.state === "failed").length;
+        this.workActivityReportExpiresAt = failedCount > 0 ? 0 : Date.now() + 5 * 60 * 1000;
         if (failedCount > 0) {
           this.workActivityMessage = `有 ${failedCount} 个 Git 仓库未能完成活动统计。`;
         }
       } catch (error) {
         if (requestGeneration !== this.workActivityRequestGeneration) return;
-        this.workActivityReport = null;
+        this.workActivityReportExpiresAt = 0;
         this.workActivityMessage = error instanceof Error ? error.message : "读取 Git 活动记录失败。";
       } finally {
         if (requestGeneration === this.workActivityRequestGeneration) {
           this.workActivityLoading = false;
+          this.workActivityPendingKey = "";
         }
       }
     },
