@@ -531,18 +531,18 @@ onBeforeUnmount(() => {
       </Transition>
     </Teleport>
 
-    <section class="mb-3 grid gap-2 sm:grid-cols-3" :aria-busy="store.workActivityLoading">
-      <div class="rounded-lg border border-border-subtle bg-surface px-3 py-2 shadow-sm">
-        <div class="text-[10px] font-bold text-on-surface-variant">{{ t.activity.totalCommits }}</div>
-        <div class="mt-1 text-xl font-bold tabular-nums text-on-surface">{{ totalCommits }}</div>
+    <section class="mb-2 grid gap-1.5 sm:grid-cols-3" :aria-busy="store.workActivityLoading">
+      <div class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+        <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.totalCommits }}</div>
+        <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ totalCommits }}</div>
       </div>
-      <div class="rounded-lg border border-border-subtle bg-surface px-3 py-2 shadow-sm">
-        <div class="text-[10px] font-bold text-on-surface-variant">{{ t.activity.activeDays }}</div>
-        <div class="mt-1 text-xl font-bold tabular-nums text-on-surface">{{ activeDays }}</div>
+      <div class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+        <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.activeDays }}</div>
+        <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ activeDays }}</div>
       </div>
-      <div class="rounded-lg border border-border-subtle bg-surface px-3 py-2 shadow-sm">
-        <div class="text-[10px] font-bold text-on-surface-variant">{{ t.activity.repositories }}</div>
-        <div class="mt-1 text-xl font-bold tabular-nums text-on-surface">{{ readyRepositories.length }}</div>
+      <div class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+        <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.repositories }}</div>
+        <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ readyRepositories.length }}</div>
       </div>
     </section>
 
