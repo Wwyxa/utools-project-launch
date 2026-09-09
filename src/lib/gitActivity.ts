@@ -66,3 +66,12 @@ export const gitActivityHeatmapCells = (
 
   return cells;
 };
+
+export const gitActivityHeatmapMonthStarts = (cells: readonly GitActivityHeatmapCell[]): (string | null)[] => {
+  const monthStarts: (string | null)[] = [];
+  for (let index = 0; index < cells.length; index += 7) {
+    const firstDay = cells[index];
+    monthStarts.push(firstDay?.inRange && Number(firstDay.date.slice(8)) <= 7 ? firstDay.date : null);
+  }
+  return monthStarts;
+};

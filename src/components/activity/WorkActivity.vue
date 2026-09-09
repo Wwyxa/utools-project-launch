@@ -14,7 +14,12 @@ import {
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import { calendarYearGitActivityRange, gitActivityHeatmapCells, rollingGitActivityRange } from "../../lib/gitActivity";
+import {
+  calendarYearGitActivityRange,
+  gitActivityHeatmapCells,
+  gitActivityHeatmapMonthStarts,
+  rollingGitActivityRange,
+} from "../../lib/gitActivity";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import type { ProjectGitActivityDayReport } from "../../types";
@@ -105,15 +110,12 @@ const heatmapWeeks = computed(() => {
   return weeks;
 });
 const monthLabels = computed(() =>
-  heatmapCells.value.flatMap((cell, index) => {
-    if (!cell.inRange || cell.date.slice(8) !== "01") return [];
-    return [
-      {
-        date: cell.date,
-        left: Math.floor(index / 7) * 16,
-        label: new Intl.DateTimeFormat(store.locale, { month: "short" }).format(new Date(`${cell.date}T12:00:00`)),
-      },
-    ];
+  gitActivityHeatmapMonthStarts(heatmapCells.value).map((date) => {
+    if (!date) return null;
+    return {
+      date,
+      label: new Intl.DateTimeFormat(store.locale, { month: "short" }).format(new Date(`${date}T12:00:00`)),
+    };
   }),
 );
 const weekdayLabels = computed(() =>
@@ -640,17 +642,13 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <div>
-            <div
-              class="relative mb-1 h-4 text-[9px] font-medium text-on-surface-variant"
-              :style="{ width: `${Math.max(0, heatmapWeeks.length * 16 - 4)}px` }"
-            >
+            <div class="mb-1 flex h-4 gap-1 text-[9px] font-medium text-on-surface-variant">
               <span
-                v-for="month in monthLabels"
-                :key="month.date"
-                class="absolute top-0 whitespace-nowrap"
-                :style="{ left: `${month.left}px` }"
+                v-for="(month, weekIndex) in monthLabels"
+                :key="month?.date || weekIndex"
+                class="w-3 shrink-0 whitespace-nowrap"
               >
-                {{ month.label }}
+                {{ month?.label }}
               </span>
             </div>
             <div class="flex gap-1" role="grid" :aria-label="t.activity.heatmap">
