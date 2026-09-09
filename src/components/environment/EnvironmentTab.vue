@@ -214,20 +214,20 @@ onBeforeUnmount(() => stopColumnResize());
 
 <template>
   <div v-overlay-scrollbar class="themed-scrollbar h-full overflow-y-auto p-2">
-    <header class="mb-3 flex flex-wrap items-center justify-between gap-2">
-      <div class="flex min-w-0 items-center gap-3">
+    <header class="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex min-w-0 items-center gap-2">
         <button
           type="button"
           @click="store.setActiveTab('projects')"
-          class="rounded-lg border border-border-subtle bg-surface p-2 text-on-surface-variant shadow-sm transition-all active:scale-90 hover:bg-surface-variant"
+          class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all active:scale-90 hover:bg-surface-variant"
           :title="t.common.back"
           :aria-label="t.common.back"
         >
-          <ArrowLeft :size="20" />
+          <ArrowLeft :size="18" />
         </button>
         <div class="min-w-0">
-          <h2 class="truncate text-xl font-bold tracking-tight text-on-surface">{{ t.environment.title }}</h2>
-          <p class="truncate text-xs text-on-surface-variant">{{ t.environment.subtitle }}</p>
+          <h2 class="truncate text-base font-bold leading-tight text-on-surface">{{ t.environment.title }}</h2>
+          <p class="mt-0.5 truncate text-xs text-on-surface-variant">{{ t.environment.subtitle }}</p>
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-2">
@@ -235,7 +235,7 @@ onBeforeUnmount(() => stopColumnResize());
           type="button"
           role="switch"
           :aria-checked="showVersionOnly"
-          class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
           :title="t.environment.extractVersion"
           :aria-label="t.environment.extractVersion"
           @click="toggleVersionOnly"
@@ -264,7 +264,7 @@ onBeforeUnmount(() => stopColumnResize());
         <button
           type="button"
           @click="store.setActiveTab('settings')"
-          class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
           :title="t.environment.configure"
           :aria-label="t.environment.configure"
         >
@@ -274,7 +274,7 @@ onBeforeUnmount(() => stopColumnResize());
         <button
           type="button"
           @click="store.refreshEnvironmentTools()"
-          class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
           :disabled="store.environmentRefreshing || enabledDefinitions.length === 0"
           :title="t.common.refresh"
           :aria-label="t.common.refresh"

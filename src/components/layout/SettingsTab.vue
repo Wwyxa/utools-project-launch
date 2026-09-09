@@ -804,17 +804,17 @@ watch(
     class="themed-scrollbar h-full w-full overflow-y-auto p-2"
     @click="isAiModelMenuOpen = false"
   >
-    <header class="mb-3 flex items-center gap-3">
+    <header class="mb-2 flex items-center gap-2">
       <button
         type="button"
         @click="store.setActiveTab('projects')"
-        class="rounded-lg border border-border-subtle bg-surface p-2 text-on-surface-variant shadow-sm transition-all active:scale-90 hover:bg-surface-variant"
+        class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all active:scale-90 hover:bg-surface-variant"
         :title="t.common.back"
         :aria-label="t.common.back"
       >
-        <ArrowLeft :size="20" />
+        <ArrowLeft :size="18" />
       </button>
-      <h2 class="text-xl font-bold tracking-tight text-on-surface">{{ t.sidebar.settings }}</h2>
+      <h2 class="text-base font-bold leading-tight text-on-surface">{{ t.sidebar.settings }}</h2>
     </header>
 
     <div class="grid gap-2.5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">

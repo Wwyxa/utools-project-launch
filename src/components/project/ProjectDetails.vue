@@ -7,6 +7,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GripHorizontal,
+  Link2,
   Star,
   Copy,
   Pencil,
@@ -117,6 +118,7 @@ const statusLabel = computed(() => {
   return t.value.common.stopped;
 });
 const isUnavailable = computed(() => props.project.pathExists === false);
+const quickLink = computed(() => props.project.quickLink?.trim() || "");
 const gitSnapshot = computed(() => store.gitSnapshotForRepository(props.project.id));
 const hasGitSnapshot = computed(() => Boolean(gitSnapshot.value?.repositoryPath));
 const latestCommit = computed(() => gitSnapshot.value?.commits?.[0]);
@@ -161,6 +163,7 @@ const refreshButtonClass = computed(() =>
 );
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
+const handleOpenQuickLink = () => store.openProjectQuickLink(props.project.id);
 const handleOpenTerminal = () => store.openProjectInTerminal(props.project.id);
 const handleOpenEditor = (applicationId?: string) => store.openProjectInEditor(props.project.id, applicationId);
 const handleEdit = () => store.openEditProjectForm(props.project.id);
@@ -594,6 +597,16 @@ watch(
           :aria-label="refreshButtonLabel"
         >
           <RefreshCw :size="16" :class="isRefreshingProject && 'animate-spin'" />
+        </button>
+        <button
+          v-if="quickLink"
+          type="button"
+          @click="handleOpenQuickLink"
+          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm"
+          :title="t.projectActions.openQuickLink"
+          :aria-label="t.projectActions.openQuickLink"
+        >
+          <Link2 :size="16" class="group-hover:text-primary" />
         </button>
         <button
           type="button"
