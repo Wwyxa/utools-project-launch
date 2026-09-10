@@ -50,11 +50,17 @@ const selectedAuthorId = ref(currentAuthorSelection);
 const selectedDate = ref("");
 const projectScopeOpen = ref(false);
 const authorPickerOpen = ref(false);
+const refScopePickerOpen = ref(false);
+const timeZonePickerOpen = ref(false);
 const criteriaOpen = ref(false);
 const projectScopeTriggerRef = ref<HTMLElement | null>(null);
 const authorPickerTriggerRef = ref<HTMLElement | null>(null);
+const refScopePickerTriggerRef = ref<HTMLElement | null>(null);
+const timeZonePickerTriggerRef = ref<HTMLElement | null>(null);
 const projectScopeMenuPosition = ref({ right: 8, top: 8 });
 const authorPickerMenuPosition = ref({ right: 8, top: 8 });
+const refScopePickerMenuPosition = ref({ right: 8, top: 8 });
+const timeZonePickerMenuPosition = ref({ right: 8, top: 8 });
 const dayDetails = ref<ProjectGitActivityDayReport | null>(null);
 const dayDetailsLoading = ref(false);
 const dayDetailsMessage = ref("");
@@ -150,8 +156,9 @@ const scopeLabel = computed(() => t.value.activity[`${activityPreferences.value.
 const timeZoneLabel = computed(() =>
   activityPreferences.value.timeZone === "local" ? t.value.activity.localTimeZone : activityPreferences.value.timeZone,
 );
-const criteriaSummary = computed(
-  () => `${scopeLabel.value} · ${t.value.activity.authorTime} · ${timeZoneLabel.value}`,
+const criteriaSummary = computed(() => `${scopeLabel.value} · ${timeZoneLabel.value}`);
+const refScopeOptions = computed(
+  () => ["current", "default", "all"] as const satisfies readonly WorkActivityPreferences["refScope"][],
 );
 const timeZoneOptions = computed(() => [
   ...new Set([
@@ -194,7 +201,11 @@ const setActivityPreference = <Key extends keyof WorkActivityPreferences>(
   value: WorkActivityPreferences[Key],
 ) => store.setWorkActivityPreferences({ [key]: value } as Pick<WorkActivityPreferences, Key>);
 
-const splitAliases = (value: string) => value.split(/[\n,;]/).map((item) => item.trim()).filter(Boolean);
+const splitAliases = (value: string) =>
+  value
+    .split(/[\n,;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 
 const updateIdentity = (index: number, field: "name" | "emails" | "names", value: string) => {
   const identities = activityPreferences.value.identities.map((identity) => ({ ...identity }));
@@ -311,6 +322,8 @@ const positionDropdown = (trigger: HTMLElement, target: { value: { right: number
 
 const toggleProjectScope = () => {
   authorPickerOpen.value = false;
+  refScopePickerOpen.value = false;
+  timeZonePickerOpen.value = false;
   projectScopeOpen.value = !projectScopeOpen.value;
   if (projectScopeOpen.value && projectScopeTriggerRef.value) {
     positionDropdown(projectScopeTriggerRef.value, projectScopeMenuPosition);
@@ -319,10 +332,42 @@ const toggleProjectScope = () => {
 
 const toggleAuthorPicker = () => {
   projectScopeOpen.value = false;
+  refScopePickerOpen.value = false;
+  timeZonePickerOpen.value = false;
   authorPickerOpen.value = !authorPickerOpen.value;
   if (authorPickerOpen.value && authorPickerTriggerRef.value) {
     positionDropdown(authorPickerTriggerRef.value, authorPickerMenuPosition);
   }
+};
+
+const toggleRefScopePicker = () => {
+  projectScopeOpen.value = false;
+  authorPickerOpen.value = false;
+  timeZonePickerOpen.value = false;
+  refScopePickerOpen.value = !refScopePickerOpen.value;
+  if (refScopePickerOpen.value && refScopePickerTriggerRef.value) {
+    positionDropdown(refScopePickerTriggerRef.value, refScopePickerMenuPosition);
+  }
+};
+
+const toggleTimeZonePicker = () => {
+  projectScopeOpen.value = false;
+  authorPickerOpen.value = false;
+  refScopePickerOpen.value = false;
+  timeZonePickerOpen.value = !timeZonePickerOpen.value;
+  if (timeZonePickerOpen.value && timeZonePickerTriggerRef.value) {
+    positionDropdown(timeZonePickerTriggerRef.value, timeZonePickerMenuPosition);
+  }
+};
+
+const selectRefScope = (refScope: WorkActivityPreferences["refScope"]) => {
+  setActivityPreference("refScope", refScope);
+  refScopePickerOpen.value = false;
+};
+
+const selectTimeZone = (timeZone: string) => {
+  setActivityPreference("timeZone", timeZone);
+  timeZonePickerOpen.value = false;
 };
 
 const setProjectSelected = (projectId: string, selected: boolean) => {
@@ -373,6 +418,12 @@ const handleWindowPointerDown = (event: PointerEvent) => {
   if (!authorPickerTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-author-menu]")) {
     authorPickerOpen.value = false;
   }
+  if (!refScopePickerTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-ref-scope-menu]")) {
+    refScopePickerOpen.value = false;
+  }
+  if (!timeZonePickerTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-time-zone-menu]")) {
+    timeZonePickerOpen.value = false;
+  }
 };
 
 const handleViewportChange = () => {
@@ -382,9 +433,25 @@ const handleViewportChange = () => {
   if (authorPickerOpen.value && authorPickerTriggerRef.value) {
     positionDropdown(authorPickerTriggerRef.value, authorPickerMenuPosition);
   }
+  if (refScopePickerOpen.value && refScopePickerTriggerRef.value) {
+    positionDropdown(refScopePickerTriggerRef.value, refScopePickerMenuPosition);
+  }
+  if (timeZonePickerOpen.value && timeZonePickerTriggerRef.value) {
+    positionDropdown(timeZonePickerTriggerRef.value, timeZonePickerMenuPosition);
+  }
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (timeZonePickerOpen.value) {
+    timeZonePickerOpen.value = false;
+    event.detail.handle();
+    return;
+  }
+  if (refScopePickerOpen.value) {
+    refScopePickerOpen.value = false;
+    event.detail.handle();
+    return;
+  }
   if (authorPickerOpen.value) {
     authorPickerOpen.value = false;
     event.detail.handle();
@@ -560,36 +627,42 @@ onBeforeUnmount(() => {
       >
         <span class="truncate">{{ criteriaSummary }}</span>
         <span v-if="excludedCommits" class="shrink-0 text-status-warning">
-          {{ t.activity.excludedCommits.replace('{count}', String(excludedCommits)) }}
+          {{ t.activity.excludedCommits.replace("{count}", String(excludedCommits)) }}
         </span>
       </button>
       <div v-if="criteriaOpen" class="mt-3 grid gap-3 border-t border-border-subtle pt-3 lg:grid-cols-2">
-        <div class="grid gap-2">
-          <label class="grid gap-1">
-            <span class="font-bold text-on-surface">{{ t.activity.refScope }}</span>
-            <select
-              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
-              :value="activityPreferences.refScope"
-              @change="setActivityPreference('refScope', ($event.target as HTMLSelectElement).value as WorkActivityPreferences['refScope'])"
+        <div class="grid gap-2 sm:grid-cols-2">
+          <div class="grid gap-1">
+            <span id="work-activity-ref-scope-label" class="font-bold text-on-surface">{{ t.activity.refScope }}</span>
+            <button
+              ref="refScopePickerTriggerRef"
+              type="button"
+              class="flex h-8 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-variant"
+              aria-haspopup="menu"
+              aria-labelledby="work-activity-ref-scope-label"
+              :aria-expanded="refScopePickerOpen"
+              @click="toggleRefScopePicker"
             >
-              <option value="current">{{ t.activity.currentRefScope }}</option>
-              <option value="default">{{ t.activity.defaultRefScope }}</option>
-              <option value="all">{{ t.activity.allRefScope }}</option>
-            </select>
-          </label>
-          <label class="grid gap-1">
-            <span class="font-bold text-on-surface">{{ t.activity.timeZone }}</span>
-            <select
-              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
-              :value="activityPreferences.timeZone"
-              @change="setActivityPreference('timeZone', ($event.target as HTMLSelectElement).value)"
+              <span class="truncate">{{ scopeLabel }}</span>
+              <ChevronDown :size="15" class="shrink-0" :class="refScopePickerOpen && 'rotate-180'" />
+            </button>
+          </div>
+          <div class="grid gap-1">
+            <span id="work-activity-time-zone-label" class="font-bold text-on-surface">{{ t.activity.timeZone }}</span>
+            <button
+              ref="timeZonePickerTriggerRef"
+              type="button"
+              class="flex h-8 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-variant"
+              aria-haspopup="menu"
+              aria-labelledby="work-activity-time-zone-label"
+              :aria-expanded="timeZonePickerOpen"
+              @click="toggleTimeZonePicker"
             >
-              <option v-for="timeZone in timeZoneOptions" :key="timeZone" :value="timeZone">
-                {{ timeZone === 'local' ? t.activity.localTimeZone : timeZone }}
-              </option>
-            </select>
-          </label>
-          <p>{{ t.activity.timeBasisHint }}</p>
+              <span class="truncate">{{ timeZoneLabel }}</span>
+              <ChevronDown :size="15" class="shrink-0" :class="timeZonePickerOpen && 'rotate-180'" />
+            </button>
+          </div>
+          <p class="sm:col-span-2">{{ t.activity.timeBasisHint }}</p>
         </div>
         <div class="grid content-start gap-2">
           <label class="flex items-center gap-2">
@@ -633,18 +706,108 @@ onBeforeUnmount(() => {
               <Plus :size="13" /> {{ t.activity.addIdentity }}
             </button>
           </div>
-          <div v-for="(identity, index) in activityPreferences.identities" :key="identity.id" class="grid gap-1 sm:grid-cols-[10rem_1fr_1fr_2rem]">
-            <input class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface" :value="identity.name" @change="updateIdentity(index, 'name', ($event.target as HTMLInputElement).value)" />
-            <input class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface" :placeholder="t.activity.identityEmails" :value="identity.emails.join(', ')" @change="updateIdentity(index, 'emails', ($event.target as HTMLInputElement).value)" />
-            <input class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface" :placeholder="t.activity.identityNames" :value="identity.names.join(', ')" @change="updateIdentity(index, 'names', ($event.target as HTMLInputElement).value)" />
-            <button type="button" class="flex h-8 w-8 items-center justify-center text-status-error hover:bg-status-error/10" :aria-label="t.common.delete" @click="removeIdentity(index)"><Trash2 :size="14" /></button>
+          <div
+            v-for="(identity, index) in activityPreferences.identities"
+            :key="identity.id"
+            class="grid gap-1 sm:grid-cols-[10rem_1fr_1fr_2rem]"
+          >
+            <input
+              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
+              :value="identity.name"
+              @change="updateIdentity(index, 'name', ($event.target as HTMLInputElement).value)"
+            />
+            <input
+              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
+              :placeholder="t.activity.identityEmails"
+              :value="identity.emails.join(', ')"
+              @change="updateIdentity(index, 'emails', ($event.target as HTMLInputElement).value)"
+            />
+            <input
+              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
+              :placeholder="t.activity.identityNames"
+              :value="identity.names.join(', ')"
+              @change="updateIdentity(index, 'names', ($event.target as HTMLInputElement).value)"
+            />
+            <button
+              type="button"
+              class="flex h-8 w-8 items-center justify-center text-status-error hover:bg-status-error/10"
+              :aria-label="t.common.delete"
+              @click="removeIdentity(index)"
+            >
+              <Trash2 :size="14" />
+            </button>
           </div>
         </div>
-        <p v-if="readyRepositories.some((repository) => repository.scopeMessage)" class="text-status-warning lg:col-span-2">
+        <p
+          v-if="readyRepositories.some((repository) => repository.scopeMessage)"
+          class="text-status-warning lg:col-span-2"
+        >
           {{ readyRepositories.find((repository) => repository.scopeMessage)?.scopeMessage }}
         </p>
       </div>
     </section>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="refScopePickerOpen"
+          data-work-activity-ref-scope-menu
+          class="fixed z-50 w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface p-1 shadow-xl"
+          :style="{ right: `${refScopePickerMenuPosition.right}px`, top: `${refScopePickerMenuPosition.top}px` }"
+        >
+          <button
+            v-for="refScope in refScopeOptions"
+            :key="refScope"
+            type="button"
+            :class="
+              cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                activityPreferences.refScope === refScope
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-on-surface-variant hover:bg-surface-variant',
+              )
+            "
+            @click="selectRefScope(refScope)"
+          >
+            <Check v-if="activityPreferences.refScope === refScope" :size="14" class="shrink-0" />
+            <span v-else class="w-3.5 shrink-0" />
+            <span class="font-semibold">{{ t.activity[`${refScope}RefScope`] }}</span>
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="timeZonePickerOpen"
+          data-work-activity-time-zone-menu
+          class="fixed z-50 w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface p-1 shadow-xl"
+          :style="{ right: `${timeZonePickerMenuPosition.right}px`, top: `${timeZonePickerMenuPosition.top}px` }"
+        >
+          <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto">
+            <button
+              v-for="timeZone in timeZoneOptions"
+              :key="timeZone"
+              type="button"
+              :class="
+                cn(
+                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                  activityPreferences.timeZone === timeZone
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-on-surface-variant hover:bg-surface-variant',
+                )
+              "
+              @click="selectTimeZone(timeZone)"
+            >
+              <Check v-if="activityPreferences.timeZone === timeZone" :size="14" class="shrink-0" />
+              <span v-else class="w-3.5 shrink-0" />
+              <span class="font-semibold">{{ timeZone === "local" ? t.activity.localTimeZone : timeZone }}</span>
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <Transition name="fade">
@@ -697,17 +860,25 @@ onBeforeUnmount(() => {
     </Teleport>
 
     <section class="mb-2 grid gap-1.5 sm:grid-cols-3" :aria-busy="store.workActivityLoading">
-      <div class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+      <div
+        class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm"
+      >
         <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.totalCommits }}</div>
         <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ totalCommits }}</div>
       </div>
-      <div class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+      <div
+        class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm"
+      >
         <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.activeDays }}</div>
         <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ activeDays }}</div>
       </div>
-      <div class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+      <div
+        class="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm"
+      >
         <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.repositories }}</div>
-        <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ readyRepositories.length }}</div>
+        <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">
+          {{ readyRepositories.length }}
+        </div>
       </div>
     </section>
 
