@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calendarYearGitActivityRange,
+  gitActivityDateInTimeZone,
   gitActivityHeatmapCells,
   gitActivityHeatmapMonthStarts,
   rollingGitActivityRange,
@@ -11,6 +12,16 @@ describe("Git activity heatmap helpers", () => {
     expect(rollingGitActivityRange("2026-09-09")).toEqual({
       startDate: "2025-09-10",
       endDate: "2026-09-09",
+    });
+  });
+
+  it("uses the selected time zone for rolling-range day boundaries", () => {
+    const instant = new Date("2026-09-09T10:30:00.000Z");
+    expect(gitActivityDateInTimeZone(instant, "UTC")).toBe("2026-09-09");
+    expect(gitActivityDateInTimeZone(instant, "Pacific/Kiritimati")).toBe("2026-09-10");
+    expect(rollingGitActivityRange(gitActivityDateInTimeZone(instant, "Pacific/Kiritimati"))).toEqual({
+      startDate: "2025-09-11",
+      endDate: "2026-09-10",
     });
   });
 

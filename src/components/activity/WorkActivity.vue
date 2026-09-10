@@ -9,20 +9,24 @@ import {
   ChevronRight,
   FolderGit2,
   GitCommitHorizontal,
+  Plus,
   RefreshCw,
+  Settings2,
+  Trash2,
   Users,
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import {
   calendarYearGitActivityRange,
+  gitActivityDateInTimeZone,
   gitActivityHeatmapCells,
   gitActivityHeatmapMonthStarts,
   rollingGitActivityRange,
 } from "../../lib/gitActivity";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
-import type { ProjectGitActivityDayReport } from "../../types";
+import type { ProjectGitActivityDayReport, WorkActivityPreferences } from "../../types";
 
 type ActivityRangeMode = "rolling" | "year";
 const currentAuthorSelection = "current";
@@ -30,21 +34,23 @@ const currentAuthorSelection = "current";
 const store = useStore();
 const t = useI18n();
 const rangeMode = computed({
-  get: () => store.workActivityRangeMode,
+  get: () => store.uiPreferences.workActivity.rangeMode,
   set: (mode: ActivityRangeMode) => {
-    store.workActivityRangeMode = mode;
+    store.setWorkActivityPreferences({ rangeMode: mode });
   },
 });
 const selectedYear = computed({
-  get: () => store.workActivitySelectedYear,
+  get: () => store.uiPreferences.workActivity.selectedYear,
   set: (year: number) => {
-    store.workActivitySelectedYear = year;
+    store.setWorkActivityPreferences({ selectedYear: year });
   },
 });
+const activityPreferences = computed(() => store.uiPreferences.workActivity);
 const selectedAuthorId = ref(currentAuthorSelection);
 const selectedDate = ref("");
 const projectScopeOpen = ref(false);
 const authorPickerOpen = ref(false);
+const criteriaOpen = ref(false);
 const projectScopeTriggerRef = ref<HTMLElement | null>(null);
 const authorPickerTriggerRef = ref<HTMLElement | null>(null);
 const projectScopeMenuPosition = ref({ right: 8, top: 8 });
@@ -56,7 +62,9 @@ let dayDetailsRequestGeneration = 0;
 let stopAppEscapeListener = () => {};
 
 const activityRange = computed(() =>
-  rangeMode.value === "year" ? calendarYearGitActivityRange(selectedYear.value) : rollingGitActivityRange(),
+  rangeMode.value === "year"
+    ? calendarYearGitActivityRange(selectedYear.value)
+    : rollingGitActivityRange(gitActivityDateInTimeZone(new Date(), activityPreferences.value.timeZone)),
 );
 const readyRepositories = computed(() =>
   (store.workActivityReport?.repositories || []).filter((repository) => repository.state === "ready"),
@@ -132,6 +140,30 @@ const rangeLabel = computed(
 );
 const dayCommits = computed(() => dayDetails.value?.commits || []);
 const hasMoreDayCommits = computed(() => dayDetails.value?.hasMore === true);
+const excludedCommits = computed(() =>
+  readyRepositories.value.reduce(
+    (total, repository) => total + (repository.excludedMerges || 0) + (repository.excludedBots || 0),
+    0,
+  ),
+);
+const scopeLabel = computed(() => t.value.activity[`${activityPreferences.value.refScope}RefScope`]);
+const timeZoneLabel = computed(() =>
+  activityPreferences.value.timeZone === "local" ? t.value.activity.localTimeZone : activityPreferences.value.timeZone,
+);
+const criteriaSummary = computed(
+  () => `${scopeLabel.value} · ${t.value.activity.authorTime} · ${timeZoneLabel.value}`,
+);
+const timeZoneOptions = computed(() => [
+  ...new Set([
+    activityPreferences.value.timeZone,
+    "local",
+    "UTC",
+    "Asia/Shanghai",
+    "Asia/Tokyo",
+    "Europe/London",
+    "America/New_York",
+  ]),
+]);
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat(store.locale, { year: "numeric", month: "short", day: "numeric" }).format(
@@ -154,7 +186,36 @@ const formatCommitTime = (value: string) =>
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: activityPreferences.value.timeZone === "local" ? undefined : activityPreferences.value.timeZone,
   }).format(new Date(value));
+
+const setActivityPreference = <Key extends keyof WorkActivityPreferences>(
+  key: Key,
+  value: WorkActivityPreferences[Key],
+) => store.setWorkActivityPreferences({ [key]: value } as Pick<WorkActivityPreferences, Key>);
+
+const splitAliases = (value: string) => value.split(/[\n,;]/).map((item) => item.trim()).filter(Boolean);
+
+const updateIdentity = (index: number, field: "name" | "emails" | "names", value: string) => {
+  const identities = activityPreferences.value.identities.map((identity) => ({ ...identity }));
+  const identity = identities[index];
+  if (!identity) return;
+  if (field === "name") identity.name = value.trim() || identity.name;
+  else identity[field] = splitAliases(value);
+  setActivityPreference("identities", identities);
+};
+
+const addIdentity = () =>
+  setActivityPreference("identities", [
+    ...activityPreferences.value.identities,
+    { id: `identity-${Date.now()}`, name: t.value.activity.newIdentity, emails: [], names: [] },
+  ]);
+
+const removeIdentity = (index: number) =>
+  setActivityPreference(
+    "identities",
+    activityPreferences.value.identities.filter((_, identityIndex) => identityIndex !== index),
+  );
 
 const resetDayDetails = () => {
   dayDetailsRequestGeneration += 1;
@@ -335,7 +396,7 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
 };
 
 watch(
-  () => `${rangeMode.value}:${selectedYear.value}`,
+  () => JSON.stringify(activityPreferences.value),
   () => {
     selectedDate.value = "";
     selectedAuthorId.value = currentAuthorSelection;
@@ -348,7 +409,7 @@ watch(
   countsByDate,
   (counts) => {
     if (selectedDate.value && counts.has(selectedDate.value)) return;
-    selectedDate.value = [...counts.keys()].at(-1) || "";
+    selectedDate.value = [...counts.keys()].sort().at(-1) || "";
     void loadDayDetails();
   },
   { immediate: true },
@@ -466,6 +527,15 @@ onBeforeUnmount(() => {
           <RefreshCw :size="15" :class="store.workActivityLoading && 'animate-spin'" />
         </button>
         <button
+          type="button"
+          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          :aria-expanded="criteriaOpen"
+          @click="criteriaOpen = !criteriaOpen"
+        >
+          <Settings2 :size="14" />
+          <span>{{ t.activity.criteria }}</span>
+        </button>
+        <button
           ref="projectScopeTriggerRef"
           type="button"
           class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
@@ -480,6 +550,101 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </header>
+
+    <section class="mb-3 border-y border-border-subtle py-2 text-xs text-on-surface-variant">
+      <button
+        type="button"
+        class="flex w-full items-center justify-between gap-3 text-left"
+        :aria-expanded="criteriaOpen"
+        @click="criteriaOpen = !criteriaOpen"
+      >
+        <span class="truncate">{{ criteriaSummary }}</span>
+        <span v-if="excludedCommits" class="shrink-0 text-status-warning">
+          {{ t.activity.excludedCommits.replace('{count}', String(excludedCommits)) }}
+        </span>
+      </button>
+      <div v-if="criteriaOpen" class="mt-3 grid gap-3 border-t border-border-subtle pt-3 lg:grid-cols-2">
+        <div class="grid gap-2">
+          <label class="grid gap-1">
+            <span class="font-bold text-on-surface">{{ t.activity.refScope }}</span>
+            <select
+              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
+              :value="activityPreferences.refScope"
+              @change="setActivityPreference('refScope', ($event.target as HTMLSelectElement).value as WorkActivityPreferences['refScope'])"
+            >
+              <option value="current">{{ t.activity.currentRefScope }}</option>
+              <option value="default">{{ t.activity.defaultRefScope }}</option>
+              <option value="all">{{ t.activity.allRefScope }}</option>
+            </select>
+          </label>
+          <label class="grid gap-1">
+            <span class="font-bold text-on-surface">{{ t.activity.timeZone }}</span>
+            <select
+              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
+              :value="activityPreferences.timeZone"
+              @change="setActivityPreference('timeZone', ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="timeZone in timeZoneOptions" :key="timeZone" :value="timeZone">
+                {{ timeZone === 'local' ? t.activity.localTimeZone : timeZone }}
+              </option>
+            </select>
+          </label>
+          <p>{{ t.activity.timeBasisHint }}</p>
+        </div>
+        <div class="grid content-start gap-2">
+          <label class="flex items-center gap-2">
+            <input
+              type="checkbox"
+              class="accent-[var(--color-primary)]"
+              :checked="activityPreferences.hideMerges"
+              @change="setActivityPreference('hideMerges', ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="font-bold text-on-surface">{{ t.activity.hideMerges }}</span>
+          </label>
+          <label class="flex items-center gap-2">
+            <input
+              type="checkbox"
+              class="accent-[var(--color-primary)]"
+              :checked="activityPreferences.excludeBots"
+              @change="setActivityPreference('excludeBots', ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="font-bold text-on-surface">{{ t.activity.excludeBots }}</span>
+          </label>
+          <label v-if="activityPreferences.excludeBots" class="grid gap-1">
+            <span>{{ t.activity.botPatterns }}</span>
+            <input
+              class="h-8 rounded-md border border-border-subtle bg-surface px-2 font-mono text-on-surface"
+              :value="activityPreferences.botPatterns.join(', ')"
+              @change="setActivityPreference('botPatterns', splitAliases(($event.target as HTMLInputElement).value))"
+            />
+          </label>
+        </div>
+        <div class="grid gap-2 lg:col-span-2">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <div class="font-bold text-on-surface">{{ t.activity.identities }}</div>
+              <div>{{ t.activity.identityHint }}</div>
+            </div>
+            <button
+              type="button"
+              class="inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant"
+              @click="addIdentity"
+            >
+              <Plus :size="13" /> {{ t.activity.addIdentity }}
+            </button>
+          </div>
+          <div v-for="(identity, index) in activityPreferences.identities" :key="identity.id" class="grid gap-1 sm:grid-cols-[10rem_1fr_1fr_2rem]">
+            <input class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface" :value="identity.name" @change="updateIdentity(index, 'name', ($event.target as HTMLInputElement).value)" />
+            <input class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface" :placeholder="t.activity.identityEmails" :value="identity.emails.join(', ')" @change="updateIdentity(index, 'emails', ($event.target as HTMLInputElement).value)" />
+            <input class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface" :placeholder="t.activity.identityNames" :value="identity.names.join(', ')" @change="updateIdentity(index, 'names', ($event.target as HTMLInputElement).value)" />
+            <button type="button" class="flex h-8 w-8 items-center justify-center text-status-error hover:bg-status-error/10" :aria-label="t.common.delete" @click="removeIdentity(index)"><Trash2 :size="14" /></button>
+          </div>
+        </div>
+        <p v-if="readyRepositories.some((repository) => repository.scopeMessage)" class="text-status-warning lg:col-span-2">
+          {{ readyRepositories.find((repository) => repository.scopeMessage)?.scopeMessage }}
+        </p>
+      </div>
+    </section>
 
     <Teleport to="body">
       <Transition name="fade">

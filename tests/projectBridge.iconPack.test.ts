@@ -18,6 +18,16 @@ const defaultUiPreferences: UiPreferences = {
   projectDetails: { tabOrder: ["info", "scripts", "automation", "files", "git", "memo"], defaultTab: "scripts" },
   dashboard: { tinyCardActionTrigger: "hover" },
   coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
+  workActivity: {
+    rangeMode: "rolling",
+    selectedYear: new Date().getFullYear(),
+    refScope: "all",
+    timeZone: "local",
+    hideMerges: false,
+    excludeBots: false,
+    botPatterns: ["\\[bot\\]$", "(^|[+._-])bot@"],
+    identities: [],
+  },
 };
 
 const createManifest = (version: string): IconPackManifest => {

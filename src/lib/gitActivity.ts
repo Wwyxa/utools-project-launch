@@ -17,6 +17,22 @@ const localDate = (value: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+export const gitActivityDateInTimeZone = (value: Date, timeZone: string): string => {
+  if (timeZone === "local") return localDate(value);
+  try {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || "";
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  } catch {
+    return localDate(value);
+  }
+};
+
 const parseLocalDate = (value: string): Date | null => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T12:00:00`);

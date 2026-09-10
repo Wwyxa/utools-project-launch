@@ -162,6 +162,27 @@ export interface UiPreferences {
     projectDetailsTabReorder: number;
     projectDetailsTabDefault: number;
   };
+  workActivity: WorkActivityPreferences;
+}
+
+export type ProjectGitActivityRefScope = "current" | "default" | "all";
+
+export interface ProjectGitActivityIdentity {
+  id: string;
+  name: string;
+  emails: string[];
+  names: string[];
+}
+
+export interface WorkActivityPreferences {
+  rangeMode: "rolling" | "year";
+  selectedYear: number;
+  refScope: ProjectGitActivityRefScope;
+  timeZone: string;
+  hideMerges: boolean;
+  excludeBots: boolean;
+  botPatterns: string[];
+  identities: ProjectGitActivityIdentity[];
 }
 
 export interface ProjectLaunchServicePreferences {
@@ -836,7 +857,9 @@ export type ProjectGitReadResult<T> =
   | { ok: true; value: T }
   | { ok: false; value: T | null; failure: ProjectGitReadFailure };
 
-export interface ProjectGitActivityOptions {
+export type ProjectGitActivityCriteria = Omit<WorkActivityPreferences, "rangeMode" | "selectedYear">;
+
+export interface ProjectGitActivityOptions extends Partial<ProjectGitActivityCriteria> {
   startDate: string;
   endDate: string;
   force?: boolean;
@@ -865,17 +888,22 @@ export interface ProjectGitActivityRepository {
   activeDays: number;
   daily: ProjectGitActivityDay[];
   authors: ProjectGitActivityAuthor[];
+  resolvedRef?: string;
+  scopeMessage?: string;
+  excludedMerges?: number;
+  excludedBots?: number;
   message?: string;
 }
 
 export interface ProjectGitActivityReport {
   startDate: string;
   endDate: string;
+  criteria?: ProjectGitActivityCriteria;
   repositories: ProjectGitActivityRepository[];
   lastRefreshedAt: string;
 }
 
-export interface ProjectGitActivityDayOptions {
+export interface ProjectGitActivityDayOptions extends Partial<ProjectGitActivityCriteria> {
   date: string;
   authorId?: string;
   currentUserOnly?: boolean;
@@ -889,6 +917,8 @@ export interface ProjectGitActivityCommit {
   message: string;
   author: string;
   authorId: string;
+  rawAuthorName?: string;
+  rawAuthorEmail?: string;
   date: string;
   repositoryPath: string;
   projectPaths: string[];

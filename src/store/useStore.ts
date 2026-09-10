@@ -87,6 +87,7 @@ import type {
   ProjectGitStatusSnapshot,
   ProjectBridgeGitWorkingTreeSnapshot,
   ProjectGitWorkspaceSnapshot,
+  WorkActivityPreferences,
   ProjectFileListResult,
   ProjectFileMutationKind,
   ProjectFileMutationResult,
@@ -1663,8 +1664,6 @@ export const useStore = defineStore("app", {
     workActivityUnavailableProjectIds: [] as string[],
     workActivityReport: null as ProjectGitActivityReport | null,
     workActivityLoading: false,
-    workActivityRangeMode: "rolling" as "rolling" | "year",
-    workActivitySelectedYear: new Date().getFullYear(),
     workActivityReportKey: "",
     workActivityReportExpiresAt: 0,
     workActivityPendingKey: "",
@@ -3129,6 +3128,9 @@ export const useStore = defineStore("app", {
       if (JSON.stringify([...selectedIds].sort()) === JSON.stringify([...this.workActivitySelectedProjectIds].sort()))
         return;
       this.workActivitySelectedProjectIds = selectedIds;
+      this.invalidateWorkActivity();
+    },
+    invalidateWorkActivity() {
       this.workActivityReport = null;
       this.workActivityReportKey = "";
       this.workActivityReportExpiresAt = 0;
@@ -3138,12 +3140,24 @@ export const useStore = defineStore("app", {
       this.workActivityRequestGeneration += 1;
       this.workActivityDayRequestGeneration += 1;
     },
+    setWorkActivityPreferences(preferences: Partial<WorkActivityPreferences>) {
+      const nextPreferences = normalizeUiPreferences({
+        ...this.uiPreferences,
+        workActivity: { ...this.uiPreferences.workActivity, ...preferences },
+      });
+      if (JSON.stringify(nextPreferences.workActivity) === JSON.stringify(this.uiPreferences.workActivity)) return;
+      this.uiPreferences = nextPreferences;
+      bridge.saveUiPreferences(this.uiPreferences);
+      this.invalidateWorkActivity();
+    },
     async loadGitActivity(options: ProjectGitActivityOptions) {
       const selectedProjects = this.workActivitySelectedProjects;
+      const { rangeMode: _rangeMode, selectedYear: _selectedYear, ...criteria } = this.uiPreferences.workActivity;
+      const requestOptions = { ...criteria, ...options };
+      const { force: _force, ...cacheOptions } = requestOptions;
       const requestKey = JSON.stringify([
         selectedProjects.map((project) => project.path).sort(),
-        options.startDate,
-        options.endDate,
+        cacheOptions,
       ]);
       if (!options.force) {
         if (this.workActivityLoading && this.workActivityPendingKey === requestKey) return;
@@ -3161,6 +3175,14 @@ export const useStore = defineStore("app", {
         this.workActivityReport = {
           startDate: options.startDate,
           endDate: options.endDate,
+          criteria: {
+            refScope: requestOptions.refScope,
+            timeZone: requestOptions.timeZone,
+            hideMerges: requestOptions.hideMerges,
+            excludeBots: requestOptions.excludeBots,
+            botPatterns: requestOptions.botPatterns,
+            identities: requestOptions.identities,
+          },
           repositories: [],
           lastRefreshedAt: new Date().toISOString(),
         };
@@ -3172,7 +3194,7 @@ export const useStore = defineStore("app", {
       try {
         const report = await bridge.readGitActivity(
           selectedProjects.map((project) => project.path),
-          options,
+          requestOptions,
         );
         if (requestGeneration !== this.workActivityRequestGeneration) return;
 
@@ -3193,8 +3215,7 @@ export const useStore = defineStore("app", {
         );
         this.workActivityReportKey = JSON.stringify([
           this.workActivitySelectedProjects.map((project) => project.path).sort(),
-          options.startDate,
-          options.endDate,
+          cacheOptions,
         ]);
         const failedCount = report.repositories.filter((repository) => repository.state === "failed").length;
         this.workActivityReportExpiresAt = failedCount > 0 ? 0 : Date.now() + 5 * 60 * 1000;
@@ -3219,7 +3240,10 @@ export const useStore = defineStore("app", {
 
       const report = await bridge.readGitActivityDay(
         selectedProjects.map((project) => project.path),
-        options,
+        (() => {
+          const { rangeMode: _rangeMode, selectedYear: _selectedYear, ...criteria } = this.uiPreferences.workActivity;
+          return { ...criteria, ...options };
+        })(),
       );
       return requestGeneration === this.workActivityDayRequestGeneration ? report : null;
     },
@@ -3566,6 +3590,7 @@ export const useStore = defineStore("app", {
       project.status = deriveProjectStatus(project);
 
       if (existingProject && existingProject.path !== project.path) {
+        this.invalidateWorkActivity();
         this.workActivityUnavailableProjectIds = this.workActivityUnavailableProjectIds.filter(
           (unavailableProjectId) => unavailableProjectId !== projectId,
         );
@@ -3624,6 +3649,7 @@ export const useStore = defineStore("app", {
       this.workActivitySelectedProjectIds = this.workActivitySelectedProjectIds.filter(
         (selectedProjectId) => selectedProjectId !== projectId,
       );
+      this.invalidateWorkActivity();
       this.workActivityUnavailableProjectIds = this.workActivityUnavailableProjectIds.filter(
         (unavailableProjectId) => unavailableProjectId !== projectId,
       );

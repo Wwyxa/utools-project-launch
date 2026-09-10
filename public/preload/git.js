@@ -677,9 +677,23 @@ async function runGitWorkspaceWorkerPool(tasks) {
   await Promise.all(workers);
 }
 
-function formatGitActivityLocalDate(value) {
+function formatGitActivityDate(value, timeZone = "local") {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
+  if (timeZone !== "local") {
+    try {
+      const parts = new Intl.DateTimeFormat("en", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(date);
+      const part = (type) => parts.find((item) => item.type === type)?.value || "";
+      return `${part("year")}-${part("month")}-${part("day")}`;
+    } catch (error) {
+      return "";
+    }
+  }
   const year = String(date.getFullYear()).padStart(4, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -690,18 +704,93 @@ function normalizeGitActivityDate(value) {
   const candidate = String(value || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return "";
   const parsed = new Date(`${candidate}T12:00:00`);
-  return formatGitActivityLocalDate(parsed) === candidate ? candidate : "";
+  return formatGitActivityDate(parsed) === candidate ? candidate : "";
 }
 
 function resolveGitActivityRange(options = {}) {
-  const today = formatGitActivityLocalDate(new Date());
+  const today = formatGitActivityDate(new Date());
   const endDate = normalizeGitActivityDate(options.endDate) || today;
   const defaultStart = new Date(`${endDate}T12:00:00`);
   defaultStart.setDate(defaultStart.getDate() - 364);
   const requestedStart = normalizeGitActivityDate(options.startDate);
   const startDate =
-    requestedStart && requestedStart <= endDate ? requestedStart : formatGitActivityLocalDate(defaultStart);
+    requestedStart && requestedStart <= endDate ? requestedStart : formatGitActivityDate(defaultStart);
   return { startDate, endDate };
+}
+
+function normalizeGitActivityCriteria(options = {}) {
+  const timeZone = String(options.timeZone || "").trim();
+  let normalizedTimeZone = timeZone || "local";
+  if (normalizedTimeZone !== "local") {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: normalizedTimeZone }).format();
+    } catch (error) {
+      normalizedTimeZone = "local";
+    }
+  }
+  const identities = Array.isArray(options.identities)
+    ? options.identities
+        .filter((identity) => identity && typeof identity === "object")
+        .map((identity) => ({
+          id: String(identity.id || "").trim(),
+          name: String(identity.name || "").trim(),
+          emails: [...new Set((Array.isArray(identity.emails) ? identity.emails : []).map((email) => String(email).trim().toLocaleLowerCase()).filter((email) => email && !/\s/.test(email)))],
+          names: [...new Set((Array.isArray(identity.names) ? identity.names : []).map((name) => String(name).trim()).filter(Boolean))],
+        }))
+        .filter((identity) => identity.id && identity.name)
+        .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
+    : [];
+  return {
+    refScope: options.refScope === "current" || options.refScope === "default" ? options.refScope : "all",
+    timeZone: normalizedTimeZone,
+    hideMerges: options.hideMerges === true,
+    excludeBots: options.excludeBots === true,
+    botPatterns: Array.isArray(options.botPatterns)
+      ? [...new Set(options.botPatterns.map((pattern) => String(pattern).trim()).filter(Boolean))].slice(0, 20)
+      : ["\\[bot\\]$", "(^|[+._-])bot@"],
+    identities,
+  };
+}
+
+function gitActivityCriteriaKey(criteria) {
+  return JSON.stringify({
+    refScope: criteria.refScope,
+    timeZone: criteria.timeZone,
+    hideMerges: criteria.hideMerges,
+    excludeBots: criteria.excludeBots,
+    botPatterns: criteria.botPatterns,
+    identities: criteria.identities,
+  });
+}
+
+function createGitActivityIdentityMatcher(criteria) {
+  const byEmail = new Map();
+  const byName = new Map();
+  criteria.identities.forEach((identity) => {
+    identity.emails.forEach((email) => {
+      if (!byEmail.has(email)) byEmail.set(email, identity);
+    });
+    identity.names.forEach((name) => {
+      const key = name.toLocaleLowerCase();
+      if (!byName.has(key)) byName.set(key, identity);
+    });
+  });
+  return (authorName, authorEmail) => {
+    const email = String(authorEmail || "").trim().toLocaleLowerCase();
+    const identity = email ? byEmail.get(email) : byName.get(String(authorName || "").trim().toLocaleLowerCase());
+    return identity || null;
+  };
+}
+
+function createGitActivityBotMatcher(criteria) {
+  const patterns = criteria.botPatterns.map((pattern) => {
+    try {
+      return new RegExp(pattern, "i");
+    } catch (error) {
+      return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    }
+  });
+  return (commit) => patterns.some((pattern) => pattern.test(commit.rawAuthorName) || pattern.test(commit.rawAuthorEmail));
 }
 
 function normalizeGitActivityRepositoryKey(repositoryPath) {
@@ -717,22 +806,27 @@ function cloneGitActivityRepositoryData(data) {
   };
 }
 
-async function resolveGitActivityCurrentAuthorId(repositoryPath) {
+async function resolveGitActivityCurrentAuthorId(repositoryPath, criteria) {
   const emailResult = await runGitWorkspaceCommand(repositoryPath, ["config", "--get", "user.email"]);
   const email = String(emailResult.stdout || "")
     .trim()
     .toLocaleLowerCase();
-  if (emailResult.status === 0 && email && !/\s/.test(email)) return `email:${email}`;
+  if (emailResult.status === 0 && email && !/\s/.test(email)) {
+    const identity = createGitActivityIdentityMatcher(criteria)("", email);
+    return identity ? `identity:${identity.id}` : `email:${email}`;
+  }
 
   const nameResult = await runGitWorkspaceCommand(repositoryPath, ["config", "--get", "user.name"]);
   const name = String(nameResult.stdout || "")
     .trim()
     .toLocaleLowerCase();
-  return nameResult.status === 0 && name ? `name:${name}` : "";
+  if (nameResult.status !== 0 || !name) return "";
+  const identity = createGitActivityIdentityMatcher(criteria)(name, "");
+  return identity ? `identity:${identity.id}` : `name:${name}`;
 }
 
-function gitActivityDayCacheKey(repositoryPath, date) {
-  return `${normalizeGitActivityRepositoryKey(repositoryPath)}::${date}`;
+function gitActivityDayCacheKey(repositoryPath, date, contextKey) {
+  return `${normalizeGitActivityRepositoryKey(repositoryPath)}::${date}::${contextKey}`;
 }
 
 function compareGitActivityCommits(left, right) {
@@ -748,6 +842,8 @@ function cloneGitActivityCommitData(commit) {
     message: commit.message,
     author: commit.author,
     authorId: commit.authorId,
+    rawAuthorName: commit.rawAuthorName,
+    rawAuthorEmail: commit.rawAuthorEmail,
     date: commit.date,
   };
 }
@@ -761,15 +857,21 @@ function trimGitActivityDayCache() {
 }
 
 function clearGitActivityDayCacheForRepository(repositoryPath) {
-  const prefix = `${normalizeGitActivityRepositoryKey(repositoryPath)}::`;
+  const repositoryKey = normalizeGitActivityRepositoryKey(repositoryPath);
+  const prefix = `${repositoryKey}::`;
   for (const cacheKey of gitActivityDayCache.keys()) {
     if (cacheKey.startsWith(prefix)) gitActivityDayCache.delete(cacheKey);
   }
+  const version = (gitActivityDayCacheVersions.get(repositoryKey) || 0) + 1;
+  gitActivityDayCacheVersions.set(repositoryKey, version);
+  return version;
 }
 
-function rememberGitActivityDayCache(repositoryPath, date, commits) {
+function rememberGitActivityDayCache(repositoryPath, date, contextKey, commits, expectedVersion) {
   if (!Array.isArray(commits) || commits.length > gitActivityDayCacheRecordLimit) return;
-  const cacheKey = gitActivityDayCacheKey(repositoryPath, date);
+  const repositoryKey = normalizeGitActivityRepositoryKey(repositoryPath);
+  if (expectedVersion !== undefined && gitActivityDayCacheVersions.get(repositoryKey) !== expectedVersion) return;
+  const cacheKey = gitActivityDayCacheKey(repositoryPath, date, contextKey);
   gitActivityDayCache.delete(cacheKey);
   gitActivityDayCache.set(cacheKey, {
     expiresAt: Date.now() + gitActivityCacheTtlMs,
@@ -778,8 +880,8 @@ function rememberGitActivityDayCache(repositoryPath, date, commits) {
   trimGitActivityDayCache();
 }
 
-function readGitActivityDayCache(repositoryPath, date) {
-  const cacheKey = gitActivityDayCacheKey(repositoryPath, date);
+function readGitActivityDayCache(repositoryPath, date, contextKey) {
+  const cacheKey = gitActivityDayCacheKey(repositoryPath, date, contextKey);
   const cached = gitActivityDayCache.get(cacheKey);
   if (!cached || cached.expiresAt <= Date.now()) {
     gitActivityDayCache.delete(cacheKey);
@@ -792,6 +894,10 @@ function readGitActivityDayCache(repositoryPath, date) {
 
 function normalizeGitActivityAuthorId(value) {
   const candidate = String(value || "").trim();
+  if (candidate.startsWith("identity:")) {
+    const identityId = candidate.slice("identity:".length).trim();
+    return identityId ? `identity:${identityId}` : "";
+  }
   if (candidate.startsWith("email:")) {
     const email = candidate.slice("email:".length).trim().toLocaleLowerCase();
     return email && !/\s/.test(email) ? `email:${email}` : "";
@@ -810,10 +916,11 @@ function normalizeGitActivityDayPageOptions(options = {}) {
   const limit = Number.isFinite(requestedLimit)
     ? Math.min(gitActivityDayPageLimit, Math.max(1, Math.floor(requestedLimit)))
     : gitActivityDayPageLimit;
-  const skip = Number.isFinite(requestedSkip)
-    ? Math.min(gitActivityDayMaximumSkip, Math.max(0, Math.floor(requestedSkip)))
+  const skip = Number.isSafeInteger(requestedSkip) && requestedSkip > 0
+    ? Math.min(Number.MAX_SAFE_INTEGER - gitActivityDayPageLimit - 1, requestedSkip)
     : 0;
   return {
+    ...normalizeGitActivityCriteria(options),
     date,
     authorId: normalizeGitActivityAuthorId(options.authorId),
     currentUserOnly: options.currentUserOnly === true,
@@ -841,10 +948,10 @@ function retainGitActivityCommit(commits, candidate, capacity) {
   }
 }
 
-function parseGitActivityCommitRecord(record) {
+function parseGitActivityCommitRecord(record, identityMatcher) {
   const hashIndex = String(record || "").search(/[0-9a-f]{40,64}\x1f/i);
   if (hashIndex < 0) return null;
-  const [hash, authorDate, authorName, authorEmail, message] = String(record)
+  const [hash, authorDate, authorName, authorEmail, parents, message] = String(record)
     .slice(hashIndex)
     .split(gitCommitFieldSeparator);
   if (!hash || !authorDate || !Number.isFinite(Date.parse(authorDate))) return null;
@@ -853,11 +960,15 @@ function parseGitActivityCommitRecord(record) {
   const email = String(authorEmail || "")
     .trim()
     .toLocaleLowerCase();
+  const identity = identityMatcher(author, email);
   return {
     hash,
     message: String(message || "").trim(),
-    author,
-    authorId: email ? `email:${email}` : `name:${author.toLocaleLowerCase()}`,
+    author: identity?.name || author,
+    authorId: identity ? `identity:${identity.id}` : email ? `email:${email}` : `name:${author.toLocaleLowerCase()}`,
+    rawAuthorName: author,
+    rawAuthorEmail: email,
+    isMerge: String(parents || "").trim().split(/\s+/).filter(Boolean).length > 1,
     date: authorDate,
   };
 }
@@ -895,13 +1006,74 @@ function createGitActivityRepositoryFailure(projectPath, result) {
 }
 
 async function resolveGitActivityRepository(projectPath) {
-  const result = await runGitWorkspaceCommand(projectPath, ["rev-parse", "--show-toplevel"], {
-    timeoutMs: gitActivityReadTimeoutMs,
-  });
+  const [result, commonDirResult] = await Promise.all([
+    runGitWorkspaceCommand(projectPath, ["rev-parse", "--show-toplevel"], { timeoutMs: gitActivityReadTimeoutMs }),
+    runGitWorkspaceCommand(projectPath, ["rev-parse", "--git-common-dir"], { timeoutMs: gitActivityReadTimeoutMs }),
+  ]);
   if (result.status !== 0 || !result.stdout.trim()) {
     return { failure: createGitActivityRepositoryFailure(projectPath, result) };
   }
-  return { repositoryPath: path.resolve(result.stdout.trim()) };
+  const repositoryPath = path.resolve(result.stdout.trim());
+  const commonDir = commonDirResult.status === 0 && commonDirResult.stdout.trim()
+    ? path.resolve(projectPath, commonDirResult.stdout.trim())
+    : repositoryPath;
+  return { repositoryPath, repositoryKey: normalizeGitActivityRepositoryKey(commonDir) };
+}
+
+async function resolveGitActivityRef(repositoryPaths, refScope) {
+  const repositoryPath = repositoryPaths[0];
+  if (refScope === "all") {
+    const fingerprintResult = await runGitWorkspaceCommand(repositoryPath, [
+      "for-each-ref",
+      "--format=%(refname)%09%(objectname)",
+      "refs/heads",
+      "refs/remotes",
+      "refs/tags",
+    ]);
+    return {
+      args: ["--exclude=refs/stash", "--all"],
+      resolvedRef: "--all",
+      fingerprint: fingerprintResult.stdout.trim(),
+      scopeMessage: "",
+    };
+  }
+
+  if (refScope === "current") {
+    const headResults = await Promise.all(
+      repositoryPaths.map((worktreePath) => runGitWorkspaceCommand(worktreePath, ["rev-parse", "--verify", "HEAD"])),
+    );
+    const heads = [...new Set(headResults.filter((result) => result.status === 0).map((result) => result.stdout.trim()).filter(Boolean))];
+    return {
+      args: heads.length ? heads : ["HEAD"],
+      resolvedRef: heads.length > 1 ? `${heads.length} worktree HEADs` : "HEAD",
+      fingerprint: heads.join("\n"),
+      scopeMessage: heads.length > 1 ? `已合并 ${heads.length} 个所选 worktree 的当前分支并按提交去重。` : "",
+    };
+  }
+
+  const remoteRefs = await runGitWorkspaceCommand(repositoryPath, [
+    "for-each-ref",
+    "--format=%(refname)%09%(symref)",
+    "refs/remotes",
+  ]);
+  const symbolicDefault = remoteRefs.stdout
+    .split(/\r?\n/)
+    .map((line) => line.split("\t"))
+    .find(([refName, target]) => refName?.endsWith("/HEAD") && target)?.[1];
+  const candidates = [...new Set([symbolicDefault, "main", "master"].filter(Boolean))];
+  for (const candidate of candidates) {
+    const result = await runGitWorkspaceCommand(repositoryPath, ["rev-parse", "--verify", `${candidate}^{commit}`]);
+    if (result.status === 0 && result.stdout.trim()) {
+      return { args: [candidate], resolvedRef: candidate, fingerprint: result.stdout.trim(), scopeMessage: "" };
+    }
+  }
+  const headResult = await runGitWorkspaceCommand(repositoryPath, ["rev-parse", "--verify", "HEAD"]);
+  return {
+    args: ["HEAD"],
+    resolvedRef: "HEAD",
+    fingerprint: headResult.stdout.trim(),
+    scopeMessage: "未识别到默认分支，已回退到当前 HEAD。",
+  };
 }
 
 function createGitActivityReadFailure(repositoryPath, result) {
@@ -921,18 +1093,31 @@ function createGitActivityReadFailure(repositoryPath, result) {
   };
 }
 
-async function readGitActivityRepositoryData(repositoryPath, range) {
+async function readGitActivityRepositoryData(repositoryPath, range, criteria, ref, currentAuthorId) {
   const dailyCounts = new Map();
   const authorCounts = new Map();
   const detailRecordsByDate = new Map();
   const detailOverflowDates = new Set();
   let totalCommits = 0;
-  clearGitActivityDayCacheForRepository(repositoryPath);
+  let excludedMerges = 0;
+  let excludedBots = 0;
+  const identityMatcher = createGitActivityIdentityMatcher(criteria);
+  const botMatcher = createGitActivityBotMatcher(criteria);
+  const contextKey = `${gitActivityCriteriaKey(criteria)}::${ref.fingerprint}`;
+  const dayCacheVersion = clearGitActivityDayCacheForRepository(repositoryPath);
   const consumeRecord = (record) => {
-    const commit = parseGitActivityCommitRecord(record);
+    const commit = parseGitActivityCommitRecord(record, identityMatcher);
     if (!commit) return;
-    const date = formatGitActivityLocalDate(commit.date);
+    const date = formatGitActivityDate(commit.date, criteria.timeZone);
     if (!date || date < range.startDate || date > range.endDate) return;
+    if (criteria.hideMerges && commit.isMerge) {
+      excludedMerges += 1;
+      return;
+    }
+    if (criteria.excludeBots && botMatcher(commit)) {
+      excludedBots += 1;
+      return;
+    }
 
     const author = authorCounts.get(commit.authorId) || { id: commit.authorId, name: commit.author, commits: 0 };
     author.commits += 1;
@@ -955,25 +1140,21 @@ async function readGitActivityRepositoryData(repositoryPath, range) {
     totalCommits += 1;
   };
 
-  const [result, currentAuthorId] = await Promise.all([
-    runGitWorkspaceCommand(
+  const result = await runGitWorkspaceCommand(
       repositoryPath,
       [
         "--no-optional-locks",
         "log",
-        "--exclude=refs/stash",
-        "--all",
+        ...ref.args,
         "--date=iso-strict",
-        `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%s%x00`,
+        `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
       ],
       { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
-    ),
-    resolveGitActivityCurrentAuthorId(repositoryPath),
-  ]);
+    );
   if (result.status !== 0) return createGitActivityReadFailure(repositoryPath, result);
 
   detailRecordsByDate.forEach((details, date) => {
-    rememberGitActivityDayCache(repositoryPath, date, details);
+    rememberGitActivityDayCache(repositoryPath, date, contextKey, details, dayCacheVersion);
   });
 
   const daily = [...dailyCounts.values()].sort((left, right) => left.date.localeCompare(right.date));
@@ -988,13 +1169,17 @@ async function readGitActivityRepositoryData(repositoryPath, range) {
     activeDays: daily.length,
     daily,
     authors,
+    resolvedRef: ref.resolvedRef,
+    scopeMessage: ref.scopeMessage || undefined,
+    excludedMerges,
+    excludedBots,
   };
 }
 
-async function readGitActivityRepositoryCached(repositoryPath, range, force) {
-  const cacheKey = `${normalizeGitActivityRepositoryKey(repositoryPath)}::${range.startDate}::${range.endDate}`;
+async function readGitActivityRepositoryCached(repositoryPath, range, criteria, ref, currentAuthorId, force) {
+  const cacheKey = `${normalizeGitActivityRepositoryKey(repositoryPath)}::${range.startDate}::${range.endDate}::${gitActivityCriteriaKey(criteria)}::${ref.fingerprint}::${currentAuthorId}`;
   const existing = gitActivityCache.get(cacheKey);
-  if (existing?.promise) {
+  if (!force && existing?.promise) {
     return existing.promise.then(cloneGitActivityRepositoryData);
   }
   if (!force && existing?.value && existing.expiresAt > Date.now()) {
@@ -1004,7 +1189,7 @@ async function readGitActivityRepositoryCached(repositoryPath, range, force) {
   }
 
   const entry = { expiresAt: Date.now() + gitActivityCacheTtlMs, promise: null, value: null };
-  entry.promise = readGitActivityRepositoryData(repositoryPath, range);
+  entry.promise = readGitActivityRepositoryData(repositoryPath, range, criteria, ref, currentAuthorId);
   gitActivityCache.set(cacheKey, entry);
   trimGitActivityCache();
   const result = await entry.promise;
@@ -1037,12 +1222,14 @@ async function resolveGitActivityRepositoryGroups(projectPaths) {
         return;
       }
 
-      const repositoryKey = normalizeGitActivityRepositoryKey(resolved.repositoryPath);
+      const repositoryKey = resolved.repositoryKey;
       const group = repositoryGroups.get(repositoryKey) || {
         index,
         repositoryPath: resolved.repositoryPath,
+        repositoryPaths: [],
         projectPaths: [],
       };
+      if (!group.repositoryPaths.includes(resolved.repositoryPath)) group.repositoryPaths.push(resolved.repositoryPath);
       group.projectPaths.push(projectPath);
       group.index = Math.min(group.index, index);
       repositoryGroups.set(repositoryKey, group);
@@ -1057,25 +1244,39 @@ async function resolveGitActivityRepositoryGroups(projectPaths) {
 
 async function readGitActivity(projectPaths, options = {}) {
   const range = resolveGitActivityRange(options);
+  const criteria = normalizeGitActivityCriteria(options);
   const { groups, failures } = await resolveGitActivityRepositoryGroups(projectPaths);
   const entries = [...failures];
 
   await runGitWorkspaceWorkerPool(
     groups.map((group) => async () => {
-      const data = await readGitActivityRepositoryCached(group.repositoryPath, range, options.force === true);
+      const [ref, currentAuthorId] = await Promise.all([
+        resolveGitActivityRef(group.repositoryPaths, criteria.refScope),
+        resolveGitActivityCurrentAuthorId(group.repositoryPath, criteria),
+      ]);
+      const data = await readGitActivityRepositoryCached(
+        group.repositoryPath,
+        range,
+        criteria,
+        ref,
+        currentAuthorId,
+        options.force === true,
+      );
       entries.push({ index: group.index, result: { ...data, projectPaths: [...group.projectPaths] } });
     }),
   );
 
   return {
     ...range,
+    criteria,
     repositories: entries.sort((left, right) => left.index - right.index).map((entry) => entry.result),
     lastRefreshedAt: new Date().toISOString(),
   };
 }
 
-async function readGitActivityDayRepositoryData(repositoryPath, date, authorId, capacity, force) {
-  const cached = force ? null : readGitActivityDayCache(repositoryPath, date);
+async function readGitActivityDayRepositoryData(repositoryPath, page, authorId, capacity, ref) {
+  const contextKey = `${gitActivityCriteriaKey(page)}::${ref.fingerprint}`;
+  const cached = page.force ? null : readGitActivityDayCache(repositoryPath, page.date, contextKey);
   if (cached) {
     const matching = authorId ? cached.filter((commit) => commit.authorId === authorId) : cached;
     return {
@@ -1089,9 +1290,21 @@ async function readGitActivityDayRepositoryData(repositoryPath, date, authorId, 
   const pageCommits = [];
   const cacheCommits = authorId ? null : [];
   let totalCommits = 0;
+  const identityMatcher = createGitActivityIdentityMatcher(page);
+  const botMatcher = createGitActivityBotMatcher(page);
+  const repositoryKey = normalizeGitActivityRepositoryKey(repositoryPath);
+  const cacheVersion = page.force
+    ? clearGitActivityDayCacheForRepository(repositoryPath)
+    : gitActivityDayCacheVersions.get(repositoryKey) || 0;
   const consumeRecord = (record) => {
-    const commit = parseGitActivityCommitRecord(record);
-    if (!commit || formatGitActivityLocalDate(commit.date) !== date || (authorId && commit.authorId !== authorId))
+    const commit = parseGitActivityCommitRecord(record, identityMatcher);
+    if (
+      !commit ||
+      formatGitActivityDate(commit.date, page.timeZone) !== page.date ||
+      (page.hideMerges && commit.isMerge) ||
+      (page.excludeBots && botMatcher(commit)) ||
+      (authorId && commit.authorId !== authorId)
+    )
       return;
     totalCommits += 1;
     retainGitActivityCommit(pageCommits, commit, capacity);
@@ -1103,10 +1316,9 @@ async function readGitActivityDayRepositoryData(repositoryPath, date, authorId, 
     [
       "--no-optional-locks",
       "log",
-      "--exclude=refs/stash",
-      "--all",
+      ...ref.args,
       "--date=iso-strict",
-      `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%s%x00`,
+      `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
     ],
     { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
   );
@@ -1115,7 +1327,7 @@ async function readGitActivityDayRepositoryData(repositoryPath, date, authorId, 
   pageCommits.sort(compareGitActivityCommits);
   if (cacheCommits && totalCommits <= gitActivityDayCacheRecordLimit) {
     cacheCommits.sort(compareGitActivityCommits);
-    rememberGitActivityDayCache(repositoryPath, date, cacheCommits);
+    rememberGitActivityDayCache(repositoryPath, page.date, contextKey, cacheCommits, cacheVersion);
   }
   return { repositoryPath, state: "ready", totalCommits, commits: pageCommits };
 }
@@ -1139,15 +1351,16 @@ async function readGitActivityDay(projectPaths, options = {}) {
   const failedRepositories = failures.map((entry) => entry.result);
   await runGitWorkspaceWorkerPool(
     groups.map((group) => async () => {
+      const ref = await resolveGitActivityRef(group.repositoryPaths, page.refScope);
       const authorId = page.currentUserOnly
-        ? await resolveGitActivityCurrentAuthorId(group.repositoryPath)
+        ? await resolveGitActivityCurrentAuthorId(group.repositoryPath, page)
         : page.authorId;
       const data = await readGitActivityDayRepositoryData(
         group.repositoryPath,
-        page.date,
+        page,
         authorId || (page.currentUserOnly ? "missing-current-user" : ""),
         pageCapacity,
-        page.force,
+        ref,
       );
       if (data.state !== "ready") {
         failedRepositories.push({ ...data, projectPaths: [...group.projectPaths] });

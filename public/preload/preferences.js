@@ -135,6 +135,16 @@ function getDefaultUiPreferences() {
     projectDetails: { tabOrder: [...projectDetailsTabIds], defaultTab: "scripts" },
     dashboard: { tinyCardActionTrigger: "hover" },
     coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
+    workActivity: {
+      rangeMode: "rolling",
+      selectedYear: new Date().getFullYear(),
+      refScope: "all",
+      timeZone: "local",
+      hideMerges: false,
+      excludeBots: false,
+      botPatterns: ["\\[bot\\]$", "(^|[+._-])bot@"],
+      identities: [],
+    },
   };
 }
 
@@ -145,6 +155,59 @@ function normalizeProjectDetailsTabOrder(value) {
 
 function normalizeProjectDetailsDefaultTab(value) {
   return projectDetailsTabIdSet.has(value) ? value : "scripts";
+}
+
+function normalizeWorkActivityPreferences(value) {
+  const defaults = getDefaultUiPreferences().workActivity;
+  if (!value || typeof value !== "object") return defaults;
+  const timeZone = String(value.timeZone || "").trim();
+  let validTimeZone = timeZone === "local";
+  if (!validTimeZone) {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone }).format();
+      validTimeZone = true;
+    } catch (error) {
+      validTimeZone = false;
+    }
+  }
+  const identities = Array.isArray(value.identities)
+    ? value.identities
+        .filter((identity) => identity && typeof identity === "object")
+        .map((identity) => ({
+          id: String(identity.id || "").trim(),
+          name: String(identity.name || "").trim(),
+          emails: [
+            ...new Set(
+              (Array.isArray(identity.emails) ? identity.emails : [])
+                .map((email) => String(email).trim().toLocaleLowerCase())
+                .filter((email) => email && !/\s/.test(email)),
+            ),
+          ],
+          names: [
+            ...new Set(
+              (Array.isArray(identity.names) ? identity.names : [])
+                .map((name) => String(name).trim())
+                .filter(Boolean),
+            ),
+          ],
+        }))
+        .filter((identity) => identity.id && identity.name)
+        .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
+    : [];
+  return {
+    rangeMode: value.rangeMode === "year" ? "year" : "rolling",
+    selectedYear: Number.isInteger(value.selectedYear)
+      ? Math.min(9999, Math.max(1970, value.selectedYear))
+      : new Date().getFullYear(),
+    refScope: value.refScope === "current" || value.refScope === "default" ? value.refScope : "all",
+    timeZone: validTimeZone ? timeZone : "local",
+    hideMerges: value.hideMerges === true,
+    excludeBots: value.excludeBots === true,
+    botPatterns: Array.isArray(value.botPatterns)
+      ? [...new Set(value.botPatterns.map((pattern) => String(pattern).trim()).filter(Boolean))].slice(0, 20)
+      : defaults.botPatterns,
+    identities,
+  };
 }
 
 function normalizeUiPreferences(value) {
@@ -165,6 +228,7 @@ function normalizeUiPreferences(value) {
       projectDetailsTabDefault:
         Number.isInteger(defaultCoachMarkVersion) && defaultCoachMarkVersion >= 0 ? defaultCoachMarkVersion : 0,
     },
+    workActivity: normalizeWorkActivityPreferences(value.workActivity),
   };
 }
 

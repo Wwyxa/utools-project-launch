@@ -453,6 +453,16 @@ const defaultUiPreferences = (): UiPreferences => ({
   projectDetails: { tabOrder: [...projectDetailsTabIds], defaultTab: "scripts" },
   dashboard: { tinyCardActionTrigger: "hover" },
   coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
+  workActivity: {
+    rangeMode: "rolling",
+    selectedYear: new Date().getFullYear(),
+    refScope: "all",
+    timeZone: "local",
+    hideMerges: false,
+    excludeBots: false,
+    botPatterns: ["\\[bot\\]$", "(^|[+._-])bot@"],
+    identities: [],
+  },
 });
 
 const browserIconPackLoadResult = (): IconPackLoadResult => ({
@@ -483,6 +493,61 @@ const normalizeProjectDetailsDefaultTab = (value: unknown): ProjectDetailsTabId 
     ? (value as ProjectDetailsTabId)
     : "scripts";
 
+const normalizeWorkActivityPreferences = (value: unknown): UiPreferences["workActivity"] => {
+  const defaults = defaultUiPreferences().workActivity;
+  if (!value || typeof value !== "object") return defaults;
+  const candidate = value as Partial<UiPreferences["workActivity"]>;
+  const timeZone = String(candidate.timeZone || "").trim();
+  let validTimeZone = timeZone === "local";
+  if (!validTimeZone) {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone }).format();
+      validTimeZone = true;
+    } catch {
+      validTimeZone = false;
+    }
+  }
+  const identities = Array.isArray(candidate.identities)
+    ? candidate.identities
+        .filter((identity) => identity && typeof identity === "object")
+        .map((identity) => ({
+          id: String(identity.id || "").trim(),
+          name: String(identity.name || "").trim(),
+          emails: [
+            ...new Set(
+              (Array.isArray(identity.emails) ? identity.emails : [])
+                .map((email) => String(email).trim().toLocaleLowerCase())
+                .filter((email) => email && !/\s/.test(email)),
+            ),
+          ],
+          names: [
+            ...new Set(
+              (Array.isArray(identity.names) ? identity.names : [])
+                .map((name) => String(name).trim())
+                .filter(Boolean),
+            ),
+          ],
+        }))
+        .filter((identity) => identity.id && identity.name)
+        .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
+    : [];
+  return {
+    rangeMode: candidate.rangeMode === "year" ? "year" : "rolling",
+    selectedYear:
+      typeof candidate.selectedYear === "number" && Number.isInteger(candidate.selectedYear)
+        ? Math.min(9999, Math.max(1970, candidate.selectedYear))
+        : new Date().getFullYear(),
+    refScope: candidate.refScope === "current" || candidate.refScope === "default" ? candidate.refScope : "all",
+    timeZone: validTimeZone ? timeZone : "local",
+    hideMerges: candidate.hideMerges === true,
+    excludeBots: candidate.excludeBots === true,
+    botPatterns: Array.isArray(candidate.botPatterns)
+      ? [...new Set(candidate.botPatterns.map((pattern) => String(pattern).trim()).filter(Boolean))].slice(0, 20)
+      : defaults.botPatterns,
+    identities,
+  };
+};
+
 export const normalizeUiPreferences = (value: unknown): UiPreferences => {
   const defaults = defaultUiPreferences();
   if (!value || typeof value !== "object" || (value as Partial<UiPreferences>).schemaVersion !== 1) return defaults;
@@ -510,6 +575,7 @@ export const normalizeUiPreferences = (value: unknown): UiPreferences => {
           ? defaultCoachMarkVersion
           : 0,
     },
+    workActivity: normalizeWorkActivityPreferences(candidate.workActivity),
   };
 };
 
@@ -1078,9 +1144,11 @@ const fallbackBridge: ProjectBridge = {
     _projectPaths: string[],
     options: ProjectGitActivityOptions,
   ): Promise<ProjectGitActivityReport> {
+    const criteria = normalizeWorkActivityPreferences(options);
     return {
       startDate: options.startDate,
       endDate: options.endDate,
+      criteria,
       repositories: [],
       lastRefreshedAt: new Date().toISOString(),
     };

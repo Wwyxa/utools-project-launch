@@ -30,7 +30,7 @@ const localDate = (iso) => {
   return `${year}-${month}-${day}`;
 };
 
-const commitFile = ({ fileName, contents, message, name, email, date }) => {
+const commitFile = ({ fileName, contents, message, name, email, date, committerDate = date }) => {
   fs.writeFileSync(path.join(projectRoot, fileName), contents);
   runGit(projectRoot, ["add", "--", fileName]);
   runGit(projectRoot, ["commit", "-m", message], {
@@ -39,7 +39,7 @@ const commitFile = ({ fileName, contents, message, name, email, date }) => {
     GIT_AUTHOR_DATE: date,
     GIT_COMMITTER_NAME: "Git Activity Validation",
     GIT_COMMITTER_EMAIL: "git-activity-validation@example.invalid",
-    GIT_COMMITTER_DATE: date,
+    GIT_COMMITTER_DATE: committerDate,
   });
 };
 
@@ -139,7 +139,7 @@ try {
     date: thirdDate,
   });
   const cachedReport = await bridge.readGitActivity([projectRoot], range);
-  assert.equal(cachedReport.repositories[0].totalCommits, 2);
+  assert.equal(cachedReport.repositories[0].totalCommits, 3);
   const refreshedReport = await bridge.readGitActivity([projectRoot], { ...range, force: true });
   assert.equal(refreshedReport.repositories[0].totalCommits, 3);
   assert.equal(refreshedReport.repositories[0].daily.find((day) => day.date === localDate(thirdDate))?.commits, 1);
@@ -203,6 +203,137 @@ try {
     Array.from(currentUserPage.commits).map((commit) => commit.message),
     ["fourth activity", "third activity"],
   );
+
+  const utcReport = await bridge.readGitActivity([projectRoot], { ...range, timeZone: "UTC", force: true });
+  const kiritimatiReport = await bridge.readGitActivity([projectRoot], {
+    ...range,
+    timeZone: "Pacific/Kiritimati",
+    force: true,
+  });
+  assert.equal(utcReport.repositories[0].daily.find((day) => day.date === "2026-02-02")?.commits, 1);
+  assert.equal(kiritimatiReport.repositories[0].daily.find((day) => day.date === "2026-02-03")?.commits, 1);
+
+  const currentBranch = runGit(projectRoot, ["branch", "--show-current"]).trim();
+  commitFile({
+    fileName: "bot.txt",
+    contents: "bot\n",
+    message: "bot activity",
+    name: "dependabot[bot]",
+    email: "bot@users.noreply.github.com",
+    date: "2026-03-01T12:00:00+00:00",
+  });
+  runGit(projectRoot, ["checkout", "-b", "merge-topic"]);
+  commitFile({
+    fileName: "merge-topic.txt",
+    contents: "topic\n",
+    message: "topic activity",
+    name: "Casey",
+    email: "casey@example.invalid",
+    date: "2026-03-02T12:00:00+00:00",
+  });
+  runGit(projectRoot, ["checkout", currentBranch]);
+  runGit(projectRoot, ["merge", "--no-ff", "merge-topic", "-m", "merge topic"], {
+    GIT_AUTHOR_DATE: "2026-03-03T12:00:00+00:00",
+    GIT_COMMITTER_DATE: "2026-03-03T12:00:00+00:00",
+  });
+  runGit(projectRoot, ["checkout", "-b", "unmerged-activity"]);
+  commitFile({
+    fileName: "unmerged.txt",
+    contents: "unmerged\n",
+    message: "unmerged activity",
+    name: "Casey",
+    email: "casey@example.invalid",
+    date: "2026-03-04T12:00:00+00:00",
+    committerDate: "2035-03-04T12:00:00+00:00",
+  });
+  runGit(projectRoot, ["checkout", currentBranch]);
+
+  const filteredAll = await bridge.readGitActivity([projectRoot], {
+    ...range,
+    refScope: "all",
+    timeZone: "UTC",
+    hideMerges: true,
+    excludeBots: true,
+    identities: [
+      {
+        id: "alex",
+        name: "Alex unified",
+        emails: ["alex.personal@example.invalid", "alex.work@example.invalid"],
+        names: [],
+      },
+    ],
+    force: true,
+  });
+  assert.equal(filteredAll.repositories[0].totalCommits, 6);
+  assert.equal(filteredAll.repositories[0].excludedMerges, 1);
+  assert.equal(filteredAll.repositories[0].excludedBots, 1);
+  assert.equal(filteredAll.repositories[0].authors.find((author) => author.id === "identity:alex")?.commits, 4);
+  assert.equal(filteredAll.repositories[0].daily.find((day) => day.date === "2026-03-04")?.commits, 1);
+
+  const currentScope = await bridge.readGitActivity([projectRoot], {
+    ...range,
+    refScope: "current",
+    timeZone: "UTC",
+    hideMerges: true,
+    excludeBots: true,
+    force: true,
+  });
+  assert.equal(currentScope.repositories[0].totalCommits, 5);
+  assert.equal(currentScope.repositories[0].resolvedRef, "HEAD");
+
+  runGit(projectRoot, ["update-ref", "refs/remotes/origin/develop", rootHash]);
+  runGit(projectRoot, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop"]);
+  const defaultScope = await bridge.readGitActivity([projectRoot], {
+    ...range,
+    refScope: "default",
+    timeZone: "UTC",
+    force: true,
+  });
+  assert.equal(defaultScope.repositories[0].resolvedRef, "refs/remotes/origin/develop");
+  assert.equal(defaultScope.repositories[0].totalCommits, 1);
+
+  const linkedWorktreeRoot = path.join(fixtureRoot, "linked-worktree");
+  runGit(projectRoot, ["worktree", "add", "-b", "linked-activity", linkedWorktreeRoot, currentBranch]);
+  fs.writeFileSync(path.join(linkedWorktreeRoot, "linked.txt"), "linked\n");
+  runGit(linkedWorktreeRoot, ["add", "--", "linked.txt"]);
+  runGit(linkedWorktreeRoot, ["commit", "-m", "linked worktree activity"], {
+    GIT_AUTHOR_NAME: "Dana",
+    GIT_AUTHOR_EMAIL: "dana@example.invalid",
+    GIT_AUTHOR_DATE: "2026-03-05T12:00:00+00:00",
+    GIT_COMMITTER_NAME: "Git Activity Validation",
+    GIT_COMMITTER_EMAIL: "git-activity-validation@example.invalid",
+    GIT_COMMITTER_DATE: "2026-03-05T12:00:00+00:00",
+  });
+  const worktreeScope = await bridge.readGitActivity([projectRoot, linkedWorktreeRoot], {
+    ...range,
+    refScope: "current",
+    timeZone: "UTC",
+    force: true,
+  });
+  assert.equal(worktreeScope.repositories.length, 1);
+  assert.equal(worktreeScope.repositories[0].totalCommits, 8);
+  assert.equal(worktreeScope.repositories[0].resolvedRef, "2 worktree HEADs");
+  assert.deepEqual(Array.from(worktreeScope.repositories[0].projectPaths).sort(), [linkedWorktreeRoot, projectRoot].sort());
+
+  const mergedIdentityPage = await bridge.readGitActivityDay([projectRoot], {
+    date: "2026-02-07",
+    timeZone: "UTC",
+    identities: filteredAll.criteria.identities,
+    authorId: "identity:alex",
+    limit: 1,
+  });
+  const mergedIdentityNextPage = await bridge.readGitActivityDay([projectRoot], {
+    date: "2026-02-07",
+    timeZone: "UTC",
+    identities: filteredAll.criteria.identities,
+    authorId: "identity:alex",
+    limit: 1,
+    skip: 1,
+  });
+  assert.equal(mergedIdentityPage.totalCommits, 2);
+  assert.equal(mergedIdentityPage.hasMore, true);
+  assert.equal(mergedIdentityNextPage.hasMore, false);
+  assert.notEqual(mergedIdentityPage.commits[0].hash, mergedIdentityNextPage.commits[0].hash);
 
   console.log("Git activity validation passed.");
 } finally {

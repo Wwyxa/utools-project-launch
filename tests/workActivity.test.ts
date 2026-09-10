@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { getProjectBridge } from "../src/lib/projectBridge";
 import { ProjectStatus } from "../src/types";
-import type { Project, ProjectBridge, ProjectGitActivityReport } from "../src/types";
+import type { Project, ProjectBridge, ProjectGitActivityDayReport, ProjectGitActivityReport } from "../src/types";
 
 const createDeferred = <T>() => {
   let resolve: (value: T) => void = () => undefined;
@@ -135,10 +135,12 @@ describe("work activity Store", () => {
     expect(store.workActivitySelectedProjectIds).toEqual([alpha.id, nonGit.id]);
 
     await store.loadGitActivity({ startDate: "2026-01-01", endDate: "2026-12-31" });
-    expect(readGitActivity).toHaveBeenCalledWith([alpha.path, nonGit.path], {
+    expect(readGitActivity).toHaveBeenCalledWith([alpha.path, nonGit.path], expect.objectContaining({
       startDate: "2026-01-01",
       endDate: "2026-12-31",
-    });
+      refScope: "all",
+      timeZone: "local",
+    }));
     expect(store.workActivityUnavailableProjectIds).toEqual([nonGit.id]);
     expect(store.workActivitySelectedProjectIds).toEqual([alpha.id]);
 
@@ -213,5 +215,85 @@ describe("work activity Store", () => {
     expect(result?.ok).toBe(true);
     expect(store.workActivityUnavailableProjectIds).toEqual([]);
     expect(store.workActivitySelectableProjects).toEqual([project]);
+  });
+
+  it("persists criteria changes and invalidates the report cache", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const readGitActivity = vi.fn<ProjectBridge["readGitActivity"]>(async (_paths, options) => ({
+      ...activityReport("C:\\alpha", ["C:\\alpha"], "ready"),
+      criteria: {
+        refScope: options.refScope || "all",
+        timeZone: options.timeZone || "local",
+        hideMerges: options.hideMerges === true,
+        excludeBots: options.excludeBots === true,
+        botPatterns: options.botPatterns || [],
+        identities: options.identities || [],
+      },
+    }));
+    const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
+    window.projectBridge = { ...getProjectBridge(), readGitActivity, saveUiPreferences };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [createProject("alpha", "C:\\alpha")];
+    store.openWorkActivity();
+    const range = { startDate: "2026-01-01", endDate: "2026-12-31" };
+
+    await store.loadGitActivity(range);
+    await store.loadGitActivity(range);
+    expect(readGitActivity).toHaveBeenCalledTimes(1);
+
+    store.setWorkActivityPreferences({ refScope: "current", hideMerges: true });
+    expect(saveUiPreferences).toHaveBeenCalledTimes(1);
+    expect(store.workActivityReport).toBeNull();
+    await store.loadGitActivity(range);
+    expect(readGitActivity).toHaveBeenCalledTimes(2);
+    expect(readGitActivity).toHaveBeenLastCalledWith(
+      ["C:\\alpha"],
+      expect.objectContaining({ refScope: "current", hideMerges: true }),
+    );
+
+    await store.loadGitActivity({ ...range, timeZone: "UTC" });
+    await store.loadGitActivity(range);
+    expect(readGitActivity).toHaveBeenCalledTimes(4);
+    expect(store.uiPreferences.workActivity.timeZone).toBe("local");
+  });
+
+  it("drops an older day-detail response when a newer request wins", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const first = createDeferred<ProjectGitActivityDayReport>();
+    const second = createDeferred<ProjectGitActivityDayReport>();
+    const readGitActivityDay = vi.fn<ProjectBridge["readGitActivityDay"]>()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    window.projectBridge = { ...getProjectBridge(), readGitActivityDay };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [createProject("alpha", "C:\\alpha")];
+    store.openWorkActivity();
+    const report = (date: string): ProjectGitActivityDayReport => ({
+      date,
+      totalCommits: 0,
+      hasMore: false,
+      commits: [],
+      failedRepositories: [],
+      lastRefreshedAt: "2026-09-10T00:00:00.000Z",
+    });
+
+    const olderRequest = store.readGitActivityDay({ date: "2026-02-03" });
+    const newerRequest = store.readGitActivityDay({ date: "2026-02-04" });
+    second.resolve(report("2026-02-04"));
+    await expect(newerRequest).resolves.toMatchObject({ date: "2026-02-04" });
+    first.resolve(report("2026-02-03"));
+    await expect(olderRequest).resolves.toBeNull();
   });
 });
