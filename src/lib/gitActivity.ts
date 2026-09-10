@@ -10,6 +10,20 @@ export interface GitActivityHeatmapCell {
   inRange: boolean;
 }
 
+export type GitActivityConventionalType =
+  | "feat"
+  | "fix"
+  | "docs"
+  | "refactor"
+  | "test"
+  | "chore"
+  | "perf"
+  | "build"
+  | "ci"
+  | "style"
+  | "revert"
+  | "other";
+
 const localDate = (value: Date): string => {
   const year = String(value.getFullYear()).padStart(4, "0");
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -51,6 +65,84 @@ export const calendarYearGitActivityRange = (year: number): GitActivityRange => 
   return {
     startDate: `${String(normalizedYear).padStart(4, "0")}-01-01`,
     endDate: `${String(normalizedYear).padStart(4, "0")}-12-31`,
+  };
+};
+
+export const currentYearGitActivityRange = (today = localDate(new Date())): GitActivityRange => ({
+  startDate: `${today.slice(0, 4)}-01-01`,
+  endDate: today,
+});
+
+export const previousGitActivityRange = (range: GitActivityRange): GitActivityRange => {
+  const start = parseLocalDate(range.startDate);
+  const end = parseLocalDate(range.endDate);
+  if (!start || !end || start > end) return range;
+  const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  const previousEnd = new Date(start);
+  previousEnd.setDate(previousEnd.getDate() - 1);
+  return rollingGitActivityRange(localDate(previousEnd), days);
+};
+
+export const gitActivityComparison = (current: number, previous: number) => ({
+  difference: current - previous,
+  percent: previous > 0 ? Math.round(((current - previous) / previous) * 100) : null,
+});
+
+export const gitActivityStreaks = (
+  range: GitActivityRange,
+  activeDates: ReadonlySet<string>,
+  today = localDate(new Date()),
+): { current: number; longest: number } => {
+  const start = parseLocalDate(range.startDate);
+  const end = parseLocalDate(range.endDate);
+  if (!start || !end || start > end) return { current: 0, longest: 0 };
+
+  let longest = 0;
+  let running = 0;
+  for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+    if (activeDates.has(localDate(date))) {
+      running += 1;
+      longest = Math.max(longest, running);
+    } else {
+      running = 0;
+    }
+  }
+
+  const currentDate = parseLocalDate(today) || new Date();
+  if (!activeDates.has(localDate(currentDate))) currentDate.setDate(currentDate.getDate() - 1);
+  let current = 0;
+  while (currentDate >= start && currentDate <= end && activeDates.has(localDate(currentDate))) {
+    current += 1;
+    currentDate.setDate(currentDate.getDate() - 1);
+  }
+  return { current, longest };
+};
+
+const conventionalTypes = new Set<GitActivityConventionalType>([
+  "feat",
+  "fix",
+  "docs",
+  "refactor",
+  "test",
+  "chore",
+  "perf",
+  "build",
+  "ci",
+  "style",
+  "revert",
+]);
+
+export const parseConventionalCommit = (
+  message: string,
+): { type: GitActivityConventionalType; scope?: string; breaking: boolean } => {
+  const match = String(message || "")
+    .trim()
+    .match(/^([a-zA-Z]+)(?:\(([^)]+)\))?(!)?:\s/);
+  const candidate = match?.[1]?.toLocaleLowerCase() as GitActivityConventionalType | undefined;
+  return {
+    type: candidate && conventionalTypes.has(candidate) ? candidate : "other",
+    scope: match?.[2]?.trim() || undefined,
+    breaking: match?.[3] === "!",
   };
 };
 

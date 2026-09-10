@@ -31,7 +31,9 @@ import type {
   ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
   ProjectGitActivityOptions,
+  ProjectGitActivityChangesOptions,
   ProjectGitActivityReport,
+  ProjectGitActivityChangesReport,
   ProjectGitActivityDayOptions,
   ProjectGitActivityDayReport,
   ProjectGitCommitMessageDiffResult,
@@ -456,6 +458,8 @@ const defaultUiPreferences = (): UiPreferences => ({
   workActivity: {
     rangeMode: "rolling",
     selectedYear: new Date().getFullYear(),
+    customStartDate: "",
+    customEndDate: "",
     refScope: "all",
     timeZone: "local",
     hideMerges: false,
@@ -493,6 +497,13 @@ const normalizeProjectDetailsDefaultTab = (value: unknown): ProjectDetailsTabId 
     ? (value as ProjectDetailsTabId)
     : "scripts";
 
+const normalizeWorkActivityDate = (value: unknown): string => {
+  const candidate = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return "";
+  const parsed = new Date(`${candidate}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate ? candidate : "";
+};
+
 const normalizeWorkActivityPreferences = (value: unknown): UiPreferences["workActivity"] => {
   const defaults = defaultUiPreferences().workActivity;
   if (!value || typeof value !== "object") return defaults;
@@ -522,21 +533,36 @@ const normalizeWorkActivityPreferences = (value: unknown): UiPreferences["workAc
           ],
           names: [
             ...new Set(
-              (Array.isArray(identity.names) ? identity.names : [])
-                .map((name) => String(name).trim())
-                .filter(Boolean),
+              (Array.isArray(identity.names) ? identity.names : []).map((name) => String(name).trim()).filter(Boolean),
             ),
           ],
         }))
         .filter((identity) => identity.id && identity.name)
         .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
     : [];
+  const selectedYear =
+    typeof candidate.selectedYear === "number" && Number.isInteger(candidate.selectedYear)
+      ? Math.min(9999, Math.max(1970, candidate.selectedYear))
+      : new Date().getFullYear();
+  const legacyCalendarYear = String(candidate.rangeMode || "") === "year";
   return {
-    rangeMode: candidate.rangeMode === "year" ? "year" : "rolling",
-    selectedYear:
-      typeof candidate.selectedYear === "number" && Number.isInteger(candidate.selectedYear)
-        ? Math.min(9999, Math.max(1970, candidate.selectedYear))
-        : new Date().getFullYear(),
+    rangeMode:
+      candidate.rangeMode === "days7" ||
+      candidate.rangeMode === "days30" ||
+      candidate.rangeMode === "days90" ||
+      candidate.rangeMode === "currentYear" ||
+      candidate.rangeMode === "custom"
+        ? candidate.rangeMode
+        : legacyCalendarYear
+          ? "custom"
+          : "rolling",
+    selectedYear,
+    customStartDate: legacyCalendarYear
+      ? `${String(selectedYear).padStart(4, "0")}-01-01`
+      : normalizeWorkActivityDate(candidate.customStartDate),
+    customEndDate: legacyCalendarYear
+      ? `${String(selectedYear).padStart(4, "0")}-12-31`
+      : normalizeWorkActivityDate(candidate.customEndDate),
     refScope: candidate.refScope === "current" || candidate.refScope === "default" ? candidate.refScope : "all",
     timeZone: validTimeZone ? timeZone : "local",
     hideMerges: candidate.hideMerges === true,
@@ -1149,6 +1175,17 @@ const fallbackBridge: ProjectBridge = {
       startDate: options.startDate,
       endDate: options.endDate,
       criteria,
+      repositories: [],
+      lastRefreshedAt: new Date().toISOString(),
+    };
+  },
+  async readGitActivityChanges(
+    _projectPaths: string[],
+    options: ProjectGitActivityChangesOptions,
+  ): Promise<ProjectGitActivityChangesReport> {
+    return {
+      startDate: options.startDate,
+      endDate: options.endDate,
       repositories: [],
       lastRefreshedAt: new Date().toISOString(),
     };

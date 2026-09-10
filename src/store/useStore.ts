@@ -62,6 +62,7 @@ import type {
   ProjectGitActivityDayOptions,
   ProjectGitActivityDayReport,
   ProjectGitActivityOptions,
+  ProjectGitActivityChangesOptions,
   ProjectGitActivityReport,
   ProjectGitCommitPage,
   ProjectGitCommitMessageDiffResult,
@@ -3152,13 +3153,16 @@ export const useStore = defineStore("app", {
     },
     async loadGitActivity(options: ProjectGitActivityOptions) {
       const selectedProjects = this.workActivitySelectedProjects;
-      const { rangeMode: _rangeMode, selectedYear: _selectedYear, ...criteria } = this.uiPreferences.workActivity;
+      const {
+        rangeMode: _rangeMode,
+        selectedYear: _selectedYear,
+        customStartDate: _customStartDate,
+        customEndDate: _customEndDate,
+        ...criteria
+      } = this.uiPreferences.workActivity;
       const requestOptions = { ...criteria, ...options };
       const { force: _force, ...cacheOptions } = requestOptions;
-      const requestKey = JSON.stringify([
-        selectedProjects.map((project) => project.path).sort(),
-        cacheOptions,
-      ]);
+      const requestKey = JSON.stringify([selectedProjects.map((project) => project.path).sort(), cacheOptions]);
       if (!options.force) {
         if (this.workActivityLoading && this.workActivityPendingKey === requestKey) return;
         if (this.workActivityReportKey === requestKey && Date.now() < this.workActivityReportExpiresAt) return;
@@ -3233,15 +3237,36 @@ export const useStore = defineStore("app", {
         }
       }
     },
-    async readGitActivityDay(options: ProjectGitActivityDayOptions): Promise<ProjectGitActivityDayReport | null> {
+    async readGitActivityChanges(options: ProjectGitActivityChangesOptions, projectPaths?: string[]) {
+      const selectedPaths = projectPaths || this.workActivitySelectedProjects.map((project) => project.path);
+      if (selectedPaths.length === 0) return null;
+      const {
+        rangeMode: _rangeMode,
+        selectedYear: _selectedYear,
+        customStartDate: _customStartDate,
+        customEndDate: _customEndDate,
+        ...criteria
+      } = this.uiPreferences.workActivity;
+      return bridge.readGitActivityChanges(selectedPaths, { ...criteria, ...options });
+    },
+    async readGitActivityDay(
+      options: ProjectGitActivityDayOptions,
+      projectPaths?: string[],
+    ): Promise<ProjectGitActivityDayReport | null> {
       const requestGeneration = ++this.workActivityDayRequestGeneration;
-      const selectedProjects = this.workActivitySelectedProjects;
-      if (selectedProjects.length === 0) return null;
+      const selectedPaths = projectPaths || this.workActivitySelectedProjects.map((project) => project.path);
+      if (selectedPaths.length === 0) return null;
 
       const report = await bridge.readGitActivityDay(
-        selectedProjects.map((project) => project.path),
+        selectedPaths,
         (() => {
-          const { rangeMode: _rangeMode, selectedYear: _selectedYear, ...criteria } = this.uiPreferences.workActivity;
+          const {
+            rangeMode: _rangeMode,
+            selectedYear: _selectedYear,
+            customStartDate: _customStartDate,
+            customEndDate: _customEndDate,
+            ...criteria
+          } = this.uiPreferences.workActivity;
           return { ...criteria, ...options };
         })(),
       );

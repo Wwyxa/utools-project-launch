@@ -713,8 +713,7 @@ function resolveGitActivityRange(options = {}) {
   const defaultStart = new Date(`${endDate}T12:00:00`);
   defaultStart.setDate(defaultStart.getDate() - 364);
   const requestedStart = normalizeGitActivityDate(options.startDate);
-  const startDate =
-    requestedStart && requestedStart <= endDate ? requestedStart : formatGitActivityDate(defaultStart);
+  const startDate = requestedStart && requestedStart <= endDate ? requestedStart : formatGitActivityDate(defaultStart);
   return { startDate, endDate };
 }
 
@@ -734,8 +733,18 @@ function normalizeGitActivityCriteria(options = {}) {
         .map((identity) => ({
           id: String(identity.id || "").trim(),
           name: String(identity.name || "").trim(),
-          emails: [...new Set((Array.isArray(identity.emails) ? identity.emails : []).map((email) => String(email).trim().toLocaleLowerCase()).filter((email) => email && !/\s/.test(email)))],
-          names: [...new Set((Array.isArray(identity.names) ? identity.names : []).map((name) => String(name).trim()).filter(Boolean))],
+          emails: [
+            ...new Set(
+              (Array.isArray(identity.emails) ? identity.emails : [])
+                .map((email) => String(email).trim().toLocaleLowerCase())
+                .filter((email) => email && !/\s/.test(email)),
+            ),
+          ],
+          names: [
+            ...new Set(
+              (Array.isArray(identity.names) ? identity.names : []).map((name) => String(name).trim()).filter(Boolean),
+            ),
+          ],
         }))
         .filter((identity) => identity.id && identity.name)
         .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
@@ -776,8 +785,16 @@ function createGitActivityIdentityMatcher(criteria) {
     });
   });
   return (authorName, authorEmail) => {
-    const email = String(authorEmail || "").trim().toLocaleLowerCase();
-    const identity = email ? byEmail.get(email) : byName.get(String(authorName || "").trim().toLocaleLowerCase());
+    const email = String(authorEmail || "")
+      .trim()
+      .toLocaleLowerCase();
+    const identity = email
+      ? byEmail.get(email)
+      : byName.get(
+          String(authorName || "")
+            .trim()
+            .toLocaleLowerCase(),
+        );
     return identity || null;
   };
 }
@@ -790,7 +807,8 @@ function createGitActivityBotMatcher(criteria) {
       return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     }
   });
-  return (commit) => patterns.some((pattern) => pattern.test(commit.rawAuthorName) || pattern.test(commit.rawAuthorEmail));
+  return (commit) =>
+    patterns.some((pattern) => pattern.test(commit.rawAuthorName) || pattern.test(commit.rawAuthorEmail));
 }
 
 function normalizeGitActivityRepositoryKey(repositoryPath) {
@@ -803,6 +821,46 @@ function cloneGitActivityRepositoryData(data) {
     ...data,
     daily: data.daily.map((day) => ({ ...day, authors: { ...day.authors } })),
     authors: data.authors.map((author) => ({ ...author })),
+    entries: data.entries.map((entry) => ({ ...entry })),
+  };
+}
+
+function gitActivityHour(value, timeZone) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 0;
+  if (timeZone === "local") return date.getHours();
+  try {
+    const hour = new Intl.DateTimeFormat("en", { timeZone, hour: "2-digit", hourCycle: "h23" })
+      .formatToParts(date)
+      .find((part) => part.type === "hour")?.value;
+    return Number(hour) % 24;
+  } catch (error) {
+    return date.getHours();
+  }
+}
+
+function parseGitActivityConventionalType(message) {
+  const match = String(message || "")
+    .trim()
+    .match(/^([a-zA-Z]+)(?:\(([^)]+)\))?(!)?:\s/);
+  const type = String(match?.[1] || "").toLocaleLowerCase();
+  const knownTypes = new Set([
+    "feat",
+    "fix",
+    "docs",
+    "refactor",
+    "test",
+    "chore",
+    "perf",
+    "build",
+    "ci",
+    "style",
+    "revert",
+  ]);
+  return {
+    type: knownTypes.has(type) ? type : "other",
+    scope: String(match?.[2] || "").trim() || undefined,
+    breaking: match?.[3] === "!" || undefined,
   };
 }
 
@@ -916,9 +974,10 @@ function normalizeGitActivityDayPageOptions(options = {}) {
   const limit = Number.isFinite(requestedLimit)
     ? Math.min(gitActivityDayPageLimit, Math.max(1, Math.floor(requestedLimit)))
     : gitActivityDayPageLimit;
-  const skip = Number.isSafeInteger(requestedSkip) && requestedSkip > 0
-    ? Math.min(Number.MAX_SAFE_INTEGER - gitActivityDayPageLimit - 1, requestedSkip)
-    : 0;
+  const skip =
+    Number.isSafeInteger(requestedSkip) && requestedSkip > 0
+      ? Math.min(Number.MAX_SAFE_INTEGER - gitActivityDayPageLimit - 1, requestedSkip)
+      : 0;
   return {
     ...normalizeGitActivityCriteria(options),
     date,
@@ -968,7 +1027,11 @@ function parseGitActivityCommitRecord(record, identityMatcher) {
     authorId: identity ? `identity:${identity.id}` : email ? `email:${email}` : `name:${author.toLocaleLowerCase()}`,
     rawAuthorName: author,
     rawAuthorEmail: email,
-    isMerge: String(parents || "").trim().split(/\s+/).filter(Boolean).length > 1,
+    isMerge:
+      String(parents || "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean).length > 1,
     date: authorDate,
   };
 }
@@ -1014,9 +1077,10 @@ async function resolveGitActivityRepository(projectPath) {
     return { failure: createGitActivityRepositoryFailure(projectPath, result) };
   }
   const repositoryPath = path.resolve(result.stdout.trim());
-  const commonDir = commonDirResult.status === 0 && commonDirResult.stdout.trim()
-    ? path.resolve(projectPath, commonDirResult.stdout.trim())
-    : repositoryPath;
+  const commonDir =
+    commonDirResult.status === 0 && commonDirResult.stdout.trim()
+      ? path.resolve(projectPath, commonDirResult.stdout.trim())
+      : repositoryPath;
   return { repositoryPath, repositoryKey: normalizeGitActivityRepositoryKey(commonDir) };
 }
 
@@ -1042,7 +1106,14 @@ async function resolveGitActivityRef(repositoryPaths, refScope) {
     const headResults = await Promise.all(
       repositoryPaths.map((worktreePath) => runGitWorkspaceCommand(worktreePath, ["rev-parse", "--verify", "HEAD"])),
     );
-    const heads = [...new Set(headResults.filter((result) => result.status === 0).map((result) => result.stdout.trim()).filter(Boolean))];
+    const heads = [
+      ...new Set(
+        headResults
+          .filter((result) => result.status === 0)
+          .map((result) => result.stdout.trim())
+          .filter(Boolean),
+      ),
+    ];
     return {
       args: heads.length ? heads : ["HEAD"],
       resolvedRef: heads.length > 1 ? `${heads.length} worktree HEADs` : "HEAD",
@@ -1101,6 +1172,7 @@ async function readGitActivityRepositoryData(repositoryPath, range, criteria, re
   let totalCommits = 0;
   let excludedMerges = 0;
   let excludedBots = 0;
+  const entries = [];
   const identityMatcher = createGitActivityIdentityMatcher(criteria);
   const botMatcher = createGitActivityBotMatcher(criteria);
   const contextKey = `${gitActivityCriteriaKey(criteria)}::${ref.fingerprint}`;
@@ -1127,6 +1199,14 @@ async function readGitActivityRepositoryData(repositoryPath, range, criteria, re
     day.commits += 1;
     day.authors[commit.authorId] = (day.authors[commit.authorId] || 0) + 1;
     dailyCounts.set(date, day);
+    entries.push({
+      hash: commit.hash,
+      date: commit.date,
+      day: date,
+      authorId: commit.authorId,
+      hour: gitActivityHour(commit.date, criteria.timeZone),
+      ...parseGitActivityConventionalType(commit.message),
+    });
     if (!detailOverflowDates.has(date)) {
       const details = detailRecordsByDate.get(date) || [];
       if (details.length < gitActivityDayCacheRecordLimit) {
@@ -1141,16 +1221,16 @@ async function readGitActivityRepositoryData(repositoryPath, range, criteria, re
   };
 
   const result = await runGitWorkspaceCommand(
-      repositoryPath,
-      [
-        "--no-optional-locks",
-        "log",
-        ...ref.args,
-        "--date=iso-strict",
-        `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
-      ],
-      { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
-    );
+    repositoryPath,
+    [
+      "--no-optional-locks",
+      "log",
+      ...ref.args,
+      "--date=iso-strict",
+      `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
+    ],
+    { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
+  );
   if (result.status !== 0) return createGitActivityReadFailure(repositoryPath, result);
 
   detailRecordsByDate.forEach((details, date) => {
@@ -1169,11 +1249,91 @@ async function readGitActivityRepositoryData(repositoryPath, range, criteria, re
     activeDays: daily.length,
     daily,
     authors,
+    entries,
     resolvedRef: ref.resolvedRef,
     scopeMessage: ref.scopeMessage || undefined,
     excludedMerges,
     excludedBots,
   };
+}
+
+function trimGitActivityChangesCache() {
+  while (gitActivityChangesCache.size > gitActivityChangesCacheLimit) {
+    const oldestKey = gitActivityChangesCache.keys().next().value;
+    if (oldestKey === undefined) return;
+    gitActivityChangesCache.delete(oldestKey);
+  }
+}
+
+async function readGitActivityChangesRepositoryData(repositoryPath, range, criteria, ref, authorId) {
+  const identityMatcher = createGitActivityIdentityMatcher(criteria);
+  const botMatcher = createGitActivityBotMatcher(criteria);
+  const result = await runGitWorkspaceCommand(
+    repositoryPath,
+    [
+      "--no-optional-locks",
+      "log",
+      ...ref.args,
+      "--numstat",
+      "--diff-merges=first-parent",
+      "--date=iso-strict",
+      `--format=%x1e%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s`,
+    ],
+    { timeoutMs: gitActivityReadTimeoutMs },
+  );
+  if (result.status !== 0) return createGitActivityReadFailure(repositoryPath, result);
+
+  const totals = { commits: 0, files: 0, additions: 0, deletions: 0, binaryFiles: 0 };
+  String(result.stdout || "")
+    .split("\x1e")
+    .slice(1)
+    .forEach((record) => {
+      const [header = "", ...statLines] = record.replace(/^\r?\n/, "").split(/\r?\n/);
+      const commit = parseGitActivityCommitRecord(header, identityMatcher);
+      if (!commit) return;
+      const date = formatGitActivityDate(commit.date, criteria.timeZone);
+      if (
+        !date ||
+        date < range.startDate ||
+        date > range.endDate ||
+        (criteria.hideMerges && commit.isMerge) ||
+        (criteria.excludeBots && botMatcher(commit)) ||
+        (authorId && commit.authorId !== authorId)
+      )
+        return;
+      totals.commits += 1;
+      statLines.forEach((line) => {
+        const [added, deleted, filePath] = line.split("\t");
+        if (!filePath || (!/^\d+$/.test(added) && added !== "-") || (!/^\d+$/.test(deleted) && deleted !== "-")) return;
+        totals.files += 1;
+        if (added === "-" || deleted === "-") {
+          totals.binaryFiles += 1;
+          return;
+        }
+        totals.additions += Number(added);
+        totals.deletions += Number(deleted);
+      });
+    });
+  return { repositoryPath, state: "ready", ...totals };
+}
+
+async function readGitActivityChangesRepositoryCached(repositoryPath, range, criteria, ref, authorId, force) {
+  const cacheKey = `${normalizeGitActivityRepositoryKey(repositoryPath)}::${range.startDate}::${range.endDate}::${gitActivityCriteriaKey(criteria)}::${ref.fingerprint}::${authorId}`;
+  const existing = gitActivityChangesCache.get(cacheKey);
+  if (!force && existing?.promise) return existing.promise.then((value) => ({ ...value }));
+  if (!force && existing?.value && existing.expiresAt > Date.now()) {
+    gitActivityChangesCache.delete(cacheKey);
+    gitActivityChangesCache.set(cacheKey, existing);
+    return { ...existing.value };
+  }
+  const entry = { expiresAt: Date.now() + gitActivityCacheTtlMs, promise: null, value: null };
+  entry.promise = readGitActivityChangesRepositoryData(repositoryPath, range, criteria, ref, authorId);
+  gitActivityChangesCache.set(cacheKey, entry);
+  trimGitActivityChangesCache();
+  const value = await entry.promise;
+  if (value.state !== "ready") gitActivityChangesCache.delete(cacheKey);
+  else gitActivityChangesCache.set(cacheKey, { expiresAt: entry.expiresAt, promise: null, value });
+  return { ...value };
 }
 
 async function readGitActivityRepositoryCached(repositoryPath, range, criteria, ref, currentAuthorId, force) {
@@ -1269,6 +1429,41 @@ async function readGitActivity(projectPaths, options = {}) {
   return {
     ...range,
     criteria,
+    repositories: entries.sort((left, right) => left.index - right.index).map((entry) => entry.result),
+    lastRefreshedAt: new Date().toISOString(),
+  };
+}
+
+async function readGitActivityChanges(projectPaths, options = {}) {
+  const range = resolveGitActivityRange(options);
+  const criteria = normalizeGitActivityCriteria(options);
+  const { groups, failures } = await resolveGitActivityRepositoryGroups(projectPaths);
+  const entries = [...failures].map((entry) => ({
+    ...entry,
+    result: { ...entry.result, commits: 0, files: 0, additions: 0, deletions: 0, binaryFiles: 0 },
+  }));
+  await runGitWorkspaceWorkerPool(
+    groups.map((group) => async () => {
+      const [ref, currentAuthorId] = await Promise.all([
+        resolveGitActivityRef(group.repositoryPaths, criteria.refScope),
+        options.currentUserOnly ? resolveGitActivityCurrentAuthorId(group.repositoryPath, criteria) : "",
+      ]);
+      const authorId = options.currentUserOnly
+        ? currentAuthorId || "missing-current-user"
+        : normalizeGitActivityAuthorId(options.authorId);
+      const data = await readGitActivityChangesRepositoryCached(
+        group.repositoryPath,
+        range,
+        criteria,
+        ref,
+        authorId,
+        options.force === true,
+      );
+      entries.push({ index: group.index, result: { ...data, projectPaths: [...group.projectPaths] } });
+    }),
+  );
+  return {
+    ...range,
     repositories: entries.sort((left, right) => left.index - right.index).map((entry) => entry.result),
     lastRefreshedAt: new Date().toISOString(),
   };

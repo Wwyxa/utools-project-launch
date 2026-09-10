@@ -21,6 +21,8 @@ const defaultUiPreferences: UiPreferences = {
   workActivity: {
     rangeMode: "rolling",
     selectedYear: new Date().getFullYear(),
+    customStartDate: "",
+    customEndDate: "",
     refScope: "all",
     timeZone: "local",
     hideMerges: false,

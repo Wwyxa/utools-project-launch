@@ -138,6 +138,8 @@ function getDefaultUiPreferences() {
     workActivity: {
       rangeMode: "rolling",
       selectedYear: new Date().getFullYear(),
+      customStartDate: "",
+      customEndDate: "",
       refScope: "all",
       timeZone: "local",
       hideMerges: false,
@@ -155,6 +157,13 @@ function normalizeProjectDetailsTabOrder(value) {
 
 function normalizeProjectDetailsDefaultTab(value) {
   return projectDetailsTabIdSet.has(value) ? value : "scripts";
+}
+
+function normalizeWorkActivityDate(value) {
+  const candidate = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return "";
+  const parsed = new Date(`${candidate}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate ? candidate : "";
 }
 
 function normalizeWorkActivityPreferences(value) {
@@ -185,20 +194,30 @@ function normalizeWorkActivityPreferences(value) {
           ],
           names: [
             ...new Set(
-              (Array.isArray(identity.names) ? identity.names : [])
-                .map((name) => String(name).trim())
-                .filter(Boolean),
+              (Array.isArray(identity.names) ? identity.names : []).map((name) => String(name).trim()).filter(Boolean),
             ),
           ],
         }))
         .filter((identity) => identity.id && identity.name)
         .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
     : [];
+  const selectedYear = Number.isInteger(value.selectedYear)
+    ? Math.min(9999, Math.max(1970, value.selectedYear))
+    : new Date().getFullYear();
+  const legacyCalendarYear = value.rangeMode === "year";
   return {
-    rangeMode: value.rangeMode === "year" ? "year" : "rolling",
-    selectedYear: Number.isInteger(value.selectedYear)
-      ? Math.min(9999, Math.max(1970, value.selectedYear))
-      : new Date().getFullYear(),
+    rangeMode: ["days7", "days30", "days90", "currentYear", "custom"].includes(value.rangeMode)
+      ? value.rangeMode
+      : legacyCalendarYear
+        ? "custom"
+        : "rolling",
+    selectedYear,
+    customStartDate: legacyCalendarYear
+      ? `${String(selectedYear).padStart(4, "0")}-01-01`
+      : normalizeWorkActivityDate(value.customStartDate),
+    customEndDate: legacyCalendarYear
+      ? `${String(selectedYear).padStart(4, "0")}-12-31`
+      : normalizeWorkActivityDate(value.customEndDate),
     refScope: value.refScope === "current" || value.refScope === "default" ? value.refScope : "all",
     timeZone: validTimeZone ? timeZone : "local",
     hideMerges: value.hideMerges === true,

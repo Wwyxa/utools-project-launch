@@ -27,6 +27,8 @@ const defaultOpenTab: ProjectDetailsTabId = "scripts";
 const defaultWorkActivity: UiPreferences["workActivity"] = {
   rangeMode: "rolling",
   selectedYear: new Date().getFullYear(),
+  customStartDate: "",
+  customEndDate: "",
   refScope: "all",
   timeZone: "local",
   hideMerges: false,
@@ -338,6 +340,27 @@ describe("browser UI preferences fallback", () => {
       identities: [{ id: "alex", emails: ["alex@example.test"] }],
     });
     expect(storage.has(legacyTabOrderKey)).toBe(false);
+  });
+
+  it("migrates the legacy calendar-year mode into an equivalent custom range", () => {
+    storage.set(
+      uiPreferencesKey,
+      JSON.stringify({
+        schemaVersion: 1,
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
+        dashboard: { tinyCardActionTrigger: "hover" },
+        coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
+        workActivity: { ...defaultWorkActivity, rangeMode: "year", selectedYear: 2024 },
+      }),
+    );
+
+    expect(getProjectBridge().loadUiPreferences().workActivity).toMatchObject({
+      rangeMode: "custom",
+      selectedYear: 2024,
+      customStartDate: "2024-01-01",
+      customEndDate: "2024-12-31",
+    });
   });
 
   it("keeps Project Launch Service disabled by default and normalizes stored preferences", () => {

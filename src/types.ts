@@ -175,8 +175,10 @@ export interface ProjectGitActivityIdentity {
 }
 
 export interface WorkActivityPreferences {
-  rangeMode: "rolling" | "year";
+  rangeMode: "days7" | "days30" | "days90" | "currentYear" | "rolling" | "custom";
   selectedYear: number;
+  customStartDate: string;
+  customEndDate: string;
   refScope: ProjectGitActivityRefScope;
   timeZone: string;
   hideMerges: boolean;
@@ -857,7 +859,10 @@ export type ProjectGitReadResult<T> =
   | { ok: true; value: T }
   | { ok: false; value: T | null; failure: ProjectGitReadFailure };
 
-export type ProjectGitActivityCriteria = Omit<WorkActivityPreferences, "rangeMode" | "selectedYear">;
+export type ProjectGitActivityCriteria = Omit<
+  WorkActivityPreferences,
+  "rangeMode" | "selectedYear" | "customStartDate" | "customEndDate"
+>;
 
 export interface ProjectGitActivityOptions extends Partial<ProjectGitActivityCriteria> {
   startDate: string;
@@ -869,6 +874,29 @@ export interface ProjectGitActivityDay {
   date: string;
   commits: number;
   authors: Record<string, number>;
+}
+
+export interface ProjectGitActivityEntry {
+  hash: string;
+  date: string;
+  day: string;
+  authorId: string;
+  hour: number;
+  type:
+    | "feat"
+    | "fix"
+    | "docs"
+    | "refactor"
+    | "test"
+    | "chore"
+    | "perf"
+    | "build"
+    | "ci"
+    | "style"
+    | "revert"
+    | "other";
+  scope?: string;
+  breaking?: boolean;
 }
 
 export interface ProjectGitActivityAuthor {
@@ -888,6 +916,7 @@ export interface ProjectGitActivityRepository {
   activeDays: number;
   daily: ProjectGitActivityDay[];
   authors: ProjectGitActivityAuthor[];
+  entries?: ProjectGitActivityEntry[];
   resolvedRef?: string;
   scopeMessage?: string;
   excludedMerges?: number;
@@ -901,6 +930,30 @@ export interface ProjectGitActivityReport {
   criteria?: ProjectGitActivityCriteria;
   repositories: ProjectGitActivityRepository[];
   lastRefreshedAt: string;
+}
+
+export interface ProjectGitActivityChangesRepository {
+  repositoryPath: string;
+  projectPaths: string[];
+  state: ProjectGitActivityRepositoryState;
+  commits: number;
+  files: number;
+  additions: number;
+  deletions: number;
+  binaryFiles: number;
+  message?: string;
+}
+
+export interface ProjectGitActivityChangesReport {
+  startDate: string;
+  endDate: string;
+  repositories: ProjectGitActivityChangesRepository[];
+  lastRefreshedAt: string;
+}
+
+export interface ProjectGitActivityChangesOptions extends ProjectGitActivityOptions {
+  authorId?: string;
+  currentUserOnly?: boolean;
 }
 
 export interface ProjectGitActivityDayOptions extends Partial<ProjectGitActivityCriteria> {
@@ -1544,6 +1597,10 @@ export interface ProjectBridge {
     options?: { limit?: number; skip?: number },
   ): Promise<ProjectGitReadResult<ProjectBridgeGitCommitPage>>;
   readGitActivity(projectPaths: string[], options: ProjectGitActivityOptions): Promise<ProjectGitActivityReport>;
+  readGitActivityChanges(
+    projectPaths: string[],
+    options: ProjectGitActivityChangesOptions,
+  ): Promise<ProjectGitActivityChangesReport>;
   readGitActivityDay(
     projectPaths: string[],
     options: ProjectGitActivityDayOptions,

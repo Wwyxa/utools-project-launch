@@ -125,6 +125,8 @@ try {
   assert.equal(repository.currentAuthorId, "email:git-activity-validation@example.invalid");
   assert.equal(repository.daily.find((day) => day.date === localDate(firstDate))?.commits, 1);
   assert.equal(repository.daily.find((day) => day.date === localDate(secondDate))?.commits, 1);
+  assert.equal(repository.entries.length, 2);
+  assert.ok(repository.entries.every((entry) => Number.isInteger(entry.hour) && entry.hour >= 0 && entry.hour < 24));
 
   const nonRepository = firstReport.repositories.find((entry) => entry.projectPaths.includes(nonGitRoot));
   assert.ok(nonRepository);
@@ -211,6 +213,7 @@ try {
     force: true,
   });
   assert.equal(utcReport.repositories[0].daily.find((day) => day.date === "2026-02-02")?.commits, 1);
+  assert.equal(utcReport.repositories[0].entries.find((entry) => entry.hash === rootHash)?.day, "2026-02-02");
   assert.equal(kiritimatiReport.repositories[0].daily.find((day) => day.date === "2026-02-03")?.commits, 1);
 
   const currentBranch = runGit(projectRoot, ["branch", "--show-current"]).trim();
@@ -313,7 +316,10 @@ try {
   assert.equal(worktreeScope.repositories.length, 1);
   assert.equal(worktreeScope.repositories[0].totalCommits, 8);
   assert.equal(worktreeScope.repositories[0].resolvedRef, "2 worktree HEADs");
-  assert.deepEqual(Array.from(worktreeScope.repositories[0].projectPaths).sort(), [linkedWorktreeRoot, projectRoot].sort());
+  assert.deepEqual(
+    Array.from(worktreeScope.repositories[0].projectPaths).sort(),
+    [linkedWorktreeRoot, projectRoot].sort(),
+  );
 
   const mergedIdentityPage = await bridge.readGitActivityDay([projectRoot], {
     date: "2026-02-07",
@@ -334,6 +340,80 @@ try {
   assert.equal(mergedIdentityPage.hasMore, true);
   assert.equal(mergedIdentityNextPage.hasMore, false);
   assert.notEqual(mergedIdentityPage.commits[0].hash, mergedIdentityNextPage.commits[0].hash);
+
+  commitFile({
+    fileName: "binary.dat",
+    contents: Buffer.from([0, 1, 2, 3]),
+    message: "feat(activity)!: add binary fixture",
+    name: "Alex",
+    email: "alex.personal@example.invalid",
+    date: "2026-04-01T09:00:00+00:00",
+  });
+  const conventionalReport = await bridge.readGitActivity([projectRoot], {
+    startDate: "2026-04-01",
+    endDate: "2026-04-01",
+    timeZone: "UTC",
+    refScope: "current",
+    force: true,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(conventionalReport.repositories[0].entries[0])), {
+    hash: conventionalReport.repositories[0].entries[0].hash,
+    date: "2026-04-01T09:00:00Z",
+    day: "2026-04-01",
+    authorId: "email:alex.personal@example.invalid",
+    hour: 9,
+    type: "feat",
+    scope: "activity",
+    breaking: true,
+  });
+
+  runGit(projectRoot, ["mv", "third.txt", "renamed-third.txt"]);
+  runGit(projectRoot, ["commit", "-m", "refactor: rename fixture"], {
+    GIT_AUTHOR_DATE: "2026-04-02T09:00:00+00:00",
+    GIT_COMMITTER_DATE: "2026-04-02T09:00:00+00:00",
+  });
+  runGit(projectRoot, ["checkout", "-b", "change-stats-topic"]);
+  commitFile({
+    fileName: "change-stats-topic.txt",
+    contents: "topic\n",
+    message: "fix(stats): add topic fixture",
+    name: "Alex",
+    email: "alex.personal@example.invalid",
+    date: "2026-04-03T09:00:00+00:00",
+  });
+  runGit(projectRoot, ["checkout", currentBranch]);
+  runGit(projectRoot, ["merge", "--no-ff", "change-stats-topic", "-m", "merge change stats topic"], {
+    GIT_AUTHOR_DATE: "2026-04-04T09:00:00+00:00",
+    GIT_COMMITTER_DATE: "2026-04-04T09:00:00+00:00",
+  });
+
+  const changesRange = {
+    startDate: "2026-04-01",
+    endDate: "2026-04-30",
+    timeZone: "UTC",
+    refScope: "current",
+    force: true,
+  };
+  const changesWithMerge = await bridge.readGitActivityChanges([projectRoot], changesRange);
+  const changesWithoutMerge = await bridge.readGitActivityChanges([projectRoot], {
+    ...changesRange,
+    hideMerges: true,
+  });
+  assert.equal(changesWithMerge.repositories[0].state, "ready");
+  assert.equal(changesWithMerge.repositories[0].commits, 4);
+  assert.equal(changesWithMerge.repositories[0].files, 4);
+  assert.equal(changesWithMerge.repositories[0].binaryFiles, 1);
+  assert.equal(changesWithMerge.repositories[0].additions, 2);
+  assert.equal(changesWithMerge.repositories[0].deletions, 0);
+  assert.equal(changesWithoutMerge.repositories[0].commits, 3);
+  assert.equal(changesWithoutMerge.repositories[0].files, 3);
+  assert.equal(changesWithoutMerge.repositories[0].additions, 1);
+  const unmatchedAuthorChanges = await bridge.readGitActivityChanges([projectRoot], {
+    ...changesRange,
+    authorId: "email:nobody@example.invalid",
+  });
+  assert.equal(unmatchedAuthorChanges.repositories[0].commits, 0);
+  assert.equal(unmatchedAuthorChanges.repositories[0].files, 0);
 
   console.log("Git activity validation passed.");
 } finally {
