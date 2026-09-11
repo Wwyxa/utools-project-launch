@@ -162,7 +162,6 @@ export interface UiPreferences {
     projectDetailsTabReorder: number;
     projectDetailsTabDefault: number;
   };
-  workActivity: WorkActivityPreferences;
 }
 
 export type ProjectGitActivityRefScope = "current" | "default" | "all";
@@ -172,6 +171,12 @@ export interface ProjectGitActivityIdentity {
   name: string;
   emails: string[];
   names: string[];
+}
+
+export interface WorkActivityProjectGroup {
+  id: string;
+  name: string;
+  projectIds: string[];
 }
 
 export interface WorkActivityPreferences {
@@ -185,6 +190,8 @@ export interface WorkActivityPreferences {
   excludeBots: boolean;
   botPatterns: string[];
   identities: ProjectGitActivityIdentity[];
+  selectedAuthorId: string;
+  projectGroups: WorkActivityProjectGroup[];
 }
 
 export interface ProjectLaunchServicePreferences {
@@ -861,7 +868,12 @@ export type ProjectGitReadResult<T> =
 
 export type ProjectGitActivityCriteria = Omit<
   WorkActivityPreferences,
-  "rangeMode" | "selectedYear" | "customStartDate" | "customEndDate"
+  | "rangeMode"
+  | "selectedYear"
+  | "customStartDate"
+  | "customEndDate"
+  | "selectedAuthorId"
+  | "projectGroups"
 >;
 
 export interface ProjectGitActivityOptions extends Partial<ProjectGitActivityCriteria> {
@@ -960,6 +972,7 @@ export interface ProjectGitActivityDayOptions extends Partial<ProjectGitActivity
   date: string;
   authorId?: string;
   currentUserOnly?: boolean;
+  query?: string;
   limit?: number;
   skip?: number;
   force?: boolean;

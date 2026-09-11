@@ -86,6 +86,8 @@ describe("work activity Store", () => {
     expect(store.workActivityReport).toBe(report);
     expect(store.workActivityMessage).toBe("offline");
     expect(store.workActivityLoading).toBe(false);
+    expect(store.workActivityLoadState).toBe("stale");
+    expect(store.workActivityReport?.lastRefreshedAt).toBe("2026-09-09T00:00:00.000Z");
 
     readGitActivity.mockResolvedValue(activityReport(alpha.path, [alpha.path], "ready"));
     await store.loadGitActivity(options);
@@ -159,6 +161,38 @@ describe("work activity Store", () => {
     expect(store.selectedProjectId).toBe(alpha.id);
   });
 
+  it("keeps selection in the current Store session and uses an explicit project opening as temporary focus", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
+    window.projectBridge = {
+      ...getProjectBridge(),
+      saveUiPreferences,
+    };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const alpha = createProject("alpha", "C:\\alpha");
+    const beta = createProject("beta", "C:\\beta");
+    store.projects = [alpha, beta];
+
+    store.openWorkActivity();
+    store.setWorkActivityProjectIds([alpha.id]);
+    store.setWorkActivityPreferences({ selectedAuthorId: "email:alex@example.test" });
+    store.returnFromWorkActivity();
+
+    store.openWorkActivity(beta.id);
+
+    expect(store.workActivitySelectedProjectIds).toEqual([alpha.id]);
+    expect(store.workActivityFocusProjectId).toBe(beta.id);
+    expect(store.workActivityPreferences.selectedAuthorId).toBe("email:alex@example.test");
+    expect(saveUiPreferences).not.toHaveBeenCalled();
+  });
+
   it("ignores a stale report after the selected project set changes", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },
@@ -217,7 +251,7 @@ describe("work activity Store", () => {
     expect(store.workActivitySelectableProjects).toEqual([project]);
   });
 
-  it("persists criteria changes and invalidates the report cache", async () => {
+  it("keeps criteria changes in the Store session and invalidates the report cache", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },
       localStorage: { getItem: () => null, setItem: () => undefined },
@@ -248,7 +282,7 @@ describe("work activity Store", () => {
     expect(readGitActivity).toHaveBeenCalledTimes(1);
 
     store.setWorkActivityPreferences({ refScope: "current", hideMerges: true });
-    expect(saveUiPreferences).toHaveBeenCalledTimes(1);
+    expect(saveUiPreferences).not.toHaveBeenCalled();
     expect(store.workActivityReport).toBeNull();
     await store.loadGitActivity(range);
     expect(readGitActivity).toHaveBeenCalledTimes(2);
@@ -260,7 +294,7 @@ describe("work activity Store", () => {
     await store.loadGitActivity({ ...range, timeZone: "UTC" });
     await store.loadGitActivity(range);
     expect(readGitActivity).toHaveBeenCalledTimes(4);
-    expect(store.uiPreferences.workActivity.timeZone).toBe("local");
+    expect(store.workActivityPreferences.timeZone).toBe("local");
   });
 
   it("drops an older day-detail response when a newer request wins", async () => {
@@ -295,5 +329,152 @@ describe("work activity Store", () => {
     await expect(newerRequest).resolves.toMatchObject({ date: "2026-02-04" });
     first.resolve(report("2026-02-03"));
     await expect(olderRequest).resolves.toBeNull();
+  });
+
+  it("saves, applies, renames, and deletes named project groups", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
+    window.projectBridge = { ...getProjectBridge(), saveUiPreferences };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [createProject("alpha", "C:\\alpha"), createProject("beta", "C:\\beta")];
+    store.openWorkActivity();
+    store.setWorkActivityProjectIds(["alpha"]);
+
+    expect(store.saveWorkActivityProjectGroup(" Main work ")).toBe(true);
+    const group = store.workActivityPreferences.projectGroups[0];
+    expect(group).toMatchObject({ name: "Main work", projectIds: ["alpha"] });
+
+    store.setWorkActivityProjectIds(["beta"]);
+    expect(store.applyWorkActivityProjectGroup(group.id)).toBe(true);
+    expect(store.workActivitySelectedProjectIds).toEqual(["alpha"]);
+    expect(store.renameWorkActivityProjectGroup(group.id, "Primary")).toBe(true);
+    expect(store.workActivityPreferences.projectGroups[0].name).toBe("Primary");
+    expect(store.deleteWorkActivityProjectGroup(group.id)).toBe(true);
+    expect(store.workActivityPreferences.projectGroups).toEqual([]);
+    expect(saveUiPreferences).not.toHaveBeenCalled();
+  });
+
+  it("resets work activity session state when a new Store is created", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
+    window.projectBridge = { ...getProjectBridge(), saveUiPreferences };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const firstStore = useStore();
+    firstStore.projects = [createProject("alpha", "C:\\alpha")];
+    firstStore.openWorkActivity();
+    firstStore.setWorkActivityProjectIds([]);
+    firstStore.setWorkActivityPreferences({ rangeMode: "days7", selectedAuthorId: "" });
+    firstStore.saveWorkActivityProjectGroup("Session group");
+
+    setActivePinia(createPinia());
+    const restartedStore = useStore();
+
+    expect(restartedStore.workActivityPreferences).toMatchObject({
+      rangeMode: "rolling",
+      selectedAuthorId: "current",
+      projectGroups: [],
+    });
+    expect(restartedStore.workActivitySelectedProjectIds).toEqual([]);
+    expect(saveUiPreferences).not.toHaveBeenCalled();
+  });
+
+  it("retries one failed repository without discarding successful repositories", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const betaReport = activityReport("C:\\beta", ["C:\\beta"], "ready");
+    const readGitActivity = vi.fn<ProjectBridge["readGitActivity"]>(async () => betaReport);
+    window.projectBridge = { ...getProjectBridge(), readGitActivity };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const alpha = activityReport("C:\\alpha", ["C:\\alpha"], "ready").repositories[0];
+    store.workActivityReport = {
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      repositories: [
+        alpha,
+        {
+          repositoryPath: "C:\\beta",
+          projectPaths: ["C:\\beta"],
+          state: "failed",
+          totalCommits: 0,
+          activeDays: 0,
+          daily: [],
+          authors: [],
+          message: "offline",
+        },
+      ],
+      lastRefreshedAt: "2026-09-09T00:00:00.000Z",
+    };
+
+    await expect(
+      store.retryWorkActivityRepository("C:\\beta", { startDate: "2026-01-01", endDate: "2026-12-31" }),
+    ).resolves.toBe(true);
+
+    expect(readGitActivity).toHaveBeenCalledWith(["C:\\beta"], expect.objectContaining({ force: true }));
+    expect(store.workActivityReport.repositories).toEqual([alpha, betaReport.repositories[0]]);
+    expect(store.workActivityLoadState).toBe("ready");
+    expect(store.workActivityRetryingRepositoryPaths).toEqual([]);
+  });
+
+  it("targets a failed repository by project path when the repository root is unavailable", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const betaReport = activityReport("C:\\beta", ["C:\\beta"], "ready");
+    const readGitActivity = vi.fn<ProjectBridge["readGitActivity"]>(async () => betaReport);
+    window.projectBridge = { ...getProjectBridge(), readGitActivity };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.workActivityReport = {
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      repositories: [
+        {
+          repositoryPath: "",
+          projectPaths: ["C:\\alpha"],
+          state: "failed",
+          totalCommits: 0,
+          activeDays: 0,
+          daily: [],
+          authors: [],
+        },
+        {
+          repositoryPath: "",
+          projectPaths: ["C:\\beta"],
+          state: "failed",
+          totalCommits: 0,
+          activeDays: 0,
+          daily: [],
+          authors: [],
+        },
+      ],
+      lastRefreshedAt: "2026-09-09T00:00:00.000Z",
+    };
+
+    await expect(
+      store.retryWorkActivityRepository("C:\\beta", { startDate: "2026-01-01", endDate: "2026-12-31" }),
+    ).resolves.toBe(true);
+
+    expect(readGitActivity).toHaveBeenCalledWith(["C:\\beta"], expect.objectContaining({ force: true }));
+    expect(store.workActivityReport.repositories[0].state).toBe("failed");
+    expect(store.workActivityReport.repositories[1]).toEqual(betaReport.repositories[0]);
   });
 });

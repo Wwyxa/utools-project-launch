@@ -24,19 +24,6 @@ const legacyTabOrderKey = "utools-project-launch.project-details-tab-order.v1";
 const projectLaunchServicePreferencesKey = "utools-project-launch.project-launch-service.v1";
 const defaultTabOrder: ProjectDetailsTabId[] = ["info", "scripts", "automation", "files", "git", "memo"];
 const defaultOpenTab: ProjectDetailsTabId = "scripts";
-const defaultWorkActivity: UiPreferences["workActivity"] = {
-  rangeMode: "rolling",
-  selectedYear: new Date().getFullYear(),
-  customStartDate: "",
-  customEndDate: "",
-  refScope: "all",
-  timeZone: "local",
-  hideMerges: false,
-  excludeBots: false,
-  botPatterns: ["\\[bot\\]$", "(^|[+._-])bot@"],
-  identities: [],
-};
-
 const loadPreloadBridge = (
   storage: Map<string, unknown>,
   removeItem: (key: string) => void = (key) => {
@@ -207,7 +194,6 @@ describe("browser UI preferences fallback", () => {
       projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-      workActivity: defaultWorkActivity,
     });
     expect(JSON.parse(storage.get(uiPreferencesKey)!)).toMatchObject({ schemaVersion: 1 });
   });
@@ -246,7 +232,6 @@ describe("browser UI preferences fallback", () => {
       },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-      workActivity: defaultWorkActivity,
     });
   });
 
@@ -260,7 +245,6 @@ describe("browser UI preferences fallback", () => {
       projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-      workActivity: defaultWorkActivity,
     });
   });
 
@@ -307,7 +291,6 @@ describe("browser UI preferences fallback", () => {
       },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 0 },
-      workActivity: defaultWorkActivity,
     });
   });
 
@@ -318,13 +301,6 @@ describe("browser UI preferences fallback", () => {
       projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "contextmenu" },
       coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
-      workActivity: {
-        ...defaultWorkActivity,
-        refScope: "default",
-        timeZone: "Asia/Shanghai",
-        hideMerges: true,
-        identities: [{ id: "alex", name: "Alex", emails: ["ALEX@EXAMPLE.TEST"], names: ["Alex"] }],
-      },
     });
 
     const preferences = getProjectBridge().loadUiPreferences();
@@ -333,34 +309,7 @@ describe("browser UI preferences fallback", () => {
     expect(preferences.dashboard.tinyCardActionTrigger).toBe("contextmenu");
     expect(preferences.coachMarks.projectDetailsTabReorder).toBe(2);
     expect(preferences.coachMarks.projectDetailsTabDefault).toBe(3);
-    expect(preferences.workActivity).toMatchObject({
-      refScope: "default",
-      timeZone: "Asia/Shanghai",
-      hideMerges: true,
-      identities: [{ id: "alex", emails: ["alex@example.test"] }],
-    });
     expect(storage.has(legacyTabOrderKey)).toBe(false);
-  });
-
-  it("migrates the legacy calendar-year mode into an equivalent custom range", () => {
-    storage.set(
-      uiPreferencesKey,
-      JSON.stringify({
-        schemaVersion: 1,
-        iconPackId: "builtin",
-        projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
-        dashboard: { tinyCardActionTrigger: "hover" },
-        coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-        workActivity: { ...defaultWorkActivity, rangeMode: "year", selectedYear: 2024 },
-      }),
-    );
-
-    expect(getProjectBridge().loadUiPreferences().workActivity).toMatchObject({
-      rangeMode: "custom",
-      selectedYear: 2024,
-      customStartDate: "2024-01-01",
-      customEndDate: "2024-12-31",
-    });
   });
 
   it("keeps Project Launch Service disabled by default and normalizes stored preferences", () => {
@@ -395,7 +344,6 @@ describe("browser UI preferences fallback", () => {
       projectDetails: { tabOrder: [...defaultTabOrder], defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-      workActivity: defaultWorkActivity,
     };
     const loadUiPreferences = vi.fn(() => initialPreferences);
     const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
@@ -4494,7 +4442,6 @@ describe("uTools preload UI preferences", () => {
       projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "contextmenu" },
       coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
-      workActivity: defaultWorkActivity,
     });
     const saved = storage.get(uiPreferencesKey) as UiPreferences;
     expect(saved.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
@@ -4516,7 +4463,6 @@ describe("uTools preload UI preferences", () => {
       projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-      workActivity: defaultWorkActivity,
     });
   });
 
@@ -4527,7 +4473,6 @@ describe("uTools preload UI preferences", () => {
       projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"], defaultTab: "memo" },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1 },
-      workActivity: defaultWorkActivity,
     };
     const storage = new Map<string, unknown>([[uiPreferencesKey, preferences]]);
     const bridge = loadPreloadBridge(storage, () => {

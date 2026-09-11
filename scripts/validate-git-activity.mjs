@@ -179,6 +179,16 @@ try {
   assert.equal(secondDayPage.commits[0].message, "third activity");
   assert.equal(secondDayPage.hasMore, false);
 
+  const searchedDayPage = await bridge.readGitActivityDay([projectRoot], {
+    date: localDate(thirdDate),
+    query: "third",
+    limit: 1,
+  });
+  assert.equal(searchedDayPage.totalCommits, 1);
+  assert.equal(searchedDayPage.commits.length, 1);
+  assert.equal(searchedDayPage.commits[0].message, "third activity");
+  assert.equal(searchedDayPage.hasMore, false);
+
   const personalAuthorPage = await bridge.readGitActivityDay([projectRoot], {
     date: localDate(thirdDate),
     authorId: "email:alex.personal@example.invalid",

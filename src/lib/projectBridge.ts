@@ -30,6 +30,7 @@ import type {
   ProjectGitActionResult,
   ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
+  ProjectGitActivityCriteria,
   ProjectGitActivityOptions,
   ProjectGitActivityChangesOptions,
   ProjectGitActivityReport,
@@ -455,18 +456,6 @@ const defaultUiPreferences = (): UiPreferences => ({
   projectDetails: { tabOrder: [...projectDetailsTabIds], defaultTab: "scripts" },
   dashboard: { tinyCardActionTrigger: "hover" },
   coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-  workActivity: {
-    rangeMode: "rolling",
-    selectedYear: new Date().getFullYear(),
-    customStartDate: "",
-    customEndDate: "",
-    refScope: "all",
-    timeZone: "local",
-    hideMerges: false,
-    excludeBots: false,
-    botPatterns: ["\\[bot\\]$", "(^|[+._-])bot@"],
-    identities: [],
-  },
 });
 
 const browserIconPackLoadResult = (): IconPackLoadResult => ({
@@ -497,83 +486,6 @@ const normalizeProjectDetailsDefaultTab = (value: unknown): ProjectDetailsTabId 
     ? (value as ProjectDetailsTabId)
     : "scripts";
 
-const normalizeWorkActivityDate = (value: unknown): string => {
-  const candidate = String(value || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return "";
-  const parsed = new Date(`${candidate}T00:00:00Z`);
-  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate ? candidate : "";
-};
-
-const normalizeWorkActivityPreferences = (value: unknown): UiPreferences["workActivity"] => {
-  const defaults = defaultUiPreferences().workActivity;
-  if (!value || typeof value !== "object") return defaults;
-  const candidate = value as Partial<UiPreferences["workActivity"]>;
-  const timeZone = String(candidate.timeZone || "").trim();
-  let validTimeZone = timeZone === "local";
-  if (!validTimeZone) {
-    try {
-      new Intl.DateTimeFormat("en", { timeZone }).format();
-      validTimeZone = true;
-    } catch {
-      validTimeZone = false;
-    }
-  }
-  const identities = Array.isArray(candidate.identities)
-    ? candidate.identities
-        .filter((identity) => identity && typeof identity === "object")
-        .map((identity) => ({
-          id: String(identity.id || "").trim(),
-          name: String(identity.name || "").trim(),
-          emails: [
-            ...new Set(
-              (Array.isArray(identity.emails) ? identity.emails : [])
-                .map((email) => String(email).trim().toLocaleLowerCase())
-                .filter((email) => email && !/\s/.test(email)),
-            ),
-          ],
-          names: [
-            ...new Set(
-              (Array.isArray(identity.names) ? identity.names : []).map((name) => String(name).trim()).filter(Boolean),
-            ),
-          ],
-        }))
-        .filter((identity) => identity.id && identity.name)
-        .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
-    : [];
-  const selectedYear =
-    typeof candidate.selectedYear === "number" && Number.isInteger(candidate.selectedYear)
-      ? Math.min(9999, Math.max(1970, candidate.selectedYear))
-      : new Date().getFullYear();
-  const legacyCalendarYear = String(candidate.rangeMode || "") === "year";
-  return {
-    rangeMode:
-      candidate.rangeMode === "days7" ||
-      candidate.rangeMode === "days30" ||
-      candidate.rangeMode === "days90" ||
-      candidate.rangeMode === "currentYear" ||
-      candidate.rangeMode === "custom"
-        ? candidate.rangeMode
-        : legacyCalendarYear
-          ? "custom"
-          : "rolling",
-    selectedYear,
-    customStartDate: legacyCalendarYear
-      ? `${String(selectedYear).padStart(4, "0")}-01-01`
-      : normalizeWorkActivityDate(candidate.customStartDate),
-    customEndDate: legacyCalendarYear
-      ? `${String(selectedYear).padStart(4, "0")}-12-31`
-      : normalizeWorkActivityDate(candidate.customEndDate),
-    refScope: candidate.refScope === "current" || candidate.refScope === "default" ? candidate.refScope : "all",
-    timeZone: validTimeZone ? timeZone : "local",
-    hideMerges: candidate.hideMerges === true,
-    excludeBots: candidate.excludeBots === true,
-    botPatterns: Array.isArray(candidate.botPatterns)
-      ? [...new Set(candidate.botPatterns.map((pattern) => String(pattern).trim()).filter(Boolean))].slice(0, 20)
-      : defaults.botPatterns,
-    identities,
-  };
-};
-
 export const normalizeUiPreferences = (value: unknown): UiPreferences => {
   const defaults = defaultUiPreferences();
   if (!value || typeof value !== "object" || (value as Partial<UiPreferences>).schemaVersion !== 1) return defaults;
@@ -601,7 +513,6 @@ export const normalizeUiPreferences = (value: unknown): UiPreferences => {
           ? defaultCoachMarkVersion
           : 0,
     },
-    workActivity: normalizeWorkActivityPreferences(candidate.workActivity),
   };
 };
 
@@ -1170,7 +1081,14 @@ const fallbackBridge: ProjectBridge = {
     _projectPaths: string[],
     options: ProjectGitActivityOptions,
   ): Promise<ProjectGitActivityReport> {
-    const criteria = normalizeWorkActivityPreferences(options);
+    const criteria: ProjectGitActivityCriteria = {
+      refScope: options.refScope || "all",
+      timeZone: options.timeZone || "local",
+      hideMerges: options.hideMerges === true,
+      excludeBots: options.excludeBots === true,
+      botPatterns: options.botPatterns || ["\\[bot\\]$", "(^|[+._-])bot@"],
+      identities: options.identities || [],
+    };
     return {
       startDate: options.startDate,
       endDate: options.endDate,

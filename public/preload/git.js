@@ -983,6 +983,7 @@ function normalizeGitActivityDayPageOptions(options = {}) {
     date,
     authorId: normalizeGitActivityAuthorId(options.authorId),
     currentUserOnly: options.currentUserOnly === true,
+    query: String(options.query || "").trim().slice(0, 200),
     limit,
     skip,
     force: options.force === true,
@@ -1470,10 +1471,13 @@ async function readGitActivityChanges(projectPaths, options = {}) {
 }
 
 async function readGitActivityDayRepositoryData(repositoryPath, page, authorId, capacity, ref) {
-  const contextKey = `${gitActivityCriteriaKey(page)}::${ref.fingerprint}`;
+  const normalizedQuery = page.query.toLocaleLowerCase();
+  const contextKey = `${gitActivityCriteriaKey(page)}::${ref.fingerprint}${normalizedQuery ? `::${normalizedQuery}` : ""}`;
   const cached = page.force ? null : readGitActivityDayCache(repositoryPath, page.date, contextKey);
   if (cached) {
-    const matching = authorId ? cached.filter((commit) => commit.authorId === authorId) : cached;
+    const matching = cached.filter(
+      (commit) => (!authorId || commit.authorId === authorId) && (!normalizedQuery || commit.message.toLocaleLowerCase().includes(normalizedQuery)),
+    );
     return {
       repositoryPath,
       state: "ready",
@@ -1498,7 +1502,8 @@ async function readGitActivityDayRepositoryData(repositoryPath, page, authorId, 
       formatGitActivityDate(commit.date, page.timeZone) !== page.date ||
       (page.hideMerges && commit.isMerge) ||
       (page.excludeBots && botMatcher(commit)) ||
-      (authorId && commit.authorId !== authorId)
+      (authorId && commit.authorId !== authorId) ||
+      (normalizedQuery && !commit.message.toLocaleLowerCase().includes(normalizedQuery))
     )
       return;
     totalCommits += 1;

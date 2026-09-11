@@ -11,9 +11,16 @@ import {
   FolderGit2,
   GitCompareArrows,
   GitCommitHorizontal,
+  ClipboardCopy,
+  Database,
+  Link2,
   Plus,
   RefreshCw,
+  RotateCcw,
+  Save,
+  Search,
   Settings2,
+  Pencil,
   Trash2,
   Users,
   X,
@@ -33,6 +40,7 @@ import {
 } from "../../lib/gitActivity";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import { getGitHubCommitUrl } from "../../lib/gitHubCommitUrl";
 import type {
   ProjectGitActivityChangesReport,
   ProjectGitActivityDayReport,
@@ -49,14 +57,18 @@ const currentAuthorSelection = "current";
 const store = useStore();
 const t = useI18n();
 const rangeMode = computed({
-  get: () => store.uiPreferences.workActivity.rangeMode,
+  get: () => store.workActivityPreferences.rangeMode,
   set: (mode: ActivityRangeMode) => {
     store.setWorkActivityPreferences({ rangeMode: mode });
   },
 });
-const activityPreferences = computed(() => store.uiPreferences.workActivity);
-const selectedAuthorId = ref(currentAuthorSelection);
+const activityPreferences = computed(() => store.workActivityPreferences);
+const selectedAuthorId = computed({
+  get: () => activityPreferences.value.selectedAuthorId,
+  set: (selectedAuthorId: string) => store.setWorkActivityPreferences({ selectedAuthorId }),
+});
 const selectedDate = ref("");
+const focusedHeatmapDate = ref("");
 const projectScopeOpen = ref(false);
 const authorPickerOpen = ref(false);
 const refScopePickerOpen = ref(false);
@@ -86,8 +98,18 @@ const customDatePickerPosition = ref({ right: 8, top: 8 });
 const dayDetails = ref<ProjectGitActivityDayReport | null>(null);
 const dayDetailsLoading = ref(false);
 const dayDetailsMessage = ref("");
+const dayProjectPaths = ref(new Set<string>());
+const dayQuery = ref("");
+const collapsedDayRepositories = ref(new Set<string>());
+const projectGroupName = ref("");
+const editingProjectGroupId = ref("");
+const editingProjectGroupName = ref("");
+const copiedCommitKey = ref("");
+const copyMessage = ref("");
 let dayDetailsRequestGeneration = 0;
 let changesRequestGeneration = 0;
+let daySearchTimer: ReturnType<typeof setTimeout> | undefined;
+let copyMessageTimer: ReturnType<typeof setTimeout> | undefined;
 let stopAppEscapeListener = () => {};
 
 const today = computed(() => gitActivityDateInTimeZone(new Date(), activityPreferences.value.timeZone));
@@ -109,6 +131,10 @@ const readyRepositories = computed(() =>
 const failedRepositories = computed(() =>
   (store.workActivityReport?.repositories || []).filter((repository) => repository.state === "failed"),
 );
+const currentReportHasOnlyNonGitRepositories = computed(() => {
+  const repositories = store.workActivityReport?.repositories || [];
+  return repositories.length > 0 && repositories.every((repository) => repository.state === "not-a-repository");
+});
 const visibleRepositories = computed(() =>
   focusedRepositoryPath.value
     ? readyRepositories.value.filter((repository) => repository.repositoryPath === focusedRepositoryPath.value)
@@ -288,6 +314,15 @@ const rangeLabel = computed(
   () => `${formatDate(activityRange.value.startDate)} - ${formatDate(activityRange.value.endDate)}`,
 );
 const dayCommits = computed(() => dayDetails.value?.commits || []);
+const dayCommitGroups = computed(() => {
+  const groups = new Map<string, typeof dayCommits.value>();
+  dayCommits.value.forEach((commit) => {
+    const commits = groups.get(commit.repositoryPath) || [];
+    commits.push(commit);
+    groups.set(commit.repositoryPath, commits);
+  });
+  return [...groups.entries()].map(([repositoryPath, commits]) => ({ repositoryPath, commits }));
+});
 const hasMoreDayCommits = computed(() => dayDetails.value?.hasMore === true);
 const excludedCommits = computed(() =>
   readyRepositories.value.reduce(
@@ -300,6 +335,35 @@ const timeZoneLabel = computed(() =>
   activityPreferences.value.timeZone === "local" ? t.value.activity.localTimeZone : activityPreferences.value.timeZone,
 );
 const criteriaSummary = computed(() => `${scopeLabel.value} · ${timeZoneLabel.value}`);
+const activityStatusLabel = computed(() => {
+  const key = store.workActivityLoadState;
+  if (key === "loading") return t.value.activity.loading;
+  if (key === "partial") return t.value.activity.partialResult;
+  if (key === "stale") return t.value.activity.staleCache;
+  if (key === "error") return t.value.activity.readFailed;
+  return "";
+});
+const showsCachedResult = computed(
+  () => store.workActivityLoadState === "cached" || store.workActivityLoadState === "refreshing",
+);
+const activityStatusTone = computed(() =>
+  store.workActivityLoadState === "partial" ||
+  store.workActivityLoadState === "stale" ||
+  store.workActivityLoadState === "error"
+    ? "text-status-warning"
+    : "text-on-surface-variant",
+);
+const lastRefreshedLabel = computed(() => {
+  const value = store.workActivityReport?.lastRefreshedAt;
+  if (!value) return "";
+  return new Intl.DateTimeFormat(store.locale, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+});
 const refScopeOptions = computed(
   () => ["current", "default", "all"] as const satisfies readonly WorkActivityPreferences["refScope"][],
 );
@@ -404,6 +468,54 @@ const formatCommitTime = (value: string) =>
     timeZone: activityPreferences.value.timeZone === "local" ? undefined : activityPreferences.value.timeZone,
   }).format(new Date(value));
 
+const dayProjectOptions = computed(() =>
+  visibleRepositories.value.map((repository) => ({
+    repositoryPath: repository.repositoryPath,
+    label: projectNamesForPaths(repository.projectPaths),
+  })),
+);
+
+const projectPathsForRepository = (repositoryPath: string) =>
+  readyRepositories.value.find((repository) => repository.repositoryPath === repositoryPath)?.projectPaths;
+
+const selectedDayProjectPaths = computed(() => {
+  if (!dayProjectPaths.value.size) return projectPathsForRepository(focusedRepositoryPath.value);
+  return readyRepositories.value
+    .filter((repository) => dayProjectPaths.value.has(repository.repositoryPath))
+    .flatMap((repository) => repository.projectPaths);
+});
+
+const toggleDayProject = (repositoryPath: string) => {
+  const nextPaths = new Set(dayProjectPaths.value);
+  if (nextPaths.has(repositoryPath)) nextPaths.delete(repositoryPath);
+  else nextPaths.add(repositoryPath);
+  dayProjectPaths.value = nextPaths;
+};
+
+const commitUrl = (commit: (typeof dayCommits.value)[number]) => {
+  const remotes = commit.projectPaths.flatMap((projectPath) => projectsByPath.value.get(projectPath)?.git?.remotes || []);
+  return getGitHubCommitUrl(remotes, commit.hash);
+};
+
+const commitSummary = (commit: (typeof dayCommits.value)[number]) =>
+  `${commit.message || commit.hash}\n${commit.hash.slice(0, 8)} · ${commit.author} · ${projectNamesForPaths(commit.projectPaths)} · ${formatCommitTime(commit.date)}`;
+
+const copyCommitText = async (key: string, value: string) => {
+  try {
+    await navigator.clipboard.writeText(value);
+    copiedCommitKey.value = key;
+    copyMessage.value = t.value.common.copied;
+  } catch {
+    copiedCommitKey.value = "";
+    copyMessage.value = t.value.activity.copyFailed;
+  }
+  if (copyMessageTimer) clearTimeout(copyMessageTimer);
+  copyMessageTimer = setTimeout(() => {
+    copiedCommitKey.value = "";
+    copyMessage.value = "";
+  }, 1800);
+};
+
 const changeTotals = computed(() =>
   (changesReport.value?.repositories || []).reduce(
     (totals, repository) => ({
@@ -476,13 +588,11 @@ const loadDayDetails = async (append = false) => {
             ? selectedAuthorId.value
             : undefined,
         currentUserOnly: selectedAuthorId.value === currentAuthorSelection,
+          query: dayQuery.value,
         limit: 50,
         skip,
       },
-      focusedRepositoryPath.value
-        ? readyRepositories.value.find((repository) => repository.repositoryPath === focusedRepositoryPath.value)
-            ?.projectPaths
-        : undefined,
+        selectedDayProjectPaths.value,
     );
     if (requestGeneration !== dayDetailsRequestGeneration) return;
     if (!report) return;
@@ -603,6 +713,36 @@ const selectAuthor = (authorId: string) => {
   void loadDayDetails();
 };
 
+const saveProjectGroup = () => {
+  if (!store.saveWorkActivityProjectGroup(projectGroupName.value)) return;
+  projectGroupName.value = "";
+};
+
+const applyProjectGroup = (groupId: string) => {
+  if (!store.applyWorkActivityProjectGroup(groupId)) return;
+  focusedRepositoryPath.value = "";
+  dayProjectPaths.value = new Set();
+  projectScopeOpen.value = false;
+  loadActivity();
+};
+
+const startRenamingProjectGroup = (groupId: string, name: string) => {
+  editingProjectGroupId.value = groupId;
+  editingProjectGroupName.value = name;
+};
+
+const finishRenamingProjectGroup = () => {
+  if (store.renameWorkActivityProjectGroup(editingProjectGroupId.value, editingProjectGroupName.value)) {
+    editingProjectGroupId.value = "";
+    editingProjectGroupName.value = "";
+  }
+};
+
+const removeProjectGroup = (groupId: string) => {
+  store.deleteWorkActivityProjectGroup(groupId);
+  if (editingProjectGroupId.value === groupId) editingProjectGroupId.value = "";
+};
+
 const isCurrentAuthor = (authorId: string) => currentAuthorIds.value.has(authorId);
 const isAuthorSelected = (authorId: string) =>
   selectedAuthorId.value === authorId ||
@@ -700,7 +840,6 @@ const setProjectSelected = (projectId: string, selected: boolean) => {
   }
   store.setWorkActivityProjectIds([...projectIds]);
   selectedDate.value = "";
-  selectedAuthorId.value = currentAuthorSelection;
   resetDayDetails();
   loadActivity();
 };
@@ -708,7 +847,6 @@ const setProjectSelected = (projectId: string, selected: boolean) => {
 const selectAllProjects = () => {
   store.setWorkActivityProjectIds(store.workActivitySelectableProjects.map((project) => project.id));
   selectedDate.value = "";
-  selectedAuthorId.value = currentAuthorSelection;
   resetDayDetails();
   loadActivity();
 };
@@ -716,14 +854,48 @@ const selectAllProjects = () => {
 const clearProjects = () => {
   store.setWorkActivityProjectIds([]);
   selectedDate.value = "";
-  selectedAuthorId.value = currentAuthorSelection;
   resetDayDetails();
 };
 
+const clearTemporaryFocus = () => {
+  focusedRepositoryPath.value = "";
+  dayProjectPaths.value = new Set();
+  if (store.clearWorkActivityProjectFocus()) loadActivity();
+};
+
 const selectCell = (date: string) => {
+  focusedHeatmapDate.value = date;
   selectedDate.value = date;
   analysisTab.value = "day";
   void loadDayDetails();
+};
+
+const handleHeatmapKeydown = (event: KeyboardEvent, date: string) => {
+  const offset =
+    event.key === "ArrowUp"
+      ? -1
+      : event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft"
+          ? -7
+          : event.key === "ArrowRight"
+            ? 7
+            : 0;
+  if (!offset) return;
+  const cells = heatmapCells.value.filter((cell) => cell.inRange);
+  const index = cells.findIndex((cell) => cell.date === date);
+  const target = cells[Math.min(cells.length - 1, Math.max(0, index + offset))];
+  if (!target || target.date === date) return;
+  event.preventDefault();
+  focusedHeatmapDate.value = target.date;
+  document.querySelector<HTMLElement>(`[data-heatmap-date="${target.date}"]`)?.focus();
+};
+
+const toggleDayRepository = (repositoryPath: string) => {
+  const next = new Set(collapsedDayRepositories.value);
+  if (next.has(repositoryPath)) next.delete(repositoryPath);
+  else next.add(repositoryPath);
+  collapsedDayRepositories.value = next;
 };
 
 const focusRepository = (repositoryPath: string) => {
@@ -774,6 +946,21 @@ const setAnalysisTab = (tab: AnalysisTab) => {
 const openCommitInGit = (projectPaths: string[], commitHash: string) => {
   const project = projectForPaths(projectPaths);
   if (project) store.openProjectGit(project.id, commitHash);
+};
+
+const repositoryRetryKey = (repository: ProjectGitActivityRepository) =>
+  repository.repositoryPath || repository.projectPaths[0] || "";
+
+const retryFailedRepository = (repository: ProjectGitActivityRepository) => {
+  void store.retryWorkActivityRepository(repositoryRetryKey(repository), {
+    startDate: comparisonRange.value.startDate,
+    endDate: activityRange.value.endDate,
+  });
+};
+
+const openProjectSettings = (projectPaths: string[]) => {
+  const project = projectForPaths(projectPaths);
+  if (project) store.openEditProjectForm(project.id);
 };
 
 const handleWindowPointerDown = (event: PointerEvent) => {
@@ -854,10 +1041,21 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
 };
 
 watch(
-  () => JSON.stringify(activityPreferences.value),
+  () =>
+    JSON.stringify({
+      rangeMode: activityPreferences.value.rangeMode,
+      selectedYear: activityPreferences.value.selectedYear,
+      customStartDate: activityPreferences.value.customStartDate,
+      customEndDate: activityPreferences.value.customEndDate,
+      refScope: activityPreferences.value.refScope,
+      timeZone: activityPreferences.value.timeZone,
+      hideMerges: activityPreferences.value.hideMerges,
+      excludeBots: activityPreferences.value.excludeBots,
+      botPatterns: activityPreferences.value.botPatterns,
+      identities: activityPreferences.value.identities,
+    }),
   () => {
     selectedDate.value = "";
-    selectedAuthorId.value = currentAuthorSelection;
     loadActivity();
   },
   { immediate: true },
@@ -867,11 +1065,40 @@ watch(focusedRepositoryPath, () => {
   if (analysisTab.value === "changes") void loadChanges();
 });
 
+watch(dayProjectPaths, () => {
+  resetDayDetails();
+  void loadDayDetails();
+});
+
+watch(dayProjectOptions, (options) => {
+  const availablePaths = new Set(options.map((option) => option.repositoryPath));
+  const nextPaths = new Set([...dayProjectPaths.value].filter((path) => availablePaths.has(path)));
+  if (nextPaths.size !== dayProjectPaths.value.size) dayProjectPaths.value = nextPaths;
+});
+
+watch(dayQuery, () => {
+  if (daySearchTimer) clearTimeout(daySearchTimer);
+  resetDayDetails();
+  daySearchTimer = setTimeout(() => void loadDayDetails(), 250);
+});
+
+watch(
+  [() => store.workActivityFocusProjectId, readyRepositories],
+  ([projectId]) => {
+    if (!projectId) return;
+    const projectPath = store.projects.find((project) => project.id === projectId)?.path;
+    const repository = readyRepositories.value.find((item) => item.projectPaths.includes(projectPath || ""));
+    if (repository) focusedRepositoryPath.value = repository.repositoryPath;
+  },
+  { immediate: true },
+);
+
 watch(
   countsByDate,
   (counts) => {
     if (selectedDate.value && counts.has(selectedDate.value)) return;
     selectedDate.value = [...counts.keys()].sort().at(-1) || "";
+    focusedHeatmapDate.value = selectedDate.value || activityRange.value.endDate;
     void loadDayDetails();
   },
   { immediate: true },
@@ -885,7 +1112,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  dayDetailsRequestGeneration += 1;
   changesRequestGeneration += 1;
+  if (daySearchTimer) clearTimeout(daySearchTimer);
+  if (copyMessageTimer) clearTimeout(copyMessageTimer);
   stopAppEscapeListener();
   window.removeEventListener("pointerdown", handleWindowPointerDown);
   window.removeEventListener("resize", handleViewportChange);
@@ -907,7 +1137,28 @@ onBeforeUnmount(() => {
           <ArrowLeft :size="18" />
         </button>
         <div class="min-w-0">
-          <h2 class="truncate text-base font-bold leading-tight text-on-surface">{{ t.activity.title }}</h2>
+          <div class="flex min-w-0 items-center gap-1.5">
+            <h2 class="shrink-0 text-base font-bold leading-tight text-on-surface">{{ t.activity.title }}</h2>
+            <span
+              v-if="showsCachedResult"
+              class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border-subtle bg-surface-container-high text-on-surface-variant"
+              role="img"
+              :title="t.activity.cached"
+              :aria-label="t.activity.cached"
+            >
+              <Database :size="10" />
+            </span>
+            <span v-if="activityStatusLabel" :class="['shrink-0 text-xs font-bold', activityStatusTone]">
+              {{ activityStatusLabel }}
+            </span>
+            <span
+              v-if="lastRefreshedLabel"
+              class="min-w-0 truncate text-xs text-on-surface-variant"
+              :title="t.activity.lastRefreshed.replace('{time}', lastRefreshedLabel)"
+            >
+              {{ t.activity.lastRefreshed.replace("{time}", lastRefreshedLabel) }}
+            </span>
+          </div>
           <p class="mt-0.5 truncate text-xs text-on-surface-variant">{{ rangeLabel }}</p>
         </div>
       </div>
@@ -1195,6 +1446,41 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </div>
+          <div v-if="activityPreferences.projectGroups.length" class="mb-1 border-b border-border-subtle pb-1">
+            <div
+              v-for="group in activityPreferences.projectGroups"
+              :key="group.id"
+              class="flex min-w-0 items-center gap-1 rounded-md px-1 py-1 hover:bg-surface-variant"
+            >
+              <template v-if="editingProjectGroupId === group.id">
+                <input
+                  v-model="editingProjectGroupName"
+                  class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 text-xs text-on-surface"
+                  :aria-label="t.activity.groupName"
+                  @keydown.enter.prevent="finishRenamingProjectGroup"
+                />
+                <button type="button" class="popover-icon-button" :aria-label="t.common.save" @click="finishRenamingProjectGroup">
+                  <Save :size="13" />
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  type="button"
+                  class="min-w-0 flex-1 truncate px-1 text-left text-xs font-bold text-on-surface"
+                  :title="group.name"
+                  @click="applyProjectGroup(group.id)"
+                >
+                  {{ group.name }} · {{ group.projectIds.length }}
+                </button>
+                <button type="button" class="popover-icon-button" :aria-label="t.activity.renameGroup" @click="startRenamingProjectGroup(group.id, group.name)">
+                  <Pencil :size="13" />
+                </button>
+                <button type="button" class="popover-icon-button text-status-error" :aria-label="t.activity.deleteGroup" @click="removeProjectGroup(group.id)">
+                  <Trash2 :size="13" />
+                </button>
+              </template>
+            </div>
+          </div>
           <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto">
             <label
               v-for="project in store.workActivitySelectableProjects"
@@ -1214,6 +1500,22 @@ onBeforeUnmount(() => {
           <p v-if="store.workActivitySelectableProjects.length === 0" class="px-2 py-2 text-xs text-on-surface-variant">
             {{ t.activity.noProjects }}
           </p>
+          <div class="mt-1 flex items-center gap-1 border-t border-border-subtle pt-1">
+            <input
+              v-model="projectGroupName"
+              class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 text-xs text-on-surface"
+              :placeholder="t.activity.groupName"
+              @keydown.enter.prevent="saveProjectGroup"
+            />
+            <button
+              type="button"
+              class="inline-flex h-7 items-center gap-1 rounded px-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-40"
+              :disabled="!projectGroupName.trim() || store.workActivitySelectedProjectIds.length === 0"
+              @click="saveProjectGroup"
+            >
+              <Save :size="13" /> {{ t.activity.saveGroup }}
+            </button>
+          </div>
         </div>
       </Transition>
     </Teleport>
@@ -1228,7 +1530,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="inline-flex h-6 items-center gap-1 px-1.5 font-bold text-primary hover:bg-primary/10"
-        @click="focusRepository('')"
+        @click="clearTemporaryFocus"
       >
         <X :size="13" /> {{ t.activity.clearFocus }}
       </button>
@@ -1302,6 +1604,19 @@ onBeforeUnmount(() => {
             <ChevronDown :size="14" class="shrink-0" :class="authorPickerOpen && 'rotate-180'" />
           </button>
         </div>
+      </div>
+
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-on-surface-variant">
+        <span v-if="activityStatusLabel">{{ activityStatusLabel }}</span>
+        <span class="inline-flex items-center gap-1" :aria-label="t.activity.heatmapLegend">
+          <span>{{ t.activity.less }}</span>
+          <span class="h-3 w-3 rounded-[2px] border border-border-subtle bg-surface-container-high" />
+          <span class="h-3 w-3 rounded-[2px] border border-status-running/30 bg-status-running/25" />
+          <span class="h-3 w-3 rounded-[2px] border border-status-running/45 bg-status-running/45" />
+          <span class="h-3 w-3 rounded-[2px] border border-status-running/65 bg-status-running/65" />
+          <span class="h-3 w-3 rounded-[2px] border border-status-running bg-status-running" />
+          <span>{{ t.activity.more }}</span>
+        </span>
       </div>
 
       <div
@@ -1490,6 +1805,18 @@ onBeforeUnmount(() => {
         </div>
         <div class="skeleton h-32 w-full" />
       </div>
+      <p v-else-if="currentReportHasOnlyNonGitRepositories" class="py-8 text-center text-sm text-on-surface-variant">
+        {{ t.activity.noGitRepositories }}
+      </p>
+      <p v-else-if="store.workActivitySelectedProjectIds.length === 0" class="py-8 text-center text-sm text-on-surface-variant">
+        {{ t.activity.noProjectsSelected }}
+      </p>
+      <p
+        v-else-if="store.workActivityLoadState === 'error' || (store.workActivityLoadState === 'partial' && readyRepositories.length === 0)"
+        class="py-8 text-center text-sm text-status-warning"
+      >
+        {{ t.activity.readFailed }}
+      </p>
       <div v-else-if="heatmapCells.length > 0" v-overlay-scrollbar class="themed-scrollbar overflow-x-auto pb-1">
         <div class="flex min-w-max items-start gap-2">
           <div class="grid grid-rows-7 gap-1 pt-5 text-center text-[9px] font-medium text-on-surface-variant">
@@ -1513,6 +1840,7 @@ onBeforeUnmount(() => {
                   <button
                     v-if="cell.inRange"
                     type="button"
+                    :data-heatmap-date="cell.date"
                     :class="
                       cn(
                         'h-3 w-3 rounded-[2px] border transition-transform hover:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
@@ -1527,7 +1855,9 @@ onBeforeUnmount(() => {
                     :title="cellLabel(cell.date, cell.count)"
                     :aria-label="cellLabel(cell.date, cell.count)"
                     :aria-pressed="selectedDate === cell.date"
+                    :tabindex="focusedHeatmapDate === cell.date ? 0 : -1"
                     @click="selectCell(cell.date)"
+                    @keydown="handleHeatmapKeydown($event, cell.date)"
                   />
                   <span v-else class="h-3 w-3" aria-hidden="true" />
                 </template>
@@ -1757,20 +2087,59 @@ onBeforeUnmount(() => {
             >{{ formatDate(selectedDate) }} · {{ selectedDateCount }}</span
           >
         </div>
+        <div v-if="selectedDate" class="mb-2 space-y-3">
+          <label class="relative block min-w-0">
+            <Search :size="13" class="pointer-events-none absolute left-2 top-2 text-on-surface-variant" />
+            <input
+              v-model="dayQuery"
+              type="search"
+              class="h-7 w-full rounded-md border border-border-subtle bg-surface pl-7 pr-2 text-xs text-on-surface"
+              :placeholder="t.activity.searchCommits"
+            />
+          </label>
+          <div class="flex min-w-0 flex-wrap items-center gap-1">
+            <button
+              type="button"
+              class="h-7 shrink-0 rounded-md border border-border-subtle px-2 text-xs font-bold"
+              :class="!dayProjectPaths.size ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-variant'"
+              :aria-pressed="!dayProjectPaths.size"
+              @click="dayProjectPaths = new Set()"
+            >
+              {{ t.activity.allProjects }}
+            </button>
+            <button
+              v-for="project in dayProjectOptions"
+              :key="project.repositoryPath"
+              type="button"
+              class="h-7 max-w-48 shrink-0 truncate rounded-md border border-border-subtle px-2 text-xs font-bold"
+              :class="dayProjectPaths.has(project.repositoryPath) ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-variant'"
+              :title="project.label"
+              :aria-pressed="dayProjectPaths.has(project.repositoryPath)"
+              @click="toggleDayProject(project.repositoryPath)"
+            >
+              {{ project.label }}
+            </button>
+          </div>
+          <p class="text-[10px] text-on-surface-variant">
+            {{ t.activity.detailFilterHint }} · {{ criteriaSummary }}
+            <span v-if="activityPreferences.hideMerges"> · {{ t.activity.hideMerges }}</span>
+            <span v-if="activityPreferences.excludeBots"> · {{ t.activity.excludeBots }}</span>
+          </p>
+        </div>
         <div
           v-if="!selectedDate"
           class="border border-dashed border-border-subtle px-3 py-3 text-sm text-on-surface-variant"
         >
           {{ t.activity.selectDay }}
         </div>
-        <div v-else-if="dayDetailsLoading" class="space-y-2 border-y border-border-subtle py-2" aria-busy="true">
+        <div v-else-if="dayDetailsLoading && !dayDetails" class="space-y-2 border-y border-border-subtle py-2" aria-busy="true">
           <div v-for="index in 3" :key="index" class="grid grid-cols-[minmax(0,1fr)_3rem] gap-3 px-2">
             <span class="skeleton h-3 w-3/4" />
             <span class="skeleton h-3 w-full" />
           </div>
         </div>
         <div
-          v-else-if="dayDetailsMessage"
+          v-else-if="dayDetailsMessage && !dayDetails"
           class="border border-status-warning/30 px-3 py-3 text-sm text-status-warning"
         >
           {{ dayDetailsMessage }}
@@ -1779,45 +2148,71 @@ onBeforeUnmount(() => {
           v-else-if="dayCommits.length === 0"
           class="border border-dashed border-border-subtle px-3 py-3 text-sm text-on-surface-variant"
         >
-          {{ t.activity.noActivity }}
+          {{ dayQuery || dayProjectPaths.size ? t.activity.filteredNoResults : t.activity.noActivity }}
         </div>
-        <div v-else class="divide-y divide-border-subtle border-y border-border-subtle">
-          <div
-            v-for="commit in dayCommits"
-            :key="`${commit.repositoryPath}:${commit.hash}`"
-            class="flex min-w-0 items-center gap-3 px-2 py-2"
-          >
-            <div class="min-w-0 flex-1">
-              <div class="truncate text-xs font-bold text-on-surface" :title="commit.message || commit.hash">
-                {{ commit.message || commit.hash }}
-              </div>
+        <div v-else class="border-y border-border-subtle">
+          <section v-for="group in dayCommitGroups" :key="group.repositoryPath" class="border-b border-border-subtle last:border-b-0">
+            <button
+              type="button"
+              class="flex h-8 w-full min-w-0 items-center gap-2 bg-surface-container-low px-2 text-left text-xs font-bold text-on-surface hover:bg-surface-variant"
+              :aria-expanded="!collapsedDayRepositories.has(group.repositoryPath)"
+              @click="toggleDayRepository(group.repositoryPath)"
+            >
+              <ChevronDown :size="14" class="shrink-0 transition-transform" :class="collapsedDayRepositories.has(group.repositoryPath) && '-rotate-90'" />
+              <span class="min-w-0 flex-1 truncate" :title="projectNamesForPaths(group.commits[0].projectPaths)">
+                {{ projectNamesForPaths(group.commits[0].projectPaths) }}
+              </span>
+              <span class="shrink-0 tabular-nums text-on-surface-variant">{{ group.commits.length }}</span>
+            </button>
+            <div v-if="!collapsedDayRepositories.has(group.repositoryPath)" class="divide-y divide-border-subtle">
               <div
-                class="truncate text-[10px] text-on-surface-variant"
-                :title="projectNamesForPaths(commit.projectPaths)"
+                v-for="commit in group.commits"
+                :key="`${commit.repositoryPath}:${commit.hash}`"
+                class="flex min-w-0 flex-wrap items-center gap-2 px-2 py-2 sm:flex-nowrap"
               >
-                {{ commit.author }} · {{ projectNamesForPaths(commit.projectPaths) }} ·
-                {{ formatCommitTime(commit.date) }}
+                <div class="min-w-0 flex-1 basis-64">
+                  <div class="break-words text-xs font-bold text-on-surface" :title="commit.message || commit.hash">
+                    {{ commit.message || commit.hash }}
+                  </div>
+                  <div class="mt-0.5 break-words text-[10px] text-on-surface-variant">
+                    {{ commit.author }} · {{ formatCommitTime(commit.date) }} ·
+                    <span class="font-mono">{{ commit.hash.slice(0, 8) }}</span>
+                  </div>
+                </div>
+                <div class="ml-auto flex shrink-0 items-center gap-0.5">
+                  <button type="button" class="popover-icon-button" :title="t.activity.copySummary" :aria-label="t.activity.copySummary" @click="copyCommitText(`${commit.repositoryPath}:${commit.hash}:summary`, commitSummary(commit))">
+                    <Check v-if="copiedCommitKey === `${commit.repositoryPath}:${commit.hash}:summary`" :size="14" />
+                    <ClipboardCopy v-else :size="14" />
+                  </button>
+                  <button v-if="commitUrl(commit)" type="button" class="popover-icon-button" :title="t.activity.copyLink" :aria-label="t.activity.copyLink" @click="copyCommitText(`${commit.repositoryPath}:${commit.hash}:link`, commitUrl(commit)!)">
+                    <Check v-if="copiedCommitKey === `${commit.repositoryPath}:${commit.hash}:link`" :size="14" />
+                    <Link2 v-else :size="14" />
+                  </button>
+                  <button
+                    v-if="projectForPaths(commit.projectPaths)"
+                    type="button"
+                    class="popover-icon-button"
+                    :title="t.activity.openInGit"
+                    :aria-label="t.activity.openInGit"
+                    @click="openCommitInGit(commit.projectPaths, commit.hash)"
+                  >
+                    <GitCommitHorizontal :size="15" />
+                  </button>
+                </div>
               </div>
             </div>
-            <span class="shrink-0 font-mono text-[10px] font-bold text-primary">{{ commit.hash.slice(0, 8) }}</span>
-            <button
-              v-if="projectForPaths(commit.projectPaths)"
-              type="button"
-              class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
-              :title="t.activity.openInGit"
-              :aria-label="t.activity.openInGit"
-              @click="openCommitInGit(commit.projectPaths, commit.hash)"
-            >
-              <GitCommitHorizontal :size="15" />
-            </button>
-          </div>
+          </section>
+          <p v-if="copyMessage" class="px-2 py-1 text-[10px] text-status-success" aria-live="polite">{{ copyMessage }}</p>
+          <p v-if="dayDetailsMessage" class="px-2 py-1 text-xs text-status-warning">{{ dayDetailsMessage }}</p>
         </div>
         <button
-          v-if="hasMoreDayCommits && !dayDetailsLoading"
+          v-if="hasMoreDayCommits"
           type="button"
           class="mt-2 inline-flex h-7 items-center rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          :disabled="dayDetailsLoading"
           @click="loadDayDetails(true)"
         >
+          <RefreshCw v-if="dayDetailsLoading" :size="13" class="mr-1 animate-spin" />
           {{ t.activity.loadMore }}
         </button>
         <p v-if="dayDetails?.failedRepositories.length" class="mt-2 text-xs text-status-warning">
@@ -1835,8 +2230,29 @@ onBeforeUnmount(() => {
         <li
           v-for="repository in failedRepositories"
           :key="repository.repositoryPath || repository.projectPaths.join('|')"
+          class="flex min-w-0 flex-wrap items-center gap-2"
         >
-          {{ repository.projectPaths.join(" · ") }}: {{ repository.message || t.activity.readFailed }}
+          <span class="min-w-0 flex-1 break-words">{{ projectNamesForPaths(repository.projectPaths) }}: {{ repository.message || t.activity.readFailed }}</span>
+          <button
+            type="button"
+            class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant disabled:opacity-50"
+            :disabled="!repositoryRetryKey(repository) || store.workActivityRetryingRepositoryPaths.includes(repositoryRetryKey(repository))"
+            @click="retryFailedRepository(repository)"
+          >
+            <RotateCcw
+              :size="12"
+              :class="store.workActivityRetryingRepositoryPaths.includes(repositoryRetryKey(repository)) && 'animate-spin'"
+            />
+            {{ t.activity.retryRepository }}
+          </button>
+          <button
+            v-if="projectForPaths(repository.projectPaths)"
+            type="button"
+            class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant"
+            @click="openProjectSettings(repository.projectPaths)"
+          >
+            <Settings2 :size="12" /> {{ t.activity.projectSettings }}
+          </button>
         </li>
       </ul>
     </section>
