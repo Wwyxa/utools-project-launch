@@ -105,11 +105,10 @@ const projectGroupName = ref("");
 const editingProjectGroupId = ref("");
 const editingProjectGroupName = ref("");
 const copiedCommitKey = ref("");
-const copyMessage = ref("");
 let dayDetailsRequestGeneration = 0;
 let changesRequestGeneration = 0;
 let daySearchTimer: ReturnType<typeof setTimeout> | undefined;
-let copyMessageTimer: ReturnType<typeof setTimeout> | undefined;
+let copiedCommitTimer: ReturnType<typeof setTimeout> | undefined;
 let stopAppEscapeListener = () => {};
 
 const today = computed(() => gitActivityDateInTimeZone(new Date(), activityPreferences.value.timeZone));
@@ -493,7 +492,9 @@ const toggleDayProject = (repositoryPath: string) => {
 };
 
 const commitUrl = (commit: (typeof dayCommits.value)[number]) => {
-  const remotes = commit.projectPaths.flatMap((projectPath) => projectsByPath.value.get(projectPath)?.git?.remotes || []);
+  const remotes = commit.projectPaths.flatMap(
+    (projectPath) => projectsByPath.value.get(projectPath)?.git?.remotes || [],
+  );
   return getGitHubCommitUrl(remotes, commit.hash);
 };
 
@@ -504,15 +505,12 @@ const copyCommitText = async (key: string, value: string) => {
   try {
     await navigator.clipboard.writeText(value);
     copiedCommitKey.value = key;
-    copyMessage.value = t.value.common.copied;
   } catch {
     copiedCommitKey.value = "";
-    copyMessage.value = t.value.activity.copyFailed;
   }
-  if (copyMessageTimer) clearTimeout(copyMessageTimer);
-  copyMessageTimer = setTimeout(() => {
+  if (copiedCommitTimer) clearTimeout(copiedCommitTimer);
+  copiedCommitTimer = setTimeout(() => {
     copiedCommitKey.value = "";
-    copyMessage.value = "";
   }, 1800);
 };
 
@@ -588,11 +586,11 @@ const loadDayDetails = async (append = false) => {
             ? selectedAuthorId.value
             : undefined,
         currentUserOnly: selectedAuthorId.value === currentAuthorSelection,
-          query: dayQuery.value,
+        query: dayQuery.value,
         limit: 50,
         skip,
       },
-        selectedDayProjectPaths.value,
+      selectedDayProjectPaths.value,
     );
     if (requestGeneration !== dayDetailsRequestGeneration) return;
     if (!report) return;
@@ -1115,7 +1113,7 @@ onBeforeUnmount(() => {
   dayDetailsRequestGeneration += 1;
   changesRequestGeneration += 1;
   if (daySearchTimer) clearTimeout(daySearchTimer);
-  if (copyMessageTimer) clearTimeout(copyMessageTimer);
+  if (copiedCommitTimer) clearTimeout(copiedCommitTimer);
   stopAppEscapeListener();
   window.removeEventListener("pointerdown", handleWindowPointerDown);
   window.removeEventListener("resize", handleViewportChange);
@@ -1459,7 +1457,12 @@ onBeforeUnmount(() => {
                   :aria-label="t.activity.groupName"
                   @keydown.enter.prevent="finishRenamingProjectGroup"
                 />
-                <button type="button" class="popover-icon-button" :aria-label="t.common.save" @click="finishRenamingProjectGroup">
+                <button
+                  type="button"
+                  class="popover-icon-button"
+                  :aria-label="t.common.save"
+                  @click="finishRenamingProjectGroup"
+                >
                   <Save :size="13" />
                 </button>
               </template>
@@ -1472,10 +1475,20 @@ onBeforeUnmount(() => {
                 >
                   {{ group.name }} · {{ group.projectIds.length }}
                 </button>
-                <button type="button" class="popover-icon-button" :aria-label="t.activity.renameGroup" @click="startRenamingProjectGroup(group.id, group.name)">
+                <button
+                  type="button"
+                  class="popover-icon-button"
+                  :aria-label="t.activity.renameGroup"
+                  @click="startRenamingProjectGroup(group.id, group.name)"
+                >
                   <Pencil :size="13" />
                 </button>
-                <button type="button" class="popover-icon-button text-status-error" :aria-label="t.activity.deleteGroup" @click="removeProjectGroup(group.id)">
+                <button
+                  type="button"
+                  class="popover-icon-button text-status-error"
+                  :aria-label="t.activity.deleteGroup"
+                  @click="removeProjectGroup(group.id)"
+                >
                   <Trash2 :size="13" />
                 </button>
               </template>
@@ -1808,11 +1821,17 @@ onBeforeUnmount(() => {
       <p v-else-if="currentReportHasOnlyNonGitRepositories" class="py-8 text-center text-sm text-on-surface-variant">
         {{ t.activity.noGitRepositories }}
       </p>
-      <p v-else-if="store.workActivitySelectedProjectIds.length === 0" class="py-8 text-center text-sm text-on-surface-variant">
+      <p
+        v-else-if="store.workActivitySelectedProjectIds.length === 0"
+        class="py-8 text-center text-sm text-on-surface-variant"
+      >
         {{ t.activity.noProjectsSelected }}
       </p>
       <p
-        v-else-if="store.workActivityLoadState === 'error' || (store.workActivityLoadState === 'partial' && readyRepositories.length === 0)"
+        v-else-if="
+          store.workActivityLoadState === 'error' ||
+          (store.workActivityLoadState === 'partial' && readyRepositories.length === 0)
+        "
         class="py-8 text-center text-sm text-status-warning"
       >
         {{ t.activity.readFailed }}
@@ -2101,7 +2120,11 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="h-7 shrink-0 rounded-md border border-border-subtle px-2 text-xs font-bold"
-              :class="!dayProjectPaths.size ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-variant'"
+              :class="
+                !dayProjectPaths.size
+                  ? 'bg-primary text-on-primary'
+                  : 'text-on-surface-variant hover:bg-surface-variant'
+              "
               :aria-pressed="!dayProjectPaths.size"
               @click="dayProjectPaths = new Set()"
             >
@@ -2112,7 +2135,11 @@ onBeforeUnmount(() => {
               :key="project.repositoryPath"
               type="button"
               class="h-7 max-w-48 shrink-0 truncate rounded-md border border-border-subtle px-2 text-xs font-bold"
-              :class="dayProjectPaths.has(project.repositoryPath) ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-variant'"
+              :class="
+                dayProjectPaths.has(project.repositoryPath)
+                  ? 'bg-primary text-on-primary'
+                  : 'text-on-surface-variant hover:bg-surface-variant'
+              "
               :title="project.label"
               :aria-pressed="dayProjectPaths.has(project.repositoryPath)"
               @click="toggleDayProject(project.repositoryPath)"
@@ -2132,7 +2159,11 @@ onBeforeUnmount(() => {
         >
           {{ t.activity.selectDay }}
         </div>
-        <div v-else-if="dayDetailsLoading && !dayDetails" class="space-y-2 border-y border-border-subtle py-2" aria-busy="true">
+        <div
+          v-else-if="dayDetailsLoading && !dayDetails"
+          class="space-y-2 border-y border-border-subtle py-2"
+          aria-busy="true"
+        >
           <div v-for="index in 3" :key="index" class="grid grid-cols-[minmax(0,1fr)_3rem] gap-3 px-2">
             <span class="skeleton h-3 w-3/4" />
             <span class="skeleton h-3 w-full" />
@@ -2151,14 +2182,22 @@ onBeforeUnmount(() => {
           {{ dayQuery || dayProjectPaths.size ? t.activity.filteredNoResults : t.activity.noActivity }}
         </div>
         <div v-else class="border-y border-border-subtle">
-          <section v-for="group in dayCommitGroups" :key="group.repositoryPath" class="border-b border-border-subtle last:border-b-0">
+          <section
+            v-for="group in dayCommitGroups"
+            :key="group.repositoryPath"
+            class="border-b border-border-subtle last:border-b-0"
+          >
             <button
               type="button"
               class="flex h-8 w-full min-w-0 items-center gap-2 bg-surface-container-low px-2 text-left text-xs font-bold text-on-surface hover:bg-surface-variant"
               :aria-expanded="!collapsedDayRepositories.has(group.repositoryPath)"
               @click="toggleDayRepository(group.repositoryPath)"
             >
-              <ChevronDown :size="14" class="shrink-0 transition-transform" :class="collapsedDayRepositories.has(group.repositoryPath) && '-rotate-90'" />
+              <ChevronDown
+                :size="14"
+                class="shrink-0 transition-transform"
+                :class="collapsedDayRepositories.has(group.repositoryPath) && '-rotate-90'"
+              />
               <span class="min-w-0 flex-1 truncate" :title="projectNamesForPaths(group.commits[0].projectPaths)">
                 {{ projectNamesForPaths(group.commits[0].projectPaths) }}
               </span>
@@ -2180,11 +2219,24 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <div class="ml-auto flex shrink-0 items-center gap-0.5">
-                  <button type="button" class="popover-icon-button" :title="t.activity.copySummary" :aria-label="t.activity.copySummary" @click="copyCommitText(`${commit.repositoryPath}:${commit.hash}:summary`, commitSummary(commit))">
+                  <button
+                    type="button"
+                    class="popover-icon-button"
+                    :title="t.activity.copySummary"
+                    :aria-label="t.activity.copySummary"
+                    @click="copyCommitText(`${commit.repositoryPath}:${commit.hash}:summary`, commitSummary(commit))"
+                  >
                     <Check v-if="copiedCommitKey === `${commit.repositoryPath}:${commit.hash}:summary`" :size="14" />
                     <ClipboardCopy v-else :size="14" />
                   </button>
-                  <button v-if="commitUrl(commit)" type="button" class="popover-icon-button" :title="t.activity.copyLink" :aria-label="t.activity.copyLink" @click="copyCommitText(`${commit.repositoryPath}:${commit.hash}:link`, commitUrl(commit)!)">
+                  <button
+                    v-if="commitUrl(commit)"
+                    type="button"
+                    class="popover-icon-button"
+                    :title="t.activity.copyLink"
+                    :aria-label="t.activity.copyLink"
+                    @click="copyCommitText(`${commit.repositoryPath}:${commit.hash}:link`, commitUrl(commit)!)"
+                  >
                     <Check v-if="copiedCommitKey === `${commit.repositoryPath}:${commit.hash}:link`" :size="14" />
                     <Link2 v-else :size="14" />
                   </button>
@@ -2202,7 +2254,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </section>
-          <p v-if="copyMessage" class="px-2 py-1 text-[10px] text-status-success" aria-live="polite">{{ copyMessage }}</p>
           <p v-if="dayDetailsMessage" class="px-2 py-1 text-xs text-status-warning">{{ dayDetailsMessage }}</p>
         </div>
         <button
@@ -2232,16 +2283,24 @@ onBeforeUnmount(() => {
           :key="repository.repositoryPath || repository.projectPaths.join('|')"
           class="flex min-w-0 flex-wrap items-center gap-2"
         >
-          <span class="min-w-0 flex-1 break-words">{{ projectNamesForPaths(repository.projectPaths) }}: {{ repository.message || t.activity.readFailed }}</span>
+          <span class="min-w-0 flex-1 break-words"
+            >{{ projectNamesForPaths(repository.projectPaths) }}:
+            {{ repository.message || t.activity.readFailed }}</span
+          >
           <button
             type="button"
             class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant disabled:opacity-50"
-            :disabled="!repositoryRetryKey(repository) || store.workActivityRetryingRepositoryPaths.includes(repositoryRetryKey(repository))"
+            :disabled="
+              !repositoryRetryKey(repository) ||
+              store.workActivityRetryingRepositoryPaths.includes(repositoryRetryKey(repository))
+            "
             @click="retryFailedRepository(repository)"
           >
             <RotateCcw
               :size="12"
-              :class="store.workActivityRetryingRepositoryPaths.includes(repositoryRetryKey(repository)) && 'animate-spin'"
+              :class="
+                store.workActivityRetryingRepositoryPaths.includes(repositoryRetryKey(repository)) && 'animate-spin'
+              "
             />
             {{ t.activity.retryRepository }}
           </button>
