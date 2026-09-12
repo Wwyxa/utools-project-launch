@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   ArrowLeft,
   BarChart3,
@@ -242,6 +242,11 @@ const comparisonLabel = (current: number, previous: number) => {
   if (percent === null) return `${t.value.activity.previousPeriod} ${previous}`;
   return `${t.value.activity.comparePrevious} ${percent >= 0 ? "+" : ""}${percent}% (${previous})`;
 };
+const comparisonTone = (current: number, previous: number) => {
+  const { percent } = gitActivityComparison(current, previous);
+  if (percent === null || percent === 0) return "text-on-surface-variant";
+  return percent > 0 ? "text-status-positive" : "text-status-negative";
+};
 const comparisonTitle = computed(
   () =>
     `${t.value.activity.previousPeriod}: ${formatDate(comparisonRange.value.startDate)} - ${formatDate(comparisonRange.value.endDate)}`,
@@ -283,6 +288,7 @@ const conventionalCounts = computed(() => {
   filteredEntries.value.forEach((entry) => values.set(entry.type, (values.get(entry.type) || 0) + 1));
   return [...values.entries()].sort((left, right) => right[1] - left[1]);
 });
+const maxConventionalCount = computed(() => conventionalCounts.value[0]?.[1] || 0);
 const projectRows = computed(() => {
   const rows = readyRepositories.value.map((repository) => {
     const commits = repositoryCommitCount(repository, activityRange.value);
@@ -500,6 +506,9 @@ const commitUrl = (commit: (typeof dayCommits.value)[number]) => {
 
 const commitSummary = (commit: (typeof dayCommits.value)[number]) =>
   `${commit.message || commit.hash}\n${commit.hash.slice(0, 8)} · ${commit.author} · ${projectNamesForPaths(commit.projectPaths)} · ${formatCommitTime(commit.date)}`;
+
+const copyActionTitle = (key: string, label: string) =>
+  copiedCommitKey.value === key ? t.value.common.copied : label;
 
 const copyCommitText = async (key: string, value: string) => {
   try {
@@ -724,9 +733,22 @@ const applyProjectGroup = (groupId: string) => {
   loadActivity();
 };
 
-const startRenamingProjectGroup = (groupId: string, name: string) => {
+const projectGroupRenameInputEl = ref<HTMLInputElement | null>(null);
+const setProjectGroupRenameInputEl = (el: unknown) => {
+  projectGroupRenameInputEl.value = el instanceof HTMLInputElement ? el : null;
+};
+
+const startRenamingProjectGroup = async (groupId: string, name: string) => {
   editingProjectGroupId.value = groupId;
   editingProjectGroupName.value = name;
+  await nextTick();
+  projectGroupRenameInputEl.value?.focus();
+  projectGroupRenameInputEl.value?.select();
+};
+
+const cancelRenamingProjectGroup = () => {
+  editingProjectGroupId.value = "";
+  editingProjectGroupName.value = "";
 };
 
 const finishRenamingProjectGroup = () => {
@@ -1127,7 +1149,7 @@ onBeforeUnmount(() => {
       <div class="flex min-w-0 items-center gap-2">
         <button
           type="button"
-          class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all hover:bg-surface-variant active:scale-90"
+          class="cursor-pointer rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all hover:bg-surface-variant active:scale-90"
           :title="t.common.back"
           :aria-label="t.common.back"
           @click="store.returnFromWorkActivity()"
@@ -1162,7 +1184,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
         <div
-          class="flex h-7 max-w-full overflow-x-auto rounded-lg border border-border-subtle bg-surface"
+          class="themed-scrollbar flex h-7 max-w-full overflow-x-auto rounded-lg border border-border-subtle bg-surface"
           role="group"
           :aria-label="t.activity.range"
         >
@@ -1172,7 +1194,7 @@ onBeforeUnmount(() => {
             type="button"
             :class="
               cn(
-                'inline-flex h-full shrink-0 items-center justify-center border-l border-border-subtle px-2 text-xs font-bold transition-colors first:border-l-0',
+                'cursor-pointer inline-flex h-full shrink-0 items-center justify-center border-l border-border-subtle px-2 text-xs font-bold transition-colors first:border-l-0',
                 rangeMode === option.value
                   ? 'bg-primary text-on-primary'
                   : 'text-on-surface-variant hover:bg-surface-variant',
@@ -1186,7 +1208,7 @@ onBeforeUnmount(() => {
         </div>
         <button
           type="button"
-          class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant disabled:cursor-wait disabled:opacity-60"
+          class="cursor-pointer inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant disabled:cursor-wait disabled:opacity-60"
           :disabled="store.workActivityLoading"
           :title="t.common.refresh"
           :aria-label="t.common.refresh"
@@ -1197,7 +1219,7 @@ onBeforeUnmount(() => {
         <button
           ref="projectScopeTriggerRef"
           type="button"
-          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          class="cursor-pointer inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
           :aria-expanded="projectScopeOpen"
           @click="toggleProjectScope"
         >
@@ -1218,7 +1240,7 @@ onBeforeUnmount(() => {
       <button
         ref="customDatePickerTriggerRef"
         type="button"
-        class="ui-field ui-field-compact flex min-w-64 items-center justify-between gap-2 px-2 text-left"
+        class="ui-field ui-field-compact flex min-w-64 cursor-pointer items-center justify-between gap-2 px-2 text-left"
         :aria-expanded="Boolean(customDatePickerKind)"
         @click="openCustomDatePicker"
       >
@@ -1253,7 +1275,7 @@ onBeforeUnmount(() => {
                 type="button"
                 :class="
                   cn(
-                    'flex min-w-0 flex-col items-center rounded px-1.5 py-1 text-[10px] leading-tight transition-colors',
+                    'cursor-pointer flex min-w-0 flex-col items-center rounded px-1.5 py-1 text-[10px] leading-tight transition-colors',
                     customDatePickerKind === kind
                       ? 'bg-surface text-primary shadow-sm'
                       : 'text-on-surface-variant hover:text-on-surface',
@@ -1315,7 +1337,7 @@ onBeforeUnmount(() => {
                 :disabled="day.disabled"
                 :class="
                   cn(
-                    'date-picker-day disabled:cursor-not-allowed disabled:opacity-25',
+                    'date-picker-day cursor-pointer disabled:cursor-not-allowed disabled:opacity-25',
                     !day.isCurrentMonth && 'text-on-surface-variant/35',
                     day.isInRange && !day.isSelected && 'bg-primary/10 text-primary',
                     day.isToday && !day.isSelected && 'border-primary/35 text-primary',
@@ -1330,21 +1352,21 @@ onBeforeUnmount(() => {
             <div class="mt-2 flex items-center justify-between gap-2">
               <button
                 type="button"
-                class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
                 @click="selectCalendarYear(customDatePickerMonth.getFullYear())"
               >
                 {{ t.activity.selectCalendarYear.replace("{year}", String(customDatePickerMonth.getFullYear())) }}
               </button>
               <button
                 type="button"
-                class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
                 @click="selectCustomDate(today)"
               >
                 {{ t.activity.today }}
               </button>
               <button
                 type="button"
-                class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
                 @click="clearCustomDateRange"
               >
                 {{ t.activity.clearSelection }}
@@ -1369,7 +1391,7 @@ onBeforeUnmount(() => {
             type="button"
             :class="
               cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                'cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
                 activityPreferences.refScope === refScope
                   ? 'bg-primary/10 text-primary'
                   : 'text-on-surface-variant hover:bg-surface-variant',
@@ -1400,7 +1422,7 @@ onBeforeUnmount(() => {
               type="button"
               :class="
                 cn(
-                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                  'cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
                   activityPreferences.timeZone === timeZone
                     ? 'bg-primary/10 text-primary'
                     : 'text-on-surface-variant hover:bg-surface-variant',
@@ -1430,14 +1452,14 @@ onBeforeUnmount(() => {
             <div class="flex items-center gap-1">
               <button
                 type="button"
-                class="rounded px-1.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/10"
+                class="cursor-pointer rounded px-1.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/10"
                 @click="selectAllProjects"
               >
                 {{ t.activity.selectAll }}
               </button>
               <button
                 type="button"
-                class="rounded px-1.5 py-1 text-[11px] font-bold text-on-surface-variant hover:bg-surface-variant"
+                class="cursor-pointer rounded px-1.5 py-1 text-[11px] font-bold text-on-surface-variant hover:bg-surface-variant"
                 @click="clearProjects"
               >
                 {{ t.activity.clearSelection }}
@@ -1453,9 +1475,11 @@ onBeforeUnmount(() => {
               <template v-if="editingProjectGroupId === group.id">
                 <input
                   v-model="editingProjectGroupName"
-                  class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 text-xs text-on-surface"
+                  :ref="setProjectGroupRenameInputEl"
+                  class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   :aria-label="t.activity.groupName"
                   @keydown.enter.prevent="finishRenamingProjectGroup"
+                  @keydown.esc.prevent="cancelRenamingProjectGroup"
                 />
                 <button
                   type="button"
@@ -1469,7 +1493,7 @@ onBeforeUnmount(() => {
               <template v-else>
                 <button
                   type="button"
-                  class="min-w-0 flex-1 truncate px-1 text-left text-xs font-bold text-on-surface"
+                  class="cursor-pointer min-w-0 flex-1 truncate px-1 text-left text-xs font-bold text-on-surface"
                   :title="group.name"
                   @click="applyProjectGroup(group.id)"
                 >
@@ -1516,13 +1540,13 @@ onBeforeUnmount(() => {
           <div class="mt-1 flex items-center gap-1 border-t border-border-subtle pt-1">
             <input
               v-model="projectGroupName"
-              class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 text-xs text-on-surface"
+              class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               :placeholder="t.activity.groupName"
               @keydown.enter.prevent="saveProjectGroup"
             />
             <button
               type="button"
-              class="inline-flex h-7 items-center gap-1 rounded px-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-40"
+              class="cursor-pointer inline-flex h-7 items-center gap-1 rounded px-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-40"
               :disabled="!projectGroupName.trim() || store.workActivitySelectedProjectIds.length === 0"
               @click="saveProjectGroup"
             >
@@ -1555,7 +1579,11 @@ onBeforeUnmount(() => {
           <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.totalCommits }}</div>
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ totalCommits }}</div>
         </div>
-        <div class="mt-1 truncate text-[9px] tabular-nums text-on-surface-variant" :title="comparisonTitle">
+        <div
+          class="mt-1 truncate text-[9px] tabular-nums"
+          :class="comparisonTone(totalCommits, previousCommits)"
+          :title="comparisonTitle"
+        >
           {{ comparisonLabel(totalCommits, previousCommits) }}
         </div>
       </div>
@@ -1564,7 +1592,11 @@ onBeforeUnmount(() => {
           <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.activeDays }}</div>
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ activeDays }}</div>
         </div>
-        <div class="mt-1 truncate text-[9px] tabular-nums text-on-surface-variant" :title="comparisonTitle">
+        <div
+          class="mt-1 truncate text-[9px] tabular-nums"
+          :class="comparisonTone(activeDays, previousActiveDays)"
+          :title="comparisonTitle"
+        >
           {{ comparisonLabel(activeDays, previousActiveDays) }}
         </div>
       </div>
@@ -1573,14 +1605,26 @@ onBeforeUnmount(() => {
           <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.activeProjects }}</div>
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ activeProjects }}</div>
         </div>
-        <div class="mt-1 truncate text-[9px] tabular-nums text-on-surface-variant" :title="comparisonTitle">
+        <div
+          class="mt-1 truncate text-[9px] tabular-nums"
+          :class="comparisonTone(activeProjects, previousActiveProjects)"
+          :title="comparisonTitle"
+        >
           {{ comparisonLabel(activeProjects, previousActiveProjects) }}
         </div>
       </div>
-      <div class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
-        <div class="text-[10px] font-bold text-on-surface-variant">{{ t.activity.busiestDay }}</div>
-        <div class="mt-1 truncate text-xs font-bold text-on-surface">
-          {{ busiestDay ? `${formatDate(busiestDay[0])} · ${busiestDay[1]}` : "—" }}
+      <div
+        class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm"
+        :title="busiestDay ? cellLabel(busiestDay[0], busiestDay[1]) : undefined"
+      >
+        <div class="flex items-center justify-between gap-2">
+          <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.busiestDay }}</div>
+          <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">
+            {{ busiestDay ? busiestDay[1] : "—" }}
+          </div>
+        </div>
+        <div class="mt-1 truncate text-[9px] text-on-surface-variant">
+          {{ busiestDay ? formatDate(busiestDay[0]) : "—" }}
         </div>
       </div>
     </section>
@@ -1594,7 +1638,7 @@ onBeforeUnmount(() => {
         <div class="flex min-w-0 items-center gap-2">
           <button
             type="button"
-            class="inline-flex min-w-0 items-center gap-1 text-[10px] text-on-surface-variant transition-colors hover:text-primary"
+            class="cursor-pointer inline-flex min-w-0 items-center gap-1 text-[10px] text-on-surface-variant transition-colors hover:text-primary"
             :title="t.activity.criteria"
             :aria-expanded="criteriaOpen"
             @click="criteriaOpen = !criteriaOpen"
@@ -1608,7 +1652,7 @@ onBeforeUnmount(() => {
           <button
             ref="authorPickerTriggerRef"
             type="button"
-            class="inline-flex h-7 max-w-[15rem] items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+            class="cursor-pointer inline-flex h-7 max-w-[15rem] items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
             :aria-expanded="authorPickerOpen"
             @click="toggleAuthorPicker"
           >
@@ -1642,7 +1686,7 @@ onBeforeUnmount(() => {
             <button
               ref="refScopePickerTriggerRef"
               type="button"
-              class="flex h-8 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-variant"
+              class="cursor-pointer flex h-8 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-variant"
               aria-haspopup="menu"
               aria-labelledby="work-activity-ref-scope-label"
               :aria-expanded="refScopePickerOpen"
@@ -1657,7 +1701,7 @@ onBeforeUnmount(() => {
             <button
               ref="timeZonePickerTriggerRef"
               type="button"
-              class="flex h-8 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-variant"
+              class="cursor-pointer flex h-8 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-variant"
               aria-haspopup="menu"
               aria-labelledby="work-activity-time-zone-label"
               :aria-expanded="timeZonePickerOpen"
@@ -1670,7 +1714,7 @@ onBeforeUnmount(() => {
           <p class="sm:col-span-2">{{ t.activity.timeBasisHint }}</p>
         </div>
         <div class="grid content-start gap-2">
-          <label class="flex items-center gap-2">
+          <label class="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
               class="accent-[var(--color-primary)]"
@@ -1679,7 +1723,7 @@ onBeforeUnmount(() => {
             />
             <span class="font-bold text-on-surface">{{ t.activity.hideMerges }}</span>
           </label>
-          <label class="flex items-center gap-2">
+          <label class="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
               class="accent-[var(--color-primary)]"
@@ -1691,7 +1735,7 @@ onBeforeUnmount(() => {
           <label v-if="activityPreferences.excludeBots" class="grid gap-1">
             <span>{{ t.activity.botPatterns }}</span>
             <input
-              class="h-8 rounded-md border border-border-subtle bg-surface px-2 font-mono text-on-surface"
+              class="ui-field ui-field-compact font-mono"
               :value="activityPreferences.botPatterns.join(', ')"
               @change="setActivityPreference('botPatterns', splitAliases(($event.target as HTMLInputElement).value))"
             />
@@ -1705,7 +1749,7 @@ onBeforeUnmount(() => {
             </div>
             <button
               type="button"
-              class="inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant"
+              class="cursor-pointer inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant"
               @click="addIdentity"
             >
               <Plus :size="13" /> {{ t.activity.addIdentity }}
@@ -1717,25 +1761,25 @@ onBeforeUnmount(() => {
             class="grid gap-1 sm:grid-cols-[10rem_1fr_1fr_2rem]"
           >
             <input
-              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
+              class="ui-field ui-field-compact"
               :value="identity.name"
               @change="updateIdentity(index, 'name', ($event.target as HTMLInputElement).value)"
             />
             <input
-              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
+              class="ui-field ui-field-compact"
               :placeholder="t.activity.identityEmails"
               :value="identity.emails.join(', ')"
               @change="updateIdentity(index, 'emails', ($event.target as HTMLInputElement).value)"
             />
             <input
-              class="h-8 rounded-md border border-border-subtle bg-surface px-2 text-on-surface"
+              class="ui-field ui-field-compact"
               :placeholder="t.activity.identityNames"
               :value="identity.names.join(', ')"
               @change="updateIdentity(index, 'names', ($event.target as HTMLInputElement).value)"
             />
             <button
               type="button"
-              class="flex h-8 w-8 items-center justify-center text-status-error hover:bg-status-error/10"
+              class="cursor-pointer flex h-8 w-8 items-center justify-center text-status-error hover:bg-status-error/10"
               :aria-label="t.common.delete"
               @click="removeIdentity(index)"
             >
@@ -1764,7 +1808,7 @@ onBeforeUnmount(() => {
                 type="button"
                 :class="
                   cn(
-                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                    'cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
                     !selectedAuthorId
                       ? 'bg-primary/10 text-primary'
                       : 'text-on-surface-variant hover:bg-surface-variant',
@@ -1785,7 +1829,7 @@ onBeforeUnmount(() => {
                 type="button"
                 :class="
                   cn(
-                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                    'cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
                     isAuthorSelected(author.id)
                       ? 'bg-primary/10 text-primary'
                       : 'text-on-surface-variant hover:bg-surface-variant',
@@ -1862,7 +1906,7 @@ onBeforeUnmount(() => {
                     :data-heatmap-date="cell.date"
                     :class="
                       cn(
-                        'h-3 w-3 rounded-[2px] border transition-transform hover:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                        'cursor-pointer h-3 w-3 rounded-[2px] border transition-transform hover:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                         cell.level === 0 && 'border-border-subtle bg-surface-container-high',
                         cell.level === 1 && 'border-status-running/30 bg-status-running/25',
                         cell.level === 2 && 'border-status-running/45 bg-status-running/45',
@@ -1900,7 +1944,7 @@ onBeforeUnmount(() => {
           :key="tab.value"
           type="button"
           role="tab"
-          class="inline-flex h-8 shrink-0 items-center gap-1.5 border-b-2 px-3 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          class="cursor-pointer inline-flex h-8 shrink-0 items-center gap-1.5 border-b-2 px-3 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40"
           :class="
             analysisTab === tab.value
               ? 'border-primary text-primary'
@@ -1926,7 +1970,7 @@ onBeforeUnmount(() => {
             <button
               ref="projectSortTriggerRef"
               type="button"
-              class="inline-flex h-7 min-w-28 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              class="cursor-pointer inline-flex h-7 min-w-28 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
               aria-haspopup="menu"
               :aria-expanded="projectSortOpen"
               @click="toggleProjectSort"
@@ -1950,7 +1994,7 @@ onBeforeUnmount(() => {
                 :key="option.value"
                 type="button"
                 role="menuitemradio"
-                class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors"
+                class="cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors"
                 :class="
                   projectSort === option.value
                     ? 'bg-primary/10 text-primary'
@@ -1971,19 +2015,62 @@ onBeforeUnmount(() => {
             <thead class="text-[10px] text-on-surface-variant">
               <tr>
                 <th class="px-2 py-1.5">{{ t.activity.project }}</th>
-                <th class="px-2 py-1.5 text-right">{{ t.activity.totalCommits }}</th>
-                <th class="px-2 py-1.5 text-right">{{ t.activity.activeDays }}</th>
-                <th class="px-2 py-1.5 text-right">{{ t.activity.recentActivity }}</th>
-                <th class="px-2 py-1.5 text-right">{{ t.activity.share }}</th>
+                <th class="px-2 py-1.5 text-right" :aria-sort="projectSort === 'commits' ? 'descending' : undefined">
+                  <button
+                    type="button"
+                    class="inline-flex w-full cursor-pointer items-center justify-end gap-0.5 transition-colors hover:text-on-surface"
+                    :class="projectSort === 'commits' && 'text-primary'"
+                    @click="selectProjectSort('commits')"
+                  >
+                    {{ t.activity.totalCommits }}
+                    <ChevronDown :size="11" class="shrink-0" :class="projectSort !== 'commits' && 'opacity-0'" />
+                  </button>
+                </th>
+                <th class="px-2 py-1.5 text-right" :aria-sort="projectSort === 'activeDays' ? 'descending' : undefined">
+                  <button
+                    type="button"
+                    class="inline-flex w-full cursor-pointer items-center justify-end gap-0.5 transition-colors hover:text-on-surface"
+                    :class="projectSort === 'activeDays' && 'text-primary'"
+                    @click="selectProjectSort('activeDays')"
+                  >
+                    {{ t.activity.activeDays }}
+                    <ChevronDown :size="11" class="shrink-0" :class="projectSort !== 'activeDays' && 'opacity-0'" />
+                  </button>
+                </th>
+                <th class="px-2 py-1.5 text-right" :aria-sort="projectSort === 'recent' ? 'descending' : undefined">
+                  <button
+                    type="button"
+                    class="inline-flex w-full cursor-pointer items-center justify-end gap-0.5 transition-colors hover:text-on-surface"
+                    :class="projectSort === 'recent' && 'text-primary'"
+                    @click="selectProjectSort('recent')"
+                  >
+                    {{ t.activity.recentActivity }}
+                    <ChevronDown :size="11" class="shrink-0" :class="projectSort !== 'recent' && 'opacity-0'" />
+                  </button>
+                </th>
+                <th class="px-2 py-1.5 text-right" :aria-sort="projectSort === 'share' ? 'descending' : undefined">
+                  <button
+                    type="button"
+                    class="inline-flex w-full cursor-pointer items-center justify-end gap-0.5 transition-colors hover:text-on-surface"
+                    :class="projectSort === 'share' && 'text-primary'"
+                    @click="selectProjectSort('share')"
+                  >
+                    {{ t.activity.share }}
+                    <ChevronDown :size="11" class="shrink-0" :class="projectSort !== 'share' && 'opacity-0'" />
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border-subtle">
               <tr
                 v-for="row in projectRows"
                 :key="row.repository.repositoryPath"
-                class="cursor-pointer transition-colors hover:bg-surface-variant"
+                class="cursor-pointer transition-colors hover:bg-surface-variant focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
                 :class="focusedRepositoryPath === row.repository.repositoryPath && 'bg-primary/10'"
+                tabindex="0"
                 @click="focusRepository(row.repository.repositoryPath)"
+                @keydown.enter.prevent="focusRepository(row.repository.repositoryPath)"
+                @keydown.space.prevent="focusRepository(row.repository.repositoryPath)"
               >
                 <td
                   class="max-w-72 truncate px-2 py-2 font-bold text-on-surface"
@@ -2032,7 +2119,7 @@ onBeforeUnmount(() => {
                 :title="t.activity.hourCount.replace('{hour}', String(hour)).replace('{count}', String(count))"
               >
                 <div
-                  class="w-full min-w-1 bg-primary/70"
+                  class="w-full min-w-1 bg-primary/70 transition-[height] duration-300 ease-out"
                   :class="busiestHour?.hour === hour && 'bg-status-running'"
                   :style="{ height: `${count ? Math.max(4, (count / maxHourlyCount) * 72) : 1}px` }"
                 />
@@ -2054,8 +2141,8 @@ onBeforeUnmount(() => {
               <span class="truncate font-mono text-on-surface-variant">{{ type }}</span>
               <span class="h-2 overflow-hidden bg-surface-container-high">
                 <span
-                  class="block h-full bg-status-running"
-                  :style="{ width: `${totalCommits ? (count / totalCommits) * 100 : 0}%` }"
+                  class="block h-full bg-status-running transition-[width] duration-300 ease-out"
+                  :style="{ width: `${maxConventionalCount ? (count / maxConventionalCount) * 100 : 0}%` }"
                 />
               </span>
               <span class="text-right tabular-nums">{{ count }}</span>
@@ -2065,19 +2152,19 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else-if="analysisTab === 'changes'">
-        <div v-if="changesLoading" class="space-y-2" aria-busy="true">
+        <div v-if="changesLoading && !changesReport" class="space-y-2" aria-busy="true">
           <div v-for="index in 3" :key="index" class="skeleton h-8 w-full" />
         </div>
-        <p v-else-if="changesMessage" class="text-xs text-status-warning">{{ changesMessage }}</p>
+        <p v-else-if="changesMessage && !changesReport" class="text-xs text-status-warning">{{ changesMessage }}</p>
         <div v-else-if="changesReport" class="space-y-3">
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div class="border-y border-border-subtle px-2 py-2">
               <div class="text-[10px] text-on-surface-variant">{{ t.activity.additions }}</div>
-              <div class="font-bold tabular-nums text-status-success">+{{ changeTotals.additions }}</div>
+              <div class="font-bold tabular-nums text-status-positive">+{{ changeTotals.additions }}</div>
             </div>
             <div class="border-y border-border-subtle px-2 py-2">
               <div class="text-[10px] text-on-surface-variant">{{ t.activity.deletions }}</div>
-              <div class="font-bold tabular-nums text-status-error">-{{ changeTotals.deletions }}</div>
+              <div class="font-bold tabular-nums text-status-negative">-{{ changeTotals.deletions }}</div>
             </div>
             <div class="border-y border-border-subtle px-2 py-2">
               <div class="text-[10px] text-on-surface-variant">{{ t.activity.changedFiles }}</div>
@@ -2089,12 +2176,15 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <p class="text-[10px] text-on-surface-variant">{{ t.activity.changeStatsHint }}</p>
+          <p v-if="changesMessage" class="text-xs text-status-warning">{{ changesMessage }}</p>
           <button
             type="button"
-            class="h-7 rounded-md border border-border-subtle px-2 text-xs font-bold hover:bg-surface-variant"
+            class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border-subtle px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-wait disabled:opacity-60"
+            :disabled="changesLoading"
             @click="loadChanges(true)"
           >
-            {{ t.common.refresh }}
+            <RefreshCw :size="12" :class="changesLoading && 'animate-spin'" />
+            {{ changesLoading ? t.common.refreshing : t.common.refresh }}
           </button>
         </div>
       </div>
@@ -2112,14 +2202,25 @@ onBeforeUnmount(() => {
             <input
               v-model="dayQuery"
               type="search"
-              class="h-7 w-full rounded-md border border-border-subtle bg-surface pl-7 pr-2 text-xs text-on-surface"
+              autocomplete="off"
+              class="h-7 w-full rounded-md border border-border-subtle bg-surface pl-7 pr-2 text-xs text-on-surface outline-none transition-colors focus:border-primary [&::-webkit-search-cancel-button]:hidden"
+              :class="dayQuery && 'pr-7'"
               :placeholder="t.activity.searchCommits"
             />
+            <button
+              v-if="dayQuery"
+              type="button"
+              class="absolute right-1.5 top-1.5 grid h-4 w-4 cursor-pointer place-items-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+              :aria-label="t.common.clear"
+              @click="dayQuery = ''"
+            >
+              <X :size="12" />
+            </button>
           </label>
           <div class="flex min-w-0 flex-wrap items-center gap-1">
             <button
               type="button"
-              class="h-7 shrink-0 rounded-md border border-border-subtle px-2 text-xs font-bold"
+              class="cursor-pointer h-7 shrink-0 rounded-md border border-border-subtle px-2 text-xs font-bold"
               :class="
                 !dayProjectPaths.size
                   ? 'bg-primary text-on-primary'
@@ -2134,7 +2235,7 @@ onBeforeUnmount(() => {
               v-for="project in dayProjectOptions"
               :key="project.repositoryPath"
               type="button"
-              class="h-7 max-w-48 shrink-0 truncate rounded-md border border-border-subtle px-2 text-xs font-bold"
+              class="cursor-pointer h-7 max-w-48 shrink-0 truncate rounded-md border border-border-subtle px-2 text-xs font-bold"
               :class="
                 dayProjectPaths.has(project.repositoryPath)
                   ? 'bg-primary text-on-primary'
@@ -2189,7 +2290,7 @@ onBeforeUnmount(() => {
           >
             <button
               type="button"
-              class="flex h-8 w-full min-w-0 items-center gap-2 bg-surface-container-low px-2 text-left text-xs font-bold text-on-surface hover:bg-surface-variant"
+              class="cursor-pointer flex h-8 w-full min-w-0 items-center gap-2 bg-surface-container-low px-2 text-left text-xs font-bold text-on-surface hover:bg-surface-variant"
               :aria-expanded="!collapsedDayRepositories.has(group.repositoryPath)"
               @click="toggleDayRepository(group.repositoryPath)"
             >
@@ -2207,7 +2308,7 @@ onBeforeUnmount(() => {
               <div
                 v-for="commit in group.commits"
                 :key="`${commit.repositoryPath}:${commit.hash}`"
-                class="flex min-w-0 flex-wrap items-center gap-2 px-2 py-2 sm:flex-nowrap"
+                class="flex min-w-0 flex-wrap items-center gap-2 px-2 py-2 transition-colors hover:bg-surface-variant sm:flex-nowrap"
               >
                 <div class="min-w-0 flex-1 basis-64">
                   <div class="break-words text-xs font-bold text-on-surface" :title="commit.message || commit.hash">
@@ -2222,8 +2323,8 @@ onBeforeUnmount(() => {
                   <button
                     type="button"
                     class="popover-icon-button"
-                    :title="t.activity.copySummary"
-                    :aria-label="t.activity.copySummary"
+                    :title="copyActionTitle(`${commit.repositoryPath}:${commit.hash}:summary`, t.activity.copySummary)"
+                    :aria-label="copyActionTitle(`${commit.repositoryPath}:${commit.hash}:summary`, t.activity.copySummary)"
                     @click="copyCommitText(`${commit.repositoryPath}:${commit.hash}:summary`, commitSummary(commit))"
                   >
                     <Check v-if="copiedCommitKey === `${commit.repositoryPath}:${commit.hash}:summary`" :size="14" />
@@ -2233,8 +2334,8 @@ onBeforeUnmount(() => {
                     v-if="commitUrl(commit)"
                     type="button"
                     class="popover-icon-button"
-                    :title="t.activity.copyLink"
-                    :aria-label="t.activity.copyLink"
+                    :title="copyActionTitle(`${commit.repositoryPath}:${commit.hash}:link`, t.activity.copyLink)"
+                    :aria-label="copyActionTitle(`${commit.repositoryPath}:${commit.hash}:link`, t.activity.copyLink)"
                     @click="copyCommitText(`${commit.repositoryPath}:${commit.hash}:link`, commitUrl(commit)!)"
                   >
                     <Check v-if="copiedCommitKey === `${commit.repositoryPath}:${commit.hash}:link`" :size="14" />
@@ -2259,7 +2360,7 @@ onBeforeUnmount(() => {
         <button
           v-if="hasMoreDayCommits"
           type="button"
-          class="mt-2 inline-flex h-7 items-center rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          class="cursor-pointer mt-2 inline-flex h-7 items-center rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
           :disabled="dayDetailsLoading"
           @click="loadDayDetails(true)"
         >
@@ -2289,7 +2390,7 @@ onBeforeUnmount(() => {
           >
           <button
             type="button"
-            class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant disabled:opacity-50"
+            class="cursor-pointer inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant disabled:opacity-50"
             :disabled="
               !repositoryRetryKey(repository) ||
               store.workActivityRetryingRepositoryPaths.includes(repositoryRetryKey(repository))
@@ -2307,7 +2408,7 @@ onBeforeUnmount(() => {
           <button
             v-if="projectForPaths(repository.projectPaths)"
             type="button"
-            class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant"
+            class="cursor-pointer inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant"
             @click="openProjectSettings(repository.projectPaths)"
           >
             <Settings2 :size="12" /> {{ t.activity.projectSettings }}
