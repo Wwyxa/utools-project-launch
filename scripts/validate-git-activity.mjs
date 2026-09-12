@@ -14,6 +14,7 @@ const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "git-activity-"));
 const projectRoot = path.join(fixtureRoot, "project");
 const nestedProjectRoot = path.join(projectRoot, "nested");
 const nonGitRoot = path.join(fixtureRoot, "non-git");
+const skewProjectRoot = path.join(fixtureRoot, "skew");
 
 const runGit = (repositoryPath, args, environment = {}) =>
   execFileSync("git", ["-C", repositoryPath, ...args], {
@@ -30,10 +31,10 @@ const localDate = (iso) => {
   return `${year}-${month}-${day}`;
 };
 
-const commitFile = ({ fileName, contents, message, name, email, date, committerDate = date }) => {
-  fs.writeFileSync(path.join(projectRoot, fileName), contents);
-  runGit(projectRoot, ["add", "--", fileName]);
-  runGit(projectRoot, ["commit", "-m", message], {
+const commitFile = ({ root = projectRoot, fileName, contents, message, name, email, date, committerDate = date }) => {
+  fs.writeFileSync(path.join(root, fileName), contents);
+  runGit(root, ["add", "--", fileName]);
+  runGit(root, ["commit", "-m", message], {
     GIT_AUTHOR_NAME: name,
     GIT_AUTHOR_EMAIL: email,
     GIT_AUTHOR_DATE: date,
@@ -424,6 +425,57 @@ try {
   });
   assert.equal(unmatchedAuthorChanges.repositories[0].commits, 0);
   assert.equal(unmatchedAuthorChanges.repositories[0].files, 0);
+
+  // Change statistics filter by author date, so commits whose committer date
+  // diverges from the author date (rebases, cherry-picks, manual dates) must
+  // still be counted regardless of how far the committer date falls outside
+  // the range in either direction.
+  fs.mkdirSync(skewProjectRoot, { recursive: true });
+  runGit(skewProjectRoot, ["init"]);
+  runGit(skewProjectRoot, ["config", "user.name", "Git Activity Validation"]);
+  runGit(skewProjectRoot, ["config", "user.email", "git-activity-validation@example.invalid"]);
+  commitFile({
+    root: skewProjectRoot,
+    fileName: "base.txt",
+    contents: "base\n",
+    message: "skew base",
+    name: "Alex",
+    email: "alex.work@example.invalid",
+    date: "2026-04-01T09:00:00+00:00",
+  });
+  commitFile({
+    root: skewProjectRoot,
+    fileName: "skew-old.txt",
+    contents: "one\ntwo\nthree\n",
+    message: "committer far older than author",
+    name: "Alex",
+    email: "alex.work@example.invalid",
+    date: "2026-04-02T09:00:00+00:00",
+    committerDate: "2020-01-01T09:00:00+00:00",
+  });
+  commitFile({
+    root: skewProjectRoot,
+    fileName: "skew-new.txt",
+    contents: "one\ntwo\n",
+    message: "committer far newer than author",
+    name: "Alex",
+    email: "alex.work@example.invalid",
+    date: "2026-04-03T09:00:00+00:00",
+    committerDate: "2040-01-01T09:00:00+00:00",
+  });
+  const skewChanges = await bridge.readGitActivityChanges([skewProjectRoot], {
+    startDate: "2026-04-01",
+    endDate: "2026-04-30",
+    timeZone: "UTC",
+    refScope: "current",
+    force: true,
+  });
+  assert.equal(skewChanges.repositories[0].state, "ready");
+  assert.equal(skewChanges.repositories[0].commits, 3);
+  assert.equal(skewChanges.repositories[0].files, 3);
+  assert.equal(skewChanges.repositories[0].additions, 6);
+  assert.equal(skewChanges.repositories[0].deletions, 0);
+  assert.equal(skewChanges.repositories[0].binaryFiles, 0);
 
   console.log("Git activity validation passed.");
 } finally {

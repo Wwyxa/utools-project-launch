@@ -347,6 +347,7 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
   const timeoutMs = Math.max(1, Number(options.timeoutMs) || gitWorkspaceEntryTimeoutMs);
   const executable = options.executable || "git";
   const stdoutRecordHandler = typeof options.stdoutRecordHandler === "function" ? options.stdoutRecordHandler : null;
+  const stdinInput = typeof options.stdinInput === "string" ? options.stdinInput : null;
   const commandArgs = options.executable
     ? Array.isArray(options.commandArgs)
       ? options.commandArgs
@@ -365,7 +366,7 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
     const child = spawn(executable, commandArgs, {
       env: { ...resolveGitExecutionEnvironment(), GIT_OPTIONAL_LOCKS: "0" },
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [stdinInput === null ? "ignore" : "pipe", "pipe", "pipe"],
       windowsHide: true,
     });
 
@@ -373,6 +374,11 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
       timedOut = true;
       child.kill();
     }, timeoutMs);
+
+    if (stdinInput !== null) {
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(stdinInput);
+    }
 
     const emitStdoutRecords = (text, flush = false) => {
       stdoutRecordRemainder += text;
@@ -1269,40 +1275,68 @@ function trimGitActivityChangesCache() {
 async function readGitActivityChangesRepositoryData(repositoryPath, range, criteria, ref, authorId) {
   const identityMatcher = createGitActivityIdentityMatcher(criteria);
   const botMatcher = createGitActivityBotMatcher(criteria);
-  const result = await runGitWorkspaceCommand(
+  // Phase 1 walks history metadata only (no per-commit diff) and filters by
+  // author date in the selected time zone — the exact criteria the report
+  // counts by. Phase 2 then computes numstat just for the surviving hashes.
+  // git's --since/--until cannot be used for this pruning because it matches
+  // committer dates and would silently drop commits whose author and
+  // committer dates diverge (rebases, cherry-picks, manual dates).
+  const isCommitInChangesRange = (commit) => {
+    const date = formatGitActivityDate(commit.date, criteria.timeZone);
+    return (
+      Boolean(date) &&
+      date >= range.startDate &&
+      date <= range.endDate &&
+      !(criteria.hideMerges && commit.isMerge) &&
+      !(criteria.excludeBots && botMatcher(commit)) &&
+      !(authorId && commit.authorId !== authorId)
+    );
+  };
+  const inRangeHashes = new Set();
+  const metadataResult = await runGitWorkspaceCommand(
     repositoryPath,
     [
       "--no-optional-locks",
       "log",
       ...ref.args,
+      "--date=iso-strict",
+      `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
+    ],
+    {
+      timeoutMs: gitActivityReadTimeoutMs,
+      stdoutRecordHandler: (record) => {
+        const commit = parseGitActivityCommitRecord(record, identityMatcher);
+        if (commit && isCommitInChangesRange(commit)) inRangeHashes.add(commit.hash);
+      },
+    },
+  );
+  if (metadataResult.status !== 0) return createGitActivityReadFailure(repositoryPath, metadataResult);
+
+  const hashes = [...inRangeHashes];
+  const totals = { commits: hashes.length, files: 0, additions: 0, deletions: 0, binaryFiles: 0 };
+  if (!hashes.length) return { repositoryPath, state: "ready", ...totals };
+
+  const numstatResult = await runGitWorkspaceCommand(
+    repositoryPath,
+    [
+      "--no-optional-locks",
+      "log",
+      "--no-walk=unsorted",
+      "--stdin",
       "--numstat",
       "--diff-merges=first-parent",
       "--date=iso-strict",
       `--format=%x1e%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s`,
     ],
-    { timeoutMs: gitActivityReadTimeoutMs },
+    { timeoutMs: gitActivityReadTimeoutMs, stdinInput: `${hashes.join("\n")}\n` },
   );
-  if (result.status !== 0) return createGitActivityReadFailure(repositoryPath, result);
+  if (numstatResult.status !== 0) return createGitActivityReadFailure(repositoryPath, numstatResult);
 
-  const totals = { commits: 0, files: 0, additions: 0, deletions: 0, binaryFiles: 0 };
-  String(result.stdout || "")
+  String(numstatResult.stdout || "")
     .split("\x1e")
     .slice(1)
     .forEach((record) => {
-      const [header = "", ...statLines] = record.replace(/^\r?\n/, "").split(/\r?\n/);
-      const commit = parseGitActivityCommitRecord(header, identityMatcher);
-      if (!commit) return;
-      const date = formatGitActivityDate(commit.date, criteria.timeZone);
-      if (
-        !date ||
-        date < range.startDate ||
-        date > range.endDate ||
-        (criteria.hideMerges && commit.isMerge) ||
-        (criteria.excludeBots && botMatcher(commit)) ||
-        (authorId && commit.authorId !== authorId)
-      )
-        return;
-      totals.commits += 1;
+      const [, ...statLines] = record.replace(/^\r?\n/, "").split(/\r?\n/);
       statLines.forEach((line) => {
         const [added, deleted, filePath] = line.split("\t");
         if (!filePath || (!/^\d+$/.test(added) && added !== "-") || (!/^\d+$/.test(deleted) && deleted !== "-")) return;
