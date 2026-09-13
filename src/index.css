@@ -69,6 +69,7 @@
 
   --color-bg-soft-gray: #f6f6f7;
   --color-border-subtle: #e2e2e3;
+  --color-scrim: #000000;
 
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(109, 122, 114, 0.34);
@@ -223,6 +224,23 @@
     background-color: var(--color-surface-container-lowest);
     color: var(--color-on-surface);
   }
+
+  /* 原生复选框/单选框跟随主题色（显式 accent-* 工具类仍可覆盖） */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-primary);
+  }
+
+  /* 文本选区主题化 */
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-primary) 24%, transparent);
+  }
+
+  /* 键盘导航的基础焦点环；元素用 outline-none / focus-visible:outline-none 可显式退出 */
+  :where(button, a, summary, [role="button"], input, select, textarea):focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+  }
 }
 
 .scrollbar-hide::-webkit-scrollbar {
@@ -344,6 +362,18 @@
   color: var(--color-on-surface);
 }
 
+.toolbar-icon-button,
+.toolbar-primary-button {
+  transition-property: background-color, border-color, color, box-shadow, transform;
+  transition-duration: 160ms;
+  transition-timing-function: ease;
+}
+
+.toolbar-icon-button:active:not(:disabled),
+.toolbar-primary-button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
 .toolbar-primary-button {
   background: var(--toolbar-primary-bg);
   color: var(--toolbar-primary-fg);
@@ -357,6 +387,15 @@
   border: 1px solid var(--color-border-subtle);
   background: var(--color-surface-container-lowest);
   color: var(--color-on-surface);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 120ms ease;
+}
+
+.dashboard-filter-chip:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .dashboard-filter-chip:hover {
@@ -487,7 +526,12 @@
   transition:
     background-color 160ms ease,
     color 160ms ease,
-    opacity 160ms ease;
+    opacity 160ms ease,
+    transform 120ms ease;
+}
+
+:where(.git-top-action, .git-section-action, .git-row-action):active:not(:disabled) {
+  transform: scale(0.92);
 }
 
 :where(.git-top-action, .git-section-action, .git-row-action):hover:not(:disabled) {
@@ -585,7 +629,12 @@
     background-color 160ms ease,
     border-color 160ms ease,
     color 160ms ease,
-    opacity 160ms ease;
+    opacity 160ms ease,
+    transform 120ms ease;
+}
+
+:where(.git-dialog-primary, .git-dialog-secondary):active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .git-dialog-secondary {
@@ -850,6 +899,8 @@
   box-shadow:
     0 18px 40px rgba(0, 0, 0, 0.16),
     0 2px 8px rgba(0, 0, 0, 0.08);
+  transform-origin: top left;
+  animation: menu-pop-in 140ms ease-out;
 }
 
 .mode-menu-popover {
@@ -917,6 +968,7 @@
 .popover-above {
   top: auto;
   bottom: calc(100% + 0.375rem);
+  transform-origin: bottom left;
 }
 
 .popover-icon-button {
@@ -929,7 +981,12 @@
   color: var(--color-on-surface-variant);
   transition:
     background-color 140ms ease,
-    color 140ms ease;
+    color 140ms ease,
+    transform 120ms ease;
+}
+
+.popover-icon-button:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .popover-icon-button:hover {
@@ -950,7 +1007,12 @@
   transition:
     background-color 140ms ease,
     border-color 140ms ease,
-    color 140ms ease;
+    color 140ms ease,
+    transform 120ms ease;
+}
+
+.date-picker-day:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .date-picker-day:hover {
@@ -1248,7 +1310,12 @@
   color: var(--color-on-surface-variant);
   transition:
     color 150ms ease,
-    background-color 150ms ease;
+    background-color 150ms ease,
+    transform 120ms ease;
+}
+
+.file-tree-toolbar-button:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .file-tree-toolbar-button:hover,
@@ -1705,5 +1772,29 @@
 
 .scale-enter-from > *,
 .scale-leave-to > * {
+  transform: scale(0.96);
+}
+
+/* 弹出层入场：轻量缩放 + 淡入（右键菜单、下拉菜单、popover） */
+@keyframes menu-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.menu-pop {
+  transform-origin: top left;
+  animation: menu-pop-in 140ms ease-out;
+}
+
+/* 按钮按压反馈：沿用色彩过渡并统一 :active 缩放；标记为 ui-press 的元素不要再叠加 transition-colors */
+.ui-press {
+  transition-property: color, background-color, border-color, transform, opacity, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+.ui-press:active:not(:disabled) {
   transform: scale(0.96);
 }

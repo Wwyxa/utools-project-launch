@@ -2441,7 +2441,7 @@ watch(
           <div
             :class="
               isDiffViewerExpanded
-                ? 'fixed inset-0 z-[90] flex items-center justify-center bg-scrim/35 p-4 backdrop-blur-sm'
+                ? 'fixed inset-0 z-[90] flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm'
                 : 'flex min-h-0 flex-1 flex-col'
             "
             :role="isDiffViewerExpanded ? 'dialog' : undefined"
@@ -2487,7 +2487,7 @@ watch(
     <Transition name="scale">
       <div
         v-if="isRemoteDialogOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-5 backdrop-blur-sm"
         @click.self="closeRemoteDialog"
       >
         <div

@@ -641,7 +641,7 @@ onBeforeUnmount(() => {
       <Transition name="scale">
         <div
           v-if="historyDialogOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
           @click.self="closeHistoryDialog"
         >
           <section

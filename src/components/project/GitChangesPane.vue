@@ -1464,7 +1464,7 @@ onBeforeUnmount(() => {
       <Transition name="scale">
         <div
           v-if="stashDialogOpen"
-          class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+          class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5 backdrop-blur-sm"
           @click.self="() => closeStashDialog()"
         >
           <form

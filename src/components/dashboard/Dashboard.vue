@@ -809,7 +809,7 @@ const handleProjectDragEnd = () => {
       <Transition name="scale">
         <div
           v-if="todoOverviewOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
           @click.self="todoOverviewOpen = false"
         >
           <section
@@ -830,7 +830,7 @@ const handleProjectDragEnd = () => {
                 <div ref="todoProjectPicker" class="relative w-36 shrink-0">
                   <button
                     type="button"
-                    class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface-container-low px-2.5 text-xs font-semibold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-50"
+                    class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface-container-low px-2.5 text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="store.visibleProjects.length === 0"
                     :aria-expanded="todoProjectPickerOpen"
                     :title="selectedTodoProject?.name"
@@ -844,7 +844,7 @@ const handleProjectDragEnd = () => {
                       v-if="todoProjectPickerOpen"
                       ref="todoProjectMenu"
                       :style="todoProjectMenuStyle"
-                      class="fixed z-[60] flex flex-col overflow-hidden rounded-md border border-border-subtle bg-surface shadow-xl"
+                      class="menu-pop fixed z-[60] flex flex-col overflow-hidden rounded-md border border-border-subtle bg-surface shadow-xl"
                     >
                       <div class="shrink-0 border-b border-border-subtle p-1">
                         <div class="relative">
@@ -906,7 +906,7 @@ const handleProjectDragEnd = () => {
                 <button
                   v-if="!todoComposerOpen"
                   type="button"
-                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant ui-press hover:bg-surface-variant hover:text-primary"
                   :title="t.memo.addTask"
                   :aria-label="t.memo.addTask"
                   :aria-expanded="todoComposerOpen"
@@ -918,7 +918,7 @@ const handleProjectDragEnd = () => {
                   v-else
                   type="submit"
                   form="dashboard-todo-form"
-                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant ui-press hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
                   :disabled="!newTodoText.trim() || !newTodoProjectId"
                   :title="t.memo.addTask"
                   :aria-label="t.memo.addTask"
@@ -927,7 +927,7 @@ const handleProjectDragEnd = () => {
                 </button>
                 <button
                   type="button"
-                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant ui-press hover:bg-surface-variant"
                   :title="todoComposerOpen ? t.common.cancel : t.common.close"
                   :aria-label="todoComposerOpen ? t.common.cancel : t.common.close"
                   @click="todoComposerOpen ? closeTodoComposer() : (todoOverviewOpen = false)"
@@ -973,7 +973,7 @@ const handleProjectDragEnd = () => {
                       <input
                         type="checkbox"
                         :checked="todo.completed"
-                        class="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-outline-variant text-primary focus:ring-primary"
+                        class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary"
                         :aria-label="t.dashboard.completeTodo.replace('{todo}', todo.text)"
                         :title="t.dashboard.completeTodo.replace('{todo}', todo.text)"
                         @change="completeTodo(group.project.id, todo.id)"
@@ -1002,7 +1002,7 @@ const handleProjectDragEnd = () => {
       <Transition name="scale">
         <div
           v-if="automationOverviewOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
           @click.self="automationOverviewOpen = false"
         >
           <section
@@ -1024,7 +1024,7 @@ const handleProjectDragEnd = () => {
               </div>
               <button
                 type="button"
-                class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
+                class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant ui-press hover:bg-surface-variant"
                 :title="t.common.close"
                 :aria-label="t.common.close"
                 @click="automationOverviewOpen = false"

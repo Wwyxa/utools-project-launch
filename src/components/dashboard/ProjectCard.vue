@@ -915,7 +915,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           </button>
           <div
             v-if="moreScriptsOpen"
-            class="absolute right-0 top-[calc(100%+0.25rem)] z-30 w-max max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-1 shadow-[0_18px_44px_rgba(0,0,0,0.20),0_0_0_1px_rgba(255,255,255,0.45)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
+            class="menu-pop absolute right-0 top-[calc(100%+0.25rem)] z-30 w-max max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-1 shadow-[0_18px_44px_rgba(0,0,0,0.20),0_0_0_1px_rgba(255,255,255,0.45)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
             @click.stop
             role="menu"
           >
@@ -1101,7 +1101,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
     <div
       v-if="tinyCardContextMenu"
       ref="tinyCardContextMenuRef"
-      class="tiny-card-context-menu fixed z-[75] w-fit max-w-[min(13rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-px shadow-2xl"
+      class="tiny-card-context-menu menu-pop fixed z-[75] w-fit max-w-[min(13rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-px shadow-2xl"
       role="menu"
       :aria-label="t.settings.tinyCardActionTrigger"
       :style="{ left: `${tinyCardContextMenu.x}px`, top: `${tinyCardContextMenu.y}px` }"
@@ -1180,7 +1180,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
     <div
       v-if="tinyCardApplicationMenu"
       ref="tinyCardApplicationMenuRef"
-      class="fixed z-[76] w-fit max-w-[min(13rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-px shadow-2xl"
+      class="menu-pop fixed z-[76] w-fit max-w-[min(13rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-px shadow-2xl"
       role="menu"
       :aria-label="t.projectActions.chooseApplication"
       :style="{ left: `${tinyCardApplicationMenu.x}px`, top: `${tinyCardApplicationMenu.y}px` }"

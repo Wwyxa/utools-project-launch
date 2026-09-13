@@ -281,7 +281,7 @@ const handleScriptDrop = (targetScriptId: string) => {
 <template>
   <Teleport to="body">
     <Transition name="scale">
-      <div v-if="store.projectFormOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-6">
+      <div v-if="store.projectFormOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-6 backdrop-blur-sm">
         <div
           class="w-full max-w-6xl max-h-[92vh] overflow-hidden rounded-xl bg-surface border border-border-subtle shadow-2xl flex flex-col"
         >
