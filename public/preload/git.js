@@ -105,6 +105,8 @@ function createEmptyGitStatusSnapshot(repositoryPath, now, statusText) {
     remoteBranches: [],
     upstream: null,
     base: null,
+    mergeInProgress: false,
+    mergeCommitMessage: null,
     repositoryPath,
     lastRefreshedAt: now,
     statusText,
@@ -3203,8 +3205,9 @@ function commitGitStaged(projectPath, message) {
     return { ok: false, message: "请先填写 commit message。" };
   }
 
+  const merging = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]).status === 0;
   const stagedDiff = runGitDiff(repositoryPath, ["diff", "--cached"]);
-  if (!stagedDiff || !stagedDiff.trim()) {
+  if (!merging && (!stagedDiff || !stagedDiff.trim())) {
     return { ok: false, message: "没有 staged 变更可提交。" };
   }
 

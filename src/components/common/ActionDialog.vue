@@ -39,6 +39,7 @@ const emit = defineEmits<{
 const t = useI18n();
 const showCancel = computed(() => props.tone === "danger" || Boolean(props.cancelLabel));
 const primaryButtonRef = ref<HTMLButtonElement | null>(null);
+const dialogRef = ref<HTMLDivElement | null>(null);
 let previousActiveElement: HTMLElement | null = null;
 
 const cancel = () => {
@@ -51,12 +52,49 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   event.detail.handle();
 };
 
+const getDialogFocusableElements = () => {
+  const dialog = dialogRef.value;
+  if (!dialog) return [];
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.offsetParent !== null);
+};
+
+const handleDialogTabKey = (event: KeyboardEvent) => {
+  if (!props.open || event.key !== "Tab") return;
+  const focusable = getDialogFocusableElements();
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const activeElement = document.activeElement;
+  const isInside = activeElement instanceof Node && dialogRef.value?.contains(activeElement);
+  if (!isInside) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return;
+  }
+  if (event.shiftKey && activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+};
+
 let stopAppEscapeListener: () => void = () => {};
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 onUnmounted(() => {
   stopAppEscapeListener();
+  document.removeEventListener("keydown", handleDialogTabKey, true);
 });
 
 watch(
@@ -64,9 +102,11 @@ watch(
   (open) => {
     if (open) {
       previousActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      document.addEventListener("keydown", handleDialogTabKey, true);
       void nextTick(() => primaryButtonRef.value?.focus());
       return;
     }
+    document.removeEventListener("keydown", handleDialogTabKey, true);
     if (previousActiveElement?.isConnected) previousActiveElement.focus();
     previousActiveElement = null;
   },
@@ -78,10 +118,11 @@ watch(
     <Transition name="scale">
       <div
         v-if="open"
-        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5 backdrop-blur-sm"
         @click.self="cancel"
       >
         <div
+          ref="dialogRef"
           class="flex max-h-[calc(100vh-2.5rem)] w-[min(24rem,92vw)] flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
           role="dialog"
           aria-modal="true"
@@ -120,7 +161,7 @@ watch(
             <button
               v-if="showCancel"
               type="button"
-              class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+              class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-transparent px-3 text-xs font-bold text-on-surface-variant ui-press hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
               :disabled="busy"
               @click="cancel"
             >
@@ -129,7 +170,7 @@ watch(
             <button
               v-if="secondaryLabel"
               type="button"
-              class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
+              class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant ui-press hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
               :disabled="busy"
               @click="emit('secondary')"
             >
@@ -140,7 +181,7 @@ watch(
               type="button"
               :class="
                 cn(
-                  'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors disabled:cursor-wait disabled:opacity-70',
+                  'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold ui-press disabled:cursor-wait disabled:opacity-70',
                   tone === 'warning'
                     ? 'border-primary/30 bg-primary text-on-primary hover:bg-primary/90'
                     : 'border-status-error/30 bg-status-error text-on-error hover:bg-status-error/90',

@@ -68,6 +68,9 @@ const draggedTab = ref<TabId | null>(null);
 const fileOpenRequest = ref("");
 const detailsRootRef = ref<HTMLElement | null>(null);
 const tabListRef = ref<HTMLElement | null>(null);
+const tabIndicator = ref<{ left: number; width: number } | null>(null);
+let tabIndicatorFrame: number | null = null;
+let tabIndicatorResizeObserver: ResizeObserver | null = null;
 const gitTabRef = ref<GitTabExpose | null>(null);
 const isGitTopInfoCollapsed = computed(() => gitTabRef.value?.isTopInfoCollapsed ?? false);
 const isGitToggleIdle = ref(false);
@@ -356,6 +359,24 @@ const focusActiveTab = () => {
   });
 };
 
+const measureTabIndicator = () => {
+  const nav = tabListRef.value;
+  const button = nav?.querySelector<HTMLElement>("[data-project-tab][aria-selected='true']");
+  if (!nav || !button) {
+    tabIndicator.value = null;
+    return;
+  }
+  tabIndicator.value = { left: button.offsetLeft, width: button.offsetWidth };
+};
+
+const scheduleTabIndicatorMeasure = () => {
+  if (tabIndicatorFrame !== null) window.cancelAnimationFrame(tabIndicatorFrame);
+  tabIndicatorFrame = window.requestAnimationFrame(() => {
+    tabIndicatorFrame = null;
+    measureTabIndicator();
+  });
+};
+
 const isTextEntryTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
 
@@ -468,6 +489,11 @@ onMounted(() => {
   focusActiveTab();
   stopRelatedProjectsEscapeListener = addAppEscapeRequestListener(handleRelatedProjectsEscape);
   window.addEventListener("keydown", handleDetailKeydown);
+  if (typeof ResizeObserver !== "undefined") {
+    tabIndicatorResizeObserver = new ResizeObserver(scheduleTabIndicatorMeasure);
+    if (tabListRef.value) tabIndicatorResizeObserver.observe(tabListRef.value);
+  }
+  void nextTick(scheduleTabIndicatorMeasure);
 });
 
 onUnmounted(() => {
@@ -479,6 +505,9 @@ onUnmounted(() => {
   stopRelatedProjectsEscapeListener?.();
   stopRelatedProjectsEscapeListener = null;
   if (suppressTabClickTimer !== null) window.clearTimeout(suppressTabClickTimer);
+  if (tabIndicatorFrame !== null) window.cancelAnimationFrame(tabIndicatorFrame);
+  tabIndicatorResizeObserver?.disconnect();
+  tabIndicatorResizeObserver = null;
   if (store.selectedProjectId !== props.project.id) {
     clearGitAiAnalysisSessionsForProject(props.project.id);
   }
@@ -507,6 +536,10 @@ watch(
   },
   { immediate: true },
 );
+
+watch([activeTab, tabs, () => props.project.id], () => {
+  void nextTick(scheduleTabIndicatorMeasure);
+});
 
 watch(
   () => store.projectDetailsTabRequest,
@@ -652,7 +685,7 @@ watch(
         <button
           type="button"
           @click="handleEdit"
-          class="bg-primary text-on-primary p-1.5 rounded-lg transition-all hover:bg-primary/90 shadow-sm"
+          class="bg-primary text-on-primary p-1.5 rounded-lg transition-all hover:bg-primary/90 active:scale-[0.95] shadow-sm"
           :title="t.common.edit"
           :aria-label="t.common.edit"
         >
@@ -661,7 +694,7 @@ watch(
         <button
           type="button"
           @click="handleDuplicate"
-          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-primary hover:bg-primary/10 p-1.5 rounded-lg transition-all shadow-sm"
+          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-primary hover:bg-primary/10 p-1.5 rounded-lg transition-all active:scale-[0.95] shadow-sm"
           :title="t.projectActions.duplicateProject"
           :aria-label="t.projectActions.duplicateProject"
         >
@@ -670,7 +703,7 @@ watch(
         <button
           type="button"
           @click="handleDelete"
-          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-1.5 rounded-lg transition-all shadow-sm"
+          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-1.5 rounded-lg transition-all active:scale-[0.95] shadow-sm"
           :title="t.projectActions.deleteProject"
           :aria-label="t.projectActions.deleteProject"
         >
@@ -681,7 +714,7 @@ watch(
 
     <div :class="cn('mb-2 flex min-w-0 items-end border-b border-border-subtle')">
       <div class="relative min-w-0 flex-1">
-        <nav ref="tabListRef" role="tablist" class="flex min-w-0 gap-5 overflow-x-auto">
+        <nav ref="tabListRef" role="tablist" class="relative flex min-w-0 gap-5 overflow-x-auto">
           <button
             v-for="tab in tabs"
             :key="tab.id"
@@ -714,9 +747,13 @@ watch(
               class="pointer-events-none absolute right-0 top-0 fill-current"
               aria-hidden="true"
             />
-            <div v-if="activeTab === tab.id" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
           </button>
         </nav>
+        <div
+          v-if="tabIndicator"
+          class="pointer-events-none absolute bottom-0 h-0.5 rounded-full bg-primary transition-[left,width] duration-200 ease-out"
+          :style="{ left: `${tabIndicator.left}px`, width: `${tabIndicator.width}px` }"
+        />
         <button
           v-if="activeTab === 'git' && gitTabRef"
           type="button"

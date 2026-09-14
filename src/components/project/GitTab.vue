@@ -25,6 +25,7 @@ import {
   SlidersHorizontal,
   Trash2,
   GitBranch,
+  GitMerge,
   GitPullRequestArrow,
   X,
   ChevronDown,
@@ -275,6 +276,38 @@ const remoteStatusText = computed(() => {
   return "未配置 remote";
 });
 const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWriteRunning.value);
+const baseBranch = computed(() => snapshot.value?.base || null);
+const canMergeBaseBranch = computed(
+  () =>
+    Boolean(baseBranch.value) &&
+    baseBranch.value?.branch !== snapshot.value?.branch &&
+    !isAnyGitWriteRunning.value &&
+    !snapshot.value?.mergeInProgress,
+);
+const mergeBaseBranchTitle = computed(() => {
+  if (!snapshot.value?.repositoryPath) return "未检测到 Git 仓库，无法合并基点分支";
+  if (!baseBranch.value) return "未识别到当前分支的基点分支，无法合并";
+  if (baseBranch.value.branch === snapshot.value?.branch) return "当前分支已是基点分支";
+  if (snapshot.value?.mergeInProgress) return "上一次合并尚未完成，请先解决冲突或放弃合并";
+  return `将 ${baseBranch.value.ref} 合并到当前分支`;
+});
+const baseBranchChipTitle = computed(() =>
+  baseBranch.value
+    ? `基点分支 ${baseBranch.value.ref}：本地 ahead ${baseBranch.value.ahead ?? 0} · behind ${baseBranch.value.behind ?? 0}`
+    : "",
+);
+const autoFilledMergeMessage = ref("");
+const applyMergeCommitMessagePrefill = (
+  mergeCommitMessage = snapshot.value?.mergeInProgress ? snapshot.value.mergeCommitMessage : undefined,
+) => {
+  if (!mergeCommitMessage) return;
+  if (!commitMessage.value.trim() || commitMessage.value === autoFilledMergeMessage.value) {
+    autoFilledMergeMessage.value = mergeCommitMessage;
+    commitMessage.value = mergeCommitMessage;
+  } else if (commitMessage.value === mergeCommitMessage) {
+    autoFilledMergeMessage.value = mergeCommitMessage;
+  }
+};
 const canInitializeGitRepository = computed(
   () =>
     activeRepositoryTarget.value.kind === "main" &&
@@ -733,6 +766,7 @@ const clearRepositoryBoundState = (projectId = props.project.id) => {
   isLoadingDiff.value = false;
   selectedCommitHashes.value = [];
   isCommitHistoryBusy.value = false;
+  autoFilledMergeMessage.value = "";
   clearGitAiAnalysisSessionsForProject(projectId);
   setGitActionResult("idle", "");
 };
@@ -757,6 +791,7 @@ const selectGitRepository = (row: GitRepositoryRow) => {
   rememberedGitRepositoryTargets.set(props.project.id, nextContext.target);
   restoreChangesSectionOpen(props.project.id, nextContext.target);
   commitMessage.value = commitDraftsByContext.get(nextContext.contextKey) || "";
+  applyMergeCommitMessagePrefill();
   if (!store.gitSnapshotForRepository(props.project.id, nextContext.target)) {
     void store.refreshGitSnapshot(props.project.id, { force: true }, nextContext.target);
   }
@@ -921,6 +956,92 @@ const executeGitRemoteAction = async (action: GitRemoteActionName, pushOptions: 
   } finally {
     activeGitAction.value = "";
   }
+};
+
+const mergeConflictState = ref<{ repositoryPath: string; files: string[] } | null>(null);
+const activeMergeConflict = computed(() =>
+  mergeConflictState.value && mergeConflictState.value.repositoryPath === snapshot.value?.repositoryPath
+    ? mergeConflictState.value
+    : null,
+);
+const mergeBannerVisible = computed(() => Boolean(snapshot.value?.mergeInProgress) || Boolean(activeMergeConflict.value));
+const mergeBannerFiles = computed(() => activeMergeConflict.value?.files || []);
+
+watch(
+  () => snapshot.value?.mergeInProgress,
+  (mergeInProgress) => {
+    if (!mergeInProgress) mergeConflictState.value = null;
+  },
+);
+
+watch(
+  [() => snapshot.value?.mergeInProgress, () => snapshot.value?.mergeCommitMessage],
+  ([mergeInProgress, mergeCommitMessage], [previousMergeInProgress]) => {
+    applyMergeCommitMessagePrefill();
+    if (!mergeInProgress && previousMergeInProgress && autoFilledMergeMessage.value) {
+      if (commitMessage.value === autoFilledMergeMessage.value) {
+        commitMessage.value = "";
+      }
+      autoFilledMergeMessage.value = "";
+    }
+  },
+  { immediate: true },
+);
+
+const executeMergeGitBaseBranch = async () => {
+  if (!canMergeBaseBranch.value) return;
+
+  activeGitAction.value = "remote:merge-base";
+  setGitActionResult("loading", "正在合并基点分支...", { retainRemoteProgress: true });
+  await waitForVisualFeedback();
+  try {
+    const result = await store.mergeGitBaseBranch(props.project.id, activeRepositoryTarget.value);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法合并基点分支。", { retainRemoteProgress: true });
+      return;
+    }
+    if (result.conflicted && snapshot.value?.repositoryPath) {
+      mergeConflictState.value = {
+        repositoryPath: snapshot.value.repositoryPath,
+        files: result.conflictedFiles || [],
+      };
+    }
+    if (result.mergeCommitMessage) applyMergeCommitMessagePrefill(result.mergeCommitMessage);
+    setGitActionResult(result.ok ? "success" : "error", result.message, { retainRemoteProgress: true });
+    if (result.ok) clearCommitSelection();
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "合并基点分支失败。", {
+      retainRemoteProgress: true,
+    });
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const executeAbortGitMerge = async () => {
+  if (isAnyGitWriteRunning.value) return;
+
+  activeGitAction.value = "remote:abort-merge";
+  setGitActionResult("loading", "正在放弃合并...");
+  await waitForVisualFeedback();
+  try {
+    const result = await store.abortGitMerge(props.project.id, activeRepositoryTarget.value);
+    if (!result) {
+      setGitActionResult("warning", "当前项目不可用，无法放弃合并。");
+      return;
+    }
+    setGitActionResult(result.ok ? "success" : "error", result.message);
+    if (result.ok) mergeConflictState.value = null;
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : "放弃合并失败。");
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+
+const resolveMergeConflictInEditor = (applicationId?: string) => {
+  if (isAnyGitWriteRunning.value) return;
+  void store.openGitRepositoryInEditor(props.project.id, activeRepositoryTarget.value, applicationId);
 };
 
 const executeFetchGitRemoteByName = async (remoteName: string) => {
@@ -1598,6 +1719,7 @@ const restoreProjectRepositoryState = (projectId: string) => {
   }
   const context = store.resolveGitRepositoryContext(projectId, target);
   commitMessage.value = context ? commitDraftsByContext.get(context.contextKey) || "" : "";
+  applyMergeCommitMessagePrefill();
   if (!workspace) void store.refreshGitWorkspace(projectId);
   if (context && !store.gitSnapshotForRepository(projectId, target)) {
     void store.refreshGitSnapshot(projectId, {}, target);
@@ -1686,6 +1808,7 @@ watch(
       restoreChangesSectionOpen(props.project.id, { kind: "main" });
       const mainContext = store.resolveGitRepositoryContext(props.project.id, { kind: "main" });
       commitMessage.value = mainContext ? commitDraftsByContext.get(mainContext.contextKey) || "" : "";
+      applyMergeCommitMessagePrefill();
       setGitActionResult("warning", "之前选择的仓库已不可用，已返回主仓库。");
       if (mainContext && !store.gitSnapshotForRepository(props.project.id, { kind: "main" })) {
         void store.refreshGitSnapshot(props.project.id, {}, { kind: "main" });
@@ -1839,6 +1962,14 @@ watch(
               <ArrowDown :size="11" aria-hidden="true" />
               {{ snapshot?.behind || 0 }}
             </span>
+          </div>
+          <div
+            v-if="baseBranch && (baseBranch.behind || 0) > 0"
+            class="flex shrink-0 items-center gap-1 rounded border border-status-warning/30 bg-status-warning/10 px-1.5 py-1 font-mono text-[10px] font-bold text-status-warning"
+            :title="baseBranchChipTitle"
+          >
+            <GitMerge :size="11" aria-hidden="true" />
+            {{ baseBranch.behind }}
           </div>
           <div class="min-w-0" data-git-refresh-exempt @click.stop>
             <button
@@ -2113,6 +2244,17 @@ watch(
           <button
             type="button"
             class="git-top-action"
+            :disabled="!canMergeBaseBranch"
+            :aria-busy="activeGitAction === 'remote:merge-base'"
+            :title="mergeBaseBranchTitle"
+            :aria-label="mergeBaseBranchTitle"
+            @click="executeMergeGitBaseBranch"
+          >
+            <GitMerge :size="14" :class="activeGitAction === 'remote:merge-base' ? 'animate-pulse' : ''" />
+          </button>
+          <button
+            type="button"
+            class="git-top-action"
             :disabled="!canRunRemoteOperation && !canPublishGitBranch"
             :aria-busy="activeGitAction === 'remote:push' || activeGitAction.startsWith('remote:publish:')"
             :title="publishGitBranchTitle()"
@@ -2127,6 +2269,44 @@ watch(
                   : ''
               "
             />
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-if="mergeBannerVisible"
+        class="flex flex-wrap items-center gap-1.5 border-t border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5 text-[11px] font-semibold text-status-warning"
+      >
+        <GitMerge :size="12" class="shrink-0" aria-hidden="true" />
+        <span class="min-w-0 shrink-0">合并进行中，请解决冲突后提交，或放弃合并。</span>
+        <span
+          v-for="file in mergeBannerFiles.slice(0, 4)"
+          :key="file"
+          class="max-w-44 truncate rounded border border-status-warning/30 bg-surface-container-lowest px-1.5 py-0.5 font-mono text-[10px] font-bold"
+          :title="file"
+        >
+          {{ file }}
+        </span>
+        <span v-if="mergeBannerFiles.length > 4" class="min-w-0 shrink-0">
+          等 {{ mergeBannerFiles.length }} 个文件
+        </span>
+        <div class="ml-auto flex shrink-0 items-center gap-1.5" data-git-refresh-exempt @click.stop>
+          <ExternalApplicationLaunchButton
+            :applications="store.externalApplicationPreferences.applications"
+            :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
+            :disabled="isAnyGitWriteRunning"
+            label="在编辑器中解决"
+            button-class="flex items-center gap-1 rounded border border-status-warning/30 bg-surface-container-lowest px-2 py-0.5 text-[10px] font-bold text-status-warning transition-colors hover:bg-surface-variant"
+            :icon-size="12"
+            @launch="resolveMergeConflictInEditor"
+          />
+          <button
+            type="button"
+            class="shrink-0 rounded border border-status-warning/30 bg-surface-container-lowest px-2 py-0.5 text-[10px] font-bold transition-colors hover:bg-surface-variant"
+            :disabled="isAnyGitWriteRunning"
+            @click="executeAbortGitMerge"
+          >
+            放弃合并
           </button>
         </div>
       </div>
@@ -2396,6 +2576,7 @@ watch(
             :toolbar-target="changesToolbarRef"
             :open="leftContext === 'changes'"
             :commit-message="commitMessage"
+            :merge-in-progress="snapshot?.mergeInProgress === true"
             :selection="worktreeSelection"
             :disabled="isChangesPaneExternallyDisabled"
             @update:open="setChangesSectionOpen"
@@ -2465,7 +2646,7 @@ watch(
           <div
             :class="
               isDiffViewerExpanded
-                ? 'fixed inset-0 z-[90] flex items-center justify-center bg-scrim/35 p-4 backdrop-blur-sm'
+                ? 'fixed inset-0 z-[90] flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm'
                 : 'flex min-h-0 flex-1 flex-col'
             "
             :role="isDiffViewerExpanded ? 'dialog' : undefined"
@@ -2511,7 +2692,7 @@ watch(
     <Transition name="scale">
       <div
         v-if="isRemoteDialogOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-5 backdrop-blur-sm"
         @click.self="closeRemoteDialog"
       >
         <div

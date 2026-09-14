@@ -82,9 +82,11 @@ const props = withDefaults(
     toolbarTarget?: HTMLElement | null;
     commitMessage: string;
     selection: FileReviewSelection | null;
+    mergeInProgress?: boolean;
     disabled?: boolean;
   }>(),
   {
+    mergeInProgress: false,
     disabled: false,
   },
 );
@@ -213,7 +215,7 @@ const composerCommitMessage = computed(() => (isAmendMode.value ? amendCommitMes
 const amendMessageChanged = computed(() => composerCommitMessage.value.trim() !== amendOriginalMessage.value);
 const canCommitStaged = computed(() => {
   if (props.disabled || isChangesWriteBusy.value || !composerCommitMessage.value.trim()) return false;
-  if (!isAmendMode.value) return hasStagedChanges.value;
+  if (!isAmendMode.value) return hasStagedChanges.value || props.mergeInProgress;
   return !headActionBlockedMessage.value && (hasStagedChanges.value || amendMessageChanged.value);
 });
 const canStartAmend = computed(() => !isAmendMode.value && !headActionBlockedMessage.value);
@@ -228,7 +230,12 @@ const amendActionTitle = computed(() =>
 );
 const undoLastCommitTitle = computed(() => headActionBlockedMessage.value || "撤销上次提交");
 const commitActionTitle = computed(() => {
-  if (isCommitActionActive.value) return isAmendMode.value ? "正在修订上次提交" : "正在提交 staged 变更";
+  if (isCommitActionActive.value) {
+    return isAmendMode.value ? "正在修订上次提交" : props.mergeInProgress ? "正在完成合并提交..." : "正在提交 staged 变更";
+  }
+  if (!isAmendMode.value && props.mergeInProgress) {
+    return hasStagedChanges.value ? "完成合并提交" : "完成合并提交（暂存区为空，将按当前暂存内容创建合并提交）";
+  }
   if (!isAmendMode.value) return hasStagedChanges.value ? "提交 staged 变更" : "没有 staged 变更可提交";
   if (headActionBlockedMessage.value) return headActionBlockedMessage.value;
   if (!composerCommitMessage.value.trim()) return "请先填写 commit message";
@@ -821,13 +828,13 @@ const handleCommitStaged = async () => {
     reportFeedback("warning", "请先填写 commit message。");
     return;
   }
-  if (!hasStagedChanges.value) {
+  if (!hasStagedChanges.value && !props.mergeInProgress) {
     reportFeedback("warning", "没有 staged 变更可提交。");
     return;
   }
 
   activeGitAction.value = "commit";
-  reportFeedback("loading", "正在提交 staged 变更...");
+  reportFeedback("loading", props.mergeInProgress ? "正在完成合并提交..." : "正在提交 staged 变更...");
   await waitForVisualFeedback();
   try {
     const result = await store.commitGitStaged(props.projectId, message, props.repositoryTarget);
@@ -1464,7 +1471,7 @@ onBeforeUnmount(() => {
       <Transition name="scale">
         <div
           v-if="stashDialogOpen"
-          class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/35 p-5 backdrop-blur-sm"
+          class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5 backdrop-blur-sm"
           @click.self="() => closeStashDialog()"
         >
           <form

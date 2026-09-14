@@ -119,6 +119,8 @@ window.projectBridge = {
   fetchGitRemoteByName,
   pullGitRemote,
   pushGitRemote,
+  mergeGitBaseBranch,
+  abortGitMerge,
   initializeGitRepository,
   publishGitBranch,
   addGitRemote,
