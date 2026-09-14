@@ -1045,7 +1045,7 @@ func (store *Store) UpdateAutomationExecution(executionID string, mutate func(*A
 		if err := store.persistLocked(); err != nil {
 			return AutomationExecution{}, fmt.Errorf("write automation execution: %w", err)
 		}
-		return cloneAutomationExecution(store.data.Automation.Executions[index]), nil
+		return cloneAutomationExecution(current), nil
 	}
 
 	return AutomationExecution{}, fmt.Errorf("automation execution %q was not found", executionID)

@@ -34,6 +34,24 @@ function projectLaunchServiceTokenPath() {
   return path.join(projectLaunchServiceDirectoryPath(), "token");
 }
 
+function appendProjectLaunchServiceDiagnostic(event, fields = {}) {
+  try {
+    fs.appendFileSync(
+      path.join(projectLaunchServiceDirectoryPath(), "service.log"),
+      `${JSON.stringify({
+        timestamp: new Date().toISOString(),
+        event,
+        source: "preload",
+        hostPid: process.pid,
+        ...fields,
+      })}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+  } catch (error) {
+    // Diagnostics must never prevent service startup or recovery.
+  }
+}
+
 function projectLaunchServiceReleaseUrl() {
   return "https://github.com/Wwyxa/utools-project-launch/releases";
 }
@@ -1356,10 +1374,25 @@ async function startProjectLaunchService(options = {}) {
       windowsHide: true,
     });
     projectLaunchServiceProcess = child;
-    child.once("exit", () => {
+    const servicePid = Number.isInteger(child.pid) && child.pid > 0 ? child.pid : undefined;
+    appendProjectLaunchServiceDiagnostic("process.spawned", {
+      ...(servicePid === undefined ? {} : { servicePid }),
+    });
+    child.once("exit", (code, signal) => {
+      appendProjectLaunchServiceDiagnostic("process.exit", {
+        ...(servicePid === undefined ? {} : { servicePid }),
+        code: typeof code === "number" ? code : null,
+        signal: typeof signal === "string" ? signal : null,
+      });
       if (projectLaunchServiceProcess === child) projectLaunchServiceProcess = null;
     });
-    child.once("error", () => {
+    child.once("error", (error) => {
+      appendProjectLaunchServiceDiagnostic("process.error", {
+        ...(servicePid === undefined ? {} : { servicePid }),
+        name: typeof error?.name === "string" ? error.name : "Error",
+        code: typeof error?.code === "string" || typeof error?.code === "number" ? error.code : null,
+        message: typeof error?.message === "string" ? error.message : String(error || "Service process error."),
+      });
       if (projectLaunchServiceProcess === child) projectLaunchServiceProcess = null;
     });
     child.unref?.();

@@ -2364,6 +2364,57 @@ describe("Project Launch Service preload installation", () => {
     }
   });
 
+  it("records spawned service process exit and error details in service.log", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const child = Object.assign(new EventEmitter(), { pid: 43210, unref: vi.fn() });
+    const spawn = vi.fn(() => child);
+    try {
+      const bridge = createBridge(serviceRoot, { child_process: { spawn } });
+      const installed = await bridge.getProjectLaunchServiceStatus();
+      mkdirSync(installed.directoryPath, { recursive: true });
+      writeFileSync(installed.executablePath, binaryContents);
+
+    vi.useFakeTimers();
+    void bridge.startProjectLaunchService({ requireVerifiedInstall: false });
+    await vi.advanceTimersByTimeAsync(0);
+      expect(spawn).toHaveBeenCalledOnce();
+
+      child.emit("exit", 7, "SIGTERM");
+      child.emit("error", Object.assign(new Error("service launch failed"), { code: "EACCES" }));
+
+      const entries = readFileSync(join(installed.directoryPath, "service.log"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(entries).toEqual([
+        expect.objectContaining({
+          event: "process.spawned",
+          source: "preload",
+          hostPid: process.pid,
+          servicePid: 43210,
+        }),
+        expect.objectContaining({
+          event: "process.exit",
+          source: "preload",
+          servicePid: 43210,
+          code: 7,
+          signal: "SIGTERM",
+        }),
+        expect.objectContaining({
+          event: "process.error",
+          source: "preload",
+          servicePid: 43210,
+          name: "Error",
+          code: "EACCES",
+          message: "service launch failed",
+        }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+      rmSync(serviceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("creates the service directory before opening it", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const openPath = vi.fn(() => "");
