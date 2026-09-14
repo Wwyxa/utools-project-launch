@@ -159,6 +159,7 @@ const props = withDefaults(
     open: boolean;
     toolbarTarget?: HTMLElement | null;
     disabled?: boolean;
+    filterCommit?: { hash: string; requestId: number } | null;
     selectedCommitHashes: string[];
   }>(),
   { disabled: false },
@@ -233,6 +234,7 @@ let pendingGraphScrollAnchor: { hash: string; offset: number } | null = null;
 let graphScrollAnchorRestoreScheduled = false;
 let loadMoreObserver: IntersectionObserver | null = null;
 let loadMoreSentinelWasIntersecting = false;
+let handledFilterCommitRequestId = 0;
 let tagInfoRequestGeneration = 0;
 let stopAppEscapeListener = () => {};
 
@@ -1818,6 +1820,13 @@ const loadMore = async () => {
   if (isLoadingMore.value || !snapshot.value?.hasMoreCommits) return;
   await store.loadMoreGitCommits(props.projectId, props.repositoryTarget);
 };
+const applyCommitFilterRequest = () => {
+  const request = props.filterCommit;
+  if (!request || request.requestId === handledFilterCommitRequestId) return;
+  handledFilterCommitRequestId = request.requestId;
+  commitSearchInput.value = `//${request.hash}`;
+  showCommitFilters.value = true;
+};
 const observeLoadMoreSentinel = () => {
   const root = graphScrollRef.value;
   const sentinel = loadMoreSentinelRef.value;
@@ -1945,6 +1954,7 @@ watch(
   () => observeGraphViewport(),
   { flush: "post" },
 );
+watch(() => props.filterCommit?.requestId || 0, applyCommitFilterRequest, { immediate: true });
 watch(
   graphWindow,
   (nextWindow) => {

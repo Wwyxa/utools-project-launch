@@ -237,6 +237,8 @@ const currentGitRefLabel = computed(() => {
   return snapshot.value?.branch || "main";
 });
 const selectedCommitHashes = ref<string[]>([]);
+const commitFilterRequest = ref<{ hash: string; requestId: number } | null>(null);
+let handledGitNavigationRequestAt = 0;
 const topBarStatusText = computed(() => {
   if (activeGitReadFailure.value) return activeGitReadFailure.value.message;
   const statusText = snapshot.value?.statusText || t.value.git.noRepo;
@@ -793,6 +795,24 @@ const selectGitRepository = (row: GitRepositoryRow) => {
   if (!store.gitSnapshotForRepository(props.project.id, nextContext.target)) {
     void store.refreshGitSnapshot(props.project.id, { force: true }, nextContext.target);
   }
+};
+
+const applyGitNavigationRequest = () => {
+  const request = store.projectDetailsTabRequest;
+  if (
+    !request ||
+    request.tab !== "git" ||
+    request.projectId !== props.project.id ||
+    !request.commitHash ||
+    request.requestedAt === handledGitNavigationRequestAt
+  ) {
+    return;
+  }
+
+  setChangesSectionOpen(false);
+  commitFilterRequest.value = { hash: request.commitHash, requestId: request.requestedAt };
+  handledGitNavigationRequestAt = request.requestedAt;
+  store.projectDetailsTabRequest = null;
 };
 
 const openRepositoryMenu = (event: MouseEvent, row: GitRepositoryRow) => {
@@ -1730,6 +1750,7 @@ onMounted(() => {
   window.addEventListener("scroll", handleFloatingViewportChange, true);
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
   restoreProjectRepositoryState(props.project.id);
+  applyGitNavigationRequest();
 });
 
 watch(
@@ -1800,6 +1821,8 @@ watch(
     }
   },
 );
+
+watch(() => store.projectDetailsTabRequest?.requestedAt || 0, applyGitNavigationRequest);
 
 watch(
   () => (snapshot.value?.commits || []).map((commit) => commit.hash).join("|"),
@@ -2581,6 +2604,7 @@ watch(
             :toolbar-target="commitHistoryToolbarRef"
             :open="leftContext === 'history'"
             :disabled="isAnyGitWriteRunning"
+            :filter-commit="commitFilterRequest"
             :selected-commit-hashes="selectedCommitHashes"
             @update:selected-commit-hashes="(hashes) => (selectedCommitHashes = hashes)"
             @review-file="({ commitHash, commitMessage, path }) => handleViewDiff(commitHash, path, commitMessage)"
@@ -2747,6 +2771,7 @@ watch(
       :open="isAiDialogOpen"
       :project-id="props.project.id"
       :repository-target="activeRepositoryTarget"
+      :filter-commit="commitFilterRequest"
       :selected-commit-hashes="selectedCommitHashes"
       @close="closeAiDialog"
       @feedback="setGitActionResult"

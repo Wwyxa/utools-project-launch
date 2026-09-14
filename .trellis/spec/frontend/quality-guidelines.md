@@ -269,3 +269,13 @@ When an action region swaps between a button row and an absolute overlay such as
 Do not put `overflow-x-auto` on this fixed action region. A transformed hidden layer can also increase `scrollWidth` even though it is transparent; keep its translation toward existing interior space or explicitly clip it after confirming that controls and focus rings remain visible.
 
 **Prevention**: Test the toolbar at normal, compact, and actual host-like dimensions. For uTools, include a narrow CSS viewport with `deviceScaleFactor: 1.25`. Assert that the action region and its sizing row have equal widths, `clientWidth === scrollWidth` for the action region and outer toolbar, first and last controls fit, and only the group region gains `scrollWidth > clientWidth` when chips are forced to overflow. At widths below the intrinsic action width, the outer toolbar may clip, but it must keep `scrollLeft === 0`, expose no scrollbar, and preserve geometry throughout search transitions.
+
+### Common Mistake: Positioning Parallel Timeline Rows with Pixel Math
+
+**Symptom**: Heatmap month labels drift away from their date columns under host scaling or spacing changes.
+
+**Cause**: The label row calculates absolute offsets from an assumed cell pitch while the data row uses Flex or Grid layout.
+
+**Fix**: Render both rows with the same number of fixed-width columns and the same CSS gap. Derive labels from the same week array that renders the cells.
+
+**Prevention**: Test that a date near the end of a month range has the same week index as that month's label, including a month whose first day is not the first weekday of the grid.

@@ -164,6 +164,36 @@ export interface UiPreferences {
   };
 }
 
+export type ProjectGitActivityRefScope = "current" | "default" | "all";
+
+export interface ProjectGitActivityIdentity {
+  id: string;
+  name: string;
+  emails: string[];
+  names: string[];
+}
+
+export interface WorkActivityProjectGroup {
+  id: string;
+  name: string;
+  projectIds: string[];
+}
+
+export interface WorkActivityPreferences {
+  rangeMode: "days7" | "days30" | "days90" | "currentYear" | "rolling" | "custom";
+  selectedYear: number;
+  customStartDate: string;
+  customEndDate: string;
+  refScope: ProjectGitActivityRefScope;
+  timeZone: string;
+  hideMerges: boolean;
+  excludeBots: boolean;
+  botPatterns: string[];
+  identities: ProjectGitActivityIdentity[];
+  selectedAuthorId: string;
+  projectGroups: WorkActivityProjectGroup[];
+}
+
 export interface ProjectLaunchServicePreferences {
   schemaVersion: 1;
   enabled: boolean;
@@ -845,6 +875,141 @@ export type ProjectGitReadResult<T> =
   | { ok: true; value: T }
   | { ok: false; value: T | null; failure: ProjectGitReadFailure };
 
+export type ProjectGitActivityCriteria = Omit<
+  WorkActivityPreferences,
+  | "rangeMode"
+  | "selectedYear"
+  | "customStartDate"
+  | "customEndDate"
+  | "selectedAuthorId"
+  | "projectGroups"
+>;
+
+export interface ProjectGitActivityOptions extends Partial<ProjectGitActivityCriteria> {
+  startDate: string;
+  endDate: string;
+  force?: boolean;
+}
+
+export interface ProjectGitActivityDay {
+  date: string;
+  commits: number;
+  authors: Record<string, number>;
+}
+
+export interface ProjectGitActivityEntry {
+  hash: string;
+  date: string;
+  day: string;
+  authorId: string;
+  hour: number;
+  type:
+    | "feat"
+    | "fix"
+    | "docs"
+    | "refactor"
+    | "test"
+    | "chore"
+    | "perf"
+    | "build"
+    | "ci"
+    | "style"
+    | "revert"
+    | "other";
+  scope?: string;
+  breaking?: boolean;
+}
+
+export interface ProjectGitActivityAuthor {
+  id: string;
+  name: string;
+  commits: number;
+}
+
+export type ProjectGitActivityRepositoryState = "ready" | "not-a-repository" | "failed";
+
+export interface ProjectGitActivityRepository {
+  repositoryPath: string;
+  projectPaths: string[];
+  state: ProjectGitActivityRepositoryState;
+  currentAuthorId?: string;
+  totalCommits: number;
+  activeDays: number;
+  daily: ProjectGitActivityDay[];
+  authors: ProjectGitActivityAuthor[];
+  entries?: ProjectGitActivityEntry[];
+  resolvedRef?: string;
+  scopeMessage?: string;
+  excludedMerges?: number;
+  excludedBots?: number;
+  message?: string;
+}
+
+export interface ProjectGitActivityReport {
+  startDate: string;
+  endDate: string;
+  criteria?: ProjectGitActivityCriteria;
+  repositories: ProjectGitActivityRepository[];
+  lastRefreshedAt: string;
+}
+
+export interface ProjectGitActivityChangesRepository {
+  repositoryPath: string;
+  projectPaths: string[];
+  state: ProjectGitActivityRepositoryState;
+  commits: number;
+  files: number;
+  additions: number;
+  deletions: number;
+  binaryFiles: number;
+  message?: string;
+}
+
+export interface ProjectGitActivityChangesReport {
+  startDate: string;
+  endDate: string;
+  repositories: ProjectGitActivityChangesRepository[];
+  lastRefreshedAt: string;
+}
+
+export interface ProjectGitActivityChangesOptions extends ProjectGitActivityOptions {
+  authorId?: string;
+  currentUserOnly?: boolean;
+}
+
+export interface ProjectGitActivityDayOptions extends Partial<ProjectGitActivityCriteria> {
+  date: string;
+  authorId?: string;
+  currentUserOnly?: boolean;
+  query?: string;
+  limit?: number;
+  skip?: number;
+  force?: boolean;
+}
+
+export interface ProjectGitActivityCommit {
+  hash: string;
+  message: string;
+  author: string;
+  authorId: string;
+  rawAuthorName?: string;
+  rawAuthorEmail?: string;
+  date: string;
+  repositoryPath: string;
+  projectPaths: string[];
+}
+
+export interface ProjectGitActivityDayReport {
+  date: string;
+  authorId?: string;
+  currentUserOnly?: boolean;
+  totalCommits: number;
+  hasMore: boolean;
+  commits: ProjectGitActivityCommit[];
+  failedRepositories: ProjectGitActivityRepository[];
+  lastRefreshedAt: string;
+}
+
 export interface ProjectGitSnapshot {
   branch: string;
   headHash?: string;
@@ -1457,6 +1622,15 @@ export interface ProjectBridge {
     projectPath: string,
     options?: { limit?: number; skip?: number },
   ): Promise<ProjectGitReadResult<ProjectBridgeGitCommitPage>>;
+  readGitActivity(projectPaths: string[], options: ProjectGitActivityOptions): Promise<ProjectGitActivityReport>;
+  readGitActivityChanges(
+    projectPaths: string[],
+    options: ProjectGitActivityChangesOptions,
+  ): Promise<ProjectGitActivityChangesReport>;
+  readGitActivityDay(
+    projectPaths: string[],
+    options: ProjectGitActivityDayOptions,
+  ): Promise<ProjectGitActivityDayReport>;
   readGitFileDiff(
     projectPath: string,
     relativePath: string,

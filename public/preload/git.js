@@ -349,6 +349,7 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
   const timeoutMs = Math.max(1, Number(options.timeoutMs) || gitWorkspaceEntryTimeoutMs);
   const executable = options.executable || "git";
   const stdoutRecordHandler = typeof options.stdoutRecordHandler === "function" ? options.stdoutRecordHandler : null;
+  const stdinInput = typeof options.stdinInput === "string" ? options.stdinInput : null;
   const commandArgs = options.executable
     ? Array.isArray(options.commandArgs)
       ? options.commandArgs
@@ -367,7 +368,7 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
     const child = spawn(executable, commandArgs, {
       env: { ...resolveGitExecutionEnvironment(), GIT_OPTIONAL_LOCKS: "0" },
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [stdinInput === null ? "ignore" : "pipe", "pipe", "pipe"],
       windowsHide: true,
     });
 
@@ -375,6 +376,11 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
       timedOut = true;
       child.kill();
     }, timeoutMs);
+
+    if (stdinInput !== null) {
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(stdinInput);
+    }
 
     const emitStdoutRecords = (text, flush = false) => {
       stdoutRecordRemainder += text;
@@ -677,6 +683,950 @@ async function runGitWorkspaceWorkerPool(tasks) {
     }
   });
   await Promise.all(workers);
+}
+
+function formatGitActivityDate(value, timeZone = "local") {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  if (timeZone !== "local") {
+    try {
+      const parts = new Intl.DateTimeFormat("en", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(date);
+      const part = (type) => parts.find((item) => item.type === type)?.value || "";
+      return `${part("year")}-${part("month")}-${part("day")}`;
+    } catch (error) {
+      return "";
+    }
+  }
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeGitActivityDate(value) {
+  const candidate = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return "";
+  const parsed = new Date(`${candidate}T12:00:00`);
+  return formatGitActivityDate(parsed) === candidate ? candidate : "";
+}
+
+function resolveGitActivityRange(options = {}) {
+  const today = formatGitActivityDate(new Date());
+  const endDate = normalizeGitActivityDate(options.endDate) || today;
+  const defaultStart = new Date(`${endDate}T12:00:00`);
+  defaultStart.setDate(defaultStart.getDate() - 364);
+  const requestedStart = normalizeGitActivityDate(options.startDate);
+  const startDate = requestedStart && requestedStart <= endDate ? requestedStart : formatGitActivityDate(defaultStart);
+  return { startDate, endDate };
+}
+
+function normalizeGitActivityCriteria(options = {}) {
+  const timeZone = String(options.timeZone || "").trim();
+  let normalizedTimeZone = timeZone || "local";
+  if (normalizedTimeZone !== "local") {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: normalizedTimeZone }).format();
+    } catch (error) {
+      normalizedTimeZone = "local";
+    }
+  }
+  const identities = Array.isArray(options.identities)
+    ? options.identities
+        .filter((identity) => identity && typeof identity === "object")
+        .map((identity) => ({
+          id: String(identity.id || "").trim(),
+          name: String(identity.name || "").trim(),
+          emails: [
+            ...new Set(
+              (Array.isArray(identity.emails) ? identity.emails : [])
+                .map((email) => String(email).trim().toLocaleLowerCase())
+                .filter((email) => email && !/\s/.test(email)),
+            ),
+          ],
+          names: [
+            ...new Set(
+              (Array.isArray(identity.names) ? identity.names : []).map((name) => String(name).trim()).filter(Boolean),
+            ),
+          ],
+        }))
+        .filter((identity) => identity.id && identity.name)
+        .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
+    : [];
+  return {
+    refScope: options.refScope === "current" || options.refScope === "default" ? options.refScope : "all",
+    timeZone: normalizedTimeZone,
+    hideMerges: options.hideMerges === true,
+    excludeBots: options.excludeBots === true,
+    botPatterns: Array.isArray(options.botPatterns)
+      ? [...new Set(options.botPatterns.map((pattern) => String(pattern).trim()).filter(Boolean))].slice(0, 20)
+      : ["\\[bot\\]$", "(^|[+._-])bot@"],
+    identities,
+  };
+}
+
+function gitActivityCriteriaKey(criteria) {
+  return JSON.stringify({
+    refScope: criteria.refScope,
+    timeZone: criteria.timeZone,
+    hideMerges: criteria.hideMerges,
+    excludeBots: criteria.excludeBots,
+    botPatterns: criteria.botPatterns,
+    identities: criteria.identities,
+  });
+}
+
+function createGitActivityIdentityMatcher(criteria) {
+  const byEmail = new Map();
+  const byName = new Map();
+  criteria.identities.forEach((identity) => {
+    identity.emails.forEach((email) => {
+      if (!byEmail.has(email)) byEmail.set(email, identity);
+    });
+    identity.names.forEach((name) => {
+      const key = name.toLocaleLowerCase();
+      if (!byName.has(key)) byName.set(key, identity);
+    });
+  });
+  return (authorName, authorEmail) => {
+    const email = String(authorEmail || "")
+      .trim()
+      .toLocaleLowerCase();
+    const identity = email
+      ? byEmail.get(email)
+      : byName.get(
+          String(authorName || "")
+            .trim()
+            .toLocaleLowerCase(),
+        );
+    return identity || null;
+  };
+}
+
+function createGitActivityBotMatcher(criteria) {
+  const patterns = criteria.botPatterns.map((pattern) => {
+    try {
+      return new RegExp(pattern, "i");
+    } catch (error) {
+      return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    }
+  });
+  return (commit) =>
+    patterns.some((pattern) => pattern.test(commit.rawAuthorName) || pattern.test(commit.rawAuthorEmail));
+}
+
+function normalizeGitActivityRepositoryKey(repositoryPath) {
+  const resolvedPath = path.resolve(repositoryPath || "");
+  return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+}
+
+function cloneGitActivityRepositoryData(data) {
+  return {
+    ...data,
+    daily: data.daily.map((day) => ({ ...day, authors: { ...day.authors } })),
+    authors: data.authors.map((author) => ({ ...author })),
+    entries: data.entries.map((entry) => ({ ...entry })),
+  };
+}
+
+function gitActivityHour(value, timeZone) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 0;
+  if (timeZone === "local") return date.getHours();
+  try {
+    const hour = new Intl.DateTimeFormat("en", { timeZone, hour: "2-digit", hourCycle: "h23" })
+      .formatToParts(date)
+      .find((part) => part.type === "hour")?.value;
+    return Number(hour) % 24;
+  } catch (error) {
+    return date.getHours();
+  }
+}
+
+function parseGitActivityConventionalType(message) {
+  const match = String(message || "")
+    .trim()
+    .match(/^([a-zA-Z]+)(?:\(([^)]+)\))?(!)?:\s/);
+  const type = String(match?.[1] || "").toLocaleLowerCase();
+  const knownTypes = new Set([
+    "feat",
+    "fix",
+    "docs",
+    "refactor",
+    "test",
+    "chore",
+    "perf",
+    "build",
+    "ci",
+    "style",
+    "revert",
+  ]);
+  return {
+    type: knownTypes.has(type) ? type : "other",
+    scope: String(match?.[2] || "").trim() || undefined,
+    breaking: match?.[3] === "!" || undefined,
+  };
+}
+
+async function resolveGitActivityCurrentAuthorId(repositoryPath, criteria) {
+  const emailResult = await runGitWorkspaceCommand(repositoryPath, ["config", "--get", "user.email"]);
+  const email = String(emailResult.stdout || "")
+    .trim()
+    .toLocaleLowerCase();
+  if (emailResult.status === 0 && email && !/\s/.test(email)) {
+    const identity = createGitActivityIdentityMatcher(criteria)("", email);
+    return identity ? `identity:${identity.id}` : `email:${email}`;
+  }
+
+  const nameResult = await runGitWorkspaceCommand(repositoryPath, ["config", "--get", "user.name"]);
+  const name = String(nameResult.stdout || "")
+    .trim()
+    .toLocaleLowerCase();
+  if (nameResult.status !== 0 || !name) return "";
+  const identity = createGitActivityIdentityMatcher(criteria)(name, "");
+  return identity ? `identity:${identity.id}` : `name:${name}`;
+}
+
+function gitActivityDayCacheKey(repositoryPath, date, contextKey) {
+  return `${normalizeGitActivityRepositoryKey(repositoryPath)}::${date}::${contextKey}`;
+}
+
+function compareGitActivityCommits(left, right) {
+  const leftTime = Date.parse(left.date);
+  const rightTime = Date.parse(right.date);
+  if (leftTime !== rightTime) return rightTime - leftTime;
+  return String(left.hash || "").localeCompare(String(right.hash || ""));
+}
+
+function cloneGitActivityCommitData(commit) {
+  return {
+    hash: commit.hash,
+    message: commit.message,
+    author: commit.author,
+    authorId: commit.authorId,
+    rawAuthorName: commit.rawAuthorName,
+    rawAuthorEmail: commit.rawAuthorEmail,
+    date: commit.date,
+  };
+}
+
+function trimGitActivityDayCache() {
+  while (gitActivityDayCache.size > gitActivityDayCacheLimit) {
+    const oldestKey = gitActivityDayCache.keys().next().value;
+    if (oldestKey === undefined) return;
+    gitActivityDayCache.delete(oldestKey);
+  }
+}
+
+function clearGitActivityDayCacheForRepository(repositoryPath) {
+  const repositoryKey = normalizeGitActivityRepositoryKey(repositoryPath);
+  const prefix = `${repositoryKey}::`;
+  for (const cacheKey of gitActivityDayCache.keys()) {
+    if (cacheKey.startsWith(prefix)) gitActivityDayCache.delete(cacheKey);
+  }
+  const version = (gitActivityDayCacheVersions.get(repositoryKey) || 0) + 1;
+  gitActivityDayCacheVersions.set(repositoryKey, version);
+  return version;
+}
+
+function rememberGitActivityDayCache(repositoryPath, date, contextKey, commits, expectedVersion) {
+  if (!Array.isArray(commits) || commits.length > gitActivityDayCacheRecordLimit) return;
+  const repositoryKey = normalizeGitActivityRepositoryKey(repositoryPath);
+  if (expectedVersion !== undefined && gitActivityDayCacheVersions.get(repositoryKey) !== expectedVersion) return;
+  const cacheKey = gitActivityDayCacheKey(repositoryPath, date, contextKey);
+  gitActivityDayCache.delete(cacheKey);
+  gitActivityDayCache.set(cacheKey, {
+    expiresAt: Date.now() + gitActivityCacheTtlMs,
+    commits: commits.map(cloneGitActivityCommitData).sort(compareGitActivityCommits),
+  });
+  trimGitActivityDayCache();
+}
+
+function readGitActivityDayCache(repositoryPath, date, contextKey) {
+  const cacheKey = gitActivityDayCacheKey(repositoryPath, date, contextKey);
+  const cached = gitActivityDayCache.get(cacheKey);
+  if (!cached || cached.expiresAt <= Date.now()) {
+    gitActivityDayCache.delete(cacheKey);
+    return null;
+  }
+  gitActivityDayCache.delete(cacheKey);
+  gitActivityDayCache.set(cacheKey, cached);
+  return cached.commits.map(cloneGitActivityCommitData);
+}
+
+function normalizeGitActivityAuthorId(value) {
+  const candidate = String(value || "").trim();
+  if (candidate.startsWith("identity:")) {
+    const identityId = candidate.slice("identity:".length).trim();
+    return identityId ? `identity:${identityId}` : "";
+  }
+  if (candidate.startsWith("email:")) {
+    const email = candidate.slice("email:".length).trim().toLocaleLowerCase();
+    return email && !/\s/.test(email) ? `email:${email}` : "";
+  }
+  if (candidate.startsWith("name:")) {
+    const name = candidate.slice("name:".length).trim().toLocaleLowerCase();
+    return name ? `name:${name}` : "";
+  }
+  return "";
+}
+
+function normalizeGitActivityDayPageOptions(options = {}) {
+  const date = normalizeGitActivityDate(options.date);
+  const requestedLimit = Number(options.limit);
+  const requestedSkip = Number(options.skip);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(gitActivityDayPageLimit, Math.max(1, Math.floor(requestedLimit)))
+    : gitActivityDayPageLimit;
+  const skip =
+    Number.isSafeInteger(requestedSkip) && requestedSkip > 0
+      ? Math.min(Number.MAX_SAFE_INTEGER - gitActivityDayPageLimit - 1, requestedSkip)
+      : 0;
+  return {
+    ...normalizeGitActivityCriteria(options),
+    date,
+    authorId: normalizeGitActivityAuthorId(options.authorId),
+    currentUserOnly: options.currentUserOnly === true,
+    query: String(options.query || "").trim().slice(0, 200),
+    limit,
+    skip,
+    force: options.force === true,
+  };
+}
+
+function retainGitActivityCommit(commits, candidate, capacity) {
+  if (capacity <= 0) return;
+  if (commits.length < capacity) {
+    commits.push(candidate);
+    return;
+  }
+
+  let oldestIndex = 0;
+  for (let index = 1; index < commits.length; index += 1) {
+    if (compareGitActivityCommits(commits[oldestIndex], commits[index]) < 0) {
+      oldestIndex = index;
+    }
+  }
+  if (compareGitActivityCommits(candidate, commits[oldestIndex]) < 0) {
+    commits[oldestIndex] = candidate;
+  }
+}
+
+function parseGitActivityCommitRecord(record, identityMatcher) {
+  const hashIndex = String(record || "").search(/[0-9a-f]{40,64}\x1f/i);
+  if (hashIndex < 0) return null;
+  const [hash, authorDate, authorName, authorEmail, parents, message] = String(record)
+    .slice(hashIndex)
+    .split(gitCommitFieldSeparator);
+  if (!hash || !authorDate || !Number.isFinite(Date.parse(authorDate))) return null;
+
+  const author = String(authorName || "").trim() || "Unknown author";
+  const email = String(authorEmail || "")
+    .trim()
+    .toLocaleLowerCase();
+  const identity = identityMatcher(author, email);
+  return {
+    hash,
+    message: String(message || "").trim(),
+    author: identity?.name || author,
+    authorId: identity ? `identity:${identity.id}` : email ? `email:${email}` : `name:${author.toLocaleLowerCase()}`,
+    rawAuthorName: author,
+    rawAuthorEmail: email,
+    isMerge:
+      String(parents || "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean).length > 1,
+    date: authorDate,
+  };
+}
+
+function trimGitActivityCache() {
+  while (gitActivityCache.size > gitActivityCacheLimit) {
+    const oldestKey = gitActivityCache.keys().next().value;
+    if (oldestKey === undefined) return;
+    gitActivityCache.delete(oldestKey);
+  }
+}
+
+function createGitActivityRepositoryFailure(projectPath, result) {
+  const output = String(result?.stderr || result?.stdout || "").toLowerCase();
+  const notRepository =
+    output.includes("not a git repository") || output.includes("does not appear to be a git repository");
+  const gitUnavailable = result?.spawnError?.code === "ENOENT" || output.includes("not recognized as an internal");
+  const message = result?.timedOut
+    ? "定位 Git 仓库超时。"
+    : gitUnavailable
+      ? "未找到 Git 可执行文件，请检查 Git 安装或 PATH。"
+      : notRepository
+        ? "未检测到 Git 仓库。"
+        : "无法定位 Git 仓库。";
+  return {
+    repositoryPath: "",
+    projectPaths: [projectPath],
+    state: notRepository ? "not-a-repository" : "failed",
+    totalCommits: 0,
+    activeDays: 0,
+    daily: [],
+    authors: [],
+    message,
+  };
+}
+
+async function resolveGitActivityRepository(projectPath) {
+  const [result, commonDirResult] = await Promise.all([
+    runGitWorkspaceCommand(projectPath, ["rev-parse", "--show-toplevel"], { timeoutMs: gitActivityReadTimeoutMs }),
+    runGitWorkspaceCommand(projectPath, ["rev-parse", "--git-common-dir"], { timeoutMs: gitActivityReadTimeoutMs }),
+  ]);
+  if (result.status !== 0 || !result.stdout.trim()) {
+    return { failure: createGitActivityRepositoryFailure(projectPath, result) };
+  }
+  const repositoryPath = path.resolve(result.stdout.trim());
+  const commonDir =
+    commonDirResult.status === 0 && commonDirResult.stdout.trim()
+      ? path.resolve(projectPath, commonDirResult.stdout.trim())
+      : repositoryPath;
+  return { repositoryPath, repositoryKey: normalizeGitActivityRepositoryKey(commonDir) };
+}
+
+async function resolveGitActivityRef(repositoryPaths, refScope) {
+  const repositoryPath = repositoryPaths[0];
+  if (refScope === "all") {
+    const fingerprintResult = await runGitWorkspaceCommand(repositoryPath, [
+      "for-each-ref",
+      "--format=%(refname)%09%(objectname)",
+      "refs/heads",
+      "refs/remotes",
+      "refs/tags",
+    ]);
+    return {
+      args: ["--exclude=refs/stash", "--all"],
+      resolvedRef: "--all",
+      fingerprint: fingerprintResult.stdout.trim(),
+      scopeMessage: "",
+    };
+  }
+
+  if (refScope === "current") {
+    const headResults = await Promise.all(
+      repositoryPaths.map((worktreePath) => runGitWorkspaceCommand(worktreePath, ["rev-parse", "--verify", "HEAD"])),
+    );
+    const heads = [
+      ...new Set(
+        headResults
+          .filter((result) => result.status === 0)
+          .map((result) => result.stdout.trim())
+          .filter(Boolean),
+      ),
+    ];
+    return {
+      args: heads.length ? heads : ["HEAD"],
+      resolvedRef: heads.length > 1 ? `${heads.length} worktree HEADs` : "HEAD",
+      fingerprint: heads.join("\n"),
+      scopeMessage: heads.length > 1 ? `已合并 ${heads.length} 个所选 worktree 的当前分支并按提交去重。` : "",
+    };
+  }
+
+  const remoteRefs = await runGitWorkspaceCommand(repositoryPath, [
+    "for-each-ref",
+    "--format=%(refname)%09%(symref)",
+    "refs/remotes",
+  ]);
+  const symbolicDefault = remoteRefs.stdout
+    .split(/\r?\n/)
+    .map((line) => line.split("\t"))
+    .find(([refName, target]) => refName?.endsWith("/HEAD") && target)?.[1];
+  const candidates = [...new Set([symbolicDefault, "main", "master"].filter(Boolean))];
+  for (const candidate of candidates) {
+    const result = await runGitWorkspaceCommand(repositoryPath, ["rev-parse", "--verify", `${candidate}^{commit}`]);
+    if (result.status === 0 && result.stdout.trim()) {
+      return { args: [candidate], resolvedRef: candidate, fingerprint: result.stdout.trim(), scopeMessage: "" };
+    }
+  }
+  const headResult = await runGitWorkspaceCommand(repositoryPath, ["rev-parse", "--verify", "HEAD"]);
+  return {
+    args: ["HEAD"],
+    resolvedRef: "HEAD",
+    fingerprint: headResult.stdout.trim(),
+    scopeMessage: "未识别到默认分支，已回退到当前 HEAD。",
+  };
+}
+
+function createGitActivityReadFailure(repositoryPath, result) {
+  const message = result?.timedOut
+    ? "读取 Git 活动记录超时。"
+    : result?.spawnError?.code === "ENOENT"
+      ? "未找到 Git 可执行文件，请检查 Git 安装或 PATH。"
+      : "读取 Git 活动记录失败。";
+  return {
+    repositoryPath,
+    state: "failed",
+    totalCommits: 0,
+    activeDays: 0,
+    daily: [],
+    authors: [],
+    message,
+  };
+}
+
+async function readGitActivityRepositoryData(repositoryPath, range, criteria, ref, currentAuthorId) {
+  const dailyCounts = new Map();
+  const authorCounts = new Map();
+  const detailRecordsByDate = new Map();
+  const detailOverflowDates = new Set();
+  let totalCommits = 0;
+  let excludedMerges = 0;
+  let excludedBots = 0;
+  const entries = [];
+  const identityMatcher = createGitActivityIdentityMatcher(criteria);
+  const botMatcher = createGitActivityBotMatcher(criteria);
+  const contextKey = `${gitActivityCriteriaKey(criteria)}::${ref.fingerprint}`;
+  const dayCacheVersion = clearGitActivityDayCacheForRepository(repositoryPath);
+  const consumeRecord = (record) => {
+    const commit = parseGitActivityCommitRecord(record, identityMatcher);
+    if (!commit) return;
+    const date = formatGitActivityDate(commit.date, criteria.timeZone);
+    if (!date || date < range.startDate || date > range.endDate) return;
+    if (criteria.hideMerges && commit.isMerge) {
+      excludedMerges += 1;
+      return;
+    }
+    if (criteria.excludeBots && botMatcher(commit)) {
+      excludedBots += 1;
+      return;
+    }
+
+    const author = authorCounts.get(commit.authorId) || { id: commit.authorId, name: commit.author, commits: 0 };
+    author.commits += 1;
+    authorCounts.set(commit.authorId, author);
+
+    const day = dailyCounts.get(date) || { date, commits: 0, authors: {} };
+    day.commits += 1;
+    day.authors[commit.authorId] = (day.authors[commit.authorId] || 0) + 1;
+    dailyCounts.set(date, day);
+    entries.push({
+      hash: commit.hash,
+      date: commit.date,
+      day: date,
+      authorId: commit.authorId,
+      hour: gitActivityHour(commit.date, criteria.timeZone),
+      ...parseGitActivityConventionalType(commit.message),
+    });
+    if (!detailOverflowDates.has(date)) {
+      const details = detailRecordsByDate.get(date) || [];
+      if (details.length < gitActivityDayCacheRecordLimit) {
+        details.push(commit);
+        detailRecordsByDate.set(date, details);
+      } else {
+        detailRecordsByDate.delete(date);
+        detailOverflowDates.add(date);
+      }
+    }
+    totalCommits += 1;
+  };
+
+  const result = await runGitWorkspaceCommand(
+    repositoryPath,
+    [
+      "--no-optional-locks",
+      "log",
+      ...ref.args,
+      "--date=iso-strict",
+      `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
+    ],
+    { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
+  );
+  if (result.status !== 0) return createGitActivityReadFailure(repositoryPath, result);
+
+  detailRecordsByDate.forEach((details, date) => {
+    rememberGitActivityDayCache(repositoryPath, date, contextKey, details, dayCacheVersion);
+  });
+
+  const daily = [...dailyCounts.values()].sort((left, right) => left.date.localeCompare(right.date));
+  const authors = [...authorCounts.values()].sort(
+    (left, right) => right.commits - left.commits || left.name.localeCompare(right.name),
+  );
+  return {
+    repositoryPath,
+    state: "ready",
+    currentAuthorId: currentAuthorId || undefined,
+    totalCommits,
+    activeDays: daily.length,
+    daily,
+    authors,
+    entries,
+    resolvedRef: ref.resolvedRef,
+    scopeMessage: ref.scopeMessage || undefined,
+    excludedMerges,
+    excludedBots,
+  };
+}
+
+function trimGitActivityChangesCache() {
+  while (gitActivityChangesCache.size > gitActivityChangesCacheLimit) {
+    const oldestKey = gitActivityChangesCache.keys().next().value;
+    if (oldestKey === undefined) return;
+    gitActivityChangesCache.delete(oldestKey);
+  }
+}
+
+async function readGitActivityChangesRepositoryData(repositoryPath, range, criteria, ref, authorId) {
+  const identityMatcher = createGitActivityIdentityMatcher(criteria);
+  const botMatcher = createGitActivityBotMatcher(criteria);
+  // Phase 1 walks history metadata only (no per-commit diff) and filters by
+  // author date in the selected time zone — the exact criteria the report
+  // counts by. Phase 2 then computes numstat just for the surviving hashes.
+  // git's --since/--until cannot be used for this pruning because it matches
+  // committer dates and would silently drop commits whose author and
+  // committer dates diverge (rebases, cherry-picks, manual dates).
+  const isCommitInChangesRange = (commit) => {
+    const date = formatGitActivityDate(commit.date, criteria.timeZone);
+    return (
+      Boolean(date) &&
+      date >= range.startDate &&
+      date <= range.endDate &&
+      !(criteria.hideMerges && commit.isMerge) &&
+      !(criteria.excludeBots && botMatcher(commit)) &&
+      !(authorId && commit.authorId !== authorId)
+    );
+  };
+  const inRangeHashes = new Set();
+  const metadataResult = await runGitWorkspaceCommand(
+    repositoryPath,
+    [
+      "--no-optional-locks",
+      "log",
+      ...ref.args,
+      "--date=iso-strict",
+      `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
+    ],
+    {
+      timeoutMs: gitActivityReadTimeoutMs,
+      stdoutRecordHandler: (record) => {
+        const commit = parseGitActivityCommitRecord(record, identityMatcher);
+        if (commit && isCommitInChangesRange(commit)) inRangeHashes.add(commit.hash);
+      },
+    },
+  );
+  if (metadataResult.status !== 0) return createGitActivityReadFailure(repositoryPath, metadataResult);
+
+  const hashes = [...inRangeHashes];
+  const totals = { commits: hashes.length, files: 0, additions: 0, deletions: 0, binaryFiles: 0 };
+  if (!hashes.length) return { repositoryPath, state: "ready", ...totals };
+
+  const numstatResult = await runGitWorkspaceCommand(
+    repositoryPath,
+    [
+      "--no-optional-locks",
+      "log",
+      "--no-walk=unsorted",
+      "--stdin",
+      "--numstat",
+      "--diff-merges=first-parent",
+      "--date=iso-strict",
+      `--format=%x1e%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s`,
+    ],
+    { timeoutMs: gitActivityReadTimeoutMs, stdinInput: `${hashes.join("\n")}\n` },
+  );
+  if (numstatResult.status !== 0) return createGitActivityReadFailure(repositoryPath, numstatResult);
+
+  String(numstatResult.stdout || "")
+    .split("\x1e")
+    .slice(1)
+    .forEach((record) => {
+      const [, ...statLines] = record.replace(/^\r?\n/, "").split(/\r?\n/);
+      statLines.forEach((line) => {
+        const [added, deleted, filePath] = line.split("\t");
+        if (!filePath || (!/^\d+$/.test(added) && added !== "-") || (!/^\d+$/.test(deleted) && deleted !== "-")) return;
+        totals.files += 1;
+        if (added === "-" || deleted === "-") {
+          totals.binaryFiles += 1;
+          return;
+        }
+        totals.additions += Number(added);
+        totals.deletions += Number(deleted);
+      });
+    });
+  return { repositoryPath, state: "ready", ...totals };
+}
+
+async function readGitActivityChangesRepositoryCached(repositoryPath, range, criteria, ref, authorId, force) {
+  const cacheKey = `${normalizeGitActivityRepositoryKey(repositoryPath)}::${range.startDate}::${range.endDate}::${gitActivityCriteriaKey(criteria)}::${ref.fingerprint}::${authorId}`;
+  const existing = gitActivityChangesCache.get(cacheKey);
+  if (!force && existing?.promise) return existing.promise.then((value) => ({ ...value }));
+  if (!force && existing?.value && existing.expiresAt > Date.now()) {
+    gitActivityChangesCache.delete(cacheKey);
+    gitActivityChangesCache.set(cacheKey, existing);
+    return { ...existing.value };
+  }
+  const entry = { expiresAt: Date.now() + gitActivityCacheTtlMs, promise: null, value: null };
+  entry.promise = readGitActivityChangesRepositoryData(repositoryPath, range, criteria, ref, authorId);
+  gitActivityChangesCache.set(cacheKey, entry);
+  trimGitActivityChangesCache();
+  const value = await entry.promise;
+  if (value.state !== "ready") gitActivityChangesCache.delete(cacheKey);
+  else gitActivityChangesCache.set(cacheKey, { expiresAt: entry.expiresAt, promise: null, value });
+  return { ...value };
+}
+
+async function readGitActivityRepositoryCached(repositoryPath, range, criteria, ref, currentAuthorId, force) {
+  const cacheKey = `${normalizeGitActivityRepositoryKey(repositoryPath)}::${range.startDate}::${range.endDate}::${gitActivityCriteriaKey(criteria)}::${ref.fingerprint}::${currentAuthorId}`;
+  const existing = gitActivityCache.get(cacheKey);
+  if (!force && existing?.promise) {
+    return existing.promise.then(cloneGitActivityRepositoryData);
+  }
+  if (!force && existing?.value && existing.expiresAt > Date.now()) {
+    gitActivityCache.delete(cacheKey);
+    gitActivityCache.set(cacheKey, existing);
+    return cloneGitActivityRepositoryData(existing.value);
+  }
+
+  const entry = { expiresAt: Date.now() + gitActivityCacheTtlMs, promise: null, value: null };
+  entry.promise = readGitActivityRepositoryData(repositoryPath, range, criteria, ref, currentAuthorId);
+  gitActivityCache.set(cacheKey, entry);
+  trimGitActivityCache();
+  const result = await entry.promise;
+  if (result.state !== "ready") {
+    if (gitActivityCache.get(cacheKey) === entry) gitActivityCache.delete(cacheKey);
+    return cloneGitActivityRepositoryData(result);
+  }
+
+  if (gitActivityCache.get(cacheKey) === entry) {
+    gitActivityCache.set(cacheKey, { expiresAt: Date.now() + gitActivityCacheTtlMs, promise: null, value: result });
+    trimGitActivityCache();
+  }
+  return cloneGitActivityRepositoryData(result);
+}
+
+async function resolveGitActivityRepositoryGroups(projectPaths) {
+  const uniqueProjectPaths = [
+    ...new Set(
+      (Array.isArray(projectPaths) ? projectPaths : []).map((item) => String(item || "").trim()).filter(Boolean),
+    ),
+  ];
+  const repositoryGroups = new Map();
+  const failures = [];
+
+  await runGitWorkspaceWorkerPool(
+    uniqueProjectPaths.map((projectPath, index) => async () => {
+      const resolved = await resolveGitActivityRepository(projectPath);
+      if (resolved.failure) {
+        failures.push({ index, result: resolved.failure });
+        return;
+      }
+
+      const repositoryKey = resolved.repositoryKey;
+      const group = repositoryGroups.get(repositoryKey) || {
+        index,
+        repositoryPath: resolved.repositoryPath,
+        repositoryPaths: [],
+        projectPaths: [],
+      };
+      if (!group.repositoryPaths.includes(resolved.repositoryPath)) group.repositoryPaths.push(resolved.repositoryPath);
+      group.projectPaths.push(projectPath);
+      group.index = Math.min(group.index, index);
+      repositoryGroups.set(repositoryKey, group);
+    }),
+  );
+
+  return {
+    groups: [...repositoryGroups.values()].sort((left, right) => left.index - right.index),
+    failures: failures.sort((left, right) => left.index - right.index),
+  };
+}
+
+async function readGitActivity(projectPaths, options = {}) {
+  const range = resolveGitActivityRange(options);
+  const criteria = normalizeGitActivityCriteria(options);
+  const { groups, failures } = await resolveGitActivityRepositoryGroups(projectPaths);
+  const entries = [...failures];
+
+  await runGitWorkspaceWorkerPool(
+    groups.map((group) => async () => {
+      const [ref, currentAuthorId] = await Promise.all([
+        resolveGitActivityRef(group.repositoryPaths, criteria.refScope),
+        resolveGitActivityCurrentAuthorId(group.repositoryPath, criteria),
+      ]);
+      const data = await readGitActivityRepositoryCached(
+        group.repositoryPath,
+        range,
+        criteria,
+        ref,
+        currentAuthorId,
+        options.force === true,
+      );
+      entries.push({ index: group.index, result: { ...data, projectPaths: [...group.projectPaths] } });
+    }),
+  );
+
+  return {
+    ...range,
+    criteria,
+    repositories: entries.sort((left, right) => left.index - right.index).map((entry) => entry.result),
+    lastRefreshedAt: new Date().toISOString(),
+  };
+}
+
+async function readGitActivityChanges(projectPaths, options = {}) {
+  const range = resolveGitActivityRange(options);
+  const criteria = normalizeGitActivityCriteria(options);
+  const { groups, failures } = await resolveGitActivityRepositoryGroups(projectPaths);
+  const entries = [...failures].map((entry) => ({
+    ...entry,
+    result: { ...entry.result, commits: 0, files: 0, additions: 0, deletions: 0, binaryFiles: 0 },
+  }));
+  await runGitWorkspaceWorkerPool(
+    groups.map((group) => async () => {
+      const [ref, currentAuthorId] = await Promise.all([
+        resolveGitActivityRef(group.repositoryPaths, criteria.refScope),
+        options.currentUserOnly ? resolveGitActivityCurrentAuthorId(group.repositoryPath, criteria) : "",
+      ]);
+      const authorId = options.currentUserOnly
+        ? currentAuthorId || "missing-current-user"
+        : normalizeGitActivityAuthorId(options.authorId);
+      const data = await readGitActivityChangesRepositoryCached(
+        group.repositoryPath,
+        range,
+        criteria,
+        ref,
+        authorId,
+        options.force === true,
+      );
+      entries.push({ index: group.index, result: { ...data, projectPaths: [...group.projectPaths] } });
+    }),
+  );
+  return {
+    ...range,
+    repositories: entries.sort((left, right) => left.index - right.index).map((entry) => entry.result),
+    lastRefreshedAt: new Date().toISOString(),
+  };
+}
+
+async function readGitActivityDayRepositoryData(repositoryPath, page, authorId, capacity, ref) {
+  const normalizedQuery = page.query.toLocaleLowerCase();
+  const contextKey = `${gitActivityCriteriaKey(page)}::${ref.fingerprint}${normalizedQuery ? `::${normalizedQuery}` : ""}`;
+  const cached = page.force ? null : readGitActivityDayCache(repositoryPath, page.date, contextKey);
+  if (cached) {
+    const matching = cached.filter(
+      (commit) => (!authorId || commit.authorId === authorId) && (!normalizedQuery || commit.message.toLocaleLowerCase().includes(normalizedQuery)),
+    );
+    return {
+      repositoryPath,
+      state: "ready",
+      totalCommits: matching.length,
+      commits: matching.slice(0, capacity),
+    };
+  }
+
+  const pageCommits = [];
+  const cacheCommits = authorId ? null : [];
+  let totalCommits = 0;
+  const identityMatcher = createGitActivityIdentityMatcher(page);
+  const botMatcher = createGitActivityBotMatcher(page);
+  const repositoryKey = normalizeGitActivityRepositoryKey(repositoryPath);
+  const cacheVersion = page.force
+    ? clearGitActivityDayCacheForRepository(repositoryPath)
+    : gitActivityDayCacheVersions.get(repositoryKey) || 0;
+  const consumeRecord = (record) => {
+    const commit = parseGitActivityCommitRecord(record, identityMatcher);
+    if (
+      !commit ||
+      formatGitActivityDate(commit.date, page.timeZone) !== page.date ||
+      (page.hideMerges && commit.isMerge) ||
+      (page.excludeBots && botMatcher(commit)) ||
+      (authorId && commit.authorId !== authorId) ||
+      (normalizedQuery && !commit.message.toLocaleLowerCase().includes(normalizedQuery))
+    )
+      return;
+    totalCommits += 1;
+    retainGitActivityCommit(pageCommits, commit, capacity);
+    if (cacheCommits) retainGitActivityCommit(cacheCommits, commit, gitActivityDayCacheRecordLimit + 1);
+  };
+
+  const result = await runGitWorkspaceCommand(
+    repositoryPath,
+    [
+      "--no-optional-locks",
+      "log",
+      ...ref.args,
+      "--date=iso-strict",
+      `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
+    ],
+    { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
+  );
+  if (result.status !== 0) return createGitActivityReadFailure(repositoryPath, result);
+
+  pageCommits.sort(compareGitActivityCommits);
+  if (cacheCommits && totalCommits <= gitActivityDayCacheRecordLimit) {
+    cacheCommits.sort(compareGitActivityCommits);
+    rememberGitActivityDayCache(repositoryPath, page.date, contextKey, cacheCommits, cacheVersion);
+  }
+  return { repositoryPath, state: "ready", totalCommits, commits: pageCommits };
+}
+
+async function readGitActivityDay(projectPaths, options = {}) {
+  const page = normalizeGitActivityDayPageOptions(options);
+  if (!page.date) {
+    return {
+      date: "",
+      totalCommits: 0,
+      hasMore: false,
+      commits: [],
+      failedRepositories: [],
+      lastRefreshedAt: new Date().toISOString(),
+    };
+  }
+
+  const { groups, failures } = await resolveGitActivityRepositoryGroups(projectPaths);
+  const pageCapacity = page.skip + page.limit + 1;
+  const repositories = [];
+  const failedRepositories = failures.map((entry) => entry.result);
+  await runGitWorkspaceWorkerPool(
+    groups.map((group) => async () => {
+      const ref = await resolveGitActivityRef(group.repositoryPaths, page.refScope);
+      const authorId = page.currentUserOnly
+        ? await resolveGitActivityCurrentAuthorId(group.repositoryPath, page)
+        : page.authorId;
+      const data = await readGitActivityDayRepositoryData(
+        group.repositoryPath,
+        page,
+        authorId || (page.currentUserOnly ? "missing-current-user" : ""),
+        pageCapacity,
+        ref,
+      );
+      if (data.state !== "ready") {
+        failedRepositories.push({ ...data, projectPaths: [...group.projectPaths] });
+        return;
+      }
+      repositories.push({ ...data, projectPaths: [...group.projectPaths] });
+    }),
+  );
+
+  const totalCommits = repositories.reduce((total, repository) => total + repository.totalCommits, 0);
+  const commits = repositories
+    .flatMap((repository) =>
+      repository.commits.map((commit) => ({
+        ...cloneGitActivityCommitData(commit),
+        repositoryPath: repository.repositoryPath,
+        projectPaths: [...repository.projectPaths],
+      })),
+    )
+    .sort(compareGitActivityCommits)
+    .slice(page.skip, page.skip + page.limit);
+  return {
+    date: page.date,
+    authorId: page.authorId || undefined,
+    currentUserOnly: page.currentUserOnly || undefined,
+    totalCommits,
+    hasMore: totalCommits > page.skip + commits.length,
+    commits,
+    failedRepositories,
+    lastRefreshedAt: new Date().toISOString(),
+  };
 }
 
 function gitWorkspaceDirectoryAvailable(targetPath) {

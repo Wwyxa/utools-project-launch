@@ -14,6 +14,7 @@ import {
   Settings,
   ChevronDown,
   CalendarClock,
+  CalendarDays,
   X,
   Play,
   ArrowUpDown,
@@ -755,6 +756,14 @@ const handleProjectDragEnd = () => {
               :aria-label="t.environment.title"
             >
               <MonitorCog :size="18" />
+            </button>
+            <button
+              @click="store.openWorkActivity()"
+              class="toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors"
+              :title="t.activity.title"
+              :aria-label="t.activity.title"
+            >
+              <CalendarDays :size="18" />
             </button>
             <button
               @click="store.setActiveTab('settings')"

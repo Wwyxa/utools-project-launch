@@ -24,7 +24,6 @@ const legacyTabOrderKey = "utools-project-launch.project-details-tab-order.v1";
 const projectLaunchServicePreferencesKey = "utools-project-launch.project-launch-service.v1";
 const defaultTabOrder: ProjectDetailsTabId[] = ["info", "scripts", "automation", "files", "git", "memo"];
 const defaultOpenTab: ProjectDetailsTabId = "scripts";
-
 const loadPreloadBridge = (
   storage: Map<string, unknown>,
   removeItem: (key: string) => void = (key) => {

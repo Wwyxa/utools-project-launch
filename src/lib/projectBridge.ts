@@ -31,6 +31,13 @@ import type {
   ProjectGitMergeResult,
   ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
+  ProjectGitActivityCriteria,
+  ProjectGitActivityOptions,
+  ProjectGitActivityChangesOptions,
+  ProjectGitActivityReport,
+  ProjectGitActivityChangesReport,
+  ProjectGitActivityDayOptions,
+  ProjectGitActivityDayReport,
   ProjectGitCommitMessageDiffResult,
   ProjectBridgePackageScript,
   ProjectScriptDiscoveryResult,
@@ -1070,6 +1077,51 @@ const fallbackBridge: ProjectBridge = {
         },
       };
     }
+  },
+  async readGitActivity(
+    _projectPaths: string[],
+    options: ProjectGitActivityOptions,
+  ): Promise<ProjectGitActivityReport> {
+    const criteria: ProjectGitActivityCriteria = {
+      refScope: options.refScope || "all",
+      timeZone: options.timeZone || "local",
+      hideMerges: options.hideMerges === true,
+      excludeBots: options.excludeBots === true,
+      botPatterns: options.botPatterns || ["\\[bot\\]$", "(^|[+._-])bot@"],
+      identities: options.identities || [],
+    };
+    return {
+      startDate: options.startDate,
+      endDate: options.endDate,
+      criteria,
+      repositories: [],
+      lastRefreshedAt: new Date().toISOString(),
+    };
+  },
+  async readGitActivityChanges(
+    _projectPaths: string[],
+    options: ProjectGitActivityChangesOptions,
+  ): Promise<ProjectGitActivityChangesReport> {
+    return {
+      startDate: options.startDate,
+      endDate: options.endDate,
+      repositories: [],
+      lastRefreshedAt: new Date().toISOString(),
+    };
+  },
+  async readGitActivityDay(
+    _projectPaths: string[],
+    options: ProjectGitActivityDayOptions,
+  ): Promise<ProjectGitActivityDayReport> {
+    return {
+      date: options.date,
+      authorId: options.authorId,
+      totalCommits: 0,
+      hasMore: false,
+      commits: [],
+      failedRepositories: [],
+      lastRefreshedAt: new Date().toISOString(),
+    };
   },
   async readGitFileDiff(projectPath: string, relativePath: string, options?: ProjectGitFileDiffOptions) {
     const scope = options?.scope === "staged" || options?.scope === "unstaged" ? options.scope : "combined";

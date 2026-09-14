@@ -1,0 +1,185 @@
+export interface GitActivityRange {
+  startDate: string;
+  endDate: string;
+}
+
+export interface GitActivityHeatmapCell {
+  date: string;
+  count: number;
+  level: 0 | 1 | 2 | 3 | 4;
+  inRange: boolean;
+}
+
+export type GitActivityConventionalType =
+  | "feat"
+  | "fix"
+  | "docs"
+  | "refactor"
+  | "test"
+  | "chore"
+  | "perf"
+  | "build"
+  | "ci"
+  | "style"
+  | "revert"
+  | "other";
+
+const localDate = (value: Date): string => {
+  const year = String(value.getFullYear()).padStart(4, "0");
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+export const gitActivityDateInTimeZone = (value: Date, timeZone: string): string => {
+  if (timeZone === "local") return localDate(value);
+  try {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || "";
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  } catch {
+    return localDate(value);
+  }
+};
+
+const parseLocalDate = (value: string): Date | null => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T12:00:00`);
+  return localDate(date) === value ? date : null;
+};
+
+export const rollingGitActivityRange = (endDate = localDate(new Date()), days = 365): GitActivityRange => {
+  const end = parseLocalDate(endDate) || new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - Math.max(1, Math.floor(days)) + 1);
+  return { startDate: localDate(start), endDate: localDate(end) };
+};
+
+export const calendarYearGitActivityRange = (year: number): GitActivityRange => {
+  const normalizedYear = Number.isInteger(year) && year >= 1 && year <= 9999 ? year : new Date().getFullYear();
+  return {
+    startDate: `${String(normalizedYear).padStart(4, "0")}-01-01`,
+    endDate: `${String(normalizedYear).padStart(4, "0")}-12-31`,
+  };
+};
+
+export const currentYearGitActivityRange = (today = localDate(new Date())): GitActivityRange => ({
+  startDate: `${today.slice(0, 4)}-01-01`,
+  endDate: today,
+});
+
+export const previousGitActivityRange = (range: GitActivityRange): GitActivityRange => {
+  const start = parseLocalDate(range.startDate);
+  const end = parseLocalDate(range.endDate);
+  if (!start || !end || start > end) return range;
+  const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  const previousEnd = new Date(start);
+  previousEnd.setDate(previousEnd.getDate() - 1);
+  return rollingGitActivityRange(localDate(previousEnd), days);
+};
+
+export const gitActivityComparison = (current: number, previous: number) => ({
+  difference: current - previous,
+  percent: previous > 0 ? Math.round(((current - previous) / previous) * 100) : null,
+});
+
+export const gitActivityStreaks = (
+  range: GitActivityRange,
+  activeDates: ReadonlySet<string>,
+  today = localDate(new Date()),
+): { current: number; longest: number } => {
+  const start = parseLocalDate(range.startDate);
+  const end = parseLocalDate(range.endDate);
+  if (!start || !end || start > end) return { current: 0, longest: 0 };
+
+  let longest = 0;
+  let running = 0;
+  for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+    if (activeDates.has(localDate(date))) {
+      running += 1;
+      longest = Math.max(longest, running);
+    } else {
+      running = 0;
+    }
+  }
+
+  const currentDate = parseLocalDate(today) || new Date();
+  if (!activeDates.has(localDate(currentDate))) currentDate.setDate(currentDate.getDate() - 1);
+  let current = 0;
+  while (currentDate >= start && currentDate <= end && activeDates.has(localDate(currentDate))) {
+    current += 1;
+    currentDate.setDate(currentDate.getDate() - 1);
+  }
+  return { current, longest };
+};
+
+const conventionalTypes = new Set<GitActivityConventionalType>([
+  "feat",
+  "fix",
+  "docs",
+  "refactor",
+  "test",
+  "chore",
+  "perf",
+  "build",
+  "ci",
+  "style",
+  "revert",
+]);
+
+export const parseConventionalCommit = (
+  message: string,
+): { type: GitActivityConventionalType; scope?: string; breaking: boolean } => {
+  const match = String(message || "")
+    .trim()
+    .match(/^([a-zA-Z]+)(?:\(([^)]+)\))?(!)?:\s/);
+  const candidate = match?.[1]?.toLocaleLowerCase() as GitActivityConventionalType | undefined;
+  return {
+    type: candidate && conventionalTypes.has(candidate) ? candidate : "other",
+    scope: match?.[2]?.trim() || undefined,
+    breaking: match?.[3] === "!",
+  };
+};
+
+export const gitActivityHeatmapCells = (
+  range: GitActivityRange,
+  countsByDate: ReadonlyMap<string, number>,
+): GitActivityHeatmapCell[] => {
+  const start = parseLocalDate(range.startDate);
+  const end = parseLocalDate(range.endDate);
+  if (!start || !end || start > end) return [];
+
+  const maxCount = Math.max(...countsByDate.values(), 0);
+  const firstVisibleDate = new Date(start);
+  firstVisibleDate.setDate(firstVisibleDate.getDate() - firstVisibleDate.getDay());
+  const lastVisibleDate = new Date(end);
+  lastVisibleDate.setDate(lastVisibleDate.getDate() + (6 - lastVisibleDate.getDay()));
+  const cells: GitActivityHeatmapCell[] = [];
+
+  for (const date = new Date(firstVisibleDate); date <= lastVisibleDate; date.setDate(date.getDate() + 1)) {
+    const dateKey = localDate(date);
+    const inRange = date >= start && date <= end;
+    const count = inRange ? Math.max(0, countsByDate.get(dateKey) || 0) : 0;
+    const level =
+      count === 0 || maxCount === 0
+        ? 0
+        : (Math.min(4, Math.max(1, Math.ceil((count / maxCount) * 4))) as 1 | 2 | 3 | 4);
+    cells.push({ date: dateKey, count, level, inRange });
+  }
+
+  return cells;
+};
+
+export const gitActivityHeatmapMonthStarts = (cells: readonly GitActivityHeatmapCell[]): (string | null)[] => {
+  const monthStarts: (string | null)[] = [];
+  for (let index = 0; index < cells.length; index += 7) {
+    const firstDay = cells[index];
+    monthStarts.push(firstDay?.inRange && Number(firstDay.date.slice(8)) <= 7 ? firstDay.date : null);
+  }
+  return monthStarts;
+};
