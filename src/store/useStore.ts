@@ -61,6 +61,7 @@ import type {
   ProjectGitActionResult,
   ProjectGitCommitPage,
   ProjectGitCommitMessageDiffResult,
+  ProjectGitMergeResult,
   ProjectGitPushOptions,
   ProjectConfigFile,
   ProjectBridgeEvent,
@@ -1037,6 +1038,8 @@ function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): 
     remoteBranches: snapshot.remoteBranches || [],
     upstream: snapshot.upstream || null,
     base: snapshot.base || null,
+    mergeInProgress: Boolean(snapshot.mergeInProgress),
+    mergeCommitMessage: snapshot.mergeCommitMessage || null,
     hasMoreCommits: snapshot.hasMoreCommits || false,
     nextCommitSkip: normalizeGitCommitSkip(snapshot.nextCommitSkip, commits.length),
     repositoryPath: snapshot.repositoryPath || "",
@@ -1102,6 +1105,9 @@ function mergeGitSnapshotPreservingHistory(
   }
 
   currentSnapshot.files = nextSnapshot.files;
+  currentSnapshot.base = nextSnapshot.base;
+  currentSnapshot.mergeInProgress = nextSnapshot.mergeInProgress;
+  currentSnapshot.mergeCommitMessage = nextSnapshot.mergeCommitMessage;
   currentSnapshot.repositoryPath = nextSnapshot.repositoryPath;
   currentSnapshot.lastRefreshedAt = nextSnapshot.lastRefreshedAt;
   currentSnapshot.statusText = nextSnapshot.statusText;
@@ -1128,6 +1134,8 @@ function mergeGitStatusSnapshot(
     remoteBranches: statusSnapshot.remoteBranches || currentSnapshot.remoteBranches || [],
     upstream: statusSnapshot.upstream || null,
     base: statusSnapshot.base || null,
+    mergeInProgress: statusSnapshot.mergeInProgress ?? (currentSnapshot.mergeInProgress || false),
+    mergeCommitMessage: statusSnapshot.mergeCommitMessage ?? currentSnapshot.mergeCommitMessage ?? null,
     hasMoreCommits: currentSnapshot.hasMoreCommits || false,
     nextCommitSkip: currentSnapshot.nextCommitSkip ?? currentSnapshot.commits.length,
     repositoryPath: statusSnapshot.repositoryPath || currentSnapshot.repositoryPath || "",
@@ -1137,6 +1145,9 @@ function mergeGitStatusSnapshot(
 
   if (gitHistorySnapshotSignature(currentSnapshot) === gitHistorySnapshotSignature(nextSnapshot)) {
     currentSnapshot.files = nextSnapshot.files;
+    currentSnapshot.base = nextSnapshot.base;
+    currentSnapshot.mergeInProgress = nextSnapshot.mergeInProgress;
+    currentSnapshot.mergeCommitMessage = nextSnapshot.mergeCommitMessage;
     currentSnapshot.repositoryPath = nextSnapshot.repositoryPath;
     currentSnapshot.lastRefreshedAt = nextSnapshot.lastRefreshedAt;
     currentSnapshot.statusText = nextSnapshot.statusText;
@@ -1155,6 +1166,8 @@ function mergeGitStatusSnapshot(
     remoteBranches: nextSnapshot.remoteBranches,
     upstream: nextSnapshot.upstream,
     base: nextSnapshot.base,
+    mergeInProgress: nextSnapshot.mergeInProgress,
+    mergeCommitMessage: nextSnapshot.mergeCommitMessage,
     repositoryPath: nextSnapshot.repositoryPath,
     lastRefreshedAt: nextSnapshot.lastRefreshedAt,
     statusText: nextSnapshot.statusText,
@@ -4454,12 +4467,12 @@ export const useStore = defineStore("app", {
         writeLock.release();
       }
     },
-    async runAuthorizedGitWrite(
+    async runAuthorizedGitWrite<TResult extends ProjectGitActionResult>(
       projectId: string,
       target: ProjectGitRepositoryTarget,
-      action: (context: ProjectGitRepositoryContext) => Promise<ProjectGitActionResult>,
+      action: (context: ProjectGitRepositoryContext) => Promise<TResult>,
       options: { refresh: "working-tree" | "status" | "full"; refs?: boolean; refreshOnFailure?: boolean },
-    ): Promise<ProjectGitActionResult | null> {
+    ): Promise<TResult | null> {
       const initialContext = this.resolveGitRepositoryContext(projectId, target);
       if (!initialContext) return null;
 
@@ -4860,6 +4873,26 @@ export const useStore = defineStore("app", {
         (context) => bridge.pushGitRemote(context.repositoryPath, options),
         { refresh: "full", refs: true, refreshOnFailure: true },
       );
+    },
+    async mergeGitBaseBranch(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitMergeResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.mergeGitBaseBranch(context.repositoryPath),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
+    },
+    async abortGitMerge(
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.abortGitMerge(context.repositoryPath), {
+        refresh: "full",
+        refreshOnFailure: true,
+      });
     },
     async publishGitBranch(
       projectId: string,

@@ -28,6 +28,7 @@ import type {
   ProjectGitFileDiffOptions,
   ProjectGitStash,
   ProjectGitActionResult,
+  ProjectGitMergeResult,
   ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
   ProjectGitCommitMessageDiffResult,
@@ -1200,6 +1201,12 @@ const fallbackBridge: ProjectBridge = {
   },
   async pushGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法执行 Git push。");
+  },
+  async mergeGitBaseBranch(): Promise<ProjectGitMergeResult> {
+    return unavailableGitAction("浏览器预览无法合并基点分支。");
+  },
+  async abortGitMerge(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法放弃 Git 合并。");
   },
   async initializeGitRepository(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法初始化 Git 仓库。");

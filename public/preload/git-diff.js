@@ -432,7 +432,7 @@ async function readGitStatusSnapshotResult(projectPath) {
   }
 
   const repositoryPath = rootResult.repositoryPath;
-  const [branchOutput, symbolicBranchOutput, headHashOutput, workingTreeResult, branchesResult, remotesResult] =
+  const [branchOutput, symbolicBranchOutput, headHashOutput, workingTreeResult, branchesResult, remotesResult, mergeHeadOutput] =
     await Promise.all([
       runGitAsyncResult(repositoryPath, ["status", "--short", "--branch"]),
       runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
@@ -440,6 +440,7 @@ async function readGitStatusSnapshotResult(projectPath) {
       readGitWorkingTreeDataResult(repositoryPath),
       readGitBranchesAsyncResult(repositoryPath),
       readGitRemotesAsyncResult(repositoryPath),
+      runGitAsyncResult(repositoryPath, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]),
     ]);
   if (!branchOutput.ok) {
     return {
@@ -472,6 +473,24 @@ async function readGitStatusSnapshotResult(projectPath) {
   const remoteBranchesResult = await readGitRemoteBranchesAsyncResult(repositoryPath, remotes);
   if (!remoteBranchesResult.ok) return { ...remoteBranchesResult, value: null };
   const remoteBranches = remoteBranchesResult.value;
+  const mergeInProgress = mergeHeadOutput.exitCode === 0;
+  const mergeCommitMessage = mergeInProgress ? await readGitMergeMessageAsync(repositoryPath) : null;
+
+  let baseSummary = base;
+  if (base) {
+    const baseCountsResult = await runGitAsyncResult(repositoryPath, [
+      "rev-list",
+      "--left-right",
+      "--count",
+      `HEAD...${base.ref}`,
+    ]);
+    if (baseCountsResult.ok) {
+      const counts = baseCountsResult.stdout.trim().split(/\s+/);
+      if (counts.length === 2 && counts.every((value) => /^\d+$/.test(value))) {
+        baseSummary = { ...base, ahead: Number(counts[0]), behind: Number(counts[1]) };
+      }
+    }
+  }
 
   return {
     ok: true,
@@ -486,7 +505,9 @@ async function readGitStatusSnapshotResult(projectPath) {
       remotes,
       remoteBranches,
       upstream,
-      base,
+      base: baseSummary,
+      mergeInProgress,
+      mergeCommitMessage,
       repositoryPath,
       lastRefreshedAt: now,
       statusText: `${isDetachedHead && headHash ? `detached HEAD @ ${headHash} · ` : ""}${workingTree.changeCount === 0 ? "工作区干净" : `${workingTree.changeCount} 个文件变更`}`,
@@ -599,6 +620,184 @@ function pushGitRemote(projectPath, options = {}) {
         ? `已推送到 ${upstream.ref}，并推送 ${tagNames.length} 个标签。`
         : `已推送到 ${upstream.ref}。`,
   );
+}
+
+async function readGitMergeInProgressAsync(repositoryPath) {
+  const mergeHeadResult = await runGitAsyncResult(repositoryPath, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]);
+  return mergeHeadResult.exitCode === 0;
+}
+
+async function resolveGitCommentPrefix(repositoryPath) {
+  for (const configKey of ["core.commentchar", "core.commentstring"]) {
+    const result = await runGitAsyncResult(repositoryPath, ["config", "--get", configKey]);
+    const value = result.ok ? result.stdout.trim() : "";
+    if (value && value !== "auto" && !/\s/.test(value) && value.length <= 16) {
+      return value;
+    }
+  }
+  return "#";
+}
+
+async function readGitMergeMessageAsync(repositoryPath) {
+  const gitPathResult = await runGitAsyncResult(repositoryPath, ["rev-parse", "--git-path", "MERGE_MSG"]);
+  if (!gitPathResult.ok) return null;
+  const mergeMessagePath = path.resolve(repositoryPath, gitPathResult.stdout.trim());
+  try {
+    if (!fs.existsSync(mergeMessagePath)) return null;
+    const raw = fs.readFileSync(mergeMessagePath, "utf8");
+    const commentPrefix = await resolveGitCommentPrefix(repositoryPath);
+    const message = raw
+      .split(/\r?\n/)
+      .filter((line) => !line.trimStart().startsWith(commentPrefix))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/\s+$/, "");
+    return message || null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveGitBaseMergeContext(projectPath) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  const branchResult = await runGitAsyncResult(repositoryPath, ["branch", "--show-current"]);
+  const branch = branchResult.ok ? branchResult.stdout.trim() : "";
+  if (!branch) {
+    return { ok: false, repositoryPath, message: "当前 HEAD 处于 detached 状态，无法合并基点分支。" };
+  }
+
+  const remotesResult = await readGitRemotesAsyncResult(repositoryPath);
+  if (!remotesResult.ok) {
+    return { ok: false, repositoryPath, branch, message: "读取 Git remote 失败。" };
+  }
+
+  const upstream = await readGitUpstreamAsync(repositoryPath);
+  const base = await readGitBranchBaseAsync(repositoryPath, branch, remotesResult.value, upstream);
+  if (!base) {
+    return { ok: false, repositoryPath, branch, message: "未能识别当前分支的基点分支，请手动合并。" };
+  }
+
+  return { ok: true, repositoryPath, branch, base };
+}
+
+async function mergeGitBaseBranch(projectPath) {
+  const context = await resolveGitBaseMergeContext(projectPath);
+  if (!context.ok) {
+    return { ok: false, message: context.message };
+  }
+  const { repositoryPath, branch, base } = context;
+
+  if (hasUncommittedGitChanges(repositoryPath)) {
+    return {
+      ok: false,
+      blockReason: "dirty-worktree",
+      branch,
+      message: "当前工作区存在未提交变更，无法合并基点分支。",
+    };
+  }
+
+  if (await readGitMergeInProgressAsync(repositoryPath)) {
+    return {
+      ok: false,
+      branch,
+      mergeInProgress: true,
+      message: "上一次合并尚未完成，请先解决冲突并提交，或放弃合并。",
+    };
+  }
+
+  const fetchResult = await runGitRemoteCommandResult(repositoryPath, [
+    "fetch",
+    "--progress",
+    base.remote,
+    base.branch,
+  ]);
+  if (fetchResult.status !== 0) {
+    return {
+      ok: false,
+      remote: base.remote,
+      branch: base.branch,
+      message: firstGitError(fetchResult, "获取基点分支更新失败。"),
+    };
+  }
+
+  const countsResult = await runGitAsyncResult(repositoryPath, ["rev-list", "--count", `HEAD..${base.ref}`]);
+  const behindCount = countsResult.ok ? Number(countsResult.stdout.trim()) : Number.NaN;
+  if (Number.isFinite(behindCount) && behindCount === 0) {
+    return {
+      ok: true,
+      remote: base.remote,
+      branch: base.branch,
+      message: `当前分支已包含 ${base.ref} 的全部提交。`,
+    };
+  }
+
+  const mergeResult = await runGitRemoteCommandResult(repositoryPath, ["merge", "--no-edit", base.ref]);
+  if (mergeResult.status === 0) {
+    const output = `${mergeResult.stdout}\n${mergeResult.stderr}`;
+    if (/already up to date/i.test(output)) {
+      return {
+        ok: true,
+        remote: base.remote,
+        branch: base.branch,
+        message: `当前分支已包含 ${base.ref} 的全部提交。`,
+      };
+    }
+    const parentsResult = await runGitAsyncResult(repositoryPath, ["rev-list", "--parents", "-n", "1", "HEAD"]);
+    const parentCount = parentsResult.ok ? parentsResult.stdout.trim().split(/\s+/).length : 0;
+    return {
+      ok: true,
+      remote: base.remote,
+      branch: base.branch,
+      message: parentCount > 2 ? `已将 ${base.ref} 合并到当前分支。` : `已快进合并 ${base.ref}。`,
+    };
+  }
+
+  const conflictedFilesResult = await runGitAsyncResult(repositoryPath, ["diff", "--name-only", "--diff-filter=U"]);
+  const conflictedFiles = conflictedFilesResult.stdout
+    ? conflictedFilesResult.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : [];
+  if (conflictedFiles.length > 0) {
+    const mergeCommitMessage = await readGitMergeMessageAsync(repositoryPath);
+    return {
+      ok: false,
+      remote: base.remote,
+      branch: base.branch,
+      conflicted: true,
+      conflictedFiles,
+      ...(mergeCommitMessage ? { mergeCommitMessage } : {}),
+      message: `合并 ${base.ref} 产生冲突，请解决冲突后提交，或放弃合并。`,
+    };
+  }
+
+  return {
+    ok: false,
+    remote: base.remote,
+    branch: base.branch,
+    message: firstGitError(mergeResult, "合并基点分支失败。"),
+  };
+}
+
+async function abortGitMerge(projectPath) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  if (!repositoryPath) {
+    return { ok: false, message: "未检测到 Git 仓库。" };
+  }
+
+  if (!(await readGitMergeInProgressAsync(repositoryPath))) {
+    return { ok: false, message: "当前没有进行中的合并。" };
+  }
+
+  const result = await runGitRemoteCommandResult(repositoryPath, ["merge", "--abort"]);
+  return result.status === 0
+    ? { ok: true, message: "已放弃合并，工作区已恢复。" }
+    : { ok: false, message: firstGitError(result, "放弃合并失败。") };
 }
 
 function initializeGitRepository(projectPath) {

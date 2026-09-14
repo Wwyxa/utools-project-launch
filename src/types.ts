@@ -734,6 +734,8 @@ export interface ProjectGitBaseSummary {
   remote: string;
   branch: string;
   ref: string;
+  ahead?: number;
+  behind?: number;
 }
 
 export type ProjectGitActionBlockReason = "dirty-worktree" | "unmerged-branch" | "merge-commit";
@@ -750,6 +752,13 @@ export interface ProjectGitActionResult {
   commitHash?: string;
   commitMessage?: string;
   isDetachedHead?: boolean;
+}
+
+export interface ProjectGitMergeResult extends ProjectGitActionResult {
+  conflicted?: boolean;
+  conflictedFiles?: string[];
+  mergeCommitMessage?: string;
+  mergeInProgress?: boolean;
 }
 
 export interface ProjectGitBulkFileActionOptions {
@@ -850,6 +859,8 @@ export interface ProjectGitSnapshot {
   remoteBranches?: ProjectGitRemoteBranchSummary[];
   upstream?: ProjectGitUpstreamSummary | null;
   base?: ProjectGitBaseSummary | null;
+  mergeInProgress?: boolean;
+  mergeCommitMessage?: string | null;
   hasMoreCommits?: boolean;
   nextCommitSkip?: number;
   repositoryPath: string;
@@ -869,6 +880,8 @@ export interface ProjectGitStatusSnapshot {
   remoteBranches?: ProjectGitRemoteBranchSummary[];
   upstream?: ProjectGitUpstreamSummary | null;
   base?: ProjectGitBaseSummary | null;
+  mergeInProgress?: boolean;
+  mergeCommitMessage?: string | null;
   repositoryPath: string;
   lastRefreshedAt: string;
   statusText: string;
@@ -1530,6 +1543,8 @@ export interface ProjectBridge {
   fetchGitRemoteByName(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   pullGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   pushGitRemote(projectPath: string, options?: ProjectGitPushOptions): Promise<ProjectGitActionResult>;
+  mergeGitBaseBranch(projectPath: string): Promise<ProjectGitMergeResult>;
+  abortGitMerge(projectPath: string): Promise<ProjectGitActionResult>;
   initializeGitRepository(projectPath: string): Promise<ProjectGitActionResult>;
   publishGitBranch(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   addGitRemote(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;

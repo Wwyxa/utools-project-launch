@@ -13,8 +13,9 @@ const props = withDefaults(
     buttonClass?: string;
     iconClass?: string;
     iconSize?: number;
+    label?: string;
   }>(),
-  { disabled: false, buttonClass: "", iconClass: "", iconSize: 18 },
+  { disabled: false, buttonClass: "", iconClass: "", iconSize: 18, label: "" },
 );
 
 const emit = defineEmits<{ (event: "launch", applicationId?: string): void }>();
@@ -155,6 +156,7 @@ onUnmounted(() => {
     @contextmenu="openAtPointer"
     @keydown="handleTriggerKeydown"
   >
+    <span v-if="label" class="truncate">{{ label }}</span>
     <Code2 :size="iconSize" :class="iconClass" />
   </button>
 

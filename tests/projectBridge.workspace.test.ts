@@ -1207,6 +1207,33 @@ describe("browser Git workspace fallback", () => {
     expect(project.git?.remoteBranches).toEqual([]);
   });
 
+  it("preserves merge state and the pending merge message when status changes history shape", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const projectPath = "C:\\project";
+    const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>(async () => ({
+      ...gitSnapshot(projectPath, "feature", "d".repeat(40)),
+      mergeInProgress: true,
+      mergeCommitMessage: "Merge origin/master into feature",
+    }));
+    window.projectBridge = { ...getProjectBridge(), readGitStatusSnapshot };
+
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("project-merge-status", projectPath);
+    project.git = gitSnapshot(projectPath, "feature", "c".repeat(40));
+    store.projects = [project];
+
+    await store.refreshGitStatusSnapshot(project.id);
+
+    expect(project.git?.mergeInProgress).toBe(true);
+    expect(project.git?.mergeCommitMessage).toBe("Merge origin/master into feature");
+  });
+
   it("rejects an in-flight commit page after a same-length full refresh", async () => {
     vi.stubGlobal("window", {
       navigator: { platform: "Win32", userAgent: "vitest" },

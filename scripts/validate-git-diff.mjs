@@ -19,6 +19,7 @@ fs.mkdirSync(projectRoot, { recursive: true });
 runGit("init");
 runGit("config", "user.email", "git-diff@example.invalid");
 runGit("config", "user.name", "Git Diff Validation");
+runGit("config", "core.commentchar", ";");
 fs.writeFileSync(path.join(projectRoot, "mixed.txt"), "base\n");
 const contextLines = Array.from({ length: 12 }, (_, index) => `line-${index + 1}`);
 fs.writeFileSync(path.join(projectRoot, "working-context.txt"), `${contextLines.join("\n")}\n`);
@@ -63,6 +64,7 @@ fs.writeFileSync(path.join(projectRoot, "whitespace-only.txt"), "value   = 1\n\n
 fs.writeFileSync(path.join(projectRoot, "whitespace-and-content.txt"), "value   = 1\nstay changed\n\n");
 
 const sandbox = {
+  CustomEvent,
   TextDecoder,
   clearTimeout,
   console: { warn() {}, error() {}, log() {} },
@@ -189,6 +191,78 @@ try {
   );
   assert.match(whitespaceAndContentStash.diff, /\+stay changed/);
   assert.doesNotMatch(whitespaceAndContentStash.diff, /^[+-]value/m);
+
+  const baseBranchName = runGit("symbolic-ref", "--short", "HEAD").trim();
+  const originPath = path.join(fixtureRoot, "origin.git");
+  runGit("init", "--bare", originPath);
+  runGit("remote", "add", "origin", originPath);
+  fs.writeFileSync(path.join(projectRoot, "base-advance.txt"), "base advance\n");
+  runGit("add", "--", "base-advance.txt");
+  runGit("commit", "-m", "base advance");
+  runGit("push", "origin", baseBranchName);
+  runGit("fetch", "origin");
+  runGit("remote", "set-head", "origin", baseBranchName);
+
+  const initialBaseSnapshot = await bridge.readGitStatusSnapshot(projectRoot);
+  assert.equal(initialBaseSnapshot.mergeInProgress, false);
+  assert.equal(initialBaseSnapshot.base?.behind, 0);
+
+  const divergeHash = runGit("rev-parse", "HEAD~1").trim();
+  runGit("switch", "-c", "feature/merge-base", divergeHash);
+  const beforeMergeSnapshot = await bridge.readGitStatusSnapshot(projectRoot);
+  assert.equal(beforeMergeSnapshot.base?.ref, `origin/${baseBranchName}`);
+  assert.equal(beforeMergeSnapshot.base?.behind, 1);
+
+  const fastForward = await bridge.mergeGitBaseBranch(projectRoot);
+  assert.equal(fastForward.ok, true);
+  assert.match(fastForward.message, /已快进合并/);
+  assert.equal(runGit("rev-parse", "HEAD").trim(), runGit("rev-parse", `origin/${baseBranchName}`).trim());
+
+  fs.writeFileSync(path.join(projectRoot, "conflict-file.txt"), "feature\n");
+  runGit("add", "--", "conflict-file.txt");
+  runGit("commit", "-m", "feature conflict");
+  runGit("switch", "--", baseBranchName);
+  fs.writeFileSync(path.join(projectRoot, "conflict-file.txt"), "base\n");
+  runGit("add", "--", "conflict-file.txt");
+  runGit("commit", "-m", "base conflict");
+  runGit("push", "origin", baseBranchName);
+  runGit("switch", "--", "feature/merge-base");
+
+  const conflictResult = await bridge.mergeGitBaseBranch(projectRoot);
+  assert.equal(conflictResult.ok, false);
+  assert.equal(conflictResult.conflicted, true);
+  assert.deepEqual([...(conflictResult.conflictedFiles || [])], ["conflict-file.txt"]);
+  assert.match(String(conflictResult.mergeCommitMessage || ""), /^Merge /);
+  const mergingSnapshot = await bridge.readGitStatusSnapshot(projectRoot);
+  assert.equal(mergingSnapshot.mergeInProgress, true);
+  assert.match(String(mergingSnapshot.mergeCommitMessage || ""), /^Merge /);
+  assert.doesNotMatch(String(mergingSnapshot.mergeCommitMessage || ""), /Conflicts/);
+
+  fs.writeFileSync(path.join(projectRoot, "conflict-file.txt"), "resolved\n");
+  runGit("add", "--", "conflict-file.txt");
+  const mergeCommit = bridge.commitGitStaged(projectRoot, String(mergingSnapshot.mergeCommitMessage || ""));
+  assert.equal(mergeCommit.ok, true);
+  assert.equal(runGit("rev-list", "--parents", "-n", "1", "HEAD").trim().split(/\s+/).length, 3);
+  const finishedSnapshot = await bridge.readGitStatusSnapshot(projectRoot);
+  assert.equal(finishedSnapshot.mergeInProgress, false);
+  assert.equal(finishedSnapshot.mergeCommitMessage, null);
+
+  runGit("switch", "--", baseBranchName);
+  fs.writeFileSync(path.join(projectRoot, "conflict-file.txt"), "base again\n");
+  runGit("add", "--", "conflict-file.txt");
+  runGit("commit", "-m", "base conflict round two");
+  runGit("push", "origin", baseBranchName);
+  runGit("switch", "--", "feature/merge-base");
+
+  const secondConflict = await bridge.mergeGitBaseBranch(projectRoot);
+  assert.equal(secondConflict.ok, false);
+  assert.equal(secondConflict.conflicted, true);
+  const abort = await bridge.abortGitMerge(projectRoot);
+  assert.equal(abort.ok, true);
+  const abortedSnapshot = await bridge.readGitStatusSnapshot(projectRoot);
+  assert.equal(abortedSnapshot.mergeInProgress, false);
+  assert.equal(abortedSnapshot.mergeCommitMessage, null);
+  assert.equal(runGit("status", "--porcelain").trim(), "");
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }
