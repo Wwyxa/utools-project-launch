@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -43,6 +44,16 @@ func TestServiceWritesAndRemovesDiscovery(t *testing.T) {
 	}
 	if _, err := os.Stat(state.DiscoveryPath(stateDir)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("discovery file still exists or could not be checked: %v", err)
+	}
+	contents, err := os.ReadFile(filepath.Join(stateDir, "service.log"))
+	if err != nil {
+		t.Fatalf("read service diagnostic log: %v", err)
+	}
+	logContents := string(contents)
+	for _, event := range []string{"start.ready", "shutdown.requested", "shutdown.complete"} {
+		if !strings.Contains(logContents, `"event":"`+event+`"`) {
+			t.Fatalf("service diagnostic log missing %q: %s", event, logContents)
+		}
 	}
 }
 

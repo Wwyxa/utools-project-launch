@@ -266,6 +266,55 @@ func TestAutomationHistoryIsGloballyBounded(t *testing.T) {
 	}
 }
 
+func TestUpdateAutomationExecutionReturnsCurrentAfterHistoryTrim(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1}`)); err != nil {
+		t.Fatalf("write automation config: %v", err)
+	}
+	for index := 0; index < MaxAutomationHistoryPerTask; index++ {
+		_, claimed, claimErr := store.ClaimAutomationExecution(1, AutomationExecution{
+			ID:          fmt.Sprintf("terminal-%02d", index),
+			ProjectID:   "project",
+			TaskID:      "task",
+			PlanEntryID: fmt.Sprintf("terminal-entry-%02d", index),
+			Status:      AutomationExecutionSkipped,
+		})
+		if claimErr != nil || !claimed {
+			t.Fatalf("claim terminal execution %d: claimed=%t err=%v", index, claimed, claimErr)
+		}
+	}
+	if _, claimed, err := store.ClaimAutomationExecution(1, AutomationExecution{
+		ID:          "current",
+		ProjectID:   "project",
+		TaskID:      "task",
+		PlanEntryID: "current-entry",
+		Status:      AutomationExecutionRunning,
+	}); err != nil || !claimed {
+		t.Fatalf("claim current execution: claimed=%t err=%v", claimed, err)
+	}
+
+	updated, err := store.UpdateAutomationExecution("current", func(current *AutomationExecution) {
+		current.Status = AutomationExecutionCompleted
+		current.EndedAt = "2026-09-14T04:43:36Z"
+	})
+	if err != nil {
+		t.Fatalf("complete current execution: %v", err)
+	}
+	if updated.ID != "current" || updated.Status != AutomationExecutionCompleted {
+		t.Fatalf("updated execution = %#v, want completed current execution", updated)
+	}
+	executions := store.Automation().Executions
+	if len(executions) != MaxAutomationHistoryPerTask {
+		t.Fatalf("execution count = %d, want %d", len(executions), MaxAutomationHistoryPerTask)
+	}
+	if executions[len(executions)-1].ID != "current" {
+		t.Fatalf("latest execution = %#v, want current execution", executions[len(executions)-1])
+	}
+}
+
 func TestAutomationReconcileRemovesDeletedHistoryAndPendingSubmissionsButKeepsRunning(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {
