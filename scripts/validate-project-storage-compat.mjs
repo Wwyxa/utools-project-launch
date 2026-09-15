@@ -645,6 +645,16 @@ const catalogBaseProject = {
   scripts: [],
   env: {},
   memo: "base memo",
+  automationTasks: [
+    {
+      id: "catalog-automation-task",
+      name: "Catalog automation task",
+      enabled: true,
+      notifyEnabled: true,
+      dailyPlans: [],
+      history: [],
+    },
+  ],
   sortOrder: 0,
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -681,6 +691,12 @@ catalogBridge.docsById.set(catalogBaseDocument._id, {
     ...remoteBaseDocument.project,
     group: "agent-group",
     scripts: [{ id: "agent-script", name: "agent", command: "echo agent", status: "IDLE" }],
+    automationTasks: remoteBaseDocument.project.automationTasks.map((task) => ({
+      ...task,
+      dailyPlans: [{ date: "2026-01-01", entries: [] }],
+      history: [{ id: "legacy-execution", status: "completed" }],
+      observedServiceExecutionIds: ["legacy-execution"],
+    })),
   },
 });
 catalogBridge.bridge.saveProjects(
@@ -702,6 +718,43 @@ assert.equal(
   safelyMergedCatalogProject.scripts.some((script) => script.id === "agent-script"),
   true,
   "Catalog saves should retain a script added by an Agent after the Store baseline",
+);
+assert.equal(
+  safelyMergedCatalogProject.automationTasks[0].history.length,
+  1,
+  "Unrelated project saves should retain legacy automation runtime data until task configuration changes",
+);
+catalogBridge.bridge.saveProjects(
+  [
+    {
+      ...catalogBaseProject,
+      memo: "local memo",
+      automationTasks: catalogBaseProject.automationTasks.map((task) => ({
+        ...task,
+        notifyEnabled: false,
+        dailyPlans: [],
+        history: [],
+      })),
+      updatedAt: "2026-01-03T00:00:00.000Z",
+    },
+  ],
+  { baseProjects: [{ ...catalogBaseProject, memo: "local memo" }] },
+);
+const automationUpdatedCatalogProject = catalogBridge.docsById.get(catalogBaseDocument._id).project;
+assert.equal(
+  automationUpdatedCatalogProject.automationTasks[0].notifyEnabled,
+  false,
+  "Automation task configuration changes should be applied",
+);
+assert.deepEqual(
+  clone(automationUpdatedCatalogProject.automationTasks[0].history),
+  [],
+  "Automation task configuration changes should clear legacy execution history",
+);
+assert.equal(
+  "observedServiceExecutionIds" in automationUpdatedCatalogProject.automationTasks[0],
+  false,
+  "Automation task configuration changes should clear legacy notification receipts",
 );
 assert.equal(
   catalogBridge.docsById.has(catalogRemoteDocument._id),

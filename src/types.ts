@@ -374,6 +374,7 @@ export interface ProjectLaunchServiceAutomationExecution {
 export interface ProjectLaunchServiceAutomationState {
   revision: number;
   executions?: ProjectLaunchServiceAutomationExecution[];
+  latestExecutions?: ProjectLaunchServiceAutomationExecution[];
   upcoming?: ProjectLaunchServiceAutomationUpcoming[];
 }
 
@@ -877,12 +878,7 @@ export type ProjectGitReadResult<T> =
 
 export type ProjectGitActivityCriteria = Omit<
   WorkActivityPreferences,
-  | "rangeMode"
-  | "selectedYear"
-  | "customStartDate"
-  | "customEndDate"
-  | "selectedAuthorId"
-  | "projectGroups"
+  "rangeMode" | "selectedYear" | "customStartDate" | "customEndDate" | "selectedAuthorId" | "projectGroups"
 >;
 
 export interface ProjectGitActivityOptions extends Partial<ProjectGitActivityCriteria> {
@@ -1581,6 +1577,13 @@ export interface ProjectBridge {
   syncProjectLaunchServiceAutomation(
     config: ProjectLaunchServiceAutomationConfig,
   ): Promise<ProjectLaunchServiceAutomationSyncResult>;
+  ignoreMissedProjectLaunchServiceAutomationExecution(
+    executionId: string,
+  ): Promise<ProjectLaunchServiceAutomationExecution>;
+  listProjectLaunchServiceAutomationExecutions(
+    projectId: string,
+    taskId: string,
+  ): Promise<ProjectLaunchServiceAutomationExecution[]>;
   openProjectLaunchServiceDirectory(): Promise<void>;
   openProjectLaunchServiceReleases(): Promise<void>;
   listAiModels(preferences?: AiPreferences): Promise<AiModelInfo[]>;

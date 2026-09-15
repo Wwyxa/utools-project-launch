@@ -13,12 +13,14 @@
 ### 2. Signatures
 
 - Service executable: `project-launch-service --state-dir <service-directory>`.
-- Service bridge methods: `loadProjectLaunchServicePreferences`, `saveProjectLaunchServicePreferences`, `getProjectLaunchServiceStatus`, `downloadProjectLaunchService`, `verifyProjectLaunchServiceInstall`, `startProjectLaunchService`, `stopProjectLaunchService`, `reconcileProjectLaunchService`, `getProjectLaunchServiceRunLog`, `getProjectLaunchServiceRunLogPage`, `getProjectLaunchServiceLogRetention`, `updateProjectLaunchServiceLogRetention`, `listProjectLaunchServiceLogs`, `clearProjectLaunchServiceLogs`, `syncProjectLaunchServiceAutomation`, `openProjectLaunchServiceDirectory`, and `openProjectLaunchServiceReleases`.
+- Service bridge methods: `loadProjectLaunchServicePreferences`, `saveProjectLaunchServicePreferences`, `getProjectLaunchServiceStatus`, `downloadProjectLaunchService`, `verifyProjectLaunchServiceInstall`, `startProjectLaunchService`, `stopProjectLaunchService`, `reconcileProjectLaunchService`, `getProjectLaunchServiceRunLog`, `getProjectLaunchServiceRunLogPage`, `getProjectLaunchServiceLogRetention`, `updateProjectLaunchServiceLogRetention`, `listProjectLaunchServiceLogs`, `clearProjectLaunchServiceLogs`, `syncProjectLaunchServiceAutomation`, `ignoreMissedProjectLaunchServiceAutomationExecution`, `openProjectLaunchServiceDirectory`, and `openProjectLaunchServiceReleases`.
 - Shared types: `ProjectLaunchServicePreferences`, `ProjectLaunchServiceStatus`, `ProjectLaunchServiceRun`, `ProjectLaunchServiceEvent`, `ProjectLaunchServiceRunLog`, `ProjectLaunchServiceLogRetentionPolicy`, `ProjectLaunchServiceLogRetentionStatus`, `ProjectLaunchServiceLogDescriptor`, `ProjectLaunchServiceLogClearResult`, `ProjectLaunchServiceAutomationConfig`, `ProjectLaunchServiceAutomationState`, and `ProjectLaunchServiceAutomationSyncResult` in `src/types.ts`.
 - `ProjectLaunchServiceAutomationConfig` has one wire shape: `{ schemaVersion: 1, revision, projects }`. Each task uses `schedule`, `scheduleAlgorithmVersion: 1`, and optional `manualRun` or `runEarlyEntryId`; the service payload does not contain renderer-materialized `dailyPlans`.
 - `PUT /v1/automation/config` receives `{ revision, config }`; the wrapper `revision` and `config.revision` must match. The service materializes plans from the schedule and persists accepted manual/early submissions.
 - Loopback requests use `Authorization: Bearer <token>` and `X-Protocol-Version: 2`. JSON mutations also use `Content-Type: application/json`; `POST /v1/runs` requires `Idempotency-Key`.
-- Protocol endpoints are `GET /v1/health`, `GET /v1/state`, `GET /v1/events?after=<cursor>`, `GET /v1/sync?after=<cursor>`, `GET /v1/runs/{runId}/log?before=<byte-offset>`, `GET/PUT /v1/log-retention`, `GET /v1/logs?projectId=<id>`, `POST /v1/logs/clear`, `POST /v1/runs`, `POST /v1/runs/{runId}/input`, `POST /v1/runs/{runId}/stop`, `PUT /v1/automation/config`, and `POST /v1/shutdown`.
+- `POST /v1/automation/executions/ignore` receives `{ executionId }` and returns the same execution updated from `missed` to `skipped`.
+- `GET /v1/automation/executions?projectId=<id>&taskId=<id>` returns only terminal executions for that task; the regular service snapshot exposes only one `latestExecutions` entry per task for overview rendering.
+- Protocol endpoints are `GET /v1/health`, `GET /v1/state`, `GET /v1/events?after=<cursor>`, `GET /v1/sync?after=<cursor>`, `GET /v1/runs/{runId}/log?before=<byte-offset>`, `GET/PUT /v1/log-retention`, `GET /v1/logs?projectId=<id>`, `POST /v1/logs/clear`, `POST /v1/runs`, `POST /v1/runs/{runId}/input`, `POST /v1/runs/{runId}/stop`, `PUT /v1/automation/config`, `POST /v1/automation/executions/ignore`, and `POST /v1/shutdown`.
 
 ### 3. Contracts
 
@@ -36,6 +38,7 @@
 - Automation configuration is a single development-stage schema: use `schemaVersion: 1` for the schedule-driven service-owned payload. Do not add `automationSchemaVersions`, capability-based payload selection, legacy `dailyPlans` serialization, or automation-payload fallback support for an older service binary. This schema version is independent from transport `X-Protocol-Version: 2`; the current transport requires the combined `/v1/sync` response.
 - The service owns bounded event/output history and returns cursor/truncation metadata. `ProjectLaunchServiceAutomationConfig` is input only; `ProjectLaunchServiceAutomationState` in `ProjectLaunchServiceStatus` exposes only a revision and optional executions, never a configuration or environment map. The service must not log tokens, full environments, or credentials.
 - State retains the latest 20 terminal automation executions per `(projectId, taskId)` while retaining active executions. An execution update that triggers retention trimming must return a stable copy captured before trimming; never index the rewritten execution slice with a position captured before trimming. Run output is stored as `logs/<runId>.log`, capped to the newest 5 MiB per run, 100 MiB in total, and 200 retained log files. Output events use a per-run buffer and flush at about 64 KiB or 200 ms; enforce retention at startup, bounded flush thresholds, run completion, policy changes, service close, and explicit clear boundaries rather than scanning on every line. When the file-count or total-size cap is exceeded, delete the oldest completed-run logs first; only then trim active logs to their newest bounded tail until the total is within the size cap. Active runs may temporarily exceed the file-count cap rather than losing their live log.
+- Ignoring a missed execution is a service-owned state transition, not a renderer-only receipt. Update that execution and its materialized plan entry atomically to `skipped`, persist `state.json`, and return the updated execution so Pinia can update immediately without waiting for the next poll.
 - `GET /v1/runs/{runId}/log` returns the retained structured events, byte size, and truncation marker for one run that still exists in bounded run history. The preload bridge keeps the default 256 KiB service-response limit for all other requests and uses an 8 MiB limit only for this bounded log response. The Terminal history dialog lists completed runs for the current project and reads a selected log without merging it into live `scriptLogs`.
 - `/v1/shutdown` accepts only an idle service. Release builds use the six-target matrix, deterministic asset names, checksum verification, stripped pure-Go binaries, and the 12 MiB raw-size limit.
 
@@ -50,6 +53,7 @@
 - Missing/incorrect bearer token -> HTTP `401` with `unauthorized`; incompatible protocol -> HTTP `426` with `protocol_mismatch`.
 - Non-JSON, malformed, duplicated, or body-limited mutation -> typed `4xx` result; unknown fields never enter service state.
 - Automation `schemaVersion` other than `1`, or a wrapper/config revision mismatch -> HTTP `400` with `automation_config_invalid`; a stale accepted revision -> HTTP `409` with `automation_revision_conflict`.
+- Ignore an unknown execution -> HTTP `404 automation_execution_not_found`; ignore a non-missed execution -> HTTP `409 automation_execution_not_missed`; persistence failure -> HTTP `500 automation_execution_ignore_failed`.
 - Reused launch idempotency key with the same fingerprint -> return the prior run; a different fingerprint -> conflict without a second process.
 - Accepted automation revision -> atomically replaces the complete normalized configuration.
 - Active service run during shutdown/disable -> reject shutdown or keep service mode enabled until explicit stop succeeds.
@@ -67,8 +71,10 @@
 - Good: enabling service mode clears the renderer timer, waits for configuration acknowledgement, then records the enabled preference so one planned entry can run only once.
 - Good: the Store sends one schema-v1 schedule payload; a manual request uses `manualRun`, and an early request uses `runEarlyEntryId` while preserving the selected entry's original `plannedAt`.
 - Good: after reopening uTools, the user opens Terminal log history, selects a completed run, and reads its retained output without adding those rows to the live terminal stream.
+- Good: the user ignores a missed automation execution; the service changes that same execution to `skipped`, so it disappears immediately and stays dismissed after project reload or plugin restart.
 - Base: a user never installs or enables the service; plugin startup continues using the former preload and renderer behavior with no Go executable start or Go toolchain requirement.
 - Bad: a component reads `discovery.json`, sends an unauthenticated local HTTP request, or starts a service executable directly.
+- Bad: prepend a renderer-only synthetic `skipped` history item while leaving the service's authoritative execution as `missed`.
 - Bad: update an execution, trim the execution slice, then read the updated execution through its pre-trim slice index.
 - Bad: gate an explicit manual verification on a prior `status.installed` result; a valid target-named release asset has not yet been normalized to the canonical path and would be skipped.
 - Bad: a failed service health check falls back to `runCommand` in preload while the global service setting remains enabled.
@@ -78,7 +84,7 @@
 
 ### 6. Tests Required
 
-- `go -C service test ./...` covers authentication/protocol rejection, request limits, discovery lifecycle, state/token integrity, idempotency, process-tree stop, recovered-run identity checks, scheduler claims, automation completion at the per-task history boundary, executable restart/reconnect, log file-count eviction, and retained-log API reads.
+- `go -C service test ./...` covers authentication/protocol rejection, request limits, discovery lifecycle, state/token integrity, idempotency, process-tree stop, recovered-run identity checks, scheduler claims, missed-execution ignore transitions, automation completion at the per-task history boundary, executable restart/reconnect, log file-count eviction, and retained-log API reads.
 - Windows process tests assert console isolation flags on launched commands and cover native process-tree enumeration and termination.
 - `go -C service vet ./...` and `gofmt -l service` pass after Go changes; `npm run go:build` produces only ignored local developer output under `service/bin/`.
 - Bridge/store tests cover default-off status, explicit manual verification of both canonical and target-named release assets (including an initial `not-installed` status), enable-time install verification, automatic startup rejection after an executable replacement, update checks that do not download or replace the executable, enabled-unavailable fail-closed behavior, ownership-handoff timer pause, accepted configuration revision, and reconciliation of service status/events.
@@ -109,6 +115,8 @@ return serviceEnabled ? runWithService(command) : runWithPreload(command);
 ```
 
 Keep ownership global and explicit: delegate only after healthy validation, otherwise fail the scoped operation without disabling unrelated plugin features.
+
+For missed execution dismissal, do not synthesize a second renderer history entry. Call `ignoreMissedProjectLaunchServiceAutomationExecution(executionId)` and merge the returned authoritative execution into the current service snapshot.
 
 ## Scenario: Unified Runtime Identity, Efficient Live State, And Scheduler Recovery
 

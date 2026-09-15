@@ -92,8 +92,16 @@ type automationConfigRequest struct {
 	Config   json.RawMessage `json:"config"`
 }
 
+type ignoreMissedAutomationExecutionRequest struct {
+	ExecutionID string `json:"executionId"`
+}
+
 type logsResponse struct {
 	Logs []state.LogDescriptor `json:"logs"`
+}
+
+type automationExecutionsResponse struct {
+	Executions []state.AutomationExecution `json:"executions"`
 }
 
 type clearLogsRequest struct {
@@ -160,6 +168,10 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		handler.handleClearLogs(responseWriter, request)
 	case request.Method == http.MethodPut && request.URL.Path == "/v1/automation/config":
 		handler.handleAutomationConfig(responseWriter, request)
+	case request.Method == http.MethodPost && request.URL.Path == "/v1/automation/executions/ignore":
+		handler.handleIgnoreMissedAutomationExecution(responseWriter, request)
+	case request.Method == http.MethodGet && request.URL.Path == "/v1/automation/executions":
+		handler.handleAutomationExecutions(responseWriter, request)
 	case request.Method == http.MethodGet && request.URL.Path == "/v1/events":
 		handler.handleEvents(responseWriter, request)
 	case request.Method == http.MethodPost && request.URL.Path == "/v1/runs":
@@ -254,6 +266,42 @@ func (handler *Handler) handleAutomationConfig(responseWriter http.ResponseWrite
 		return
 	}
 	handler.writeJSON(responseWriter, http.StatusOK, updated)
+}
+
+func (handler *Handler) handleIgnoreMissedAutomationExecution(responseWriter http.ResponseWriter, request *http.Request) {
+	if !handler.requireJSON(responseWriter, request) {
+		return
+	}
+	var payload ignoreMissedAutomationExecutionRequest
+	if _, ok := handler.readJSON(responseWriter, request, &payload); !ok {
+		return
+	}
+	updated, err := handler.config.Scheduler.IgnoreMissedExecution(payload.ExecutionID)
+	if err != nil {
+		if errors.Is(err, state.ErrAutomationExecutionNotMissed) {
+			handler.writeError(responseWriter, http.StatusConflict, "automation_execution_not_missed", err.Error())
+			return
+		}
+		if errors.Is(err, state.ErrAutomationExecutionNotFound) {
+			handler.writeError(responseWriter, http.StatusNotFound, "automation_execution_not_found", err.Error())
+			return
+		}
+		handler.writeError(responseWriter, http.StatusInternalServerError, "automation_execution_ignore_failed", err.Error())
+		return
+	}
+	handler.writeJSON(responseWriter, http.StatusOK, updated)
+}
+
+func (handler *Handler) handleAutomationExecutions(responseWriter http.ResponseWriter, request *http.Request) {
+	projectID := strings.TrimSpace(request.URL.Query().Get("projectId"))
+	taskID := strings.TrimSpace(request.URL.Query().Get("taskId"))
+	if projectID == "" || taskID == "" {
+		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_automation_scope", "projectId and taskId query parameters are required.")
+		return
+	}
+	handler.writeJSON(responseWriter, http.StatusOK, automationExecutionsResponse{
+		Executions: handler.config.Scheduler.AutomationExecutions(projectID, taskID),
+	})
 }
 
 func (handler *Handler) handleLogRetention(responseWriter http.ResponseWriter, request *http.Request) {

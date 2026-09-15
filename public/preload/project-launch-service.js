@@ -1136,6 +1136,47 @@ async function syncProjectLaunchServiceAutomation(config) {
   };
 }
 
+async function ignoreMissedProjectLaunchServiceAutomationExecution(executionId) {
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "POST",
+    "/v1/automation/executions/ignore",
+    { executionId },
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "忽略已错过任务失败。");
+  }
+  const execution = projectLaunchServiceAutomationSnapshot({ executions: [response.payload] }).executions?.[0];
+  if (!execution?.id) {
+    const error = new Error("项目启动服务返回了无效的自动化执行结果。");
+    error.code = "invalid-automation-execution-response";
+    throw error;
+  }
+  return execution;
+}
+
+async function listProjectLaunchServiceAutomationExecutions(projectId, taskId) {
+  const connection = await projectLaunchServiceConnection();
+  const response = await requestProjectLaunchService(
+    connection.discovery,
+    connection.token,
+    "GET",
+    `/v1/automation/executions?projectId=${encodeURIComponent(projectId)}&taskId=${encodeURIComponent(taskId)}`,
+  );
+  if (response.statusCode !== 200) {
+    throw projectLaunchServiceResponseError(response, "读取自动化执行历史失败。");
+  }
+  const executions = Array.isArray(response.payload?.executions) ? response.payload.executions : null;
+  if (!executions) {
+    const error = new Error("项目启动服务返回了无效的自动化执行历史。");
+    error.code = "invalid-automation-executions-response";
+    throw error;
+  }
+  return executions;
+}
+
 function serviceRunCount(runs) {
   return Array.isArray(runs)
     ? runs.filter((run) => ["starting", "running", "stopping"].includes(run.status)).length
@@ -1164,8 +1205,9 @@ function projectLaunchServiceEventToBridgeEvent(event) {
 
 function projectLaunchServiceAutomationSnapshot(automation) {
   const revision = Number(automation?.revision);
-  const executions = Array.isArray(automation?.executions)
-    ? automation.executions
+  const executionSource = Array.isArray(automation?.executions) ? automation.executions : automation?.latestExecutions;
+  const executions = Array.isArray(executionSource)
+    ? executionSource
         .filter((execution) => execution && typeof execution === "object" && !Array.isArray(execution))
         .map((execution) => ({
           ...execution,

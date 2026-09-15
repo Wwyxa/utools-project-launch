@@ -233,6 +233,40 @@ func TestReplaceAutomationPreservesExecutionClaimsAcrossRevisions(t *testing.T) 
 	}
 }
 
+func TestIgnoreMissedAutomationExecutionPersistsSkippedStatus(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1}`)); err != nil {
+		t.Fatalf("write automation config: %v", err)
+	}
+	if _, claimed, err := store.ClaimAutomationExecution(1, AutomationExecution{
+		ID:          "missed-execution",
+		ProjectID:   "project",
+		TaskID:      "task",
+		PlanEntryID: "entry",
+		Status:      AutomationExecutionMissed,
+	}); err != nil || !claimed {
+		t.Fatalf("claim missed execution: claimed=%t err=%v", claimed, err)
+	}
+
+	updated, err := store.IgnoreMissedAutomationExecution("missed-execution")
+	if err != nil || updated.Status != AutomationExecutionSkipped {
+		t.Fatalf("ignore missed execution: status=%q err=%v", updated.Status, err)
+	}
+
+	reopened, err := Open(stateDir)
+	if err != nil {
+		t.Fatalf("reopen state: %v", err)
+	}
+	executions := reopened.Automation().Executions
+	if len(executions) != 1 || executions[0].Status != AutomationExecutionSkipped {
+		t.Fatalf("persisted executions = %#v, want one skipped execution", executions)
+	}
+}
+
 func TestAutomationHistoryIsGloballyBounded(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

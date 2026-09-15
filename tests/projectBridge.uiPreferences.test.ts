@@ -1378,6 +1378,7 @@ describe("browser UI preferences fallback", () => {
             projectId: project.id,
             taskId: "reconnected-task",
             planEntryId: "reconnected-entry",
+            plannedAt: "2026-08-14T00:00:00.000Z",
             status: "completed",
             currentScriptIndex: 1,
             startedAt: "2026-08-14T00:00:00.000Z",
@@ -1436,7 +1437,9 @@ describe("browser UI preferences fallback", () => {
       }),
     );
     const task = store.projects[0]?.automationTasks?.find((item) => item.id === "reconnected-task");
-    const entry = task?.dailyPlans.flatMap((plan) => plan.entries).find((item) => item.id === "reconnected-entry");
+    const entry = store
+      .serviceAutomationTaskEntries(project.id, "reconnected-task")
+      ?.find((item) => item.id === "reconnected-entry");
     expect(entry).toMatchObject({ status: "completed", runId: "reconnected-automation-run" });
     expect(task?.history).toContainEqual(
       expect.objectContaining({
@@ -2373,9 +2376,9 @@ describe("Project Launch Service preload installation", () => {
       mkdirSync(installed.directoryPath, { recursive: true });
       writeFileSync(installed.executablePath, binaryContents);
 
-    vi.useFakeTimers();
-    void bridge.startProjectLaunchService({ requireVerifiedInstall: false });
-    await vi.advanceTimersByTimeAsync(0);
+      vi.useFakeTimers();
+      void bridge.startProjectLaunchService({ requireVerifiedInstall: false });
+      await vi.advanceTimersByTimeAsync(0);
       expect(spawn).toHaveBeenCalledOnce();
 
       child.emit("exit", 7, "SIGTERM");
@@ -4022,10 +4025,7 @@ describe("store startup timing", () => {
     expect(task?.history).toHaveLength(1);
     expect(task?.history[0]).toMatchObject({ id: "automation-run", status: "completed" });
     expect(showNotification).toHaveBeenCalledWith("任务“Deploy task”已完成");
-    await vi.waitFor(() => expect(saveProjects).toHaveBeenCalledTimes(1));
-    expect(saveProjects.mock.calls[0]?.[0][0]?.automationTasks?.[0]?.observedServiceExecutionIds).toContain(
-      "automation-run",
-    );
+    expect(saveProjects).not.toHaveBeenCalled();
 
     store.handleBridgeEvent({
       type: "service-state",

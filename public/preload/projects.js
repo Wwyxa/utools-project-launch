@@ -186,11 +186,13 @@ function toStoredProject(project, index = 0) {
             ? Math.max(0, Math.floor(task.missedGraceMinutes))
             : 5,
           history: Array.isArray(task.history) ? task.history.slice(0, 20) : [],
-          observedServiceExecutionIds: Array.isArray(task.observedServiceExecutionIds)
-            ? Array.from(
-                new Set(task.observedServiceExecutionIds.filter((id) => typeof id === "string" && id.trim())),
-              ).slice(-20)
-            : [],
+          ...(Array.isArray(task.observedServiceExecutionIds)
+            ? {
+                observedServiceExecutionIds: Array.from(
+                  new Set(task.observedServiceExecutionIds.filter((id) => typeof id === "string" && id.trim())),
+                ).slice(-20),
+              }
+            : {}),
           dailyPlans: Array.isArray(task.dailyPlans) ? task.dailyPlans : [],
           inputConfigs: Array.isArray(task.inputConfigs) ? task.inputConfigs : [],
           exitConfigs: Array.isArray(task.exitConfigs) ? task.exitConfigs : [],
@@ -730,6 +732,16 @@ function mergeStoredProjectScripts(baseScripts, nextScripts, currentScripts) {
   return orderedScripts;
 }
 
+function automationTaskConfigurations(tasks) {
+  return (Array.isArray(tasks) ? tasks : []).map((task) => {
+    const configuration = { ...task };
+    delete configuration.dailyPlans;
+    delete configuration.history;
+    delete configuration.observedServiceExecutionIds;
+    return configuration;
+  });
+}
+
 function mergeStoredProjectCatalogChange(baseProject, nextProject, currentProject) {
   const mergedProject = { ...currentProject };
   let appliedLocalChange = false;
@@ -750,6 +762,20 @@ function mergeStoredProjectCatalogChange(baseProject, nextProject, currentProjec
     }
     if (field === "env") {
       mergedProject.env = mergeStoredProjectEnvironment(baseProject.env, nextProject.env, currentProject.env);
+      appliedLocalChange = true;
+      return;
+    }
+    if (field === "automationTasks") {
+      const baseConfiguration = automationTaskConfigurations(baseProject.automationTasks);
+      const nextConfiguration = automationTaskConfigurations(nextProject.automationTasks);
+      const currentConfiguration = automationTaskConfigurations(currentProject.automationTasks);
+      if (
+        !storedValueEquals(currentConfiguration, baseConfiguration) &&
+        !storedValueEquals(currentConfiguration, nextConfiguration)
+      ) {
+        throw new Error(`项目配置已被其他窗口修改（${nextProject.id}），请刷新后重试。`);
+      }
+      mergedProject.automationTasks = nextProject.automationTasks;
       appliedLocalChange = true;
       return;
     }

@@ -459,42 +459,6 @@ const vite = await createServer({
 });
 try {
   const { useStore } = await vite.ssrLoadModule("/src/store/useStore.ts");
-  setActivePinia(createPinia());
-  const store = useStore();
-
-  const oldPlannedAt = new Date(Date.now() - 120_000).toISOString();
-  const duePlannedAt = new Date(Date.now() - 60_000).toISOString();
-  const loadRecoveryResult = createDeferred();
-  storedProjects = [
-    createStoredProject([
-      { id: "old-entry", plannedAt: oldPlannedAt, status: "running", runId: "old-run" },
-      { id: "due-entry", plannedAt: duePlannedAt, status: "pending" },
-    ]),
-  ];
-  automationResultHandler = async (_projectId, _scriptId, automationRunId) => {
-    assert.equal(automationRunId, "old-run", "load recovery must query the persisted run id");
-    return loadRecoveryResult.promise;
-  };
-
-  const loadPromise = store.loadProjects();
-  await waitFor(() => automationQueries.length === 1, "loadProjects should begin old-run recovery");
-  assert.equal(runPayloads.length, 0, "due plans must not launch before old-run recovery finishes");
-  loadRecoveryResult.resolve(null);
-  await loadPromise;
-  await waitFor(() => runPayloads.length === 1, "run-now due policy should launch after recovery finishes");
-
-  const loadedTask = store.projects[0].automationTasks[0];
-  const oldEntry = loadedTask.dailyPlans[0].entries.find((entry) => entry.id === "old-entry");
-  const dueEntry = loadedTask.dailyPlans[0].entries.find((entry) => entry.id === "due-entry");
-  assert.equal(oldEntry.status, "skipped", "an old orphan without an exact result must only be skipped");
-  assert.equal(
-    loadedTask.history.filter((entry) => entry.id === "old-run").length,
-    1,
-    "old orphan recovery must create exactly one history row",
-  );
-  assert.equal(dueEntry.status, "running", "run-now missed policy should remain schedulable after recovery");
-  assert.ok(runPayloads[0].automationRunId, "scheduled launches must carry a new automation run id");
-  assert.notEqual(runPayloads[0].automationRunId, "old-run", "new due runs must not reuse the recovered run id");
 
   const matchedRecoveryEntry = {
     id: "matched-recovery-entry",

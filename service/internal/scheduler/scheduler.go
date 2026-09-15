@@ -169,6 +169,8 @@ func (runtime *Runtime) Health() SchedulerHealth {
 
 func (runtime *Runtime) AutomationSnapshot() state.AutomationState {
 	automation := runtime.store.Automation()
+	automation.LatestExecutions = latestAutomationExecutions(automation.Executions)
+	automation.Executions = nil
 	if automation.Revision == 0 || len(automation.Config) == 0 {
 		automation.Plans = nil
 		return automation
@@ -189,6 +191,55 @@ func (runtime *Runtime) AutomationSnapshot() state.AutomationState {
 	automation.Upcoming = automationUpcomingEntries(config, plans, time.Now().UTC())
 	automation.Plans = nil
 	return automation
+}
+
+func latestAutomationExecutions(executions []state.AutomationExecution) []state.AutomationExecution {
+	latest := make(map[string]state.AutomationExecution)
+	for _, execution := range executions {
+		key := execution.ProjectID + "\x00" + execution.TaskID
+		current, exists := latest[key]
+		if !exists || automationExecutionTime(execution).UnixNano() >= automationExecutionTime(current).UnixNano() {
+			latest[key] = execution
+		}
+	}
+	result := make([]state.AutomationExecution, 0, len(latest))
+	for _, execution := range latest {
+		result = append(result, execution)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		return automationExecutionTime(result[left]).UnixNano() > automationExecutionTime(result[right]).UnixNano()
+	})
+	return result
+}
+
+func automationExecutionTime(execution state.AutomationExecution) time.Time {
+	value := execution.EndedAt
+	if value == "" {
+		value = execution.StartedAt
+	}
+	if value == "" {
+		value = execution.PlannedAt
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
+func (runtime *Runtime) IgnoreMissedExecution(executionID string) (state.AutomationExecution, error) {
+	return runtime.store.IgnoreMissedAutomationExecution(strings.TrimSpace(executionID))
+}
+
+func (runtime *Runtime) AutomationExecutions(projectID string, taskID string) []state.AutomationExecution {
+	automation := runtime.store.Automation()
+	executions := make([]state.AutomationExecution, 0)
+	for _, execution := range automation.Executions {
+		if execution.ProjectID == projectID && execution.TaskID == taskID && execution.Status != state.AutomationExecutionRunning {
+			executions = append(executions, execution)
+		}
+	}
+	return executions
 }
 
 func (runtime *Runtime) ReplaceConfiguration(revision uint64, rawConfig json.RawMessage) (state.AutomationState, error) {

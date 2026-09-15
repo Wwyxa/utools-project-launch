@@ -63,6 +63,8 @@ window.projectBridge = {
   listProjectLaunchServiceLogs,
   clearProjectLaunchServiceLogs,
   syncProjectLaunchServiceAutomation,
+  ignoreMissedProjectLaunchServiceAutomationExecution,
+  listProjectLaunchServiceAutomationExecutions,
   openProjectLaunchServiceDirectory,
   openProjectLaunchServiceReleases: () => shell.openExternal(projectLaunchServiceReleaseUrl()),
   listAiModels,

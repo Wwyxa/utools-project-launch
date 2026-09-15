@@ -50,6 +50,8 @@ var ErrRunLogPageInvalid = errors.New("run log page parameters are invalid")
 var ErrLogRetentionPolicyInvalid = errors.New("log retention policy is invalid")
 
 var ErrAutomationExecutionInvalid = errors.New("automation execution is invalid")
+var ErrAutomationExecutionNotFound = errors.New("automation execution was not found")
+var ErrAutomationExecutionNotMissed = errors.New("automation execution is not missed")
 
 type RunStatus string
 
@@ -213,6 +215,7 @@ type AutomationState struct {
 	Plans              []AutomationPlan       `json:"-"`
 	PendingSubmissions []AutomationSubmission `json:"-"`
 	Executions         []AutomationExecution  `json:"executions,omitempty"`
+	LatestExecutions   []AutomationExecution  `json:"latestExecutions,omitempty"`
 	Upcoming           []AutomationUpcoming   `json:"upcoming,omitempty"`
 }
 
@@ -1049,6 +1052,36 @@ func (store *Store) UpdateAutomationExecution(executionID string, mutate func(*A
 	}
 
 	return AutomationExecution{}, fmt.Errorf("automation execution %q was not found", executionID)
+}
+
+func (store *Store) IgnoreMissedAutomationExecution(executionID string) (AutomationExecution, error) {
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
+
+	for index := range store.data.Automation.Executions {
+		execution := &store.data.Automation.Executions[index]
+		if execution.ID != executionID {
+			continue
+		}
+		if execution.Status != AutomationExecutionMissed {
+			return AutomationExecution{}, ErrAutomationExecutionNotMissed
+		}
+		execution.Status = AutomationExecutionSkipped
+		execution.Reason = "The missed execution was ignored."
+		execution.EndedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		store.updateAutomationPlanEntryStatusLocked(
+			execution.ProjectID,
+			execution.TaskID,
+			execution.PlanEntryID,
+			AutomationPlanEntrySkipped,
+		)
+		if err := store.persistLocked(); err != nil {
+			return AutomationExecution{}, fmt.Errorf("ignore missed automation execution: %w", err)
+		}
+		return cloneAutomationExecution(*execution), nil
+	}
+
+	return AutomationExecution{}, fmt.Errorf("%w: %q", ErrAutomationExecutionNotFound, executionID)
 }
 
 func (store *Store) UpdateRun(runID string, mutate func(*Run)) (Run, error) {

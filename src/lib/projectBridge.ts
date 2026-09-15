@@ -869,6 +869,12 @@ const fallbackBridge: ProjectBridge = {
       message: "浏览器预览不支持 Project Launch Service 自动化同步。",
     };
   },
+  async ignoreMissedProjectLaunchServiceAutomationExecution() {
+    throw new Error("浏览器预览无法忽略项目启动服务的自动化执行记录。");
+  },
+  async listProjectLaunchServiceAutomationExecutions() {
+    throw new Error("浏览器预览无法读取项目启动服务的自动化执行历史。");
+  },
   async openProjectLaunchServiceDirectory() {
     return undefined;
   },

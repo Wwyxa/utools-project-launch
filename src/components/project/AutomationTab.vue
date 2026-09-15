@@ -40,6 +40,8 @@ const t = useI18n();
 const editingTaskId = ref<string | null>(null);
 const formDialogOpen = ref(false);
 const historyDialogTaskId = ref<string | null>(null);
+const historyDialogEntries = ref<ProjectAutomationHistoryEntry[]>([]);
+const historyDialogLoading = ref(false);
 const feedback = ref("");
 const actionFeedback = ref<{ message: string; tone: "success" | "warning" } | null>(null);
 const isMissedPolicyMenuOpen = ref(false);
@@ -120,12 +122,33 @@ const closeForm = () => {
   resetForm();
 };
 
-const openHistory = (task: ProjectAutomationTask) => {
+const openHistory = async (task: ProjectAutomationTask) => {
   historyDialogTaskId.value = task.id;
+  historyDialogEntries.value = taskHistory(task);
+  if (!store.projectLaunchServicePreferences.enabled) {
+    return;
+  }
+  historyDialogLoading.value = true;
+  try {
+    const entries = await store.loadProjectLaunchServiceAutomationHistory(props.project.id, task.id);
+    if (historyDialogTaskId.value === task.id) {
+      historyDialogEntries.value = entries;
+    }
+  } catch (error) {
+    if (historyDialogTaskId.value === task.id) {
+      historyDialogEntries.value = [];
+    }
+  } finally {
+    if (historyDialogTaskId.value === task.id) {
+      historyDialogLoading.value = false;
+    }
+  }
 };
 
 const closeHistory = () => {
   historyDialogTaskId.value = null;
+  historyDialogEntries.value = [];
+  historyDialogLoading.value = false;
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
@@ -347,8 +370,9 @@ const formatMinutes = (minutes: number) => t.value.automation.minutes.replace("{
 const historyTime = (entry: ProjectAutomationHistoryEntry) =>
   new Date(entry.endedAt || entry.startedAt || entry.plannedAt || 0).getTime();
 const taskHistory = (task: ProjectAutomationTask) =>
-  [...task.history].sort((left, right) => historyTime(right) - historyTime(left));
-const historyDialogEntries = computed(() => (historyDialogTask.value ? taskHistory(historyDialogTask.value) : []));
+  store.projectLaunchServicePreferences.enabled
+    ? [...task.history].sort((left, right) => historyTime(right) - historyTime(left))
+    : [];
 const latestHistory = (task: ProjectAutomationTask) => taskHistory(task)[0];
 const latestResultStatus = (task: ProjectAutomationTask) => latestHistory(task)?.status || "pending";
 const latestResultAt = (task: ProjectAutomationTask) => {
@@ -583,6 +607,7 @@ const taskSummaryText = computed(() =>
                 <Copy :size="14" />
               </button>
               <button
+                v-if="store.projectLaunchServicePreferences.enabled"
                 type="button"
                 class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant"
                 :title="t.automation.history"
@@ -611,12 +636,17 @@ const taskSummaryText = computed(() =>
           </div>
           <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border-subtle pt-2 text-xs">
             <div class="flex items-center gap-1.5">
-              <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{ t.automation.maxRuntime }}</span>
+              <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{
+                t.automation.maxRuntime
+              }}</span>
               <span class="font-mono font-bold text-on-surface">
                 {{ formatMinutes(task.maxScriptRuntimeMinutes) }}
               </span>
             </div>
-            <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-right">
+            <div
+              v-if="store.projectLaunchServicePreferences.enabled"
+              class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-right"
+            >
               <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{
                 t.automation.latestResult
               }}</span>
@@ -628,13 +658,11 @@ const taskSummaryText = computed(() =>
                   )
                 "
               >
-                <span
-                  v-if="latestResultStatus(task) === 'running'"
-                  class="h-1.5 w-1.5 rounded-full bg-status-info animate-pulse"
-                />
                 {{ statusLabel(latestResultStatus(task)) }}
               </span>
-              <span class="whitespace-nowrap font-mono font-bold text-on-surface">{{ formatDateTime(latestResultAt(task)) }}</span>
+              <span class="whitespace-nowrap font-mono font-bold text-on-surface">{{
+                formatDateTime(latestResultAt(task))
+              }}</span>
             </div>
           </div>
           <div class="mt-2 flex flex-wrap items-center gap-1 border-t border-border-subtle pt-2">
@@ -666,7 +694,7 @@ const taskSummaryText = computed(() =>
     <Teleport to="body">
       <Transition name="scale">
         <div
-          v-if="historyDialogTask"
+          v-if="historyDialogTask && store.projectLaunchServicePreferences.enabled"
           class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
           @click.self="closeHistory"
         >
@@ -694,7 +722,10 @@ const taskSummaryText = computed(() =>
               </button>
             </div>
             <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-2">
-              <div v-if="historyDialogEntries.length === 0" class="py-6 text-xs text-on-surface-variant">
+              <div v-if="historyDialogLoading" class="py-6 text-xs text-on-surface-variant">
+                {{ t.common.loading }}
+              </div>
+              <div v-else-if="historyDialogEntries.length === 0" class="py-6 text-xs text-on-surface-variant">
                 {{ t.common.noData }}
               </div>
               <table v-else class="min-w-[32rem] w-full border-collapse text-xs">
@@ -734,7 +765,10 @@ const taskSummaryText = computed(() =>
 
     <Teleport to="body">
       <Transition name="scale">
-        <div v-if="formDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm">
+        <div
+          v-if="formDialogOpen"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
+        >
           <div
             class="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
             @click.stop="isMissedPolicyMenuOpen = false"
