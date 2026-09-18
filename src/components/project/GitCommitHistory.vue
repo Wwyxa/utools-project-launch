@@ -2566,7 +2566,7 @@ onBeforeUnmount(() => {
         :style="tooltipArrowStyle"
       />
       <div
-        class="relative z-10 flex max-w-full flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest"
+        class="relative z-10 flex max-h-[inherit] max-w-full flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface-container-lowest"
       >
         <div class="shrink-0 border-b border-border-subtle bg-surface-container-low px-3 py-1.5">
           <div class="flex min-w-0 items-center gap-2">
