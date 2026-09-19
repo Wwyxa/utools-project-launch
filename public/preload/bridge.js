@@ -19,11 +19,22 @@ function registerProcessCleanupHooks() {
 registerProcessCleanupHooks();
 
 window.projectBridge = {
-  loadDeviceId: getCurrentDeviceId,
+  preflightStartup,
+  runMigration,
+  readMigrationSummary,
   loadProjects: readProjects,
   saveProjects: writeStoredProjects,
   loadUiPreferences: readUiPreferences,
   saveUiPreferences,
+  loadWorkspaceState: readLocalWorkspaceState,
+  saveWorkspaceState: saveLocalWorkspaceState,
+  loadProjectEnvironmentOverrides: readProjectEnvironmentOverride,
+  saveProjectEnvironmentOverrides: saveProjectEnvironmentOverride,
+  getStorageOverview: collectStorageOverview,
+  getCleanupPlan: buildCleanupPlan,
+  executeCleanup,
+  openPluginLocalDataDirectory,
+  openLegacyDataDirectory,
   loadInstalledIconPack,
   getIconPackStatus,
   checkIconPackUpdate,

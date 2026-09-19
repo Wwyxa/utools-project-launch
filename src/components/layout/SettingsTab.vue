@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Brain,
   Code2,
+  Database,
   Download,
   FolderCog,
   FolderOpen,
@@ -90,7 +91,66 @@ const logRetentionClearBusy = ref(false);
 const iconPackAction = ref<"install" | "verify" | "remove" | null>(null);
 const iconPackSelectingId = ref<IconPackId | null>(null);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
+const cleanupDialogOpen = ref(false);
+const cleanupConfirmOpen = ref(false);
+const cleanupSelection = ref<Record<string, boolean>>({});
 let stopAppEscapeListener = () => {};
+
+const formatDataSize = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 100 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+};
+
+const migrationStatusLabel = computed(() => {
+  const status = store.storageOverview?.migration?.status;
+  if (status === "completed") return t.value.settings.migrationStatusCompleted;
+  if (status === "in-progress") return t.value.settings.migrationStatusInProgress;
+  if (status === "failed") return t.value.settings.migrationStatusFailed;
+  return t.value.settings.migrationStatusNone;
+});
+
+const migrationRetryDisabled = computed(
+  () => store.dataToolsBusy || store.storageOverview?.serviceRunning === true,
+);
+
+const openCleanupDialog = async () => {
+  cleanupDialogOpen.value = true;
+  store.cleanupResults = [];
+  store.cleanupMessage = "";
+  await store.loadCleanupPlan();
+  const selection: Record<string, boolean> = {};
+  (store.cleanupPlan?.items || []).forEach((item) => {
+    selection[item.id] = item.category === "cache" && !item.disabledReason;
+  });
+  cleanupSelection.value = selection;
+};
+
+const cleanupItems = computed(() => store.cleanupPlan?.items || []);
+const cleanupSelectedIds = computed(() =>
+  cleanupItems.value.filter((item) => cleanupSelection.value[item.id] && !item.disabledReason).map((item) => item.id),
+);
+const cleanupHasSyncSelection = computed(() =>
+  cleanupItems.value.some(
+    (item) => cleanupSelection.value[item.id] && !item.disabledReason && item.category === "sync",
+  ),
+);
+const cleanupRunnable = computed(() => cleanupSelectedIds.value.length > 0 && !store.cleanupRunning);
+
+const requestCleanupRun = () => {
+  if (!cleanupRunnable.value) return;
+  if (cleanupHasSyncSelection.value) {
+    cleanupConfirmOpen.value = true;
+    return;
+  }
+  void store.runCleanup();
+};
 
 type EnvironmentSettingsCard = {
   kind: "builtin" | "custom";
@@ -772,6 +832,7 @@ const aiTestTitle = computed(() => {
 onMounted(() => {
   void loadAiModels();
   void refreshLogRetention();
+  void store.refreshStorageOverview();
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 
@@ -1785,6 +1846,112 @@ watch(
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div class="mb-2.5 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <Database :size="15" class="shrink-0 text-primary" />
+            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.dataTools }}</h3>
+          </div>
+          <p class="truncate text-xs text-on-surface-variant">{{ t.settings.dataToolsDescription }}</p>
+        </div>
+        <p
+          v-if="store.localStateWriteError"
+          class="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+        >
+          {{ store.localStateWriteError }}
+        </p>
+
+        <div class="space-y-2">
+          <div class="rounded-lg bg-surface-container-low px-3 py-2">
+            <div class="mb-1.5 text-xs font-semibold text-on-surface-variant">{{ t.settings.storageOverview }}</div>
+            <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-on-surface-variant md:grid-cols-3">
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storageHostVersion }}</dt>
+                <dd class="font-mono">{{ store.storageOverview?.hostVersion || "—" }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storagePublicProjects }}</dt>
+                <dd>{{ store.storageOverview?.projects.publicCount ?? "—" }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storagePrivateProjects }}</dt>
+                <dd>{{ store.storageOverview?.projects.privateLocalCount ?? "—" }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storageLegacyPrivateDocs }}</dt>
+                <dd>{{ store.storageOverview?.projects.legacyPrivateDocCount ?? "—" }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storageOrphanDocs }}</dt>
+                <dd>{{ store.storageOverview?.projects.orphanDocumentCount ?? "—" }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storageLegacyKeys }}</dt>
+                <dd>{{ store.storageOverview?.legacyDbStorageKeys.length ?? "—" }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storageLocalDataSize }}</dt>
+                <dd>{{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.localDataBytes) : "—" }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storageLegacySize }}</dt>
+                <dd>{{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.legacyBytes) : "—" }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt>{{ t.settings.storageSyncEstimate }}</dt>
+                <dd>{{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.syncDocumentBytes) : "—" }}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              :disabled="store.dataToolsBusy || migrationRetryDisabled"
+              @click="store.retryStorageMigration"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-variant disabled:opacity-50"
+            >
+              <RotateCcw :size="14" />
+              {{ store.dataToolsBusy ? t.settings.cleanupRunning : t.settings.migrationRetry }}
+            </button>
+            <span class="text-xs text-on-surface-variant">
+              {{ t.settings.dataMigration }}: {{ migrationStatusLabel }}
+              <template v-if="store.migrationProgress && store.migrationProgress.totalCount > 0">
+                ({{ store.migrationProgress.verifiedCount }}/{{ store.migrationProgress.totalCount }})
+              </template>
+            </span>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              @click="openCleanupDialog"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-variant"
+            >
+              <Trash2 :size="14" />
+              {{ t.settings.dataCleanup }}
+            </button>
+            <button
+              type="button"
+              @click="store.openLocalDataDirectory"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-variant"
+            >
+              <FolderOpen :size="14" />
+              {{ t.settings.openLocalDataDirectory }}
+            </button>
+            <button
+              type="button"
+              @click="store.openLegacyDataDirectory"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-variant"
+            >
+              <FolderOpen :size="14" />
+              {{ t.settings.openLegacyDataDirectory }}
+            </button>
+          </div>
+          <p v-if="store.cleanupMessage" class="text-xs text-on-surface-variant">{{ store.cleanupMessage }}</p>
+        </div>
+      </section>
+
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center gap-2">
           <Info :size="15" class="shrink-0 text-primary" />
           <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.about }}</h3>
@@ -2081,4 +2248,126 @@ watch(
       @primary="confirmDeleteCustomEnvironment"
     />
   </div>
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="cleanupDialogOpen"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          @click.self="cleanupDialogOpen = false"
+        >
+          <div
+            class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-surface shadow-lg"
+          >
+            <div class="flex items-center justify-between border-b border-border-subtle px-4 py-3">
+              <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.dataCleanup }}</h3>
+              <button
+                type="button"
+                class="rounded-lg p-1 text-on-surface-variant hover:bg-surface-container"
+                @click="cleanupDialogOpen = false"
+              >
+                <X :size="16" />
+              </button>
+            </div>
+            <div class="flex-1 space-y-4 overflow-y-auto px-4 py-3" v-overlay-scrollbar>
+              <p v-if="!store.cleanupPlan" class="text-xs text-on-surface-variant">…</p>
+              <template v-else>
+                <fieldset
+                  v-for="category in (['sync', 'local', 'cache'] as const)"
+                  :key="category"
+                  class="space-y-1.5"
+                >
+                  <legend class="text-xs font-bold text-on-surface-variant">
+                    {{
+                      category === "sync"
+                        ? t.settings.cleanupCategorySync
+                        : category === "local"
+                          ? t.settings.cleanupCategoryLocal
+                          : t.settings.cleanupCategoryCache
+                    }}
+                  </legend>
+                  <label
+                    v-for="item in cleanupItems.filter((candidate) => candidate.category === category)"
+                    :key="item.id"
+                    class="flex items-start gap-2.5 rounded-lg border border-border-subtle px-3 py-2"
+                    :class="{ 'opacity-50': item.disabledReason }"
+                  >
+                    <input
+                      type="checkbox"
+                      class="mt-0.5"
+                      :checked="cleanupSelection[item.id]"
+                      :disabled="Boolean(item.disabledReason) || store.cleanupRunning"
+                      @change="cleanupSelection[item.id] = ($event.target as HTMLInputElement).checked"
+                    />
+                    <span class="min-w-0 flex-1">
+                      <span class="flex items-baseline justify-between gap-2">
+                        <span class="text-sm font-medium text-on-surface">{{ item.label }}</span>
+                        <span class="shrink-0 text-xs text-on-surface-variant">
+                          <template v-if="item.count > 0">{{ t.settings.cleanupCount }}: {{ item.count }}</template>
+                          <template v-if="item.estimatedBytes > 0">
+                            {{ item.count > 0 ? " · " : "" }}~{{ formatDataSize(item.estimatedBytes) }}
+                          </template>
+                        </span>
+                      </span>
+                      <span class="mt-0.5 block text-xs text-on-surface-variant">{{ item.description }}</span>
+                      <span v-if="item.disabledReason" class="mt-0.5 block text-xs text-status-error">
+                        {{ item.disabledReason }}
+                      </span>
+                    </span>
+                  </label>
+                </fieldset>
+              </template>
+
+              <div v-if="store.cleanupResults.length" class="space-y-1 rounded-lg bg-surface-container-low px-3 py-2">
+                <div
+                  v-for="result in store.cleanupResults"
+                  :key="result.id"
+                  class="flex items-start justify-between gap-2 text-xs"
+                  :class="result.ok ? 'text-on-surface-variant' : 'text-status-error'"
+                >
+                  <span class="font-medium">{{ result.label }}</span>
+                  <span class="text-right">{{ result.ok ? "✓" : "✗" }} {{ result.message }}</span>
+                </div>
+              </div>
+              <p v-if="store.cleanupMessage" class="text-xs text-on-surface-variant">{{ store.cleanupMessage }}</p>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-border-subtle px-4 py-3">
+              <button
+                type="button"
+                class="rounded-lg border border-border-subtle px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
+                @click="cleanupDialogOpen = false"
+              >
+                {{ t.common.close }}
+              </button>
+              <button
+                type="button"
+                class="rounded-lg bg-status-error px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                :disabled="!cleanupRunnable"
+                @click="requestCleanupRun"
+              >
+                {{ store.cleanupRunning ? t.settings.cleanupRunning : t.settings.cleanupRun }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <ActionDialog
+        :open="cleanupConfirmOpen"
+        tone="danger"
+        icon="trash"
+        :title="t.settings.cleanupConfirm"
+        :message="t.settings.cleanupSyncWarning"
+        :primary-label="t.settings.cleanupConfirm"
+        :cancel-label="t.common.cancel"
+        @cancel="cleanupConfirmOpen = false"
+        @primary="
+          () => {
+            cleanupConfirmOpen = false;
+            void store.runCleanup();
+          }
+        "
+      />
+    </Teleport>
 </template>

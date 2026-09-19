@@ -477,4 +477,47 @@ describe("work activity Store", () => {
     expect(store.workActivityReport.repositories[0].state).toBe("failed");
     expect(store.workActivityReport.repositories[1]).toEqual(betaReport.repositories[0]);
   });
+
+  it("persists work activity preferences, selections and the dashboard group across store recreation", async () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+      projectBridge: undefined,
+    });
+    window.projectBridge = { ...getProjectBridge() };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const alpha = createProject("alpha", "C:\\alpha");
+    const beta = createProject("beta", "C:\\beta");
+    store.projects = [alpha, beta];
+
+    store.setDashboardProjectGroup("group:frontend");
+    store.setWorkActivityProjectIds(["alpha"]);
+    store.saveWorkActivityProjectGroup("Release work");
+    store.setWorkActivityPreferences({ rangeMode: "days30", hideMerges: true });
+    expect(store.workActivitySelectionInitialized).toBe(true);
+
+    // A recreated store (plugin restart) restores the persisted workspace state.
+    setActivePinia(createPinia());
+    const restartedStore = useStore();
+    restartedStore.projects = [alpha, beta];
+    expect(restartedStore.dashboardProjectGroup).toBe("group:frontend");
+    expect(restartedStore.workActivitySelectionInitialized).toBe(true);
+    expect(restartedStore.workActivitySelectedProjectIds).toEqual(["alpha"]);
+    expect(restartedStore.workActivityPreferences.rangeMode).toBe("days30");
+    expect(restartedStore.workActivityPreferences.hideMerges).toBe(true);
+    expect(
+      restartedStore.workActivityPreferences.projectGroups.some((group) => group.name === "Release work"),
+    ).toBe(true);
+
+    // Transient state (focus, reports) is never persisted.
+    expect(restartedStore.workActivityFocusProjectId).toBeNull();
+    expect(restartedStore.workActivityReport).toBeNull();
+  });
 });

@@ -153,7 +153,6 @@ function toStoredProject(project, index = 0) {
     name: project.name,
     path: project.path,
     visibility,
-    ownerDeviceId: project.ownerDeviceId || getCurrentDeviceId(),
     type: project.type || "Custom",
     kind: project.kind || "custom",
     icon: project.icon || "custom",
@@ -212,20 +211,6 @@ function toPlainJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function writeLegacyStoredProjects(projects) {
-  const payload = {
-    schemaVersion,
-    updatedAt: new Date().toISOString(),
-    projects: projects.map(toStoredProject),
-  };
-
-  if (window.utools?.dbStorage) {
-    window.utools.dbStorage.setItem(storageKey, payload);
-    return;
-  }
-  window.localStorage?.setItem(storageKey, JSON.stringify(payload));
-}
-
 function detectNodeUnit(rootPath, targetPath) {
   const packageResult = readPackageScripts(targetPath);
   if (!packageResult.packagePath) {
@@ -271,25 +256,6 @@ function discoverProjectScripts(projectPath, options = {}) {
     scripts: [...packageResults.flatMap((result) => result.scripts), ...makefileResult.scripts],
     ...(errors.length > 0 ? { message: errors.join("；") } : {}),
   };
-}
-
-function readLegacyStoredProjects() {
-  try {
-    if (window.utools?.dbStorage) {
-      const stored = window.utools.dbStorage.getItem(storageKey);
-      return Array.isArray(stored?.projects) ? stored.projects : Array.isArray(stored) ? stored : [];
-    }
-
-    const raw = window.localStorage?.getItem(storageKey);
-    if (!raw) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed.projects) ? parsed.projects : [];
-  } catch (error) {
-    return [];
-  }
 }
 
 function readProjectDocs() {
@@ -419,83 +385,24 @@ function normalizeStoredProjects(projects, fallbackIndexOffset = 0) {
     : [];
 }
 
-function mergeStoredProjects(legacyProjects, docProjects) {
-  const mergedByProjectId = new Map();
-
-  normalizeStoredProjects(legacyProjects).forEach((project) => {
-    if (typeof project.id === "string" && project.id) {
-      mergedByProjectId.set(project.id, project);
-    }
-  });
-
-  normalizeStoredProjects(docProjects, Array.isArray(legacyProjects) ? legacyProjects.length : 0).forEach((project) => {
-    if (typeof project.id === "string" && project.id) {
-      mergedByProjectId.set(project.id, project);
-    }
-  });
-
-  return sortProjectsByStoredOrder(Array.from(mergedByProjectId.values()));
+function storedProjectVisibility(project) {
+  return project?.visibility === "private" ? "private" : "public";
 }
 
-function hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects) {
-  const docProjectIds = new Set(
-    docProjects.map((project) => project?.id).filter((projectId) => typeof projectId === "string" && projectId),
-  );
-  return legacyProjects.some(
-    (project) => typeof project?.id === "string" && project.id && !docProjectIds.has(project.id),
-  );
-}
-
-function migrateMissingLegacyProjectDocuments(legacyProjects, docProjects) {
-  const documentProjectIds = new Set(
-    docProjects.map((project) => project?.id).filter((projectId) => typeof projectId === "string" && projectId),
-  );
-
-  legacyProjects.forEach((project, index) => {
-    if (!project?.id || documentProjectIds.has(project.id)) {
-      return;
-    }
-    for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
-      const current = readCurrentProjectDocument(project.id);
-      if (current) {
-        return;
-      }
-      const document = createStoredProjectDocument(project, index);
-      try {
-        putProjectDocument(document, project.id);
-        return;
-      } catch (error) {
-        if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
-          throw error;
-        }
-      }
-    }
-  });
-}
-
+// The catalog is public documents from the syncing database plus private
+// projects from the plugin local data directory. Private documents that still
+// exist inside the sync database (leftovers owned by other devices before the
+// v8 migration) are ignored on purpose: a private project only ever comes from
+// this device's local files, so deleted projects can never be resurrected by a
+// legacy aggregate key or a foreign private document again.
 function readProjects() {
-  if (!hasProjectDocumentCatalog()) {
-    return sortProjectsByStoredOrder(normalizeStoredProjects(readLegacyStoredProjects()));
-  }
-
   try {
-    const docs = readProjectDocs();
-    const docProjects = docs.map((doc) => doc.project).filter(Boolean);
-    const legacyProjects = readLegacyStoredProjects();
-    const mergedProjects = mergeStoredProjects(legacyProjects, docProjects);
-
-    if (
-      legacyProjects.length > 0 &&
-      supportsProjectDocumentWrites() &&
-      hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects)
-    ) {
-      try {
-        migrateMissingLegacyProjectDocuments(legacyProjects, docProjects);
-      } catch (error) {
-        logStorageError("migrate legacy projects to uTools db", error);
-      }
-    }
-    return mergedProjects;
+    const docs = hasProjectDocumentCatalog() ? readProjectDocs() : [];
+    const publicDocProjects = docs
+      .map((document) => document.project)
+      .filter((project) => project && storedProjectVisibility(project) !== "private");
+    const localPrivateProjects = readLocalPrivateProjects();
+    return sortProjectsByStoredOrder(normalizeStoredProjects([...publicDocProjects, ...localPrivateProjects]));
   } catch (error) {
     logStorageError("read projects", error);
     throw error;
@@ -516,54 +423,75 @@ function readCanonicalStoredProject(projectId) {
   return null;
 }
 
-function readLegacyStoredProject(projectId) {
-  const normalizedProjectId = normalizeProjectId(projectId);
-  if (!normalizedProjectId) {
-    return null;
-  }
-  const legacyProjects = readLegacyStoredProjects();
-  const legacyIndex = legacyProjects.findIndex((project) => project?.id === normalizedProjectId);
-  return legacyIndex >= 0 ? toStoredProject(legacyProjects[legacyIndex], legacyIndex) : null;
-}
-
-function readStoredProject(projectId) {
-  return readCanonicalStoredProject(projectId) || readLegacyStoredProject(projectId);
-}
-
 function readPersistedProject(projectId) {
-  return supportsProjectDocumentWrites() ? readCanonicalStoredProject(projectId) : readStoredProject(projectId);
+  return readCanonicalStoredProject(projectId) || readLocalPrivateProject(projectId);
 }
 
-function writeStoredProject(project) {
+function writePublicProjectDocument(project, options = {}) {
+  for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
+    const current = readCurrentProjectDocument(project.id);
+    const document = createStoredProjectDocument(project, resolveProjectSortOrder(project), {
+      preserveMissingSortOrder:
+        options.preserveMissingSortOrder ??
+        (Boolean(current) && !hasStoredProjectSortOrder(project) && !hasStoredProjectSortOrder(current.project)),
+    });
+    if (current?._rev) {
+      document._rev = current._rev;
+    }
+    try {
+      putProjectDocument(document, project.id);
+      return;
+    } catch (error) {
+      if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
+        throw error;
+      }
+    }
+  }
+}
+
+function writeStoredProject(project, options = {}) {
   const normalizedProject = toStoredProject(project, resolveProjectSortOrder(project));
   if (!normalizeProjectId(normalizedProject.id)) {
     throw new Error("项目 ID 不能为空。");
   }
-  if (supportsProjectDocumentWrites()) {
-    try {
-      const current = readCurrentProjectDocument(normalizedProject.id);
-      const document = createStoredProjectDocument(normalizedProject, resolveProjectSortOrder(normalizedProject), {
-        preserveMissingSortOrder:
-          Boolean(current) && !hasStoredProjectSortOrder(project) && !hasStoredProjectSortOrder(current.project),
-      });
-      if (current?._rev) {
-        document._rev = current._rev;
-      }
-      putProjectDocument(document, normalizedProject.id);
-      return;
-    } catch (error) {
-      logStorageError("save project to uTools db", error);
+
+  if (normalizedProject.visibility === "private") {
+    // Public → private transition: the local file is written and verified
+    // first; only then may the syncing document be removed.
+    const writeResult = writeLocalPrivateProject(normalizedProject);
+    if (!writeResult.ok) {
+      const error = new Error(writeResult.error || "私有项目写入本地数据目录失败。");
+      logStorageError("save private project to local data", error);
       throw error;
     }
+    if (readCurrentProjectDocument(normalizedProject.id)) {
+      try {
+        removeStoredProjectDocument(normalizedProject.id);
+      } catch (error) {
+        // The local file already wins on read; the stale public document is
+        // retried on the next save and is also reachable via data cleanup.
+        logStorageError("remove syncing document after privatizing project", error);
+      }
+    }
+    return normalizedProject;
   }
 
-  const projects = readProjects();
-  const projectIndex = projects.findIndex((candidate) => candidate.id === normalizedProject.id);
-  const nextProjects = projectIndex >= 0 ? [...projects] : [...projects, normalizedProject];
-  if (projectIndex >= 0) {
-    nextProjects[projectIndex] = normalizedProject;
+  try {
+    writePublicProjectDocument(normalizedProject, options);
+  } catch (error) {
+    logStorageError("save project to uTools db", error);
+    throw error;
   }
-  writeStoredProjects(nextProjects);
+
+  // Private → public transition: the document is confirmed in the sync
+  // database, so the local-only copy can be dropped.
+  if (readLocalPrivateProject(normalizedProject.id)) {
+    const removed = removeLocalPrivateProject(normalizedProject.id);
+    if (!removed.ok) {
+      logStorageError("remove local private project after publishing", new Error(removed.error || "未知错误"));
+    }
+  }
+  return normalizedProject;
 }
 
 function mutateStoredProject(projectId, mutateProject) {
@@ -575,57 +503,63 @@ function mutateStoredProject(projectId, mutateProject) {
     throw new Error("项目更新函数无效。");
   }
 
-  if (supportsProjectDocumentWrites()) {
-    try {
-      for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
-        const currentDocument = readCurrentProjectDocument(normalizedProjectId);
-        const preserveMissingSortOrder =
-          Boolean(currentDocument) && !hasStoredProjectSortOrder(currentDocument.project);
-        const currentProject = currentDocument?.project
-          ? toStoredProject(currentDocument.project)
-          : readLegacyStoredProject(normalizedProjectId);
-        if (!currentProject) {
-          return null;
-        }
+  try {
+    for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
+      const currentDocument = readCurrentProjectDocument(normalizedProjectId);
+      const currentLocalProject = currentDocument ? null : readLocalPrivateProject(normalizedProjectId);
+      const currentProject = currentDocument?.project
+        ? toStoredProject(currentDocument.project)
+        : currentLocalProject
+          ? toStoredProject(currentLocalProject)
+          : null;
+      if (!currentProject) {
+        return null;
+      }
 
-        const nextProject = mutateProject(toPlainJson(currentProject));
-        const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
-        if (normalizedProject.id !== normalizedProjectId) {
-          throw new Error("项目更新不能修改项目 ID。");
-        }
+      const nextProject = mutateProject(toPlainJson(currentProject));
+      const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
+      if (normalizedProject.id !== normalizedProjectId) {
+        throw new Error("项目更新不能修改项目 ID。");
+      }
 
-        const document = createStoredProjectDocument(normalizedProject, resolveProjectSortOrder(normalizedProject), {
-          preserveMissingSortOrder,
-        });
-        if (currentDocument?._rev) {
-          document._rev = currentDocument._rev;
-        }
-        try {
+      try {
+        if (normalizedProject.visibility === "private") {
+          // Private projects live in local files; the syncing document (when
+          // one is still left over) is dropped after the local write verifies.
+          const writeResult = writeLocalPrivateProject(normalizedProject);
+          if (!writeResult.ok) {
+            throw new Error(writeResult.error || "私有项目写入本地数据目录失败。");
+          }
+          if (readCurrentProjectDocument(normalizedProjectId)) {
+            removeStoredProjectDocument(normalizedProjectId);
+          }
+        } else {
+          // Put against the exact revision that was read above so a concurrent
+          // writer conflicts and the whole read-mutate cycle retries.
+          const document = createStoredProjectDocument(normalizedProject, resolveProjectSortOrder(normalizedProject), {
+            preserveMissingSortOrder:
+              Boolean(currentDocument) && !hasStoredProjectSortOrder(currentDocument.project),
+          });
+          if (currentDocument?._rev) {
+            document._rev = currentDocument._rev;
+          }
           putProjectDocument(document, normalizedProjectId);
-          return normalizedProject;
-        } catch (error) {
-          if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
-            throw error;
+          if (readLocalPrivateProject(normalizedProjectId)) {
+            removeLocalPrivateProject(normalizedProjectId);
           }
         }
+        return normalizedProject;
+      } catch (error) {
+        if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
+          throw error;
+        }
       }
-    } catch (error) {
-      logStorageError("mutate project in uTools db", error);
-      throw error;
     }
+  } catch (error) {
+    logStorageError("mutate project", error);
+    throw error;
   }
-
-  const currentProject = readStoredProject(normalizedProjectId);
-  if (!currentProject) {
-    return null;
-  }
-  const nextProject = mutateProject(toPlainJson(currentProject));
-  const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
-  if (normalizedProject.id !== normalizedProjectId) {
-    throw new Error("项目更新不能修改项目 ID。");
-  }
-  writeStoredProject(normalizedProject);
-  return normalizedProject;
+  return null;
 }
 
 function storedValueEquals(left, right) {
@@ -861,48 +795,72 @@ function normalizeProjectCatalogWriteOptions(options) {
 }
 
 function writeStoredProjects(projects, options = {}) {
-  if (window.utools?.db?.put) {
-    if (!hasProjectDocumentCatalog() || !supportsProjectDocumentWrites()) {
-      throw new Error("无法读取项目文档目录，已取消保存以避免覆盖现有项目。");
-    }
-    try {
-      const { hasBaseProjects, baseProjects, removedProjectIds } = normalizeProjectCatalogWriteOptions(options);
-      const normalizedProjects = normalizeStoredProjects(projects);
-      const submittedProjectIds = new Set(normalizedProjects.map((project) => project.id));
-      const baseProjectsById = new Map(normalizeStoredProjects(baseProjects).map((project) => [project.id, project]));
+  try {
+    const { hasBaseProjects, baseProjects, removedProjectIds } = normalizeProjectCatalogWriteOptions(options);
+    const normalizedProjects = normalizeStoredProjects(projects);
+    const submittedProjectIds = new Set(normalizedProjects.map((project) => project.id));
+    const baseProjectsById = new Map(normalizeStoredProjects(baseProjects).map((project) => [project.id, project]));
 
-      // Fail before any write when the canonical catalog cannot be read.
-      const existingDocuments = readProjectDocs();
-      const existingProjectsById = new Map(
-        existingDocuments
-          .filter((document) => document?.project?.id)
-          .map((document, index) => [document.project.id, toStoredProject(document.project, index)]),
-      );
-      normalizedProjects.forEach((project, index) => {
-        const baseProject = hasBaseProjects
-          ? baseProjectsById.get(project.id) || null
-          : existingProjectsById.get(project.id) || null;
-        writeStoredProjectCatalogEntry(project, baseProject, index);
-      });
-      const deletionProjectIds = hasBaseProjects
-        ? removedProjectIds
-        : existingDocuments
-            .map((document) => normalizeProjectId(document?.project?.id))
-            .filter((projectId) => projectId && !submittedProjectIds.has(projectId));
-      deletionProjectIds.forEach((projectId) => {
-        if (!submittedProjectIds.has(projectId)) {
+    // Fail before any write when the canonical catalog cannot be read.
+    const existingDocuments = readProjectDocs();
+    const existingProjectsById = new Map(
+      existingDocuments
+        .filter((document) => document?.project?.id)
+        .map((document, index) => [document.project.id, toStoredProject(document.project, index)]),
+    );
+
+    // Private entries go to local files first (single-writer per device, no
+    // catalog merge), then public entries are merged into the sync database.
+    const publicEntries = [];
+    normalizedProjects.forEach((project, index) => {
+      if (project.visibility === "private") {
+        const writeResult = writeLocalPrivateProject(project);
+        if (!writeResult.ok) {
+          throw new Error(writeResult.error || `私有项目 ${project.id} 写入本地数据目录失败。`);
+        }
+        return;
+      }
+      publicEntries.push([project, index]);
+    });
+    publicEntries.forEach(([project, index]) => {
+      const baseProject = hasBaseProjects
+        ? baseProjectsById.get(project.id) || null
+        : existingProjectsById.get(project.id) || null;
+      writeStoredProjectCatalogEntry(project, baseProject, index);
+    });
+
+    // Visibility transition cleanup. A privatized project drops its syncing
+    // document; a published project drops its local-only copy.
+    normalizedProjects.forEach((project) => {
+      if (project.visibility === "private") {
+        if (readCurrentProjectDocument(project.id)) {
+          removeStoredProjectDocument(project.id);
+        }
+        return;
+      }
+      if (readLocalPrivateProject(project.id)) {
+        removeLocalPrivateProject(project.id);
+      }
+    });
+
+    const deletionProjectIds = hasBaseProjects
+      ? removedProjectIds
+      : existingDocuments
+          .map((document) => normalizeProjectId(document?.project?.id))
+          .filter((projectId) => projectId && !submittedProjectIds.has(projectId));
+    deletionProjectIds.forEach((projectId) => {
+      if (!submittedProjectIds.has(projectId)) {
+        if (readCurrentProjectDocument(projectId)) {
           removeStoredProjectDocument(projectId);
         }
-      });
-      return normalizedProjects;
-    } catch (error) {
-      logStorageError("save projects to uTools db", error);
-      throw error;
-    }
+        removeLocalPrivateProject(projectId);
+      }
+    });
+    return normalizedProjects;
+  } catch (error) {
+    logStorageError("save projects", error);
+    throw error;
   }
-
-  writeLegacyStoredProjects(projects);
-  return normalizeStoredProjects(projects);
 }
 
 function pathExists(projectPath) {

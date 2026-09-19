@@ -75,6 +75,14 @@ import type {
   ProjectBridgeProcessStatusResult,
   ProjectBridgeStopProcessOptions,
   ProjectEnvironmentEntry,
+  ProjectEnvironmentOverride,
+  LocalStateWriteResult,
+  MigrationSummary,
+  WorkspaceState,
+  WorkspaceStatePatch,
+  StorageOverview,
+  CleanupPlan,
+  CleanupResult,
   ProjectFormValue,
   ProjectGitFileChange,
   ProjectGitFileDiffOptions,
@@ -128,6 +136,70 @@ import type {
 } from "../types";
 
 const bridge = getProjectBridge();
+
+const defaultWorkspaceState = (): WorkspaceState => ({
+  dashboardProjectGroup: "all",
+  workActivity: {
+    selectionInitialized: false,
+    preferences: null,
+    selectedProjectIds: [],
+  },
+});
+
+function loadPersistedWorkspaceState(): WorkspaceState {
+  try {
+    const persisted = bridge.loadWorkspaceState();
+    const workActivity = persisted?.workActivity;
+    return {
+      dashboardProjectGroup:
+        typeof persisted?.dashboardProjectGroup === "string" && persisted.dashboardProjectGroup
+          ? persisted.dashboardProjectGroup
+          : "all",
+      workActivity: {
+        selectionInitialized: workActivity?.selectionInitialized === true,
+        preferences:
+          workActivity?.preferences && typeof workActivity.preferences === "object"
+            ? workActivity.preferences
+            : null,
+        selectedProjectIds: Array.isArray(workActivity?.selectedProjectIds)
+          ? workActivity.selectedProjectIds.filter((projectId): projectId is string => Boolean(projectId))
+          : [],
+      },
+    };
+  } catch (error) {
+    return defaultWorkspaceState();
+  }
+}
+
+function mergeWorkActivityPreferences(persisted: Partial<WorkActivityPreferences> | null): WorkActivityPreferences {
+  const defaults = defaultWorkActivityPreferences();
+  if (!persisted || typeof persisted !== "object") return defaults;
+  return { ...defaults, ...persisted };
+}
+
+// New public-project environment variables whose names look like credentials
+// default to staying on this device; users can always change the choice.
+const sensitiveEnvironmentKeyPattern = /(TOKEN|SECRET|PASSWORD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|API[_-]?KEY)/i;
+
+export function isSensitiveEnvironmentKey(key: string): boolean {
+  return sensitiveEnvironmentKeyPattern.test(key.trim());
+}
+
+function getProjectEnvironmentOverride(projectId: string): ProjectEnvironmentOverride {
+  try {
+    const override = bridge.loadProjectEnvironmentOverrides(projectId);
+    return override && typeof override === "object" ? override : { env: {}, localOnlyEnvKeys: [] };
+  } catch (error) {
+    return { env: {}, localOnlyEnvKeys: [] };
+  }
+}
+
+// Effective runtime environment: shared values from the project document are
+// merged with device-local overrides and local-only variables (local wins).
+function resolveProjectEnvironment(project: Pick<Project, "id" | "env">): Record<string, string> {
+  const override = getProjectEnvironmentOverride(project.id);
+  return { ...project.env, ...override.env };
+}
 
 const normalizeTinyCardButtonCount = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value)
@@ -864,12 +936,6 @@ function normalizeAutomationTasks(projectId: string, value: unknown): ProjectAut
   }, []);
 }
 
-const currentDeviceId = bridge.loadDeviceId();
-
-function isProjectVisibleOnCurrentDevice(project: Project): boolean {
-  return normalizeProjectVisibility(project.visibility) === "public" || project.ownerDeviceId === currentDeviceId;
-}
-
 function toPersistedProject(project: Project, sortOrder?: number): Project {
   const projectKind = normalizeProjectKind(project.kind);
   const projectType = typeof project.type === "string" && project.type.trim() ? project.type : "Custom";
@@ -883,7 +949,6 @@ function toPersistedProject(project: Project, sortOrder?: number): Project {
     name: project.name,
     path: project.path,
     visibility: normalizeProjectVisibility(project.visibility),
-    ownerDeviceId: project.ownerDeviceId || currentDeviceId,
     type: projectType,
     kind: projectKind,
     icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
@@ -962,7 +1027,7 @@ function buildProjectLaunchServiceAutomationConfig(
     id: project.id,
     name: project.name,
     path: project.path,
-    env: { ...project.env },
+    env: resolveProjectEnvironment(project),
     scripts: project.scripts.map((script) => ({
       id: script.id,
       name: script.name,
@@ -1259,6 +1324,10 @@ function formFromProject(project: Project): ProjectFormValue {
   const projectEnv = normalizeProjectEnv(project.env);
   const projectScripts = normalizeProjectScripts(project.id, project.scripts);
   const relatedProjects = normalizeProjectRelations(project.relatedProjects);
+  const isPublicProject = normalizeProjectVisibility(project.visibility) === "public";
+  const environmentOverride = isPublicProject ? getProjectEnvironmentOverride(project.id) : { env: {}, localOnlyEnvKeys: [] };
+  const localOnlyEnvKeys = new Set(environmentOverride.localOnlyEnvKeys);
+  const environmentKeys = [...new Set([...Object.keys(projectEnv), ...Object.keys(environmentOverride.env)])];
 
   return {
     id: project.id,
@@ -1277,11 +1346,17 @@ function formFromProject(project: Project): ProjectFormValue {
     relatedProjectsBidirectional:
       relatedProjects.length > 0 && relatedProjects.every((relation) => relation.bidirectional),
     memo: project.memo || "",
-    envEntries: Object.entries(projectEnv).map(([key, value]) => ({
-      id: `${project.id}-${key}`,
-      key,
-      value,
-    })),
+    envEntries: environmentKeys.map((key) => {
+      const isLocalOnly = localOnlyEnvKeys.has(key);
+      const sharedValue = Object.prototype.hasOwnProperty.call(projectEnv, key) ? projectEnv[key] : null;
+      return {
+        id: `${project.id}-${key}`,
+        key,
+        value: isLocalOnly ? environmentOverride.env[key] ?? "" : sharedValue ?? "",
+        localOnly: isLocalOnly,
+        sharedValue,
+      };
+    }),
     scripts: projectScripts.map((script) => ({
       id: script.id,
       name: script.name,
@@ -1337,7 +1412,6 @@ function hydrateProject(project: Project): Project {
     type: projectType,
     kind: projectKind,
     visibility: normalizeProjectVisibility(project.visibility),
-    ownerDeviceId: project.ownerDeviceId || currentDeviceId,
     icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
     cardStyle: project.cardStyle || "default",
     tinyCardButtonCount: normalizeTinyCardButtonCount(project.tinyCardButtonCount),
@@ -1666,7 +1740,9 @@ const workActivityGitCriteria = (preferences: WorkActivityPreferences): ProjectG
 };
 
 export const useStore = defineStore("app", {
-  state: () => ({
+  state: () => {
+    const persistedWorkspace = loadPersistedWorkspaceState();
+    return {
     locale: "zh-CN" as Locale,
     activeTab: "projects" as "projects" | "settings" | "environment" | "activity",
     theme: "auto" as "light" | "dark" | "auto",
@@ -1712,9 +1788,19 @@ export const useStore = defineStore("app", {
     iconPackMessage: "",
     projects: supportsRealProjectBridge() ? [] : demoProjects,
     selectedProjectId: null as string | null,
-    workActivityPreferences: defaultWorkActivityPreferences(),
-    workActivitySelectedProjectIds: [] as string[],
-    workActivitySelectionInitialized: false,
+    dashboardProjectGroup: persistedWorkspace.dashboardProjectGroup,
+    localStateWriteError: "",
+    storageOverview: null as StorageOverview | null,
+    cleanupPlan: null as CleanupPlan | null,
+    cleanupSelectedIds: [] as string[],
+    cleanupRunning: false,
+    cleanupResults: [] as CleanupResult["results"],
+    cleanupMessage: "",
+    dataToolsBusy: false,
+    migrationProgress: null as MigrationSummary | null,
+    workActivityPreferences: mergeWorkActivityPreferences(persistedWorkspace.workActivity.preferences),
+    workActivitySelectedProjectIds: persistedWorkspace.workActivity.selectedProjectIds,
+    workActivitySelectionInitialized: persistedWorkspace.workActivity.selectionInitialized,
     workActivityUnavailableProjectIds: [] as string[],
     workActivityReport: null as ProjectGitActivityReport | null,
     workActivityLoading: false,
@@ -1799,20 +1885,18 @@ export const useStore = defineStore("app", {
       "project-python-1": "Remember to activate the virtual environment before launch.",
       "project-go-1": "Binary launch is supported through executable scripts.",
     } as Record<string, string>,
-  }),
+    };
+  },
 
   getters: {
-    visibleProjects: (state): Project[] => state.projects.filter(isProjectVisibleOnCurrentDevice),
-    availableProjects: (state): Project[] =>
-      state.projects.filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false),
-    unavailableProjects: (state): Project[] =>
-      state.projects.filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists === false),
+    // Every loaded project is visible on this device by construction: public
+    // projects come from the sync database and private ones from local files.
+    visibleProjects: (state): Project[] => state.projects,
+    availableProjects: (state): Project[] => state.projects.filter((project) => project.pathExists !== false),
+    unavailableProjects: (state): Project[] => state.projects.filter((project) => project.pathExists === false),
     workActivitySelectableProjects: (state): Project[] => {
       const unavailableIds = new Set(state.workActivityUnavailableProjectIds);
-      return state.projects.filter(
-        (project) =>
-          isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false && !unavailableIds.has(project.id),
-      );
+      return state.projects.filter((project) => project.pathExists !== false && !unavailableIds.has(project.id));
     },
     workActivitySelectedProjects(): Project[] {
       const selectedIds = new Set(this.workActivitySelectedProjectIds);
@@ -1827,7 +1911,7 @@ export const useStore = defineStore("app", {
         const projectsById = new Map(state.projects.map((project) => [project.id, project]));
         return resolveProjectRelatedProjectIds(projectId, state.projects)
           .map((relatedProjectId) => projectsById.get(relatedProjectId))
-          .filter((project): project is Project => Boolean(project && isProjectVisibleOnCurrentDevice(project)))
+          .filter((project): project is Project => Boolean(project))
           .slice(0, PROJECT_MAX_RELATED_PROJECTS);
       },
     pendingDeleteProject: (state): Project | undefined =>
@@ -1948,7 +2032,7 @@ export const useStore = defineStore("app", {
             return { ...mergedProject, status: deriveProjectStatus(mergedProject) };
           });
           this.selectedProjectId = this.projects.some(
-            (project) => project.id === this.selectedProjectId && isProjectVisibleOnCurrentDevice(project),
+            (project) => project.id === this.selectedProjectId,
           )
             ? this.selectedProjectId
             : null;
@@ -2003,7 +2087,7 @@ export const useStore = defineStore("app", {
         if (this.supportsBridge || storedProjects.length > 0) {
           this.projects = storedProjects.map(hydrateProject);
           this.selectedProjectId = this.projects.some(
-            (project) => project.id === this.selectedProjectId && isProjectVisibleOnCurrentDevice(project),
+            (project) => project.id === this.selectedProjectId,
           )
             ? this.selectedProjectId
             : null;
@@ -2283,12 +2367,111 @@ export const useStore = defineStore("app", {
         void this.queueProjectLaunchServiceAutomationSync();
       }
     },
+    recordLocalStateWrite(result?: LocalStateWriteResult | null) {
+      // Bridge mocks and legacy callers may return void; only an explicit
+      // failure result is surfaced to the settings page.
+      if (!result) return result;
+      this.localStateWriteError = result.ok ? "" : result.error || "本地状态写入失败，本次修改仅保留在内存中。";
+      return result;
+    },
+    persistWorkspaceState(patch: WorkspaceStatePatch = {}) {
+      const result = bridge.saveWorkspaceState({
+        dashboardProjectGroup: patch.dashboardProjectGroup ?? this.dashboardProjectGroup,
+        workActivity: {
+          selectionInitialized: patch.workActivity?.selectionInitialized ?? this.workActivitySelectionInitialized,
+          preferences:
+            patch.workActivity?.preferences !== undefined
+              ? patch.workActivity.preferences
+              : this.workActivityPreferences,
+          selectedProjectIds: patch.workActivity?.selectedProjectIds ?? this.workActivitySelectedProjectIds,
+        },
+      });
+      this.recordLocalStateWrite(result);
+      return result;
+    },
+    setDashboardProjectGroup(groupKey: string) {
+      const nextGroup = groupKey.trim() || "all";
+      if (this.dashboardProjectGroup === nextGroup) return;
+      this.dashboardProjectGroup = nextGroup;
+      this.persistWorkspaceState();
+    },
+    async refreshStorageOverview() {
+      this.dataToolsBusy = true;
+      try {
+        this.storageOverview = await bridge.getStorageOverview();
+      } catch (error) {
+        this.cleanupMessage = error instanceof Error ? error.message : "无法读取存储概览。";
+      } finally {
+        this.dataToolsBusy = false;
+      }
+    },
+    async loadCleanupPlan() {
+      try {
+        this.cleanupPlan = await bridge.getCleanupPlan();
+      } catch (error) {
+        this.cleanupPlan = null;
+        this.cleanupMessage = error instanceof Error ? error.message : "无法读取清理计划。";
+      }
+    },
+    async runCleanup() {
+      if (this.cleanupRunning || this.cleanupSelectedIds.length === 0) return null;
+      this.cleanupRunning = true;
+      this.cleanupMessage = "";
+      this.cleanupResults = [];
+      try {
+        const result = await bridge.executeCleanup(this.cleanupSelectedIds);
+        this.cleanupResults = result.results;
+        this.cleanupMessage = result.ok
+          ? "清理完成。"
+          : result.partial
+            ? "部分项目清理失败，详见逐项结果。"
+            : "清理未执行成功，详见逐项结果。";
+        await Promise.all([this.refreshStorageOverview(), this.loadCleanupPlan()]);
+        return result;
+      } catch (error) {
+        this.cleanupMessage = error instanceof Error ? error.message : "清理执行失败。";
+        return null;
+      } finally {
+        this.cleanupRunning = false;
+      }
+    },
+    async retryStorageMigration() {
+      if (this.dataToolsBusy) return null;
+      this.dataToolsBusy = true;
+      this.cleanupMessage = "";
+      try {
+        const result = await bridge.runMigration({
+          onProgress: (summary) => {
+            this.migrationProgress = summary;
+          },
+        });
+        this.migrationProgress = result.ledger;
+        await this.refreshStorageOverview();
+        return result;
+      } catch (error) {
+        this.cleanupMessage = error instanceof Error ? error.message : "迁移执行失败。";
+        return null;
+      } finally {
+        this.dataToolsBusy = false;
+      }
+    },
+    async openLocalDataDirectory() {
+      try {
+        await bridge.openPluginLocalDataDirectory();
+      } catch (error) {
+        this.cleanupMessage = error instanceof Error ? error.message : "无法打开本地数据目录。";
+      }
+    },
+    async openLegacyDataDirectory() {
+      try {
+        await bridge.openLegacyDataDirectory();
+      } catch (error) {
+        this.cleanupMessage = error instanceof Error ? error.message : "无法打开旧数据目录。";
+      }
+    },
     async refreshProjectAvailability() {
       await Promise.all(
         this.projects.map(async (project) => {
-          if (!isProjectVisibleOnCurrentDevice(project)) {
-            return;
-          }
           const exists = await bridge.pathExists(project.path);
           project.pathExists = exists;
           project.unavailableReason = exists ? "" : "当前设备无法访问该路径";
@@ -2351,7 +2534,7 @@ export const useStore = defineStore("app", {
       const nextPreferences = normalizeUiPreferences({ ...this.uiPreferences, iconPackId: packId });
       if (nextPreferences.iconPackId !== this.uiPreferences.iconPackId) {
         this.uiPreferences = nextPreferences;
-        bridge.saveUiPreferences(this.uiPreferences);
+        this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
       }
       return this.loadIconPack();
     },
@@ -2601,7 +2784,7 @@ export const useStore = defineStore("app", {
           serviceStartedForHandoff = true;
           await this.synchronizeProjectLaunchServiceAutomation();
           this.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
-          bridge.saveProjectLaunchServicePreferences(this.projectLaunchServicePreferences);
+          this.recordLocalStateWrite(bridge.saveProjectLaunchServicePreferences(this.projectLaunchServicePreferences));
         } catch (error) {
           if (serviceStartedForHandoff) {
             try {
@@ -2634,7 +2817,7 @@ export const useStore = defineStore("app", {
       }
       this.projectLaunchServicePreferences = { schemaVersion: 1, enabled: false };
       serviceAutomationExecutionStatuses = null;
-      bridge.saveProjectLaunchServicePreferences(this.projectLaunchServicePreferences);
+      this.recordLocalStateWrite(bridge.saveProjectLaunchServicePreferences(this.projectLaunchServicePreferences));
       this.projectLaunchServiceStatus = await bridge.getProjectLaunchServiceStatus();
       this.scheduleAutomationTimer();
       return this.projectLaunchServiceStatus;
@@ -2651,7 +2834,7 @@ export const useStore = defineStore("app", {
         return;
       }
       this.uiPreferences = nextPreferences;
-      bridge.saveUiPreferences(this.uiPreferences);
+      this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
     },
     setProjectDetailsDefaultTab(tab: ProjectDetailsTabId) {
       const nextPreferences = normalizeUiPreferences({
@@ -2662,7 +2845,7 @@ export const useStore = defineStore("app", {
         return;
       }
       this.uiPreferences = nextPreferences;
-      bridge.saveUiPreferences(this.uiPreferences);
+      this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
     },
     setTinyCardActionTrigger(trigger: TinyCardActionTrigger) {
       if (this.uiPreferences.dashboard.tinyCardActionTrigger === trigger) {
@@ -2672,7 +2855,7 @@ export const useStore = defineStore("app", {
         ...this.uiPreferences,
         dashboard: { tinyCardActionTrigger: trigger },
       });
-      bridge.saveUiPreferences(this.uiPreferences);
+      this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
     },
     acknowledgeProjectDetailsTabReorderHint(version: number) {
       if (
@@ -2686,7 +2869,7 @@ export const useStore = defineStore("app", {
         ...this.uiPreferences,
         coachMarks: { ...this.uiPreferences.coachMarks, projectDetailsTabReorder: version },
       });
-      bridge.saveUiPreferences(this.uiPreferences);
+      this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
     },
     acknowledgeProjectDetailsTabDefaultHint(version: number) {
       if (
@@ -2700,7 +2883,7 @@ export const useStore = defineStore("app", {
         ...this.uiPreferences,
         coachMarks: { ...this.uiPreferences.coachMarks, projectDetailsTabDefault: version },
       });
-      bridge.saveUiPreferences(this.uiPreferences);
+      this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
     },
     setProjectConfigMessage(message: string) {
       cancelProjectConfigMessageClear();
@@ -2718,18 +2901,20 @@ export const useStore = defineStore("app", {
     },
     setDefaultTerminal(kind: DefaultTerminalKind) {
       this.terminalPreferences = { ...this.terminalPreferences, kind };
-      bridge.saveTerminalPreferences(this.terminalPreferences);
+      this.recordLocalStateWrite(bridge.saveTerminalPreferences(this.terminalPreferences));
     },
     setDefaultTerminalCustomCommand(command: string) {
       this.terminalPreferences = { ...this.terminalPreferences, kind: "custom", customCommand: command };
-      bridge.saveTerminalPreferences(this.terminalPreferences);
+      this.recordLocalStateWrite(bridge.saveTerminalPreferences(this.terminalPreferences));
     },
     persistExternalApplicationPreferences(preferences: ExternalApplicationPreferences) {
       this.externalApplicationPreferences = normalizeExternalApplicationPreferences(preferences);
-      bridge.saveExternalApplicationPreferences({
-        ...this.externalApplicationPreferences,
-        applications: this.externalApplicationPreferences.applications.map((application) => ({ ...application })),
-      });
+      this.recordLocalStateWrite(
+        bridge.saveExternalApplicationPreferences({
+          ...this.externalApplicationPreferences,
+          applications: this.externalApplicationPreferences.applications.map((application) => ({ ...application })),
+        }),
+      );
     },
     addExternalApplication(name: string, command: string) {
       const normalizedName = name.trim();
@@ -2848,7 +3033,7 @@ export const useStore = defineStore("app", {
         enabledToolKeys: Array.from(keys),
       };
       this.environmentPreferences = nextPreferences;
-      bridge.saveEnvironmentPreferences(nextPreferences);
+      this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(nextPreferences));
       this.invalidateEnvironmentTool(key);
     },
     invalidateEnvironmentTool(key: string) {
@@ -2868,7 +3053,7 @@ export const useStore = defineStore("app", {
         ...this.environmentPreferences,
         customTools: [...this.environmentPreferences.customTools, tool],
       };
-      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
       return { ok: true as const, tool };
     },
     updateCustomEnvironmentTool(id: string, input: CustomEnvironmentToolInput) {
@@ -2880,7 +3065,7 @@ export const useStore = defineStore("app", {
         ...this.environmentPreferences,
         customTools: this.environmentPreferences.customTools.map((item) => (item.id === id ? tool : item)),
       };
-      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
       this.invalidateEnvironmentTool(id);
       return { ok: true as const, tool };
     },
@@ -2893,7 +3078,7 @@ export const useStore = defineStore("app", {
           tool.id === id ? { ...tool, enabled } : tool,
         ),
       };
-      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
       this.invalidateEnvironmentTool(id);
     },
     deleteCustomEnvironmentTool(id: string) {
@@ -2902,7 +3087,7 @@ export const useStore = defineStore("app", {
         ...this.environmentPreferences,
         customTools: this.environmentPreferences.customTools.filter((tool) => tool.id !== id),
       };
-      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
       this.invalidateEnvironmentTool(id);
     },
     saveBuiltinEnvironmentToolOverride(
@@ -2925,7 +3110,7 @@ export const useStore = defineStore("app", {
           ...(override ? [override] : []),
         ],
       };
-      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
       this.invalidateEnvironmentTool(key);
       return { ok: true as const, override };
     },
@@ -2935,7 +3120,7 @@ export const useStore = defineStore("app", {
         ...this.environmentPreferences,
         builtinOverrides: this.environmentPreferences.builtinOverrides.filter((item) => item.key !== key),
       };
-      bridge.saveEnvironmentPreferences(this.environmentPreferences);
+      this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
       this.invalidateEnvironmentTool(key);
     },
     async refreshEnvironmentTools(targetKeys?: string[]) {
@@ -3027,7 +3212,7 @@ export const useStore = defineStore("app", {
     },
     setAiPreferences(patch: Partial<AiPreferences>) {
       this.aiPreferences = { ...this.aiPreferences, ...patch };
-      bridge.saveAiPreferences(this.aiPreferences);
+      this.recordLocalStateWrite(bridge.saveAiPreferences(this.aiPreferences));
     },
     addAiPromptMode() {
       const id = createAiPromptModeId();
@@ -3039,7 +3224,7 @@ export const useStore = defineStore("app", {
         kind: "git-analysis",
       };
       this.aiPreferences = { ...this.aiPreferences, modes: [...this.aiPreferences.modes, nextMode] };
-      bridge.saveAiPreferences(this.aiPreferences);
+      this.recordLocalStateWrite(bridge.saveAiPreferences(this.aiPreferences));
       return id;
     },
     updateAiPromptMode(modeId: string, patch: Partial<Pick<AiPromptMode, "name" | "prompt">>) {
@@ -3053,7 +3238,7 @@ export const useStore = defineStore("app", {
           : mode,
       );
       this.aiPreferences = { ...this.aiPreferences, modes };
-      bridge.saveAiPreferences(this.aiPreferences);
+      this.recordLocalStateWrite(bridge.saveAiPreferences(this.aiPreferences));
     },
     deleteAiPromptMode(modeId: string) {
       const modes = this.aiPreferences.modes.filter((mode) => mode.builtIn || mode.id !== modeId);
@@ -3061,14 +3246,14 @@ export const useStore = defineStore("app", {
         ...this.aiPreferences,
         modes: modes.length > 0 ? modes : DEFAULT_AI_PROMPT_MODES.map((mode) => ({ ...mode })),
       };
-      bridge.saveAiPreferences(this.aiPreferences);
+      this.recordLocalStateWrite(bridge.saveAiPreferences(this.aiPreferences));
     },
     resetAiPromptModes() {
       this.aiPreferences = {
         ...this.aiPreferences,
         modes: DEFAULT_AI_PROMPT_MODES.map((mode) => ({ ...mode })),
       };
-      bridge.saveAiPreferences(this.aiPreferences);
+      this.recordLocalStateWrite(bridge.saveAiPreferences(this.aiPreferences));
     },
     async refreshAiModels() {
       this.aiModelRefreshing = true;
@@ -3223,7 +3408,7 @@ export const useStore = defineStore("app", {
       this.workActivityDayRequestGeneration += 1;
       this.activeTab = "projects";
       this.selectedProjectId = this.projects.some(
-        (project) => project.id === returnProjectId && isProjectVisibleOnCurrentDevice(project),
+        (project) => project.id === returnProjectId,
       )
         ? returnProjectId
         : null;
@@ -3236,6 +3421,7 @@ export const useStore = defineStore("app", {
       this.workActivitySelectedProjectIds = selectedIds;
       this.workActivitySelectionInitialized = true;
       if (selectionChanged) this.invalidateWorkActivity();
+      this.persistWorkspaceState();
     },
     saveWorkActivityProjectGroup(name: string) {
       const normalizedName = name.trim().slice(0, 80);
@@ -3316,6 +3502,7 @@ export const useStore = defineStore("app", {
       if (JSON.stringify(nextPreferences) === JSON.stringify(this.workActivityPreferences)) return;
       this.workActivityPreferences = nextPreferences;
       if (reportPreferenceKeys.some((key) => key in preferences)) this.invalidateWorkActivity();
+      this.persistWorkspaceState();
     },
     async loadGitActivity(options: ProjectGitActivityOptions) {
       const selectedProjects = this.workActivitySelectedProjects;
@@ -3490,10 +3677,10 @@ export const useStore = defineStore("app", {
 
       const matchedProject =
         this.projects.find(
-          (project) => isProjectVisibleOnCurrentDevice(project) && project.name.toLowerCase() === normalizedQuery,
+          (project) => project.name.toLowerCase() === normalizedQuery,
         ) ||
         this.projects.find(
-          (project) => isProjectVisibleOnCurrentDevice(project) && project.name.toLowerCase().includes(normalizedQuery),
+          (project) => project.name.toLowerCase().includes(normalizedQuery),
         );
       if (!matchedProject) {
         return false;
@@ -3671,6 +3858,8 @@ export const useStore = defineStore("app", {
         id: createEnvId(),
         key: "",
         value: "",
+        localOnly: false,
+        sharedValue: null,
       });
     },
     updateEnvironmentEntry(entryId: string, patch: Partial<ProjectEnvironmentEntry>) {
@@ -3761,7 +3950,12 @@ export const useStore = defineStore("app", {
       };
       const projectId = payload.id || createProjectId();
       const now = new Date().toISOString();
-      const env = envFromEntries(payload.envEntries);
+      const isPublicProject = payload.visibility !== "private";
+      const sharedEnvEntries = isPublicProject
+        ? payload.envEntries.filter((entry) => !entry.localOnly)
+        : payload.envEntries;
+      const localOnlyEnvEntries = isPublicProject ? payload.envEntries.filter((entry) => entry.localOnly) : [];
+      const env = envFromEntries(sharedEnvEntries);
       const formScripts = payload.scripts
         .filter((script) => script.name.trim() && script.command.trim())
         .map((script, index) => scriptFromForm(projectId, script, index));
@@ -3782,8 +3976,6 @@ export const useStore = defineStore("app", {
         name: payload.name.trim(),
         path: payload.path.trim(),
         visibility: payload.visibility,
-        ownerDeviceId:
-          payload.visibility === "private" ? currentDeviceId : existingProject?.ownerDeviceId || currentDeviceId,
         type: payload.type,
         kind: payload.kind,
         icon: payload.icon,
@@ -3854,6 +4046,15 @@ export const useStore = defineStore("app", {
       this.selectedProjectId = projectId;
       this.projectFormOpen = false;
       this.projectFormDraft = createBlankProjectForm();
+
+      // Public projects keep device-scoped env values in local state; private
+      // projects are local-only anyway, so any stale override map is cleared.
+      const environmentOverride: ProjectEnvironmentOverride = {
+        env: envFromEntries(localOnlyEnvEntries),
+        localOnlyEnvKeys: localOnlyEnvEntries.map((entry) => entry.key.trim()).filter(Boolean),
+      };
+      this.recordLocalStateWrite(bridge.saveProjectEnvironmentOverrides(projectId, environmentOverride));
+
       await this.persistProjects();
       return projectId;
     },
@@ -3883,6 +4084,7 @@ export const useStore = defineStore("app", {
         projectIds: group.projectIds.filter((groupProjectId) => groupProjectId !== projectId),
       }));
       this.invalidateWorkActivity();
+      this.persistWorkspaceState();
       this.workActivityUnavailableProjectIds = this.workActivityUnavailableProjectIds.filter(
         (unavailableProjectId) => unavailableProjectId !== projectId,
       );
@@ -3963,7 +4165,7 @@ export const useStore = defineStore("app", {
     async refreshDashboardGitChangeCounts() {
       await Promise.all(
         this.projects
-          .filter((project) => isProjectVisibleOnCurrentDevice(project) && project.pathExists !== false)
+          .filter((project) => project.pathExists !== false)
           .map((project) => this.refreshGitWorkingTreeSnapshot(project.id)),
       );
     },
@@ -3975,8 +4177,7 @@ export const useStore = defineStore("app", {
 
       const isUnavailable = project.pathExists === false;
       const isSameSection = (item: Project) =>
-        isProjectVisibleOnCurrentDevice(item) &&
-        (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+        isUnavailable ? item.pathExists === false : item.pathExists !== false;
       const sectionProjects = this.projects.filter(isSameSection);
       const sectionProjectIds = new Set(sectionProjects.map((item) => item.id));
       const scopedSectionProjects = (scopeProjectIds || [])
@@ -4036,14 +4237,13 @@ export const useStore = defineStore("app", {
 
       const project = this.projects.find((item) => item.id === projectId);
       const targetProject = this.projects.find((item) => item.id === targetProjectId);
-      if (!project || !targetProject || !isProjectVisibleOnCurrentDevice(project)) {
+      if (!project || !targetProject) {
         return false;
       }
 
       const isUnavailable = project.pathExists === false;
       const isSameSection = (item: Project) =>
-        isProjectVisibleOnCurrentDevice(item) &&
-        (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+        isUnavailable ? item.pathExists === false : item.pathExists !== false;
       if (!isSameSection(targetProject)) {
         return false;
       }
@@ -6455,7 +6655,7 @@ export const useStore = defineStore("app", {
           scriptId,
           command: script.command,
           cwd: resolveScriptCwd(project.path, script.cwd),
-          env: project.env,
+          env: resolveProjectEnvironment(project),
           label: `${project.name} / ${script.name}`,
           automationRunId,
         });

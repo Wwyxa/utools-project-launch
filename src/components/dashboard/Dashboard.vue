@@ -56,7 +56,10 @@ const draggingProjectId = ref<string | null>(null);
 type ProjectDropPosition = "before" | "after";
 const dragOverProjectId = ref<string | null>(null);
 const dragOverProjectPosition = ref<ProjectDropPosition | null>(null);
-const selectedProjectGroupKey = ref("all");
+const selectedProjectGroupKey = computed({
+  get: () => store.dashboardProjectGroup,
+  set: (groupKey: string) => store.setDashboardProjectGroup(groupKey),
+});
 const normalizedSearchQuery = computed(() => props.searchQuery.trim().toLowerCase());
 let stopAppEscapeListener = () => {};
 const projectCardsMounted = ref(false);

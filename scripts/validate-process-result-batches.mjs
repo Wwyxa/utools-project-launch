@@ -386,7 +386,6 @@ let nextTimerId = 1;
 
 globalThis.window = {
   projectBridge: {
-    loadDeviceId: () => "validation-device",
     loadProjects: async () => structuredClone(storedProjects),
     saveProjects: async () => undefined,
     loadUiPreferences: () => ({

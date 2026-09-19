@@ -12,7 +12,7 @@ function projectLaunchServiceTarget() {
 }
 
 function projectLaunchServiceDirectoryPath() {
-  return path.join(path.dirname(getDeviceIdFilePath()), "service");
+  return path.join(pluginLocalDataDirectory(), "service");
 }
 
 function projectLaunchServiceExecutablePath() {

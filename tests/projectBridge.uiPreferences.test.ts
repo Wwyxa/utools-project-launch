@@ -1696,7 +1696,7 @@ describe("Project Launch Service preload installation", () => {
   const binaryContents = Buffer.from("verified-project-launch-service");
 
   const createBridge = (serviceRoot: string, moduleOverrides: Record<string, unknown> = {}) =>
-    loadPreloadBridge(new Map(), undefined, { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot }, moduleOverrides);
+    loadPreloadBridge(new Map(), undefined, { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot }, moduleOverrides);
 
   it("reports a manually placed executable as installed", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
@@ -1856,9 +1856,11 @@ describe("Project Launch Service preload installation", () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const requestedPaths: string[] = [];
     const https = createProjectLaunchServiceDownloadHttps(Buffer.from("updated-project-launch-service"));
-    const storage = new Map<string, unknown>([
-      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
-    ]);
+    writeFileSync(
+      join(serviceRoot, "local-state.v1.json"),
+      JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
+      "utf8",
+    );
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
         requestedPaths.push(options.path);
@@ -1920,9 +1922,9 @@ describe("Project Launch Service preload installation", () => {
 
     try {
       const bridge = loadPreloadBridge(
-        storage,
+        new Map(),
         undefined,
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { http, https },
       );
       const installed = await bridge.getProjectLaunchServiceStatus();
@@ -1974,9 +1976,11 @@ describe("Project Launch Service preload installation", () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus; message?: string }> = [];
     const requestedPaths: string[] = [];
-    const storage = new Map<string, unknown>([
-      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
-    ]);
+    writeFileSync(
+      join(serviceRoot, "local-state.v1.json"),
+      JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
+      "utf8",
+    );
     const health = {
       protocolVersion: 2,
       serviceVersion: "test",
@@ -2089,9 +2093,9 @@ describe("Project Launch Service preload installation", () => {
 
     try {
       const bridge = loadPreloadBridge(
-        storage,
+        new Map(),
         undefined,
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { http },
         (detail) => {
           if (detail && typeof detail === "object") {
@@ -2139,9 +2143,11 @@ describe("Project Launch Service preload installation", () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus }> = [];
     const requestedPaths: string[] = [];
-    const storage = new Map<string, unknown>([
-      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
-    ]);
+    writeFileSync(
+      join(serviceRoot, "local-state.v1.json"),
+      JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
+      "utf8",
+    );
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
         requestedPaths.push(options.path);
@@ -2191,9 +2197,9 @@ describe("Project Launch Service preload installation", () => {
 
     try {
       const bridge = loadPreloadBridge(
-        storage,
+        new Map(),
         undefined,
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { http },
         (detail) => {
           if (detail && typeof detail === "object") {
@@ -2291,7 +2297,7 @@ describe("Project Launch Service preload installation", () => {
       const bridge = loadPreloadBridge(
         new Map(),
         undefined,
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { https },
         (detail) => {
           if (detail && typeof detail === "object") {
@@ -4444,103 +4450,142 @@ describe("store project catalog refresh", () => {
 });
 
 describe("uTools preload UI preferences", () => {
+  const localDataDirEnv = "UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR";
+  const localStateFileName = "local-state.v1.json";
+
+  const readLocalStateFile = (directory: string) =>
+    JSON.parse(readFileSync(join(directory, localStateFileName), "utf8"));
+
   it.each([
     [defaultTabOrder, 0],
     [["scripts", "info", "automation", "files", "git", "memo"], 1],
-  ])("migrates legacy order %j with coach mark version %i", (legacyOrder, expectedVersion) => {
-    const storage = new Map<string, unknown>([[legacyTabOrderKey, legacyOrder]]);
-    const bridge = loadPreloadBridge(storage);
+  ])("migrates legacy order %j with coach mark version %i", async (legacyOrder, expectedVersion) => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const storage = new Map<string, unknown>([[legacyTabOrderKey, legacyOrder]]);
+      const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
+      await expect(bridge.runMigration()).resolves.toMatchObject({ ok: true });
 
-    const preferences = bridge.loadUiPreferences();
+      const preferences = bridge.loadUiPreferences();
+      expect(preferences.projectDetails.tabOrder).toEqual(legacyOrder);
+      expect(preferences.coachMarks.projectDetailsTabReorder).toBe(expectedVersion);
+      // Migration keeps legacy data intact; data cleanup owns its removal.
+      expect(storage.has(legacyTabOrderKey)).toBe(true);
 
-    expect(preferences.projectDetails.tabOrder).toEqual(legacyOrder);
-    expect(preferences.coachMarks.projectDetailsTabReorder).toBe(expectedVersion);
-    expect(storage.get(uiPreferencesKey)).toEqual(preferences);
-    expect(storage.has(legacyTabOrderKey)).toBe(false);
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      expect(restartedBridge.loadUiPreferences()).toEqual(preferences);
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
-  it("prefers and normalizes the new configuration, then removes the legacy key", () => {
-    const storage = new Map<string, unknown>([
-      [
-        uiPreferencesKey,
-        {
-          schemaVersion: 1,
-          projectDetails: { tabOrder: ["memo", "unknown", "memo"], defaultTab: "unknown" },
-          dashboard: { tinyCardActionTrigger: "unsupported" },
-          coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1.5 },
-        },
-      ],
-      [legacyTabOrderKey, ["scripts", "info"]],
-    ]);
-    const bridge = loadPreloadBridge(storage);
+  it("migrates the released configuration, normalizes it, and keeps the legacy key", async () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const storage = new Map<string, unknown>([
+        [
+          uiPreferencesKey,
+          {
+            schemaVersion: 1,
+            projectDetails: { tabOrder: ["memo", "unknown", "memo"], defaultTab: "unknown" },
+            dashboard: { tinyCardActionTrigger: "unsupported" },
+            coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1.5 },
+          },
+        ],
+        [legacyTabOrderKey, ["scripts", "info"]],
+      ]);
+      const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
+      await bridge.runMigration();
 
-    expect(bridge.loadUiPreferences().projectDetails.tabOrder).toEqual([
-      "memo",
-      "info",
-      "scripts",
-      "automation",
-      "files",
-      "git",
-    ]);
-    expect(bridge.loadUiPreferences().dashboard.tinyCardActionTrigger).toBe("hover");
-    expect(bridge.loadUiPreferences().projectDetails.defaultTab).toBe(defaultOpenTab);
-    expect(bridge.loadUiPreferences().coachMarks.projectDetailsTabDefault).toBe(0);
-    expect(storage.has(legacyTabOrderKey)).toBe(false);
+      const preferences = bridge.loadUiPreferences();
+      expect(preferences.projectDetails.tabOrder).toEqual(["memo", "info", "scripts", "automation", "files", "git"]);
+      expect(preferences.dashboard.tinyCardActionTrigger).toBe("hover");
+      expect(preferences.projectDetails.defaultTab).toBe(defaultOpenTab);
+      expect(preferences.coachMarks.projectDetailsTabDefault).toBe(0);
+      expect(storage.has(legacyTabOrderKey)).toBe(true);
 
-    bridge.saveUiPreferences({
-      schemaVersion: 1,
-      iconPackId: "builtin",
-      projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
-      dashboard: { tinyCardActionTrigger: "contextmenu" },
-      coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
-    });
-    const saved = storage.get(uiPreferencesKey) as UiPreferences;
-    expect(saved.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
-    expect(saved.projectDetails.defaultTab).toBe("memo");
-    expect(saved.dashboard.tinyCardActionTrigger).toBe("contextmenu");
-    expect(saved.coachMarks.projectDetailsTabDefault).toBe(3);
-    expect(storage.has(legacyTabOrderKey)).toBe(false);
+      bridge.saveUiPreferences({
+        schemaVersion: 1,
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
+        dashboard: { tinyCardActionTrigger: "contextmenu" },
+        coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
+      });
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      const saved = restartedBridge.loadUiPreferences();
+      expect(saved.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
+      expect(saved.projectDetails.defaultTab).toBe("memo");
+      expect(saved.dashboard.tinyCardActionTrigger).toBe("contextmenu");
+      expect(saved.coachMarks.projectDetailsTabDefault).toBe(3);
+      const storedState = readLocalStateFile(localDataDirectory);
+      expect(storedState.preferences.ui).toEqual(saved);
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
-  it("uses defaults instead of legacy data when the new configuration is invalid", () => {
-    const storage = new Map<string, unknown>([
-      [uiPreferencesKey, { schemaVersion: 2 }],
-      [legacyTabOrderKey, ["scripts", "info", "automation", "files", "git", "memo"]],
-    ]);
+  it("uses defaults instead of legacy data when the released configuration is invalid", async () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const storage = new Map<string, unknown>([
+        [uiPreferencesKey, { schemaVersion: 2 }],
+        [legacyTabOrderKey, ["scripts", "info", "automation", "files", "git", "memo"]],
+      ]);
+      const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
+      await bridge.runMigration();
 
-    expect(loadPreloadBridge(storage).loadUiPreferences()).toEqual({
-      schemaVersion: 1,
-      iconPackId: "builtin",
-      projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
-      dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-    });
+      expect(bridge.loadUiPreferences()).toEqual({
+        schemaVersion: 1,
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
+        dashboard: { tinyCardActionTrigger: "hover" },
+        coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
+      });
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
-  it("keeps readable current preferences when legacy cleanup fails", () => {
-    const preferences: UiPreferences = {
-      schemaVersion: 1,
-      iconPackId: "builtin",
-      projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"], defaultTab: "memo" },
-      dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1 },
-    };
-    const storage = new Map<string, unknown>([[uiPreferencesKey, preferences]]);
-    const bridge = loadPreloadBridge(storage, () => {
-      throw new Error("storage unavailable");
-    });
+  it("round-trips current preferences through the local state file", () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const preferences: UiPreferences = {
+        schemaVersion: 1,
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"], defaultTab: "memo" },
+        dashboard: { tinyCardActionTrigger: "hover" },
+        coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1 },
+      };
+      const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
 
-    expect(bridge.loadUiPreferences()).toEqual(preferences);
+      expect(bridge.saveUiPreferences(preferences)).toMatchObject({ ok: true });
+      expect(bridge.loadUiPreferences()).toEqual(preferences);
+
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      expect(restartedBridge.loadUiPreferences()).toEqual(preferences);
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
   it("persists Project Launch Service preferences separately from project data", () => {
-    const storage = new Map<string, unknown>();
-    const bridge = loadPreloadBridge(storage);
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
 
-    expect(bridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
+      expect(bridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
+      expect(bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true })).toMatchObject({
+        ok: true,
+      });
+      expect(bridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: true });
 
-    bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
-    expect(storage.get(projectLaunchServicePreferencesKey)).toEqual({ schemaVersion: 1, enabled: true });
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      expect(restartedBridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: true });
+      const storedState = readLocalStateFile(localDataDirectory);
+      expect(storedState.preferences.projectLaunchService).toEqual({ schemaVersion: 1, enabled: true });
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
   it("removes stale service discovery when a live PID has a different process identity", async () => {
@@ -4569,7 +4614,7 @@ describe("uTools preload UI preferences", () => {
       );
 
       await loadPreloadBridge(new Map(), undefined, {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        [localDataDirEnv]: applicationDirectory,
       }).getProjectLaunchServiceStatus();
 
       expect(existsSync(discoveryPath)).toBe(false);

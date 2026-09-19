@@ -1194,6 +1194,10 @@ export interface ProjectEnvironmentEntry {
   id: string;
   key: string;
   value: string;
+  /** Public projects only: the value exists on this device instead of the shared document. */
+  localOnly?: boolean;
+  /** When set, this entry overrides a shared value; holds the shared value for display. */
+  sharedValue?: string | null;
 }
 
 export interface ProjectRelation {
@@ -1226,7 +1230,6 @@ export interface Project {
   name: string;
   path: string;
   visibility?: ProjectVisibility;
-  ownerDeviceId?: string;
   type: string;
   kind: ProjectKind;
   icon?: ProjectIconKey;
@@ -1533,12 +1536,160 @@ export interface ProjectGitRemoteProgressEvent {
   phase: "start" | "output" | "complete";
 }
 
+export type StartupPreflightStatus =
+  | "ready"
+  | "upgrade-required"
+  | "migration-required"
+  | "migration-incomplete"
+  | "browser-preview";
+
+export interface StartupPreflightCapabilities {
+  hasUtools: boolean;
+  getAppVersion: boolean;
+  getPluginLocalDataPath: boolean;
+  getPluginTempPath: boolean;
+}
+
+export interface StartupPreflightLegacySummary {
+  legacyDirectoryHasData: boolean;
+  legacyDbStorageKeys: string[];
+  legacyAggregateProjects: number;
+  legacyPrivateProjectDocs: number;
+}
+
+export type MigrationItemState = "pending" | "copied" | "verified" | "failed" | "skipped";
+
+export interface MigrationSummaryItem {
+  id: string;
+  kind: string;
+  label: string;
+  status: MigrationItemState;
+  error: string;
+}
+
+export interface MigrationSummary {
+  status: string;
+  startedAt: string;
+  completedAt: string;
+  totalCount: number;
+  verifiedCount: number;
+  failedCount: number;
+  pendingCount: number;
+  failedItems: MigrationSummaryItem[];
+  items: MigrationSummaryItem[];
+}
+
+export interface StartupPreflightResult {
+  status: StartupPreflightStatus;
+  browserPreview?: boolean;
+  appVersion: string;
+  capabilities: StartupPreflightCapabilities;
+  migration: MigrationSummary | null;
+  legacy: StartupPreflightLegacySummary;
+  message: string;
+}
+
+export interface MigrationRunResult {
+  ok: boolean;
+  blocked?: "unsupported-host" | "active-runs" | "items-failed";
+  message?: string;
+  ledger: MigrationSummary | null;
+}
+
+export interface LocalStateWriteResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface ProjectEnvironmentOverride {
+  /** Local values: overrides of shared keys plus local-only variables. */
+  env: Record<string, string>;
+  /** Subset of `env` keys that exist only on this device. */
+  localOnlyEnvKeys: string[];
+}
+
+export interface WorkspaceState {
+  dashboardProjectGroup: string;
+  workActivity: {
+    selectionInitialized: boolean;
+    preferences: WorkActivityPreferences | null;
+    selectedProjectIds: string[];
+  };
+}
+
+export interface WorkspaceStatePatch {
+  dashboardProjectGroup?: string;
+  workActivity?: Partial<Pick<WorkspaceState["workActivity"], "selectionInitialized" | "preferences" | "selectedProjectIds">>;
+}
+
+export interface StorageOverview {
+  hostVersion: string;
+  capabilities: StartupPreflightCapabilities;
+  localDataPath: string;
+  tempPath: string;
+  legacyPath: string;
+  migration: MigrationSummary | null;
+  serviceRunning: boolean;
+  projects: {
+    publicCount: number;
+    privateLocalCount: number;
+    legacyPrivateDocCount: number;
+    orphanDocumentCount: number;
+  };
+  legacyDbStorageKeys: string[];
+  sizes: {
+    localDataBytes: number;
+    serviceBytes: number;
+    iconPacksBytes: number;
+    privateProjectsBytes: number;
+    tempBytes: number;
+    legacyBytes: number;
+    syncDocumentBytes: number;
+  };
+}
+
+export type CleanupItemCategory = "sync" | "local" | "cache";
+
+export interface CleanupPlanItem {
+  id: string;
+  category: CleanupItemCategory;
+  label: string;
+  description: string;
+  kind: string;
+  paths: string[];
+  disabledReason: string;
+  selectedByDefault: boolean;
+  estimatedBytes: number;
+  count: number;
+}
+
+export interface CleanupPlan {
+  items: CleanupPlanItem[];
+  serviceRunning: boolean;
+  syncReplicating: boolean;
+}
+
+export interface CleanupResultItem {
+  id: string;
+  label: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface CleanupResult {
+  ok: boolean;
+  partial: boolean;
+  results: CleanupResultItem[];
+}
+
 export interface ProjectBridge {
-  loadDeviceId(): string;
+  preflightStartup(): StartupPreflightResult;
+  runMigration(options?: { onProgress?: (summary: MigrationSummary) => void }): Promise<MigrationRunResult>;
+  readMigrationSummary(): MigrationSummary | null;
   loadProjects(): Promise<Project[]>;
   saveProjects(projects: Project[], options?: ProjectSaveProjectsOptions): Promise<void>;
   loadUiPreferences(): UiPreferences;
-  saveUiPreferences(preferences: UiPreferences): void;
+  saveUiPreferences(preferences: UiPreferences): LocalStateWriteResult;
   loadInstalledIconPack(): Promise<IconPackLoadResult>;
   getIconPackStatus(): Promise<IconPackStatus>;
   checkIconPackUpdate(): Promise<IconPackUpdateResult>;
@@ -1547,18 +1698,27 @@ export interface ProjectBridge {
   removeIconPack(): Promise<IconPackRemoveResult>;
   openIconPackDirectory(): Promise<void>;
   openIconPackReleases(): Promise<void>;
+  loadWorkspaceState(): WorkspaceState;
+  saveWorkspaceState(patch: WorkspaceStatePatch): LocalStateWriteResult;
+  loadProjectEnvironmentOverrides(projectId: string): ProjectEnvironmentOverride;
+  saveProjectEnvironmentOverrides(projectId: string, override: ProjectEnvironmentOverride): LocalStateWriteResult;
+  getStorageOverview(): Promise<StorageOverview>;
+  getCleanupPlan(): Promise<CleanupPlan>;
+  executeCleanup(itemIds: string[]): Promise<CleanupResult>;
+  openPluginLocalDataDirectory(): Promise<void>;
+  openLegacyDataDirectory(): Promise<void>;
   loadTerminalPreferences(): TerminalPreferences;
-  saveTerminalPreferences(preferences: TerminalPreferences): void;
+  saveTerminalPreferences(preferences: TerminalPreferences): LocalStateWriteResult;
   loadExternalApplicationPreferences(): ExternalApplicationPreferences;
-  saveExternalApplicationPreferences(preferences: ExternalApplicationPreferences): void;
+  saveExternalApplicationPreferences(preferences: ExternalApplicationPreferences): LocalStateWriteResult;
   loadEnvironmentPreferences(): EnvironmentPreferences;
-  saveEnvironmentPreferences(preferences: EnvironmentPreferences): void;
+  saveEnvironmentPreferences(preferences: EnvironmentPreferences): LocalStateWriteResult;
   loadBuiltinEnvironmentTools(): EnvironmentToolDefinition[];
   detectEnvironmentTool(request: EnvironmentToolRequest): Promise<EnvironmentToolResult>;
   loadAiPreferences(): AiPreferences;
-  saveAiPreferences(preferences: AiPreferences): void;
+  saveAiPreferences(preferences: AiPreferences): LocalStateWriteResult;
   loadProjectLaunchServicePreferences(): ProjectLaunchServicePreferences;
-  saveProjectLaunchServicePreferences(preferences: ProjectLaunchServicePreferences): void;
+  saveProjectLaunchServicePreferences(preferences: ProjectLaunchServicePreferences): LocalStateWriteResult;
   getProjectLaunchServiceStatus(): Promise<ProjectLaunchServiceStatus>;
   checkProjectLaunchServiceUpdate(): Promise<ProjectLaunchServiceStatus>;
   downloadProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;

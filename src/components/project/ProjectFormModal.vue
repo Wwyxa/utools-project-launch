@@ -14,7 +14,7 @@ import {
   CircleHelp,
   Network,
 } from "lucide-vue-next";
-import { useStore } from "../../store/useStore";
+import { isSensitiveEnvironmentKey, useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import type {
@@ -35,6 +35,29 @@ const store = useStore();
 const t = useI18n();
 
 const form = computed(() => store.projectFormDraft);
+const isPublicFormProject = computed(() => form.value.visibility !== "private");
+const envScopeTouchedIds = ref(new Set<string>());
+
+const handleEnvKeyInput = (entryId: string, value: string) => {
+  store.updateEnvironmentEntry(entryId, { key: value });
+  if (isPublicFormProject.value && !envScopeTouchedIds.value.has(entryId) && isSensitiveEnvironmentKey(value)) {
+    // Credential-looking variables default to staying on this device.
+    store.updateEnvironmentEntry(entryId, { localOnly: true });
+  }
+};
+
+const setEnvEntryLocalOnly = (entryId: string, localOnly: boolean) => {
+  envScopeTouchedIds.value.add(entryId);
+  store.updateEnvironmentEntry(entryId, { localOnly });
+};
+
+const restoreSharedEnvValue = (entryId: string) => {
+  const entry = store.projectFormDraft.envEntries.find((item) => item.id === entryId);
+  if (!entry || entry.sharedValue === null || entry.sharedValue === undefined) return;
+  envScopeTouchedIds.value.add(entryId);
+  store.updateEnvironmentEntry(entryId, { localOnly: false, value: entry.sharedValue });
+};
+
 const title = computed(() => {
   if (store.projectFormMode === "edit") return t.value.modal.editTitle;
   if (store.projectFormMode === "duplicate") return t.value.modal.duplicateTitle;
@@ -927,33 +950,78 @@ const handleScriptDrop = (targetScriptId: string) => {
                 <div
                   v-for="entry in form.envEntries"
                   :key="entry.id"
-                  class="grid grid-cols-1 md:grid-cols-[1fr_2fr_auto] gap-2"
+                  class="space-y-1.5 rounded-lg border border-border-subtle p-2"
                 >
-                  <input
-                    :value="entry.key"
-                    @input="
-                      (event) =>
-                        store.updateEnvironmentEntry(entry.id, { key: (event.target as HTMLInputElement).value })
-                    "
-                    class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
-                  />
-                  <input
-                    :value="entry.value"
-                    @input="
-                      (event) =>
-                        store.updateEnvironmentEntry(entry.id, { value: (event.target as HTMLInputElement).value })
-                    "
-                    class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
-                  />
-                  <button
-                    type="button"
-                    @click="store.removeEnvironmentEntry(entry.id)"
-                    class="rounded-lg border border-border-subtle px-3 text-on-surface-variant hover:text-status-error hover:bg-surface-container"
-                    :title="t.common.delete"
-                    :aria-label="t.common.delete"
-                  >
-                    <Trash2 :size="16" />
-                  </button>
+                  <div class="grid grid-cols-1 md:grid-cols-[1fr_2fr_auto] gap-2">
+                    <input
+                      :value="entry.key"
+                      @input="
+                        (event) =>
+                          handleEnvKeyInput(entry.id, (event.target as HTMLInputElement).value)
+                      "
+                      class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                    />
+                    <input
+                      :value="entry.value"
+                      @input="
+                        (event) =>
+                          store.updateEnvironmentEntry(entry.id, { value: (event.target as HTMLInputElement).value })
+                      "
+                      class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      @click="store.removeEnvironmentEntry(entry.id)"
+                      class="rounded-lg border border-border-subtle px-3 text-on-surface-variant hover:text-status-error hover:bg-surface-container"
+                      :title="t.common.delete"
+                      :aria-label="t.common.delete"
+                    >
+                      <Trash2 :size="16" />
+                    </button>
+                  </div>
+                  <div v-if="isPublicFormProject" class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span
+                      v-if="entry.localOnly && entry.sharedValue !== null"
+                      class="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                    >
+                      {{ t.modal.envScopeOverrideBadge }}
+                    </span>
+                    <span
+                      v-else-if="entry.localOnly"
+                      class="rounded bg-muted px-1.5 py-0.5 text-muted-foreground"
+                    >
+                      {{ t.modal.envScopeLocalBadge }}
+                    </span>
+                    <span v-else />
+                    <div class="flex items-center gap-2">
+                      <button
+                        v-if="entry.localOnly && entry.sharedValue !== null"
+                        type="button"
+                        class="text-primary hover:underline"
+                        @click="restoreSharedEnvValue(entry.id)"
+                      >
+                        {{ t.modal.envScopeRestoreShared }}
+                      </button>
+                      <div class="flex overflow-hidden rounded-lg border border-border-subtle">
+                        <button
+                          type="button"
+                          class="px-2 py-0.5"
+                          :class="!entry.localOnly ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-surface-container'"
+                          @click="setEnvEntryLocalOnly(entry.id, false)"
+                        >
+                          {{ t.modal.envScopeSync }}
+                        </button>
+                        <button
+                          type="button"
+                          class="px-2 py-0.5"
+                          :class="entry.localOnly ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-surface-container'"
+                          @click="setEnvEntryLocalOnly(entry.id, true)"
+                        >
+                          {{ t.modal.envScopeLocal }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
