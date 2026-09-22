@@ -2219,6 +2219,20 @@ func (store *Store) trimRunHistoryLocked() {
 	if remainingCompleted < 0 {
 		remainingCompleted = 0
 	}
+	sort.SliceStable(completedRuns, func(left, right int) bool {
+		leftStartedAt, leftErr := time.Parse(time.RFC3339Nano, completedRuns[left].StartedAt)
+		rightStartedAt, rightErr := time.Parse(time.RFC3339Nano, completedRuns[right].StartedAt)
+		if leftErr != nil && rightErr != nil {
+			return completedRuns[left].StartedAt < completedRuns[right].StartedAt
+		}
+		if leftErr != nil {
+			return true
+		}
+		if rightErr != nil {
+			return false
+		}
+		return leftStartedAt.Before(rightStartedAt)
+	})
 	if len(completedRuns) > remainingCompleted {
 		completedRuns = completedRuns[len(completedRuns)-remainingCompleted:]
 	}

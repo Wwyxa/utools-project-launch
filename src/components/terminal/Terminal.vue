@@ -448,6 +448,22 @@ const handleInputSubmit = async () => {
   }
 };
 
+const refreshOpenHistory = async () => {
+  if (!historyDialogOpen.value) return;
+  const requestGeneration = historyLoadGeneration;
+  try {
+    const runs = await store.listProjectLaunchServiceLogs(props.projectId);
+    if (requestGeneration !== historyLoadGeneration || !historyDialogOpen.value) return;
+    historyRuns.value = runs;
+    if (!selectedHistoryRunId.value && serviceHistoryRuns.value[0]) {
+      await loadHistoryRun(serviceHistoryRuns.value[0]);
+    }
+  } catch (error) {
+    if (requestGeneration !== historyLoadGeneration || !historyDialogOpen.value) return;
+    historyError.value = error instanceof Error ? error.message : t.value.terminal.historyUnavailable;
+  }
+};
+
 watch(
   () => filteredLogs.value.length,
   () => {
@@ -459,6 +475,20 @@ watch(
 watch(selectedScriptId, () => {
   void scrollToBottom();
 });
+watch(
+  () => (props.scripts || []).map((script) => ({ id: script.id, status: script.status })),
+  (statuses, previousStatuses) => {
+    const currentById = new Map(statuses.map((script) => [script.id, script.status]));
+    const runCompleted = previousStatuses.some((script) => {
+      return (
+        (script.status === "RUNNING" || script.status === "STOPPING") &&
+        currentById.get(script.id) !== "RUNNING" &&
+        currentById.get(script.id) !== "STOPPING"
+      );
+    });
+    if (runCompleted) void refreshOpenHistory();
+  },
+);
 watch(
   logTargets,
   (targets) => {
