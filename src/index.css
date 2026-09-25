@@ -1774,21 +1774,63 @@
   animation: action-status-indeterminate 1.3s ease-in-out infinite;
 }
 
-/* Action status toast: solid state-tinted surfaces (state color mixed into the opaque surface color) */
+/* Action status toast: theme-explicit state tints. The uTools host webview may lack
+   color-mix() support (Chromium < 111), and its build-time fallback is resolved from
+   light-theme values only, so dark mode must not depend on either. */
+:root {
+  --action-status-tint-loading: #d9e9e4;
+  --action-status-tint-success: #e0f3ec;
+  --action-status-tint-warning: #f3e9d9;
+  --action-status-tint-error: #ffe3e1;
+  --action-status-border-idle: rgba(188, 202, 192, 0.8);
+  --action-status-border-loading: rgba(0, 108, 73, 0.3);
+  --action-status-border-loading-hover: rgba(0, 108, 73, 0.5);
+  --action-status-border-success: rgba(46, 175, 125, 0.4);
+  --action-status-border-success-hover: rgba(46, 175, 125, 0.6);
+  --action-status-border-warning: rgba(178, 106, 0, 0.4);
+  --action-status-border-warning-hover: rgba(178, 106, 0, 0.6);
+  --action-status-border-error: rgba(255, 69, 58, 0.45);
+  --action-status-border-error-hover: rgba(255, 69, 58, 0.65);
+  --action-status-panel-border-loading: rgba(0, 108, 73, 0.4);
+  --action-status-panel-border-success: rgba(46, 175, 125, 0.4);
+  --action-status-panel-border-warning: rgba(178, 106, 0, 0.4);
+  --action-status-panel-border-error: rgba(255, 69, 58, 0.5);
+}
+
+.dark {
+  --action-status-tint-loading: #3c504b;
+  --action-status-tint-success: #344945;
+  --action-status-tint-warning: #524a41;
+  --action-status-tint-error: #533a3b;
+  --action-status-border-idle: rgba(85, 90, 98, 0.8);
+  --action-status-border-loading: rgba(99, 220, 166, 0.3);
+  --action-status-border-loading-hover: rgba(99, 220, 166, 0.5);
+  --action-status-border-success: rgba(46, 175, 125, 0.4);
+  --action-status-border-success-hover: rgba(46, 175, 125, 0.6);
+  --action-status-border-warning: rgba(244, 184, 96, 0.4);
+  --action-status-border-warning-hover: rgba(244, 184, 96, 0.6);
+  --action-status-border-error: rgba(255, 69, 58, 0.45);
+  --action-status-border-error-hover: rgba(255, 69, 58, 0.65);
+  --action-status-panel-border-loading: rgba(99, 220, 166, 0.4);
+  --action-status-panel-border-success: rgba(46, 175, 125, 0.4);
+  --action-status-panel-border-warning: rgba(244, 184, 96, 0.4);
+  --action-status-panel-border-error: rgba(255, 69, 58, 0.5);
+}
+
 .action-status-tint-loading {
-  background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface-container-lowest));
+  background-color: var(--action-status-tint-loading);
 }
 
 .action-status-tint-success {
-  background-color: color-mix(in srgb, var(--color-status-running) 15%, var(--color-surface-container-lowest));
+  background-color: var(--action-status-tint-success);
 }
 
 .action-status-tint-warning {
-  background-color: color-mix(in srgb, var(--color-status-warning) 15%, var(--color-surface-container-lowest));
+  background-color: var(--action-status-tint-warning);
 }
 
 .action-status-tint-error {
-  background-color: color-mix(in srgb, var(--color-status-error) 15%, var(--color-surface-container-lowest));
+  background-color: var(--action-status-tint-error);
 }
 
 /* Vue transition: scale (modal / dialog entry) */

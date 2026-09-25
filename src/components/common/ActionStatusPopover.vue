@@ -55,13 +55,15 @@ const indicatorClasses = computed(() => {
   return "bg-on-surface-variant";
 });
 const stateContainerClasses = computed(() => {
-  if (props.state === "loading") return "action-status-tint-loading border-primary/30 hover:border-primary/50";
+  if (props.state === "loading")
+    return "action-status-tint-loading border-[color:var(--action-status-border-loading)] hover:border-[color:var(--action-status-border-loading-hover)]";
   if (props.state === "success")
-    return "action-status-tint-success border-status-running/40 hover:border-status-running/60";
+    return "action-status-tint-success border-[color:var(--action-status-border-success)] hover:border-[color:var(--action-status-border-success-hover)]";
   if (props.state === "warning")
-    return "action-status-tint-warning border-status-warning/40 hover:border-status-warning/60";
-  if (props.state === "error") return "action-status-tint-error border-status-error/45 hover:border-status-error/65";
-  return "border-outline-variant/80 bg-surface-container-lowest hover:border-outline hover:bg-surface-container-low";
+    return "action-status-tint-warning border-[color:var(--action-status-border-warning)] hover:border-[color:var(--action-status-border-warning-hover)]";
+  if (props.state === "error")
+    return "action-status-tint-error border-[color:var(--action-status-border-error)] hover:border-[color:var(--action-status-border-error-hover)]";
+  return "border-[color:var(--action-status-border-idle)] bg-surface-container-lowest hover:border-outline hover:bg-surface-container-low";
 });
 const stateIconComponent = computed(() => {
   if (props.state === "success") return CheckCircle2;
@@ -70,10 +72,14 @@ const stateIconComponent = computed(() => {
   return null;
 });
 const statePanelClasses = computed(() => {
-  if (props.state === "loading") return "action-status-tint-loading border-primary/40";
-  if (props.state === "success") return "action-status-tint-success border-status-running/40";
-  if (props.state === "warning") return "action-status-tint-warning border-status-warning/40";
-  if (props.state === "error") return "action-status-tint-error border-status-error/50";
+  if (props.state === "loading")
+    return "action-status-tint-loading border-[color:var(--action-status-panel-border-loading)]";
+  if (props.state === "success")
+    return "action-status-tint-success border-[color:var(--action-status-panel-border-success)]";
+  if (props.state === "warning")
+    return "action-status-tint-warning border-[color:var(--action-status-panel-border-warning)]";
+  if (props.state === "error")
+    return "action-status-tint-error border-[color:var(--action-status-panel-border-error)]";
   return "border-border-subtle bg-surface-container-lowest";
 });
 
