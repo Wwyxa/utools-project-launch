@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { ChevronDown, RefreshCw } from "lucide-vue-next";
+import { CheckCircle2, ChevronDown, CircleAlert, CircleX, RefreshCw } from "lucide-vue-next";
 import { setActionStatusHovered } from "./actionStatus";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
@@ -53,6 +53,28 @@ const indicatorClasses = computed(() => {
   if (props.state === "warning") return "bg-status-warning";
   if (props.state === "error") return "bg-status-error";
   return "bg-on-surface-variant";
+});
+const stateContainerClasses = computed(() => {
+  if (props.state === "loading") return "action-status-tint-loading border-primary/30 hover:border-primary/50";
+  if (props.state === "success")
+    return "action-status-tint-success border-status-running/40 hover:border-status-running/60";
+  if (props.state === "warning")
+    return "action-status-tint-warning border-status-warning/40 hover:border-status-warning/60";
+  if (props.state === "error") return "action-status-tint-error border-status-error/45 hover:border-status-error/65";
+  return "border-outline-variant/80 bg-surface-container-lowest hover:border-outline hover:bg-surface-container-low";
+});
+const stateIconComponent = computed(() => {
+  if (props.state === "success") return CheckCircle2;
+  if (props.state === "warning") return CircleAlert;
+  if (props.state === "error") return CircleX;
+  return null;
+});
+const statePanelClasses = computed(() => {
+  if (props.state === "loading") return "action-status-tint-loading border-primary/40";
+  if (props.state === "success") return "action-status-tint-success border-status-running/40";
+  if (props.state === "warning") return "action-status-tint-warning border-status-warning/40";
+  if (props.state === "error") return "action-status-tint-error border-status-error/50";
+  return "border-border-subtle bg-surface-container-lowest";
 });
 
 const positionPanel = (trigger: HTMLElement, width: number, height: number): FloatingPosition => {
@@ -197,45 +219,63 @@ watch(
 </script>
 
 <template>
-  <button
-    ref="triggerRef"
-    v-bind="$attrs"
-    type="button"
-    aria-live="polite"
-    :class="
-      cn(
-        'inline-flex h-7 max-w-80 items-center gap-1.5 truncate rounded-md border border-outline-variant/80 bg-surface-container-lowest px-2 text-[10px] font-semibold shadow-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
-        stateClasses,
-        hasDetails && 'cursor-pointer hover:border-outline hover:bg-surface-container-low',
-        !hasDetails && 'cursor-default',
-      )
-    "
-    :title="hasDetails ? '展开或收起操作进度' : message"
-    :aria-label="hasDetails ? '展开或收起操作进度' : message"
-    :aria-expanded="hasDetails ? expanded : undefined"
-    :disabled="!hasDetails"
-    @pointerenter="handlePointerEnter"
-    @pointerleave="handlePointerLeave"
-    @click.stop="toggleExpanded"
-  >
-    <RefreshCw v-if="state === 'loading'" :size="12" class="shrink-0 animate-spin" aria-hidden="true" />
-    <span v-else class="h-1.5 w-1.5 shrink-0 rounded-full" :class="indicatorClasses" aria-hidden="true" />
-    <span class="min-w-0 truncate">{{ message }}</span>
-    <ChevronDown
-      v-if="hasDetails"
-      :size="11"
-      class="shrink-0 transition-transform"
-      :class="expanded ? 'rotate-180' : ''"
-      aria-hidden="true"
-    />
-  </button>
+  <Transition name="slide-up" appear>
+    <button
+      ref="triggerRef"
+      v-bind="$attrs"
+      type="button"
+      aria-live="polite"
+      :class="
+        cn(
+          'inline-flex h-8 max-w-80 items-center gap-1.5 truncate rounded-md border px-2.5 text-xs font-semibold shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
+          stateContainerClasses,
+          stateClasses,
+          hasDetails && 'cursor-pointer',
+          !hasDetails && 'cursor-default',
+        )
+      "
+      :title="hasDetails ? '展开或收起操作进度' : message"
+      :aria-label="hasDetails ? '展开或收起操作进度' : message"
+      :aria-expanded="hasDetails ? expanded : undefined"
+      :disabled="!hasDetails"
+      @pointerenter="handlePointerEnter"
+      @pointerleave="handlePointerLeave"
+      @click.stop="toggleExpanded"
+    >
+      <RefreshCw v-if="state === 'loading'" :size="14" class="shrink-0 animate-spin" aria-hidden="true" />
+      <component
+        :is="stateIconComponent"
+        v-else-if="stateIconComponent"
+        :size="14"
+        class="shrink-0"
+        aria-hidden="true"
+      />
+      <span v-else class="h-1.5 w-1.5 shrink-0 rounded-full" :class="indicatorClasses" aria-hidden="true" />
+      <span class="min-w-0 truncate">{{ message }}</span>
+      <ChevronDown
+        v-if="hasDetails"
+        :size="12"
+        class="shrink-0 transition-transform"
+        :class="expanded ? 'rotate-180' : ''"
+        aria-hidden="true"
+      />
+      <span
+        v-if="state === 'loading'"
+        class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden"
+        aria-hidden="true"
+      >
+        <span class="action-status-indeterminate-bar h-full w-2/5 rounded-full bg-current" />
+      </span>
+    </button>
+  </Transition>
 
   <Teleport to="body">
     <Transition name="fade">
       <div
         v-if="expanded"
         ref="panelRef"
-        class="fixed z-[80] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest text-xs shadow-2xl"
+        class="fixed z-[80] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border text-xs shadow-2xl"
+        :class="statePanelClasses"
         :style="{
           left: `${panelPosition.left}px`,
           top: `${panelPosition.top}px`,

@@ -1759,6 +1759,38 @@
   opacity: 0;
 }
 
+/* Indeterminate progress bar (action status toast, loading state) */
+@keyframes action-status-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
+.action-status-indeterminate-bar {
+  animation: action-status-indeterminate 1.3s ease-in-out infinite;
+}
+
+/* Action status toast: solid state-tinted surfaces (state color mixed into the opaque surface color) */
+.action-status-tint-loading {
+  background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface-container-lowest));
+}
+
+.action-status-tint-success {
+  background-color: color-mix(in srgb, var(--color-status-running) 15%, var(--color-surface-container-lowest));
+}
+
+.action-status-tint-warning {
+  background-color: color-mix(in srgb, var(--color-status-warning) 15%, var(--color-surface-container-lowest));
+}
+
+.action-status-tint-error {
+  background-color: color-mix(in srgb, var(--color-status-error) 15%, var(--color-surface-container-lowest));
+}
+
 /* Vue transition: scale (modal / dialog entry) */
 .scale-enter-active,
 .scale-leave-active {
