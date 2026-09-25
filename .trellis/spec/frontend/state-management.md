@@ -573,7 +573,7 @@ Preserve service-owned identity until authoritative state says the run is termin
 
 ### 3. Contracts
 
-- Every user-visible project metadata field that should survive restart must be written by both store-side persistence (`toPersistedProject` in `src/store/useStore.ts`) and preload-side persistence (`toStoredProject` in `public/preload.js`).
+- Every user-visible project metadata field that should survive restart must be written by both store-side persistence (`toPersistedProject` in `src/store/helpers/projectHelpers.ts`) and preload-side persistence (`toStoredProject` in `public/preload.js`).
 - Browser fallback and uTools preload storage must preserve the same logical project fields. A field working in browser/local state is not enough if preload drops it during doc writes.
 - `type`, `kind`, and `icon` are linked metadata: icon selection may update type/kind, and all three must round-trip together.
 - `quickLink` is a project-level optional URL string. Trim it when moving between persisted projects, hydrated projects, form drafts, and saved projects; keep missing/legacy values as an empty string in form state and absent/empty in project state.

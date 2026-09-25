@@ -34,7 +34,10 @@ src/
 │   ├── useGlobalActionStatus.ts
 │   └── useResizableSplit.ts
 ├── store/
-│   └── useStore.ts
+│   ├── useStore.ts
+│   ├── appStoreShape.ts
+│   ├── actions/
+│   └── helpers/
 └── components/
 	├── dashboard/
 	│   ├── Dashboard.vue

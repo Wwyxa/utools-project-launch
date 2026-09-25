@@ -36,7 +36,7 @@ service/
 public/preload.js                # installer, discovery validation, HTTP client
 src/types.ts                     # shared ProjectBridge and service contracts
 src/lib/projectBridge.ts         # typed browser fallback
-src/store/useStore.ts            # ownership routing and reconciliation
+src/store/actions/               # ownership routing and reconciliation
 src/components/layout/           # service settings surface
 ```
 
