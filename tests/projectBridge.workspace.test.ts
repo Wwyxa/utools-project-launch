@@ -518,7 +518,10 @@ describe("browser Git workspace fallback", () => {
     await store.refreshGitSnapshotForInteraction(project.id, { kind: "main" }, { limit: 20 });
 
     expect(readGitSnapshot).toHaveBeenCalledOnce();
-    expect(project.git?.commits).toHaveLength(1);
+    // The store repopulated `project.git`, but TS still narrows it to the
+    // earlier `= null` assignment.
+    const snapshot = project.git as ProjectGitSnapshot | null;
+    expect(snapshot?.commits).toHaveLength(1);
   });
 
   it("treats a persisted status-only object as incomplete and reloads history", async () => {
@@ -952,7 +955,7 @@ describe("browser Git workspace fallback", () => {
     window.projectBridge = {
       ...getProjectBridge(),
       readGitSnapshotResult: vi.fn(() => staleFull.promise),
-      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false, value: null, failure: repositoryFailure })),
+      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false as const, value: null, failure: repositoryFailure })),
     };
 
     const { useStore } = await import("../src/store/useStore");
@@ -988,7 +991,7 @@ describe("browser Git workspace fallback", () => {
     window.projectBridge = {
       ...getProjectBridge(),
       readGitSnapshotResult: vi.fn(() => staleFull.promise),
-      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false, value: null, failure: repositoryFailure })),
+      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false as const, value: null, failure: repositoryFailure })),
     };
 
     const { useStore } = await import("../src/store/useStore");

@@ -1364,7 +1364,7 @@ const setGitActionResult = (
     });
     return;
   }
-  if (retainRemoteProgress) {
+  if (retainRemoteProgress && state !== "loading") {
     completeActionProgress(state, message, gitRemoteProgressOperationId);
     return;
   }

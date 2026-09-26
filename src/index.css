@@ -834,12 +834,24 @@
   color: #fff;
 }
 
+/* Dark graph colors are brightened for line visibility, so a solid fill is
+   glaring on badges — use a soft tint with the graph color as text instead. */
+.dark .git-ref-badge--graph-linked {
+  border-color: rgba(var(--git-ref-graph-color-rgb), 0.45);
+  background-color: rgba(var(--git-ref-graph-color-rgb), 0.14);
+  color: var(--git-ref-graph-color);
+}
+
 .git-ref-badge--current {
   font-weight: 800;
 }
 
 .git-ref-badge--graph-linked.git-ref-badge--current {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68);
+}
+
+.dark .git-ref-badge--graph-linked.git-ref-badge--current {
+  box-shadow: inset 0 0 0 1px rgba(var(--git-ref-graph-color-rgb), 0.6);
 }
 
 .terminal-log-timestamp {

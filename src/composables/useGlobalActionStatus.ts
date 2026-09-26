@@ -44,12 +44,17 @@ export const mergeGitRemoteProgressEntry = (
 export const isNewProgressOperation = (
   status: ActionStatusSnapshot | null | undefined,
   previousStatus: ActionStatusSnapshot | null | undefined,
-) =>
-  Boolean(status?.isProgress && status.state === "loading" && status.entries.length > 0) &&
-  (!previousStatus?.isProgress ||
+) => {
+  if (!status?.isProgress || status.state !== "loading" || status.entries.length === 0) {
+    return false;
+  }
+  return (
+    !previousStatus?.isProgress ||
     previousStatus.operationId !== status.operationId ||
     previousStatus.state !== "loading" ||
-    previousStatus.entries.length === 0);
+    previousStatus.entries.length === 0
+  );
+};
 
 export const useGlobalActionStatus = (store: AppStore) => {
   const actionStatus = activeActionStatus;

@@ -148,7 +148,6 @@ type AppActionDialog = {
   cancelLabel?: string;
   onConfirm: () => Promise<void> | void;
 };
-type GitGraphPathMode = "vertical" | "fanOut" | "fanIn";
 type FloatingMenuPosition = { left: number; top: number };
 type DatePickerKind = "since" | "until";
 
@@ -541,41 +540,49 @@ const commitContextMenuViewportInset = 8;
 const commitContextMenuMaxWidth = 208;
 const commitContextMenuMaxHeight = 240;
 const graphWindowOverscan = 256;
-const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
-const rowPitch = rowHeight + rowGap;
+const { rowHeight, rowGap, strokeWidth } = GIT_COMMIT_GRAPH_GEOMETRY;
 const currentBranchGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch;
 const baseGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.base;
 const upstreamGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.upstream;
 const stashGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.stash;
-const graphStrokeColor = gitCommitGraphStrokeColor;
+const graphStrokeColor = (colorIndex: number) =>
+  gitCommitGraphStrokeColor(colorIndex, store.iconPackColorMode === "dark" ? "dark" : "light");
 const graphNodeX = (lane: number) =>
   GIT_COMMIT_GRAPH_GEOMETRY.paddingX +
   lane * GIT_COMMIT_GRAPH_GEOMETRY.laneWidth +
   GIT_COMMIT_GRAPH_GEOMETRY.laneWidth / 2;
-const graphPathData = (sourceX: number, sourceY: number, targetX: number, targetY: number, mode: GitGraphPathMode) => {
-  if (sourceX === targetX) return `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
-  const deltaY = targetY - sourceY;
-  if (deltaY <= rowPitch) {
-    const curveY = Math.max(rowHeight * 0.32, deltaY * 0.45);
-    return `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + curveY} ${targetX} ${targetY - curveY} ${targetX} ${targetY}`;
-  }
-  const switchY =
-    mode === "fanIn" ? Math.max(sourceY, targetY - rowPitch * 0.78) : Math.min(targetY, sourceY + rowPitch * 0.78);
-  const curveY = Math.max(rowHeight * 0.28, Math.abs(switchY - sourceY) * 0.5);
-  return mode === "fanIn"
-    ? `M ${sourceX} ${sourceY} L ${sourceX} ${switchY} C ${sourceX} ${switchY + curveY} ${targetX} ${targetY - curveY} ${targetX} ${targetY}`
-    : `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + curveY} ${targetX} ${switchY - curveY} ${targetX} ${switchY} L ${targetX} ${targetY}`;
-};
+/** Quarter-arc radii: one-lane turns, plus tighter mid-row junctions (VS Code git-graph style). */
+const graphLaneArcRadius = GIT_COMMIT_GRAPH_GEOMETRY.laneWidth;
+const graphJunctionArcRadius = 6.4;
 const graphSegmentPathData = (segment: GitCommitGraphSegment) => {
   if (segment.kind === "root-termination" && segment.from.x === segment.to.x && segment.from.y === segment.to.y)
     return "";
-  const mode: GitGraphPathMode =
-    segment.kind === "duplicate-convergence" || segment.kind === "lane-shift"
-      ? "fanIn"
-      : segment.kind === "additional-parent-fan-out" || segment.kind === "first-parent-continuation"
-        ? "fanOut"
-        : "vertical";
-  return graphPathData(segment.from.x, segment.from.y, segment.to.x, segment.to.y, mode);
+  const { from, to } = segment;
+  if (from.x === to.x) return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+  const direction = to.x > from.x ? 1 : -1;
+  if (segment.kind === "duplicate-convergence") {
+    // Drop vertically, then quarter-arc into the node's side so the trunk
+    // above the node stays clear of this lane's stroke.
+    const radius = Math.min(graphLaneArcRadius, Math.abs(to.x - from.x), to.y - from.y);
+    const sweep = direction > 0 ? 0 : 1;
+    return `M ${from.x} ${from.y} L ${from.x} ${to.y - radius} A ${radius} ${radius} 0 0 ${sweep} ${from.x + direction * radius} ${to.y} L ${to.x} ${to.y}`;
+  }
+  if (segment.kind === "additional-parent-fan-out" || segment.kind === "first-parent-continuation") {
+    // Exit the node sideways at mid-row, then quarter-arc down onto the
+    // parent lane so the stroke never overlaps the trunk below the node.
+    const radius = Math.min(graphLaneArcRadius, Math.abs(to.x - from.x), to.y - from.y);
+    const sweep = direction > 0 ? 1 : 0;
+    return `M ${from.x} ${from.y} L ${to.x - direction * radius} ${from.y} A ${radius} ${radius} 0 0 ${sweep} ${to.x} ${from.y + radius} L ${to.x} ${to.y}`;
+  }
+  if (segment.kind === "lane-shift") {
+    // H-bridge: vertical, arc, horizontal run at node height, arc, vertical.
+    const midY = from.y + rowHeight / 2;
+    const radius = Math.min(graphJunctionArcRadius, Math.abs(to.x - from.x) / 2, (to.y - from.y) / 2);
+    const sweepIn = direction > 0 ? 0 : 1;
+    const sweepOut = direction > 0 ? 1 : 0;
+    return `M ${from.x} ${from.y} L ${from.x} ${midY - radius} A ${radius} ${radius} 0 0 ${sweepIn} ${from.x + direction * radius} ${midY} L ${to.x - direction * radius} ${midY} A ${radius} ${radius} 0 0 ${sweepOut} ${to.x} ${midY + radius} L ${to.x} ${to.y}`;
+  }
+  return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 };
 const graphReferences = computed(() => {
   const references: { identity: string; name: string; colorIndex: number }[] = [];
@@ -662,19 +669,18 @@ const graphWindow = computed(() =>
 const graphPaths = computed(() =>
   graphWindow.value.segments.flatMap(({ row, index, segment }) => {
     const d = graphSegmentPathData(segment);
-    return d
-      ? [
-          {
-            id: `${row.commit.hash}-${index}`,
-            d,
-            color: graphStrokeColor(segment.colorIndex),
-            strokeDasharray:
-              isGitStashCommit(row.commit) && (segment.fromLane === row.nodeLane || segment.toLane === row.nodeLane)
-                ? "3 2"
-                : undefined,
-          },
-        ]
-      : [];
+    if (!d) return [];
+    return [
+      {
+        id: `${row.commit.hash}-${index}`,
+        d,
+        color: graphStrokeColor(segment.colorIndex),
+        strokeDasharray:
+          isGitStashCommit(row.commit) && (segment.fromLane === row.nodeLane || segment.toLane === row.nodeLane)
+            ? "3 2"
+            : undefined,
+      },
+    ];
   }),
 );
 const graphNodes = computed(() =>
@@ -833,10 +839,14 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
     className: cn(refBadgeBaseClass, "border-border-subtle bg-surface-container-low text-on-surface-variant"),
   };
 };
+const gitRefColorRgb = (hexColor: string) => {
+  const value = Number.parseInt(hexColor.slice(1), 16);
+  return `${(value >> 16) & 0xff}, ${(value >> 8) & 0xff}, ${value & 0xff}`;
+};
 const refGraphAccentStyle = (ref: GitCommitRefPresentationMember) => {
   if (ref.graphColorIndex === undefined) return undefined;
   const color = graphStrokeColor(ref.graphColorIndex);
-  return { "--git-ref-graph-color": color };
+  return { "--git-ref-graph-color": color, "--git-ref-graph-color-rgb": gitRefColorRgb(color) };
 };
 const commitRefPresentation = (commit: ProjectGitCommitSummary) =>
   presentGitCommitRefs(commit, {
@@ -2307,39 +2317,39 @@ onBeforeUnmount(() => {
                 :stroke="path.color"
                 :stroke-dasharray="path.strokeDasharray"
                 fill="none"
-                stroke-width="1.8"
+                :stroke-width="strokeWidth"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               />
               <g v-for="node in graphNodes" :key="node.hash">
                 <rect
                   v-if="node.isStash && !node.isHead"
-                  :x="node.x - 4.3"
-                  :y="node.y - 4.3"
-                  width="8.6"
-                  height="8.6"
-                  rx="1.6"
+                  :x="node.x - 4.5"
+                  :y="node.y - 4.5"
+                  width="9"
+                  height="9"
+                  rx="1.8"
                   :fill="node.color"
                   stroke="var(--color-surface-container-lowest)"
-                  stroke-width="1.5"
+                  stroke-width="1.4"
                 />
                 <template v-else>
                   <circle
                     v-if="node.isHead || node.isMerge"
                     :cx="node.x"
                     :cy="node.y"
-                    :r="node.isHead ? 6.8 : 6.1"
+                    :r="node.isHead ? 7.2 : 6.3"
                     :fill="node.color"
                     stroke="var(--color-surface-container-lowest)"
-                    stroke-width="1.6"
+                    :stroke-width="node.isHead ? 1.5 : 1.4"
                   />
                   <circle
                     :cx="node.x"
                     :cy="node.y"
-                    :r="node.isHead ? 3 : node.isMerge ? 2.5 : 4.2"
+                    :r="node.isHead ? 3.2 : node.isMerge ? 3.3 : 4.6"
                     :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
                     stroke="var(--color-surface-container-lowest)"
-                    :stroke-width="node.isHead || node.isMerge ? 1.3 : 1.6"
+                    :stroke-width="node.isMerge ? 2.2 : node.isHead ? 1.2 : 1.5"
                   />
                 </template>
               </g>

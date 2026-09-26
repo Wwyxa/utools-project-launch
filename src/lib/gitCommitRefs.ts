@@ -94,7 +94,11 @@ const upstreamRefNames = (context: GitCommitRefPresentationContext) => {
 
 const baseRefNames = (context: GitCommitRefPresentationContext) => {
   const base = context.base;
-  return new Set([base?.ref, base && `${base.remote}/${base.branch}`].filter(Boolean).map(normalizeRemoteRefName));
+  return new Set(
+    [base?.ref, base && `${base.remote}/${base.branch}`]
+      .filter((value): value is string => Boolean(value))
+      .map(normalizeRemoteRefName),
+  );
 };
 
 const remainingPriority = (kind: GitCommitRefPresentationKind) => {
