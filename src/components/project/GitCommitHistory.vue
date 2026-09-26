@@ -936,15 +936,19 @@ const commitTooltipVerticalLayout = computed(() => {
   );
   return { top, height, maxHeight };
 });
+// Seals the tooltip against the history pane's right edge with a hairline tuck
+// (VS Code graph-hover style) — deep enough to avoid a floating gap, shallow
+// enough to leave the scrollbar, pane padding, and row content visible.
+const COMMIT_TOOLTIP_PANE_OVERLAP = 2;
 const tooltipStyle = computed(() => {
   const graphRect = graphScrollRef.value?.getBoundingClientRect();
   const layout = commitTooltipVerticalLayout.value;
   if (!graphRect || !layout) return {};
   const viewportWidth = window.innerWidth;
   return {
-    left: `${graphRect.right + 8}px`,
+    left: `${graphRect.right - COMMIT_TOOLTIP_PANE_OVERLAP}px`,
     top: `${layout.top}px`,
-    maxWidth: `${Math.max(1, Math.min(384, viewportWidth - graphRect.right - 20))}px`,
+    maxWidth: `${Math.max(1, Math.min(384, viewportWidth - (graphRect.right - COMMIT_TOOLTIP_PANE_OVERLAP) - 12))}px`,
     maxHeight: `${layout.maxHeight}px`,
   };
 });
