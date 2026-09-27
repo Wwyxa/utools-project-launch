@@ -1312,6 +1312,10 @@ function inferProjectIcon(kind: ProjectKind, type = "", name = ""): ProjectIconK
   if (/\brust|cargo\b/.test(source)) return "rust";
   if (/\bjava|spring\b/.test(source)) return "java";
   if (/\bdocker|compose\b/.test(source)) return "docker";
+  if (/\b(android|apk)\b/.test(source)) return "android";
+  if (/\b(linux|ubuntu|debian|fedora|arch)\b/.test(source)) return "linux";
+  if (/\b(macos|osx|darwin|swift|xcode)\b/.test(source)) return "macos";
+  if (/\b(windows|win32|win64)\b/.test(source)) return "windows";
   if (/\b(db|sql|mysql|postgres|redis|mongo)\b/.test(source)) return "database";
   if (/\b(browser|web|frontend)\b/.test(source)) return "browser";
   if (/\b(ai|llm|gpt|claude)\b/.test(source)) return "ai";

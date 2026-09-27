@@ -210,6 +210,10 @@ const projectIcons: Array<{ key: ProjectIconKey; label: string; kind: ProjectKin
   { key: "backend", label: "API", kind: "custom", type: "API" },
   { key: "package", label: "Package", kind: "custom", type: "Package" },
   { key: "ai", label: "AI", kind: "custom", type: "AI" },
+  { key: "android", label: "Android", kind: "custom", type: "Android" },
+  { key: "linux", label: "Linux", kind: "custom", type: "Linux" },
+  { key: "macos", label: "macOS", kind: "custom", type: "macOS" },
+  { key: "windows", label: "Windows", kind: "custom", type: "Windows" },
   { key: "executable", label: "Executable", kind: "executable", type: "Executable" },
   { key: "custom", label: "Custom", kind: "custom", type: "Custom" },
 ];
@@ -357,7 +361,7 @@ const handleScriptDrop = (targetScriptId: string) => {
               <div class="space-y-1.5 md:col-span-12">
                 <span class="text-xs font-bold uppercase text-on-surface-variant">{{ t.modal.icon }}</span>
                 <div
-                  class="grid grid-cols-8 gap-1.5 rounded-lg border border-border-subtle bg-surface-container-low p-1.5"
+                  class="grid grid-cols-10 gap-1.5 rounded-lg border border-border-subtle bg-surface-container-low p-1.5"
                 >
                   <button
                     v-for="icon in projectIcons"

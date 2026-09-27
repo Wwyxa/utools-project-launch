@@ -29,6 +29,10 @@ export type ProjectIconKey =
   | "backend"
   | "package"
   | "ai"
+  | "android"
+  | "linux"
+  | "macos"
+  | "windows"
   | "executable"
   | "custom";
 
