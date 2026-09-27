@@ -100,6 +100,7 @@ const emit = defineEmits<{
   (event: "busy-change", busy: boolean): void;
   (event: "worktree-action-started"): void;
   (event: "committed"): void;
+  (event: "amend-mode-change", value: boolean): void;
 }>();
 
 const store = useStore();
@@ -641,6 +642,8 @@ const cancelAmendMode = () => {
   closeMoreMenu(false);
 };
 
+defineExpose({ startAmendMode, cancelAmendMode });
+
 const closeStashDialog = (restoreFocus = true, force = false) => {
   if (isStashDialogBusy.value && !force) return;
   stashDialogOpen.value = false;
@@ -1017,6 +1020,8 @@ onMounted(() => {
 });
 
 watch(isChangesWriteBusy, (busy) => emit("busy-change", busy), { immediate: true });
+
+watch(isAmendMode, (value) => emit("amend-mode-change", value), { immediate: true });
 
 watch(
   () => activeRepositoryContext.value?.contextKey,

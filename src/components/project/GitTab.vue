@@ -1558,6 +1558,20 @@ const setLeftContext = (context: GitLeftContext, shouldFocus = false) => {
   }
 };
 
+const changesPaneRef = ref<InstanceType<typeof GitChangesPane> | null>(null);
+const isChangesAmendMode = ref(false);
+const handleStartAmendFromHistory = () => {
+  setLeftContext("changes");
+  changesPaneRef.value?.startAmendMode();
+};
+const handleCancelAmendFromHistory = () => {
+  changesPaneRef.value?.cancelAmendMode();
+};
+const handleUndoCompletedFromHistory = (restoredMessage?: string) => {
+  if (typeof restoredMessage === "string" && restoredMessage) commitMessage.value = restoredMessage;
+  setLeftContext("changes");
+};
+
 const handleLeftContextKeydown = (event: KeyboardEvent) => {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
@@ -2570,6 +2584,7 @@ watch(
           class="flex min-h-0 flex-1 flex-col"
         >
           <GitChangesPane
+            ref="changesPaneRef"
             class="min-h-0 min-w-0 flex-1"
             :project-id="props.project.id"
             :repository-target="activeRepositoryTarget"
@@ -2587,6 +2602,7 @@ watch(
             @busy-change="(busy) => (isChangesPaneBusy = busy)"
             @worktree-action-started="invalidateWorktreeDiffRequest"
             @committed="clearCommitSelection"
+            @amend-mode-change="(value) => (isChangesAmendMode = value)"
           />
         </div>
 
@@ -2606,11 +2622,15 @@ watch(
             :disabled="isAnyGitWriteRunning"
             :filter-commit="commitFilterRequest"
             :selected-commit-hashes="selectedCommitHashes"
+            :amend-mode-active="isChangesAmendMode"
             @update:selected-commit-hashes="(hashes) => (selectedCommitHashes = hashes)"
             @review-file="({ commitHash, commitMessage, path }) => handleViewDiff(commitHash, path, commitMessage)"
             @request-ai="openAiDialog"
             @feedback="setGitActionResult"
             @busy-change="(busy) => (isCommitHistoryBusy = busy)"
+            @start-amend="handleStartAmendFromHistory"
+            @cancel-amend="handleCancelAmendFromHistory"
+            @undo-completed="handleUndoCompletedFromHistory"
           />
         </div>
       </div>

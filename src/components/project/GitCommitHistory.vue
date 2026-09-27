@@ -25,6 +25,7 @@ import {
   ListChecks,
   ListTree,
   ListX,
+  MoreHorizontal,
   Pencil,
   Tag,
   Target,
@@ -160,8 +161,9 @@ const props = withDefaults(
     disabled?: boolean;
     filterCommit?: { hash: string; requestId: number } | null;
     selectedCommitHashes: string[];
+    amendModeActive?: boolean;
   }>(),
-  { disabled: false },
+  { disabled: false, amendModeActive: false },
 );
 
 const emit = defineEmits<{
@@ -171,6 +173,9 @@ const emit = defineEmits<{
   (event: "request-ai"): void;
   (event: "feedback", state: GitFeedbackState, message: string): void;
   (event: "busy-change", busy: boolean): void;
+  (event: "start-amend"): void;
+  (event: "cancel-amend"): void;
+  (event: "undo-completed", commitMessage?: string): void;
 }>();
 
 const store = useStore();
@@ -216,6 +221,10 @@ const refDialogInputRef = ref<HTMLInputElement | null>(null);
 const tagInfoDialog = ref<TagInfoDialogState | null>(null);
 const confirmationDialog = ref<AppActionDialog | null>(null);
 const confirmationBusy = ref(false);
+const moreMenuOpen = ref(false);
+const moreMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
+const moreMenuRef = ref<HTMLElement | null>(null);
+const moreMenuOpener = ref<HTMLElement | null>(null);
 const activeAction = ref("");
 const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
@@ -891,6 +900,75 @@ const gitHistoryActionUnavailableReason = (action: GitHistoryAction, commit: Pro
 };
 const detachedCheckoutTitle = (commit: ProjectGitCommitSummary) =>
   isCommitDetachedHead(commit) ? "当前已处于该分离 HEAD 提交" : "切换到此提交，并进入分离 HEAD 状态";
+const headCommit = computed(() => {
+  const headHash = snapshot.value?.headHash;
+  if (!headHash) return null;
+  return snapshot.value?.commits?.find((commit) => commitHashMatches(commit.hash, headHash)) ?? null;
+});
+const headActionUnavailableReason = computed(() => {
+  if (!context.value || !snapshot.value?.repositoryPath) return "未检测到 Git 仓库。";
+  if (snapshot.value.isDetachedHead) return "当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。";
+  if (!hasAttachedLocalGitHead()) return "当前 HEAD 未指向本地分支，请使用外部 Git 工具处理。";
+  if (!headCommit.value) return "当前分支没有可操作的提交。";
+  return "";
+});
+const amendToolbarTitle = computed(() => headActionUnavailableReason.value || "修订上次提交（前往更改视图）");
+const undoToolbarTitle = computed(
+  () => headActionUnavailableReason.value || "撤销上次提交（改动将回到更改视图的暂存区）",
+);
+const moreMenuStyle = computed(() => floatingMenuStyle(moreMenuPosition.value));
+const moreMenuItems = () =>
+  moreMenuRef.value
+    ? Array.from(moreMenuRef.value.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
+        (item) => !(item instanceof HTMLButtonElement && item.disabled),
+      )
+    : [];
+const closeMoreMenu = (restoreFocus = true) => {
+  const opener = moreMenuOpener.value;
+  moreMenuOpen.value = false;
+  moreMenuOpener.value = null;
+  if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
+};
+const openMoreMenu = async (trigger: HTMLElement) => {
+  moreMenuOpener.value = trigger;
+  moreMenuOpen.value = true;
+  await nextTick();
+  const menu = moreMenuRef.value;
+  const menuWidth = menu?.getBoundingClientRect().width || 112;
+  const menuHeight = menu?.getBoundingClientRect().height || 80;
+  moreMenuPosition.value = positionFloatingMenu(trigger, menuWidth, menuHeight);
+  moreMenuItems()[0]?.focus();
+};
+const toggleMoreMenu = (event: MouseEvent) => {
+  const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  if (!trigger) return;
+  if (moreMenuOpen.value) {
+    closeMoreMenu();
+    return;
+  }
+  void openMoreMenu(trigger);
+};
+const handleMoreMenuKeydown = (event: KeyboardEvent) => {
+  const current = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[role="menuitem"]') : null;
+  const items = moreMenuItems();
+  if (!current || items.length === 0) return;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeMoreMenu();
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const index = Math.max(0, items.indexOf(current));
+    items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    return;
+  }
+  if (event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+  }
+};
 const isRemoteRef = (name: string) =>
   snapshot.value?.remotes?.some((remote) => name.startsWith(`${remote.name}/`)) ||
   /^(?:origin|upstream|remote|remotes\/[^/]+)\//.test(name);
@@ -1408,6 +1486,53 @@ const requestGitHistoryAction = (action: GitHistoryAction, commit: ProjectGitCom
     },
   });
 };
+const requestStartAmend = () => {
+  if (isInteractionDisabled.value || props.amendModeActive) return;
+  closeMoreMenu(false);
+  emit("start-amend");
+};
+const requestCancelAmend = () => {
+  closeMoreMenu(false);
+  emit("cancel-amend");
+};
+const executeUndoLastCommit = async (allowMerge = false) => {
+  const result = await runAction("undo-last-commit", () =>
+    store.undoLastGitCommit(props.projectId, { allowMerge }, props.repositoryTarget),
+  );
+  if (!result) return;
+  if (!result.ok && result.blockReason === "merge-commit" && !allowMerge) {
+    requestConfirmation({
+      tone: "danger",
+      icon: "undo",
+      title: "按第一父提交撤销 merge commit",
+      message: "上次提交是 merge commit。继续会按第一父提交移除该提交，并保留文件改动。",
+      detail: headCommit.value?.message || "",
+      confirmLabel: "按第一父提交撤销",
+      cancelLabel: t.value.common.cancel,
+      onConfirm: () => executeUndoLastCommit(true),
+    });
+    return;
+  }
+  report(result.ok ? "success" : "error", result.message);
+  if (result.ok) {
+    clearCommitSelection();
+    emit("undo-completed", typeof result.commitMessage === "string" ? result.commitMessage : undefined);
+  }
+};
+const requestUndoLastCommit = () => {
+  if (isInteractionDisabled.value || headActionUnavailableReason.value) return;
+  closeMoreMenu(false);
+  requestConfirmation({
+    tone: "danger",
+    icon: "undo",
+    title: "撤销上次提交",
+    message: "此操作将恢复上个提交的暂存和提交信息，不创建反向提交",
+    detail: headCommit.value?.message || "",
+    confirmLabel: "撤销",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeUndoLastCommit(),
+  });
+};
 const checkoutRemoteBranch = async (branchName: string, force = false) => {
   if (isInteractionDisabled.value) return;
   closeCommitContextMenu(false);
@@ -1870,6 +1995,7 @@ const closeHistoryFloatingControls = () => {
   closeTagInfoDialog();
   confirmationDialog.value = null;
   closeCommitFilters();
+  closeMoreMenu(false);
 };
 const clearHistoryState = () => {
   commitFilesContextGeneration += 1;
@@ -1902,6 +2028,9 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   } else if (showCommitFilters.value) {
     closeCommitFilters();
     event.detail.handle();
+  } else if (moreMenuOpen.value) {
+    closeMoreMenu();
+    event.detail.handle();
   }
 };
 const handleWindowPointerDown = (event: PointerEvent) => {
@@ -1915,6 +2044,7 @@ const handleWindowPointerDown = (event: PointerEvent) => {
   ) {
     closeCommitFilters();
   }
+  if (!target.closest("[data-history-more-menu], [data-history-more-menu-trigger]")) closeMoreMenu(false);
 };
 const handleFloatingViewportChange = (event: Event) => {
   const isTooltipScroll =
@@ -1931,6 +2061,7 @@ const handleFloatingViewportChange = (event: Event) => {
     return;
   }
   closeCommitContextMenu(false);
+  closeMoreMenu(false);
 };
 
 watch(
@@ -2088,6 +2219,19 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
+          data-history-more-menu-trigger
+          class="git-section-action"
+          :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
+          :aria-expanded="moreMenuOpen"
+          aria-haspopup="menu"
+          title="更多 Git 操作"
+          aria-label="更多 Git 操作"
+          @click="toggleMoreMenu"
+        >
+          <MoreHorizontal :size="13" />
+        </button>
+        <button
+          type="button"
           class="git-section-action"
           :title="commitFileViewModeLabel"
           :aria-label="commitFileViewModeLabel"
@@ -2097,6 +2241,59 @@ onBeforeUnmount(() => {
           <List v-if="commitFileViewMode === 'tree'" :size="13" /><ListTree v-else :size="13" />
         </button>
       </div>
+    </Teleport>
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="moreMenuOpen"
+          ref="moreMenuRef"
+          data-history-more-menu
+          class="fixed z-[90] w-max max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-2xl"
+          :style="moreMenuStyle"
+          role="menu"
+          @click.stop
+          @keydown="handleMoreMenuKeydown"
+        >
+          <button
+            v-if="!amendModeActive"
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
+            :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
+            :title="amendToolbarTitle"
+            :aria-label="amendToolbarTitle"
+            @click="requestStartAmend"
+          >
+            <Pencil :size="13" />
+            <span>修订上次提交</span>
+          </button>
+          <button
+            v-else
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
+            title="恢复进入修订模式前的提交草稿"
+            aria-label="取消修订上次提交"
+            @click="requestCancelAmend"
+          >
+            <X :size="13" />
+            <span>取消修订模式</span>
+          </button>
+          <div class="my-1 border-t border-border-subtle" />
+          <button
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact text-status-error hover:bg-status-error/10 hover:text-status-error"
+            :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
+            :title="undoToolbarTitle"
+            :aria-label="undoToolbarTitle"
+            @click="requestUndoLastCommit"
+          >
+            <Undo :size="13" />
+            <span>撤销上次提交</span>
+          </button>
+        </div>
+      </Transition>
     </Teleport>
     <div v-show="open" class="relative flex min-h-0 flex-1 flex-col">
       <Transition name="fade">
