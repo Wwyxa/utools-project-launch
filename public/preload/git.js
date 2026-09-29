@@ -2450,6 +2450,14 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
     }
   }
 
+  // 旧版 git fetch 不会自动生成 <remote>/HEAD，退回按各 remote 下的同名分支识别基点。
+  for (const remote of preferredRemoteNames) {
+    const sameNameBase = await resolveBase(`${remote}/${branch}`);
+    if (sameNameBase) {
+      return rememberBase(sameNameBase);
+    }
+  }
+
   return null;
 }
 

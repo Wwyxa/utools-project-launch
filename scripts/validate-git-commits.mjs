@@ -113,6 +113,50 @@ try {
     `origin/${baseBranch}`,
   );
 
+  const forkProjectRoot = path.join(fixtureRoot, "fork-project");
+  const forkOriginRoot = path.join(fixtureRoot, "fork-origin.git");
+  const forkUpstreamRoot = path.join(fixtureRoot, "fork-upstream.git");
+  const forkSeedRoot = path.join(fixtureRoot, "fork-upstream-seed");
+  initializeRepository(forkProjectRoot, "git-fork@example.invalid");
+  const forkBranch = runGitAt(forkProjectRoot, "branch", "--show-current").trim();
+  fs.writeFileSync(path.join(forkProjectRoot, "fork.txt"), "fork base\n");
+  runGitAt(forkProjectRoot, "add", "--", "fork.txt");
+  runGitAt(forkProjectRoot, "commit", "-m", "fork base commit");
+  execFileSync("git", ["init", "--bare", forkOriginRoot], { encoding: "utf8" });
+  execFileSync("git", ["init", "--bare", forkUpstreamRoot], { encoding: "utf8" });
+  runGitAt(forkOriginRoot, "symbolic-ref", "HEAD", `refs/heads/${forkBranch}`);
+  runGitAt(forkUpstreamRoot, "symbolic-ref", "HEAD", `refs/heads/${forkBranch}`);
+  runGitAt(forkProjectRoot, "remote", "add", "origin", forkOriginRoot);
+  runGitAt(forkProjectRoot, "remote", "add", "upstream", forkUpstreamRoot);
+  runGitAt(forkProjectRoot, "push", "--set-upstream", "origin", forkBranch);
+  runGitAt(forkProjectRoot, "push", "upstream", forkBranch);
+  execFileSync("git", ["clone", "--quiet", forkUpstreamRoot, forkSeedRoot], { encoding: "utf8" });
+  runGitAt(forkSeedRoot, "config", "user.email", "git-fork-seed@example.invalid");
+  runGitAt(forkSeedRoot, "config", "user.name", "Git Fork Seed");
+  fs.writeFileSync(path.join(forkSeedRoot, "upstream.txt"), "upstream only\n");
+  runGitAt(forkSeedRoot, "add", "--", "upstream.txt");
+  runGitAt(forkSeedRoot, "commit", "-m", "upstream only commit");
+  runGitAt(forkSeedRoot, "push", "origin", forkBranch);
+  runGitAt(forkProjectRoot, "fetch", "upstream");
+  const forkSnapshot = await bridge.readGitStatusSnapshot(forkProjectRoot);
+  assert.equal(forkSnapshot.base?.ref, `upstream/${forkBranch}`);
+  assert.equal(forkSnapshot.base?.behind, 1);
+  const forkMergeResult = await bridge.mergeGitBaseBranch(forkProjectRoot);
+  assert.equal(forkMergeResult.ok, true);
+  assert.equal(forkMergeResult.remote, "upstream");
+  assert.equal(forkMergeResult.branch, forkBranch);
+  assert.equal(
+    runGitAt(forkProjectRoot, "rev-parse", "HEAD").trim(),
+    runGitAt(forkProjectRoot, "rev-parse", `upstream/${forkBranch}`).trim(),
+  );
+  assert.equal(fs.existsSync(path.join(forkProjectRoot, "upstream.txt")), true);
+  runGitAt(forkProjectRoot, "config", "--unset", `branch.${forkBranch}.vscode-merge-base`);
+  // 模拟旧版 git 不生成 <remote>/HEAD 的状态；不能用 update-ref -d，
+  // 新版 git 删除该 HEAD 时会连带清理同名 remote 的分支引用。
+  fs.rmSync(path.join(forkProjectRoot, ".git", "refs", "remotes", "upstream", "HEAD"), { force: true });
+  const forkFallbackSnapshot = await bridge.readGitStatusSnapshot(forkProjectRoot);
+  assert.equal(forkFallbackSnapshot.base?.ref, `upstream/${forkBranch}`);
+
   initializeRepository(historyActionRoot, "git-history-actions@example.invalid");
   const historyActionBranch = runGitAt(historyActionRoot, "branch", "--show-current").trim();
   fs.writeFileSync(path.join(historyActionRoot, "base.txt"), "base\n");

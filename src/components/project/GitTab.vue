@@ -280,14 +280,16 @@ const baseBranch = computed(() => snapshot.value?.base || null);
 const canMergeBaseBranch = computed(
   () =>
     Boolean(baseBranch.value) &&
-    baseBranch.value?.branch !== snapshot.value?.branch &&
+    baseBranch.value?.ref !== snapshot.value?.upstream?.ref &&
     !isAnyGitWriteRunning.value &&
     !snapshot.value?.mergeInProgress,
 );
 const mergeBaseBranchTitle = computed(() => {
   if (!snapshot.value?.repositoryPath) return "未检测到 Git 仓库，无法合并基点分支";
   if (!baseBranch.value) return "未识别到当前分支的基点分支，无法合并";
-  if (baseBranch.value.branch === snapshot.value?.branch) return "当前分支已是基点分支";
+  if (baseBranch.value.ref === snapshot.value?.upstream?.ref) {
+    return `当前分支已跟踪 ${snapshot.value?.upstream?.ref}，使用 Pull 即可更新`;
+  }
   if (snapshot.value?.mergeInProgress) return "上一次合并尚未完成，请先解决冲突或放弃合并";
   return `将 ${baseBranch.value.ref} 合并到当前分支`;
 });
