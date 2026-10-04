@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "vscode-icons-derived",
   "name": "vscode-icons (derived)",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minHostVersion": "1",
   "source": {
     "repository": "vscode-icons/vscode-icons",
-    "version": "12.19.0",
+    "version": "13.0.0",
     "url": "https://github.com/vscode-icons/vscode-icons"
   },
   "defaults": {
@@ -14,6 +14,27 @@
     "folder": "default_folder.svg"
   },
   "rules": [
+    {
+      "icon": "file_type_quartoconfig.svg",
+      "fileNames": [
+        "_quarto.yaml",
+        "_quarto.yml"
+      ]
+    },
+    {
+      "icon": "file_type_xml.svg",
+      "fileNames": [
+        ".actionscriptproperties",
+        ".flexlibproperties",
+        ".flexproperties",
+        ".project"
+      ],
+      "fileSuffixes": [
+        ".pex",
+        ".tmlanguage",
+        ".xml"
+      ]
+    },
     {
       "icon": "file_type_aikido.svg",
       "fileNames": [
@@ -30,9 +51,12 @@
       "icon": "file_type_angular.svg",
       "fileNames": [
         ".angular-cli.json",
+        ".angular-config.json",
         ".angular.json",
         "angular-cli.json",
-        "angular.json"
+        "angular.json",
+        "ngsw-config.json",
+        "ngsw.json"
       ]
     },
     {
@@ -77,9 +101,7 @@
         ".bash_aliases",
         ".bash_profile",
         ".bashrc",
-        ".profile",
-        ".zprofile",
-        ".zshrc"
+        ".profile"
       ],
       "fileSuffixes": [
         ".bash",
@@ -206,10 +228,30 @@
       ]
     },
     {
+      "icon": "file_type_changelogen.svg",
+      "fileNames": [
+        ".changelogenrc",
+        ".changelogrc",
+        "changelog.config.cjs",
+        "changelog.config.js",
+        "changelog.config.json",
+        "changelog.config.mjs",
+        "changelog.config.ts"
+      ]
+    },
+    {
       "icon": "file_type_changie.svg",
       "fileNames": [
         ".changie.yaml",
         ".changie.yml"
+      ]
+    },
+    {
+      "icon": "file_type_checkov.svg",
+      "light": "file_type_light_checkov.svg",
+      "fileNames": [
+        ".checkov.yaml",
+        ".checkov.yml"
       ]
     },
     {
@@ -238,6 +280,22 @@
       "fileNames": [
         ".codecov.yml",
         "codecov.yml"
+      ]
+    },
+    {
+      "icon": "file_type_codegen.svg",
+      "fileNames": [
+        ".codegenrc.js",
+        ".codegenrc.json",
+        ".codegenrc.ts",
+        ".codegenrc.yaml",
+        ".codegenrc.yml",
+        "codegen.config.js",
+        "codegen.js",
+        "codegen.json",
+        "codegen.ts",
+        "codegen.yaml",
+        "codegen.yml"
       ]
     },
     {
@@ -413,8 +471,17 @@
     {
       "icon": "file_type_devcontainer.svg",
       "fileNames": [
+        ".devcontainer-lock.json",
         ".devcontainer.json",
+        "devcontainer-lock.json",
         "devcontainer.json"
+      ]
+    },
+    {
+      "icon": "file_type_devprune.svg",
+      "fileNames": [
+        ".devprune.json",
+        "ignore.devprune.json"
       ]
     },
     {
@@ -491,6 +558,22 @@
       ]
     },
     {
+      "icon": "file_type_expo.svg",
+      "light": "file_type_light_expo.svg",
+      "fileNames": [
+        ".easignore",
+        "app.config.cjs",
+        "app.config.cts",
+        "app.config.js",
+        "app.config.json",
+        "app.config.mjs",
+        "app.config.mts",
+        "app.config.ts",
+        "app.json",
+        "eas.json"
+      ]
+    },
+    {
       "icon": "file_type_editorconfig.svg",
       "fileNames": [
         ".editorconfig"
@@ -544,6 +627,7 @@
         ".eslintrc.ts",
         ".eslintrc.yaml",
         ".eslintrc.yml",
+        "eslint-suppressions.json",
         "eslint.config.cjs",
         "eslint.config.cts",
         "eslint.config.js",
@@ -666,6 +750,15 @@
       "icon": "file_type_glitter.svg",
       "fileNames": [
         ".glitterrc"
+      ]
+    },
+    {
+      "icon": "file_type_golangci.svg",
+      "fileNames": [
+        ".golangci.json",
+        ".golangci.toml",
+        ".golangci.yaml",
+        ".golangci.yml"
       ]
     },
     {
@@ -1028,6 +1121,14 @@
       ]
     },
     {
+      "icon": "file_type_mcp.svg",
+      "light": "file_type_light_mcp.svg",
+      "fileNames": [
+        ".mcp.json",
+        "mcp.json"
+      ]
+    },
+    {
       "icon": "file_type_mdxlint.svg",
       "fileNames": [
         ".mdxlintignore",
@@ -1047,6 +1148,12 @@
       ],
       "fileSuffixes": [
         ".ml"
+      ]
+    },
+    {
+      "icon": "file_type_meteor.svg",
+      "fileNames": [
+        ".meteorignore"
       ]
     },
     {
@@ -1262,6 +1369,14 @@
       ]
     },
     {
+      "icon": "file_type_ohpm.svg",
+      "fileNames": [
+        ".ohpmrc",
+        "oh-package-lock.json5",
+        "oh-package.json5"
+      ]
+    },
+    {
       "icon": "file_type_opentofu.svg",
       "fileNames": [
         ".opentofu-version"
@@ -1271,6 +1386,12 @@
         ".tofu.json",
         ".tofutest.hcl",
         ".tofutest.json"
+      ]
+    },
+    {
+      "icon": "file_type_overmind.svg",
+      "fileNames": [
+        ".overmind.env"
       ]
     },
     {
@@ -1502,8 +1623,12 @@
     },
     {
       "icon": "file_type_readthedocs.svg",
+      "light": "file_type_light_readthedocs.svg",
       "fileNames": [
-        ".readthedocs.yaml"
+        ".readthedocs.yaml",
+        ".readthedocs.yml",
+        "readthedocs.yaml",
+        "readthedocs.yml"
       ]
     },
     {
@@ -1875,6 +2000,13 @@
       ]
     },
     {
+      "icon": "file_type_tombi.svg",
+      "fileNames": [
+        ".tombi.toml",
+        "tombi.toml"
+      ]
+    },
+    {
       "icon": "file_type_config.svg",
       "light": "file_type_light_config.svg",
       "fileNames": [
@@ -1929,8 +2061,6 @@
       "icon": "file_type_vscode.svg",
       "fileNames": [
         ".vscodeignore",
-        "launch.json",
-        "tasks.json",
         "vscodeignore.json"
       ],
       "fileSuffixes": [
@@ -2074,6 +2204,25 @@
       ]
     },
     {
+      "icon": "file_type_zed.svg",
+      "light": "file_type_light_zed.svg",
+      "fileNames": [
+        ".zedignore",
+        "zedignore.json"
+      ]
+    },
+    {
+      "icon": "file_type_zsh.svg",
+      "fileNames": [
+        ".zlogin",
+        ".zprofile",
+        ".zshrc",
+        "zlogin",
+        "zprofile",
+        "zshrc"
+      ]
+    },
+    {
       "icon": "file_type_agents.svg",
       "light": "file_type_light_agents.svg",
       "fileNames": [
@@ -2111,17 +2260,6 @@
       "fileNames": [
         "api-extractor-base.json",
         "api-extractor.json"
-      ]
-    },
-    {
-      "icon": "file_type_expo.svg",
-      "light": "file_type_light_expo.svg",
-      "fileNames": [
-        "app.config.js",
-        "app.config.json",
-        "app.config.json5",
-        "app.json",
-        "eas.json"
       ]
     },
     {
@@ -2165,6 +2303,15 @@
       ]
     },
     {
+      "icon": "file_type_azureresourcemanager.svg",
+      "fileNames": [
+        "azuredeploy.json",
+        "azuredeploy.parameters.json",
+        "azuredeploy.parameters.us.json",
+        "createuidefinition.json"
+      ]
+    },
+    {
       "icon": "file_type_behat.svg",
       "light": "file_type_light_behat.svg",
       "fileNames": [
@@ -2192,6 +2339,27 @@
       "icon": "file_type_bitbucketpipeline.svg",
       "fileNames": [
         "bitbucket-pipelines.yml"
+      ]
+    },
+    {
+      "icon": "file_type_brakeman.svg",
+      "fileNames": [
+        "brakeman.ignore",
+        "brakeman.yml"
+      ]
+    },
+    {
+      "icon": "file_type_buf.svg",
+      "fileNames": [
+        "buf.gen.yaml",
+        "buf.gen.yml",
+        "buf.work.yaml",
+        "buf.work.yml",
+        "buf.yaml",
+        "buf.yml"
+      ],
+      "fileSuffixes": [
+        ".buf.yaml"
       ]
     },
     {
@@ -2584,6 +2752,7 @@
     },
     {
       "icon": "file_type_firestore.svg",
+      "light": "file_type_light_firestore.svg",
       "fileNames": [
         "firestore.indexes.json",
         "firestore.rules"
@@ -2634,6 +2803,13 @@
         "formkit.theme.js",
         "formkit.theme.mjs",
         "formkit.theme.ts"
+      ]
+    },
+    {
+      "icon": "file_type_fresh.svg",
+      "fileNames": [
+        "fresh.config.ts",
+        "fresh.gen.ts"
       ]
     },
     {
@@ -2692,6 +2868,17 @@
       "icon": "file_type_glide.svg",
       "fileNames": [
         "glide.yml"
+      ]
+    },
+    {
+      "icon": "file_type_shaderlab.svg",
+      "light": "file_type_light_shaderlab.svg",
+      "fileNames": [
+        "global-metadata.dat"
+      ],
+      "fileSuffixes": [
+        ".shader",
+        ".unity"
       ]
     },
     {
@@ -2786,6 +2973,13 @@
       ]
     },
     {
+      "icon": "file_type_heroku.svg",
+      "light": "file_type_light_heroku.svg",
+      "fileNames": [
+        "heroku.yml"
+      ]
+    },
+    {
       "icon": "file_type_horusec.svg",
       "fileNames": [
         "horusec-config.json"
@@ -2833,6 +3027,16 @@
       ]
     },
     {
+      "icon": "file_type_xposed.svg",
+      "fileNames": [
+        "java_init.list",
+        "native_init",
+        "native_init.list",
+        "scope.list",
+        "xposed_init"
+      ]
+    },
+    {
       "icon": "file_type_jsconfig.svg",
       "light": "file_type_light_jsconfig.svg",
       "fileNames": [
@@ -2868,6 +3072,17 @@
         "knexfile.js",
         "knexfile.ls",
         "knexfile.ts"
+      ]
+    },
+    {
+      "icon": "file_type_kysely.svg",
+      "fileNames": [
+        "kysely.config.cjs",
+        "kysely.config.cts",
+        "kysely.config.js",
+        "kysely.config.mjs",
+        "kysely.config.mts",
+        "kysely.config.ts"
       ]
     },
     {
@@ -2952,13 +3167,6 @@
         "master.json",
         "master.mjs",
         "master.ts"
-      ]
-    },
-    {
-      "icon": "file_type_mcp.svg",
-      "light": "file_type_light_mcp.svg",
-      "fileNames": [
-        "mcp.json"
       ]
     },
     {
@@ -3047,6 +3255,17 @@
       ]
     },
     {
+      "icon": "file_type_moniq.svg",
+      "fileNames": [
+        "moniq.config.cjs",
+        "moniq.config.cts",
+        "moniq.config.js",
+        "moniq.config.mjs",
+        "moniq.config.mts",
+        "moniq.config.ts"
+      ]
+    },
+    {
       "icon": "file_type_motif.svg",
       "fileNames": [
         "motif.json"
@@ -3068,6 +3287,13 @@
         "next.config.mjs",
         "next.config.mts",
         "next.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_ng-packagr.svg",
+      "fileNames": [
+        "ng-package.js",
+        "ng-package.json"
       ]
     },
     {
@@ -3178,12 +3404,48 @@
     {
       "icon": "file_type_playwright.svg",
       "fileNames": [
+        "playwright.base.config.cjs",
+        "playwright.base.config.cts",
+        "playwright.base.config.js",
+        "playwright.base.config.mjs",
+        "playwright.base.config.mts",
+        "playwright.base.config.ts",
+        "playwright.ci.config.cjs",
+        "playwright.ci.config.cts",
+        "playwright.ci.config.js",
+        "playwright.ci.config.mjs",
+        "playwright.ci.config.mts",
+        "playwright.ci.config.ts",
         "playwright.config.cjs",
         "playwright.config.cts",
         "playwright.config.js",
         "playwright.config.mjs",
         "playwright.config.mts",
-        "playwright.config.ts"
+        "playwright.config.ts",
+        "playwright.dev.config.cjs",
+        "playwright.dev.config.cts",
+        "playwright.dev.config.js",
+        "playwright.dev.config.mjs",
+        "playwright.dev.config.mts",
+        "playwright.dev.config.ts",
+        "playwright.e2e.config.cjs",
+        "playwright.e2e.config.cts",
+        "playwright.e2e.config.js",
+        "playwright.e2e.config.mjs",
+        "playwright.e2e.config.mts",
+        "playwright.e2e.config.ts",
+        "playwright.local.config.cjs",
+        "playwright.local.config.cts",
+        "playwright.local.config.js",
+        "playwright.local.config.mjs",
+        "playwright.local.config.mts",
+        "playwright.local.config.ts",
+        "playwright.prod.config.cjs",
+        "playwright.prod.config.cts",
+        "playwright.prod.config.js",
+        "playwright.prod.config.mjs",
+        "playwright.prod.config.mts",
+        "playwright.prod.config.ts"
       ]
     },
     {
@@ -3207,6 +3469,7 @@
     },
     {
       "icon": "file_type_prismaconfig.svg",
+      "light": "file_type_light_prismaconfig.svg",
       "fileNames": [
         "prisma.cjs",
         "prisma.config.cjs",
@@ -3272,6 +3535,13 @@
       ]
     },
     {
+      "icon": "file_type_pyrefly.svg",
+      "light": "file_type_light_pyrefly.svg",
+      "fileNames": [
+        "pyrefly.toml"
+      ]
+    },
+    {
       "icon": "file_type_qmldir.svg",
       "fileNames": [
         "qmldir"
@@ -3324,6 +3594,12 @@
       ]
     },
     {
+      "icon": "file_type_rector.svg",
+      "fileNames": [
+        "rector.php"
+      ]
+    },
+    {
       "icon": "file_type_render.svg",
       "light": "file_type_light_render.svg",
       "fileNames": [
@@ -3337,6 +3613,12 @@
         "requirements-prod.txt",
         "requirements-test.txt",
         "requirements.txt"
+      ]
+    },
+    {
+      "icon": "file_type_reuse.svg",
+      "fileNames": [
+        "reuse.toml"
       ]
     },
     {
@@ -3409,6 +3691,61 @@
       "light": "file_type_light_rome.svg",
       "fileNames": [
         "rome.json"
+      ]
+    },
+    {
+      "icon": "file_type_rspack.svg",
+      "fileNames": [
+        "rsbuild.config.cjs",
+        "rsbuild.config.cts",
+        "rsbuild.config.js",
+        "rsbuild.config.mjs",
+        "rsbuild.config.mts",
+        "rsbuild.config.ts",
+        "rsdoctor.config.cjs",
+        "rsdoctor.config.cts",
+        "rsdoctor.config.js",
+        "rsdoctor.config.mjs",
+        "rsdoctor.config.mts",
+        "rsdoctor.config.ts",
+        "rslib.config.cjs",
+        "rslib.config.cts",
+        "rslib.config.js",
+        "rslib.config.mjs",
+        "rslib.config.mts",
+        "rslib.config.ts",
+        "rslint.config.cjs",
+        "rslint.config.cts",
+        "rslint.config.js",
+        "rslint.config.mjs",
+        "rslint.config.mts",
+        "rslint.config.ts",
+        "rslint.json",
+        "rslint.jsonc",
+        "rspack.config.cjs",
+        "rspack.config.cts",
+        "rspack.config.js",
+        "rspack.config.mjs",
+        "rspack.config.mts",
+        "rspack.config.ts",
+        "rspress.config.cjs",
+        "rspress.config.cts",
+        "rspress.config.js",
+        "rspress.config.mjs",
+        "rspress.config.mts",
+        "rspress.config.ts",
+        "rstack.config.cjs",
+        "rstack.config.cts",
+        "rstack.config.js",
+        "rstack.config.mjs",
+        "rstack.config.mts",
+        "rstack.config.ts",
+        "rstest.config.cjs",
+        "rstest.config.cts",
+        "rstest.config.js",
+        "rstest.config.mjs",
+        "rstest.config.mts",
+        "rstest.config.ts"
       ]
     },
     {
@@ -3503,6 +3840,7 @@
     },
     {
       "icon": "file_type_firebasestorage.svg",
+      "light": "file_type_light_firebasestorage.svg",
       "fileNames": [
         "storage.rules"
       ]
@@ -3560,6 +3898,12 @@
         "taskfile.dist.yml",
         "taskfile.yaml",
         "taskfile.yml"
+      ]
+    },
+    {
+      "icon": "file_type_tasks_json.svg",
+      "fileNames": [
+        "tasks.json"
       ]
     },
     {
@@ -3628,7 +3972,8 @@
         "tsconfig.spec.json",
         "tsconfig.staging.json",
         "tsconfig.test.json",
-        "tsconfig.types.json"
+        "tsconfig.types.json",
+        "tsfmt.json"
       ]
     },
     {
@@ -3760,6 +4105,13 @@
       ],
       "fileSuffixes": [
         ".vitest-snap"
+      ]
+    },
+    {
+      "icon": "file_type_vlt.svg",
+      "fileNames": [
+        "vlt-lock.json",
+        "vlt.json"
       ]
     },
     {
@@ -4004,6 +4356,12 @@
         "wxt.config.mjs",
         "wxt.config.mts",
         "wxt.config.ts"
+      ]
+    },
+    {
+      "icon": "file_type_zensical.svg",
+      "fileNames": [
+        "zensical.toml"
       ]
     },
     {
@@ -4313,7 +4671,8 @@
     {
       "icon": "file_type_actionscript.svg",
       "fileSuffixes": [
-        ".as"
+        ".as",
+        ".part"
       ]
     },
     {
@@ -4530,17 +4889,6 @@
       ]
     },
     {
-      "icon": "file_type_buf.svg",
-      "fileSuffixes": [
-        ".buf.gen.yaml",
-        ".buf.gen.yml",
-        ".buf.work.yaml",
-        ".buf.work.yml",
-        ".buf.yaml",
-        ".buf.yml"
-      ]
-    },
-    {
       "icon": "file_type_c.svg",
       "fileSuffixes": [
         ".c"
@@ -4595,9 +4943,23 @@
       ]
     },
     {
+      "icon": "file_type_cadence.svg",
+      "fileSuffixes": [
+        ".cdc"
+      ]
+    },
+    {
       "icon": "file_type_cddl.svg",
       "fileSuffixes": [
         ".cddl"
+      ]
+    },
+    {
+      "icon": "file_type_cdp.svg",
+      "fileSuffixes": [
+        ".cdp",
+        ".cdp1",
+        ".codrop"
       ]
     },
     {
@@ -4791,11 +5153,10 @@
       ]
     },
     {
-      "icon": "file_type_text.svg",
+      "icon": "file_type_csv.svg",
       "fileSuffixes": [
         ".csv",
-        ".tsv",
-        ".txt"
+        ".tsv"
       ]
     },
     {
@@ -4957,6 +5318,13 @@
       "icon": "file_type_drools.svg",
       "fileSuffixes": [
         ".drl"
+      ]
+    },
+    {
+      "icon": "file_type_proteus.svg",
+      "fileSuffixes": [
+        ".dsn",
+        ".pdsprj"
       ]
     },
     {
@@ -5437,6 +5805,13 @@
       ]
     },
     {
+      "icon": "file_type_hip.svg",
+      "light": "file_type_light_hip.svg",
+      "fileSuffixes": [
+        ".hip"
+      ]
+    },
+    {
       "icon": "file_type_hjson.svg",
       "light": "file_type_light_hjson.svg",
       "fileSuffixes": [
@@ -5631,6 +6006,14 @@
       ]
     },
     {
+      "icon": "file_type_jinja.svg",
+      "fileSuffixes": [
+        ".j2",
+        ".jinja",
+        ".jinja2"
+      ]
+    },
+    {
       "icon": "file_type_janet.svg",
       "fileSuffixes": [
         ".janet"
@@ -5658,12 +6041,6 @@
       "icon": "file_type_jest_snapshot.svg",
       "fileSuffixes": [
         ".jest-snap"
-      ]
-    },
-    {
-      "icon": "file_type_jinja.svg",
-      "fileSuffixes": [
-        ".jinja"
       ]
     },
     {
@@ -5972,6 +6349,7 @@
     },
     {
       "icon": "file_type_mongo.svg",
+      "light": "file_type_light_mongo.svg",
       "fileSuffixes": [
         ".mongo"
       ]
@@ -6000,7 +6378,9 @@
       "light": "file_type_light_mustache.svg",
       "fileSuffixes": [
         ".mst",
-        ".mustache"
+        ".mu",
+        ".mustache",
+        ".stache"
       ]
     },
     {
@@ -6013,6 +6393,12 @@
       "icon": "file_type_mvtjs.svg",
       "fileSuffixes": [
         ".mvt"
+      ]
+    },
+    {
+      "icon": "file_type_mxml.svg",
+      "fileSuffixes": [
+        ".mxml"
       ]
     },
     {
@@ -6262,14 +6648,6 @@
       ]
     },
     {
-      "icon": "file_type_xml.svg",
-      "fileSuffixes": [
-        ".pex",
-        ".tmlanguage",
-        ".xml"
-      ]
-    },
-    {
       "icon": "file_type_pgsql.svg",
       "fileSuffixes": [
         ".pgsql"
@@ -6303,6 +6681,16 @@
       "icon": "file_type_plsql_package_header.svg",
       "fileSuffixes": [
         ".pkh"
+      ]
+    },
+    {
+      "icon": "file_type_packer.svg",
+      "fileSuffixes": [
+        ".pkr.hcl",
+        ".pkr.json",
+        ".pkrtpl.hcl",
+        ".pkrvars.hcl",
+        ".pkrvars.json"
       ]
     },
     {
@@ -6478,6 +6866,12 @@
       "icon": "file_type_codeql.svg",
       "fileSuffixes": [
         ".ql"
+      ]
+    },
+    {
+      "icon": "file_type_quarto.svg",
+      "fileSuffixes": [
+        ".qmd"
       ]
     },
     {
@@ -6721,23 +7115,21 @@
       ]
     },
     {
-      "icon": "file_type_shaderlab.svg",
-      "light": "file_type_light_shaderlab.svg",
-      "fileSuffixes": [
-        ".shader",
-        ".unity"
-      ]
-    },
-    {
       "icon": "file_type_sketch.svg",
       "fileSuffixes": [
         ".sketch"
       ]
     },
     {
-      "icon": "file_type_slang.svg",
+      "icon": "file_type_slangacademic.svg",
       "fileSuffixes": [
         ".slang"
+      ]
+    },
+    {
+      "icon": "file_type_shaderslang.svg",
+      "fileSuffixes": [
+        ".slangh"
       ]
     },
     {
@@ -6819,6 +7211,12 @@
       "icon": "file_type_sql.svg",
       "fileSuffixes": [
         ".sql"
+      ]
+    },
+    {
+      "icon": "file_type_sqlproj.svg",
+      "fileSuffixes": [
+        ".sqlproj"
       ]
     },
     {
@@ -6922,7 +7320,9 @@
       "icon": "file_type_flash.svg",
       "fileSuffixes": [
         ".swc",
-        ".swf"
+        ".swc.cache",
+        ".swf",
+        ".swf.cache"
       ]
     },
     {
@@ -6941,6 +7341,12 @@
       "icon": "file_type_riot.svg",
       "fileSuffixes": [
         ".tag"
+      ]
+    },
+    {
+      "icon": "file_type_tablegen.svg",
+      "fileSuffixes": [
+        ".td"
       ]
     },
     {
@@ -7100,6 +7506,12 @@
       ]
     },
     {
+      "icon": "file_type_text.svg",
+      "fileSuffixes": [
+        ".txt"
+      ]
+    },
+    {
       "icon": "file_type_powershell_types.svg",
       "fileSuffixes": [
         ".types.ps1xml"
@@ -7121,6 +7533,12 @@
       "icon": "file_type_uiua.svg",
       "fileSuffixes": [
         ".ua"
+      ]
+    },
+    {
+      "icon": "file_type_uvue.svg",
+      "fileSuffixes": [
+        ".uvue"
       ]
     },
     {
@@ -7553,7 +7971,9 @@
         "languages",
         "locale",
         "locales",
-        "localization"
+        "localization",
+        "translation",
+        "translations"
       ]
     },
     {
@@ -7686,6 +8106,8 @@
         "export",
         "exports",
         "out",
+        "output",
+        "outputs",
         "outs",
         "release",
         "releases",
@@ -7721,6 +8143,33 @@
         "certificates",
         "certs",
         "certs."
+      ]
+    },
+    {
+      "icon": "folder_type_config.svg",
+      "folderNames": [
+        ".cfg",
+        ".cfgs",
+        ".conf",
+        ".config",
+        ".configs",
+        ".configuration",
+        ".configurations",
+        ".ini",
+        ".initializers",
+        ".setting",
+        ".settings",
+        "cfg",
+        "cfgs",
+        "conf",
+        "config",
+        "configs",
+        "configuration",
+        "configurations",
+        "ini",
+        "initializers",
+        "setting",
+        "settings"
       ]
     },
     {
@@ -7779,29 +8228,6 @@
       "folderNames": [
         ".composer",
         "composer"
-      ]
-    },
-    {
-      "icon": "folder_type_config.svg",
-      "folderNames": [
-        ".conf",
-        ".config",
-        ".configs",
-        ".configuration",
-        ".configurations",
-        ".ini",
-        ".initializers",
-        ".setting",
-        ".settings",
-        "conf",
-        "config",
-        "configs",
-        "configuration",
-        "configurations",
-        "ini",
-        "initializers",
-        "setting",
-        "settings"
       ]
     },
     {
@@ -8047,6 +8473,12 @@
       ]
     },
     {
+      "icon": "folder_type_kadence.svg",
+      "folderNames": [
+        ".kadence"
+      ]
+    },
+    {
       "icon": "folder_type_kiro.svg",
       "folderNames": [
         ".kiro"
@@ -8134,6 +8566,13 @@
       "folderNames": [
         ".nuxt",
         "nuxt"
+      ]
+    },
+    {
+      "icon": "folder_type_ocx.svg",
+      "light": "folder_type_light_ocx.svg",
+      "folderNames": [
+        ".ocx"
       ]
     },
     {
@@ -8370,6 +8809,13 @@
       ]
     },
     {
+      "icon": "folder_type_alpine.svg",
+      "light": "folder_type_light_alpine.svg",
+      "folderNames": [
+        "alpine"
+      ]
+    },
+    {
       "icon": "folder_type_android.svg",
       "folderNames": [
         "android"
@@ -8391,9 +8837,24 @@
       ]
     },
     {
+      "icon": "folder_type_arch.svg",
+      "folderNames": [
+        "arch"
+      ]
+    },
+    {
       "icon": "folder_type_aurelia.svg",
       "folderNames": [
         "aurelia_project"
+      ]
+    },
+    {
+      "icon": "folder_type_auth.svg",
+      "folderNames": [
+        "auth",
+        "authentication",
+        "authorisation",
+        "authorization"
       ]
     },
     {
@@ -8535,6 +8996,13 @@
       ]
     },
     {
+      "icon": "folder_type_fedora.svg",
+      "light": "folder_type_light_fedora.svg",
+      "folderNames": [
+        "fedora"
+      ]
+    },
+    {
       "icon": "folder_type_flow.svg",
       "folderNames": [
         "flow",
@@ -8555,6 +9023,12 @@
         "font",
         "fonts",
         "webfonts"
+      ]
+    },
+    {
+      "icon": "folder_type_gentoo.svg",
+      "folderNames": [
+        "gentoo"
       ]
     },
     {
@@ -8698,6 +9172,19 @@
       ]
     },
     {
+      "icon": "folder_type_ohpm.svg",
+      "folderNames": [
+        "oh_modules"
+      ]
+    },
+    {
+      "icon": "folder_type_suse.svg",
+      "folderNames": [
+        "opensuse",
+        "suse"
+      ]
+    },
+    {
       "icon": "folder_type_php.svg",
       "folderNames": [
         "php"
@@ -8716,6 +9203,13 @@
       ]
     },
     {
+      "icon": "folder_type_redhat.svg",
+      "folderNames": [
+        "redhat",
+        "rhel"
+      ]
+    },
+    {
       "icon": "folder_type_redis.svg",
       "folderNames": [
         "redis"
@@ -8726,6 +9220,13 @@
       "light": "folder_type_light_redux.svg",
       "folderNames": [
         "redux"
+      ]
+    },
+    {
+      "icon": "folder_type_schema.svg",
+      "folderNames": [
+        "schema",
+        "schemas"
       ]
     },
     {
@@ -8746,6 +9247,12 @@
       "folderNames": [
         "service",
         "services"
+      ]
+    },
+    {
+      "icon": "folder_type_slackware.svg",
+      "folderNames": [
+        "slackware"
       ]
     },
     {
@@ -8791,6 +9298,12 @@
       "folderNames": [
         "ts",
         "typescript"
+      ]
+    },
+    {
+      "icon": "folder_type_void.svg",
+      "folderNames": [
+        "void"
       ]
     },
     {
