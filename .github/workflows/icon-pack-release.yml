@@ -82,7 +82,7 @@ jobs:
           release_assets=(
             icon-packs/vscode-icons-derived/icon-pack-release/*.iconpack.json.gz
             icon-packs/vscode-icons-derived/icon-pack-release/checksums.txt
-            icon-packs/vscode-icons-derived/icon-pack-release/LICENSES-vscode-icons.txt
+            icon-packs/vscode-icons-derived/icon-pack-release/LICENSES-vscode-icons-derived.txt
           )
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
