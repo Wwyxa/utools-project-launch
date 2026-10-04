@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Edit3,
   FileImage,
+  FilePenLine,
   Filter,
   FilePlus2,
   Folder,
@@ -39,6 +40,7 @@ import { classifyProjectMarkdownImageSource } from "../../lib/projectMarkdown";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import FileTreeNode, { type InlineTreeEdit, type TreeNode } from "./FileTreeNode.vue";
+import FileIcon from "../common/FileIcon.vue";
 import ActionDialog from "../common/ActionDialog.vue";
 
 type SearchMatch = { start: number; end: number };
@@ -89,7 +91,7 @@ const isFiltering = ref(false);
 const filterTruncated = ref(false);
 const inlineEdit = ref<InlineTreeEdit | null>(null);
 const contextMenu = ref<{
-  node: TreeNode;
+  node: TreeNode | null;
   x: number;
   y: number;
   previousSelectedPath: string;
@@ -437,14 +439,32 @@ const pathIsSameOrChild = (relativePath: string, parentRelativePath: string) => 
 };
 
 const closeContextMenu = (restoreFocus = false) => {
-  const relativePath = contextMenu.value?.node.relativePath || "";
+  const relativePath = contextMenu.value?.node?.relativePath || "";
   contextMenu.value = null;
   if (restoreFocus && relativePath) focusTreeNode(relativePath);
 };
-const handleWindowClick = () => closeContextMenu();
+
+// 菜单未触发任何动作即被关闭（点击外部）时，还原右键前的选中与焦点；
+// 只回写树内状态，不夺回 DOM 焦点，避免打断点击目标（如编辑区）。
+// 点击落在文件树节点上时交给节点自身的选中逻辑处理。
+const handleWindowClick = (event: MouseEvent) => {
+  const menu = contextMenu.value;
+  if (!menu) return;
+  contextMenu.value = null;
+  const clickedTreeNode = event.target instanceof HTMLElement && Boolean(event.target.closest("[data-tree-path]"));
+  if (
+    menu.node &&
+    !clickedTreeNode &&
+    menu.previousSelectedPath &&
+    menu.previousSelectedPath !== selectedNodeRelativePath.value
+  ) {
+    selectedNodeRelativePath.value = menu.previousSelectedPath;
+    focusedRelativePath.value = menu.previousFocusedPath || menu.previousSelectedPath;
+  }
+};
 
 const showNodeContextMenu = (
-  node: TreeNode,
+  node: TreeNode | null,
   anchor: { x: number; y: number; aboveY?: number },
   previousSelectedPath: string,
   previousFocusedPath: string,
@@ -495,6 +515,18 @@ const openNodeContextMenu = (node: TreeNode, source: MouseEvent | KeyboardEvent)
   );
 };
 
+// 空白区域右键：不改变当前选中，提供根级的新建、刷新与折叠操作
+const openBlankContextMenu = (event: MouseEvent) => {
+  event.preventDefault();
+  if (inlineEdit.value || filterQuery.value.trim()) return;
+  showNodeContextMenu(
+    null,
+    { x: event.clientX, y: event.clientY },
+    selectedNodeRelativePath.value,
+    focusedRelativePath.value,
+  );
+};
+
 const handleContextMenuKeydown = (event: KeyboardEvent) => {
   const items = Array.from(contextMenuRef.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') || []);
   if (items.length === 0) return;
@@ -509,7 +541,10 @@ const handleContextMenuKeydown = (event: KeyboardEvent) => {
   items[nextIndex].focus();
 };
 
+// 内联编辑的取消入口：Escape、点击任意空白处（input blur）都会走到这里。
+// 确认弹窗打开时会夺走 input 焦点，此时不能视为取消。
 const cancelInlineEdit = () => {
+  if (actionDialog.value) return;
   if (!inlineEdit.value?.busy) inlineEdit.value = null;
 };
 
@@ -806,6 +841,15 @@ const executeInlineEdit = async () => {
       return;
     }
     rewriteTreePrefix(rootNodes.value, targetPath, result.relativePath, sourceNode.path, result.path);
+    // rewriteTreePrefix 只重写路径前缀；树节点对象是原位复用的，末段变更后的 name/extension 需要单独同步，
+    // 否则树里会一直显示旧名称，直到手动刷新
+    const renamedName = pathParts(result.relativePath).pop() || edit.value;
+    const renamedDotIndex = renamedName.lastIndexOf(".");
+    sourceNode.name = renamedName;
+    sourceNode.extension =
+      renamedDotIndex > 0
+        ? `${sourceNode.extension.startsWith(".") ? "." : ""}${renamedName.slice(renamedDotIndex + 1)}`
+        : "";
     selectedNodeRelativePath.value = replacePathPrefix(selectedNodeRelativePath.value, targetPath, result.relativePath);
     focusedRelativePath.value = replacePathPrefix(focusedRelativePath.value, targetPath, result.relativePath);
     const selectedWasAffected = Boolean(
@@ -932,6 +976,11 @@ const revealNode = async (node: TreeNode) => {
   } catch (error) {
     statusMessage.value = error instanceof Error ? error.message : t.value.files.operationFailed;
   }
+};
+
+const editNode = (node: TreeNode) => {
+  closeContextMenu();
+  void openFile(node, true);
 };
 
 const toggleFilter = () => {
@@ -1471,6 +1520,7 @@ watch(filterQuery, (query) => {
           )
         "
         @keydown="handleTreeKeydown"
+        @contextmenu="openBlankContextMenu"
       >
         <div v-if="isLoadingTree" class="space-y-1.5 p-1" aria-busy="true">
           <div
@@ -1496,11 +1546,14 @@ watch(filterQuery, (query) => {
             v-else
             :key="entry.relativePath"
             type="button"
-            class="flex h-9 w-full min-w-0 flex-col justify-center rounded px-2 text-left hover:bg-surface-variant"
+            class="flex h-9 w-full min-w-0 items-center gap-2 rounded px-2 text-left hover:bg-surface-variant"
             @click="activateFilterResult(entry)"
           >
-            <span class="truncate font-medium text-on-surface">{{ entry.name }}</span>
-            <span class="truncate font-mono text-[9px] text-on-surface-variant">{{ entry.relativePath }}</span>
+            <FileIcon :name="entry.name" :path="entry.relativePath" :kind="entry.kind" fallback-policy="lucide" />
+            <span class="min-w-0 flex-1">
+              <span class="block truncate font-medium text-on-surface">{{ entry.name }}</span>
+              <span class="block truncate font-mono text-[9px] text-on-surface-variant">{{ entry.relativePath }}</span>
+            </span>
           </button>
           <div v-if="!isFiltering && filterResults.length === 0" class="p-2 text-on-surface-variant">
             {{ t.files.noResults }}
@@ -1519,6 +1572,7 @@ watch(filterQuery, (query) => {
               @input="updateInlineValue(($event.target as HTMLInputElement).value)"
               @keydown.enter.prevent="submitInlineEdit"
               @keydown.esc.prevent="cancelInlineEdit"
+              @blur="cancelInlineEdit"
             />
             <p v-if="inlineEdit.error" class="mt-1 break-words text-[10px] text-status-error">{{ inlineEdit.error }}</p>
           </div>
@@ -1866,64 +1920,95 @@ watch(filterQuery, (query) => {
   </div>
 
   <Teleport to="body">
-    <Transition name="fade">
-      <div
-        v-if="contextMenu"
-        ref="contextMenuRef"
-        class="file-tree-context-menu fixed z-[75] overflow-hidden rounded border border-border-subtle bg-surface-container-lowest py-1 text-xs text-on-surface shadow-xl"
-        :style="contextMenuStyle"
-        role="menu"
-        @click.stop
-        @contextmenu.prevent
-        @keydown="handleContextMenuKeydown"
-      >
+    <div
+      v-if="contextMenu"
+      ref="contextMenuRef"
+      class="menu-pop fixed z-[75] w-fit max-w-[min(13rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-0.5 shadow-2xl"
+      :style="contextMenuStyle"
+      role="menu"
+      @click.stop
+      @contextmenu.prevent
+      @keydown="handleContextMenuKeydown"
+    >
+      <template v-if="contextMenu.node">
+        <button
+          v-if="contextMenu.node.kind === 'file'"
+          type="button"
+          class="ui-menu-item"
+          role="menuitem"
+          @click="editNode(contextMenu.node)"
+        >
+          <FilePenLine :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.editFile }}</span>
+        </button>
         <button
           v-if="contextMenu.node.kind === 'directory'"
           type="button"
-          class="file-tree-menu-item"
+          class="ui-menu-item"
           role="menuitem"
           @click="beginCreate('file', contextMenu.node)"
         >
-          <FilePlus2 :size="13" />{{ t.files.newFile }}
+          <FilePlus2 :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.newFile }}</span>
         </button>
         <button
           v-if="contextMenu.node.kind === 'directory'"
           type="button"
-          class="file-tree-menu-item"
+          class="ui-menu-item"
           role="menuitem"
           @click="beginCreate('directory', contextMenu.node)"
         >
-          <FolderPlus :size="13" />{{ t.files.newDirectory }}
+          <FolderPlus :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.newDirectory }}</span>
         </button>
-        <button type="button" class="file-tree-menu-item" role="menuitem" @click="requestRename(contextMenu.node)">
-          <Pencil :size="13" />{{ t.files.rename }}
+        <button type="button" class="ui-menu-item" role="menuitem" @click="requestRename(contextMenu.node)">
+          <Pencil :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.rename }}</span>
         </button>
-        <div class="my-1 border-t border-border-subtle" />
+        <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
+        <button type="button" class="ui-menu-item" role="menuitem" @click="copyNodePath(contextMenu.node, false)">
+          <Copy :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.copyRelativePath }}</span>
+        </button>
+        <button type="button" class="ui-menu-item" role="menuitem" @click="copyNodePath(contextMenu.node, true)">
+          <Copy :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.copyAbsolutePath }}</span>
+        </button>
+        <button type="button" class="ui-menu-item" role="menuitem" @click="revealNode(contextMenu.node)">
+          <LocateFixed :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.revealInFolder }}</span>
+        </button>
+        <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
         <button
           type="button"
-          class="file-tree-menu-item"
-          role="menuitem"
-          @click="copyNodePath(contextMenu.node, false)"
-        >
-          <Copy :size="13" />{{ t.files.copyRelativePath }}
-        </button>
-        <button type="button" class="file-tree-menu-item" role="menuitem" @click="copyNodePath(contextMenu.node, true)">
-          <Copy :size="13" />{{ t.files.copyAbsolutePath }}
-        </button>
-        <button type="button" class="file-tree-menu-item" role="menuitem" @click="revealNode(contextMenu.node)">
-          <LocateFixed :size="13" />{{ t.files.revealInFolder }}
-        </button>
-        <div class="my-1 border-t border-border-subtle" />
-        <button
-          type="button"
-          class="file-tree-menu-item text-status-error hover:bg-status-error/10"
+          class="ui-menu-item text-status-error hover:bg-status-error/10"
           role="menuitem"
           @click="requestDelete(contextMenu.node)"
         >
-          <Trash2 :size="13" />{{ t.common.delete }}
+          <Trash2 :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.common.delete }}</span>
         </button>
-      </div>
-    </Transition>
+      </template>
+      <template v-else>
+        <button type="button" class="ui-menu-item" role="menuitem" @click="beginCreate('file')">
+          <FilePlus2 :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.newFile }}</span>
+        </button>
+        <button type="button" class="ui-menu-item" role="menuitem" @click="beginCreate('directory')">
+          <FolderPlus :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.newDirectory }}</span>
+        </button>
+        <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
+        <button type="button" class="ui-menu-item" role="menuitem" @click="refreshTree">
+          <RefreshCw :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.refreshTree }}</span>
+        </button>
+        <button type="button" class="ui-menu-item" role="menuitem" @click="collapseAll">
+          <ListCollapse :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.collapseAll }}</span>
+        </button>
+      </template>
+    </div>
   </Teleport>
 
   <ActionDialog

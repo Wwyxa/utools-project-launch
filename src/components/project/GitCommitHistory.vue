@@ -2928,7 +2928,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="isInteractionDisabled"
           @click="openRefDialog('create-branch', commitContextMenu.commit)"
           @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2938,7 +2938,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="isInteractionDisabled"
           @click="openRefDialog('create-tag', commitContextMenu.commit)"
           @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2949,7 +2949,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="
             isInteractionDisabled || Boolean(gitHistoryActionUnavailableReason('cherry-pick', commitContextMenu.commit))
           "
@@ -2964,7 +2964,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="
             isInteractionDisabled || Boolean(gitHistoryActionUnavailableReason('revert', commitContextMenu.commit))
           "
@@ -2977,7 +2977,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="isInteractionDisabled || !canCheckoutDetachedCommit(commitContextMenu.commit)"
           @click="checkoutCommit(commitContextMenu.commit)"
           @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2989,7 +2989,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled"
             @click="executeStashAction('apply', commitContextMenu.commit)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2999,7 +2999,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled"
             @click="executeStashAction('pop', commitContextMenu.commit)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -3009,7 +3009,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item text-status-error"
+            class="ui-menu-item text-status-error"
             :disabled="isInteractionDisabled"
             @click="requestDropStash(commitContextMenu.commit)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -3035,7 +3035,7 @@ onBeforeUnmount(() => {
               commitSubmenu.branch.kind === branch.kind &&
               commitSubmenu.branch.name === branch.name
             "
-            class="git-history-menu-item cursor-default"
+            class="ui-menu-item cursor-default"
             @click="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
             @mouseenter="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -3063,7 +3063,7 @@ onBeforeUnmount(() => {
             :data-tag-index="tagIndex"
             aria-haspopup="menu"
             :aria-expanded="commitSubmenu?.kind === 'tag' && commitSubmenu.tag.name === tag.name"
-            class="git-history-menu-item cursor-default"
+            class="ui-menu-item cursor-default"
             @click="openCommitSubmenu({ kind: 'tag', tag }, $event.currentTarget as HTMLElement)"
             @mouseenter="openCommitSubmenu({ kind: 'tag', tag }, $event.currentTarget as HTMLElement)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -3100,7 +3100,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled || commitSubmenu.branch.current"
             @click="
               commitSubmenu.branch.kind === 'local'
@@ -3117,7 +3117,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               role="menuitem"
-              class="git-history-menu-item"
+              class="ui-menu-item"
               :disabled="isInteractionDisabled"
               @click="openRefDialog('rename-branch', commitContextMenu.commit, commitSubmenu.branch.name)"
               @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -3127,7 +3127,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               role="menuitem"
-              class="git-history-menu-item text-status-error"
+              class="ui-menu-item text-status-error"
               :disabled="isInteractionDisabled || commitSubmenu.branch.current"
               :title="commitSubmenu.branch.current ? '不能删除当前检出的分支' : '先执行安全删除'"
               @click="requestDeleteBranch(commitSubmenu.branch)"
@@ -3141,7 +3141,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled"
             @click="openTagInfo(commitSubmenu.tag.name)"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -3154,7 +3154,7 @@ onBeforeUnmount(() => {
               :key="`${commitSubmenu.tag.name}:${remote.name}`"
               type="button"
               role="menuitem"
-              class="git-history-menu-item"
+              class="ui-menu-item"
               :disabled="isInteractionDisabled"
               :title="`推送到 ${remote.name}`"
               @click="requestPushTag(commitSubmenu.tag.name, remote.name)"
@@ -3167,7 +3167,7 @@ onBeforeUnmount(() => {
             v-else
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             disabled
             title="当前没有可用的推送 remote"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -3178,7 +3178,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled"
             @click="copyTagRef(commitSubmenu.tag.name)"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -3188,7 +3188,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item text-status-error"
+            class="ui-menu-item text-status-error"
             :disabled="isInteractionDisabled"
             @click="requestDeleteTag(commitSubmenu.tag.name)"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"

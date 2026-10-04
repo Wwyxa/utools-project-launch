@@ -122,7 +122,7 @@ watch([isRenaming, isCreatingInside], ([renaming, creating]) => {
       @click="handleClick"
       @dblclick="handleDoubleClick"
       @focus="emit('focus-node', node)"
-      @contextmenu.prevent="emit('context-menu', node, $event)"
+      @contextmenu.prevent.stop="emit('context-menu', node, $event)"
       :class="
         cn(
           'relative flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left hover:bg-surface-variant',
@@ -161,6 +161,7 @@ watch([isRenaming, isCreatingInside], ([renaming, creating]) => {
         :aria-label="node.name"
         @input="emit('inline-input', ($event.target as HTMLInputElement).value)"
         @keydown="handleInlineKeydown"
+        @blur="emit('inline-cancel')"
       />
       <p v-if="inlineEdit?.error" class="mt-1 break-words text-[10px] text-status-error">{{ inlineEdit.error }}</p>
     </div>
@@ -176,6 +177,7 @@ watch([isRenaming, isCreatingInside], ([renaming, creating]) => {
           :aria-label="inlineEdit?.kind === 'directory' ? 'New directory' : 'New file'"
           @input="emit('inline-input', ($event.target as HTMLInputElement).value)"
           @keydown="handleInlineKeydown"
+          @blur="emit('inline-cancel')"
         />
         <p v-if="inlineEdit?.error" class="mt-1 break-words text-[10px] text-status-error">{{ inlineEdit.error }}</p>
       </div>

@@ -564,7 +564,8 @@
   opacity: 0.6;
 }
 
-.git-history-menu-item {
+/* 右键菜单 / 紧凑菜单通用条目：Git 提交历史与文件树等浮层共享同一套规格 */
+.ui-menu-item {
   display: flex;
   width: 100%;
   height: 1.75rem;
@@ -583,24 +584,24 @@
     opacity 120ms ease;
 }
 
-.git-history-menu-item:hover:not(:disabled),
-.git-history-menu-item:focus-visible {
+.ui-menu-item:hover:not(:disabled),
+.ui-menu-item:focus-visible {
   background: var(--color-surface-variant);
   color: var(--color-primary);
   outline: none;
 }
 
-.git-history-menu-item:disabled {
+.ui-menu-item:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
-.git-history-menu-item.text-status-error {
+.ui-menu-item.text-status-error {
   color: var(--color-status-error);
 }
 
-.git-history-menu-item.text-status-error:hover:not(:disabled),
-.git-history-menu-item.text-status-error:focus-visible {
+.ui-menu-item.text-status-error:hover:not(:disabled),
+.ui-menu-item.text-status-error:focus-visible {
   color: var(--color-status-error);
 }
 
@@ -1369,33 +1370,6 @@
     width: 1.5rem;
     height: 1.5rem;
   }
-}
-
-.file-tree-menu-item {
-  display: flex;
-  width: 100%;
-  min-width: 100%;
-  height: 1.8rem;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.65rem;
-  text-align: left;
-  white-space: nowrap;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
-}
-
-.file-tree-context-menu {
-  width: max-content;
-  max-width: calc(100vw - 1rem);
-}
-
-.file-tree-menu-item:hover,
-.file-tree-menu-item:focus-visible {
-  background: var(--color-surface-variant);
-  color: var(--color-primary);
-  outline: none;
 }
 
 .file-find-input-wrap {
