@@ -48,6 +48,7 @@ import type {
   EnvironmentToolKey,
   ExternalApplication,
   IconPackId,
+  IconPackUpdateResult,
   ProjectLaunchServiceLogRetentionPolicy,
 } from "../../types";
 
@@ -87,7 +88,7 @@ const logRetentionFeedback = ref("");
 const logRetentionFeedbackTone = ref<"success" | "error">("success");
 const logRetentionClearOpen = ref(false);
 const logRetentionClearBusy = ref(false);
-const iconPackAction = ref<"install" | "verify" | "remove" | null>(null);
+const iconPackAction = ref<"install" | "check" | "verify" | "remove" | null>(null);
 const iconPackSelectingId = ref<IconPackId | null>(null);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 let stopAppEscapeListener = () => {};
@@ -287,16 +288,18 @@ const projectLaunchServiceSchedulerClass = computed(() => {
 });
 const segmentButtonClass = (active: boolean) =>
   cn(
-    "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all",
+    "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-55",
     active
       ? "bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
       : "text-on-surface-variant hover:bg-surface-container",
   );
 
 type ServiceActionTone = "primary" | "secondary" | "danger";
-const serviceActionButtonClass = (tone: ServiceActionTone = "secondary") =>
+type ServiceActionSize = "sm" | "md" | "field";
+const serviceActionButtonClass = (tone: ServiceActionTone = "secondary", size: ServiceActionSize = "md") =>
   cn(
-    "inline-flex h-8 min-w-[7.5rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-55",
+    "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-55",
+    size === "sm" ? "h-7 px-2" : size === "field" ? "h-9 px-3" : "h-8 min-w-[8rem] px-2.5",
     tone === "primary"
       ? "border-primary bg-primary text-on-primary hover:bg-primary/90"
       : tone === "danger"
@@ -342,6 +345,31 @@ const handleOpenGithubRepository = async () => {
 
 const handleInstallIconPack = async () => {
   if (iconPackBusy.value) return;
+  const isUpdate = Boolean(iconPackStatus.value?.installedPackId);
+  if (isUpdate) {
+    iconPackAction.value = "check";
+    showActionStatus({ state: "loading", message: t.value.settings.iconPackChecking });
+    let check: IconPackUpdateResult;
+    try {
+      check = await store.checkIconPackUpdate();
+      if (!check.ok) {
+        showActionStatus({ state: "error", message: check.message || t.value.settings.iconPackUpdateCheckError });
+        return;
+      }
+      if (!check.updateAvailable) {
+        showActionStatus({ state: "success", message: t.value.settings.iconPackUpToDate });
+        return;
+      }
+    } catch (error) {
+      showActionStatus({
+        state: "error",
+        message: error instanceof Error ? error.message : t.value.settings.iconPackUpdateCheckError,
+      });
+      return;
+    } finally {
+      iconPackAction.value = null;
+    }
+  }
   iconPackAction.value = "install";
   showActionStatus({ state: "loading", message: t.value.settings.iconPackInstalling });
   try {
@@ -349,7 +377,9 @@ const handleInstallIconPack = async () => {
     showActionStatus({
       state: result.ok ? "success" : "error",
       message: result.ok
-        ? t.value.settings.iconPackInstallSuccess
+        ? isUpdate
+          ? t.value.settings.iconPackUpdateSuccess
+          : t.value.settings.iconPackInstallSuccess
         : result.message || t.value.settings.iconPackInstallError,
     });
   } catch (error) {
@@ -911,7 +941,11 @@ watch(
                 </span>
               </div>
               <div class="grid min-w-0 gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.8fr)]">
-                <div class="flex min-w-0 flex-wrap items-start gap-1.5" role="group" :aria-label="t.settings.iconPack">
+                <div
+                  class="inline-flex max-w-full rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
+                  role="group"
+                  :aria-label="t.settings.iconPack"
+                >
                   <button
                     type="button"
                     :class="segmentButtonClass(store.uiPreferences.iconPackId === 'builtin')"
@@ -936,12 +970,22 @@ watch(
                     type="button"
                     :class="serviceActionButtonClass('primary')"
                     :disabled="iconPackBusy"
-                    :aria-busy="iconPackAction === 'install'"
+                    :aria-busy="iconPackAction === 'install' || iconPackAction === 'check'"
                     @click="handleInstallIconPack"
                   >
-                    <RefreshCw v-if="iconPackAction === 'install'" :size="13" class="animate-spin" />
+                    <RefreshCw
+                      v-if="iconPackAction === 'install' || iconPackAction === 'check'"
+                      :size="13"
+                      class="animate-spin"
+                    />
                     <Download v-else :size="13" />
-                    {{ iconPackAction === "install" ? t.settings.iconPackInstalling : iconPackInstallLabel }}
+                    {{
+                      iconPackAction === "install"
+                        ? t.settings.iconPackInstalling
+                        : iconPackAction === "check"
+                          ? t.settings.iconPackChecking
+                          : iconPackInstallLabel
+                    }}
                   </button>
                   <button
                     type="button"
@@ -999,7 +1043,7 @@ watch(
           <div class="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
-              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+              :class="serviceActionButtonClass('secondary', 'sm')"
               @click="openEnvironmentDialog()"
             >
               <Plus :size="12" />
@@ -1007,8 +1051,8 @@ watch(
             </button>
             <button
               type="button"
+              :class="serviceActionButtonClass('secondary', 'sm')"
               @click="store.setActiveTab('environment')"
-              class="inline-flex h-7 items-center gap-1 rounded border border-border-subtle bg-transparent px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
             >
               <MonitorCog :size="12" />
               {{ t.environment.title }}
@@ -1078,7 +1122,7 @@ watch(
         <div class="grid gap-2.5 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.95fr)]">
           <div class="space-y-2.5 rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2.5">
             <div
-              class="grid grid-cols-3 gap-1 rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-inner"
+              class="grid grid-cols-3 gap-1 rounded-full border border-border-subtle bg-surface-container-low p-0.5 shadow-inner"
             >
               <button
                 v-for="option in aiProviderOptions"
@@ -1174,7 +1218,7 @@ watch(
                 <button
                   type="button"
                   @click="loadAiModels"
-                  class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                   :title="t.common.refresh"
                   :aria-label="t.common.refresh"
                 >
@@ -1183,8 +1227,9 @@ watch(
                 <button
                   type="button"
                   @click="handleTestAi"
-                  class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                  :class="serviceActionButtonClass('primary', 'field')"
                   :disabled="store.aiModelTesting || !aiConfigReady"
+                  :aria-busy="store.aiModelTesting"
                 >
                   <WandSparkles :size="13" />
                   {{ store.aiModelTesting ? "测试中" : "测试" }}
@@ -1218,7 +1263,7 @@ watch(
                 <div class="flex gap-1">
                   <button
                     type="button"
-                    class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                    class="flex h-7 w-7 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     title="新增模式"
                     aria-label="新增模式"
                     @click="handleAddAiMode"
@@ -1227,7 +1272,7 @@ watch(
                   </button>
                   <button
                     type="button"
-                    class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+                    class="flex h-7 w-7 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     title="恢复默认模式"
                     aria-label="恢复默认模式"
                     @click="handleResetAiModes"
@@ -1274,7 +1319,7 @@ watch(
                 </label>
                 <button
                   type="button"
-                  class="mt-5 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant transition-colors hover:bg-status-error/10 hover:text-status-error disabled:cursor-not-allowed disabled:opacity-40"
+                  :class="cn('mt-5', serviceActionButtonClass('danger', 'field'))"
                   :disabled="selectedAiMode.builtIn"
                   @click="handleDeleteAiMode"
                 >
@@ -1371,7 +1416,7 @@ watch(
           </div>
           <button
             type="button"
-            class="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+            :class="cn('ml-auto shrink-0', serviceActionButtonClass('secondary', 'sm'))"
             @click="openExternalApplicationDialog()"
           >
             <Plus :size="12" />
@@ -1449,26 +1494,6 @@ watch(
             <span class="text-[10px] leading-4 text-on-surface-variant">{{ t.settings.projectLaunchServiceHint }}</span>
           </div>
           <div class="ml-auto flex shrink-0 items-center gap-2">
-            <button
-              v-if="
-                projectLaunchServiceStatus &&
-                !projectLaunchServiceStatus.installed &&
-                projectLaunchServiceStatus.expectedAssetName
-              "
-              type="button"
-              class="inline-flex h-7 items-center gap-1 rounded border border-primary bg-primary px-2 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
-              :disabled="projectLaunchServiceBusy"
-              :aria-busy="projectLaunchServiceDownloading"
-              @click="handleDownloadProjectLaunchService"
-            >
-              <RefreshCw v-if="projectLaunchServiceDownloading" :size="12" class="animate-spin" />
-              <Download v-else :size="12" />
-              {{
-                projectLaunchServiceDownloading
-                  ? t.settings.projectLaunchServiceDownloading
-                  : t.settings.projectLaunchServiceDownload
-              }}
-            </button>
             <span :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', projectLaunchServiceStatusClass)">
               {{ projectLaunchServiceStatusLabel }}
             </span>
@@ -1532,6 +1557,26 @@ watch(
 
           <div class="flex min-w-0 flex-wrap content-start gap-1.5">
             <button
+              v-if="
+                projectLaunchServiceStatus &&
+                !projectLaunchServiceStatus.installed &&
+                projectLaunchServiceStatus.expectedAssetName
+              "
+              type="button"
+              :class="serviceActionButtonClass('primary')"
+              :disabled="projectLaunchServiceBusy"
+              :aria-busy="projectLaunchServiceDownloading"
+              @click="handleDownloadProjectLaunchService"
+            >
+              <RefreshCw v-if="projectLaunchServiceDownloading" :size="13" class="animate-spin" />
+              <Download v-else :size="13" />
+              {{
+                projectLaunchServiceDownloading
+                  ? t.settings.projectLaunchServiceDownloading
+                  : t.settings.projectLaunchServiceDownload
+              }}
+            </button>
+            <button
               type="button"
               :class="serviceActionButtonClass('primary')"
               :disabled="projectLaunchServiceBusy || !projectLaunchServiceStatus?.installed"
@@ -1560,11 +1605,21 @@ watch(
                   : t.settings.projectLaunchServiceRecheck
               }}
             </button>
-            <button type="button" :class="serviceActionButtonClass()" @click="store.openProjectLaunchServiceDirectory">
+            <button
+              type="button"
+              :class="serviceActionButtonClass()"
+              :disabled="projectLaunchServiceBusy"
+              @click="store.openProjectLaunchServiceDirectory"
+            >
               <FolderOpen :size="13" />
               {{ t.settings.projectLaunchServiceOpenDirectory }}
             </button>
-            <button type="button" :class="serviceActionButtonClass()" @click="store.openProjectLaunchServiceReleases">
+            <button
+              type="button"
+              :class="serviceActionButtonClass()"
+              :disabled="projectLaunchServiceBusy"
+              @click="store.openProjectLaunchServiceReleases"
+            >
               <Github :size="13" />
               {{ t.settings.projectLaunchServiceOpenReleases }}
             </button>
@@ -1597,6 +1652,7 @@ watch(
                 type="button"
                 :class="serviceActionButtonClass('primary')"
                 :disabled="!logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy"
+                :aria-busy="logRetentionSaving"
                 @click="saveLogRetention"
               >
                 <Save :size="13" />
@@ -1608,6 +1664,7 @@ watch(
                 type="button"
                 :class="serviceActionButtonClass('danger')"
                 :disabled="!logRetentionReady || logRetentionClearBusy"
+                :aria-busy="logRetentionClearBusy"
                 @click="logRetentionClearOpen = true"
               >
                 <Trash2 :size="13" />
@@ -1765,20 +1822,12 @@ watch(
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            @click="store.importProjectConfig"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-variant"
-          >
-            <Download :size="14" />
+          <button type="button" :class="serviceActionButtonClass()" @click="store.importProjectConfig">
+            <Download :size="13" />
             {{ t.settings.importProjectConfig }}
           </button>
-          <button
-            type="button"
-            @click="store.exportProjectConfig"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-transparent px-3 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-variant"
-          >
-            <Upload :size="14" />
+          <button type="button" :class="serviceActionButtonClass()" @click="store.exportProjectConfig">
+            <Upload :size="13" />
             {{ t.settings.exportProjectConfig }}
           </button>
         </div>
@@ -1871,10 +1920,10 @@ watch(
                 <button
                   v-if="editingExternalApplication?.kind === 'custom'"
                   type="button"
-                  class="inline-flex h-8 items-center gap-1 rounded border border-status-error/30 px-2.5 text-xs font-bold text-status-error hover:bg-status-error/10"
+                  :class="serviceActionButtonClass('danger')"
                   @click="deleteExternalApplication"
                 >
-                  <Trash2 :size="12" />
+                  <Trash2 :size="13" />
                   {{ t.common.delete }}
                 </button>
                 <button
@@ -1884,7 +1933,7 @@ watch(
                       (editingExternalApplication.kind === 'vscode' ? 'code {path}' : 'cursor {path}')
                   "
                   type="button"
-                  class="inline-flex h-8 items-center gap-1 rounded border border-border-subtle px-2.5 text-xs font-bold text-primary hover:bg-primary/10"
+                  :class="serviceActionButtonClass()"
                   @click="
                     store.restoreExternalApplicationNativeLaunch(editingExternalApplication.id);
                     externalApplicationDialogOpen = false;
@@ -1894,14 +1943,10 @@ watch(
                 </button>
               </div>
               <div class="flex gap-2">
-                <button
-                  type="button"
-                  class="h-8 rounded border border-border-subtle px-3 text-xs font-bold text-on-surface"
-                  @click="externalApplicationDialogOpen = false"
-                >
+                <button type="button" :class="serviceActionButtonClass()" @click="externalApplicationDialogOpen = false">
                   {{ t.common.cancel }}
                 </button>
-                <button type="submit" class="h-8 rounded bg-primary px-3 text-xs font-bold text-on-primary">
+                <button type="submit" :class="serviceActionButtonClass('primary')">
                   {{ t.common.save }}
                 </button>
               </div>
@@ -1995,31 +2040,27 @@ watch(
                 <button
                   v-if="editingBuiltinEnvironmentKey && editingBuiltinHasOverride"
                   type="button"
-                  class="inline-flex h-8 items-center gap-1 rounded border border-border-subtle px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+                  :class="serviceActionButtonClass()"
                   @click="restoreBuiltinEnvironment"
                 >
-                  <RotateCcw :size="12" />
+                  <RotateCcw :size="13" />
                   {{ t.settings.restoreEnvironmentDefault }}
                 </button>
                 <button
                   v-else-if="editingCustomEnvironmentId"
                   type="button"
-                  class="inline-flex h-8 items-center gap-1 rounded border border-status-error/30 px-2.5 text-xs font-bold text-status-error transition-colors hover:bg-status-error/10"
+                  :class="serviceActionButtonClass('danger')"
                   @click="requestDeleteCustomEnvironment"
                 >
-                  <Trash2 :size="12" />
+                  <Trash2 :size="13" />
                   {{ t.common.delete }}
                 </button>
               </div>
               <div class="flex gap-2">
-                <button
-                  type="button"
-                  class="h-8 rounded border border-border-subtle px-3 text-xs font-bold text-on-surface"
-                  @click="environmentDialogOpen = false"
-                >
+                <button type="button" :class="serviceActionButtonClass()" @click="environmentDialogOpen = false">
                   {{ t.common.cancel }}
                 </button>
-                <button type="submit" class="h-8 rounded bg-primary px-3 text-xs font-bold text-on-primary">
+                <button type="submit" :class="serviceActionButtonClass('primary')">
                   {{ t.common.save }}
                 </button>
               </div>
