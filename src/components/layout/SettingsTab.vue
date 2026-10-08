@@ -624,8 +624,11 @@ const saveLogRetention = async () => {
 };
 
 const confirmClearLogRetention = async () => {
+  if (logRetentionClearBusy.value) return;
   logRetentionClearBusy.value = true;
+  logRetentionClearOpen.value = false;
   logRetentionFeedback.value = "";
+  showActionStatus({ state: "loading", message: t.value.settings.projectLaunchServiceLogClearBusy });
   try {
     const result = await store.clearProjectLaunchServiceLogs();
     try {
@@ -637,11 +640,12 @@ const confirmClearLogRetention = async () => {
     logRetentionFeedback.value = t.value.settings.projectLaunchServiceLogClearResult
       .replace("{count}", String(result.deletedCount))
       .replace("{size}", formatLogBytes(result.releasedBytes));
-    logRetentionClearOpen.value = false;
+    showActionStatus({ state: "success", message: logRetentionFeedback.value });
   } catch (error) {
     logRetentionFeedbackTone.value = "error";
     logRetentionFeedback.value =
       error instanceof Error ? error.message : t.value.settings.projectLaunchServiceLogClearError;
+    showActionStatus({ state: "error", message: logRetentionFeedback.value });
   } finally {
     logRetentionClearBusy.value = false;
   }

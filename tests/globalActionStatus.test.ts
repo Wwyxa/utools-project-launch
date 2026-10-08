@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { effectScope, nextTick } from "vue";
 import {
   activeActionStatus,
   completeActionProgress,
@@ -7,7 +8,13 @@ import {
   showActionProgress,
   showActionStatus,
 } from "../src/components/common/actionStatus";
-import { isNewProgressOperation, mergeGitRemoteProgressEntry } from "../src/composables/useGlobalActionStatus";
+import { isNewProgressOperation, mergeGitRemoteProgressEntry, useGlobalActionStatus } from "../src/composables/useGlobalActionStatus";
+
+vi.mock("vue", async (importOriginal) => ({
+  ...await importOriginal<typeof import("vue")>(),
+  onMounted: vi.fn(),
+  onUnmounted: vi.fn(),
+}));
 
 describe("global action status", () => {
   beforeEach(() => {
@@ -130,7 +137,39 @@ describe("global action status", () => {
     expect(activeActionStatus.value?.id).toBe(newerOperationId);
   });
 
-  it("updates the current remote progress stage and only auto-expands a new operation", () => {
+  it("auto-expands new progress with details and preserves manual collapse during updates", async () => {
+    const scope = effectScope();
+    try {
+      const store = {
+        gitRepositoryRefreshing: {},
+        gitRepositoryStatusRefreshing: {},
+        gitRepositoryLoadingMore: {},
+      } as Parameters<typeof useGlobalActionStatus>[0];
+      const status = scope.run(() => useGlobalActionStatus(store))!;
+      const progress = {
+        operationId: "first-operation",
+        state: "loading" as const,
+        message: "Fetching",
+        entries: [{ timestamp: "12:00:00", message: "Fetching", stage: "start" }],
+      };
+      showActionProgress(progress);
+      await nextTick();
+      expect(status.isGlobalActionStatusExpanded.value).toBe(true);
+
+      status.isGlobalActionStatusExpanded.value = false;
+      showActionProgress({ ...progress, message: "Receiving objects" });
+      await nextTick();
+      expect(status.isGlobalActionStatusExpanded.value).toBe(false);
+
+      showActionProgress({ ...progress, operationId: "second-operation" });
+      await nextTick();
+      expect(status.isGlobalActionStatusExpanded.value).toBe(true);
+    } finally {
+      scope.stop();
+    }
+  });
+
+  it("updates the current remote progress stage and identifies a new operation", () => {
     const startEntry = { timestamp: "12:00:00", message: "开始: git fetch", stage: "start" };
     const outputEntry = { timestamp: "12:00:01", message: "Receiving objects: 50%", stage: "receiving objects" };
     const laterOutputEntry = { timestamp: "12:00:02", message: "Receiving objects: 75%", stage: "receiving objects" };

@@ -1413,11 +1413,11 @@ const closeConfirmationDialog = () => {
 };
 const confirmAction = async () => {
   const dialog = confirmationDialog.value;
-  if (!dialog) return;
+  if (!dialog || confirmationBusy.value) return;
   confirmationBusy.value = true;
+  confirmationDialog.value = null;
   try {
     await dialog.onConfirm();
-    if (confirmationDialog.value === dialog) confirmationDialog.value = null;
   } finally {
     confirmationBusy.value = false;
   }

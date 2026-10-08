@@ -702,9 +702,9 @@ const confirmRiskyAction = async () => {
   if (!dialog || isConfirmationRunning.value) return;
 
   isConfirmationRunning.value = true;
+  confirmationDialog.value = null;
   try {
     await dialog.onConfirm();
-    if (confirmationDialog.value === dialog) confirmationDialog.value = null;
   } finally {
     isConfirmationRunning.value = false;
   }

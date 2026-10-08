@@ -225,7 +225,7 @@ watch(
 </script>
 
 <template>
-  <Transition name="slide-up" appear>
+  <Transition name="fade" appear>
     <button
       ref="triggerRef"
       v-bind="$attrs"
@@ -280,7 +280,7 @@ watch(
       <div
         v-if="expanded"
         ref="panelRef"
-        class="fixed z-[80] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border text-xs shadow-2xl"
+        class="fixed z-[100] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border text-xs shadow-2xl"
         :class="statePanelClasses"
         :style="{
           left: `${panelPosition.left}px`,

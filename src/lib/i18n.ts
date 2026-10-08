@@ -396,6 +396,7 @@ const messages = {
       unsavedMessage: "当前文件包含未保存内容。保存后继续、放弃更改，或取消本次操作。",
       discard: "放弃",
       deleteTitle: "删除项目文件",
+      deleted: "已删除项目文件。",
       deleteFileMessage: "确定删除文件“{name}”吗？此操作无法撤销。",
       deleteDirectoryMessage: "确定删除目录“{name}”吗？目录中的所有内容也会一并删除，此操作无法撤销。",
       processing: "处理中",
@@ -1088,6 +1089,7 @@ const messages = {
       unsavedMessage: "The current file has unsaved content. Save and continue, discard the changes, or cancel.",
       discard: "Discard",
       deleteTitle: "Delete project file",
+      deleted: "Project file deleted.",
       deleteFileMessage: "Delete the file “{name}”? This cannot be undone.",
       deleteDirectoryMessage:
         "Delete the directory “{name}”? All of its contents will also be removed. This cannot be undone.",

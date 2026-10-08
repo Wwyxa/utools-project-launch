@@ -42,6 +42,7 @@ import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../l
 import FileTreeNode, { type InlineTreeEdit, type TreeNode } from "./FileTreeNode.vue";
 import FileIcon from "../common/FileIcon.vue";
 import ActionDialog from "../common/ActionDialog.vue";
+import { showActionStatus } from "../common/actionStatus";
 
 type SearchMatch = { start: number; end: number };
 type MarkdownAssetState = { status: "loading" | "failed" | "ready"; dataUrl?: string };
@@ -929,11 +930,15 @@ const confirmDelete = async () => {
   const target = deleteTarget.value;
   if (!target || isActionRunning.value) return;
   isActionRunning.value = true;
+  actionDialog.value = null;
+  deleteTarget.value = null;
+  showActionStatus({ state: "loading", message: t.value.files.processing });
   try {
     const result = await store.deleteProjectEntry(props.project.id, target.relativePath);
     if (!result?.ok) {
       actionDialogError.value = result?.message || t.value.files.operationFailed;
       statusMessage.value = actionDialogError.value;
+      showActionStatus({ state: "error", message: actionDialogError.value });
       return;
     }
     removeTreeNode(rootNodes.value, target.relativePath);
@@ -942,13 +947,13 @@ const confirmDelete = async () => {
     if (pathIsSameOrChild(selectedNodeRelativePath.value, target.relativePath)) {
       selectedNodeRelativePath.value = parentRelativePath(target.relativePath);
     }
-    actionDialog.value = null;
-    deleteTarget.value = null;
+    showActionStatus({ state: "success", message: t.value.files.deleted });
     const nextFocus = findNodeRecursive(rootNodes.value, selectedNodeRelativePath.value) || visibleNodes.value[0];
     if (nextFocus) focusTreeNode(nextFocus.relativePath);
   } catch (error) {
     actionDialogError.value = error instanceof Error ? error.message : t.value.files.operationFailed;
     statusMessage.value = actionDialogError.value;
+    showActionStatus({ state: "error", message: actionDialogError.value });
   } finally {
     isActionRunning.value = false;
   }
