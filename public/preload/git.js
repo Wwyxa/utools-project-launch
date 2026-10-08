@@ -2276,7 +2276,7 @@ async function readGitRemoteBranchesAsyncResult(repositoryPath, remotes) {
   const branches = outputResult.stdout
     .split(/\r?\n/)
     .map((line) => {
-      const [fullName] = line.split(fieldSeparator);
+      const [fullName, commitHash] = line.split(fieldSeparator);
       const normalizedName = String(fullName || "").trim();
       const prefix = "refs/remotes/";
       if (!normalizedName.startsWith(prefix)) {
@@ -2295,7 +2295,7 @@ async function readGitRemoteBranchesAsyncResult(repositoryPath, remotes) {
         return null;
       }
 
-      return { remote, branch, ref: `${remote}/${branch}` };
+      return { remote, branch, ref: `${remote}/${branch}`, commitHash };
     })
     .filter(Boolean)
     .sort((left, right) => left.ref.localeCompare(right.ref));

@@ -1188,11 +1188,13 @@ describe("browser Git workspace fallback", () => {
     });
     const projectPath = "C:\\project";
     const remoteBranches: ProjectGitRemoteBranchSummary[] = [
-      { remote: "origin", branch: "feature/login", ref: "origin/feature/login" },
+      { remote: "origin", branch: "feature/login", ref: "origin/feature/login", commitHash: "b".repeat(40) },
     ];
+    const updatedRemoteBranches = [{ ...remoteBranches[0], commitHash: "e".repeat(40) }];
     const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>();
     readGitStatusSnapshot
       .mockResolvedValueOnce(gitSnapshot(projectPath, "with-remote", "c".repeat(40), remoteBranches))
+      .mockResolvedValueOnce(gitSnapshot(projectPath, "updated-remote", "c".repeat(40), updatedRemoteBranches))
       .mockResolvedValueOnce(gitSnapshot(projectPath, "pruned", "d".repeat(40), []));
     window.projectBridge = { ...getProjectBridge(), readGitStatusSnapshot };
 
@@ -1205,6 +1207,9 @@ describe("browser Git workspace fallback", () => {
 
     await store.refreshGitStatusSnapshot(project.id);
     expect(project.git?.remoteBranches).toEqual(remoteBranches);
+
+    await store.refreshGitStatusSnapshot(project.id);
+    expect(project.git?.remoteBranches).toEqual(updatedRemoteBranches);
 
     await store.refreshGitStatusSnapshot(project.id);
     expect(project.git?.remoteBranches).toEqual([]);

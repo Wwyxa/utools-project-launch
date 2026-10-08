@@ -562,6 +562,38 @@ try {
     /standalone annotation/,
   );
 
+  runGitAt(publishProjectRoot, "commit", "--amend", "-m", "rewritten release commit");
+  const rewrittenHead = runGitAt(publishProjectRoot, "rev-parse", "HEAD").trim();
+  const forceWithLease = {
+    remote: "mirror", branch: publishBranch, expectedHash: releaseCommit,
+    headHash: runGitAt(publishProjectRoot, "rev-parse", "--short", "HEAD").trim(),
+  };
+  const leasedSnapshot = await bridge.readGitStatusSnapshot(publishProjectRoot);
+  assert.equal(leasedSnapshot.remoteBranches.find((branch) => branch.ref === `mirror/${publishBranch}`).commitHash, releaseCommit);
+  assert.equal((await bridge.pushGitRemote(publishProjectRoot)).ok, false);
+  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
+    forceWithLease: { ...forceWithLease, branch: "different-target" },
+  })).ok, false);
+  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
+    forceWithLease: { ...forceWithLease, expectedHash: "invalid" },
+  })).ok, false);
+  assert.equal((await bridge.pushGitRemote(publishProjectRoot, { forceWithLease })).ok, true);
+  assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `refs/heads/${publishBranch}`).trim(), rewrittenHead);
+  assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `${releaseTagName}^{commit}`).trim(), releaseCommit);
+  runGitAt(publishProjectRoot, "commit", "--amend", "-m", "second rewritten release commit");
+  const secondHead = runGitAt(publishProjectRoot, "rev-parse", "HEAD").trim();
+  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
+    forceWithLease: { ...forceWithLease, headHash: secondHead },
+  })).ok, false);
+  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
+    forceWithLease: { ...forceWithLease, expectedHash: rewrittenHead },
+  })).ok, false);
+  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
+    forceWithLease: { ...forceWithLease, expectedHash: rewrittenHead, headHash: secondHead },
+    tagNames: [releaseTagName],
+  })).ok, false);
+  assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `refs/heads/${publishBranch}`).trim(), rewrittenHead);
+
   const remoteDeleteBranch = "feature/remote-delete";
   runGitAt(publishProjectRoot, "switch", "-c", remoteDeleteBranch);
   fs.writeFileSync(path.join(publishProjectRoot, "remote-delete.txt"), "remote delete\n");
