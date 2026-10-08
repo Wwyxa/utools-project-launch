@@ -1171,6 +1171,74 @@ func TestRetainedLogDescriptorsOnlyListReadableCompletedLogs(t *testing.T) {
 	}
 }
 
+func TestTrimRunHistoryKeepsRecentlyCompletedReorderedRun(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	store.data.Runs = []Run{{
+		ID:        "persistent-active",
+		Status:    RunStatusRunning,
+		StartedAt: "2026-09-01T00:00:00Z",
+	}}
+	for index := range MaxRunHistory - 1 {
+		store.data.Runs = append(store.data.Runs, Run{
+			ID:        fmt.Sprintf("completed-%03d", index),
+			Status:    RunStatusExited,
+			StartedAt: fmt.Sprintf("2026-09-02T00:%02d:%02dZ", index/60, index%60),
+		})
+	}
+	store.data.Runs = append(store.data.Runs, Run{
+		ID:        "recently-completed",
+		Status:    RunStatusRunning,
+		StartedAt: "2026-09-22T10:46:40Z",
+	})
+	store.trimRunHistoryLocked()
+	for index := range store.data.Runs {
+		if store.data.Runs[index].ID == "recently-completed" {
+			store.data.Runs[index].Status = RunStatusExited
+		}
+	}
+	store.data.Runs = append(store.data.Runs, Run{
+		ID:        "next-active",
+		Status:    RunStatusRunning,
+		StartedAt: "2026-09-22T10:47:30Z",
+	})
+	store.trimRunHistoryLocked()
+
+	if _, found := findRun(store.data.Runs, "recently-completed"); !found {
+		t.Fatal("recently completed run was trimmed after the next run started")
+	}
+	if _, found := findRun(store.data.Runs, "completed-000"); found {
+		t.Fatal("oldest completed run was retained instead of the recently completed run")
+	}
+}
+
+func TestTrimRunHistoryOrdersMixedPrecisionTimestamps(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	for index := range MaxRunHistory - 1 {
+		store.data.Runs = append(store.data.Runs, Run{
+			ID:     fmt.Sprintf("active-%03d", index),
+			Status: RunStatusRunning,
+		})
+	}
+	store.data.Runs = append(store.data.Runs,
+		Run{ID: "whole-second", Status: RunStatusExited, StartedAt: "2026-09-22T10:46:40Z"},
+		Run{ID: "fractional-second", Status: RunStatusExited, StartedAt: "2026-09-22T10:46:40.1Z"},
+	)
+	store.trimRunHistoryLocked()
+
+	if _, found := findRun(store.data.Runs, "fractional-second"); !found {
+		t.Fatal("newer fractional-second run was trimmed before the whole-second run")
+	}
+	if _, found := findRun(store.data.Runs, "whole-second"); found {
+		t.Fatal("older whole-second run was retained")
+	}
+}
+
 func TestUpdateLogRetentionCleansOldCompletedLogsPerProject(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

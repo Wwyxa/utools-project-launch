@@ -518,7 +518,10 @@ describe("browser Git workspace fallback", () => {
     await store.refreshGitSnapshotForInteraction(project.id, { kind: "main" }, { limit: 20 });
 
     expect(readGitSnapshot).toHaveBeenCalledOnce();
-    expect(project.git?.commits).toHaveLength(1);
+    // The store repopulated `project.git`, but TS still narrows it to the
+    // earlier `= null` assignment.
+    const snapshot = project.git as ProjectGitSnapshot | null;
+    expect(snapshot?.commits).toHaveLength(1);
   });
 
   it("treats a persisted status-only object as incomplete and reloads history", async () => {
@@ -952,7 +955,7 @@ describe("browser Git workspace fallback", () => {
     window.projectBridge = {
       ...getProjectBridge(),
       readGitSnapshotResult: vi.fn(() => staleFull.promise),
-      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false, value: null, failure: repositoryFailure })),
+      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false as const, value: null, failure: repositoryFailure })),
     };
 
     const { useStore } = await import("../src/store/useStore");
@@ -988,7 +991,7 @@ describe("browser Git workspace fallback", () => {
     window.projectBridge = {
       ...getProjectBridge(),
       readGitSnapshotResult: vi.fn(() => staleFull.promise),
-      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false, value: null, failure: repositoryFailure })),
+      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false as const, value: null, failure: repositoryFailure })),
     };
 
     const { useStore } = await import("../src/store/useStore");
@@ -1185,11 +1188,13 @@ describe("browser Git workspace fallback", () => {
     });
     const projectPath = "C:\\project";
     const remoteBranches: ProjectGitRemoteBranchSummary[] = [
-      { remote: "origin", branch: "feature/login", ref: "origin/feature/login" },
+      { remote: "origin", branch: "feature/login", ref: "origin/feature/login", commitHash: "b".repeat(40) },
     ];
+    const updatedRemoteBranches = [{ ...remoteBranches[0], commitHash: "e".repeat(40) }];
     const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>();
     readGitStatusSnapshot
       .mockResolvedValueOnce(gitSnapshot(projectPath, "with-remote", "c".repeat(40), remoteBranches))
+      .mockResolvedValueOnce(gitSnapshot(projectPath, "updated-remote", "c".repeat(40), updatedRemoteBranches))
       .mockResolvedValueOnce(gitSnapshot(projectPath, "pruned", "d".repeat(40), []));
     window.projectBridge = { ...getProjectBridge(), readGitStatusSnapshot };
 
@@ -1202,6 +1207,9 @@ describe("browser Git workspace fallback", () => {
 
     await store.refreshGitStatusSnapshot(project.id);
     expect(project.git?.remoteBranches).toEqual(remoteBranches);
+
+    await store.refreshGitStatusSnapshot(project.id);
+    expect(project.git?.remoteBranches).toEqual(updatedRemoteBranches);
 
     await store.refreshGitStatusSnapshot(project.id);
     expect(project.git?.remoteBranches).toEqual([]);

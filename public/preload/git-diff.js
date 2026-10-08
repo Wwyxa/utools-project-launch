@@ -604,7 +604,50 @@ async function pushGitTag(projectPath, tagName, remoteName = "") {
       };
 }
 
-function pushGitRemote(projectPath, options = {}) {
+async function pushGitRemote(projectPath, options = {}) {
+  if (options.forceWithLease !== undefined) {
+    const lease = options.forceWithLease;
+    if (
+      !lease ||
+      typeof lease.remote !== "string" ||
+      typeof lease.branch !== "string" ||
+      !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(lease.expectedHash || "") ||
+      !/^[0-9a-f]{7,64}$/i.test(lease.headHash || "") ||
+      normalizeGitPushTagNames(options).length > 0
+    ) {
+      return { ok: false, message: "强制推送需要有效的分支租约，且不能同时推送标签。" };
+    }
+    const context = await resolveGitRemoteOperation(projectPath);
+    if (!context.ok) return { ok: false, message: context.message };
+    const confirmedHead = await runGitAsyncResult(context.repositoryPath, [
+      "rev-parse", "--verify", `${lease.headHash}^{commit}`,
+    ]);
+    const head = await runGitAsyncResult(context.repositoryPath, ["rev-parse", "--verify", "HEAD"]);
+    if (
+      context.upstream.remote !== lease.remote ||
+      context.upstream.branch !== lease.branch ||
+      !confirmedHead.ok || !head.ok || head.stdout.trim() !== confirmedHead.stdout.trim()
+    ) {
+      return { ok: false, message: "当前分支或推送目标已变化，请重新确认强制推送。" };
+    }
+    const result = await runGitRemoteCommandResult(context.repositoryPath, [
+      "push",
+      "--progress",
+      "--no-follow-tags",
+      `--force-with-lease=refs/heads/${lease.branch}:${lease.expectedHash}`,
+      "--",
+      lease.remote,
+      `${confirmedHead.stdout.trim()}:refs/heads/${lease.branch}`,
+    ]);
+    return {
+      ok: result.status === 0,
+      remote: lease.remote,
+      branch: lease.branch,
+      message: result.status === 0
+        ? `已通过租约保护强制推送到 ${context.upstream.ref}。`
+        : firstGitError(result, "强制推送失败，请检查远端分支是否已变化。"),
+    };
+  }
   const tagNames = normalizeGitPushTagNames(options);
   return runGitRemoteResult(
     projectPath,

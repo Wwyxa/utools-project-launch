@@ -348,6 +348,21 @@ describe("layoutGitCommitGraph", () => {
     expect(rowFor(layout, "main").segments.map((segment) => segment.colorIndex)).toEqual([0, 1]);
   });
 
+  it("keeps semantic reference colors out of the branch cycle hues in both themes", () => {
+    const reservedColorIndexes = GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES;
+    const firstBranchColorIndex = reservedColorIndexes.length;
+
+    for (const colorTheme of ["light", "dark"] as const) {
+      const semanticColors = reservedColorIndexes.map((colorIndex) => gitCommitGraphStrokeColor(colorIndex, colorTheme));
+      for (let branchColorIndex = firstBranchColorIndex; branchColorIndex < firstBranchColorIndex + 5; branchColorIndex += 1) {
+        expect(semanticColors).not.toContain(gitCommitGraphStrokeColor(branchColorIndex, colorTheme));
+      }
+    }
+
+    expect(gitCommitGraphStrokeColor(GIT_COMMIT_GRAPH_COLOR_INDEX.upstream, "light")).toBe("#652d90");
+    expect(gitCommitGraphStrokeColor(GIT_COMMIT_GRAPH_COLOR_INDEX.upstream, "dark")).toBe("#b180d7");
+  });
+
   it("uses expanded heights for later row and segment coordinates", () => {
     const layout = layoutGitCommitGraph([commit("A", ["B"]), commit("B", ["C"]), commit("C")], {
       expandedRowHeights: { A: 40, B: 24 },

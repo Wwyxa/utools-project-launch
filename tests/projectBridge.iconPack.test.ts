@@ -111,7 +111,9 @@ const createHttpsMock = (responses: Array<{ contents?: Buffer; location?: string
       callback(response);
       if (next.contents) {
         const chunkSize =
-          Number.isInteger(next.chunkSize) && next.chunkSize > 0 ? next.chunkSize : next.contents.length;
+          typeof next.chunkSize === "number" && Number.isInteger(next.chunkSize) && next.chunkSize > 0
+            ? next.chunkSize
+            : next.contents.length;
         for (let offset = 0; offset < next.contents.length; offset += chunkSize) {
           response.emit("data", next.contents.subarray(offset, offset + chunkSize));
         }

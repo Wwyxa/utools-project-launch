@@ -29,6 +29,10 @@ export type ProjectIconKey =
   | "backend"
   | "package"
   | "ai"
+  | "android"
+  | "linux"
+  | "macos"
+  | "windows"
   | "executable"
   | "custom";
 
@@ -751,6 +755,7 @@ export interface ProjectGitRemoteBranchSummary {
   remote: string;
   branch: string;
   ref: string;
+  commitHash?: string;
 }
 
 export interface ProjectGitUpstreamSummary {
@@ -798,6 +803,7 @@ export interface ProjectGitBulkFileActionOptions {
 
 export interface ProjectGitPushOptions {
   tagNames?: string[];
+  forceWithLease?: { remote: string; branch: string; expectedHash: string; headHash: string };
 }
 
 export type ProjectGitStashScope = "all" | "staged" | "unstaged";

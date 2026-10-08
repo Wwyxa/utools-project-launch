@@ -140,6 +140,10 @@ const commitHistoryToolbarRef = ref<HTMLElement | null>(null);
 const isAiDialogOpen = ref(false);
 const isBranchMenuOpen = ref(false);
 const isRemoteMenuOpen = ref(false);
+const isPushMenuOpen = ref(false);
+const pushMenuRef = ref<HTMLElement | null>(null);
+const pushMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
+const pushRejectedNonFastForward = ref(false);
 const branchMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const remoteMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const branchMenuRef = ref<HTMLElement | null>(null);
@@ -280,14 +284,16 @@ const baseBranch = computed(() => snapshot.value?.base || null);
 const canMergeBaseBranch = computed(
   () =>
     Boolean(baseBranch.value) &&
-    baseBranch.value?.branch !== snapshot.value?.branch &&
+    baseBranch.value?.ref !== snapshot.value?.upstream?.ref &&
     !isAnyGitWriteRunning.value &&
     !snapshot.value?.mergeInProgress,
 );
 const mergeBaseBranchTitle = computed(() => {
   if (!snapshot.value?.repositoryPath) return "未检测到 Git 仓库，无法合并基点分支";
   if (!baseBranch.value) return "未识别到当前分支的基点分支，无法合并";
-  if (baseBranch.value.branch === snapshot.value?.branch) return "当前分支已是基点分支";
+  if (baseBranch.value.ref === snapshot.value?.upstream?.ref) {
+    return `当前分支已跟踪 ${snapshot.value?.upstream?.ref}，使用 Pull 即可更新`;
+  }
   if (snapshot.value?.mergeInProgress) return "上一次合并尚未完成，请先解决冲突或放弃合并";
   return `将 ${baseBranch.value.ref} 合并到当前分支`;
 });
@@ -725,10 +731,11 @@ const closeAiDialog = () => {
 const closeFloatingControls = () => {
   isBranchMenuOpen.value = false;
   isRemoteMenuOpen.value = false;
+  isPushMenuOpen.value = false;
   repositoryMenu.value = null;
 };
 
-const hasFloatingControlsOpen = () => isBranchMenuOpen.value || isRemoteMenuOpen.value || Boolean(repositoryMenu.value);
+const hasFloatingControlsOpen = () => isBranchMenuOpen.value || isRemoteMenuOpen.value || isPushMenuOpen.value || Boolean(repositoryMenu.value);
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (event.detail.handled) return;
@@ -758,6 +765,7 @@ const clearRepositoryBoundState = (projectId = props.project.id) => {
   isAiDialogOpen.value = false;
   isDiffViewerExpanded.value = false;
   confirmationDialog.value = null;
+  pushRejectedNonFastForward.value = false;
   worktreeSelection.value = null;
   worktreeDiff.value = null;
   isLoadingWorktreeDiff.value = false;
@@ -925,7 +933,8 @@ const executeInitializeGitRepository = async () => {
 
 const executeGitRemoteAction = async (action: GitRemoteActionName, pushOptions: ProjectGitPushOptions = {}) => {
   if (isAnyGitWriteRunning.value) return;
-  isRemoteMenuOpen.value = false;
+  closeFloatingControls();
+  pushRejectedNonFastForward.value = false;
   if (!hasUpstream.value) {
     setGitActionResult("warning", "当前分支未设置 upstream，无法执行远程操作。");
     return;
@@ -946,6 +955,8 @@ const executeGitRemoteAction = async (action: GitRemoteActionName, pushOptions: 
       return;
     }
     setGitActionResult(result.ok ? "success" : "error", result.message, { retainRemoteProgress: true });
+    pushRejectedNonFastForward.value = action === "push" && !result.ok &&
+      /non-fast-forward|\(fetch first\)/i.test(result.message);
     if (result.ok) {
       clearCommitSelection();
     }
@@ -1205,6 +1216,7 @@ const requestPublishGitBranch = (remote: ProjectGitRemoteSummary) => {
 
 const requestGitPush = () => {
   if (isAnyGitWriteRunning.value || !hasUpstream.value) return;
+  closeFloatingControls();
   const tagNames = headTagNames.value;
   if (tagNames.length === 0) {
     void executeGitRemoteAction("push");
@@ -1223,6 +1235,50 @@ const requestGitPush = () => {
     onConfirm: () => executeGitRemoteAction("push", { tagNames }),
     onSecondary: () => executeGitRemoteAction("push"),
   };
+};
+
+const requestForceGitPush = () => {
+  if (isAnyGitWriteRunning.value || !hasUpstream.value) return;
+  closeFloatingControls();
+  const target = upstream.value;
+  const headHash = snapshot.value?.headHash;
+  const expectedHash = snapshot.value?.remoteBranches?.find(
+    (branch) => branch.remote === target?.remote && branch.branch === target?.branch,
+  )?.commitHash;
+  if (!target || !headHash || !expectedHash || snapshot.value?.isDetachedHead) {
+    setGitActionResult("warning", "无法确定当前分支或远端提交，请检查分支状态后重试。");
+    return;
+  }
+  const projectId = props.project.id;
+  const repositoryTarget = activeRepositoryTarget.value;
+  const generation = repositoryContextGeneration.value;
+  const forceWithLease = { remote: target.remote, branch: target.branch, expectedHash, headHash };
+  confirmationDialog.value = {
+    kind: "danger",
+    title: "强制推送分支",
+    message: `将本地 ${currentLocalBranch.value} 推送到 ${target.ref}，改写远端分支历史。若远端分支已发生变化，本次推送将被拒绝。`,
+    detail: `远端提交：${expectedHash}\n本地提交：${headHash}`,
+    confirmLabel: "强制推送",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => {
+      if (props.project.id !== projectId || repositoryContextGeneration.value !== generation ||
+        !gitRepositoryTargetsEqual(repositoryTarget, activeRepositoryTarget.value)) return;
+      return executeGitRemoteAction("push", { forceWithLease });
+    },
+  };
+};
+
+const togglePushMenu = async (event: MouseEvent) => {
+  const shouldOpen = !isPushMenuOpen.value;
+  closeFloatingControls();
+  if (!shouldOpen || !canRunRemoteOperation.value) return;
+  const trigger = event.currentTarget as HTMLElement;
+  pushMenuPosition.value = positionFloatingMenu(trigger, 144, 40);
+  isPushMenuOpen.value = true;
+  await nextTick();
+  if (!pushMenuRef.value) return;
+  pushMenuPosition.value = positionFloatingMenu(trigger, pushMenuRef.value.offsetWidth, pushMenuRef.value.offsetHeight);
+  pushMenuRef.value.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
 };
 
 const handlePushAction = (event: MouseEvent) => {
@@ -1364,7 +1420,7 @@ const setGitActionResult = (
     });
     return;
   }
-  if (retainRemoteProgress) {
+  if (retainRemoteProgress && state !== "loading") {
     completeActionProgress(state, message, gitRemoteProgressOperationId);
     return;
   }
@@ -1389,9 +1445,9 @@ const confirmRiskyAction = async () => {
   if (!dialog || isConfirmationRunning.value) return;
 
   isConfirmationRunning.value = true;
+  confirmationDialog.value = null;
   try {
     await dialog.onConfirm();
-    if (confirmationDialog.value === dialog) confirmationDialog.value = null;
   } finally {
     isConfirmationRunning.value = false;
   }
@@ -1402,9 +1458,9 @@ const confirmSecondaryAction = async () => {
   if (!dialog?.onSecondary || isConfirmationRunning.value) return;
 
   isConfirmationRunning.value = true;
+  confirmationDialog.value = null;
   try {
     await dialog.onSecondary();
-    if (confirmationDialog.value === dialog) confirmationDialog.value = null;
   } finally {
     isConfirmationRunning.value = false;
   }
@@ -1558,6 +1614,20 @@ const setLeftContext = (context: GitLeftContext, shouldFocus = false) => {
   }
 };
 
+const changesPaneRef = ref<InstanceType<typeof GitChangesPane> | null>(null);
+const isChangesAmendMode = ref(false);
+const handleStartAmendFromHistory = () => {
+  setLeftContext("changes");
+  changesPaneRef.value?.startAmendMode();
+};
+const handleCancelAmendFromHistory = () => {
+  changesPaneRef.value?.cancelAmendMode();
+};
+const handleUndoCompletedFromHistory = (restoredMessage?: string) => {
+  if (typeof restoredMessage === "string" && restoredMessage) commitMessage.value = restoredMessage;
+  setLeftContext("changes");
+};
+
 const handleLeftContextKeydown = (event: KeyboardEvent) => {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
@@ -1675,6 +1745,7 @@ const handleWindowPointerDown = (event: PointerEvent) => {
   if (!(target instanceof Element && target.closest("[data-git-top-menu], [data-git-top-menu-trigger]"))) {
     isBranchMenuOpen.value = false;
     isRemoteMenuOpen.value = false;
+    isPushMenuOpen.value = false;
   }
   if (target instanceof Element && target.closest("[data-repository-menu]")) return;
   repositoryMenu.value = null;
@@ -1690,6 +1761,7 @@ const handleFloatingViewportChange = (event: Event) => {
   }
   isBranchMenuOpen.value = false;
   isRemoteMenuOpen.value = false;
+  isPushMenuOpen.value = false;
   repositoryMenu.value = null;
 };
 
@@ -2252,9 +2324,10 @@ watch(
           >
             <GitMerge :size="14" :class="activeGitAction === 'remote:merge-base' ? 'animate-pulse' : ''" />
           </button>
+          <div class="inline-flex h-8 shrink-0 items-center rounded border border-border-subtle bg-surface">
           <button
             type="button"
-            class="git-top-action"
+            class="git-top-action !h-full !rounded-none !border-0"
             :disabled="!canRunRemoteOperation && !canPublishGitBranch"
             :aria-busy="activeGitAction === 'remote:push' || activeGitAction.startsWith('remote:publish:')"
             :title="publishGitBranchTitle()"
@@ -2270,7 +2343,51 @@ watch(
               "
             />
           </button>
+          <button
+            v-if="hasUpstream"
+            type="button"
+            data-git-top-menu-trigger
+            class="git-top-action !h-full !w-5 !rounded-none !border-y-0 !border-r-0 border-l border-border-subtle"
+            :disabled="!canRunRemoteOperation"
+            title="推送选项"
+            aria-label="推送选项"
+            aria-haspopup="menu"
+            :aria-expanded="isPushMenuOpen"
+            @click.stop="togglePushMenu"
+          >
+            <ChevronDown :size="12" />
+          </button>
+          </div>
+          <Teleport to="body">
+            <Transition name="fade">
+              <div
+                v-if="isPushMenuOpen"
+                ref="pushMenuRef"
+                data-git-top-menu
+                class="fixed z-[80] w-36 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest py-1 text-xs shadow-2xl"
+                :style="floatingMenuStyle(pushMenuPosition)"
+                role="menu"
+                @click.stop
+              >
+                <button type="button" role="menuitem" class="mode-menu-item text-status-warning" title="使用租约保护改写远端分支历史；远端提交发生变化时会拒绝推送。" :disabled="!canRunRemoteOperation" @click="requestForceGitPush()">
+                  <span>强制推送</span><CloudUpload :size="13" />
+                </button>
+              </div>
+            </Transition>
+          </Teleport>
         </div>
+      </div>
+
+      <div
+        v-if="pushRejectedNonFastForward"
+        class="flex flex-wrap items-center gap-2 border-t border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5 text-[11px] text-status-warning"
+        data-git-refresh-exempt
+      >
+        <span class="min-w-0 flex-1">远端包含本地历史中不存在的提交。若刚完成变基，可使用带租约保护的强制推送。</span>
+        <button type="button" class="shrink-0 rounded border border-border-subtle px-2 py-1 font-semibold hover:bg-surface-variant" :disabled="!canRunRemoteOperation" @click="requestForceGitPush()">
+          强制推送...
+        </button>
+        <button type="button" class="git-top-action" title="关闭提示" aria-label="关闭提示" @click="pushRejectedNonFastForward = false"><X :size="12" /></button>
       </div>
 
       <div
@@ -2570,6 +2687,7 @@ watch(
           class="flex min-h-0 flex-1 flex-col"
         >
           <GitChangesPane
+            ref="changesPaneRef"
             class="min-h-0 min-w-0 flex-1"
             :project-id="props.project.id"
             :repository-target="activeRepositoryTarget"
@@ -2587,6 +2705,7 @@ watch(
             @busy-change="(busy) => (isChangesPaneBusy = busy)"
             @worktree-action-started="invalidateWorktreeDiffRequest"
             @committed="clearCommitSelection"
+            @amend-mode-change="(value) => (isChangesAmendMode = value)"
           />
         </div>
 
@@ -2606,11 +2725,15 @@ watch(
             :disabled="isAnyGitWriteRunning"
             :filter-commit="commitFilterRequest"
             :selected-commit-hashes="selectedCommitHashes"
+            :amend-mode-active="isChangesAmendMode"
             @update:selected-commit-hashes="(hashes) => (selectedCommitHashes = hashes)"
             @review-file="({ commitHash, commitMessage, path }) => handleViewDiff(commitHash, path, commitMessage)"
             @request-ai="openAiDialog"
             @feedback="setGitActionResult"
             @busy-change="(busy) => (isCommitHistoryBusy = busy)"
+            @start-amend="handleStartAmendFromHistory"
+            @cancel-amend="handleCancelAmendFromHistory"
+            @undo-completed="handleUndoCompletedFromHistory"
           />
         </div>
       </div>

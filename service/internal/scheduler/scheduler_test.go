@@ -1194,6 +1194,11 @@ func TestSchedulerSendsConfiguredInputSteps(t *testing.T) {
 						DelayMS: 0,
 					}},
 				}},
+				ExitConfigs: []ExitConfig{{
+					ScriptID:  "input-script",
+					Enabled:   true,
+					MatchText: "RECEIVED:from-service",
+				}},
 			}},
 		}},
 	})
@@ -1211,6 +1216,14 @@ func TestSchedulerSendsConfiguredInputSteps(t *testing.T) {
 
 	if !hasOutput(store.EventsAfter(0).Events, "input-script", "RECEIVED:from-service") {
 		t.Fatalf("automation input was not delivered: %#v", store.EventsAfter(0).Events)
+	}
+	descriptors, err := store.RetainedLogDescriptors("input-project")
+	if err != nil || len(descriptors) != 1 {
+		t.Fatalf("retained log descriptors = %#v, err=%v; want one", descriptors, err)
+	}
+	runLog, err := store.ReadRunLog(descriptors[0].RunID)
+	if err != nil || !hasOutput(runLog.Events, "input-script", "RECEIVED:from-service") {
+		t.Fatalf("retained run log = %#v, err=%v; want input response output", runLog, err)
 	}
 }
 

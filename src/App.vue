@@ -284,7 +284,7 @@ onUnmounted(() => {
     </div>
     <ActionStatusPopover
       v-if="globalActionStatus"
-      class="fixed right-4 top-16 z-50 max-w-xs"
+      class="fixed right-4 top-16 z-[100] max-w-xs"
       :message="globalActionStatus.message"
       :state="globalActionStatus.state"
       :entries="globalActionStatus.entries"

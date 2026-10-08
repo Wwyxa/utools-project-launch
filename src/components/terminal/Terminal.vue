@@ -19,6 +19,7 @@ import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import type { LogEntry, ProjectLaunchServiceLogDescriptor, ProjectScript } from "../../types";
 import ActionDialog from "../common/ActionDialog.vue";
+import { showActionStatus } from "../common/actionStatus";
 
 const props = defineProps<{
   projectId: string;
@@ -225,6 +226,7 @@ const closeHistoryDialog = () => {
 };
 
 const loadHistoryRun = async (run: ProjectLaunchServiceLogDescriptor) => {
+  if (historyClearBusy.value) return;
   const requestGeneration = historyLoadGeneration + 1;
   historyLoadGeneration = requestGeneration;
   selectedHistoryRunId.value = run.runId;
@@ -254,7 +256,7 @@ const loadHistoryRun = async (run: ProjectLaunchServiceLogDescriptor) => {
 
 const loadOlderHistory = async () => {
   const run = selectedHistoryRun.value;
-  if (!run || !historyHasMore.value || historyLoadingOlder.value) return;
+  if (!run || !historyHasMore.value || historyLoadingOlder.value || historyClearBusy.value) return;
   const requestGeneration = historyLoadGeneration;
   historyLoadingOlder.value = true;
   historyOlderError.value = "";
@@ -309,14 +311,16 @@ const openHistoryDialog = async () => {
 
 const confirmClearHistory = async () => {
   const run = selectedHistoryRun.value;
-  if (!run) return;
+  if (!run || historyClearBusy.value) return;
   historyLoadGeneration += 1;
   historyLoading.value = false;
   historyLoadingOlder.value = false;
   historyOlderError.value = "";
   historyClearBusy.value = true;
+  historyClearOpen.value = false;
   historyFeedback.value = "";
   historyError.value = "";
+  showActionStatus({ state: "loading", message: t.value.terminal.historyClearBusy });
   try {
     const result = await store.clearProjectLaunchServiceLogs({
       runId: run.runId,
@@ -337,10 +341,11 @@ const confirmClearHistory = async () => {
       "{size}",
       formatHistoryBytes(result.releasedBytes),
     );
-    historyClearOpen.value = false;
+    showActionStatus({ state: "success", message: historyFeedback.value });
   } catch (error) {
     historyFeedbackTone.value = "error";
     historyFeedback.value = error instanceof Error ? error.message : t.value.terminal.historyClearError;
+    showActionStatus({ state: "error", message: historyFeedback.value });
   } finally {
     historyClearBusy.value = false;
   }
@@ -448,6 +453,22 @@ const handleInputSubmit = async () => {
   }
 };
 
+const refreshOpenHistory = async () => {
+  if (!historyDialogOpen.value) return;
+  const requestGeneration = historyLoadGeneration;
+  try {
+    const runs = await store.listProjectLaunchServiceLogs(props.projectId);
+    if (requestGeneration !== historyLoadGeneration || !historyDialogOpen.value) return;
+    historyRuns.value = runs;
+    if (!selectedHistoryRunId.value && serviceHistoryRuns.value[0]) {
+      await loadHistoryRun(serviceHistoryRuns.value[0]);
+    }
+  } catch (error) {
+    if (requestGeneration !== historyLoadGeneration || !historyDialogOpen.value) return;
+    historyError.value = error instanceof Error ? error.message : t.value.terminal.historyUnavailable;
+  }
+};
+
 watch(
   () => filteredLogs.value.length,
   () => {
@@ -459,6 +480,20 @@ watch(
 watch(selectedScriptId, () => {
   void scrollToBottom();
 });
+watch(
+  () => (props.scripts || []).map((script) => ({ id: script.id, status: script.status })),
+  (statuses, previousStatuses) => {
+    const currentById = new Map(statuses.map((script) => [script.id, script.status]));
+    const runCompleted = previousStatuses.some((script) => {
+      return (
+        (script.status === "RUNNING" || script.status === "STOPPING") &&
+        currentById.get(script.id) !== "RUNNING" &&
+        currentById.get(script.id) !== "STOPPING"
+      );
+    });
+    if (runCompleted) void refreshOpenHistory();
+  },
+);
 watch(
   logTargets,
   (targets) => {
@@ -692,6 +727,7 @@ onBeforeUnmount(() => {
                           selectedHistoryRunId === run.runId && 'bg-primary/10',
                         )
                       "
+                      :disabled="historyClearBusy"
                       @click="loadHistoryRun(run)"
                     >
                       <span class="flex min-w-0 items-center gap-1.5">

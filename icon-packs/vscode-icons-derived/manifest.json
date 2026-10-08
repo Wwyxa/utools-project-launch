@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "vscode-icons-derived",
   "name": "vscode-icons (derived)",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minHostVersion": "1",
   "source": {
     "repository": "vscode-icons/vscode-icons",
-    "version": "12.19.0",
+    "version": "13.0.0",
     "url": "https://github.com/vscode-icons/vscode-icons"
   },
   "notices": [
@@ -31,6 +31,15 @@
   ],
   "mappings": {
     "fileNames": {
+      "_quarto.yaml": {
+        "dark": "file_type_quartoconfig.svg"
+      },
+      "_quarto.yml": {
+        "dark": "file_type_quartoconfig.svg"
+      },
+      ".actionscriptproperties": {
+        "dark": "file_type_xml.svg"
+      },
       ".aikido": {
         "dark": "file_type_aikido.svg"
       },
@@ -38,6 +47,9 @@
         "dark": "file_type_allcontributors.svg"
       },
       ".angular-cli.json": {
+        "dark": "file_type_angular.svg"
+      },
+      ".angular-config.json": {
         "dark": "file_type_angular.svg"
       },
       ".angular.json": {
@@ -158,11 +170,25 @@
         "dark": "file_type_cloudfoundry.svg",
         "light": "file_type_light_cloudfoundry.svg"
       },
+      ".changelogenrc": {
+        "dark": "file_type_changelogen.svg"
+      },
+      ".changelogrc": {
+        "dark": "file_type_changelogen.svg"
+      },
       ".changie.yaml": {
         "dark": "file_type_changie.svg"
       },
       ".changie.yml": {
         "dark": "file_type_changie.svg"
+      },
+      ".checkov.yaml": {
+        "dark": "file_type_checkov.svg",
+        "light": "file_type_light_checkov.svg"
+      },
+      ".checkov.yml": {
+        "dark": "file_type_checkov.svg",
+        "light": "file_type_light_checkov.svg"
       },
       ".clangd": {
         "dark": "file_type_clangd.svg"
@@ -181,6 +207,21 @@
       },
       ".codecov.yml": {
         "dark": "file_type_codecov.svg"
+      },
+      ".codegenrc.js": {
+        "dark": "file_type_codegen.svg"
+      },
+      ".codegenrc.json": {
+        "dark": "file_type_codegen.svg"
+      },
+      ".codegenrc.ts": {
+        "dark": "file_type_codegen.svg"
+      },
+      ".codegenrc.yaml": {
+        "dark": "file_type_codegen.svg"
+      },
+      ".codegenrc.yml": {
+        "dark": "file_type_codegen.svg"
       },
       ".coderabbit.yaml": {
         "dark": "file_type_coderabbit.svg"
@@ -321,8 +362,14 @@
       ".denoifyrc": {
         "dark": "file_type_denoify.svg"
       },
+      ".devcontainer-lock.json": {
+        "dark": "file_type_devcontainer.svg"
+      },
       ".devcontainer.json": {
         "dark": "file_type_devcontainer.svg"
+      },
+      ".devprune.json": {
+        "dark": "file_type_devprune.svg"
       },
       ".dockerignore": {
         "dark": "file_type_docker.svg"
@@ -355,6 +402,10 @@
       },
       ".earthlyignore": {
         "dark": "file_type_earthly.svg"
+      },
+      ".easignore": {
+        "dark": "file_type_expo.svg",
+        "light": "file_type_light_expo.svg"
       },
       ".editorconfig": {
         "dark": "file_type_editorconfig.svg"
@@ -427,6 +478,12 @@
       ".firebaserc": {
         "dark": "file_type_firebase.svg"
       },
+      ".flexlibproperties": {
+        "dark": "file_type_xml.svg"
+      },
+      ".flexproperties": {
+        "dark": "file_type_xml.svg"
+      },
       ".flooignore": {
         "dark": "file_type_floobits.svg"
       },
@@ -489,6 +546,18 @@
       },
       ".glitterrc": {
         "dark": "file_type_glitter.svg"
+      },
+      ".golangci.json": {
+        "dark": "file_type_golangci.svg"
+      },
+      ".golangci.toml": {
+        "dark": "file_type_golangci.svg"
+      },
+      ".golangci.yaml": {
+        "dark": "file_type_golangci.svg"
+      },
+      ".golangci.yml": {
+        "dark": "file_type_golangci.svg"
       },
       ".gqlconfig": {
         "dark": "file_type_graphql.svg"
@@ -763,6 +832,10 @@
         "dark": "file_type_markuplint.svg",
         "light": "file_type_light_markuplint.svg"
       },
+      ".mcp.json": {
+        "dark": "file_type_mcp.svg",
+        "light": "file_type_light_mcp.svg"
+      },
       ".mdxlintignore": {
         "dark": "file_type_mdxlint.svg"
       },
@@ -792,6 +865,9 @@
       },
       ".metadata": {
         "dark": "file_type_flutter.svg"
+      },
+      ".meteorignore": {
+        "dark": "file_type_meteor.svg"
       },
       ".mise.local.toml": {
         "dark": "file_type_mise.svg"
@@ -941,8 +1017,14 @@
         "dark": "file_type_objidconfig.svg",
         "light": "file_type_light_objidconfig.svg"
       },
+      ".ohpmrc": {
+        "dark": "file_type_ohpm.svg"
+      },
       ".opentofu-version": {
         "dark": "file_type_opentofu.svg"
+      },
+      ".overmind.env": {
+        "dark": "file_type_overmind.svg"
       },
       ".oxfmtrc.json": {
         "dark": "file_type_oxc.svg",
@@ -1111,6 +1193,9 @@
       ".profile": {
         "dark": "file_type_shell.svg"
       },
+      ".project": {
+        "dark": "file_type_xml.svg"
+      },
       ".pubignore": {
         "dark": "file_type_dartlang_ignore.svg"
       },
@@ -1145,7 +1230,12 @@
         "dark": "file_type_quokka.svg"
       },
       ".readthedocs.yaml": {
-        "dark": "file_type_readthedocs.svg"
+        "dark": "file_type_readthedocs.svg",
+        "light": "file_type_light_readthedocs.svg"
+      },
+      ".readthedocs.yml": {
+        "dark": "file_type_readthedocs.svg",
+        "light": "file_type_light_readthedocs.svg"
       },
       ".rehypeignore": {
         "dark": "file_type_rehype.svg",
@@ -1529,6 +1619,9 @@
         "dark": "file_type_tmux.svg",
         "light": "file_type_light_tmux.svg"
       },
+      ".tombi.toml": {
+        "dark": "file_type_tombi.svg"
+      },
       ".tool-versions": {
         "dark": "file_type_config.svg",
         "light": "file_type_light_config.svg"
@@ -1680,11 +1773,18 @@
       ".yo-rc.json": {
         "dark": "file_type_yeoman.svg"
       },
+      ".zedignore": {
+        "dark": "file_type_zed.svg",
+        "light": "file_type_light_zed.svg"
+      },
+      ".zlogin": {
+        "dark": "file_type_zsh.svg"
+      },
       ".zprofile": {
-        "dark": "file_type_shell.svg"
+        "dark": "file_type_zsh.svg"
       },
       ".zshrc": {
-        "dark": "file_type_shell.svg"
+        "dark": "file_type_zsh.svg"
       },
       "agents.md": {
         "dark": "file_type_agents.svg",
@@ -1738,6 +1838,14 @@
       "app-definition.yaml": {
         "dark": "file_type_appsemble.svg"
       },
+      "app.config.cjs": {
+        "dark": "file_type_expo.svg",
+        "light": "file_type_light_expo.svg"
+      },
+      "app.config.cts": {
+        "dark": "file_type_expo.svg",
+        "light": "file_type_light_expo.svg"
+      },
       "app.config.js": {
         "dark": "file_type_expo.svg",
         "light": "file_type_light_expo.svg"
@@ -1746,7 +1854,15 @@
         "dark": "file_type_expo.svg",
         "light": "file_type_light_expo.svg"
       },
-      "app.config.json5": {
+      "app.config.mjs": {
+        "dark": "file_type_expo.svg",
+        "light": "file_type_light_expo.svg"
+      },
+      "app.config.mts": {
+        "dark": "file_type_expo.svg",
+        "light": "file_type_light_expo.svg"
+      },
+      "app.config.ts": {
         "dark": "file_type_expo.svg",
         "light": "file_type_light_expo.svg"
       },
@@ -1801,6 +1917,15 @@
       },
       "azure-pipelines.yml": {
         "dark": "file_type_azurepipelines.svg"
+      },
+      "azuredeploy.json": {
+        "dark": "file_type_azureresourcemanager.svg"
+      },
+      "azuredeploy.parameters.json": {
+        "dark": "file_type_azureresourcemanager.svg"
+      },
+      "azuredeploy.parameters.us.json": {
+        "dark": "file_type_azureresourcemanager.svg"
       },
       "babel.config.cjs": {
         "dark": "file_type_babel.svg",
@@ -1874,6 +1999,12 @@
       "bower.json": {
         "dark": "file_type_bower.svg"
       },
+      "brakeman.ignore": {
+        "dark": "file_type_brakeman.svg"
+      },
+      "brakeman.yml": {
+        "dark": "file_type_brakeman.svg"
+      },
       "brewfile": {
         "dark": "file_type_brew.svg"
       },
@@ -1888,6 +2019,24 @@
       },
       "budgets.json": {
         "dark": "file_type_lighthouse.svg"
+      },
+      "buf.gen.yaml": {
+        "dark": "file_type_buf.svg"
+      },
+      "buf.gen.yml": {
+        "dark": "file_type_buf.svg"
+      },
+      "buf.work.yaml": {
+        "dark": "file_type_buf.svg"
+      },
+      "buf.work.yml": {
+        "dark": "file_type_buf.svg"
+      },
+      "buf.yaml": {
+        "dark": "file_type_buf.svg"
+      },
+      "buf.yml": {
+        "dark": "file_type_buf.svg"
       },
       "build.bazel": {
         "dark": "file_type_bazel.svg"
@@ -1928,6 +2077,21 @@
       "cargo.toml": {
         "dark": "file_type_cargo.svg"
       },
+      "changelog.config.cjs": {
+        "dark": "file_type_changelogen.svg"
+      },
+      "changelog.config.js": {
+        "dark": "file_type_changelogen.svg"
+      },
+      "changelog.config.json": {
+        "dark": "file_type_changelogen.svg"
+      },
+      "changelog.config.mjs": {
+        "dark": "file_type_changelogen.svg"
+      },
+      "changelog.config.ts": {
+        "dark": "file_type_changelogen.svg"
+      },
       "chart.lock": {
         "dark": "file_type_helm.svg"
       },
@@ -1964,6 +2128,24 @@
       },
       "codecov.yml": {
         "dark": "file_type_codecov.svg"
+      },
+      "codegen.config.js": {
+        "dark": "file_type_codegen.svg"
+      },
+      "codegen.js": {
+        "dark": "file_type_codegen.svg"
+      },
+      "codegen.json": {
+        "dark": "file_type_codegen.svg"
+      },
+      "codegen.ts": {
+        "dark": "file_type_codegen.svg"
+      },
+      "codegen.yaml": {
+        "dark": "file_type_codegen.svg"
+      },
+      "codegen.yml": {
+        "dark": "file_type_codegen.svg"
       },
       "codemagic.yaml": {
         "dark": "file_type_codemagic.svg"
@@ -2078,6 +2260,9 @@
       },
       "craco.config.ts": {
         "dark": "file_type_craco.svg"
+      },
+      "createuidefinition.json": {
+        "dark": "file_type_azureresourcemanager.svg"
       },
       "crowdin.yml": {
         "dark": "file_type_crowdin.svg"
@@ -2198,6 +2383,9 @@
       },
       "dependencies.yml": {
         "dark": "file_type_dependencies.svg"
+      },
+      "devcontainer-lock.json": {
+        "dark": "file_type_devcontainer.svg"
       },
       "devcontainer.json": {
         "dark": "file_type_devcontainer.svg"
@@ -2479,6 +2667,9 @@
       "esbuild.ts": {
         "dark": "file_type_esbuild.svg"
       },
+      "eslint-suppressions.json": {
+        "dark": "file_type_eslint.svg"
+      },
       "eslint.config.cjs": {
         "dark": "file_type_eslint.svg"
       },
@@ -2520,10 +2711,12 @@
         "light": "file_type_light_firebasehosting.svg"
       },
       "firestore.indexes.json": {
-        "dark": "file_type_firestore.svg"
+        "dark": "file_type_firestore.svg",
+        "light": "file_type_light_firestore.svg"
       },
       "firestore.rules": {
-        "dark": "file_type_firestore.svg"
+        "dark": "file_type_firestore.svg",
+        "light": "file_type_light_firestore.svg"
       },
       "flake.lock": {
         "dark": "file_type_nix.svg"
@@ -2572,6 +2765,12 @@
       },
       "formkit.theme.ts": {
         "dark": "file_type_formkit.svg"
+      },
+      "fresh.config.ts": {
+        "dark": "file_type_fresh.svg"
+      },
+      "fresh.gen.ts": {
+        "dark": "file_type_fresh.svg"
       },
       "front-commerce.config.ts": {
         "dark": "file_type_frontcommerce.svg"
@@ -2642,6 +2841,10 @@
       },
       "glide.yml": {
         "dark": "file_type_glide.svg"
+      },
+      "global-metadata.dat": {
+        "dark": "file_type_shaderlab.svg",
+        "light": "file_type_light_shaderlab.svg"
       },
       "go.mod": {
         "dark": "file_type_go_package.svg"
@@ -2752,6 +2955,10 @@
       "haxelib.json": {
         "dark": "file_type_haxe.svg"
       },
+      "heroku.yml": {
+        "dark": "file_type_heroku.svg",
+        "light": "file_type_light_heroku.svg"
+      },
       "histoire.config.js": {
         "dark": "file_type_histoire.svg"
       },
@@ -2779,6 +2986,9 @@
       "ignore-glob": {
         "dark": "file_type_fossil.svg"
       },
+      "ignore.devprune.json": {
+        "dark": "file_type_devprune.svg"
+      },
       "include.xml": {
         "dark": "file_type_lime.svg"
       },
@@ -2796,6 +3006,9 @@
       },
       "jasmine.json": {
         "dark": "file_type_jasmine.svg"
+      },
+      "java_init.list": {
+        "dark": "file_type_xposed.svg"
       },
       "jest.config.babel.js": {
         "dark": "file_type_jest.svg"
@@ -3023,6 +3236,24 @@
       "knip.ts": {
         "dark": "file_type_knip.svg"
       },
+      "kysely.config.cjs": {
+        "dark": "file_type_kysely.svg"
+      },
+      "kysely.config.cts": {
+        "dark": "file_type_kysely.svg"
+      },
+      "kysely.config.js": {
+        "dark": "file_type_kysely.svg"
+      },
+      "kysely.config.mjs": {
+        "dark": "file_type_kysely.svg"
+      },
+      "kysely.config.mts": {
+        "dark": "file_type_kysely.svg"
+      },
+      "kysely.config.ts": {
+        "dark": "file_type_kysely.svg"
+      },
       "lake-manifest.json": {
         "dark": "file_type_leanconfig.svg",
         "light": "file_type_light_leanconfig.svg"
@@ -3037,9 +3268,6 @@
       },
       "language-configuration.json": {
         "dark": "file_type_language_configuration.svg"
-      },
-      "launch.json": {
-        "dark": "file_type_vscode.svg"
       },
       "layout.htm": {
         "dark": "file_type_layout.svg"
@@ -3408,6 +3636,24 @@
       "moleculer.config.ts": {
         "dark": "file_type_moleculer.svg"
       },
+      "moniq.config.cjs": {
+        "dark": "file_type_moniq.svg"
+      },
+      "moniq.config.cts": {
+        "dark": "file_type_moniq.svg"
+      },
+      "moniq.config.js": {
+        "dark": "file_type_moniq.svg"
+      },
+      "moniq.config.mjs": {
+        "dark": "file_type_moniq.svg"
+      },
+      "moniq.config.mts": {
+        "dark": "file_type_moniq.svg"
+      },
+      "moniq.config.ts": {
+        "dark": "file_type_moniq.svg"
+      },
       "motif.json": {
         "dark": "file_type_motif.svg"
       },
@@ -3426,6 +3672,12 @@
       },
       "nano-staged.mjs": {
         "dark": "file_type_nanostaged.svg"
+      },
+      "native_init": {
+        "dark": "file_type_xposed.svg"
+      },
+      "native_init.list": {
+        "dark": "file_type_xposed.svg"
       },
       "nest-cli.json": {
         "dark": "file_type_nestjs.svg"
@@ -3457,11 +3709,23 @@
         "dark": "file_type_next.svg",
         "light": "file_type_light_next.svg"
       },
+      "ng-package.js": {
+        "dark": "file_type_ng-packagr.svg"
+      },
+      "ng-package.json": {
+        "dark": "file_type_ng-packagr.svg"
+      },
       "ng-tailwind.js": {
         "dark": "file_type_ng_tailwind.svg"
       },
       "nginx.conf": {
         "dark": "file_type_nginx.svg"
+      },
+      "ngsw-config.json": {
+        "dark": "file_type_angular.svg"
+      },
+      "ngsw.json": {
+        "dark": "file_type_angular.svg"
       },
       "nitro.cjs": {
         "dark": "file_type_nitro.svg"
@@ -3587,6 +3851,12 @@
       },
       "ocx.toml": {
         "dark": "file_type_ocx.svg"
+      },
+      "oh-package-lock.json5": {
+        "dark": "file_type_ohpm.svg"
+      },
+      "oh-package.json5": {
+        "dark": "file_type_ohpm.svg"
       },
       "opencode.json": {
         "dark": "file_type_opencode.svg",
@@ -3719,6 +3989,42 @@
       "platformio.ini": {
         "dark": "file_type_platformio.svg"
       },
+      "playwright.base.config.cjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.base.config.cts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.base.config.js": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.base.config.mjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.base.config.mts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.base.config.ts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.ci.config.cjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.ci.config.cts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.ci.config.js": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.ci.config.mjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.ci.config.mts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.ci.config.ts": {
+        "dark": "file_type_playwright.svg"
+      },
       "playwright.config.cjs": {
         "dark": "file_type_playwright.svg"
       },
@@ -3735,6 +4041,78 @@
         "dark": "file_type_playwright.svg"
       },
       "playwright.config.ts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.dev.config.cjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.dev.config.cts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.dev.config.js": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.dev.config.mjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.dev.config.mts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.dev.config.ts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.e2e.config.cjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.e2e.config.cts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.e2e.config.js": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.e2e.config.mjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.e2e.config.mts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.e2e.config.ts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.local.config.cjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.local.config.cts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.local.config.js": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.local.config.mjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.local.config.mts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.local.config.ts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.prod.config.cjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.prod.config.cts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.prod.config.js": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.prod.config.mjs": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.prod.config.mts": {
+        "dark": "file_type_playwright.svg"
+      },
+      "playwright.prod.config.ts": {
         "dark": "file_type_playwright.svg"
       },
       "pnpm-lock.yaml": {
@@ -3815,40 +4193,52 @@
         "light": "file_type_light_prettier.svg"
       },
       "prisma.cjs": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.config.cjs": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.config.cts": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.config.js": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.config.mjs": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.config.mts": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.config.ts": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.cts": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.js": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.mjs": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.mts": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "prisma.ts": {
-        "dark": "file_type_prismaconfig.svg"
+        "dark": "file_type_prismaconfig.svg",
+        "light": "file_type_light_prismaconfig.svg"
       },
       "procfile": {
         "dark": "file_type_procfile.svg"
@@ -3897,6 +4287,10 @@
       },
       "pyproject.toml": {
         "dark": "file_type_pypi.svg"
+      },
+      "pyrefly.toml": {
+        "dark": "file_type_pyrefly.svg",
+        "light": "file_type_light_pyrefly.svg"
       },
       "pytest.ini": {
         "dark": "file_type_pytest.svg"
@@ -3953,6 +4347,17 @@
         "dark": "file_type_reactrouter.svg",
         "light": "file_type_light_reactrouter.svg"
       },
+      "readthedocs.yaml": {
+        "dark": "file_type_readthedocs.svg",
+        "light": "file_type_light_readthedocs.svg"
+      },
+      "readthedocs.yml": {
+        "dark": "file_type_readthedocs.svg",
+        "light": "file_type_light_readthedocs.svg"
+      },
+      "rector.php": {
+        "dark": "file_type_rector.svg"
+      },
       "release.config.cjs": {
         "dark": "file_type_semanticrelease.svg",
         "light": "file_type_light_semanticrelease.svg"
@@ -3999,6 +4404,9 @@
       },
       "requirements.txt": {
         "dark": "file_type_pip.svg"
+      },
+      "reuse.toml": {
+        "dark": "file_type_reuse.svg"
       },
       "robots.txt": {
         "dark": "file_type_robots.svg"
@@ -4179,6 +4587,156 @@
         "dark": "file_type_rome.svg",
         "light": "file_type_light_rome.svg"
       },
+      "rsbuild.config.cjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsbuild.config.cts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsbuild.config.js": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsbuild.config.mjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsbuild.config.mts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsbuild.config.ts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsdoctor.config.cjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsdoctor.config.cts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsdoctor.config.js": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsdoctor.config.mjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsdoctor.config.mts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rsdoctor.config.ts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslib.config.cjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslib.config.cts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslib.config.js": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslib.config.mjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslib.config.mts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslib.config.ts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslint.config.cjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslint.config.cts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslint.config.js": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslint.config.mjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslint.config.mts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslint.config.ts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslint.json": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rslint.jsonc": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspack.config.cjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspack.config.cts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspack.config.js": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspack.config.mjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspack.config.mts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspack.config.ts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspress.config.cjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspress.config.cts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspress.config.js": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspress.config.mjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspress.config.mts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rspress.config.ts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstack.config.cjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstack.config.cts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstack.config.js": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstack.config.mjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstack.config.mts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstack.config.ts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstest.config.cjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstest.config.cts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstest.config.js": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstest.config.mjs": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstest.config.mts": {
+        "dark": "file_type_rspack.svg"
+      },
+      "rstest.config.ts": {
+        "dark": "file_type_rspack.svg"
+      },
       "ruff.toml": {
         "dark": "file_type_ruff.svg"
       },
@@ -4189,6 +4747,9 @@
       "rust-toolchain.toml": {
         "dark": "file_type_rust_toolchain.svg",
         "light": "file_type_light_rust_toolchain.svg"
+      },
+      "scope.list": {
+        "dark": "file_type_xposed.svg"
       },
       "seedkit.config.js": {
         "dark": "file_type_seedkit.svg"
@@ -4289,7 +4850,8 @@
         "dark": "file_type_datadog.svg"
       },
       "storage.rules": {
-        "dark": "file_type_firebasestorage.svg"
+        "dark": "file_type_firebasestorage.svg",
+        "light": "file_type_light_firebasestorage.svg"
       },
       "store.config.json": {
         "dark": "file_type_eas-metadata.svg",
@@ -4502,7 +5064,7 @@
         "dark": "file_type_taskfile.svg"
       },
       "tasks.json": {
-        "dark": "file_type_vscode.svg"
+        "dark": "file_type_tasks_json.svg"
       },
       "tauri.conf.json": {
         "dark": "file_type_tauri.svg"
@@ -4533,6 +5095,9 @@
       },
       "tiltfile": {
         "dark": "file_type_tiltfile.svg"
+      },
+      "tombi.toml": {
+        "dark": "file_type_tombi.svg"
       },
       "tox.ini": {
         "dark": "file_type_tox.svg"
@@ -4645,6 +5210,9 @@
       },
       "tsdown.config.ts": {
         "dark": "file_type_tsdown.svg"
+      },
+      "tsfmt.json": {
+        "dark": "file_type_tsconfig.svg"
       },
       "tslint.json": {
         "dark": "file_type_tslint.svg"
@@ -4881,6 +5449,12 @@
       "vitest.workspace.ts": {
         "dark": "file_type_vitest.svg",
         "light": "file_type_light_vitest.svg"
+      },
+      "vlt-lock.json": {
+        "dark": "file_type_vlt.svg"
+      },
+      "vlt.json": {
+        "dark": "file_type_vlt.svg"
       },
       "vscodeignore.json": {
         "dark": "file_type_vscode.svg"
@@ -5522,14 +6096,33 @@
       "xo.config.ts": {
         "dark": "file_type_xo.svg"
       },
+      "xposed_init": {
+        "dark": "file_type_xposed.svg"
+      },
       "yarn.lock": {
         "dark": "file_type_yarn.svg"
+      },
+      "zedignore.json": {
+        "dark": "file_type_zed.svg",
+        "light": "file_type_light_zed.svg"
+      },
+      "zensical.toml": {
+        "dark": "file_type_zensical.svg"
       },
       "zizmor.yaml": {
         "dark": "file_type_zizmor.svg"
       },
       "zizmor.yml": {
         "dark": "file_type_zizmor.svg"
+      },
+      "zlogin": {
+        "dark": "file_type_zsh.svg"
+      },
+      "zprofile": {
+        "dark": "file_type_zsh.svg"
+      },
+      "zshrc": {
+        "dark": "file_type_zsh.svg"
       }
     },
     "fileSuffixes": {
@@ -5823,22 +6416,7 @@
       ".bsq": {
         "dark": "file_type_bosque.svg"
       },
-      ".buf.gen.yaml": {
-        "dark": "file_type_buf.svg"
-      },
-      ".buf.gen.yml": {
-        "dark": "file_type_buf.svg"
-      },
-      ".buf.work.yaml": {
-        "dark": "file_type_buf.svg"
-      },
-      ".buf.work.yml": {
-        "dark": "file_type_buf.svg"
-      },
       ".buf.yaml": {
-        "dark": "file_type_buf.svg"
-      },
-      ".buf.yml": {
         "dark": "file_type_buf.svg"
       },
       ".builder": {
@@ -5886,8 +6464,17 @@
       ".ccss": {
         "dark": "file_type_css.svg"
       },
+      ".cdc": {
+        "dark": "file_type_cadence.svg"
+      },
       ".cddl": {
         "dark": "file_type_cddl.svg"
+      },
+      ".cdp": {
+        "dark": "file_type_cdp.svg"
+      },
+      ".cdp1": {
+        "dark": "file_type_cdp.svg"
       },
       ".cer": {
         "dark": "file_type_cert.svg"
@@ -5972,6 +6559,9 @@
       ".code-workspace": {
         "dark": "file_type_vscode.svg"
       },
+      ".codrop": {
+        "dark": "file_type_cdp.svg"
+      },
       ".coffee": {
         "dark": "file_type_coffeescript.svg"
       },
@@ -6019,7 +6609,7 @@
         "dark": "file_type_vanilla_extract.svg"
       },
       ".csv": {
-        "dark": "file_type_text.svg"
+        "dark": "file_type_csv.svg"
       },
       ".csx": {
         "dark": "file_type_csharp.svg"
@@ -6178,6 +6768,9 @@
       },
       ".drl": {
         "dark": "file_type_drools.svg"
+      },
+      ".dsn": {
+        "dark": "file_type_proteus.svg"
       },
       ".dss": {
         "dark": "file_type_audio.svg"
@@ -6550,6 +7143,10 @@
       ".hh": {
         "dark": "file_type_cppheader.svg"
       },
+      ".hip": {
+        "dark": "file_type_hip.svg",
+        "light": "file_type_light_hip.svg"
+      },
       ".hjson": {
         "dark": "file_type_hjson.svg",
         "light": "file_type_light_hjson.svg"
@@ -6687,6 +7284,9 @@
       ".ivs": {
         "dark": "file_type_audio.svg"
       },
+      ".j2": {
+        "dark": "file_type_jinja.svg"
+      },
       ".jake": {
         "dark": "file_type_js.svg",
         "light": "file_type_light_js.svg"
@@ -6713,6 +7313,9 @@
         "dark": "file_type_jest_snapshot.svg"
       },
       ".jinja": {
+        "dark": "file_type_jinja.svg"
+      },
+      ".jinja2": {
         "dark": "file_type_jinja.svg"
       },
       ".jl": {
@@ -7059,7 +7662,8 @@
         "dark": "file_type_mojo.svg"
       },
       ".mongo": {
-        "dark": "file_type_mongo.svg"
+        "dark": "file_type_mongo.svg",
+        "light": "file_type_light_mongo.svg"
       },
       ".mov": {
         "dark": "file_type_video.svg"
@@ -7116,6 +7720,10 @@
       ".mts": {
         "dark": "file_type_typescript.svg"
       },
+      ".mu": {
+        "dark": "file_type_mustache.svg",
+        "light": "file_type_light_mustache.svg"
+      },
       ".mum": {
         "dark": "file_type_matlab.svg"
       },
@@ -7134,6 +7742,9 @@
       },
       ".mx3": {
         "dark": "file_type_matlab.svg"
+      },
+      ".mxml": {
+        "dark": "file_type_mxml.svg"
       },
       ".n": {
         "dark": "file_type_binary.svg"
@@ -7335,6 +7946,9 @@
       ".parquet": {
         "dark": "file_type_parquet.svg"
       },
+      ".part": {
+        "dark": "file_type_actionscript.svg"
+      },
       ".pas": {
         "dark": "file_type_delphi.svg"
       },
@@ -7368,6 +7982,9 @@
       },
       ".pdf": {
         "dark": "file_type_pdf.svg"
+      },
+      ".pdsprj": {
+        "dark": "file_type_proteus.svg"
       },
       ".pem": {
         "dark": "file_type_key.svg"
@@ -7451,6 +8068,21 @@
       },
       ".pkh": {
         "dark": "file_type_plsql_package_header.svg"
+      },
+      ".pkr.hcl": {
+        "dark": "file_type_packer.svg"
+      },
+      ".pkr.json": {
+        "dark": "file_type_packer.svg"
+      },
+      ".pkrtpl.hcl": {
+        "dark": "file_type_packer.svg"
+      },
+      ".pkrvars.hcl": {
+        "dark": "file_type_packer.svg"
+      },
+      ".pkrvars.json": {
+        "dark": "file_type_packer.svg"
       },
       ".pks": {
         "dark": "file_type_plsql_package_spec.svg"
@@ -7649,6 +8281,9 @@
       },
       ".ql": {
         "dark": "file_type_codeql.svg"
+      },
+      ".qmd": {
+        "dark": "file_type_quarto.svg"
       },
       ".qml": {
         "dark": "file_type_qml.svg"
@@ -7872,7 +8507,10 @@
         "dark": "file_type_s-lang.svg"
       },
       ".slang": {
-        "dark": "file_type_slang.svg"
+        "dark": "file_type_slangacademic.svg"
+      },
+      ".slangh": {
+        "dark": "file_type_shaderslang.svg"
       },
       ".slddc": {
         "dark": "file_type_matlab.svg"
@@ -7965,6 +8603,9 @@
       ".sqlite3": {
         "dark": "file_type_sqlite.svg"
       },
+      ".sqlproj": {
+        "dark": "file_type_sqlproj.svg"
+      },
       ".src": {
         "dark": "file_type_cert.svg"
       },
@@ -7983,6 +8624,10 @@
       },
       ".st.css": {
         "dark": "file_type_stylable.svg"
+      },
+      ".stache": {
+        "dark": "file_type_mustache.svg",
+        "light": "file_type_light_mustache.svg"
       },
       ".stan": {
         "dark": "file_type_stan.svg"
@@ -8068,7 +8713,13 @@
       ".swc": {
         "dark": "file_type_flash.svg"
       },
+      ".swc.cache": {
+        "dark": "file_type_flash.svg"
+      },
       ".swf": {
+        "dark": "file_type_flash.svg"
+      },
+      ".swf.cache": {
         "dark": "file_type_flash.svg"
       },
       ".swift": {
@@ -8088,6 +8739,9 @@
       },
       ".tcl": {
         "dark": "file_type_tcl.svg"
+      },
+      ".td": {
+        "dark": "file_type_tablegen.svg"
       },
       ".teal": {
         "dark": "file_type_teal.svg"
@@ -8266,7 +8920,7 @@
         "dark": "file_type_test.svg"
       },
       ".tsv": {
-        "dark": "file_type_text.svg"
+        "dark": "file_type_csv.svg"
       },
       ".tsx": {
         "dark": "file_type_reactts.svg"
@@ -8314,6 +8968,9 @@
       ".unity": {
         "dark": "file_type_shaderlab.svg",
         "light": "file_type_light_shaderlab.svg"
+      },
+      ".uvue": {
+        "dark": "file_type_uvue.svg"
       },
       ".v": {
         "dark": "file_type_vlang.svg"
@@ -8776,6 +9433,12 @@
       ".certificates": {
         "dark": "folder_type_certificate.svg"
       },
+      ".cfg": {
+        "dark": "folder_type_config.svg"
+      },
+      ".cfgs": {
+        "dark": "folder_type_config.svg"
+      },
       ".changeset": {
         "dark": "folder_type_changesets.svg"
       },
@@ -8967,6 +9630,9 @@
       ".k8s": {
         "dark": "folder_type_kubernetes.svg"
       },
+      ".kadence": {
+        "dark": "folder_type_kadence.svg"
+      },
       ".kiro": {
         "dark": "folder_type_kiro.svg"
       },
@@ -9037,6 +9703,10 @@
       },
       ".nuxt": {
         "dark": "folder_type_nuxt.svg"
+      },
+      ".ocx": {
+        "dark": "folder_type_ocx.svg",
+        "light": "folder_type_light_ocx.svg"
       },
       ".package": {
         "dark": "folder_type_package.svg"
@@ -9204,6 +9874,10 @@
       "@types": {
         "dark": "folder_type_typings.svg"
       },
+      "alpine": {
+        "dark": "folder_type_alpine.svg",
+        "light": "folder_type_light_alpine.svg"
+      },
       "android": {
         "dark": "folder_type_android.svg"
       },
@@ -9237,6 +9911,9 @@
       "arangodb": {
         "dark": "folder_type_arangodb.svg"
       },
+      "arch": {
+        "dark": "folder_type_arch.svg"
+      },
       "assets": {
         "dark": "folder_type_asset.svg"
       },
@@ -9248,6 +9925,18 @@
       },
       "aurelia_project": {
         "dark": "folder_type_aurelia.svg"
+      },
+      "auth": {
+        "dark": "folder_type_auth.svg"
+      },
+      "authentication": {
+        "dark": "folder_type_auth.svg"
+      },
+      "authorisation": {
+        "dark": "folder_type_auth.svg"
+      },
+      "authorization": {
+        "dark": "folder_type_auth.svg"
       },
       "aws": {
         "dark": "folder_type_aws.svg"
@@ -9299,6 +9988,12 @@
       },
       "certs.": {
         "dark": "folder_type_certificate.svg"
+      },
+      "cfg": {
+        "dark": "folder_type_config.svg"
+      },
+      "cfgs": {
+        "dark": "folder_type_config.svg"
       },
       "chef": {
         "dark": "folder_type_chef.svg"
@@ -9473,6 +10168,10 @@
       "favicons": {
         "dark": "folder_type_favicon.svg"
       },
+      "fedora": {
+        "dark": "folder_type_fedora.svg",
+        "light": "folder_type_light_fedora.svg"
+      },
       "flow": {
         "dark": "folder_type_flow.svg"
       },
@@ -9499,6 +10198,9 @@
       },
       "gcp": {
         "dark": "folder_type_gcp.svg"
+      },
+      "gentoo": {
+        "dark": "folder_type_gentoo.svg"
       },
       "globalization": {
         "dark": "folder_type_locale.svg"
@@ -9804,7 +10506,19 @@
       "nuxt": {
         "dark": "folder_type_nuxt.svg"
       },
+      "oh_modules": {
+        "dark": "folder_type_ohpm.svg"
+      },
+      "opensuse": {
+        "dark": "folder_type_suse.svg"
+      },
       "out": {
+        "dark": "folder_type_dist.svg"
+      },
+      "output": {
+        "dark": "folder_type_dist.svg"
+      },
+      "outputs": {
         "dark": "folder_type_dist.svg"
       },
       "outs": {
@@ -9846,6 +10560,9 @@
       "ravendb": {
         "dark": "folder_type_ravendb.svg"
       },
+      "redhat": {
+        "dark": "folder_type_redhat.svg"
+      },
       "redis": {
         "dark": "folder_type_redis.svg"
       },
@@ -9868,6 +10585,9 @@
       "repository": {
         "dark": "folder_type_db.svg"
       },
+      "rhel": {
+        "dark": "folder_type_redhat.svg"
+      },
       "route": {
         "dark": "folder_type_route.svg"
       },
@@ -9883,6 +10603,12 @@
       "sass": {
         "dark": "folder_type_sass.svg",
         "light": "folder_type_light_sass.svg"
+      },
+      "schema": {
+        "dark": "folder_type_schema.svg"
+      },
+      "schemas": {
+        "dark": "folder_type_schema.svg"
       },
       "screenshot": {
         "dark": "folder_type_images.svg"
@@ -9923,6 +10649,9 @@
       },
       "shared": {
         "dark": "folder_type_shared.svg"
+      },
+      "slackware": {
+        "dark": "folder_type_slackware.svg"
       },
       "sound": {
         "dark": "folder_type_audio.svg"
@@ -9987,6 +10716,9 @@
       "supabase": {
         "dark": "folder_type_supabase.svg"
       },
+      "suse": {
+        "dark": "folder_type_suse.svg"
+      },
       "svelte": {
         "dark": "folder_type_svelte.svg"
       },
@@ -10047,6 +10779,12 @@
       "tools": {
         "dark": "folder_type_tools.svg"
       },
+      "translation": {
+        "dark": "folder_type_locale.svg"
+      },
+      "translations": {
+        "dark": "folder_type_locale.svg"
+      },
       "ts": {
         "dark": "folder_type_typescript.svg"
       },
@@ -10085,6 +10823,9 @@
       },
       "views": {
         "dark": "folder_type_view.svg"
+      },
+      "void": {
+        "dark": "folder_type_void.svg"
       },
       "vscode": {
         "dark": "folder_type_vscode.svg"
@@ -10286,6 +11027,12 @@
       ".certificates": {
         "dark": "folder_type_certificate_opened.svg"
       },
+      ".cfg": {
+        "dark": "folder_type_config_opened.svg"
+      },
+      ".cfgs": {
+        "dark": "folder_type_config_opened.svg"
+      },
       ".changeset": {
         "dark": "folder_type_changesets_opened.svg"
       },
@@ -10477,6 +11224,9 @@
       ".k8s": {
         "dark": "folder_type_kubernetes_opened.svg"
       },
+      ".kadence": {
+        "dark": "folder_type_kadence_opened.svg"
+      },
       ".kiro": {
         "dark": "folder_type_kiro_opened.svg"
       },
@@ -10547,6 +11297,10 @@
       },
       ".nuxt": {
         "dark": "folder_type_nuxt_opened.svg"
+      },
+      ".ocx": {
+        "dark": "folder_type_ocx_opened.svg",
+        "light": "folder_type_light_ocx_opened.svg"
       },
       ".package": {
         "dark": "folder_type_package_opened.svg"
@@ -10714,6 +11468,10 @@
       "@types": {
         "dark": "folder_type_typings_opened.svg"
       },
+      "alpine": {
+        "dark": "folder_type_alpine_opened.svg",
+        "light": "folder_type_light_alpine_opened.svg"
+      },
       "android": {
         "dark": "folder_type_android_opened.svg"
       },
@@ -10747,6 +11505,9 @@
       "arangodb": {
         "dark": "folder_type_arangodb_opened.svg"
       },
+      "arch": {
+        "dark": "folder_type_arch_opened.svg"
+      },
       "assets": {
         "dark": "folder_type_asset_opened.svg"
       },
@@ -10758,6 +11519,18 @@
       },
       "aurelia_project": {
         "dark": "folder_type_aurelia_opened.svg"
+      },
+      "auth": {
+        "dark": "folder_type_auth_opened.svg"
+      },
+      "authentication": {
+        "dark": "folder_type_auth_opened.svg"
+      },
+      "authorisation": {
+        "dark": "folder_type_auth_opened.svg"
+      },
+      "authorization": {
+        "dark": "folder_type_auth_opened.svg"
       },
       "aws": {
         "dark": "folder_type_aws_opened.svg"
@@ -10809,6 +11582,12 @@
       },
       "certs.": {
         "dark": "folder_type_certificate_opened.svg"
+      },
+      "cfg": {
+        "dark": "folder_type_config_opened.svg"
+      },
+      "cfgs": {
+        "dark": "folder_type_config_opened.svg"
       },
       "chef": {
         "dark": "folder_type_chef_opened.svg"
@@ -10983,6 +11762,10 @@
       "favicons": {
         "dark": "folder_type_favicon_opened.svg"
       },
+      "fedora": {
+        "dark": "folder_type_fedora_opened.svg",
+        "light": "folder_type_light_fedora_opened.svg"
+      },
       "flow": {
         "dark": "folder_type_flow_opened.svg"
       },
@@ -11009,6 +11792,9 @@
       },
       "gcp": {
         "dark": "folder_type_gcp_opened.svg"
+      },
+      "gentoo": {
+        "dark": "folder_type_gentoo_opened.svg"
       },
       "globalization": {
         "dark": "folder_type_locale_opened.svg"
@@ -11314,7 +12100,19 @@
       "nuxt": {
         "dark": "folder_type_nuxt_opened.svg"
       },
+      "oh_modules": {
+        "dark": "folder_type_ohpm_opened.svg"
+      },
+      "opensuse": {
+        "dark": "folder_type_suse_opened.svg"
+      },
       "out": {
+        "dark": "folder_type_dist_opened.svg"
+      },
+      "output": {
+        "dark": "folder_type_dist_opened.svg"
+      },
+      "outputs": {
         "dark": "folder_type_dist_opened.svg"
       },
       "outs": {
@@ -11356,6 +12154,9 @@
       "ravendb": {
         "dark": "folder_type_ravendb_opened.svg"
       },
+      "redhat": {
+        "dark": "folder_type_redhat_opened.svg"
+      },
       "redis": {
         "dark": "folder_type_redis_opened.svg"
       },
@@ -11378,6 +12179,9 @@
       "repository": {
         "dark": "folder_type_db_opened.svg"
       },
+      "rhel": {
+        "dark": "folder_type_redhat_opened.svg"
+      },
       "route": {
         "dark": "folder_type_route_opened.svg"
       },
@@ -11393,6 +12197,12 @@
       "sass": {
         "dark": "folder_type_sass_opened.svg",
         "light": "folder_type_light_sass_opened.svg"
+      },
+      "schema": {
+        "dark": "folder_type_schema_opened.svg"
+      },
+      "schemas": {
+        "dark": "folder_type_schema_opened.svg"
       },
       "screenshot": {
         "dark": "folder_type_images_opened.svg"
@@ -11433,6 +12243,9 @@
       },
       "shared": {
         "dark": "folder_type_shared_opened.svg"
+      },
+      "slackware": {
+        "dark": "folder_type_slackware_opened.svg"
       },
       "sound": {
         "dark": "folder_type_audio_opened.svg"
@@ -11497,6 +12310,9 @@
       "supabase": {
         "dark": "folder_type_supabase_opened.svg"
       },
+      "suse": {
+        "dark": "folder_type_suse_opened.svg"
+      },
       "svelte": {
         "dark": "folder_type_svelte_opened.svg"
       },
@@ -11557,6 +12373,12 @@
       "tools": {
         "dark": "folder_type_tools_opened.svg"
       },
+      "translation": {
+        "dark": "folder_type_locale_opened.svg"
+      },
+      "translations": {
+        "dark": "folder_type_locale_opened.svg"
+      },
       "ts": {
         "dark": "folder_type_typescript_opened.svg"
       },
@@ -11595,6 +12417,9 @@
       },
       "views": {
         "dark": "folder_type_view_opened.svg"
+      },
+      "void": {
+        "dark": "folder_type_void_opened.svg"
       },
       "vscode": {
         "dark": "folder_type_vscode_opened.svg"
@@ -11972,6 +12797,11 @@
       "encoding": "path",
       "path": "icons/file_type_azurepipelines.svg"
     },
+    "file_type_azureresourcemanager.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_azureresourcemanager.svg"
+    },
     "file_type_azurestreamanalytics.svg": {
       "format": "svg",
       "encoding": "path",
@@ -12102,6 +12932,11 @@
       "encoding": "path",
       "path": "icons/file_type_bower2.svg"
     },
+    "file_type_brakeman.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_brakeman.svg"
+    },
     "file_type_brew.svg": {
       "format": "svg",
       "encoding": "path",
@@ -12177,6 +13012,11 @@
       "encoding": "path",
       "path": "icons/file_type_caddy.svg"
     },
+    "file_type_cadence.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_cadence.svg"
+    },
     "file_type_cairo.svg": {
       "format": "svg",
       "encoding": "path",
@@ -12222,6 +13062,11 @@
       "encoding": "path",
       "path": "icons/file_type_cddl.svg"
     },
+    "file_type_cdp.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_cdp.svg"
+    },
     "file_type_cert.svg": {
       "format": "svg",
       "encoding": "path",
@@ -12262,6 +13107,11 @@
       "encoding": "path",
       "path": "icons/file_type_cfm2.svg"
     },
+    "file_type_changelogen.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_changelogen.svg"
+    },
     "file_type_changie.svg": {
       "format": "svg",
       "encoding": "path",
@@ -12271,6 +13121,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_cheader.svg"
+    },
+    "file_type_checkov.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_checkov.svg"
     },
     "file_type_chef_cookbook.svg": {
       "format": "svg",
@@ -12351,6 +13206,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_codecov.svg"
+    },
+    "file_type_codegen.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_codegen.svg"
     },
     "file_type_codekit.svg": {
       "format": "svg",
@@ -12537,6 +13397,11 @@
       "encoding": "path",
       "path": "icons/file_type_cssmap.svg"
     },
+    "file_type_csv.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_csv.svg"
+    },
     "file_type_cucumber.svg": {
       "format": "svg",
       "encoding": "path",
@@ -12681,6 +13546,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_devenv.svg"
+    },
+    "file_type_devprune.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_devprune.svg"
     },
     "file_type_devvit.svg": {
       "format": "svg",
@@ -13127,6 +13997,11 @@
       "encoding": "path",
       "path": "icons/file_type_freemarker.svg"
     },
+    "file_type_fresh.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_fresh.svg"
+    },
     "file_type_fritzing.svg": {
       "format": "svg",
       "encoding": "path",
@@ -13367,6 +14242,11 @@
       "encoding": "path",
       "path": "icons/file_type_godot.svg"
     },
+    "file_type_golangci.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_golangci.svg"
+    },
     "file_type_gpg.svg": {
       "format": "svg",
       "encoding": "path",
@@ -13506,6 +14386,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_helm.svg"
+    },
+    "file_type_heroku.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_heroku.svg"
+    },
+    "file_type_hip.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_hip.svg"
     },
     "file_type_histoire.svg": {
       "format": "svg",
@@ -13922,6 +14812,11 @@
       "encoding": "path",
       "path": "icons/file_type_kusto.svg"
     },
+    "file_type_kysely.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_kysely.svg"
+    },
     "file_type_language_configuration.svg": {
       "format": "svg",
       "encoding": "path",
@@ -14077,6 +14972,11 @@
       "encoding": "path",
       "path": "icons/file_type_light_cabal.svg"
     },
+    "file_type_light_checkov.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_checkov.svg"
+    },
     "file_type_light_circleci.svg": {
       "format": "svg",
       "encoding": "path",
@@ -14202,6 +15102,16 @@
       "encoding": "path",
       "path": "icons/file_type_light_firebasehosting.svg"
     },
+    "file_type_light_firebasestorage.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_firebasestorage.svg"
+    },
+    "file_type_light_firestore.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_firestore.svg"
+    },
     "file_type_light_fla.svg": {
       "format": "svg",
       "encoding": "path",
@@ -14231,6 +15141,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_light_hashicorp.svg"
+    },
+    "file_type_light_heroku.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_heroku.svg"
+    },
+    "file_type_light_hip.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_hip.svg"
     },
     "file_type_light_hjson.svg": {
       "format": "svg",
@@ -14352,6 +15272,11 @@
       "encoding": "path",
       "path": "icons/file_type_light_mlang.svg"
     },
+    "file_type_light_mongo.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_mongo.svg"
+    },
     "file_type_light_mustache.svg": {
       "format": "svg",
       "encoding": "path",
@@ -14437,10 +15362,20 @@
       "encoding": "path",
       "path": "icons/file_type_light_prisma.svg"
     },
+    "file_type_light_prismaconfig.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_prismaconfig.svg"
+    },
     "file_type_light_purescript.svg": {
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_light_purescript.svg"
+    },
+    "file_type_light_pyrefly.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_pyrefly.svg"
     },
     "file_type_light_quarkdown.svg": {
       "format": "svg",
@@ -14667,6 +15602,16 @@
       "encoding": "path",
       "path": "icons/file_type_light_vitest.svg"
     },
+    "file_type_light_vlt.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_vlt.svg"
+    },
+    "file_type_light_vlt2.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_vlt2.svg"
+    },
     "file_type_light_vsix.svg": {
       "format": "svg",
       "encoding": "path",
@@ -14706,6 +15651,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_light_yaml.svg"
+    },
+    "file_type_light_zed.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_light_zed.svg"
     },
     "file_type_lighthouse.svg": {
       "format": "svg",
@@ -15007,6 +15957,11 @@
       "encoding": "path",
       "path": "icons/file_type_mongo.svg"
     },
+    "file_type_moniq.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_moniq.svg"
+    },
     "file_type_monotone.svg": {
       "format": "svg",
       "encoding": "path",
@@ -15046,6 +16001,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_mvtjs.svg"
+    },
+    "file_type_mxml.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_mxml.svg"
     },
     "file_type_mypy.svg": {
       "format": "svg",
@@ -15457,6 +16417,11 @@
       "encoding": "path",
       "path": "icons/file_type_ng_tailwind.svg"
     },
+    "file_type_ng-packagr.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_ng-packagr.svg"
+    },
     "file_type_nginx.svg": {
       "format": "svg",
       "encoding": "path",
@@ -15607,6 +16572,11 @@
       "encoding": "path",
       "path": "icons/file_type_ogone.svg"
     },
+    "file_type_ohpm.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_ohpm.svg"
+    },
     "file_type_onenote.svg": {
       "format": "svg",
       "encoding": "path",
@@ -15657,6 +16627,11 @@
       "encoding": "path",
       "path": "icons/file_type_outlook.svg"
     },
+    "file_type_overmind.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_overmind.svg"
+    },
     "file_type_ovpn.svg": {
       "format": "svg",
       "encoding": "path",
@@ -15671,6 +16646,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_package.svg"
+    },
+    "file_type_packer.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_packer.svg"
     },
     "file_type_packship.svg": {
       "format": "svg",
@@ -16042,6 +17022,11 @@
       "encoding": "path",
       "path": "icons/file_type_prometheus.svg"
     },
+    "file_type_proteus.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_proteus.svg"
+    },
     "file_type_protobuf.svg": {
       "format": "svg",
       "encoding": "path",
@@ -16096,6 +17081,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_pypi.svg"
+    },
+    "file_type_pyrefly.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_pyrefly.svg"
     },
     "file_type_pyret.svg": {
       "format": "svg",
@@ -16176,6 +17166,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_quarkdown.svg"
+    },
+    "file_type_quarto.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_quarto.svg"
+    },
+    "file_type_quartoconfig.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_quartoconfig.svg"
     },
     "file_type_quasar.svg": {
       "format": "svg",
@@ -16267,6 +17267,11 @@
       "encoding": "path",
       "path": "icons/file_type_reason.svg"
     },
+    "file_type_rector.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_rector.svg"
+    },
     "file_type_red.svg": {
       "format": "svg",
       "encoding": "path",
@@ -16321,6 +17326,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_retext.svg"
+    },
+    "file_type_reuse.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_reuse.svg"
     },
     "file_type_rexx.svg": {
       "format": "svg",
@@ -16381,6 +17391,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_rproj.svg"
+    },
+    "file_type_rspack.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_rspack.svg"
     },
     "file_type_rspec.svg": {
       "format": "svg",
@@ -16532,6 +17547,11 @@
       "encoding": "path",
       "path": "icons/file_type_shaderlab.svg"
     },
+    "file_type_shaderslang.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_shaderslang.svg"
+    },
     "file_type_shell.svg": {
       "format": "svg",
       "encoding": "path",
@@ -16582,10 +17602,10 @@
       "encoding": "path",
       "path": "icons/file_type_skipper.svg"
     },
-    "file_type_slang.svg": {
+    "file_type_slangacademic.svg": {
       "format": "svg",
       "encoding": "path",
-      "path": "icons/file_type_slang.svg"
+      "path": "icons/file_type_slangacademic.svg"
     },
     "file_type_slashup.svg": {
       "format": "svg",
@@ -16696,6 +17716,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_sqlite.svg"
+    },
+    "file_type_sqlproj.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_sqlproj.svg"
     },
     "file_type_squirrel.svg": {
       "format": "svg",
@@ -16857,6 +17882,11 @@
       "encoding": "path",
       "path": "icons/file_type_t4tt.svg"
     },
+    "file_type_tablegen.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_tablegen.svg"
+    },
     "file_type_tailwind.svg": {
       "format": "svg",
       "encoding": "path",
@@ -16876,6 +17906,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_taskfile.svg"
+    },
+    "file_type_tasks_json.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_tasks_json.svg"
     },
     "file_type_tauri.svg": {
       "format": "svg",
@@ -16986,6 +18021,11 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_toit.svg"
+    },
+    "file_type_tombi.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_tombi.svg"
     },
     "file_type_toml.svg": {
       "format": "svg",
@@ -17157,6 +18197,11 @@
       "encoding": "path",
       "path": "icons/file_type_uv.svg"
     },
+    "file_type_uvue.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_uvue.svg"
+    },
     "file_type_vagrant.svg": {
       "format": "svg",
       "encoding": "path",
@@ -17271,6 +18316,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_vlang.svg"
+    },
+    "file_type_vlt.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_vlt.svg"
+    },
+    "file_type_vlt2.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_vlt2.svg"
     },
     "file_type_volt.svg": {
       "format": "svg",
@@ -17507,6 +18562,11 @@
       "encoding": "path",
       "path": "icons/file_type_xorg.svg"
     },
+    "file_type_xposed.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_xposed.svg"
+    },
     "file_type_xquery.svg": {
       "format": "svg",
       "encoding": "path",
@@ -17557,6 +18617,16 @@
       "encoding": "path",
       "path": "icons/file_type_yeoman.svg"
     },
+    "file_type_zed.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_zed.svg"
+    },
+    "file_type_zensical.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_zensical.svg"
+    },
     "file_type_zig.svg": {
       "format": "svg",
       "encoding": "path",
@@ -17576,6 +18646,21 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/file_type_zizmor.svg"
+    },
+    "file_type_zsh.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/file_type_zsh.svg"
+    },
+    "folder_type_alpine_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_alpine_opened.svg"
+    },
+    "folder_type_alpine.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_alpine.svg"
     },
     "folder_type_android_opened.svg": {
       "format": "svg",
@@ -17637,6 +18722,16 @@
       "encoding": "path",
       "path": "icons/folder_type_arangodb.svg"
     },
+    "folder_type_arch_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_arch_opened.svg"
+    },
+    "folder_type_arch.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_arch.svg"
+    },
     "folder_type_asset_opened.svg": {
       "format": "svg",
       "encoding": "path",
@@ -17676,6 +18771,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/folder_type_aurelia.svg"
+    },
+    "folder_type_auth_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_auth_opened.svg"
+    },
+    "folder_type_auth.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_auth.svg"
     },
     "folder_type_aws_opened.svg": {
       "format": "svg",
@@ -18167,6 +19272,16 @@
       "encoding": "path",
       "path": "icons/folder_type_favicon.svg"
     },
+    "folder_type_fedora_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_fedora_opened.svg"
+    },
+    "folder_type_fedora.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_fedora.svg"
+    },
     "folder_type_flow_opened.svg": {
       "format": "svg",
       "encoding": "path",
@@ -18226,6 +19341,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/folder_type_gemini.svg"
+    },
+    "folder_type_gentoo_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_gentoo_opened.svg"
+    },
+    "folder_type_gentoo.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_gentoo.svg"
     },
     "folder_type_git_opened.svg": {
       "format": "svg",
@@ -18457,6 +19582,16 @@
       "encoding": "path",
       "path": "icons/folder_type_junie.svg"
     },
+    "folder_type_kadence_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_kadence_opened.svg"
+    },
+    "folder_type_kadence.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_kadence.svg"
+    },
     "folder_type_kiro_opened.svg": {
       "format": "svg",
       "encoding": "path",
@@ -18507,6 +19642,16 @@
       "encoding": "path",
       "path": "icons/folder_type_library.svg"
     },
+    "folder_type_light_alpine_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_light_alpine_opened.svg"
+    },
+    "folder_type_light_alpine.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_light_alpine.svg"
+    },
     "folder_type_light_cursor_opened.svg": {
       "format": "svg",
       "encoding": "path",
@@ -18556,6 +19701,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/folder_type_light_expo.svg"
+    },
+    "folder_type_light_fedora_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_light_fedora_opened.svg"
+    },
+    "folder_type_light_fedora.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_light_fedora.svg"
     },
     "folder_type_light_fonts_opened.svg": {
       "format": "svg",
@@ -18616,6 +19771,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/folder_type_light_node.svg"
+    },
+    "folder_type_light_ocx_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_light_ocx_opened.svg"
+    },
+    "folder_type_light_ocx.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_light_ocx.svg"
     },
     "folder_type_light_redux_opened.svg": {
       "format": "svg",
@@ -18947,6 +20112,26 @@
       "encoding": "path",
       "path": "icons/folder_type_nuxt.svg"
     },
+    "folder_type_ocx_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_ocx_opened.svg"
+    },
+    "folder_type_ocx.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_ocx.svg"
+    },
+    "folder_type_ohpm_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_ohpm_opened.svg"
+    },
+    "folder_type_ohpm.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_ohpm.svg"
+    },
     "folder_type_package_opened.svg": {
       "format": "svg",
       "encoding": "path",
@@ -19057,6 +20242,16 @@
       "encoding": "path",
       "path": "icons/folder_type_ravendb.svg"
     },
+    "folder_type_redhat_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_redhat_opened.svg"
+    },
+    "folder_type_redhat.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_redhat.svg"
+    },
     "folder_type_redis_opened.svg": {
       "format": "svg",
       "encoding": "path",
@@ -19096,6 +20291,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/folder_type_sass.svg"
+    },
+    "folder_type_schema_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_schema_opened.svg"
+    },
+    "folder_type_schema.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_schema.svg"
     },
     "folder_type_script_opened.svg": {
       "format": "svg",
@@ -19146,6 +20351,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/folder_type_shared.svg"
+    },
+    "folder_type_slackware_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_slackware_opened.svg"
+    },
+    "folder_type_slackware.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_slackware.svg"
     },
     "folder_type_snaplet_opened.svg": {
       "format": "svg",
@@ -19216,6 +20431,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/folder_type_supabase.svg"
+    },
+    "folder_type_suse_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_suse_opened.svg"
+    },
+    "folder_type_suse.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_suse.svg"
     },
     "folder_type_svelte_opened.svg": {
       "format": "svg",
@@ -19426,6 +20651,16 @@
       "format": "svg",
       "encoding": "path",
       "path": "icons/folder_type_vitepress.svg"
+    },
+    "folder_type_void_opened.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_void_opened.svg"
+    },
+    "folder_type_void.svg": {
+      "format": "svg",
+      "encoding": "path",
+      "path": "icons/folder_type_void.svg"
     },
     "folder_type_vs_opened.svg": {
       "format": "svg",

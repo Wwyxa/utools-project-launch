@@ -1,7 +1,7 @@
 vscode-icons derived icon pack
 
 Source repository: https://github.com/vscode-icons/vscode-icons
-Source version: 12.19.0
+Source version: 13.0.0
 
 The vscode-icons source code is licensed under MIT.
 The icon assets are licensed under Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0).
@@ -14,7 +14,7 @@ The upstream README is included below for attribution context:
 
 
 <h3>Bring real icons to your <a href="https://code.visualstudio.com" target="_blank">Visual Studio Code</a></h3>
-<p style="font-size:10px;">minimum supported version: <b>1.82.0</b></p>
+<p style="font-size:10px;">minimum supported version: <b>1.104.3</b></p>
 
 </div>
 

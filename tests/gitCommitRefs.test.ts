@@ -259,6 +259,34 @@ describe("presentGitCommitRefs", () => {
     ).toEqual([{ kind: "stash", name: "stash@{0}", display: "label", memberNames: ["stash@{0}"] }]);
   });
 
+  it("surfaces a tag as the dense label when it is the only ref", () => {
+    const presentation = presentGitCommitRefs(
+      commit([{ kind: "tag", name: "service-v1.0.8" }], undefined, "tag-commit"),
+      gitContext({ headHash: "head" }),
+    );
+
+    expect(
+      presentation.dense.members.map(({ kind, name, display, memberNames }) => ({ kind, name, display, memberNames })),
+    ).toEqual([{ kind: "tag", name: "service-v1.0.8", display: "label", memberNames: ["service-v1.0.8"] }]);
+  });
+
+  it("keeps the branch label ahead of a tag and folds the tag behind its icon", () => {
+    const presentation = presentGitCommitRefs(
+      commit([
+        { kind: "local", name: "release" },
+        { kind: "tag", name: "service-v1.0.8" },
+      ]),
+      gitContext({ headHash: "head", upstream: null }),
+    );
+
+    expect(
+      presentation.dense.members.map(({ kind, name, display, memberNames }) => ({ kind, name, display, memberNames })),
+    ).toEqual([
+      { kind: "local", name: "release", display: "label", memberNames: ["release"] },
+      { kind: "tag", name: "service-v1.0.8", display: "icon", memberNames: ["service-v1.0.8"] },
+    ]);
+  });
+
   it("shows one primary label and icon-only companions for local and remote refs", () => {
     const presentation = presentGitCommitRefs(
       commit([

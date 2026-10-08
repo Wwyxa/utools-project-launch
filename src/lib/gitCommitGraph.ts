@@ -7,6 +7,7 @@ export const GIT_COMMIT_GRAPH_GEOMETRY = {
   minimumWidth: 24,
   rowHeight: 32,
   rowGap: 1,
+  strokeWidth: 1.25,
 } as const;
 
 export const GIT_COMMIT_GRAPH_COLOR_INDEX = {
@@ -18,20 +19,46 @@ export const GIT_COMMIT_GRAPH_COLOR_INDEX = {
 
 export const GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES = Object.values(GIT_COMMIT_GRAPH_COLOR_INDEX);
 
-const graphReferenceStrokeColors: Readonly<Record<number, string>> = {
-  [GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch]: "#2563eb",
-  [GIT_COMMIT_GRAPH_COLOR_INDEX.base]: "#d97706",
-  [GIT_COMMIT_GRAPH_COLOR_INDEX.upstream]: "#db2777",
-  [GIT_COMMIT_GRAPH_COLOR_INDEX.stash]: "#0f766e",
-};
-const graphBranchStrokeColors = ["#ffb000", "#dc267f", "#994f00", "#40b0a6", "#b66dff"];
+export type GitCommitGraphColorTheme = "light" | "dark";
 
-export const gitCommitGraphStrokeColor = (colorIndex: number) => {
+/**
+ * Semantic reference slots reuse VS Code's SCM graph palette
+ * (references/vscode/src/vs/workbench/contrib/scm/browser/scmHistory.ts) so
+ * reserved hues stay outside the cycled branch hues: the old upstream pink
+ * #db2777 was visually indistinguishable from the branch cycle's #dc267f.
+ */
+const graphReferenceStrokeColors: Readonly<Record<GitCommitGraphColorTheme, Readonly<Record<number, string>>>> = {
+  light: {
+    [GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch]: "#0063d3", // charts.blue
+    [GIT_COMMIT_GRAPH_COLOR_INDEX.base]: "#ea5c00", // scmGraph.historyItemBaseRefColor
+    [GIT_COMMIT_GRAPH_COLOR_INDEX.upstream]: "#652d90", // charts.purple
+    [GIT_COMMIT_GRAPH_COLOR_INDEX.stash]: "#388a34", // charts.green
+  },
+  dark: {
+    [GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch]: "#59a4f9", // charts.blue
+    [GIT_COMMIT_GRAPH_COLOR_INDEX.base]: "#ea5c00", // scmGraph.historyItemBaseRefColor
+    [GIT_COMMIT_GRAPH_COLOR_INDEX.upstream]: "#b180d7", // charts.purple
+    [GIT_COMMIT_GRAPH_COLOR_INDEX.stash]: "#89d185", // charts.green
+  },
+};
+/**
+ * scmGraph.foreground1-5. Light keeps VS Code's palette verbatim; dark
+ * replaces two entries because VS Code's single-value palette is tuned for
+ * light surfaces: #994f00 is nearly invisible on dark backgrounds, and
+ * #b66dff collides with the upstream lavender #b180d7.
+ */
+const graphBranchStrokeColors: Readonly<Record<GitCommitGraphColorTheme, readonly string[]>> = {
+  light: ["#ffb000", "#dc267f", "#994f00", "#40b0a6", "#b66dff"],
+  dark: ["#ffb000", "#dc267f", "#98c030", "#40b0a6", "#35c878"],
+};
+
+export const gitCommitGraphStrokeColor = (colorIndex: number, colorTheme: GitCommitGraphColorTheme = "light") => {
   const normalizedColorIndex = Number.isInteger(colorIndex) && colorIndex >= 0 ? colorIndex : 0;
-  const referenceColor = graphReferenceStrokeColors[normalizedColorIndex];
+  const referenceColor = graphReferenceStrokeColors[colorTheme][normalizedColorIndex];
   if (referenceColor) return referenceColor;
   const branchColorIndex = normalizedColorIndex - GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES.length;
-  return graphBranchStrokeColors[branchColorIndex % graphBranchStrokeColors.length] || graphBranchStrokeColors[0];
+  const branchColors = graphBranchStrokeColors[colorTheme];
+  return branchColors[branchColorIndex % branchColors.length] || branchColors[0];
 };
 
 export interface GitCommitGraphLane {

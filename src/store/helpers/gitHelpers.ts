@@ -70,7 +70,7 @@ export function gitHistorySnapshotSignature(
     })),
     branches: (snapshot.branches || []).map((branch) => [branch.name, Boolean(branch.current)]),
     remotes: (snapshot.remotes || []).map((remote) => [remote.name, remote.fetchUrl, remote.pushUrl]),
-    remoteBranches: (snapshot.remoteBranches || []).map((branch) => [branch.remote, branch.branch, branch.ref]),
+    remoteBranches: (snapshot.remoteBranches || []).map((branch) => [branch.remote, branch.branch, branch.ref, branch.commitHash || ""]),
     upstream: snapshot.upstream
       ? [
           snapshot.upstream.remote,

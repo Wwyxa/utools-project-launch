@@ -564,7 +564,8 @@
   opacity: 0.6;
 }
 
-.git-history-menu-item {
+/* 右键菜单 / 紧凑菜单通用条目：Git 提交历史与文件树等浮层共享同一套规格 */
+.ui-menu-item {
   display: flex;
   width: 100%;
   height: 1.75rem;
@@ -583,24 +584,24 @@
     opacity 120ms ease;
 }
 
-.git-history-menu-item:hover:not(:disabled),
-.git-history-menu-item:focus-visible {
+.ui-menu-item:hover:not(:disabled),
+.ui-menu-item:focus-visible {
   background: var(--color-surface-variant);
   color: var(--color-primary);
   outline: none;
 }
 
-.git-history-menu-item:disabled {
+.ui-menu-item:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
-.git-history-menu-item.text-status-error {
+.ui-menu-item.text-status-error {
   color: var(--color-status-error);
 }
 
-.git-history-menu-item.text-status-error:hover:not(:disabled),
-.git-history-menu-item.text-status-error:focus-visible {
+.ui-menu-item.text-status-error:hover:not(:disabled),
+.ui-menu-item.text-status-error:focus-visible {
   color: var(--color-status-error);
 }
 
@@ -834,12 +835,24 @@
   color: #fff;
 }
 
+/* Dark graph colors are brightened for line visibility, so a solid fill is
+   glaring on badges — use a soft tint with the graph color as text instead. */
+.dark .git-ref-badge--graph-linked {
+  border-color: rgba(var(--git-ref-graph-color-rgb), 0.45);
+  background-color: rgba(var(--git-ref-graph-color-rgb), 0.14);
+  color: var(--git-ref-graph-color);
+}
+
 .git-ref-badge--current {
   font-weight: 800;
 }
 
 .git-ref-badge--graph-linked.git-ref-badge--current {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68);
+}
+
+.dark .git-ref-badge--graph-linked.git-ref-badge--current {
+  box-shadow: inset 0 0 0 1px rgba(var(--git-ref-graph-color-rgb), 0.6);
 }
 
 .terminal-log-timestamp {
@@ -1359,33 +1372,6 @@
   }
 }
 
-.file-tree-menu-item {
-  display: flex;
-  width: 100%;
-  min-width: 100%;
-  height: 1.8rem;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.65rem;
-  text-align: left;
-  white-space: nowrap;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
-}
-
-.file-tree-context-menu {
-  width: max-content;
-  max-width: calc(100vw - 1rem);
-}
-
-.file-tree-menu-item:hover,
-.file-tree-menu-item:focus-visible {
-  background: var(--color-surface-variant);
-  color: var(--color-primary);
-  outline: none;
-}
-
 .file-find-input-wrap {
   display: flex;
   min-width: 0;
@@ -1757,6 +1743,80 @@
 .slide-up-leave-to {
   transform: translateY(-0.5rem);
   opacity: 0;
+}
+
+/* Indeterminate progress bar (action status toast, loading state) */
+@keyframes action-status-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
+.action-status-indeterminate-bar {
+  animation: action-status-indeterminate 1.3s ease-in-out infinite;
+}
+
+/* Action status toast: theme-explicit state tints. The uTools host webview may lack
+   color-mix() support (Chromium < 111), and its build-time fallback is resolved from
+   light-theme values only, so dark mode must not depend on either. */
+:root {
+  --action-status-tint-loading: #d9e9e4;
+  --action-status-tint-success: #e0f3ec;
+  --action-status-tint-warning: #f3e9d9;
+  --action-status-tint-error: #ffe3e1;
+  --action-status-border-idle: rgba(188, 202, 192, 0.8);
+  --action-status-border-loading: rgba(0, 108, 73, 0.3);
+  --action-status-border-loading-hover: rgba(0, 108, 73, 0.5);
+  --action-status-border-success: rgba(46, 175, 125, 0.4);
+  --action-status-border-success-hover: rgba(46, 175, 125, 0.6);
+  --action-status-border-warning: rgba(178, 106, 0, 0.4);
+  --action-status-border-warning-hover: rgba(178, 106, 0, 0.6);
+  --action-status-border-error: rgba(255, 69, 58, 0.45);
+  --action-status-border-error-hover: rgba(255, 69, 58, 0.65);
+  --action-status-panel-border-loading: rgba(0, 108, 73, 0.4);
+  --action-status-panel-border-success: rgba(46, 175, 125, 0.4);
+  --action-status-panel-border-warning: rgba(178, 106, 0, 0.4);
+  --action-status-panel-border-error: rgba(255, 69, 58, 0.5);
+}
+
+.dark {
+  --action-status-tint-loading: #3c504b;
+  --action-status-tint-success: #344945;
+  --action-status-tint-warning: #524a41;
+  --action-status-tint-error: #533a3b;
+  --action-status-border-idle: rgba(85, 90, 98, 0.8);
+  --action-status-border-loading: rgba(99, 220, 166, 0.3);
+  --action-status-border-loading-hover: rgba(99, 220, 166, 0.5);
+  --action-status-border-success: rgba(46, 175, 125, 0.4);
+  --action-status-border-success-hover: rgba(46, 175, 125, 0.6);
+  --action-status-border-warning: rgba(244, 184, 96, 0.4);
+  --action-status-border-warning-hover: rgba(244, 184, 96, 0.6);
+  --action-status-border-error: rgba(255, 69, 58, 0.45);
+  --action-status-border-error-hover: rgba(255, 69, 58, 0.65);
+  --action-status-panel-border-loading: rgba(99, 220, 166, 0.4);
+  --action-status-panel-border-success: rgba(46, 175, 125, 0.4);
+  --action-status-panel-border-warning: rgba(244, 184, 96, 0.4);
+  --action-status-panel-border-error: rgba(255, 69, 58, 0.5);
+}
+
+.action-status-tint-loading {
+  background-color: var(--action-status-tint-loading);
+}
+
+.action-status-tint-success {
+  background-color: var(--action-status-tint-success);
+}
+
+.action-status-tint-warning {
+  background-color: var(--action-status-tint-warning);
+}
+
+.action-status-tint-error {
+  background-color: var(--action-status-tint-error);
 }
 
 /* Vue transition: scale (modal / dialog entry) */

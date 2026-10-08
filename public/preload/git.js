@@ -2276,7 +2276,7 @@ async function readGitRemoteBranchesAsyncResult(repositoryPath, remotes) {
   const branches = outputResult.stdout
     .split(/\r?\n/)
     .map((line) => {
-      const [fullName] = line.split(fieldSeparator);
+      const [fullName, commitHash] = line.split(fieldSeparator);
       const normalizedName = String(fullName || "").trim();
       const prefix = "refs/remotes/";
       if (!normalizedName.startsWith(prefix)) {
@@ -2295,7 +2295,7 @@ async function readGitRemoteBranchesAsyncResult(repositoryPath, remotes) {
         return null;
       }
 
-      return { remote, branch, ref: `${remote}/${branch}` };
+      return { remote, branch, ref: `${remote}/${branch}`, commitHash };
     })
     .filter(Boolean)
     .sort((left, right) => left.ref.localeCompare(right.ref));
@@ -2447,6 +2447,14 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
     const defaultBase = await resolveBase(defaultRemoteRef);
     if (defaultBase) {
       return rememberBase(defaultBase);
+    }
+  }
+
+  // 旧版 git fetch 不会自动生成 <remote>/HEAD，退回按各 remote 下的同名分支识别基点。
+  for (const remote of preferredRemoteNames) {
+    const sameNameBase = await resolveBase(`${remote}/${branch}`);
+    if (sameNameBase) {
+      return rememberBase(sameNameBase);
     }
   }
 

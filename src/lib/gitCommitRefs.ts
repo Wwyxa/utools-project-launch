@@ -94,7 +94,11 @@ const upstreamRefNames = (context: GitCommitRefPresentationContext) => {
 
 const baseRefNames = (context: GitCommitRefPresentationContext) => {
   const base = context.base;
-  return new Set([base?.ref, base && `${base.remote}/${base.branch}`].filter(Boolean).map(normalizeRemoteRefName));
+  return new Set(
+    [base?.ref, base && `${base.remote}/${base.branch}`]
+      .filter((value): value is string => Boolean(value))
+      .map(normalizeRemoteRefName),
+  );
 };
 
 const remainingPriority = (kind: GitCommitRefPresentationKind) => {
@@ -194,10 +198,9 @@ export const presentGitCommitRefs = (
   const members: GitCommitRefDenseMember[] = [];
   let remaining = full.slice();
   const firstColored = remaining.find((member) => member.graphColorIndex !== undefined);
-  const primary =
-    firstColored ??
-    remaining.find((member) => member.isCurrentHead) ??
-    remaining.find((member) => member.kind !== "tag");
+  // Fall through to the top remaining ref even when it is a tag, so tag-only commits
+  // surface the tag name as the row's labeled chip like the VS Code graph hover does.
+  const primary = firstColored ?? remaining.find((member) => member.isCurrentHead) ?? remaining[0];
   if (primary) {
     members.push(denseMember([primary], "label"));
     remaining = remaining.filter((member) => member !== primary);

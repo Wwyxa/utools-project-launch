@@ -25,6 +25,7 @@ import {
   ListChecks,
   ListTree,
   ListX,
+  MoreHorizontal,
   Pencil,
   Tag,
   Target,
@@ -148,7 +149,6 @@ type AppActionDialog = {
   cancelLabel?: string;
   onConfirm: () => Promise<void> | void;
 };
-type GitGraphPathMode = "vertical" | "fanOut" | "fanIn";
 type FloatingMenuPosition = { left: number; top: number };
 type DatePickerKind = "since" | "until";
 
@@ -161,8 +161,9 @@ const props = withDefaults(
     disabled?: boolean;
     filterCommit?: { hash: string; requestId: number } | null;
     selectedCommitHashes: string[];
+    amendModeActive?: boolean;
   }>(),
-  { disabled: false },
+  { disabled: false, amendModeActive: false },
 );
 
 const emit = defineEmits<{
@@ -172,6 +173,9 @@ const emit = defineEmits<{
   (event: "request-ai"): void;
   (event: "feedback", state: GitFeedbackState, message: string): void;
   (event: "busy-change", busy: boolean): void;
+  (event: "start-amend"): void;
+  (event: "cancel-amend"): void;
+  (event: "undo-completed", commitMessage?: string): void;
 }>();
 
 const store = useStore();
@@ -217,6 +221,10 @@ const refDialogInputRef = ref<HTMLInputElement | null>(null);
 const tagInfoDialog = ref<TagInfoDialogState | null>(null);
 const confirmationDialog = ref<AppActionDialog | null>(null);
 const confirmationBusy = ref(false);
+const moreMenuOpen = ref(false);
+const moreMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
+const moreMenuRef = ref<HTMLElement | null>(null);
+const moreMenuOpener = ref<HTMLElement | null>(null);
 const activeAction = ref("");
 const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
@@ -541,41 +549,49 @@ const commitContextMenuViewportInset = 8;
 const commitContextMenuMaxWidth = 208;
 const commitContextMenuMaxHeight = 240;
 const graphWindowOverscan = 256;
-const { rowHeight, rowGap } = GIT_COMMIT_GRAPH_GEOMETRY;
-const rowPitch = rowHeight + rowGap;
+const { rowHeight, rowGap, strokeWidth } = GIT_COMMIT_GRAPH_GEOMETRY;
 const currentBranchGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch;
 const baseGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.base;
 const upstreamGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.upstream;
 const stashGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.stash;
-const graphStrokeColor = gitCommitGraphStrokeColor;
+const graphStrokeColor = (colorIndex: number) =>
+  gitCommitGraphStrokeColor(colorIndex, store.iconPackColorMode === "dark" ? "dark" : "light");
 const graphNodeX = (lane: number) =>
   GIT_COMMIT_GRAPH_GEOMETRY.paddingX +
   lane * GIT_COMMIT_GRAPH_GEOMETRY.laneWidth +
   GIT_COMMIT_GRAPH_GEOMETRY.laneWidth / 2;
-const graphPathData = (sourceX: number, sourceY: number, targetX: number, targetY: number, mode: GitGraphPathMode) => {
-  if (sourceX === targetX) return `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
-  const deltaY = targetY - sourceY;
-  if (deltaY <= rowPitch) {
-    const curveY = Math.max(rowHeight * 0.32, deltaY * 0.45);
-    return `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + curveY} ${targetX} ${targetY - curveY} ${targetX} ${targetY}`;
-  }
-  const switchY =
-    mode === "fanIn" ? Math.max(sourceY, targetY - rowPitch * 0.78) : Math.min(targetY, sourceY + rowPitch * 0.78);
-  const curveY = Math.max(rowHeight * 0.28, Math.abs(switchY - sourceY) * 0.5);
-  return mode === "fanIn"
-    ? `M ${sourceX} ${sourceY} L ${sourceX} ${switchY} C ${sourceX} ${switchY + curveY} ${targetX} ${targetY - curveY} ${targetX} ${targetY}`
-    : `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + curveY} ${targetX} ${switchY - curveY} ${targetX} ${switchY} L ${targetX} ${targetY}`;
-};
+/** Quarter-arc radii: one-lane turns, plus tighter mid-row junctions (VS Code git-graph style). */
+const graphLaneArcRadius = GIT_COMMIT_GRAPH_GEOMETRY.laneWidth;
+const graphJunctionArcRadius = 6.4;
 const graphSegmentPathData = (segment: GitCommitGraphSegment) => {
   if (segment.kind === "root-termination" && segment.from.x === segment.to.x && segment.from.y === segment.to.y)
     return "";
-  const mode: GitGraphPathMode =
-    segment.kind === "duplicate-convergence" || segment.kind === "lane-shift"
-      ? "fanIn"
-      : segment.kind === "additional-parent-fan-out" || segment.kind === "first-parent-continuation"
-        ? "fanOut"
-        : "vertical";
-  return graphPathData(segment.from.x, segment.from.y, segment.to.x, segment.to.y, mode);
+  const { from, to } = segment;
+  if (from.x === to.x) return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+  const direction = to.x > from.x ? 1 : -1;
+  if (segment.kind === "duplicate-convergence") {
+    // Drop vertically, then quarter-arc into the node's side so the trunk
+    // above the node stays clear of this lane's stroke.
+    const radius = Math.min(graphLaneArcRadius, Math.abs(to.x - from.x), to.y - from.y);
+    const sweep = direction > 0 ? 0 : 1;
+    return `M ${from.x} ${from.y} L ${from.x} ${to.y - radius} A ${radius} ${radius} 0 0 ${sweep} ${from.x + direction * radius} ${to.y} L ${to.x} ${to.y}`;
+  }
+  if (segment.kind === "additional-parent-fan-out" || segment.kind === "first-parent-continuation") {
+    // Exit the node sideways at mid-row, then quarter-arc down onto the
+    // parent lane so the stroke never overlaps the trunk below the node.
+    const radius = Math.min(graphLaneArcRadius, Math.abs(to.x - from.x), to.y - from.y);
+    const sweep = direction > 0 ? 1 : 0;
+    return `M ${from.x} ${from.y} L ${to.x - direction * radius} ${from.y} A ${radius} ${radius} 0 0 ${sweep} ${to.x} ${from.y + radius} L ${to.x} ${to.y}`;
+  }
+  if (segment.kind === "lane-shift") {
+    // H-bridge: vertical, arc, horizontal run at node height, arc, vertical.
+    const midY = from.y + rowHeight / 2;
+    const radius = Math.min(graphJunctionArcRadius, Math.abs(to.x - from.x) / 2, (to.y - from.y) / 2);
+    const sweepIn = direction > 0 ? 0 : 1;
+    const sweepOut = direction > 0 ? 1 : 0;
+    return `M ${from.x} ${from.y} L ${from.x} ${midY - radius} A ${radius} ${radius} 0 0 ${sweepIn} ${from.x + direction * radius} ${midY} L ${to.x - direction * radius} ${midY} A ${radius} ${radius} 0 0 ${sweepOut} ${to.x} ${midY + radius} L ${to.x} ${to.y}`;
+  }
+  return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 };
 const graphReferences = computed(() => {
   const references: { identity: string; name: string; colorIndex: number }[] = [];
@@ -662,19 +678,18 @@ const graphWindow = computed(() =>
 const graphPaths = computed(() =>
   graphWindow.value.segments.flatMap(({ row, index, segment }) => {
     const d = graphSegmentPathData(segment);
-    return d
-      ? [
-          {
-            id: `${row.commit.hash}-${index}`,
-            d,
-            color: graphStrokeColor(segment.colorIndex),
-            strokeDasharray:
-              isGitStashCommit(row.commit) && (segment.fromLane === row.nodeLane || segment.toLane === row.nodeLane)
-                ? "3 2"
-                : undefined,
-          },
-        ]
-      : [];
+    if (!d) return [];
+    return [
+      {
+        id: `${row.commit.hash}-${index}`,
+        d,
+        color: graphStrokeColor(segment.colorIndex),
+        strokeDasharray:
+          isGitStashCommit(row.commit) && (segment.fromLane === row.nodeLane || segment.toLane === row.nodeLane)
+            ? "3 2"
+            : undefined,
+      },
+    ];
   }),
 );
 const graphNodes = computed(() =>
@@ -833,10 +848,14 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
     className: cn(refBadgeBaseClass, "border-border-subtle bg-surface-container-low text-on-surface-variant"),
   };
 };
+const gitRefColorRgb = (hexColor: string) => {
+  const value = Number.parseInt(hexColor.slice(1), 16);
+  return `${(value >> 16) & 0xff}, ${(value >> 8) & 0xff}, ${value & 0xff}`;
+};
 const refGraphAccentStyle = (ref: GitCommitRefPresentationMember) => {
   if (ref.graphColorIndex === undefined) return undefined;
   const color = graphStrokeColor(ref.graphColorIndex);
-  return { "--git-ref-graph-color": color };
+  return { "--git-ref-graph-color": color, "--git-ref-graph-color-rgb": gitRefColorRgb(color) };
 };
 const commitRefPresentation = (commit: ProjectGitCommitSummary) =>
   presentGitCommitRefs(commit, {
@@ -881,6 +900,75 @@ const gitHistoryActionUnavailableReason = (action: GitHistoryAction, commit: Pro
 };
 const detachedCheckoutTitle = (commit: ProjectGitCommitSummary) =>
   isCommitDetachedHead(commit) ? "当前已处于该分离 HEAD 提交" : "切换到此提交，并进入分离 HEAD 状态";
+const headCommit = computed(() => {
+  const headHash = snapshot.value?.headHash;
+  if (!headHash) return null;
+  return snapshot.value?.commits?.find((commit) => commitHashMatches(commit.hash, headHash)) ?? null;
+});
+const headActionUnavailableReason = computed(() => {
+  if (!context.value || !snapshot.value?.repositoryPath) return "未检测到 Git 仓库。";
+  if (snapshot.value.isDetachedHead) return "当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。";
+  if (!hasAttachedLocalGitHead()) return "当前 HEAD 未指向本地分支，请使用外部 Git 工具处理。";
+  if (!headCommit.value) return "当前分支没有可操作的提交。";
+  return "";
+});
+const amendToolbarTitle = computed(() => headActionUnavailableReason.value || "修订上次提交（前往更改视图）");
+const undoToolbarTitle = computed(
+  () => headActionUnavailableReason.value || "撤销上次提交（改动将回到更改视图的暂存区）",
+);
+const moreMenuStyle = computed(() => floatingMenuStyle(moreMenuPosition.value));
+const moreMenuItems = () =>
+  moreMenuRef.value
+    ? Array.from(moreMenuRef.value.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
+        (item) => !(item instanceof HTMLButtonElement && item.disabled),
+      )
+    : [];
+const closeMoreMenu = (restoreFocus = true) => {
+  const opener = moreMenuOpener.value;
+  moreMenuOpen.value = false;
+  moreMenuOpener.value = null;
+  if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
+};
+const openMoreMenu = async (trigger: HTMLElement) => {
+  moreMenuOpener.value = trigger;
+  moreMenuOpen.value = true;
+  await nextTick();
+  const menu = moreMenuRef.value;
+  const menuWidth = menu?.getBoundingClientRect().width || 112;
+  const menuHeight = menu?.getBoundingClientRect().height || 80;
+  moreMenuPosition.value = positionFloatingMenu(trigger, menuWidth, menuHeight);
+  moreMenuItems()[0]?.focus();
+};
+const toggleMoreMenu = (event: MouseEvent) => {
+  const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  if (!trigger) return;
+  if (moreMenuOpen.value) {
+    closeMoreMenu();
+    return;
+  }
+  void openMoreMenu(trigger);
+};
+const handleMoreMenuKeydown = (event: KeyboardEvent) => {
+  const current = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[role="menuitem"]') : null;
+  const items = moreMenuItems();
+  if (!current || items.length === 0) return;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeMoreMenu();
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const index = Math.max(0, items.indexOf(current));
+    items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    return;
+  }
+  if (event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+  }
+};
 const isRemoteRef = (name: string) =>
   snapshot.value?.remotes?.some((remote) => name.startsWith(`${remote.name}/`)) ||
   /^(?:origin|upstream|remote|remotes\/[^/]+)\//.test(name);
@@ -936,15 +1024,19 @@ const commitTooltipVerticalLayout = computed(() => {
   );
   return { top, height, maxHeight };
 });
+// Seals the tooltip against the history pane's right edge with a hairline tuck
+// (VS Code graph-hover style) — deep enough to avoid a floating gap, shallow
+// enough to leave the scrollbar, pane padding, and row content visible.
+const COMMIT_TOOLTIP_PANE_OVERLAP = 2;
 const tooltipStyle = computed(() => {
   const graphRect = graphScrollRef.value?.getBoundingClientRect();
   const layout = commitTooltipVerticalLayout.value;
   if (!graphRect || !layout) return {};
   const viewportWidth = window.innerWidth;
   return {
-    left: `${graphRect.right + 8}px`,
+    left: `${graphRect.right - COMMIT_TOOLTIP_PANE_OVERLAP}px`,
     top: `${layout.top}px`,
-    maxWidth: `${Math.max(1, Math.min(384, viewportWidth - graphRect.right - 20))}px`,
+    maxWidth: `${Math.max(1, Math.min(384, viewportWidth - (graphRect.right - COMMIT_TOOLTIP_PANE_OVERLAP) - 12))}px`,
     maxHeight: `${layout.maxHeight}px`,
   };
 });
@@ -1321,11 +1413,11 @@ const closeConfirmationDialog = () => {
 };
 const confirmAction = async () => {
   const dialog = confirmationDialog.value;
-  if (!dialog) return;
+  if (!dialog || confirmationBusy.value) return;
   confirmationBusy.value = true;
+  confirmationDialog.value = null;
   try {
     await dialog.onConfirm();
-    if (confirmationDialog.value === dialog) confirmationDialog.value = null;
   } finally {
     confirmationBusy.value = false;
   }
@@ -1392,6 +1484,53 @@ const requestGitHistoryAction = (action: GitHistoryAction, commit: ProjectGitCom
       report("success", result.message);
       clearCommitSelection();
     },
+  });
+};
+const requestStartAmend = () => {
+  if (isInteractionDisabled.value || props.amendModeActive) return;
+  closeMoreMenu(false);
+  emit("start-amend");
+};
+const requestCancelAmend = () => {
+  closeMoreMenu(false);
+  emit("cancel-amend");
+};
+const executeUndoLastCommit = async (allowMerge = false) => {
+  const result = await runAction("undo-last-commit", () =>
+    store.undoLastGitCommit(props.projectId, { allowMerge }, props.repositoryTarget),
+  );
+  if (!result) return;
+  if (!result.ok && result.blockReason === "merge-commit" && !allowMerge) {
+    requestConfirmation({
+      tone: "danger",
+      icon: "undo",
+      title: "按第一父提交撤销 merge commit",
+      message: "上次提交是 merge commit。继续会按第一父提交移除该提交，并保留文件改动。",
+      detail: headCommit.value?.message || "",
+      confirmLabel: "按第一父提交撤销",
+      cancelLabel: t.value.common.cancel,
+      onConfirm: () => executeUndoLastCommit(true),
+    });
+    return;
+  }
+  report(result.ok ? "success" : "error", result.message);
+  if (result.ok) {
+    clearCommitSelection();
+    emit("undo-completed", typeof result.commitMessage === "string" ? result.commitMessage : undefined);
+  }
+};
+const requestUndoLastCommit = () => {
+  if (isInteractionDisabled.value || headActionUnavailableReason.value) return;
+  closeMoreMenu(false);
+  requestConfirmation({
+    tone: "danger",
+    icon: "undo",
+    title: "撤销上次提交",
+    message: "此操作将恢复上个提交的暂存和提交信息，不创建反向提交",
+    detail: headCommit.value?.message || "",
+    confirmLabel: "撤销",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeUndoLastCommit(),
   });
 };
 const checkoutRemoteBranch = async (branchName: string, force = false) => {
@@ -1856,6 +1995,7 @@ const closeHistoryFloatingControls = () => {
   closeTagInfoDialog();
   confirmationDialog.value = null;
   closeCommitFilters();
+  closeMoreMenu(false);
 };
 const clearHistoryState = () => {
   commitFilesContextGeneration += 1;
@@ -1888,6 +2028,9 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   } else if (showCommitFilters.value) {
     closeCommitFilters();
     event.detail.handle();
+  } else if (moreMenuOpen.value) {
+    closeMoreMenu();
+    event.detail.handle();
   }
 };
 const handleWindowPointerDown = (event: PointerEvent) => {
@@ -1901,6 +2044,7 @@ const handleWindowPointerDown = (event: PointerEvent) => {
   ) {
     closeCommitFilters();
   }
+  if (!target.closest("[data-history-more-menu], [data-history-more-menu-trigger]")) closeMoreMenu(false);
 };
 const handleFloatingViewportChange = (event: Event) => {
   const isTooltipScroll =
@@ -1917,6 +2061,7 @@ const handleFloatingViewportChange = (event: Event) => {
     return;
   }
   closeCommitContextMenu(false);
+  closeMoreMenu(false);
 };
 
 watch(
@@ -2074,6 +2219,19 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
+          data-history-more-menu-trigger
+          class="git-section-action"
+          :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
+          :aria-expanded="moreMenuOpen"
+          aria-haspopup="menu"
+          title="更多 Git 操作"
+          aria-label="更多 Git 操作"
+          @click="toggleMoreMenu"
+        >
+          <MoreHorizontal :size="13" />
+        </button>
+        <button
+          type="button"
           class="git-section-action"
           :title="commitFileViewModeLabel"
           :aria-label="commitFileViewModeLabel"
@@ -2083,6 +2241,59 @@ onBeforeUnmount(() => {
           <List v-if="commitFileViewMode === 'tree'" :size="13" /><ListTree v-else :size="13" />
         </button>
       </div>
+    </Teleport>
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="moreMenuOpen"
+          ref="moreMenuRef"
+          data-history-more-menu
+          class="fixed z-[90] w-max max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-2xl"
+          :style="moreMenuStyle"
+          role="menu"
+          @click.stop
+          @keydown="handleMoreMenuKeydown"
+        >
+          <button
+            v-if="!amendModeActive"
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
+            :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
+            :title="amendToolbarTitle"
+            :aria-label="amendToolbarTitle"
+            @click="requestStartAmend"
+          >
+            <Pencil :size="13" />
+            <span>修订上次提交</span>
+          </button>
+          <button
+            v-else
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
+            title="恢复进入修订模式前的提交草稿"
+            aria-label="取消修订上次提交"
+            @click="requestCancelAmend"
+          >
+            <X :size="13" />
+            <span>取消修订模式</span>
+          </button>
+          <div class="my-1 border-t border-border-subtle" />
+          <button
+            type="button"
+            role="menuitem"
+            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact text-status-error hover:bg-status-error/10 hover:text-status-error"
+            :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
+            :title="undoToolbarTitle"
+            :aria-label="undoToolbarTitle"
+            @click="requestUndoLastCommit"
+          >
+            <Undo :size="13" />
+            <span>撤销上次提交</span>
+          </button>
+        </div>
+      </Transition>
     </Teleport>
     <div v-show="open" class="relative flex min-h-0 flex-1 flex-col">
       <Transition name="fade">
@@ -2303,39 +2514,39 @@ onBeforeUnmount(() => {
                 :stroke="path.color"
                 :stroke-dasharray="path.strokeDasharray"
                 fill="none"
-                stroke-width="1.8"
+                :stroke-width="strokeWidth"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               />
               <g v-for="node in graphNodes" :key="node.hash">
                 <rect
                   v-if="node.isStash && !node.isHead"
-                  :x="node.x - 4.3"
-                  :y="node.y - 4.3"
-                  width="8.6"
-                  height="8.6"
-                  rx="1.6"
+                  :x="node.x - 4.5"
+                  :y="node.y - 4.5"
+                  width="9"
+                  height="9"
+                  rx="1.8"
                   :fill="node.color"
                   stroke="var(--color-surface-container-lowest)"
-                  stroke-width="1.5"
+                  stroke-width="1.4"
                 />
                 <template v-else>
                   <circle
                     v-if="node.isHead || node.isMerge"
                     :cx="node.x"
                     :cy="node.y"
-                    :r="node.isHead ? 6.8 : 6.1"
+                    :r="node.isHead ? 7.2 : 6.3"
                     :fill="node.color"
                     stroke="var(--color-surface-container-lowest)"
-                    stroke-width="1.6"
+                    :stroke-width="node.isHead ? 1.5 : 1.4"
                   />
                   <circle
                     :cx="node.x"
                     :cy="node.y"
-                    :r="node.isHead ? 3 : node.isMerge ? 2.5 : 4.2"
+                    :r="node.isHead ? 3.2 : node.isMerge ? 3.3 : 4.6"
                     :fill="node.isHead ? 'var(--color-surface-container-lowest)' : node.color"
                     stroke="var(--color-surface-container-lowest)"
-                    :stroke-width="node.isHead || node.isMerge ? 1.3 : 1.6"
+                    :stroke-width="node.isMerge ? 2.2 : node.isHead ? 1.2 : 1.5"
                   />
                 </template>
               </g>
@@ -2717,7 +2928,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="isInteractionDisabled"
           @click="openRefDialog('create-branch', commitContextMenu.commit)"
           @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2727,7 +2938,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="isInteractionDisabled"
           @click="openRefDialog('create-tag', commitContextMenu.commit)"
           @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2738,7 +2949,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="
             isInteractionDisabled || Boolean(gitHistoryActionUnavailableReason('cherry-pick', commitContextMenu.commit))
           "
@@ -2753,7 +2964,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="
             isInteractionDisabled || Boolean(gitHistoryActionUnavailableReason('revert', commitContextMenu.commit))
           "
@@ -2766,7 +2977,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="menuitem"
-          class="git-history-menu-item"
+          class="ui-menu-item"
           :disabled="isInteractionDisabled || !canCheckoutDetachedCommit(commitContextMenu.commit)"
           @click="checkoutCommit(commitContextMenu.commit)"
           @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2778,7 +2989,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled"
             @click="executeStashAction('apply', commitContextMenu.commit)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2788,7 +2999,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled"
             @click="executeStashAction('pop', commitContextMenu.commit)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2798,7 +3009,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item text-status-error"
+            class="ui-menu-item text-status-error"
             :disabled="isInteractionDisabled"
             @click="requestDropStash(commitContextMenu.commit)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2824,7 +3035,7 @@ onBeforeUnmount(() => {
               commitSubmenu.branch.kind === branch.kind &&
               commitSubmenu.branch.name === branch.name
             "
-            class="git-history-menu-item cursor-default"
+            class="ui-menu-item cursor-default"
             @click="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
             @mouseenter="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2852,7 +3063,7 @@ onBeforeUnmount(() => {
             :data-tag-index="tagIndex"
             aria-haspopup="menu"
             :aria-expanded="commitSubmenu?.kind === 'tag' && commitSubmenu.tag.name === tag.name"
-            class="git-history-menu-item cursor-default"
+            class="ui-menu-item cursor-default"
             @click="openCommitSubmenu({ kind: 'tag', tag }, $event.currentTarget as HTMLElement)"
             @mouseenter="openCommitSubmenu({ kind: 'tag', tag }, $event.currentTarget as HTMLElement)"
             @keydown="handleCommitMenuKeydown($event, 'main')"
@@ -2889,7 +3100,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled || commitSubmenu.branch.current"
             @click="
               commitSubmenu.branch.kind === 'local'
@@ -2906,7 +3117,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               role="menuitem"
-              class="git-history-menu-item"
+              class="ui-menu-item"
               :disabled="isInteractionDisabled"
               @click="openRefDialog('rename-branch', commitContextMenu.commit, commitSubmenu.branch.name)"
               @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -2916,7 +3127,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               role="menuitem"
-              class="git-history-menu-item text-status-error"
+              class="ui-menu-item text-status-error"
               :disabled="isInteractionDisabled || commitSubmenu.branch.current"
               :title="commitSubmenu.branch.current ? '不能删除当前检出的分支' : '先执行安全删除'"
               @click="requestDeleteBranch(commitSubmenu.branch)"
@@ -2930,7 +3141,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled"
             @click="openTagInfo(commitSubmenu.tag.name)"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -2943,7 +3154,7 @@ onBeforeUnmount(() => {
               :key="`${commitSubmenu.tag.name}:${remote.name}`"
               type="button"
               role="menuitem"
-              class="git-history-menu-item"
+              class="ui-menu-item"
               :disabled="isInteractionDisabled"
               :title="`推送到 ${remote.name}`"
               @click="requestPushTag(commitSubmenu.tag.name, remote.name)"
@@ -2956,7 +3167,7 @@ onBeforeUnmount(() => {
             v-else
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             disabled
             title="当前没有可用的推送 remote"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -2967,7 +3178,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item"
+            class="ui-menu-item"
             :disabled="isInteractionDisabled"
             @click="copyTagRef(commitSubmenu.tag.name)"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
@@ -2977,7 +3188,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             role="menuitem"
-            class="git-history-menu-item text-status-error"
+            class="ui-menu-item text-status-error"
             :disabled="isInteractionDisabled"
             @click="requestDeleteTag(commitSubmenu.tag.name)"
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
