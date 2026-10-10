@@ -1,11 +1,11 @@
 <script lang="ts">
-import type { CommitFileViewMode as RememberedCommitFileViewMode } from "../../lib/gitCommitFileTree";
+import type { CommitFileViewMode as RememberedCommitFileViewMode } from '../../lib/gitCommitFileTree';
 
-let rememberedCommitFileViewMode: RememberedCommitFileViewMode = "list";
+let rememberedCommitFileViewMode: RememberedCommitFileViewMode = 'list';
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue';
 import {
   Archive,
   CalendarDays,
@@ -33,7 +33,7 @@ import {
   Undo,
   WandSparkles,
   X,
-} from "lucide-vue-next";
+} from 'lucide-vue-next';
 import type {
   ProjectGitActionResult,
   ProjectGitCommitRef,
@@ -41,7 +41,7 @@ import type {
   ProjectGitFileChange,
   ProjectGitRepositoryTarget,
   ProjectGitTagInfo,
-} from "../../types";
+} from '../../types';
 import {
   collapseGitStashAuxiliaryCommits,
   GIT_COMMIT_GRAPH_COLOR_INDEX,
@@ -53,38 +53,39 @@ import {
   selectGitCommitGraphWindow,
   type GitCommitGraphRow,
   type GitCommitGraphSegment,
-} from "../../lib/gitCommitGraph";
+} from '../../lib/gitCommitGraph';
 import {
   buildCommitFileItems,
   normalizeCommitFilePath,
   type CommitFileDisplayItem,
   type CommitFileViewMode,
-} from "../../lib/gitCommitFileTree";
+} from '../../lib/gitCommitFileTree';
 import {
   clearGitCommitTooltipSessionsForProject,
   hasUsableGitCommitShortStats,
   loadGitCommitTooltipSessionDetails,
   markGitCommitTooltipSessionAvatarUnavailable,
+  prefetchGitCommitTooltipAvatar,
   pruneGitCommitTooltipSession,
-} from "../../lib/gitCommitTooltipSession";
+} from '../../lib/gitCommitTooltipSession';
 import {
   gitCommitRefIdentity,
   presentGitCommitRefs,
   type GitCommitRefPresentationMember,
-} from "../../lib/gitCommitRefs";
-import { getGitHubCommitUrl } from "../../lib/gitHubCommitUrl";
-import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
-import { useI18n } from "../../lib/i18n";
-import { renderMarkdown } from "../../lib/markdown";
-import { getProjectBridge } from "../../lib/projectBridge";
-import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
-import { useStore } from "../../store/useStore";
-import ActionDialog from "../common/ActionDialog.vue";
-import FileIcon from "../common/FileIcon.vue";
+} from '../../lib/gitCommitRefs';
+import { getGitHubCommitUrl } from '../../lib/gitHubCommitUrl';
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from '../../lib/escape';
+import { useI18n } from '../../lib/i18n';
+import { renderMarkdown } from '../../lib/markdown';
+import { getProjectBridge } from '../../lib/projectBridge';
+import { cn, transferWheelAtScrollBoundary } from '../../lib/utils';
+import { useStore } from '../../store/useStore';
+import ActionDialog from '../common/ActionDialog.vue';
+import FileIcon from '../common/FileIcon.vue';
 
 defineOptions({ inheritAttrs: false });
 
-type GitFeedbackState = "loading" | "success" | "warning" | "error";
+type GitFeedbackState = 'loading' | 'success' | 'warning' | 'error';
 type CommitReviewFileRequest = { commitHash: string; commitMessage: string; path: string };
 type ExpandedCommitFilesState = {
   files: ProjectGitFileChange[];
@@ -107,7 +108,7 @@ type CommitTooltipDetailsState = {
   contextKey: string;
 };
 type CommitTooltipSummary = {
-  state: "loading" | "ready" | "unavailable";
+  state: 'loading' | 'ready' | 'unavailable';
   fileCount: number;
   additions: number;
   deletions: number;
@@ -126,11 +127,11 @@ type CommitContextMenuState = {
   opensUpward: boolean;
   maxHeight: number;
 };
-type CommitBranchRef = { kind: "local" | "remote"; name: string; current: boolean };
+type CommitBranchRef = { kind: 'local' | 'remote'; name: string; current: boolean };
 type CommitTagRef = { name: string };
-type CommitSubmenuContent = { kind: "branch"; branch: CommitBranchRef } | { kind: "tag"; tag: CommitTagRef };
+type CommitSubmenuContent = { kind: 'branch'; branch: CommitBranchRef } | { kind: 'tag'; tag: CommitTagRef };
 type CommitSubmenuState = CommitSubmenuContent & { left: number; top: number; parent: HTMLElement };
-type RefDialogMode = "create-branch" | "rename-branch" | "create-tag";
+type RefDialogMode = 'create-branch' | 'rename-branch' | 'create-tag';
 type RefDialogState = { mode: RefDialogMode; commit: ProjectGitCommitSummary; sourceBranch?: string };
 type TagInfoDialogState = {
   tagName: string;
@@ -138,10 +139,10 @@ type TagInfoDialogState = {
   isLoading: boolean;
   error: string;
 };
-type GitHistoryAction = "cherry-pick" | "revert";
+type GitHistoryAction = 'cherry-pick' | 'revert';
 type AppActionDialog = {
-  tone?: "danger" | "warning";
-  icon?: "alert" | "trash" | "undo";
+  tone?: 'danger' | 'warning';
+  icon?: 'alert' | 'trash' | 'undo';
   title: string;
   message: string;
   detail?: string;
@@ -150,7 +151,7 @@ type AppActionDialog = {
   onConfirm: () => Promise<void> | void;
 };
 type FloatingMenuPosition = { left: number; top: number };
-type DatePickerKind = "since" | "until";
+type DatePickerKind = 'since' | 'until';
 
 const props = withDefaults(
   defineProps<{
@@ -167,15 +168,15 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  (event: "update:open", value: boolean): void;
-  (event: "update:selectedCommitHashes", value: string[]): void;
-  (event: "review-file", request: CommitReviewFileRequest): void;
-  (event: "request-ai"): void;
-  (event: "feedback", state: GitFeedbackState, message: string): void;
-  (event: "busy-change", busy: boolean): void;
-  (event: "start-amend"): void;
-  (event: "cancel-amend"): void;
-  (event: "undo-completed", commitMessage?: string): void;
+  (event: 'update:open', value: boolean): void;
+  (event: 'update:selectedCommitHashes', value: string[]): void;
+  (event: 'review-file', request: CommitReviewFileRequest): void;
+  (event: 'request-ai'): void;
+  (event: 'feedback', state: GitFeedbackState, message: string): void;
+  (event: 'busy-change', busy: boolean): void;
+  (event: 'start-amend'): void;
+  (event: 'cancel-amend'): void;
+  (event: 'undo-completed', commitMessage?: string): void;
 }>();
 
 const store = useStore();
@@ -190,11 +191,11 @@ const commitUntilDatePickerTriggerRef = ref<HTMLElement | null>(null);
 const commitDatePickerPopoverRef = ref<HTMLElement | null>(null);
 const commitDatePickerPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const showCommitFilters = ref(false);
-const commitKeyword = ref("");
-const commitAuthor = ref("");
-const commitHash = ref("");
-const commitSince = ref("");
-const commitUntil = ref("");
+const commitKeyword = ref('');
+const commitAuthor = ref('');
+const commitHash = ref('');
+const commitSince = ref('');
+const commitUntil = ref('');
 const openDatePickerKind = ref<DatePickerKind | null>(null);
 const datePickerMonth = ref(new Date());
 const commitFileViewMode = ref<CommitFileViewMode>(rememberedCommitFileViewMode);
@@ -212,11 +213,11 @@ const commitSubmenu = ref<CommitSubmenuState | null>(null);
 const commitSubmenuRef = ref<HTMLElement | null>(null);
 const commitMenuOpener = ref<HTMLElement | null>(null);
 const refDialog = ref<RefDialogState | null>(null);
-const refDialogName = ref("");
-const refDialogMessage = ref("");
+const refDialogName = ref('');
+const refDialogMessage = ref('');
 const refDialogCheckout = ref(false);
 const refDialogAnnotated = ref(false);
-const refDialogError = ref("");
+const refDialogError = ref('');
 const refDialogInputRef = ref<HTMLInputElement | null>(null);
 const tagInfoDialog = ref<TagInfoDialogState | null>(null);
 const confirmationDialog = ref<AppActionDialog | null>(null);
@@ -225,8 +226,8 @@ const moreMenuOpen = ref(false);
 const moreMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const moreMenuRef = ref<HTMLElement | null>(null);
 const moreMenuOpener = ref<HTMLElement | null>(null);
-const activeAction = ref("");
-const copiedText = ref("");
+const activeAction = ref('');
+const copiedText = ref('');
 const copiedTimer = ref<number | undefined>();
 let commitFilesRequestGeneration = 0;
 let commitFilesContextGeneration = 0;
@@ -248,7 +249,7 @@ let stopAppEscapeListener = () => {};
 
 const context = computed(() => store.resolveGitRepositoryContext(props.projectId, props.repositoryTarget));
 const snapshot = computed(() => store.gitSnapshotForRepository(props.projectId, props.repositoryTarget));
-const projectPath = computed(() => store.projects.find((project) => project.id === props.projectId)?.path || "");
+const projectPath = computed(() => store.projects.find((project) => project.id === props.projectId)?.path || '');
 const tagPushRemotes = computed(() => {
   const remotes = snapshot.value?.remotes || [];
   const upstreamRemote = snapshot.value?.upstream?.remote;
@@ -276,17 +277,17 @@ const hasCommitFilters = computed(() =>
 );
 const commitSearchInput = computed({
   get: () =>
-    `${commitKeyword.value}${commitAuthor.value || commitHash.value ? ` / ${commitAuthor.value}` : ""}${
-      commitHash.value ? ` / ${commitHash.value}` : ""
+    `${commitKeyword.value}${commitAuthor.value || commitHash.value ? ` / ${commitAuthor.value}` : ''}${
+      commitHash.value ? ` / ${commitHash.value}` : ''
     }`,
   set: (value: string) => {
-    const [keyword = "", author = "", hash = ""] = value.split("/", 3);
+    const [keyword = '', author = '', hash = ''] = value.split('/', 3);
     commitKeyword.value = keyword.trim();
     commitAuthor.value = author.trim();
     commitHash.value = hash.trim();
   },
 });
-const weekDayLabels = ["日", "一", "二", "三", "四", "五", "六"];
+const weekDayLabels = ['日', '一', '二', '三', '四', '五', '六'];
 const positionFloatingMenu = (trigger: HTMLElement, width: number, estimatedHeight: number): FloatingMenuPosition => {
   const rect = trigger.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
@@ -296,14 +297,14 @@ const positionFloatingMenu = (trigger: HTMLElement, width: number, estimatedHeig
   const top = belowTop + estimatedHeight <= viewportHeight - 8 ? belowTop : Math.max(8, rect.top - estimatedHeight - 6);
   return { left, top };
 };
-const floatingMenuStyle = (position: FloatingMenuPosition, maxHeight = "calc(100vh - 1rem)") => ({
+const floatingMenuStyle = (position: FloatingMenuPosition, maxHeight = 'calc(100vh - 1rem)') => ({
   left: `${position.left}px`,
   top: `${position.top}px`,
   maxHeight,
 });
 const positionCommitDatePicker = (kind = openDatePickerKind.value) => {
   if (!kind) return;
-  const trigger = kind === "since" ? commitSinceDatePickerTriggerRef.value : commitUntilDatePickerTriggerRef.value;
+  const trigger = kind === 'since' ? commitSinceDatePickerTriggerRef.value : commitUntilDatePickerTriggerRef.value;
   if (!trigger) return;
   commitDatePickerPosition.value = positionFloatingMenu(trigger, 216, 292);
 };
@@ -314,16 +315,16 @@ const parseDateValue = (value: string) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 const formatDateValue = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const datePickerValue = computed(() =>
-  openDatePickerKind.value === "since"
+  openDatePickerKind.value === 'since'
     ? commitSince.value
-    : openDatePickerKind.value === "until"
+    : openDatePickerKind.value === 'until'
       ? commitUntil.value
-      : "",
+      : '',
 );
 const datePickerTitle = computed(() =>
-  new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(datePickerMonth.value),
+  new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long' }).format(datePickerMonth.value),
 );
 const datePickerDays = computed(() => {
   const year = datePickerMonth.value.getFullYear();
@@ -344,7 +345,7 @@ const datePickerDays = computed(() => {
   });
 });
 const openDatePicker = (kind: DatePickerKind) => {
-  const selectedDate = parseDateValue(kind === "since" ? commitSince.value : commitUntil.value);
+  const selectedDate = parseDateValue(kind === 'since' ? commitSince.value : commitUntil.value);
   datePickerMonth.value = selectedDate || new Date();
   if (openDatePickerKind.value === kind) {
     openDatePickerKind.value = null;
@@ -357,13 +358,13 @@ const shiftDatePickerMonth = (offset: number) => {
   datePickerMonth.value = new Date(datePickerMonth.value.getFullYear(), datePickerMonth.value.getMonth() + offset, 1);
 };
 const selectDatePickerDay = (value: string) => {
-  if (openDatePickerKind.value === "since") commitSince.value = value;
-  else if (openDatePickerKind.value === "until") commitUntil.value = value;
+  if (openDatePickerKind.value === 'since') commitSince.value = value;
+  else if (openDatePickerKind.value === 'until') commitUntil.value = value;
   openDatePickerKind.value = null;
 };
 const clearDatePickerValue = () => {
-  if (openDatePickerKind.value === "since") commitSince.value = "";
-  else if (openDatePickerKind.value === "until") commitUntil.value = "";
+  if (openDatePickerKind.value === 'since') commitSince.value = '';
+  else if (openDatePickerKind.value === 'until') commitUntil.value = '';
 };
 const commits = computed(() => {
   const keyword = commitKeyword.value.trim().toLocaleLowerCase();
@@ -372,7 +373,7 @@ const commits = computed(() => {
   const since = commitSince.value ? new Date(`${commitSince.value}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
   const until = commitUntil.value ? new Date(`${commitUntil.value}T23:59:59.999`).getTime() : Number.POSITIVE_INFINITY;
   return collapseGitStashAuxiliaryCommits(snapshot.value?.commits || []).filter((commit) => {
-    const searchable = `${commit.message}\n${commit.body || ""}\n${commit.refs || ""}`.toLocaleLowerCase();
+    const searchable = `${commit.message}\n${commit.body || ''}\n${commit.refs || ''}`.toLocaleLowerCase();
     const commitDate = new Date(commit.date).getTime();
     return (
       (!keyword || searchable.includes(keyword)) &&
@@ -388,15 +389,15 @@ const areAllVisibleCommitsSelected = computed(
   () => commits.value.length > 0 && commits.value.every((commit) => selectedCommitHashSet.value.has(commit.hash)),
 );
 const commitFileViewModeLabel = computed(() =>
-  commitFileViewMode.value === "tree" ? "切换为平铺文件列表" : "切换为树形文件列表",
+  commitFileViewMode.value === 'tree' ? '切换为平铺文件列表' : '切换为树形文件列表',
 );
 
 const clearCommitFilters = () => {
-  commitKeyword.value = "";
-  commitAuthor.value = "";
-  commitHash.value = "";
-  commitSince.value = "";
-  commitUntil.value = "";
+  commitKeyword.value = '';
+  commitAuthor.value = '';
+  commitHash.value = '';
+  commitSince.value = '';
+  commitUntil.value = '';
   openDatePickerKind.value = null;
 };
 const closeCommitFilters = () => {
@@ -404,14 +405,14 @@ const closeCommitFilters = () => {
   openDatePickerKind.value = null;
 };
 const toggleCommitFilters = () => {
-  if (!props.open) emit("update:open", true);
+  if (!props.open) emit('update:open', true);
   if (showCommitFilters.value) {
     closeCommitFilters();
     return;
   }
   showCommitFilters.value = true;
 };
-const updateSelectedHashes = (hashes: string[]) => emit("update:selectedCommitHashes", hashes);
+const updateSelectedHashes = (hashes: string[]) => emit('update:selectedCommitHashes', hashes);
 const isCommitSelected = (hash: string) => selectedCommitHashSet.value.has(hash);
 const toggleCommitSelection = (hash: string) =>
   updateSelectedHashes(
@@ -431,22 +432,22 @@ const isCommitDirectoryExpanded = (hash: string, path: string) =>
 const gitFileDisplayPath = (file: ProjectGitFileChange) =>
   file.originalPath && file.originalPath !== file.path ? `${file.originalPath} -> ${file.path}` : file.path;
 const gitFileName = (file: ProjectGitFileChange) => file.path.split(/[\\/]/).filter(Boolean).pop() || file.path;
-const gitFileStatusCode = (status: ProjectGitFileChange["status"]) => {
-  if (status === "ADDED") return "A";
-  if (status === "DELETED") return "D";
-  if (status === "RENAMED") return "R";
-  if (status === "UNTRACKED") return "U";
-  return "M";
+const gitFileStatusCode = (status: ProjectGitFileChange['status']) => {
+  if (status === 'ADDED') return 'A';
+  if (status === 'DELETED') return 'D';
+  if (status === 'RENAMED') return 'R';
+  if (status === 'UNTRACKED') return 'U';
+  return 'M';
 };
-const gitFileStatusLabel = (status: ProjectGitFileChange["status"]) => {
-  if (status === "ADDED") return t.value.git.added;
-  if (status === "DELETED") return t.value.git.deleted;
-  if (status === "RENAMED") return t.value.git.renamed;
-  if (status === "UNTRACKED") return t.value.git.untracked;
+const gitFileStatusLabel = (status: ProjectGitFileChange['status']) => {
+  if (status === 'ADDED') return t.value.git.added;
+  if (status === 'DELETED') return t.value.git.deleted;
+  if (status === 'RENAMED') return t.value.git.renamed;
+  if (status === 'UNTRACKED') return t.value.git.untracked;
   return t.value.git.modified;
 };
 const gitFileDirectory = (file: ProjectGitFileChange) =>
-  file.path.split(/[\\/]/).filter(Boolean).slice(0, -1).join("/");
+  file.path.split(/[\\/]/).filter(Boolean).slice(0, -1).join('/');
 const toggleCommitDirectory = (hash: string, path: string) => {
   const normalizedPath = normalizeCommitFilePath(path);
   changeExpandedCommitFileGeometry(() => {
@@ -502,7 +503,7 @@ const toggleCommitFiles = async (hash: string) => {
   changeExpandedCommitFileGeometry(() => {
     expandedCommitFiles.value = {
       ...expandedCommitFiles.value,
-      [hash]: { files: [], isLoading: true, error: "", requestGeneration, contextGeneration },
+      [hash]: { files: [], isLoading: true, error: '', requestGeneration, contextGeneration },
     };
   });
   try {
@@ -524,7 +525,7 @@ const toggleCommitFiles = async (hash: string) => {
       changeExpandedCommitFileGeometry(() => {
         expandedCommitFiles.value = {
           ...expandedCommitFiles.value,
-          [hash]: { ...state, error: error instanceof Error ? error.message : "读取提交文件失败。" },
+          [hash]: { ...state, error: error instanceof Error ? error.message : '读取提交文件失败。' },
         };
       });
     }
@@ -539,7 +540,7 @@ const toggleCommitFiles = async (hash: string) => {
 };
 const toggleCommitFileViewMode = () => {
   changeExpandedCommitFileGeometry(() => {
-    commitFileViewMode.value = commitFileViewMode.value === "tree" ? "list" : "tree";
+    commitFileViewMode.value = commitFileViewMode.value === 'tree' ? 'list' : 'tree';
     rememberedCommitFileViewMode = commitFileViewMode.value;
   });
 };
@@ -555,7 +556,7 @@ const baseGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.base;
 const upstreamGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.upstream;
 const stashGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.stash;
 const graphStrokeColor = (colorIndex: number) =>
-  gitCommitGraphStrokeColor(colorIndex, store.iconPackColorMode === "dark" ? "dark" : "light");
+  gitCommitGraphStrokeColor(colorIndex, store.iconPackColorMode === 'dark' ? 'dark' : 'light');
 const graphNodeX = (lane: number) =>
   GIT_COMMIT_GRAPH_GEOMETRY.paddingX +
   lane * GIT_COMMIT_GRAPH_GEOMETRY.laneWidth +
@@ -564,26 +565,26 @@ const graphNodeX = (lane: number) =>
 const graphLaneArcRadius = GIT_COMMIT_GRAPH_GEOMETRY.laneWidth;
 const graphJunctionArcRadius = 6.4;
 const graphSegmentPathData = (segment: GitCommitGraphSegment) => {
-  if (segment.kind === "root-termination" && segment.from.x === segment.to.x && segment.from.y === segment.to.y)
-    return "";
+  if (segment.kind === 'root-termination' && segment.from.x === segment.to.x && segment.from.y === segment.to.y)
+    return '';
   const { from, to } = segment;
   if (from.x === to.x) return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
   const direction = to.x > from.x ? 1 : -1;
-  if (segment.kind === "duplicate-convergence") {
+  if (segment.kind === 'duplicate-convergence') {
     // Drop vertically, then quarter-arc into the node's side so the trunk
     // above the node stays clear of this lane's stroke.
     const radius = Math.min(graphLaneArcRadius, Math.abs(to.x - from.x), to.y - from.y);
     const sweep = direction > 0 ? 0 : 1;
     return `M ${from.x} ${from.y} L ${from.x} ${to.y - radius} A ${radius} ${radius} 0 0 ${sweep} ${from.x + direction * radius} ${to.y} L ${to.x} ${to.y}`;
   }
-  if (segment.kind === "additional-parent-fan-out" || segment.kind === "first-parent-continuation") {
+  if (segment.kind === 'additional-parent-fan-out' || segment.kind === 'first-parent-continuation') {
     // Exit the node sideways at mid-row, then quarter-arc down onto the
     // parent lane so the stroke never overlaps the trunk below the node.
     const radius = Math.min(graphLaneArcRadius, Math.abs(to.x - from.x), to.y - from.y);
     const sweep = direction > 0 ? 1 : 0;
     return `M ${from.x} ${from.y} L ${to.x - direction * radius} ${from.y} A ${radius} ${radius} 0 0 ${sweep} ${to.x} ${from.y + radius} L ${to.x} ${to.y}`;
   }
-  if (segment.kind === "lane-shift") {
+  if (segment.kind === 'lane-shift') {
     // H-bridge: vertical, arc, horizontal run at node height, arc, vertical.
     const midY = from.y + rowHeight / 2;
     const radius = Math.min(graphJunctionArcRadius, Math.abs(to.x - from.x) / 2, (to.y - from.y) / 2);
@@ -599,27 +600,27 @@ const graphReferences = computed(() => {
   if (!currentSnapshot) return references;
   if (currentSnapshot.isDetachedHead) {
     references.push({
-      identity: gitCommitRefIdentity("head", "HEAD"),
-      name: "HEAD",
+      identity: gitCommitRefIdentity('head', 'HEAD'),
+      name: 'HEAD',
       colorIndex: currentBranchGraphColorIndex,
     });
   } else if (currentSnapshot.branch) {
     references.push({
-      identity: gitCommitRefIdentity("local", currentSnapshot.branch),
+      identity: gitCommitRefIdentity('local', currentSnapshot.branch),
       name: currentSnapshot.branch,
       colorIndex: currentBranchGraphColorIndex,
     });
   }
   if (currentSnapshot.upstream?.ref) {
     references.push({
-      identity: gitCommitRefIdentity("remote", currentSnapshot.upstream.ref),
+      identity: gitCommitRefIdentity('remote', currentSnapshot.upstream.ref),
       name: currentSnapshot.upstream.ref,
       colorIndex: upstreamGraphColorIndex,
     });
   }
   if (currentSnapshot.base?.ref) {
     references.push({
-      identity: gitCommitRefIdentity("remote", currentSnapshot.base.ref),
+      identity: gitCommitRefIdentity('remote', currentSnapshot.base.ref),
       name: currentSnapshot.base.ref,
       colorIndex: baseGraphColorIndex,
     });
@@ -686,7 +687,7 @@ const graphPaths = computed(() =>
         color: graphStrokeColor(segment.colorIndex),
         strokeDasharray:
           isGitStashCommit(row.commit) && (segment.fromLane === row.nodeLane || segment.toLane === row.nodeLane)
-            ? "3 2"
+            ? '3 2'
             : undefined,
       },
     ];
@@ -744,7 +745,7 @@ const observeGraphViewport = () => {
     updateGraphViewport();
     return;
   }
-  if (typeof ResizeObserver !== "undefined") {
+  if (typeof ResizeObserver !== 'undefined') {
     graphViewportResizeObserver = new ResizeObserver(scheduleGraphViewportUpdate);
     graphViewportResizeObserver.observe(root);
   }
@@ -779,49 +780,49 @@ const changeExpandedCommitFileGeometry = (change: () => void) => {
 };
 const graphRowColumns = (row: GitCommitGraphRow) => `${row.graphWidth}px minmax(0, 1fr)`;
 
-const refBadgeBaseClass = "git-ref-badge";
+const refBadgeBaseClass = 'git-ref-badge';
 const refPresentation = (ref: GitCommitRefPresentationMember) => {
-  if (ref.kind === "head") {
+  if (ref.kind === 'head') {
     return {
       refName: ref.name,
       label: ref.label,
       title: ref.title,
       icon: Target as Component,
       isHead: true,
-      className: cn(refBadgeBaseClass, "git-ref-badge--current", "border-primary/70 bg-primary/10 text-primary"),
+      className: cn(refBadgeBaseClass, 'git-ref-badge--current', 'border-primary/70 bg-primary/10 text-primary'),
     };
   }
-  if (ref.kind === "tag") {
+  if (ref.kind === 'tag') {
     return {
       refName: ref.name,
       label: ref.label,
       title: ref.title,
       icon: Tag as Component,
       isHead: false,
-      className: cn(refBadgeBaseClass, "border-tertiary/30 bg-tertiary/10 text-tertiary"),
+      className: cn(refBadgeBaseClass, 'border-tertiary/30 bg-tertiary/10 text-tertiary'),
     };
   }
-  if (ref.kind === "stash") {
+  if (ref.kind === 'stash') {
     return {
       refName: ref.name,
       label: ref.label,
       title: ref.title,
       icon: Archive as Component,
       isHead: false,
-      className: cn(refBadgeBaseClass, "border-status-warning/35 bg-status-warning/10 text-status-warning"),
+      className: cn(refBadgeBaseClass, 'border-status-warning/35 bg-status-warning/10 text-status-warning'),
     };
   }
-  if (ref.kind === "remote") {
+  if (ref.kind === 'remote') {
     return {
       refName: ref.name,
       label: ref.label,
       title: ref.title,
       icon: Cloud as Component,
       isHead: false,
-      className: cn(refBadgeBaseClass, "border-secondary/35 bg-secondary/10 text-secondary"),
+      className: cn(refBadgeBaseClass, 'border-secondary/35 bg-secondary/10 text-secondary'),
     };
   }
-  if (ref.kind === "local") {
+  if (ref.kind === 'local') {
     return {
       refName: ref.name,
       label: ref.label,
@@ -831,8 +832,8 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
       className: cn(
         refBadgeBaseClass,
         ref.isCurrentHead
-          ? "git-ref-badge--current border-primary/70 bg-primary/10 text-primary"
-          : "border-status-warning/35 bg-status-warning/10 text-status-warning",
+          ? 'git-ref-badge--current border-primary/70 bg-primary/10 text-primary'
+          : 'border-status-warning/35 bg-status-warning/10 text-status-warning',
       ),
     };
   }
@@ -842,7 +843,7 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
     title: ref.title,
     icon: null,
     isHead: false,
-    className: cn(refBadgeBaseClass, "border-border-subtle bg-surface-container-low text-on-surface-variant"),
+    className: cn(refBadgeBaseClass, 'border-border-subtle bg-surface-container-low text-on-surface-variant'),
   };
 };
 const gitRefColorRgb = (hexColor: string) => {
@@ -852,7 +853,7 @@ const gitRefColorRgb = (hexColor: string) => {
 const refGraphAccentStyle = (ref: GitCommitRefPresentationMember) => {
   if (ref.graphColorIndex === undefined) return undefined;
   const color = graphStrokeColor(ref.graphColorIndex);
-  return { "--git-ref-graph-color": color, "--git-ref-graph-color-rgb": gitRefColorRgb(color) };
+  return { '--git-ref-graph-color': color, '--git-ref-graph-color-rgb': gitRefColorRgb(color) };
 };
 const commitRefPresentation = (commit: ProjectGitCommitSummary) =>
   presentGitCommitRefs(commit, {
@@ -874,7 +875,7 @@ const compactCommitRefPresentations = (commit: ProjectGitCommitSummary) =>
   commitRefPresentation(commit).dense.members.map((ref) => ({
     ...refPresentation(ref),
     kind: ref.kind,
-    showLabel: ref.display === "label",
+    showLabel: ref.display === 'label',
     count: ref.memberNames.length,
     graphAccentStyle: refGraphAccentStyle(ref),
   }));
@@ -885,33 +886,33 @@ const isCommitDetachedHead = (commit: ProjectGitCommitSummary) =>
 const canCheckoutDetachedCommit = (commit: ProjectGitCommitSummary) => !isCommitDetachedHead(commit);
 const hasAttachedLocalGitHead = () => snapshot.value?.branches?.some((branch) => branch.current) === true;
 const gitHistoryActionUnavailableReason = (action: GitHistoryAction, commit: ProjectGitCommitSummary) => {
-  if (isGitStashCommit(commit)) return "stash 提交不能用于 Cherry-pick 或 Revert";
-  if ((commit.parents?.length || 0) > 1) return "合并提交暂不支持 Cherry-pick 或 Revert";
-  if (snapshot.value?.isDetachedHead) return "当前 HEAD 处于 detached 状态";
-  if (!hasAttachedLocalGitHead()) return "当前 HEAD 未指向本地分支";
-  if (snapshot.value?.files.length) return "当前工作区存在未提交变更";
-  if (action === "cherry-pick" && commitHashMatches(commit.hash, snapshot.value?.headHash)) {
-    return "当前 HEAD 不能 Cherry-pick 到自身";
+  if (isGitStashCommit(commit)) return 'stash 提交不能用于 Cherry-pick 或 Revert';
+  if ((commit.parents?.length || 0) > 1) return '合并提交暂不支持 Cherry-pick 或 Revert';
+  if (snapshot.value?.isDetachedHead) return '当前 HEAD 处于 detached 状态';
+  if (!hasAttachedLocalGitHead()) return '当前 HEAD 未指向本地分支';
+  if (snapshot.value?.files.length) return '当前工作区存在未提交变更';
+  if (action === 'cherry-pick' && commitHashMatches(commit.hash, snapshot.value?.headHash)) {
+    return '当前 HEAD 不能 Cherry-pick 到自身';
   }
-  return "";
+  return '';
 };
 const detachedCheckoutTitle = (commit: ProjectGitCommitSummary) =>
-  isCommitDetachedHead(commit) ? "当前已处于该分离 HEAD 提交" : "切换到此提交，并进入分离 HEAD 状态";
+  isCommitDetachedHead(commit) ? '当前已处于该分离 HEAD 提交' : '切换到此提交，并进入分离 HEAD 状态';
 const headCommit = computed(() => {
   const headHash = snapshot.value?.headHash;
   if (!headHash) return null;
   return snapshot.value?.commits?.find((commit) => commitHashMatches(commit.hash, headHash)) ?? null;
 });
 const headActionUnavailableReason = computed(() => {
-  if (!context.value || !snapshot.value?.repositoryPath) return "未检测到 Git 仓库。";
-  if (snapshot.value.isDetachedHead) return "当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。";
-  if (!hasAttachedLocalGitHead()) return "当前 HEAD 未指向本地分支，请使用外部 Git 工具处理。";
-  if (!headCommit.value) return "当前分支没有可操作的提交。";
-  return "";
+  if (!context.value || !snapshot.value?.repositoryPath) return '未检测到 Git 仓库。';
+  if (snapshot.value.isDetachedHead) return '当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。';
+  if (!hasAttachedLocalGitHead()) return '当前 HEAD 未指向本地分支，请使用外部 Git 工具处理。';
+  if (!headCommit.value) return '当前分支没有可操作的提交。';
+  return '';
 });
-const amendToolbarTitle = computed(() => headActionUnavailableReason.value || "修订上次提交（前往更改视图）");
+const amendToolbarTitle = computed(() => headActionUnavailableReason.value || '修订上次提交（前往更改视图）');
 const undoToolbarTitle = computed(
-  () => headActionUnavailableReason.value || "撤销上次提交（改动将回到更改视图的暂存区）",
+  () => headActionUnavailableReason.value || '撤销上次提交（改动将回到更改视图的暂存区）',
 );
 const moreMenuStyle = computed(() => floatingMenuStyle(moreMenuPosition.value));
 const moreMenuItems = () =>
@@ -950,20 +951,20 @@ const handleMoreMenuKeydown = (event: KeyboardEvent) => {
   const items = moreMenuItems();
   if (!current || items.length === 0) return;
 
-  if (event.key === "Escape") {
+  if (event.key === 'Escape') {
     event.preventDefault();
     closeMoreMenu();
     return;
   }
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault();
     const index = Math.max(0, items.indexOf(current));
-    items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
     return;
   }
-  if (event.key === "Home" || event.key === "End") {
+  if (event.key === 'Home' || event.key === 'End') {
     event.preventDefault();
-    items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+    items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
   }
 };
 const isRemoteRef = (name: string) =>
@@ -973,39 +974,39 @@ const commitBranchRefs = (commit: ProjectGitCommitSummary): CommitBranchRef[] =>
   if (commit.refNames) {
     return commit.refNames
       .filter(
-        (ref): ref is ProjectGitCommitRef & { kind: "local" | "remote" } =>
-          ref.kind === "local" || ref.kind === "remote",
+        (ref): ref is ProjectGitCommitRef & { kind: 'local' | 'remote' } =>
+          ref.kind === 'local' || ref.kind === 'remote',
       )
-      .map((ref) => ({ kind: ref.kind, name: ref.name, current: ref.kind === "local" && Boolean(ref.head) }));
+      .map((ref) => ({ kind: ref.kind, name: ref.name, current: ref.kind === 'local' && Boolean(ref.head) }));
   }
   const locals = new Set((snapshot.value?.branches || []).map((branch) => branch.name));
-  return (commit.refs || "")
-    .split(",")
-    .map((name) => name.replace(/^HEAD ->\s*/, "").trim())
+  return (commit.refs || '')
+    .split(',')
+    .map((name) => name.replace(/^HEAD ->\s*/, '').trim())
     .filter((name) => locals.has(name) || isRemoteRef(name))
     .map((name) => ({
-      kind: locals.has(name) ? "local" : "remote",
+      kind: locals.has(name) ? 'local' : 'remote',
       name,
       current: locals.has(name) && name === snapshot.value?.branch && !snapshot.value?.isDetachedHead,
     }));
 };
 const commitTagRefs = (commit: ProjectGitCommitSummary): CommitTagRef[] =>
   commit.refNames
-    ? commit.refNames.filter((ref) => ref.kind === "tag").map((ref) => ({ name: ref.name }))
-    : (commit.refs || "")
-        .split(",")
+    ? commit.refNames.filter((ref) => ref.kind === 'tag').map((ref) => ({ name: ref.name }))
+    : (commit.refs || '')
+        .split(',')
         .map((name) => name.trim())
-        .filter((name) => name.startsWith("tag:"))
-        .map((name) => ({ name: name.replace(/^tag:\s*/, "") }));
+        .filter((name) => name.startsWith('tag:'))
+        .map((name) => ({ name: name.replace(/^tag:\s*/, '') }));
 const commitStashRef = (commit: ProjectGitCommitSummary) => {
   if (commit.stash?.selector) return commit.stash.selector;
-  const structuredRef = commit.refNames?.find((ref) => ref.kind === "stash")?.name;
+  const structuredRef = commit.refNames?.find((ref) => ref.kind === 'stash')?.name;
   if (structuredRef) return structuredRef;
-  const legacyRef = (commit.refs || "")
-    .split(",")
+  const legacyRef = (commit.refs || '')
+    .split(',')
     .map((ref) => ref.trim())
-    .find((ref) => ref === "refs/stash" || /^stash@\{\d+\}$/.test(ref));
-  return legacyRef ? "stash@{0}" : null;
+    .find((ref) => ref === 'refs/stash' || /^stash@\{\d+\}$/.test(ref));
+  return legacyRef ? 'stash@{0}' : null;
 };
 
 const commitTooltipVerticalLayout = computed(() => {
@@ -1055,23 +1056,23 @@ const tooltipDetailsFor = (hash: string) => {
 const tooltipSummary = (commit: ProjectGitCommitSummary): CommitTooltipSummary => {
   if (hasUsableGitCommitShortStats(commit.shortStats))
     return {
-      state: "ready",
+      state: 'ready',
       fileCount: commit.shortStats.files,
       additions: commit.shortStats.additions,
       deletions: commit.shortStats.deletions,
     };
   const details = tooltipDetailsFor(commit.hash);
-  if (!details || details.isLoadingFiles) return { state: "loading", fileCount: 0, additions: 0, deletions: 0 };
+  if (!details || details.isLoadingFiles) return { state: 'loading', fileCount: 0, additions: 0, deletions: 0 };
   if (!details.files || details.filesUnavailable)
-    return { state: "unavailable", fileCount: 0, additions: 0, deletions: 0 };
+    return { state: 'unavailable', fileCount: 0, additions: 0, deletions: 0 };
   return details.files.reduce(
     (summary, file) => ({
-      state: "ready" as const,
+      state: 'ready' as const,
       fileCount: summary.fileCount + 1,
       additions: summary.additions + file.additions,
       deletions: summary.deletions + file.deletions,
     }),
-    { state: "ready" as const, fileCount: 0, additions: 0, deletions: 0 },
+    { state: 'ready' as const, fileCount: 0, additions: 0, deletions: 0 },
   );
 };
 const tooltipContentCache = new WeakMap<ProjectGitCommitSummary, CommitTooltipContent>();
@@ -1081,41 +1082,41 @@ const commitAuthorInitials = (author: string) =>
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((name) => Array.from(name)[0] || "")
-    .join("")
-    .toUpperCase() || "?";
+    .map((name) => Array.from(name)[0] || '')
+    .join('')
+    .toUpperCase() || '?';
 const commitAuthorAvatarClass = (author: string) => {
   const classes = [
-    "bg-primary/15 text-primary",
-    "bg-secondary/15 text-secondary",
-    "bg-status-running/15 text-status-running",
-    "bg-status-warning/15 text-status-warning",
+    'bg-primary/15 text-primary',
+    'bg-secondary/15 text-secondary',
+    'bg-status-running/15 text-status-running',
+    'bg-status-warning/15 text-status-warning',
   ];
   const index = Array.from(author).reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0, 0);
   return classes[index % classes.length];
 };
 const commitDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
   hour12: false,
 });
 const formatCommitTime = (value?: string) => {
   const date = value ? new Date(value) : null;
-  if (!date || Number.isNaN(date.getTime())) return { text: "", title: value || "" };
+  if (!date || Number.isNaN(date.getTime())) return { text: '', title: value || '' };
   const delta = Date.now() - date.getTime();
   const minutes = Math.round(Math.abs(delta) / 60000);
   const text =
     minutes < 1
-      ? "刚刚"
+      ? '刚刚'
       : minutes < 60
-        ? `${minutes} 分钟${delta >= 0 ? "前" : "后"}`
+        ? `${minutes} 分钟${delta >= 0 ? '前' : '后'}`
         : minutes < 1440
-          ? `${Math.round(minutes / 60)} 小时${delta >= 0 ? "前" : "后"}`
-          : `${Math.round(minutes / 1440)} 天${delta >= 0 ? "前" : "后"}`;
+          ? `${Math.round(minutes / 60)} 小时${delta >= 0 ? '前' : '后'}`
+          : `${Math.round(minutes / 1440)} 天${delta >= 0 ? '前' : '后'}`;
   return {
     text,
     title: commitDateTimeFormatter.format(date),
@@ -1124,14 +1125,14 @@ const formatCommitTime = (value?: string) => {
 const unorderedListLinePattern = /^[-*+]\s+/;
 const unorderedListItemPattern = /^[-*+]\s+(.+)$/;
 const conventionalCommitPrefixPattern =
-  "(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test|change)(?:\\([^)]+\\))?!?:\\s+";
-const conventionalCommitLinePattern = new RegExp(`^${conventionalCommitPrefixPattern}.+`, "i");
-const conventionalCommitSplitPattern = new RegExp(`\\s+(?=${conventionalCommitPrefixPattern})`, "gi");
-const normalizeCommitText = (value: string) => value.replace(/\s+/g, " ").trim();
+  '(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test|change)(?:\\([^)]+\\))?!?:\\s+';
+const conventionalCommitLinePattern = new RegExp(`^${conventionalCommitPrefixPattern}.+`, 'i');
+const conventionalCommitSplitPattern = new RegExp(`\\s+(?=${conventionalCommitPrefixPattern})`, 'gi');
+const normalizeCommitText = (value: string) => value.replace(/\s+/g, ' ').trim();
 const markdownListItems = (value: string) =>
   value
     .split(/\r?\n/)
-    .map((line) => unorderedListItemPattern.exec(line.trim())?.[1]?.trim() || "")
+    .map((line) => unorderedListItemPattern.exec(line.trim())?.[1]?.trim() || '')
     .filter(Boolean);
 const markdownComparableLines = (value: string) =>
   value
@@ -1153,20 +1154,20 @@ const commitTooltipUsesFullMarkdown = (commit: ProjectGitCommitSummary) => {
     source
       .split(/\r?\n/)
       .find((line) => line.trim())
-      ?.trim() || "";
+      ?.trim() || '';
   return unorderedListLinePattern.test(message) && unorderedListLinePattern.test(firstContentLine);
 };
 const tooltipBody = (commit: ProjectGitCommitSummary, usesFullMarkdown = commitTooltipUsesFullMarkdown(commit)) => {
   if (usesFullMarkdown) return (commit.body || commit.message).trim();
 
-  const body = (commit.body || "").trim();
+  const body = (commit.body || '').trim();
   const message = commit.message.trim();
-  if (!body || body === message) return "";
+  if (!body || body === message) return '';
 
   const lines = body.split(/\r?\n/);
-  const firstLine = lines[0]?.trim() || "";
+  const firstLine = lines[0]?.trim() || '';
   if (firstLine && (firstLine === message || message.startsWith(firstLine) || firstLine.startsWith(message))) {
-    return lines.slice(1).join("\n").trim();
+    return lines.slice(1).join('\n').trim();
   }
   return body;
 };
@@ -1175,7 +1176,7 @@ const tooltipTitle = (
   body = tooltipBody(commit),
   usesFullMarkdown = commitTooltipUsesFullMarkdown(commit),
 ) => {
-  if (usesFullMarkdown) return "";
+  if (usesFullMarkdown) return '';
 
   const message = commit.message.trim();
   const bodyItems = markdownListItems(body).map(normalizeCommitText);
@@ -1186,7 +1187,7 @@ const tooltipTitle = (
   if (messageParts.length > bodyItems.length && bodyItems.length > 0) {
     const tailParts = messageParts.slice(-bodyItems.length).map(normalizeCommitText);
     if (bodyItems.every((item, index) => item === tailParts[index])) {
-      return messageParts.slice(0, -bodyItems.length).join(" - ");
+      return messageParts.slice(0, -bodyItems.length).join(' - ');
     }
   }
 
@@ -1197,7 +1198,7 @@ const tooltipTitle = (
   if (messageConventionalSegments.length > bodyConventionalLines.length && bodyConventionalLines.length > 0) {
     const tailSegments = messageConventionalSegments.slice(-bodyConventionalLines.length);
     if (bodyConventionalLines.every((line, index) => line === tailSegments[index])) {
-      return messageConventionalSegments.slice(0, -bodyConventionalLines.length).join(" ");
+      return messageConventionalSegments.slice(0, -bodyConventionalLines.length).join(' ');
     }
   }
 
@@ -1214,7 +1215,7 @@ const commitTooltipContent = computed(() => {
     content = {
       title: tooltipTitle(commit, body, usesFullMarkdown),
       body,
-      renderedBody: body ? renderMarkdown(body) : "",
+      renderedBody: body ? renderMarkdown(body) : '',
       authorInitials: commitAuthorInitials(commit.author),
       authorAvatarClass: commitAuthorAvatarClass(commit.author),
     };
@@ -1229,7 +1230,7 @@ const commitTooltipDetailsForActiveCommit = computed(() => {
 });
 const commitTooltipSummaryForActiveCommit = computed<CommitTooltipSummary>(() => {
   const commit = commitTooltip.value?.commit;
-  return commit ? tooltipSummary(commit) : { state: "loading", fileCount: 0, additions: 0, deletions: 0 };
+  return commit ? tooltipSummary(commit) : { state: 'loading', fileCount: 0, additions: 0, deletions: 0 };
 });
 const commitTooltipRefs = computed(() => {
   const commit = commitTooltip.value?.commit;
@@ -1251,7 +1252,8 @@ const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
   if (
     !repositoryContext ||
     (commitTooltipDetails.value?.hash === commit.hash &&
-      commitTooltipDetails.value.contextKey === repositoryContext.contextKey)
+      commitTooltipDetails.value.contextKey === repositoryContext.contextKey &&
+      (commitTooltipDetails.value.isLoadingAvatar || commitTooltipDetails.value.avatarUrl))
   )
     return;
   const requestGeneration = ++commitTooltipDetailsRequestGeneration;
@@ -1389,17 +1391,17 @@ const scheduleCommitTooltipClose = () => {
   }, 180);
 };
 
-const report = (state: GitFeedbackState, message: string) => emit("feedback", state, message);
+const report = (state: GitFeedbackState, message: string) => emit('feedback', state, message);
 const runAction = async <T extends ProjectGitActionResult | null>(name: string, operation: () => Promise<T>) => {
   if (isInteractionDisabled.value) return null;
   activeAction.value = name;
   try {
     return await operation();
   } catch (error) {
-    report("error", error instanceof Error ? error.message : "Git 操作失败。");
+    report('error', error instanceof Error ? error.message : 'Git 操作失败。');
     return null;
   } finally {
-    activeAction.value = "";
+    activeAction.value = '';
   }
 };
 const requestConfirmation = (dialog: AppActionDialog) => {
@@ -1426,50 +1428,50 @@ const checkoutCommit = async (commit: ProjectGitCommitSummary, force = false) =>
     store.checkoutGitCommit(props.projectId, commit.hash, { detach: true, force }, props.repositoryTarget),
   );
   if (!result) return;
-  if (!result.ok && !force && result.blockReason === "dirty-worktree") {
+  if (!result.ok && !force && result.blockReason === 'dirty-worktree') {
     requestConfirmation({
-      icon: "trash",
-      title: "强制切换到提交",
+      icon: 'trash',
+      title: '强制切换到提交',
       message: `当前工作区存在未提交变更。继续切换到 ${commit.hash} 会丢弃这些本地变更。`,
-      confirmLabel: "强制切换",
+      confirmLabel: '强制切换',
       cancelLabel: t.value.common.cancel,
       onConfirm: () => checkoutCommit(commit, true),
     });
     return;
   }
-  report(result.ok ? "success" : "error", result.message);
+  report(result.ok ? 'success' : 'error', result.message);
   if (result.ok) clearCommitSelection();
 };
 const gitHistoryActionFailureGuidance =
-  "操作未完成。你可以使用专业 Git 工具检查或重试；也可以先在设置中配置外部应用，直接通过插件打开外部 Git 工具。";
+  '操作未完成。你可以使用专业 Git 工具检查或重试；也可以先在设置中配置外部应用，直接通过插件打开外部 Git 工具。';
 const showGitHistoryActionFailure = (action: GitHistoryAction, result: ProjectGitActionResult) => {
   requestConfirmation({
-    tone: "warning",
-    title: action === "cherry-pick" ? "Cherry-pick 未完成" : "Revert 未完成",
+    tone: 'warning',
+    title: action === 'cherry-pick' ? 'Cherry-pick 未完成' : 'Revert 未完成',
     message: gitHistoryActionFailureGuidance,
     detail: result.message,
-    confirmLabel: "关闭",
+    confirmLabel: '关闭',
     onConfirm: () => undefined,
   });
 };
 const requestGitHistoryAction = (action: GitHistoryAction, commit: ProjectGitCommitSummary) => {
   if (isInteractionDisabled.value || gitHistoryActionUnavailableReason(action, commit)) return;
   closeCommitContextMenu(false);
-  const commitLabel = `${shortCommitHash(commit.hash)} · ${commit.message || "（无标题）"}`;
+  const commitLabel = `${shortCommitHash(commit.hash)} · ${commit.message || '（无标题）'}`;
   requestConfirmation({
-    tone: "warning",
-    icon: action === "revert" ? "undo" : "alert",
-    title: action === "cherry-pick" ? "Cherry-pick" : "Revert",
+    tone: 'warning',
+    icon: action === 'revert' ? 'undo' : 'alert',
+    title: action === 'cherry-pick' ? 'Cherry-pick' : 'Revert',
     message:
-      action === "cherry-pick"
+      action === 'cherry-pick'
         ? `将 ${commitLabel} 应用到当前分支，并创建一个新提交。`
         : `将创建一个新的反向提交以回退 ${commitLabel} 的影响。`,
     detail: commitLabel,
-    confirmLabel: action === "cherry-pick" ? "Cherry-pick" : "Revert",
+    confirmLabel: action === 'cherry-pick' ? 'Cherry-pick' : 'Revert',
     cancelLabel: t.value.common.cancel,
     onConfirm: async () => {
       const result = await runAction(`${action}:${commit.hash}`, () =>
-        action === "cherry-pick"
+        action === 'cherry-pick'
           ? store.cherryPickGitCommit(props.projectId, commit.hash, props.repositoryTarget)
           : store.revertGitCommit(props.projectId, commit.hash, props.repositoryTarget),
       );
@@ -1478,7 +1480,7 @@ const requestGitHistoryAction = (action: GitHistoryAction, commit: ProjectGitCom
         showGitHistoryActionFailure(action, result);
         return;
       }
-      report("success", result.message);
+      report('success', result.message);
       clearCommitSelection();
     },
   });
@@ -1486,46 +1488,46 @@ const requestGitHistoryAction = (action: GitHistoryAction, commit: ProjectGitCom
 const requestStartAmend = () => {
   if (isInteractionDisabled.value || props.amendModeActive) return;
   closeMoreMenu(false);
-  emit("start-amend");
+  emit('start-amend');
 };
 const requestCancelAmend = () => {
   closeMoreMenu(false);
-  emit("cancel-amend");
+  emit('cancel-amend');
 };
 const executeUndoLastCommit = async (allowMerge = false) => {
-  const result = await runAction("undo-last-commit", () =>
+  const result = await runAction('undo-last-commit', () =>
     store.undoLastGitCommit(props.projectId, { allowMerge }, props.repositoryTarget),
   );
   if (!result) return;
-  if (!result.ok && result.blockReason === "merge-commit" && !allowMerge) {
+  if (!result.ok && result.blockReason === 'merge-commit' && !allowMerge) {
     requestConfirmation({
-      tone: "danger",
-      icon: "undo",
-      title: "按第一父提交撤销 merge commit",
-      message: "上次提交是 merge commit。继续会按第一父提交移除该提交，并保留文件改动。",
-      detail: headCommit.value?.message || "",
-      confirmLabel: "按第一父提交撤销",
+      tone: 'danger',
+      icon: 'undo',
+      title: '按第一父提交撤销 merge commit',
+      message: '上次提交是 merge commit。继续会按第一父提交移除该提交，并保留文件改动。',
+      detail: headCommit.value?.message || '',
+      confirmLabel: '按第一父提交撤销',
       cancelLabel: t.value.common.cancel,
       onConfirm: () => executeUndoLastCommit(true),
     });
     return;
   }
-  report(result.ok ? "success" : "error", result.message);
+  report(result.ok ? 'success' : 'error', result.message);
   if (result.ok) {
     clearCommitSelection();
-    emit("undo-completed", typeof result.commitMessage === "string" ? result.commitMessage : undefined);
+    emit('undo-completed', typeof result.commitMessage === 'string' ? result.commitMessage : undefined);
   }
 };
 const requestUndoLastCommit = () => {
   if (isInteractionDisabled.value || headActionUnavailableReason.value) return;
   closeMoreMenu(false);
   requestConfirmation({
-    tone: "danger",
-    icon: "undo",
-    title: "撤销上次提交",
-    message: "此操作将恢复上个提交的暂存和提交信息，不创建反向提交",
-    detail: headCommit.value?.message || "",
-    confirmLabel: "撤销",
+    tone: 'danger',
+    icon: 'undo',
+    title: '撤销上次提交',
+    message: '此操作将恢复上个提交的暂存和提交信息，不创建反向提交',
+    detail: headCommit.value?.message || '',
+    confirmLabel: '撤销',
     cancelLabel: t.value.common.cancel,
     onConfirm: () => executeUndoLastCommit(),
   });
@@ -1537,18 +1539,18 @@ const checkoutRemoteBranch = async (branchName: string, force = false) => {
     store.checkoutGitRemoteBranch(props.projectId, branchName, { force }, props.repositoryTarget),
   );
   if (!result) return;
-  if (!result.ok && !force && result.blockReason === "dirty-worktree") {
+  if (!result.ok && !force && result.blockReason === 'dirty-worktree') {
     requestConfirmation({
-      icon: "trash",
-      title: "强制检出远程分支",
+      icon: 'trash',
+      title: '强制检出远程分支',
       message: `当前工作区存在未提交变更。继续检出 ${branchName} 会丢弃这些本地变更。`,
-      confirmLabel: "强制检出",
+      confirmLabel: '强制检出',
       cancelLabel: t.value.common.cancel,
       onConfirm: () => checkoutRemoteBranch(branchName, true),
     });
     return;
   }
-  report(result.ok ? "success" : "error", result.message);
+  report(result.ok ? 'success' : 'error', result.message);
 };
 const checkoutLocalBranch = async (branchName: string) => {
   if (isInteractionDisabled.value) return;
@@ -1557,47 +1559,47 @@ const checkoutLocalBranch = async (branchName: string) => {
     store.switchGitBranch(props.projectId, branchName, {}, props.repositoryTarget),
   );
   if (!result) return;
-  if (!result.ok && result.blockReason === "dirty-worktree") {
+  if (!result.ok && result.blockReason === 'dirty-worktree') {
     requestConfirmation({
-      icon: "trash",
-      title: "强制切换分支",
+      icon: 'trash',
+      title: '强制切换分支',
       message: `当前工作区存在未提交变更。强制切换到 ${branchName} 会丢弃这些本地变更。`,
-      confirmLabel: "强制切换",
+      confirmLabel: '强制切换',
       cancelLabel: t.value.common.cancel,
       onConfirm: async () => {
         const forced = await runAction(`branch:${branchName}`, () =>
           store.switchGitBranch(props.projectId, branchName, { force: true }, props.repositoryTarget),
         );
-        if (forced) report(forced.ok ? "success" : "error", forced.message);
+        if (forced) report(forced.ok ? 'success' : 'error', forced.message);
       },
     });
     return;
   }
-  report(result.ok ? "success" : "error", result.message);
+  report(result.ok ? 'success' : 'error', result.message);
 };
 const deleteBranch = async (branchName: string, force = false) => {
   const result = await runAction(`delete-branch:${branchName}`, () =>
     store.deleteGitBranch(props.projectId, branchName, { force }, props.repositoryTarget),
   );
   if (!result) return;
-  if (!result.ok && !force && result.blockReason === "unmerged-branch") {
+  if (!result.ok && !force && result.blockReason === 'unmerged-branch') {
     requestConfirmation({
-      icon: "trash",
-      title: "强制删除未合并分支",
+      icon: 'trash',
+      title: '强制删除未合并分支',
       message: `分支 ${branchName} 包含尚未合并的提交。`,
-      confirmLabel: "强制删除",
+      confirmLabel: '强制删除',
       cancelLabel: t.value.common.cancel,
       onConfirm: () => deleteBranch(branchName, true),
     });
     return;
   }
-  report(result.ok ? "success" : "error", result.message);
+  report(result.ok ? 'success' : 'error', result.message);
 };
 const deleteTag = async (tagName: string) => {
   const result = await runAction(`delete-tag:${tagName}`, () =>
     store.deleteGitTag(props.projectId, tagName, props.repositoryTarget),
   );
-  if (result) report(result.ok ? "success" : "error", result.message);
+  if (result) report(result.ok ? 'success' : 'error', result.message);
 };
 const executePushTag = async (tagName: string, remoteName: string) => {
   if (!remoteName || isInteractionDisabled.value) return;
@@ -1605,17 +1607,17 @@ const executePushTag = async (tagName: string, remoteName: string) => {
   const result = await runAction(`push-tag:${remoteName}:${tagName}`, () =>
     store.pushGitTag(props.projectId, tagName, remoteName, props.repositoryTarget),
   );
-  if (result) report(result.ok ? "success" : "error", result.message);
+  if (result) report(result.ok ? 'success' : 'error', result.message);
 };
 const requestPushTag = (tagName: string, remoteName: string) => {
   if (!tagName || !remoteName || isInteractionDisabled.value) return;
   closeCommitContextMenu();
   requestConfirmation({
-    tone: "warning",
-    title: "推送 Git 标签",
+    tone: 'warning',
+    title: '推送 Git 标签',
     message: `将标签 ${tagName} 推送到 ${remoteName}。`,
     detail: `refs/tags/${tagName}`,
-    confirmLabel: "推送标签",
+    confirmLabel: '推送标签',
     cancelLabel: t.value.common.cancel,
     onConfirm: () => executePushTag(tagName, remoteName),
   });
@@ -1625,10 +1627,10 @@ const copyTagRef = async (name: string) => {
     await navigator.clipboard.writeText(name);
     copiedText.value = name;
     window.clearTimeout(copiedTimer.value);
-    copiedTimer.value = window.setTimeout(() => (copiedText.value = ""), 1200);
-    report("success", `已复制标签名：${name}`);
+    copiedTimer.value = window.setTimeout(() => (copiedText.value = ''), 1200);
+    report('success', `已复制标签名：${name}`);
   } catch {
-    report("error", "复制标签名失败。");
+    report('error', '复制标签名失败。');
   }
 };
 const closeTagInfoDialog = () => {
@@ -1639,41 +1641,41 @@ const openTagInfo = async (tagName: string) => {
   if (!tagName || isInteractionDisabled.value) return;
   closeCommitContextMenu(false);
   const requestGeneration = ++tagInfoRequestGeneration;
-  tagInfoDialog.value = { tagName, info: null, isLoading: true, error: "" };
+  tagInfoDialog.value = { tagName, info: null, isLoading: true, error: '' };
   let info: ProjectGitTagInfo | null = null;
   try {
     info = await store.readGitTagInfo(props.projectId, tagName, props.repositoryTarget);
   } catch {
     if (requestGeneration === tagInfoRequestGeneration) {
-      tagInfoDialog.value = { tagName, info: null, isLoading: false, error: "无法读取标签信息。" };
+      tagInfoDialog.value = { tagName, info: null, isLoading: false, error: '无法读取标签信息。' };
     }
     return;
   }
   if (requestGeneration !== tagInfoRequestGeneration) return;
   tagInfoDialog.value = info
-    ? { tagName, info, isLoading: false, error: "" }
-    : { tagName, info: null, isLoading: false, error: "无法读取标签信息。" };
+    ? { tagName, info, isLoading: false, error: '' }
+    : { tagName, info: null, isLoading: false, error: '无法读取标签信息。' };
 };
-const executeStashAction = async (action: "apply" | "pop" | "drop", commit: ProjectGitCommitSummary) => {
+const executeStashAction = async (action: 'apply' | 'pop' | 'drop', commit: ProjectGitCommitSummary) => {
   const stashRef = commitStashRef(commit);
   if (!stashRef || isInteractionDisabled.value) return null;
   closeCommitContextMenu(false);
   const result = await runAction(`stash:${action}:${stashRef}`, () => {
-    if (action === "apply") return store.applyGitStash(props.projectId, stashRef, props.repositoryTarget);
-    if (action === "pop") return store.popGitStash(props.projectId, stashRef, props.repositoryTarget);
+    if (action === 'apply') return store.applyGitStash(props.projectId, stashRef, props.repositoryTarget);
+    if (action === 'pop') return store.popGitStash(props.projectId, stashRef, props.repositoryTarget);
     return store.dropGitStash(props.projectId, stashRef, props.repositoryTarget);
   });
-  if (result) report(result.ok ? "success" : "error", result.message);
+  if (result) report(result.ok ? 'success' : 'error', result.message);
   return result;
 };
 const requestDeleteBranch = (branch: CommitBranchRef) => {
-  if (branch.kind !== "local" || branch.current || isInteractionDisabled.value) return;
+  if (branch.kind !== 'local' || branch.current || isInteractionDisabled.value) return;
   closeCommitContextMenu();
   requestConfirmation({
-    icon: "trash",
-    title: "删除本地分支",
+    icon: 'trash',
+    title: '删除本地分支',
     message: `先使用 Git 安全删除分支 ${branch.name}。未合并分支不会被删除。`,
-    confirmLabel: "安全删除",
+    confirmLabel: '安全删除',
     cancelLabel: t.value.common.cancel,
     onConfirm: () => deleteBranch(branch.name),
   });
@@ -1682,10 +1684,10 @@ const requestDeleteTag = (tagName: string) => {
   if (isInteractionDisabled.value) return;
   closeCommitContextMenu();
   requestConfirmation({
-    icon: "trash",
-    title: "删除标签",
+    icon: 'trash',
+    title: '删除标签',
     message: `将删除标签 ${tagName}。此操作不会删除提交，但可能影响依赖该标签的发布或引用。`,
-    confirmLabel: "删除标签",
+    confirmLabel: '删除标签',
     cancelLabel: t.value.common.cancel,
     onConfirm: () => deleteTag(tagName),
   });
@@ -1695,24 +1697,24 @@ const requestDropStash = (commit: ProjectGitCommitSummary) => {
   if (!stashRef || isInteractionDisabled.value) return;
   closeCommitContextMenu();
   requestConfirmation({
-    icon: "trash",
+    icon: 'trash',
     title: t.value.git.stashDropTitle,
     message: t.value.git.stashDropMessage,
     detail: stashRef,
     confirmLabel: t.value.git.stashDrop,
     cancelLabel: t.value.common.cancel,
     onConfirm: async (): Promise<void> => {
-      await executeStashAction("drop", commit);
+      await executeStashAction('drop', commit);
     },
   });
 };
 const openRefDialog = async (mode: RefDialogMode, commit: ProjectGitCommitSummary, sourceBranch?: string) => {
   refDialog.value = { mode, commit, sourceBranch };
-  refDialogName.value = sourceBranch || "";
-  refDialogMessage.value = "";
+  refDialogName.value = sourceBranch || '';
+  refDialogMessage.value = '';
   refDialogCheckout.value = false;
   refDialogAnnotated.value = false;
-  refDialogError.value = "";
+  refDialogError.value = '';
   closeCommitContextMenu(false);
   await nextTick();
   refDialogInputRef.value?.focus();
@@ -1720,22 +1722,22 @@ const openRefDialog = async (mode: RefDialogMode, commit: ProjectGitCommitSummar
 const closeRefDialog = () => {
   if (!localWriteRunning.value) {
     refDialog.value = null;
-    refDialogError.value = "";
+    refDialogError.value = '';
   }
 };
 const submitRefDialog = async () => {
   const dialog = refDialog.value;
   const name = refDialogName.value.trim();
   if (!dialog || !name) {
-    refDialogError.value = dialog?.mode === "create-tag" ? "请输入标签名称。" : "请输入分支名称。";
+    refDialogError.value = dialog?.mode === 'create-tag' ? '请输入标签名称。' : '请输入分支名称。';
     return;
   }
-  if (dialog.mode === "create-tag" && refDialogAnnotated.value && !refDialogMessage.value.trim()) {
-    refDialogError.value = "请输入附注标签说明。";
+  if (dialog.mode === 'create-tag' && refDialogAnnotated.value && !refDialogMessage.value.trim()) {
+    refDialogError.value = '请输入附注标签说明。';
     return;
   }
   let result: ProjectGitActionResult | null = null;
-  if (dialog.mode === "create-branch")
+  if (dialog.mode === 'create-branch')
     result = await runAction(`create-branch:${name}`, () =>
       store.createGitBranch(
         props.projectId,
@@ -1745,7 +1747,7 @@ const submitRefDialog = async () => {
         props.repositoryTarget,
       ),
     );
-  else if (dialog.mode === "create-tag")
+  else if (dialog.mode === 'create-tag')
     result = await runAction(`create-tag:${name}`, () =>
       store.createGitTag(
         props.projectId,
@@ -1757,20 +1759,20 @@ const submitRefDialog = async () => {
     );
   else
     result = await runAction(`rename-branch:${name}`, () =>
-      store.renameGitBranch(props.projectId, dialog.sourceBranch || "", name, props.repositoryTarget),
+      store.renameGitBranch(props.projectId, dialog.sourceBranch || '', name, props.repositoryTarget),
     );
   if (!result) return;
   if (
     !result.ok &&
-    result.blockReason === "dirty-worktree" &&
-    dialog.mode === "create-branch" &&
+    result.blockReason === 'dirty-worktree' &&
+    dialog.mode === 'create-branch' &&
     refDialogCheckout.value
   ) {
     requestConfirmation({
-      icon: "trash",
-      title: "创建并强制切换分支",
+      icon: 'trash',
+      title: '创建并强制切换分支',
       message: `当前工作区存在未提交变更。继续创建并切换到 ${name} 会丢弃这些本地变更。`,
-      confirmLabel: "创建并强制切换",
+      confirmLabel: '创建并强制切换',
       cancelLabel: t.value.common.cancel,
       onConfirm: async () => {
         const forced = await runAction(`create-branch:${name}`, () =>
@@ -1782,13 +1784,13 @@ const submitRefDialog = async () => {
             props.repositoryTarget,
           ),
         );
-        if (forced) report(forced.ok ? "success" : "error", forced.message);
+        if (forced) report(forced.ok ? 'success' : 'error', forced.message);
       },
     });
     refDialog.value = null;
     return;
   }
-  report(result.ok ? "success" : "error", result.message);
+  report(result.ok ? 'success' : 'error', result.message);
   if (result.ok) closeRefDialog();
   else refDialogError.value = result.message;
 };
@@ -1806,7 +1808,7 @@ const commitMenuItems = (element: HTMLElement | null) =>
   element
     ? Array.from(element.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
         (item) =>
-          item.getAttribute("aria-disabled") !== "true" && !(item instanceof HTMLButtonElement && item.disabled),
+          item.getAttribute('aria-disabled') !== 'true' && !(item instanceof HTMLButtonElement && item.disabled),
       )
     : [];
 const focusCommitMenuItem = (element: HTMLElement | null, current: HTMLElement, offset: number) => {
@@ -1833,7 +1835,7 @@ const openCommitContextMenu = async (event: MouseEvent, commit: ProjectGitCommit
   closeCommitContextMenu(false);
   const row = event.currentTarget as HTMLElement;
   const rect = row.getBoundingClientRect();
-  const eventTarget = event.target instanceof Element ? event.target.closest<HTMLElement>("button, [tabindex]") : null;
+  const eventTarget = event.target instanceof Element ? event.target.closest<HTMLElement>('button, [tabindex]') : null;
   commitMenuOpener.value =
     document.activeElement instanceof HTMLElement && document.activeElement !== document.body
       ? document.activeElement
@@ -1885,28 +1887,28 @@ const handleCommitRowClick = (event: MouseEvent, hash: string) => {
   if (event.ctrlKey || event.metaKey) toggleCommitSelection(hash);
   else void toggleCommitFiles(hash);
 };
-const handleCommitMenuKeydown = (event: KeyboardEvent, level: "main" | "submenu") => {
+const handleCommitMenuKeydown = (event: KeyboardEvent, level: 'main' | 'submenu') => {
   const current = event.currentTarget as HTMLElement;
-  const container = level === "main" ? commitContextMenuRef.value : commitSubmenuRef.value;
-  if (event.key === "Escape") {
+  const container = level === 'main' ? commitContextMenuRef.value : commitSubmenuRef.value;
+  if (event.key === 'Escape') {
     event.preventDefault();
-    if (level === "submenu") {
+    if (level === 'submenu') {
       const parent = commitSubmenu.value?.parent;
       commitSubmenu.value = null;
       void nextTick(() => parent?.focus());
     } else {
       closeCommitContextMenu();
     }
-  } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault();
-    if (level === "main") commitSubmenu.value = null;
-    focusCommitMenuItem(container, current, event.key === "ArrowDown" ? 1 : -1);
-  } else if (event.key === "Home" || event.key === "End") {
+    if (level === 'main') commitSubmenu.value = null;
+    focusCommitMenuItem(container, current, event.key === 'ArrowDown' ? 1 : -1);
+  } else if (event.key === 'Home' || event.key === 'End') {
     event.preventDefault();
-    if (level === "main") commitSubmenu.value = null;
+    if (level === 'main') commitSubmenu.value = null;
     const items = commitMenuItems(container);
-    items[event.key === "Home" ? 0 : items.length - 1]?.focus();
-  } else if (level === "main" && event.key === "ArrowRight") {
+    items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
+  } else if (level === 'main' && event.key === 'ArrowRight') {
     const commit = commitContextMenu.value?.commit;
     const branchIndex = current.dataset.branchIndex;
     const branch = commit && branchIndex !== undefined ? commitBranchRefs(commit)[Number(branchIndex)] : undefined;
@@ -1914,9 +1916,9 @@ const handleCommitMenuKeydown = (event: KeyboardEvent, level: "main" | "submenu"
     const tag = commit && tagIndex !== undefined ? commitTagRefs(commit)[Number(tagIndex)] : undefined;
     if (branch || tag) {
       event.preventDefault();
-      void openCommitSubmenu(branch ? { kind: "branch", branch } : { kind: "tag", tag: tag! }, current, true);
+      void openCommitSubmenu(branch ? { kind: 'branch', branch } : { kind: 'tag', tag: tag! }, current, true);
     }
-  } else if (level === "submenu" && event.key === "ArrowLeft") {
+  } else if (level === 'submenu' && event.key === 'ArrowLeft') {
     event.preventDefault();
     const parent = commitSubmenu.value?.parent;
     commitSubmenu.value = null;
@@ -1928,9 +1930,9 @@ const copyText = async (value: string) => {
     await navigator.clipboard.writeText(value);
     copiedText.value = value;
     window.clearTimeout(copiedTimer.value);
-    copiedTimer.value = window.setTimeout(() => (copiedText.value = ""), 1200);
+    copiedTimer.value = window.setTimeout(() => (copiedText.value = ''), 1200);
   } catch {
-    report("error", "复制失败。");
+    report('error', '复制失败。');
   }
 };
 const copyBranchRef = async (name: string) => {
@@ -1938,10 +1940,10 @@ const copyBranchRef = async (name: string) => {
     await navigator.clipboard.writeText(name);
     copiedText.value = name;
     window.clearTimeout(copiedTimer.value);
-    copiedTimer.value = window.setTimeout(() => (copiedText.value = ""), 1200);
-    report("success", `已复制分支名：${name}`);
+    copiedTimer.value = window.setTimeout(() => (copiedText.value = ''), 1200);
+    report('success', `已复制分支名：${name}`);
   } catch {
-    report("error", "复制分支名失败。");
+    report('error', '复制分支名失败。');
   }
 };
 const copyLabel = (value: string) => (copiedText.value === value ? t.value.common.copied : t.value.common.copy);
@@ -1967,7 +1969,7 @@ const observeLoadMoreSentinel = () => {
   const root = graphScrollRef.value;
   const sentinel = loadMoreSentinelRef.value;
   const contextKey = context.value?.contextKey;
-  if (!root || !sentinel || !props.open || !contextKey || typeof IntersectionObserver === "undefined") return;
+  if (!root || !sentinel || !props.open || !contextKey || typeof IntersectionObserver === 'undefined') return;
   loadMoreObserver = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -1980,7 +1982,7 @@ const observeLoadMoreSentinel = () => {
         if (context.value?.contextKey === contextKey) void loadMore();
       }
     },
-    { root, rootMargin: "0px 0px 120px 0px", threshold: 0 },
+    { root, rootMargin: '0px 0px 120px 0px', threshold: 0 },
   );
   loadMoreObserver.observe(sentinel);
 };
@@ -1988,7 +1990,7 @@ const closeHistoryFloatingControls = () => {
   hideCommitTooltip();
   closeCommitContextMenu(false);
   refDialog.value = null;
-  refDialogError.value = "";
+  refDialogError.value = '';
   closeTagInfoDialog();
   confirmationDialog.value = null;
   closeCommitFilters();
@@ -2033,7 +2035,7 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
 const handleWindowPointerDown = (event: PointerEvent) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
-  if (!target.closest("[data-commit-context-menu]")) closeCommitContextMenu(false);
+  if (!target.closest('[data-commit-context-menu]')) closeCommitContextMenu(false);
   if (
     !commitFilterTriggerRef.value?.contains(target) &&
     !commitFiltersPopoverRef.value?.contains(target) &&
@@ -2041,18 +2043,18 @@ const handleWindowPointerDown = (event: PointerEvent) => {
   ) {
     closeCommitFilters();
   }
-  if (!target.closest("[data-history-more-menu], [data-history-more-menu-trigger]")) closeMoreMenu(false);
+  if (!target.closest('[data-history-more-menu], [data-history-more-menu-trigger]')) closeMoreMenu(false);
 };
 const handleFloatingViewportChange = (event: Event) => {
   const isTooltipScroll =
-    event.type === "scroll" && event.target instanceof Node && commitTooltipRef.value?.contains(event.target);
-  const isGraphScroll = event.type === "scroll" && event.target === graphScrollRef.value;
+    event.type === 'scroll' && event.target instanceof Node && commitTooltipRef.value?.contains(event.target);
+  const isGraphScroll = event.type === 'scroll' && event.target === graphScrollRef.value;
   if (!isTooltipScroll && !isGraphScroll) hideCommitTooltip();
   if (openDatePickerKind.value) positionCommitDatePicker();
   if (
-    event.type === "scroll" &&
+    event.type === 'scroll' &&
     event.target instanceof Element &&
-    event.target.closest("[data-commit-context-menu]")
+    event.target.closest('[data-commit-context-menu]')
   ) {
     commitSubmenu.value = null;
     return;
@@ -2070,11 +2072,11 @@ watch(
       scheduleCommitTooltipLayout();
     }
   },
-  { flush: "post" },
+  { flush: 'post' },
 );
 watch(
   () => activeAction.value,
-  (action) => emit("busy-change", Boolean(action)),
+  (action) => emit('busy-change', Boolean(action)),
   { immediate: true },
 );
 watch(
@@ -2089,14 +2091,58 @@ watch(
     disconnectLoadMoreObserver();
     if (props.open) void nextTick(observeLoadMoreSentinel);
   },
-  { flush: "post" },
+  { flush: 'post' },
 );
 watch(
   () => [graphScrollRef.value, props.open],
   () => observeGraphViewport(),
-  { flush: "post" },
+  { flush: 'post' },
 );
 watch(() => props.filterCommit?.requestId || 0, applyCommitFilterRequest, { immediate: true });
+let avatarPrefetchQueue: Array<() => Promise<void>> = [];
+let activeAvatarPrefetches = 0;
+const drainAvatarPrefetchQueue = () => {
+  while (activeAvatarPrefetches < 3 && avatarPrefetchQueue.length) {
+    const load = avatarPrefetchQueue.shift();
+    if (!load) break;
+    activeAvatarPrefetches += 1;
+    void load().catch(() => undefined).finally(() => {
+      activeAvatarPrefetches -= 1;
+      drainAvatarPrefetchQueue();
+    });
+  }
+};
+watch(
+  [graphWindow, () => props.open, () => context.value?.contextKey],
+  ([nextWindow, open, contextKey], _previous, onCleanup) => {
+    let cancelled = false;
+    onCleanup(() => {
+      cancelled = true;
+      avatarPrefetchQueue = [];
+    });
+    if (!open || !contextKey) return;
+    const projectId = props.projectId;
+    const repositoryTarget = props.repositoryTarget;
+    avatarPrefetchQueue = nextWindow.rows.map(({ commit }) => async () => {
+      if (cancelled) return;
+      await prefetchGitCommitTooltipAvatar(contextKey, commit.hash, async () => {
+        const avatarUrl = await store.readGitCommitAuthorAvatar(projectId, commit.hash, repositoryTarget);
+        if (avatarUrl) {
+          const image = new Image();
+          image.src = avatarUrl;
+          try {
+            await image.decode();
+          } catch {
+            return null;
+          }
+        }
+        return avatarUrl;
+      });
+    });
+    drainAvatarPrefetchQueue();
+  },
+  { immediate: true, flush: 'post' },
+);
 watch(
   graphWindow,
   (nextWindow) => {
@@ -2107,10 +2153,10 @@ watch(
       closeCommitContextMenu(false);
     }
   },
-  { flush: "pre" },
+  { flush: 'pre' },
 );
 watch(
-  () => context.value?.contextKey || "",
+  () => context.value?.contextKey || '',
   () => clearHistoryState(),
 );
 watch(
@@ -2127,7 +2173,7 @@ watch(
   },
 );
 watch(
-  () => (snapshot.value?.commits || []).map((commit) => commit.hash).join("|"),
+  () => (snapshot.value?.commits || []).map((commit) => commit.hash).join('|'),
   () => {
     const hashes = new Set((snapshot.value?.commits || []).map((commit) => commit.hash));
     const selected = props.selectedCommitHashes.filter((hash) => hashes.has(hash));
@@ -2137,12 +2183,12 @@ watch(
   },
 );
 onMounted(() => {
-  if (typeof ResizeObserver !== "undefined")
+  if (typeof ResizeObserver !== 'undefined')
     commitTooltipResizeObserver = new ResizeObserver(handleCommitTooltipResize);
   observeGraphViewport();
-  window.addEventListener("pointerdown", handleWindowPointerDown);
-  window.addEventListener("resize", handleFloatingViewportChange);
-  window.addEventListener("scroll", handleFloatingViewportChange, true);
+  window.addEventListener('pointerdown', handleWindowPointerDown);
+  window.addEventListener('resize', handleFloatingViewportChange);
+  window.addEventListener('scroll', handleFloatingViewportChange, true);
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 onBeforeUnmount(() => {
@@ -2157,9 +2203,9 @@ onBeforeUnmount(() => {
   pendingGraphScrollAnchor = null;
   graphScrollAnchorRestoreScheduled = false;
   window.clearTimeout(copiedTimer.value);
-  window.removeEventListener("pointerdown", handleWindowPointerDown);
-  window.removeEventListener("resize", handleFloatingViewportChange);
-  window.removeEventListener("scroll", handleFloatingViewportChange, true);
+  window.removeEventListener('pointerdown', handleWindowPointerDown);
+  window.removeEventListener('resize', handleFloatingViewportChange);
+  window.removeEventListener('scroll', handleFloatingViewportChange, true);
   stopAppEscapeListener();
 });
 </script>
@@ -3105,7 +3151,7 @@ onBeforeUnmount(() => {
             @keydown="handleCommitMenuKeydown($event, 'submenu')"
           >
             <component :is="commitSubmenu.branch.kind === 'local' ? GitBranch : CloudDownload" :size="12" />
-            {{ commitSubmenu.branch.kind === "local" ? "切换到分支" : "检出为 tracking 分支" }}
+            {{ commitSubmenu.branch.kind === 'local' ? '切换到分支' : '检出为 tracking 分支' }}
           </button>
           <template v-if="commitSubmenu.branch.kind === 'local'">
             <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
@@ -3155,7 +3201,7 @@ onBeforeUnmount(() => {
               @click="requestPushTag(commitSubmenu.tag.name, remote.name)"
               @keydown="handleCommitMenuKeydown($event, 'submenu')"
             >
-              <Cloud :size="12" />{{ tagPushRemotes.length === 1 ? "推送标签" : `推送到 ${remote.name}` }}
+              <Cloud :size="12" />{{ tagPushRemotes.length === 1 ? '推送标签' : `推送到 ${remote.name}` }}
             </button>
           </template>
           <button
@@ -3214,11 +3260,11 @@ onBeforeUnmount(() => {
             <div class="min-w-0">
               <h3 class="text-sm font-bold text-on-surface">
                 {{
-                  refDialog.mode === "create-tag"
-                    ? "新建标签"
-                    : refDialog.mode === "rename-branch"
-                      ? "重命名分支"
-                      : "新建分支"
+                  refDialog.mode === 'create-tag'
+                    ? '新建标签'
+                    : refDialog.mode === 'rename-branch'
+                      ? '重命名分支'
+                      : '新建分支'
                 }}
               </h3>
               <p class="truncate font-mono text-[10px] text-on-surface-variant">
@@ -3238,7 +3284,7 @@ onBeforeUnmount(() => {
           </header>
           <div class="space-y-3 p-4">
             <label class="block text-xs font-bold text-on-surface"
-              ><span>{{ refDialog.mode === "create-tag" ? "标签名称" : "分支名称" }}</span
+              ><span>{{ refDialog.mode === 'create-tag' ? '标签名称' : '分支名称' }}</span
               ><input
                 ref="refDialogInputRef"
                 v-model="refDialogName"
@@ -3283,7 +3329,7 @@ onBeforeUnmount(() => {
               >
                 {{ t.common.cancel }}</button
               ><button type="submit" class="git-dialog-primary" :disabled="isInteractionDisabled">
-                <Check :size="13" />{{ isInteractionDisabled ? "处理中" : "确认" }}
+                <Check :size="13" />{{ isInteractionDisabled ? '处理中' : '确认' }}
               </button>
             </div>
           </div>
@@ -3337,7 +3383,7 @@ onBeforeUnmount(() => {
               <dl class="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
                 <dt class="text-on-surface-variant">类型</dt>
                 <dd class="font-medium text-on-surface">
-                  {{ tagInfoDialogInfo.kind === "annotated" ? "附注标签" : "轻量标签" }}
+                  {{ tagInfoDialogInfo.kind === 'annotated' ? '附注标签' : '轻量标签' }}
                 </dd>
                 <dt class="text-on-surface-variant">目标提交</dt>
                 <dd class="flex min-w-0 items-center gap-1">
@@ -3369,7 +3415,7 @@ onBeforeUnmount(() => {
                 </div>
                 <pre
                   class="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-surface-container-low px-3 py-3 font-mono text-xs leading-5 text-on-surface"
-                  >{{ tagInfoDialogInfo.message || "此标签没有附注说明。" }}</pre
+                  >{{ tagInfoDialogInfo.message || '此标签没有附注说明。' }}</pre
                 >
               </div>
             </template>
