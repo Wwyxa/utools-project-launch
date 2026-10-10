@@ -720,7 +720,6 @@ const graphLayerStyle = computed(() => ({
   height: `${graphWindowHeight.value}px`,
 }));
 const graphSurfaceStyle = computed(() => ({
-  minWidth: graphCanvasMinWidth.value,
   height: `${graphContentHeight.value}px`,
 }));
 const updateGraphViewport = () => {
@@ -778,9 +777,7 @@ const changeExpandedCommitFileGeometry = (change: () => void) => {
     restoreGraphScrollAnchor(anchor);
   });
 };
-const graphRowColumns = (row: GitCommitGraphRow) => `${row.graphWidth}px minmax(14rem, 1fr)`;
-const graphRowMinWidth = (row: GitCommitGraphRow) => `max(16rem, calc(${row.graphWidth}px + 14rem + 9px))`;
-const graphCanvasMinWidth = computed(() => `max(16rem, calc(${graphCanvasWidth.value}px + 14rem + 9px))`);
+const graphRowColumns = (row: GitCommitGraphRow) => `${row.graphWidth}px minmax(0, 1fr)`;
 
 const refBadgeBaseClass = "git-ref-badge";
 const refPresentation = (ref: GitCommitRefPresentationMember) => {
@@ -2560,14 +2557,13 @@ onBeforeUnmount(() => {
                 :aria-controls="`git-commit-files-${row.commit.hash}`"
                 :class="
                   cn(
-                    'group absolute left-0 z-10 grid w-full min-w-[16rem] cursor-pointer items-center gap-px px-1 text-xs transition-colors hover:bg-surface-container-high',
+                    'group absolute left-0 z-10 grid w-full min-w-0 cursor-pointer items-center gap-px px-1 text-xs transition-colors hover:bg-surface-container-high',
                     isCommitSelected(row.commit.hash) && 'bg-primary/10 shadow-[inset_2px_0_0_var(--color-primary)]',
                   )
                 "
                 :style="{
                   top: `${row.top}px`,
                   gridTemplateColumns: graphRowColumns(row),
-                  minWidth: graphRowMinWidth(row),
                   height: `${rowHeight}px`,
                 }"
                 @click="handleCommitRowClick($event, row.commit.hash)"
@@ -2580,7 +2576,7 @@ onBeforeUnmount(() => {
               >
                 <div class="col-start-2 min-w-0 self-stretch py-px">
                   <div class="flex min-w-0 items-stretch gap-1.5">
-                    <div class="min-w-0 flex-1 py-px">
+                    <div class="min-w-0 flex-1 overflow-hidden py-px">
                       <span class="block min-w-0 truncate text-[11px] font-semibold leading-4 text-on-surface">{{
                         row.commit.message
                       }}</span>
@@ -2633,7 +2629,6 @@ onBeforeUnmount(() => {
                 :style="{
                   top: `${row.top + rowHeight}px`,
                   height: `${expandedCommitFilesHeight(row.commit.hash)}px`,
-                  minWidth: graphRowMinWidth(row),
                   paddingLeft: `${graphRowPaddingX + row.graphWidth + 4}px`,
                 }"
               >
