@@ -46,9 +46,12 @@ import {
   type ProjectGitFileChange,
   type ProjectGitFileDiffOptions,
   type ProjectGitFileDiffResult,
+  type ProjectGitHeadState,
   type ProjectGitRemoteBranchSummary,
   type ProjectGitRemoteSummary,
   type ProjectGitRepositoryTarget,
+  type ProjectGitSubmoduleIndexState,
+  type ProjectGitSubmoduleSummary,
   type ProjectGitPushOptions,
 } from "../../types";
 import { cn } from "../../lib/utils";
@@ -401,6 +404,34 @@ const repositoryDisplayName = (repositoryPath: string, fallback: string) => {
   return normalized.split(/[\\/]/).pop() || fallback;
 };
 
+const gitRepositoryHeadLabel = (head: ProjectGitHeadState) => {
+  if (head.name) return head.name;
+  if (head.kind === "detached") return `HEAD @ ${head.oid?.slice(0, 7) || "unknown"}`;
+  if (head.kind === "unborn") return "无提交";
+  if (head.kind === "unknown") return "未检出";
+  return head.kind;
+};
+
+const gitSubmoduleRegistrationLabels: Record<ProjectGitSubmoduleSummary["registration"], string> = {
+  initialized: "已初始化",
+  uninitialized: "未初始化",
+  unknown: "未声明",
+};
+
+const gitSubmoduleCheckoutLabels: Record<ProjectGitSubmoduleSummary["checkout"], string> = {
+  available: "可用",
+  missing: "未检出",
+  "not-repository": "非本仓库的直接检出",
+  unreadable: "无法读取",
+};
+
+const gitSubmoduleIndexLabels: Record<ProjectGitSubmoduleIndexState["kind"], string> = {
+  recorded: "已记录",
+  conflicted: "冲突",
+  missing: "未记录",
+  "not-gitlink": "非 gitlink",
+};
+
 const repositoryChangeCount = (
   status: {
     stagedEntries: number;
@@ -473,23 +504,22 @@ const repositoryRows = computed<GitRepositoryRow[]>(() => {
       target,
       repositoryPath: entry.path,
       depth: 1,
-      name: entry.name || repositoryDisplayName(entry.path, "submodule"),
+      name: repositoryDisplayName(entry.path, "submodule"),
       kindLabel: "子模块",
-      branchLabel:
-        entry.head.name ||
-        (entry.head.kind === "detached" ? `HEAD @ ${entry.head.oid?.slice(0, 7) || "unknown"}` : entry.head.kind),
+      branchLabel: gitRepositoryHeadLabel(entry.head),
       changeCount: repositoryChangeCount(entry.status),
       selectable,
       selected: gitRepositoryTargetsEqual(activeRepositoryTarget.value, target),
       health: selectable ? (entry.commitMismatch ? "warning" : "healthy") : "unavailable",
       statusText:
         entry.failure?.message ||
-        (entry.commitMismatch ? "检出提交与父仓库记录不一致" : selectable ? "可用" : `检出状态：${entry.checkout}`),
+        (entry.commitMismatch ? "检出提交与父仓库记录不一致" : selectable ? "可用" : gitSubmoduleCheckoutLabels[entry.checkout]),
       detailLines: [
-        `初始化：${entry.registration}`,
+        `声明名：${entry.name || "未声明"}`,
+        `初始化：${gitSubmoduleRegistrationLabels[entry.registration]}`,
         `URL：${entry.url.declared || entry.url.local || entry.url.effective || "未配置"}`,
         `配置分支：${entry.branch.declared || entry.branch.local || entry.branch.effective || "未配置"}`,
-        `父仓库记录：${entry.index.recordedOid || entry.index.kind}`,
+        `父仓库记录：${entry.index.recordedOid || gitSubmoduleIndexLabels[entry.index.kind]}`,
         `检出提交：${entry.head.oid || "不可用"}`,
         repositoryChangeDetail(entry.status),
       ],
@@ -506,11 +536,9 @@ const repositoryRows = computed<GitRepositoryRow[]>(() => {
         target,
         repositoryPath: entry.path,
         depth: 0,
-        name: repositoryDisplayName(entry.path, "worktree"),
-        kindLabel: "工作树",
-        branchLabel:
-          entry.head.name ||
-          (entry.head.kind === "detached" ? `HEAD @ ${entry.head.oid?.slice(0, 7) || "unknown"}` : entry.head.kind),
+      name: repositoryDisplayName(entry.path, "worktree"),
+      kindLabel: "工作树",
+      branchLabel: gitRepositoryHeadLabel(entry.head),
         changeCount: repositoryChangeCount(entry.status),
         selectable,
         selected: gitRepositoryTargetsEqual(activeRepositoryTarget.value, target),

@@ -1641,6 +1641,16 @@ function gitWorkspaceDirectoryAvailable(targetPath) {
   }
 }
 
+// 未检出的 submodule 目录内没有自己的 .git，git -C 会向上穿透解析到父仓库，
+// 让逐项探测看似成功却拿到父仓库的结果，必须在探测前先把这类路径判为未检出。
+function gitWorkspaceCheckoutGitPresent(targetPath) {
+  try {
+    return fs.existsSync(path.join(targetPath, '.git'));
+  } catch (error) {
+    return false;
+  }
+}
+
 function gitWorkspacePathsEqual(left, right) {
   const normalize = (value) => {
     const resolved = path.resolve(value || '');
@@ -1869,6 +1879,7 @@ async function enumerateGitWorkspaceSubmodules(repository) {
     const localConfig = descriptor.name ? local.records.get(descriptor.name) || null : null;
     const targetPath = resolveGitWorkspaceChildPath(repository.repositoryPath, descriptor.path);
     const pathAvailable = Boolean(targetPath && gitWorkspaceDirectoryAvailable(targetPath));
+    const checkoutPresent = Boolean(targetPath && pathAvailable && gitWorkspaceCheckoutGitPresent(targetPath));
     const configuration = !targetPath ? 'invalid' : descriptor.declared ? 'configured' : 'index-only';
     const configValue = (key) => {
       const declaredValue = descriptor.declared?.[key] || null;
@@ -1884,7 +1895,7 @@ async function enumerateGitWorkspaceSubmodules(repository) {
       branch: configValue('branch'),
       index: indexState,
       registration: descriptor.name ? (localConfig?.url ? 'initialized' : 'uninitialized') : 'unknown',
-      checkout: !targetPath || !pathAvailable ? 'missing' : 'unreadable',
+      checkout: !checkoutPresent ? 'missing' : 'unreadable',
       objectFormat: null,
       head: { kind: 'unknown', ref: null, name: null, oid: null },
       commitMismatch: null,
@@ -1898,7 +1909,7 @@ async function enumerateGitWorkspaceSubmodules(repository) {
   });
 
   const jobs = entries
-    .filter((entry) => entry.pathAvailable && entry.configuration !== 'invalid')
+    .filter((entry) => entry.pathAvailable && entry.configuration !== 'invalid' && entry.checkout !== 'missing')
     .map((entry) => async () => {
       const entryDeadline = Date.now() + gitWorkspaceEntryTimeoutMs;
       const entryCommand = (args, options = {}) =>
