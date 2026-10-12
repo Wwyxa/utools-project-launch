@@ -1,9 +1,9 @@
 function emit(detail) {
-  window.dispatchEvent(new CustomEvent("project-bridge-event", { detail }));
+  window.dispatchEvent(new CustomEvent('project-bridge-event', { detail }));
 }
 
 function emitGitRemoteProgress(detail) {
-  window.dispatchEvent(new CustomEvent("git-remote-progress", { detail }));
+  window.dispatchEvent(new CustomEvent('git-remote-progress', { detail }));
 }
 
 function logStorageError(action, error) {
@@ -14,9 +14,9 @@ function findGitRoot(startPath) {
   const resolvedPath = expandPath(startPath);
 
   try {
-    const output = execFileSync("git", ["-C", resolvedPath, "rev-parse", "--show-toplevel"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
+    const output = execFileSync('git', ['-C', resolvedPath, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: resolveGitExecutionEnvironment(),
     });
     return output.trim();
@@ -30,50 +30,50 @@ function findGitRootAsync(startPath) {
 
   return new Promise((resolve) => {
     execFile(
-      "git",
-      ["-C", resolvedPath, "rev-parse", "--show-toplevel"],
-      { encoding: "utf8", env: resolveGitExecutionEnvironment(), windowsHide: true },
+      'git',
+      ['-C', resolvedPath, 'rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', env: resolveGitExecutionEnvironment(), windowsHide: true },
       (error, stdout) => {
-        resolve(error ? null : String(stdout || "").trim());
+        resolve(error ? null : String(stdout || '').trim());
       },
     );
   });
 }
 
 function createGitReadFailure(operation, result, fallback) {
-  const detail = String(result.stderr || result.stdout || "")
+  const detail = String(result.stderr || result.stdout || '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .find(Boolean);
-  const normalizedDetail = String(result.stderr || result.stdout || "").toLowerCase();
-  const normalizedErrorCode = String(result.errorCode || "").toLowerCase();
+  const normalizedDetail = String(result.stderr || result.stdout || '').toLowerCase();
+  const normalizedErrorCode = String(result.errorCode || '').toLowerCase();
   const code =
-    normalizedErrorCode === "enoent" ||
-    normalizedDetail.includes("enoent") ||
-    normalizedDetail.includes("not recognized as an internal or external command")
-      ? "git-unavailable"
-      : normalizedDetail.includes("not a git repository") ||
-          normalizedDetail.includes("does not appear to be a git repository")
-        ? "not-a-repository"
-        : "command-failed";
+    normalizedErrorCode === 'enoent' ||
+    normalizedDetail.includes('enoent') ||
+    normalizedDetail.includes('not recognized as an internal or external command')
+      ? 'git-unavailable'
+      : normalizedDetail.includes('not a git repository') ||
+          normalizedDetail.includes('does not appear to be a git repository')
+        ? 'not-a-repository'
+        : 'command-failed';
 
   return {
     code,
     operation,
     message:
-      code === "git-unavailable"
-        ? "未找到 Git 可执行文件，请检查 Git 安装或 PATH。"
-        : code === "not-a-repository"
-          ? "未检测到 Git 仓库。"
-          : `${fallback}${detail ? `：${detail}` : ""}`,
-    ...(typeof result.exitCode === "number" ? { exitCode: result.exitCode } : {}),
+      code === 'git-unavailable'
+        ? '未找到 Git 可执行文件，请检查 Git 安装或 PATH。'
+        : code === 'not-a-repository'
+          ? '未检测到 Git 仓库。'
+          : `${fallback}${detail ? `：${detail}` : ''}`,
+    ...(typeof result.exitCode === 'number' ? { exitCode: result.exitCode } : {}),
   };
 }
 
 async function findGitRootAsyncResult(startPath) {
-  const result = await runGitAsyncResult(startPath, ["rev-parse", "--show-toplevel"]);
+  const result = await runGitAsyncResult(startPath, ['rev-parse', '--show-toplevel']);
   if (!result.ok) {
-    return { ok: false, failure: createGitReadFailure("repository", result, "无法定位 Git 仓库") };
+    return { ok: false, failure: createGitReadFailure('repository', result, '无法定位 Git 仓库') };
   }
 
   const repositoryPath = result.stdout.trim();
@@ -81,9 +81,9 @@ async function findGitRootAsyncResult(startPath) {
     return {
       ok: false,
       failure: {
-        code: "invalid-output",
-        operation: "repository",
-        message: "Git 未返回有效的仓库路径。",
+        code: 'invalid-output',
+        operation: 'repository',
+        message: 'Git 未返回有效的仓库路径。',
         exitCode: result.exitCode,
       },
     };
@@ -94,8 +94,8 @@ async function findGitRootAsyncResult(startPath) {
 
 function createEmptyGitStatusSnapshot(repositoryPath, now, statusText) {
   return {
-    branch: "main",
-    headHash: "",
+    branch: 'main',
+    headHash: '',
     isDetachedHead: false,
     ahead: 0,
     behind: 0,
@@ -140,9 +140,9 @@ function runGit(startPath, args) {
   const resolvedPath = expandPath(startPath);
 
   try {
-    return execFileSync("git", ["-C", resolvedPath, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
+    return execFileSync('git', ['-C', resolvedPath, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: resolveGitExecutionEnvironment(),
     });
   } catch (error) {
@@ -155,11 +155,11 @@ function runGitAsync(startPath, args) {
 
   return new Promise((resolve) => {
     execFile(
-      "git",
-      ["-C", resolvedPath, ...args],
-      { encoding: "utf8", env: resolveGitExecutionEnvironment(), windowsHide: true },
+      'git',
+      ['-C', resolvedPath, ...args],
+      { encoding: 'utf8', env: resolveGitExecutionEnvironment(), windowsHide: true },
       (error, stdout) => {
-        resolve(error ? null : String(stdout || ""));
+        resolve(error ? null : String(stdout || ''));
       },
     );
   });
@@ -170,15 +170,15 @@ function runGitAsyncResult(startPath, args) {
 
   return new Promise((resolve) => {
     execFile(
-      "git",
-      ["-C", resolvedPath, ...args],
-      { encoding: "utf8", env: resolveGitExecutionEnvironment(), windowsHide: true },
+      'git',
+      ['-C', resolvedPath, ...args],
+      { encoding: 'utf8', env: resolveGitExecutionEnvironment(), windowsHide: true },
       (error, stdout, stderr) => {
         resolve({
           ok: !error,
-          stdout: String(stdout || ""),
-          stderr: String(stderr || error?.message || ""),
-          exitCode: error ? (typeof error.code === "number" ? error.code : 1) : 0,
+          stdout: String(stdout || ''),
+          stderr: String(stderr || error?.message || ''),
+          exitCode: error ? (typeof error.code === 'number' ? error.code : 1) : 0,
           errorCode: error?.code,
         });
       },
@@ -190,9 +190,9 @@ function runGitDiff(startPath, args) {
   const resolvedPath = expandPath(startPath);
 
   try {
-    return execFileSync("git", ["-C", resolvedPath, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
+    return execFileSync('git', ['-C', resolvedPath, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: resolveGitExecutionEnvironment(),
     });
   } catch (error) {
@@ -202,15 +202,15 @@ function runGitDiff(startPath, args) {
 
 function runGitResult(startPath, args) {
   const resolvedPath = expandPath(startPath);
-  const result = spawnSync("git", ["-C", resolvedPath, ...args], {
-    encoding: "utf8",
+  const result = spawnSync('git', ['-C', resolvedPath, ...args], {
+    encoding: 'utf8',
     env: resolveGitExecutionEnvironment(),
     windowsHide: true,
   });
   return {
-    status: typeof result.status === "number" ? result.status : 1,
-    stdout: String(result.stdout || ""),
-    stderr: String(result.stderr || result.error?.message || ""),
+    status: typeof result.status === 'number' ? result.status : 1,
+    stdout: String(result.stdout || ''),
+    stderr: String(result.stderr || result.error?.message || ''),
   };
 }
 
@@ -220,7 +220,7 @@ function runGitRemoteCommandResult(startPath, args) {
   return new Promise((resolve) => {
     const stdoutChunks = [];
     const stderrChunks = [];
-    const progressRemainders = { stdout: "", stderr: "" };
+    const progressRemainders = { stdout: '', stderr: '' };
     const pendingProgress = [];
     const progressDrainResolvers = [];
     let progressDispatchTimer = null;
@@ -250,18 +250,18 @@ function runGitRemoteCommandResult(startPath, args) {
       }
       return new Promise((resolveProgressDrain) => progressDrainResolvers.push(resolveProgressDrain));
     };
-    const emitProgress = (message, phase = "output") => {
-      const normalized = String(message || "")
-        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    const emitProgress = (message, phase = 'output') => {
+      const normalized = String(message || '')
+        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
         .trim();
       if (!normalized) return;
       const detail = {
-        type: "git-remote-progress",
+        type: 'git-remote-progress',
         repositoryPath: resolvedPath,
         message: normalized,
         phase,
       };
-      if (phase === "start") {
+      if (phase === 'start') {
         emitGitRemoteProgress(detail);
         return;
       }
@@ -273,20 +273,20 @@ function runGitRemoteCommandResult(startPath, args) {
       scheduleProgressDispatch(0);
     };
     const consumeProgress = (stream, chunk, flush = false) => {
-      progressRemainders[stream] += String(chunk || "");
+      progressRemainders[stream] += String(chunk || '');
       const lines = progressRemainders[stream].split(/[\r\n]/);
-      progressRemainders[stream] = lines.pop() || "";
+      progressRemainders[stream] = lines.pop() || '';
       lines.forEach((line) => emitProgress(line));
       if (flush && progressRemainders[stream]) {
         emitProgress(progressRemainders[stream]);
-        progressRemainders[stream] = "";
+        progressRemainders[stream] = '';
       }
     };
-    const commandArgs = ["-C", resolvedPath, ...args];
-    emitProgress(`开始: git ${args.join(" ")}`, "start");
-    const child = spawn("git", commandArgs, {
-      env: { ...resolveGitExecutionEnvironment(), GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
-      stdio: ["ignore", "pipe", "pipe"],
+    const commandArgs = ['-C', resolvedPath, ...args];
+    emitProgress(`开始: git ${args.join(' ')}`, 'start');
+    const child = spawn('git', commandArgs, {
+      env: { ...resolveGitExecutionEnvironment(), GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' },
+      stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
     const timeout = setTimeout(() => {
@@ -299,46 +299,46 @@ function runGitRemoteCommandResult(startPath, args) {
       clearTimeout(timeout);
       void waitForProgressDispatch().then(() => {
         emitGitRemoteProgress({
-          type: "git-remote-progress",
+          type: 'git-remote-progress',
           repositoryPath: resolvedPath,
-          message: "",
-          phase: "complete",
+          message: '',
+          phase: 'complete',
         });
         resolve(result);
       });
     };
 
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      const text = String(chunk || "");
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      const text = String(chunk || '');
       stdoutChunks.push(text);
-      consumeProgress("stdout", text);
+      consumeProgress('stdout', text);
     });
-    child.stderr.on("data", (chunk) => {
-      const text = String(chunk || "");
+    child.stderr.on('data', (chunk) => {
+      const text = String(chunk || '');
       stderrChunks.push(text);
-      consumeProgress("stderr", text);
+      consumeProgress('stderr', text);
     });
-    child.on("error", (error) => {
+    child.on('error', (error) => {
       if (settled) return;
-      consumeProgress("stderr", error.message, true);
+      consumeProgress('stderr', error.message, true);
       settle({
-        status: typeof error.code === "number" ? error.code : 1,
-        stdout: stdoutChunks.join(""),
-        stderr: stderrChunks.join("") || error.message,
+        status: typeof error.code === 'number' ? error.code : 1,
+        stdout: stdoutChunks.join(''),
+        stderr: stderrChunks.join('') || error.message,
       });
     });
-    child.on("close", (code) => {
+    child.on('close', (code) => {
       if (settled) return;
-      consumeProgress("stdout", "", true);
-      consumeProgress("stderr", "", true);
-      const status = typeof code === "number" ? code : 1;
-      const timeoutMessage = timedOut ? "远程 Git 操作超时，请检查网络或认证配置。" : "";
+      consumeProgress('stdout', '', true);
+      consumeProgress('stderr', '', true);
+      const status = typeof code === 'number' ? code : 1;
+      const timeoutMessage = timedOut ? '远程 Git 操作超时，请检查网络或认证配置。' : '';
       settle({
         status,
-        stdout: stdoutChunks.join(""),
-        stderr: stderrChunks.join("") || timeoutMessage,
+        stdout: stdoutChunks.join(''),
+        stderr: stderrChunks.join('') || timeoutMessage,
       });
     });
   });
@@ -347,28 +347,28 @@ function runGitRemoteCommandResult(startPath, args) {
 function runGitWorkspaceCommand(startPath, args, options = {}) {
   const resolvedPath = expandPath(startPath);
   const timeoutMs = Math.max(1, Number(options.timeoutMs) || gitWorkspaceEntryTimeoutMs);
-  const executable = options.executable || "git";
-  const stdoutRecordHandler = typeof options.stdoutRecordHandler === "function" ? options.stdoutRecordHandler : null;
-  const stdinInput = typeof options.stdinInput === "string" ? options.stdinInput : null;
+  const executable = options.executable || 'git';
+  const stdoutRecordHandler = typeof options.stdoutRecordHandler === 'function' ? options.stdoutRecordHandler : null;
+  const stdinInput = typeof options.stdinInput === 'string' ? options.stdinInput : null;
   const commandArgs = options.executable
     ? Array.isArray(options.commandArgs)
       ? options.commandArgs
       : []
-    : ["-C", resolvedPath, ...args];
+    : ['-C', resolvedPath, ...args];
 
   return new Promise((resolve) => {
     const stdoutChunks = [];
     const stderrChunks = [];
     const stdoutDecoder = stdoutRecordHandler ? new TextDecoder() : null;
-    let stdoutRecordRemainder = "";
+    let stdoutRecordRemainder = '';
     let stderrLength = 0;
     let timedOut = false;
     let settled = false;
     let spawnError = null;
     const child = spawn(executable, commandArgs, {
-      env: { ...resolveGitExecutionEnvironment(), GIT_OPTIONAL_LOCKS: "0" },
+      env: { ...resolveGitExecutionEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
       shell: false,
-      stdio: [stdinInput === null ? "ignore" : "pipe", "pipe", "pipe"],
+      stdio: [stdinInput === null ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
 
@@ -378,24 +378,24 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
     }, timeoutMs);
 
     if (stdinInput !== null) {
-      child.stdin?.on("error", () => {});
+      child.stdin?.on('error', () => {});
       child.stdin?.end(stdinInput);
     }
 
     const emitStdoutRecords = (text, flush = false) => {
       stdoutRecordRemainder += text;
-      let separator = stdoutRecordRemainder.indexOf("\0");
+      let separator = stdoutRecordRemainder.indexOf('\0');
       while (separator >= 0) {
         stdoutRecordHandler(stdoutRecordRemainder.slice(0, separator));
         stdoutRecordRemainder = stdoutRecordRemainder.slice(separator + 1);
-        separator = stdoutRecordRemainder.indexOf("\0");
+        separator = stdoutRecordRemainder.indexOf('\0');
       }
       if (flush && stdoutRecordRemainder) {
         stdoutRecordHandler(stdoutRecordRemainder);
-        stdoutRecordRemainder = "";
+        stdoutRecordRemainder = '';
       }
     };
-    child.stdout?.on("data", (chunk) => {
+    child.stdout?.on('data', (chunk) => {
       const buffer = Buffer.from(chunk);
       if (stdoutRecordHandler && stdoutDecoder) {
         emitStdoutRecords(stdoutDecoder.decode(buffer, { stream: true }));
@@ -403,17 +403,17 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
         stdoutChunks.push(buffer);
       }
     });
-    child.stderr?.on("data", (chunk) => {
+    child.stderr?.on('data', (chunk) => {
       if (stderrLength >= gitWorkspaceStderrLimit) return;
       const buffer = Buffer.from(chunk);
       const remaining = gitWorkspaceStderrLimit - stderrLength;
       stderrChunks.push(buffer.subarray(0, remaining));
       stderrLength += Math.min(buffer.length, remaining);
     });
-    child.on("error", (error) => {
+    child.on('error', (error) => {
       spawnError = error;
     });
-    child.on("close", (code, signal) => {
+    child.on('close', (code, signal) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -421,7 +421,7 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
         emitStdoutRecords(stdoutDecoder.decode(), true);
       }
       resolve({
-        status: timedOut || spawnError ? 1 : typeof code === "number" ? code : 0,
+        status: timedOut || spawnError ? 1 : typeof code === 'number' ? code : 0,
         signal: signal || null,
         stdout: new TextDecoder().decode(Buffer.concat(stdoutChunks)),
         stderr: new TextDecoder().decode(Buffer.concat(stderrChunks)).trim(),
@@ -432,33 +432,33 @@ function runGitWorkspaceCommand(startPath, args, options = {}) {
   });
 }
 
-function gitWorkspaceFailure(operation, result, fallbackMessage, fallbackCode = "command-failed") {
+function gitWorkspaceFailure(operation, result, fallbackMessage, fallbackCode = 'command-failed') {
   if (result?.timedOut) {
-    return { code: "timeout", operation, message: "Git 读取超时。" };
+    return { code: 'timeout', operation, message: 'Git 读取超时。' };
   }
-  if (result?.spawnError?.code === "ENOENT") {
-    return { code: "git-unavailable", operation, message: "未找到 Git 可执行文件。" };
+  if (result?.spawnError?.code === 'ENOENT') {
+    return { code: 'git-unavailable', operation, message: '未找到 Git 可执行文件。' };
   }
-  if (result?.spawnError?.code === "EACCES" || result?.spawnError?.code === "EPERM") {
-    return { code: "permission-denied", operation, message: "没有权限读取该 Git 路径。" };
+  if (result?.spawnError?.code === 'EACCES' || result?.spawnError?.code === 'EPERM') {
+    return { code: 'permission-denied', operation, message: '没有权限读取该 Git 路径。' };
   }
   const failure = {
     code: fallbackCode,
     operation,
-    message: String(result?.stderr || fallbackMessage || "Git 读取失败。").slice(0, gitWorkspaceStderrLimit),
+    message: String(result?.stderr || fallbackMessage || 'Git 读取失败。').slice(0, gitWorkspaceStderrLimit),
   };
-  if (typeof result?.status === "number") failure.exitCode = result.status;
+  if (typeof result?.status === 'number') failure.exitCode = result.status;
   return failure;
 }
 
 function isGitWorkspaceObjectId(value, objectFormat) {
-  const length = objectFormat === "sha256" ? 64 : objectFormat === "sha1" ? 40 : 0;
-  const normalized = String(value || "").toLowerCase();
+  const length = objectFormat === 'sha256' ? 64 : objectFormat === 'sha1' ? 40 : 0;
+  const normalized = String(value || '').toLowerCase();
   return length > 0 && !/^0+$/.test(normalized) && new RegExp(`^[0-9a-f]{${length}}$`).test(normalized);
 }
 
 function normalizeGitWorkspaceObjectId(value, objectFormat) {
-  const normalized = String(value || "").toLowerCase();
+  const normalized = String(value || '').toLowerCase();
   return isGitWorkspaceObjectId(normalized, objectFormat) ? normalized : null;
 }
 
@@ -470,19 +470,19 @@ function parseGitWorktreePorcelain(output, objectFormat) {
     if (!current?.path) return;
     const oid = normalizeGitWorkspaceObjectId(current.headValue, objectFormat);
     const branchRef = current.branch || null;
-    const branchName = branchRef?.startsWith("refs/heads/") ? branchRef.slice("refs/heads/".length) : branchRef;
-    const kind = current.bare ? "bare" : entries.length > 0 ? "linked" : "main";
+    const branchName = branchRef?.startsWith('refs/heads/') ? branchRef.slice('refs/heads/'.length) : branchRef;
+    const kind = current.bare ? 'bare' : entries.length > 0 ? 'linked' : 'main';
     const headKind = current.bare
-      ? "bare"
+      ? 'bare'
       : current.detached
-        ? "detached"
+        ? 'detached'
         : !oid && branchRef
-          ? "unborn"
+          ? 'unborn'
           : branchRef
-            ? "branch"
+            ? 'branch'
             : oid
-              ? "detached"
-              : "unknown";
+              ? 'detached'
+              : 'unknown';
     entries.push({
       kind,
       path: current.path,
@@ -495,19 +495,19 @@ function parseGitWorktreePorcelain(output, objectFormat) {
     current = null;
   };
 
-  for (const field of String(output || "").split("\0")) {
+  for (const field of String(output || '').split('\0')) {
     if (!field) {
       finish();
       continue;
     }
-    const separator = field.indexOf(" ");
+    const separator = field.indexOf(' ');
     const key = separator < 0 ? field : field.slice(0, separator);
-    const value = separator < 0 ? "" : field.slice(separator + 1);
-    if (key === "worktree") {
+    const value = separator < 0 ? '' : field.slice(separator + 1);
+    if (key === 'worktree') {
       finish();
       current = {
         path: value,
-        headValue: "",
+        headValue: '',
         branch: null,
         bare: false,
         detached: false,
@@ -519,14 +519,14 @@ function parseGitWorktreePorcelain(output, objectFormat) {
       continue;
     }
     if (!current) continue;
-    if (key === "HEAD") current.headValue = value;
-    else if (key === "branch") current.branch = value;
-    else if (key === "bare") current.bare = true;
-    else if (key === "detached") current.detached = true;
-    else if (key === "locked") {
+    if (key === 'HEAD') current.headValue = value;
+    else if (key === 'branch') current.branch = value;
+    else if (key === 'bare') current.bare = true;
+    else if (key === 'detached') current.detached = true;
+    else if (key === 'locked') {
       current.locked = true;
       current.lockReason = value || null;
-    } else if (key === "prunable") {
+    } else if (key === 'prunable') {
       current.prunable = true;
       current.prunableReason = value || null;
     }
@@ -550,50 +550,50 @@ function createGitWorkspaceStatusParser(objectFormat) {
       return;
     }
     if (!record) return;
-    if (record.startsWith("# branch.oid ")) {
-      const value = record.slice("# branch.oid ".length);
-      branchOidInitial = value === "(initial)";
+    if (record.startsWith('# branch.oid ')) {
+      const value = record.slice('# branch.oid '.length);
+      branchOidInitial = value === '(initial)';
       branchOid = branchOidInitial ? null : normalizeGitWorkspaceObjectId(value, objectFormat);
       return;
     }
-    if (record.startsWith("# branch.head ")) {
-      branchHead = record.slice("# branch.head ".length);
+    if (record.startsWith('# branch.head ')) {
+      branchHead = record.slice('# branch.head '.length);
       return;
     }
-    if (record.startsWith("# branch.upstream ")) {
-      upstreamRef = record.slice("# branch.upstream ".length) || null;
+    if (record.startsWith('# branch.upstream ')) {
+      upstreamRef = record.slice('# branch.upstream '.length) || null;
       return;
     }
-    if (record.startsWith("# branch.ab ")) {
+    if (record.startsWith('# branch.ab ')) {
       const match = record.match(/^# branch\.ab \+(\d+) -(\d+)$/);
       if (match) divergence = { ahead: Number(match[1]), behind: Number(match[2]) };
       return;
     }
     const kind = record[0];
-    if (kind === "1" || kind === "2") {
-      const statusCode = record.split(" ", 3)[1] || "..";
-      if (statusCode[0] && statusCode[0] !== ".") counts.stagedEntries += 1;
-      if (statusCode[1] && statusCode[1] !== ".") counts.unstagedEntries += 1;
-      if (kind === "2") consumeTypeTwoPath = true;
-    } else if (kind === "u") {
+    if (kind === '1' || kind === '2') {
+      const statusCode = record.split(' ', 3)[1] || '..';
+      if (statusCode[0] && statusCode[0] !== '.') counts.stagedEntries += 1;
+      if (statusCode[1] && statusCode[1] !== '.') counts.unstagedEntries += 1;
+      if (kind === '2') consumeTypeTwoPath = true;
+    } else if (kind === 'u') {
       counts.conflictedEntries += 1;
-    } else if (kind === "?") {
+    } else if (kind === '?') {
       counts.untrackedEntries += 1;
     }
   };
 
   const result = () => {
-    const detached = branchHead === "(detached)";
+    const detached = branchHead === '(detached)';
     const head = {
       kind: branchOidInitial
-        ? "unborn"
+        ? 'unborn'
         : detached
-          ? "detached"
+          ? 'detached'
           : branchHead
-            ? "branch"
+            ? 'branch'
             : branchOid
-              ? "detached"
-              : "unknown",
+              ? 'detached'
+              : 'unknown',
       ref: branchHead && !detached ? `refs/heads/${branchHead}` : null,
       name: branchHead && !detached ? branchHead : null,
       oid: branchOid,
@@ -611,8 +611,8 @@ function createGitWorkspaceStatusParser(objectFormat) {
 
 function parseGitWorkspaceStatus(output, objectFormat) {
   const parser = createGitWorkspaceStatusParser(objectFormat);
-  String(output || "")
-    .split("\0")
+  String(output || '')
+    .split('\0')
     .forEach(parser.consume);
   return parser.result();
 }
@@ -620,19 +620,19 @@ function parseGitWorkspaceStatus(output, objectFormat) {
 function parseGitWorkspaceConfig(output) {
   const records = new Map();
   let invalid = false;
-  for (const record of String(output || "").split("\0")) {
+  for (const record of String(output || '').split('\0')) {
     if (!record) continue;
-    const separator = record.indexOf("\n");
+    const separator = record.indexOf('\n');
     if (separator < 0) {
       invalid = true;
       continue;
     }
     const key = record.slice(0, separator);
     const value = record.slice(separator + 1);
-    if (!key.startsWith("submodule.")) continue;
-    const suffix = [".path", ".url", ".branch"].find((candidate) => key.endsWith(candidate));
+    if (!key.startsWith('submodule.')) continue;
+    const suffix = ['.path', '.url', '.branch'].find((candidate) => key.endsWith(candidate));
     if (!suffix) continue;
-    const name = key.slice("submodule.".length, -suffix.length);
+    const name = key.slice('submodule.'.length, -suffix.length);
     if (!name) {
       invalid = true;
       continue;
@@ -659,7 +659,7 @@ function createGitWorkspaceIndexParser(objectFormat = null, includedPaths = null
       invalid = true;
       return;
     }
-    if (includedPaths && match[1] !== "160000" && !includedPaths.has(match[4])) return;
+    if (includedPaths && match[1] !== '160000' && !includedPaths.has(match[4])) return;
     entries.push({ mode: match[1], oid, stage: Number(match[3]), path: match[4] });
   };
   return { consume, result: () => ({ entries, invalid }) };
@@ -667,8 +667,8 @@ function createGitWorkspaceIndexParser(objectFormat = null, includedPaths = null
 
 function parseGitWorkspaceIndex(output, objectFormat = null) {
   const parser = createGitWorkspaceIndexParser(objectFormat);
-  String(output || "")
-    .split("\0")
+  String(output || '')
+    .split('\0')
     .forEach(parser.consume);
   return parser.result();
 }
@@ -685,34 +685,34 @@ async function runGitWorkspaceWorkerPool(tasks) {
   await Promise.all(workers);
 }
 
-function formatGitActivityDate(value, timeZone = "local") {
+function formatGitActivityDate(value, timeZone = 'local') {
   const date = value instanceof Date ? value : new Date(value);
-  if (!Number.isFinite(date.getTime())) return "";
-  if (timeZone !== "local") {
+  if (!Number.isFinite(date.getTime())) return '';
+  if (timeZone !== 'local') {
     try {
-      const parts = new Intl.DateTimeFormat("en", {
+      const parts = new Intl.DateTimeFormat('en', {
         timeZone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
       }).formatToParts(date);
-      const part = (type) => parts.find((item) => item.type === type)?.value || "";
-      return `${part("year")}-${part("month")}-${part("day")}`;
+      const part = (type) => parts.find((item) => item.type === type)?.value || '';
+      return `${part('year')}-${part('month')}-${part('day')}`;
     } catch (error) {
-      return "";
+      return '';
     }
   }
-  const year = String(date.getFullYear()).padStart(4, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function normalizeGitActivityDate(value) {
-  const candidate = String(value || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return "";
+  const candidate = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return '';
   const parsed = new Date(`${candidate}T12:00:00`);
-  return formatGitActivityDate(parsed) === candidate ? candidate : "";
+  return formatGitActivityDate(parsed) === candidate ? candidate : '';
 }
 
 function resolveGitActivityRange(options = {}) {
@@ -726,21 +726,21 @@ function resolveGitActivityRange(options = {}) {
 }
 
 function normalizeGitActivityCriteria(options = {}) {
-  const timeZone = String(options.timeZone || "").trim();
-  let normalizedTimeZone = timeZone || "local";
-  if (normalizedTimeZone !== "local") {
+  const timeZone = String(options.timeZone || '').trim();
+  let normalizedTimeZone = timeZone || 'local';
+  if (normalizedTimeZone !== 'local') {
     try {
-      new Intl.DateTimeFormat("en", { timeZone: normalizedTimeZone }).format();
+      new Intl.DateTimeFormat('en', { timeZone: normalizedTimeZone }).format();
     } catch (error) {
-      normalizedTimeZone = "local";
+      normalizedTimeZone = 'local';
     }
   }
   const identities = Array.isArray(options.identities)
     ? options.identities
-        .filter((identity) => identity && typeof identity === "object")
+        .filter((identity) => identity && typeof identity === 'object')
         .map((identity) => ({
-          id: String(identity.id || "").trim(),
-          name: String(identity.name || "").trim(),
+          id: String(identity.id || '').trim(),
+          name: String(identity.name || '').trim(),
           emails: [
             ...new Set(
               (Array.isArray(identity.emails) ? identity.emails : [])
@@ -758,13 +758,13 @@ function normalizeGitActivityCriteria(options = {}) {
         .filter((identity, index, values) => values.findIndex((item) => item.id === identity.id) === index)
     : [];
   return {
-    refScope: options.refScope === "current" || options.refScope === "default" ? options.refScope : "all",
+    refScope: options.refScope === 'current' || options.refScope === 'default' ? options.refScope : 'all',
     timeZone: normalizedTimeZone,
     hideMerges: options.hideMerges === true,
     excludeBots: options.excludeBots === true,
     botPatterns: Array.isArray(options.botPatterns)
       ? [...new Set(options.botPatterns.map((pattern) => String(pattern).trim()).filter(Boolean))].slice(0, 20)
-      : ["\\[bot\\]$", "(^|[+._-])bot@"],
+      : ['\\[bot\\]$', '(^|[+._-])bot@'],
     identities,
   };
 }
@@ -793,13 +793,13 @@ function createGitActivityIdentityMatcher(criteria) {
     });
   });
   return (authorName, authorEmail) => {
-    const email = String(authorEmail || "")
+    const email = String(authorEmail || '')
       .trim()
       .toLocaleLowerCase();
     const identity = email
       ? byEmail.get(email)
       : byName.get(
-          String(authorName || "")
+          String(authorName || '')
             .trim()
             .toLocaleLowerCase(),
         );
@@ -810,9 +810,9 @@ function createGitActivityIdentityMatcher(criteria) {
 function createGitActivityBotMatcher(criteria) {
   const patterns = criteria.botPatterns.map((pattern) => {
     try {
-      return new RegExp(pattern, "i");
+      return new RegExp(pattern, 'i');
     } catch (error) {
-      return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     }
   });
   return (commit) =>
@@ -820,8 +820,8 @@ function createGitActivityBotMatcher(criteria) {
 }
 
 function normalizeGitActivityRepositoryKey(repositoryPath) {
-  const resolvedPath = path.resolve(repositoryPath || "");
-  return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+  const resolvedPath = path.resolve(repositoryPath || '');
+  return process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
 }
 
 function cloneGitActivityRepositoryData(data) {
@@ -836,11 +836,11 @@ function cloneGitActivityRepositoryData(data) {
 function gitActivityHour(value, timeZone) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return 0;
-  if (timeZone === "local") return date.getHours();
+  if (timeZone === 'local') return date.getHours();
   try {
-    const hour = new Intl.DateTimeFormat("en", { timeZone, hour: "2-digit", hourCycle: "h23" })
+    const hour = new Intl.DateTimeFormat('en', { timeZone, hour: '2-digit', hourCycle: 'h23' })
       .formatToParts(date)
-      .find((part) => part.type === "hour")?.value;
+      .find((part) => part.type === 'hour')?.value;
     return Number(hour) % 24;
   } catch (error) {
     return date.getHours();
@@ -848,46 +848,46 @@ function gitActivityHour(value, timeZone) {
 }
 
 function parseGitActivityConventionalType(message) {
-  const match = String(message || "")
+  const match = String(message || '')
     .trim()
     .match(/^([a-zA-Z]+)(?:\(([^)]+)\))?(!)?:\s/);
-  const type = String(match?.[1] || "").toLocaleLowerCase();
+  const type = String(match?.[1] || '').toLocaleLowerCase();
   const knownTypes = new Set([
-    "feat",
-    "fix",
-    "docs",
-    "refactor",
-    "test",
-    "chore",
-    "perf",
-    "build",
-    "ci",
-    "style",
-    "revert",
+    'feat',
+    'fix',
+    'docs',
+    'refactor',
+    'test',
+    'chore',
+    'perf',
+    'build',
+    'ci',
+    'style',
+    'revert',
   ]);
   return {
-    type: knownTypes.has(type) ? type : "other",
-    scope: String(match?.[2] || "").trim() || undefined,
-    breaking: match?.[3] === "!" || undefined,
+    type: knownTypes.has(type) ? type : 'other',
+    scope: String(match?.[2] || '').trim() || undefined,
+    breaking: match?.[3] === '!' || undefined,
   };
 }
 
 async function resolveGitActivityCurrentAuthorId(repositoryPath, criteria) {
-  const emailResult = await runGitWorkspaceCommand(repositoryPath, ["config", "--get", "user.email"]);
-  const email = String(emailResult.stdout || "")
+  const emailResult = await runGitWorkspaceCommand(repositoryPath, ['config', '--get', 'user.email']);
+  const email = String(emailResult.stdout || '')
     .trim()
     .toLocaleLowerCase();
   if (emailResult.status === 0 && email && !/\s/.test(email)) {
-    const identity = createGitActivityIdentityMatcher(criteria)("", email);
+    const identity = createGitActivityIdentityMatcher(criteria)('', email);
     return identity ? `identity:${identity.id}` : `email:${email}`;
   }
 
-  const nameResult = await runGitWorkspaceCommand(repositoryPath, ["config", "--get", "user.name"]);
-  const name = String(nameResult.stdout || "")
+  const nameResult = await runGitWorkspaceCommand(repositoryPath, ['config', '--get', 'user.name']);
+  const name = String(nameResult.stdout || '')
     .trim()
     .toLocaleLowerCase();
-  if (nameResult.status !== 0 || !name) return "";
-  const identity = createGitActivityIdentityMatcher(criteria)(name, "");
+  if (nameResult.status !== 0 || !name) return '';
+  const identity = createGitActivityIdentityMatcher(criteria)(name, '');
   return identity ? `identity:${identity.id}` : `name:${name}`;
 }
 
@@ -899,7 +899,7 @@ function compareGitActivityCommits(left, right) {
   const leftTime = Date.parse(left.date);
   const rightTime = Date.parse(right.date);
   if (leftTime !== rightTime) return rightTime - leftTime;
-  return String(left.hash || "").localeCompare(String(right.hash || ""));
+  return String(left.hash || '').localeCompare(String(right.hash || ''));
 }
 
 function cloneGitActivityCommitData(commit) {
@@ -959,20 +959,20 @@ function readGitActivityDayCache(repositoryPath, date, contextKey) {
 }
 
 function normalizeGitActivityAuthorId(value) {
-  const candidate = String(value || "").trim();
-  if (candidate.startsWith("identity:")) {
-    const identityId = candidate.slice("identity:".length).trim();
-    return identityId ? `identity:${identityId}` : "";
+  const candidate = String(value || '').trim();
+  if (candidate.startsWith('identity:')) {
+    const identityId = candidate.slice('identity:'.length).trim();
+    return identityId ? `identity:${identityId}` : '';
   }
-  if (candidate.startsWith("email:")) {
-    const email = candidate.slice("email:".length).trim().toLocaleLowerCase();
-    return email && !/\s/.test(email) ? `email:${email}` : "";
+  if (candidate.startsWith('email:')) {
+    const email = candidate.slice('email:'.length).trim().toLocaleLowerCase();
+    return email && !/\s/.test(email) ? `email:${email}` : '';
   }
-  if (candidate.startsWith("name:")) {
-    const name = candidate.slice("name:".length).trim().toLocaleLowerCase();
-    return name ? `name:${name}` : "";
+  if (candidate.startsWith('name:')) {
+    const name = candidate.slice('name:'.length).trim().toLocaleLowerCase();
+    return name ? `name:${name}` : '';
   }
-  return "";
+  return '';
 }
 
 function normalizeGitActivityDayPageOptions(options = {}) {
@@ -991,7 +991,9 @@ function normalizeGitActivityDayPageOptions(options = {}) {
     date,
     authorId: normalizeGitActivityAuthorId(options.authorId),
     currentUserOnly: options.currentUserOnly === true,
-    query: String(options.query || "").trim().slice(0, 200),
+    query: String(options.query || '')
+      .trim()
+      .slice(0, 200),
     limit,
     skip,
     force: options.force === true,
@@ -1017,27 +1019,27 @@ function retainGitActivityCommit(commits, candidate, capacity) {
 }
 
 function parseGitActivityCommitRecord(record, identityMatcher) {
-  const hashIndex = String(record || "").search(/[0-9a-f]{40,64}\x1f/i);
+  const hashIndex = String(record || '').search(/[0-9a-f]{40,64}\x1f/i);
   if (hashIndex < 0) return null;
   const [hash, authorDate, authorName, authorEmail, parents, message] = String(record)
     .slice(hashIndex)
     .split(gitCommitFieldSeparator);
   if (!hash || !authorDate || !Number.isFinite(Date.parse(authorDate))) return null;
 
-  const author = String(authorName || "").trim() || "Unknown author";
-  const email = String(authorEmail || "")
+  const author = String(authorName || '').trim() || 'Unknown author';
+  const email = String(authorEmail || '')
     .trim()
     .toLocaleLowerCase();
   const identity = identityMatcher(author, email);
   return {
     hash,
-    message: String(message || "").trim(),
+    message: String(message || '').trim(),
     author: identity?.name || author,
     authorId: identity ? `identity:${identity.id}` : email ? `email:${email}` : `name:${author.toLocaleLowerCase()}`,
     rawAuthorName: author,
     rawAuthorEmail: email,
     isMerge:
-      String(parents || "")
+      String(parents || '')
         .trim()
         .split(/\s+/)
         .filter(Boolean).length > 1,
@@ -1054,21 +1056,21 @@ function trimGitActivityCache() {
 }
 
 function createGitActivityRepositoryFailure(projectPath, result) {
-  const output = String(result?.stderr || result?.stdout || "").toLowerCase();
+  const output = String(result?.stderr || result?.stdout || '').toLowerCase();
   const notRepository =
-    output.includes("not a git repository") || output.includes("does not appear to be a git repository");
-  const gitUnavailable = result?.spawnError?.code === "ENOENT" || output.includes("not recognized as an internal");
+    output.includes('not a git repository') || output.includes('does not appear to be a git repository');
+  const gitUnavailable = result?.spawnError?.code === 'ENOENT' || output.includes('not recognized as an internal');
   const message = result?.timedOut
-    ? "定位 Git 仓库超时。"
+    ? '定位 Git 仓库超时。'
     : gitUnavailable
-      ? "未找到 Git 可执行文件，请检查 Git 安装或 PATH。"
+      ? '未找到 Git 可执行文件，请检查 Git 安装或 PATH。'
       : notRepository
-        ? "未检测到 Git 仓库。"
-        : "无法定位 Git 仓库。";
+        ? '未检测到 Git 仓库。'
+        : '无法定位 Git 仓库。';
   return {
-    repositoryPath: "",
+    repositoryPath: '',
     projectPaths: [projectPath],
-    state: notRepository ? "not-a-repository" : "failed",
+    state: notRepository ? 'not-a-repository' : 'failed',
     totalCommits: 0,
     activeDays: 0,
     daily: [],
@@ -1079,8 +1081,8 @@ function createGitActivityRepositoryFailure(projectPath, result) {
 
 async function resolveGitActivityRepository(projectPath) {
   const [result, commonDirResult] = await Promise.all([
-    runGitWorkspaceCommand(projectPath, ["rev-parse", "--show-toplevel"], { timeoutMs: gitActivityReadTimeoutMs }),
-    runGitWorkspaceCommand(projectPath, ["rev-parse", "--git-common-dir"], { timeoutMs: gitActivityReadTimeoutMs }),
+    runGitWorkspaceCommand(projectPath, ['rev-parse', '--show-toplevel'], { timeoutMs: gitActivityReadTimeoutMs }),
+    runGitWorkspaceCommand(projectPath, ['rev-parse', '--git-common-dir'], { timeoutMs: gitActivityReadTimeoutMs }),
   ]);
   if (result.status !== 0 || !result.stdout.trim()) {
     return { failure: createGitActivityRepositoryFailure(projectPath, result) };
@@ -1095,25 +1097,25 @@ async function resolveGitActivityRepository(projectPath) {
 
 async function resolveGitActivityRef(repositoryPaths, refScope) {
   const repositoryPath = repositoryPaths[0];
-  if (refScope === "all") {
+  if (refScope === 'all') {
     const fingerprintResult = await runGitWorkspaceCommand(repositoryPath, [
-      "for-each-ref",
-      "--format=%(refname)%09%(objectname)",
-      "refs/heads",
-      "refs/remotes",
-      "refs/tags",
+      'for-each-ref',
+      '--format=%(refname)%09%(objectname)',
+      'refs/heads',
+      'refs/remotes',
+      'refs/tags',
     ]);
     return {
-      args: ["--exclude=refs/stash", "--all"],
-      resolvedRef: "--all",
+      args: ['--exclude=refs/stash', '--all'],
+      resolvedRef: '--all',
       fingerprint: fingerprintResult.stdout.trim(),
-      scopeMessage: "",
+      scopeMessage: '',
     };
   }
 
-  if (refScope === "current") {
+  if (refScope === 'current') {
     const headResults = await Promise.all(
-      repositoryPaths.map((worktreePath) => runGitWorkspaceCommand(worktreePath, ["rev-parse", "--verify", "HEAD"])),
+      repositoryPaths.map((worktreePath) => runGitWorkspaceCommand(worktreePath, ['rev-parse', '--verify', 'HEAD'])),
     );
     const heads = [
       ...new Set(
@@ -1124,47 +1126,47 @@ async function resolveGitActivityRef(repositoryPaths, refScope) {
       ),
     ];
     return {
-      args: heads.length ? heads : ["HEAD"],
-      resolvedRef: heads.length > 1 ? `${heads.length} worktree HEADs` : "HEAD",
-      fingerprint: heads.join("\n"),
-      scopeMessage: heads.length > 1 ? `已合并 ${heads.length} 个所选 worktree 的当前分支并按提交去重。` : "",
+      args: heads.length ? heads : ['HEAD'],
+      resolvedRef: heads.length > 1 ? `${heads.length} worktree HEADs` : 'HEAD',
+      fingerprint: heads.join('\n'),
+      scopeMessage: heads.length > 1 ? `已合并 ${heads.length} 个所选 worktree 的当前分支并按提交去重。` : '',
     };
   }
 
   const remoteRefs = await runGitWorkspaceCommand(repositoryPath, [
-    "for-each-ref",
-    "--format=%(refname)%09%(symref)",
-    "refs/remotes",
+    'for-each-ref',
+    '--format=%(refname)%09%(symref)',
+    'refs/remotes',
   ]);
   const symbolicDefault = remoteRefs.stdout
     .split(/\r?\n/)
-    .map((line) => line.split("\t"))
-    .find(([refName, target]) => refName?.endsWith("/HEAD") && target)?.[1];
-  const candidates = [...new Set([symbolicDefault, "main", "master"].filter(Boolean))];
+    .map((line) => line.split('\t'))
+    .find(([refName, target]) => refName?.endsWith('/HEAD') && target)?.[1];
+  const candidates = [...new Set([symbolicDefault, 'main', 'master'].filter(Boolean))];
   for (const candidate of candidates) {
-    const result = await runGitWorkspaceCommand(repositoryPath, ["rev-parse", "--verify", `${candidate}^{commit}`]);
+    const result = await runGitWorkspaceCommand(repositoryPath, ['rev-parse', '--verify', `${candidate}^{commit}`]);
     if (result.status === 0 && result.stdout.trim()) {
-      return { args: [candidate], resolvedRef: candidate, fingerprint: result.stdout.trim(), scopeMessage: "" };
+      return { args: [candidate], resolvedRef: candidate, fingerprint: result.stdout.trim(), scopeMessage: '' };
     }
   }
-  const headResult = await runGitWorkspaceCommand(repositoryPath, ["rev-parse", "--verify", "HEAD"]);
+  const headResult = await runGitWorkspaceCommand(repositoryPath, ['rev-parse', '--verify', 'HEAD']);
   return {
-    args: ["HEAD"],
-    resolvedRef: "HEAD",
+    args: ['HEAD'],
+    resolvedRef: 'HEAD',
     fingerprint: headResult.stdout.trim(),
-    scopeMessage: "未识别到默认分支，已回退到当前 HEAD。",
+    scopeMessage: '未识别到默认分支，已回退到当前 HEAD。',
   };
 }
 
 function createGitActivityReadFailure(repositoryPath, result) {
   const message = result?.timedOut
-    ? "读取 Git 活动记录超时。"
-    : result?.spawnError?.code === "ENOENT"
-      ? "未找到 Git 可执行文件，请检查 Git 安装或 PATH。"
-      : "读取 Git 活动记录失败。";
+    ? '读取 Git 活动记录超时。'
+    : result?.spawnError?.code === 'ENOENT'
+      ? '未找到 Git 可执行文件，请检查 Git 安装或 PATH。'
+      : '读取 Git 活动记录失败。';
   return {
     repositoryPath,
-    state: "failed",
+    state: 'failed',
     totalCommits: 0,
     activeDays: 0,
     daily: [],
@@ -1232,10 +1234,10 @@ async function readGitActivityRepositoryData(repositoryPath, range, criteria, re
   const result = await runGitWorkspaceCommand(
     repositoryPath,
     [
-      "--no-optional-locks",
-      "log",
+      '--no-optional-locks',
+      'log',
       ...ref.args,
-      "--date=iso-strict",
+      '--date=iso-strict',
       `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
     ],
     { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
@@ -1252,7 +1254,7 @@ async function readGitActivityRepositoryData(repositoryPath, range, criteria, re
   );
   return {
     repositoryPath,
-    state: "ready",
+    state: 'ready',
     currentAuthorId: currentAuthorId || undefined,
     totalCommits,
     activeDays: daily.length,
@@ -1298,10 +1300,10 @@ async function readGitActivityChangesRepositoryData(repositoryPath, range, crite
   const metadataResult = await runGitWorkspaceCommand(
     repositoryPath,
     [
-      "--no-optional-locks",
-      "log",
+      '--no-optional-locks',
+      'log',
       ...ref.args,
-      "--date=iso-strict",
+      '--date=iso-strict',
       `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
     ],
     {
@@ -1316,34 +1318,34 @@ async function readGitActivityChangesRepositoryData(repositoryPath, range, crite
 
   const hashes = [...inRangeHashes];
   const totals = { commits: hashes.length, files: 0, additions: 0, deletions: 0, binaryFiles: 0 };
-  if (!hashes.length) return { repositoryPath, state: "ready", ...totals };
+  if (!hashes.length) return { repositoryPath, state: 'ready', ...totals };
 
   const numstatResult = await runGitWorkspaceCommand(
     repositoryPath,
     [
-      "--no-optional-locks",
-      "log",
-      "--no-walk=unsorted",
-      "--stdin",
-      "--numstat",
-      "--diff-merges=first-parent",
-      "--date=iso-strict",
+      '--no-optional-locks',
+      'log',
+      '--no-walk=unsorted',
+      '--stdin',
+      '--numstat',
+      '--diff-merges=first-parent',
+      '--date=iso-strict',
       `--format=%x1e%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s`,
     ],
-    { timeoutMs: gitActivityReadTimeoutMs, stdinInput: `${hashes.join("\n")}\n` },
+    { timeoutMs: gitActivityReadTimeoutMs, stdinInput: `${hashes.join('\n')}\n` },
   );
   if (numstatResult.status !== 0) return createGitActivityReadFailure(repositoryPath, numstatResult);
 
-  String(numstatResult.stdout || "")
-    .split("\x1e")
+  String(numstatResult.stdout || '')
+    .split('\x1e')
     .slice(1)
     .forEach((record) => {
-      const [, ...statLines] = record.replace(/^\r?\n/, "").split(/\r?\n/);
+      const [, ...statLines] = record.replace(/^\r?\n/, '').split(/\r?\n/);
       statLines.forEach((line) => {
-        const [added, deleted, filePath] = line.split("\t");
-        if (!filePath || (!/^\d+$/.test(added) && added !== "-") || (!/^\d+$/.test(deleted) && deleted !== "-")) return;
+        const [added, deleted, filePath] = line.split('\t');
+        if (!filePath || (!/^\d+$/.test(added) && added !== '-') || (!/^\d+$/.test(deleted) && deleted !== '-')) return;
         totals.files += 1;
-        if (added === "-" || deleted === "-") {
+        if (added === '-' || deleted === '-') {
           totals.binaryFiles += 1;
           return;
         }
@@ -1351,7 +1353,7 @@ async function readGitActivityChangesRepositoryData(repositoryPath, range, crite
         totals.deletions += Number(deleted);
       });
     });
-  return { repositoryPath, state: "ready", ...totals };
+  return { repositoryPath, state: 'ready', ...totals };
 }
 
 async function readGitActivityChangesRepositoryCached(repositoryPath, range, criteria, ref, authorId, force) {
@@ -1368,7 +1370,7 @@ async function readGitActivityChangesRepositoryCached(repositoryPath, range, cri
   gitActivityChangesCache.set(cacheKey, entry);
   trimGitActivityChangesCache();
   const value = await entry.promise;
-  if (value.state !== "ready") gitActivityChangesCache.delete(cacheKey);
+  if (value.state !== 'ready') gitActivityChangesCache.delete(cacheKey);
   else gitActivityChangesCache.set(cacheKey, { expiresAt: entry.expiresAt, promise: null, value });
   return { ...value };
 }
@@ -1390,7 +1392,7 @@ async function readGitActivityRepositoryCached(repositoryPath, range, criteria, 
   gitActivityCache.set(cacheKey, entry);
   trimGitActivityCache();
   const result = await entry.promise;
-  if (result.state !== "ready") {
+  if (result.state !== 'ready') {
     if (gitActivityCache.get(cacheKey) === entry) gitActivityCache.delete(cacheKey);
     return cloneGitActivityRepositoryData(result);
   }
@@ -1405,7 +1407,7 @@ async function readGitActivityRepositoryCached(repositoryPath, range, criteria, 
 async function resolveGitActivityRepositoryGroups(projectPaths) {
   const uniqueProjectPaths = [
     ...new Set(
-      (Array.isArray(projectPaths) ? projectPaths : []).map((item) => String(item || "").trim()).filter(Boolean),
+      (Array.isArray(projectPaths) ? projectPaths : []).map((item) => String(item || '').trim()).filter(Boolean),
     ),
   ];
   const repositoryGroups = new Map();
@@ -1483,10 +1485,10 @@ async function readGitActivityChanges(projectPaths, options = {}) {
     groups.map((group) => async () => {
       const [ref, currentAuthorId] = await Promise.all([
         resolveGitActivityRef(group.repositoryPaths, criteria.refScope),
-        options.currentUserOnly ? resolveGitActivityCurrentAuthorId(group.repositoryPath, criteria) : "",
+        options.currentUserOnly ? resolveGitActivityCurrentAuthorId(group.repositoryPath, criteria) : '',
       ]);
       const authorId = options.currentUserOnly
-        ? currentAuthorId || "missing-current-user"
+        ? currentAuthorId || 'missing-current-user'
         : normalizeGitActivityAuthorId(options.authorId);
       const data = await readGitActivityChangesRepositoryCached(
         group.repositoryPath,
@@ -1508,15 +1510,17 @@ async function readGitActivityChanges(projectPaths, options = {}) {
 
 async function readGitActivityDayRepositoryData(repositoryPath, page, authorId, capacity, ref) {
   const normalizedQuery = page.query.toLocaleLowerCase();
-  const contextKey = `${gitActivityCriteriaKey(page)}::${ref.fingerprint}${normalizedQuery ? `::${normalizedQuery}` : ""}`;
+  const contextKey = `${gitActivityCriteriaKey(page)}::${ref.fingerprint}${normalizedQuery ? `::${normalizedQuery}` : ''}`;
   const cached = page.force ? null : readGitActivityDayCache(repositoryPath, page.date, contextKey);
   if (cached) {
     const matching = cached.filter(
-      (commit) => (!authorId || commit.authorId === authorId) && (!normalizedQuery || commit.message.toLocaleLowerCase().includes(normalizedQuery)),
+      (commit) =>
+        (!authorId || commit.authorId === authorId) &&
+        (!normalizedQuery || commit.message.toLocaleLowerCase().includes(normalizedQuery)),
     );
     return {
       repositoryPath,
-      state: "ready",
+      state: 'ready',
       totalCommits: matching.length,
       commits: matching.slice(0, capacity),
     };
@@ -1550,10 +1554,10 @@ async function readGitActivityDayRepositoryData(repositoryPath, page, authorId, 
   const result = await runGitWorkspaceCommand(
     repositoryPath,
     [
-      "--no-optional-locks",
-      "log",
+      '--no-optional-locks',
+      'log',
       ...ref.args,
-      "--date=iso-strict",
+      '--date=iso-strict',
       `--format=%H${gitCommitFieldSeparator}%aI${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%s%x00`,
     ],
     { timeoutMs: gitActivityReadTimeoutMs, stdoutRecordHandler: consumeRecord },
@@ -1565,14 +1569,14 @@ async function readGitActivityDayRepositoryData(repositoryPath, page, authorId, 
     cacheCommits.sort(compareGitActivityCommits);
     rememberGitActivityDayCache(repositoryPath, page.date, contextKey, cacheCommits, cacheVersion);
   }
-  return { repositoryPath, state: "ready", totalCommits, commits: pageCommits };
+  return { repositoryPath, state: 'ready', totalCommits, commits: pageCommits };
 }
 
 async function readGitActivityDay(projectPaths, options = {}) {
   const page = normalizeGitActivityDayPageOptions(options);
   if (!page.date) {
     return {
-      date: "",
+      date: '',
       totalCommits: 0,
       hasMore: false,
       commits: [],
@@ -1594,11 +1598,11 @@ async function readGitActivityDay(projectPaths, options = {}) {
       const data = await readGitActivityDayRepositoryData(
         group.repositoryPath,
         page,
-        authorId || (page.currentUserOnly ? "missing-current-user" : ""),
+        authorId || (page.currentUserOnly ? 'missing-current-user' : ''),
         pageCapacity,
         ref,
       );
-      if (data.state !== "ready") {
+      if (data.state !== 'ready') {
         failedRepositories.push({ ...data, projectPaths: [...group.projectPaths] });
         return;
       }
@@ -1637,10 +1641,20 @@ function gitWorkspaceDirectoryAvailable(targetPath) {
   }
 }
 
+// 未检出的 submodule 目录内没有自己的 .git，git -C 会向上穿透解析到父仓库，
+// 让逐项探测看似成功却拿到父仓库的结果，必须在探测前先把这类路径判为未检出。
+function gitWorkspaceCheckoutGitPresent(targetPath) {
+  try {
+    return fs.existsSync(path.join(targetPath, '.git'));
+  } catch (error) {
+    return false;
+  }
+}
+
 function gitWorkspacePathsEqual(left, right) {
   const normalize = (value) => {
-    const resolved = path.resolve(value || "");
-    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+    const resolved = path.resolve(value || '');
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
   };
   return normalize(left) === normalize(right);
 }
@@ -1649,63 +1663,63 @@ function resolveGitWorkspaceChildPath(repositoryPath, relativePath) {
   if (!relativePath || path.isAbsolute(relativePath)) return null;
   const targetPath = path.resolve(repositoryPath, relativePath);
   const relation = path.relative(repositoryPath, targetPath);
-  return relation && relation !== ".." && !relation.startsWith(`..${path.sep}`) && !path.isAbsolute(relation)
+  return relation && relation !== '..' && !relation.startsWith(`..${path.sep}`) && !path.isAbsolute(relation)
     ? targetPath
     : null;
 }
 
 async function probeGitWorkspaceRepository(projectPath) {
-  const bareResult = await runGitWorkspaceCommand(projectPath, ["rev-parse", "--is-bare-repository"]);
+  const bareResult = await runGitWorkspaceCommand(projectPath, ['rev-parse', '--is-bare-repository']);
   if (bareResult.status !== 0) {
-    const code = bareResult.spawnError?.code === "ENOENT" ? "git-unavailable" : "not-a-repository";
-    return { failure: gitWorkspaceFailure("repository", bareResult, "未检测到 Git 仓库。", code) };
+    const code = bareResult.spawnError?.code === 'ENOENT' ? 'git-unavailable' : 'not-a-repository';
+    return { failure: gitWorkspaceFailure('repository', bareResult, '未检测到 Git 仓库。', code) };
   }
   const bareText = bareResult.stdout.trim();
-  if (bareText !== "true" && bareText !== "false") {
+  if (bareText !== 'true' && bareText !== 'false') {
     return {
-      failure: { code: "invalid-output", operation: "repository", message: "Git 返回了无法识别的仓库类型。" },
+      failure: { code: 'invalid-output', operation: 'repository', message: 'Git 返回了无法识别的仓库类型。' },
     };
   }
 
   const [gitDirResult, formatResult] = await Promise.all([
-    runGitWorkspaceCommand(projectPath, ["rev-parse", "--absolute-git-dir"]),
-    runGitWorkspaceCommand(projectPath, ["rev-parse", "--show-object-format=storage"]),
+    runGitWorkspaceCommand(projectPath, ['rev-parse', '--absolute-git-dir']),
+    runGitWorkspaceCommand(projectPath, ['rev-parse', '--show-object-format=storage']),
   ]);
   if (gitDirResult.status !== 0 || !gitDirResult.stdout.trim()) {
     return {
-      failure: gitWorkspaceFailure("repository", gitDirResult, "无法解析 Git 目录。", "unsupported-output"),
+      failure: gitWorkspaceFailure('repository', gitDirResult, '无法解析 Git 目录。', 'unsupported-output'),
     };
   }
   const objectFormat = formatResult.stdout.trim();
-  if (formatResult.status !== 0 || (objectFormat !== "sha1" && objectFormat !== "sha256")) {
+  if (formatResult.status !== 0 || (objectFormat !== 'sha1' && objectFormat !== 'sha256')) {
     return {
-      failure: gitWorkspaceFailure("repository", formatResult, "当前 Git 不支持对象格式探测。", "unsupported-output"),
+      failure: gitWorkspaceFailure('repository', formatResult, '当前 Git 不支持对象格式探测。', 'unsupported-output'),
     };
   }
 
-  const bare = bareText === "true";
+  const bare = bareText === 'true';
   if (bare) {
     return { repositoryPath: path.resolve(gitDirResult.stdout.trim()), objectFormat, bare, failure: null };
   }
-  const rootResult = await runGitWorkspaceCommand(projectPath, ["rev-parse", "--show-toplevel"]);
+  const rootResult = await runGitWorkspaceCommand(projectPath, ['rev-parse', '--show-toplevel']);
   if (rootResult.status !== 0 || !rootResult.stdout.trim()) {
-    return { failure: gitWorkspaceFailure("repository", rootResult, "无法解析仓库根目录。", "invalid-output") };
+    return { failure: gitWorkspaceFailure('repository', rootResult, '无法解析仓库根目录。', 'invalid-output') };
   }
   return { repositoryPath: path.resolve(rootResult.stdout.trim()), objectFormat, bare, failure: null };
 }
 
 async function enumerateGitWorkspaceWorktrees(repository) {
   const result = await runGitWorkspaceCommand(repository.repositoryPath, [
-    "worktree",
-    "list",
-    "--porcelain",
-    "-z",
-    "--expire=now",
+    'worktree',
+    'list',
+    '--porcelain',
+    '-z',
+    '--expire=now',
   ]);
   if (result.status !== 0) {
     return {
       entries: [],
-      failure: gitWorkspaceFailure("worktree-list", result, "无法读取 linked worktrees。", "unsupported-output"),
+      failure: gitWorkspaceFailure('worktree-list', result, '无法读取 linked worktrees。', 'unsupported-output'),
       jobs: [],
       unavailable: true,
     };
@@ -1714,7 +1728,7 @@ async function enumerateGitWorkspaceWorktrees(repository) {
   if (!parsed.length) {
     return {
       entries: [],
-      failure: { code: "invalid-output", operation: "worktree-list", message: "Git 未返回 worktree 记录。" },
+      failure: { code: 'invalid-output', operation: 'worktree-list', message: 'Git 未返回 worktree 记录。' },
       jobs: [],
       unavailable: true,
     };
@@ -1728,26 +1742,26 @@ async function enumerateGitWorkspaceWorktrees(repository) {
       objectFormat: repository.objectFormat,
       status: null,
       failure:
-        !pathAvailable && entry.kind !== "bare"
-          ? { code: "path-unavailable", operation: "worktree-status", message: "Worktree 路径当前不可访问。" }
+        !pathAvailable && entry.kind !== 'bare'
+          ? { code: 'path-unavailable', operation: 'worktree-status', message: 'Worktree 路径当前不可访问。' }
           : null,
     };
   });
   const jobs = entries
-    .filter((entry) => entry.kind !== "bare" && entry.pathAvailable)
+    .filter((entry) => entry.kind !== 'bare' && entry.pathAvailable)
     .map((entry) => async () => {
       const entryDeadline = Date.now() + gitWorkspaceEntryTimeoutMs;
       const statusParser = createGitWorkspaceStatusParser(repository.objectFormat);
       const statusResult = await runGitWorkspaceCommand(
         entry.path,
         [
-          "--no-optional-locks",
-          "status",
-          "--porcelain=v2",
-          "--branch",
-          "--ahead-behind",
-          "--untracked-files=normal",
-          "-z",
+          '--no-optional-locks',
+          'status',
+          '--porcelain=v2',
+          '--branch',
+          '--ahead-behind',
+          '--untracked-files=normal',
+          '-z',
         ],
         {
           timeoutMs: Math.max(1, entryDeadline - Date.now()),
@@ -1755,12 +1769,12 @@ async function enumerateGitWorkspaceWorktrees(repository) {
         },
       );
       if (statusResult.status !== 0) {
-        entry.failure = gitWorkspaceFailure("worktree-status", statusResult, "无法读取 worktree 状态。");
+        entry.failure = gitWorkspaceFailure('worktree-status', statusResult, '无法读取 worktree 状态。');
         return;
       }
       const parsedStatus = statusParser.result();
       entry.status = parsedStatus.status;
-      entry.head = parsedStatus.head.kind === "unknown" ? entry.head : parsedStatus.head;
+      entry.head = parsedStatus.head.kind === 'unknown' ? entry.head : parsedStatus.head;
     });
   return { entries, failure: null, jobs, unavailable: false };
 }
@@ -1769,31 +1783,31 @@ async function enumerateGitWorkspaceSubmodules(repository) {
   if (repository.bare) {
     return {
       entries: [],
-      failure: { code: "path-unavailable", operation: "submodule-config", message: "裸仓库没有可读取的工作树。" },
+      failure: { code: 'path-unavailable', operation: 'submodule-config', message: '裸仓库没有可读取的工作树。' },
       jobs: [],
       unavailable: true,
     };
   }
 
-  const gitmodulesPath = path.join(repository.repositoryPath, ".gitmodules");
+  const gitmodulesPath = path.join(repository.repositoryPath, '.gitmodules');
   const declaredPromise = fs.existsSync(gitmodulesPath)
     ? runGitWorkspaceCommand(repository.repositoryPath, [
-        "config",
-        "--null",
-        "--file",
-        ".gitmodules",
-        "--get-regexp",
-        "^submodule\\..*\\.(path|url|branch)$",
+        'config',
+        '--null',
+        '--file',
+        '.gitmodules',
+        '--get-regexp',
+        '^submodule\\..*\\.(path|url|branch)$',
       ])
-    : Promise.resolve({ status: 1, stdout: "", stderr: "", timedOut: false, spawnError: null });
+    : Promise.resolve({ status: 1, stdout: '', stderr: '', timedOut: false, spawnError: null });
   const [declaredResult, localResult] = await Promise.all([
     declaredPromise,
     runGitWorkspaceCommand(repository.repositoryPath, [
-      "config",
-      "--local",
-      "--null",
-      "--get-regexp",
-      "^submodule\\..*\\.(url|branch)$",
+      'config',
+      '--local',
+      '--null',
+      '--get-regexp',
+      '^submodule\\..*\\.(url|branch)$',
     ]),
   ]);
 
@@ -1807,20 +1821,20 @@ async function enumerateGitWorkspaceSubmodules(repository) {
   const indexParser = createGitWorkspaceIndexParser(repository.objectFormat, configuredIndexPaths);
   const indexResult = await runGitWorkspaceCommand(
     repository.repositoryPath,
-    ["ls-files", "--stage", "--full-name", "-z"],
+    ['ls-files', '--stage', '--full-name', '-z'],
     { stdoutRecordHandler: indexParser.consume },
   );
   const indexFailed = indexResult.status !== 0;
   const index = indexParser.result();
   const declaredIncomplete = [...declared.records.values()].some((record) => !record.path || !record.url);
   const sourceFailure = declaredFailed
-    ? gitWorkspaceFailure("submodule-config", declaredResult, "无法读取 .gitmodules。")
+    ? gitWorkspaceFailure('submodule-config', declaredResult, '无法读取 .gitmodules。')
     : localFailed
-      ? gitWorkspaceFailure("submodule-registration", localResult, "无法读取本地 submodule 配置。")
+      ? gitWorkspaceFailure('submodule-registration', localResult, '无法读取本地 submodule 配置。')
       : indexFailed
-        ? gitWorkspaceFailure("submodule-index", indexResult, "无法读取 submodule gitlink。")
+        ? gitWorkspaceFailure('submodule-index', indexResult, '无法读取 submodule gitlink。')
         : declared.invalid || declaredIncomplete || local.invalid || index.invalid
-          ? { code: "invalid-output", operation: "submodule-config", message: "部分 submodule 元数据无法解析。" }
+          ? { code: 'invalid-output', operation: 'submodule-config', message: '部分 submodule 元数据无法解析。' }
           : null;
 
   if (indexFailed && declared.records.size === 0) {
@@ -1841,7 +1855,7 @@ async function enumerateGitWorkspaceSubmodules(repository) {
     configuredPaths.add(config.path);
   }
   for (const [indexPath, stages] of indexByPath) {
-    if (!configuredPaths.has(indexPath) && stages.some((stage) => stage.mode === "160000")) {
+    if (!configuredPaths.has(indexPath) && stages.some((stage) => stage.mode === '160000')) {
       descriptors.push({ name: null, path: indexPath, declared: null });
     }
   }
@@ -1851,21 +1865,22 @@ async function enumerateGitWorkspaceSubmodules(repository) {
     const conflictStages = stages
       .filter((stage) => stage.stage >= 1 && stage.stage <= 3)
       .map((stage) => ({ stage: stage.stage, mode: stage.mode, oid: stage.oid }));
-    const recorded = stages.find((stage) => stage.stage === 0 && stage.mode === "160000");
+    const recorded = stages.find((stage) => stage.stage === 0 && stage.mode === '160000');
     const hasStageZero = stages.some((stage) => stage.stage === 0);
     const indexState = conflictStages.length
-      ? { kind: "conflicted", recordedOid: null, conflictStages }
+      ? { kind: 'conflicted', recordedOid: null, conflictStages }
       : recorded
         ? {
-            kind: "recorded",
+            kind: 'recorded',
             recordedOid: normalizeGitWorkspaceObjectId(recorded.oid, repository.objectFormat),
             conflictStages: [],
           }
-        : { kind: hasStageZero ? "not-gitlink" : "missing", recordedOid: null, conflictStages: [] };
+        : { kind: hasStageZero ? 'not-gitlink' : 'missing', recordedOid: null, conflictStages: [] };
     const localConfig = descriptor.name ? local.records.get(descriptor.name) || null : null;
     const targetPath = resolveGitWorkspaceChildPath(repository.repositoryPath, descriptor.path);
     const pathAvailable = Boolean(targetPath && gitWorkspaceDirectoryAvailable(targetPath));
-    const configuration = !targetPath ? "invalid" : descriptor.declared ? "configured" : "index-only";
+    const checkoutPresent = Boolean(targetPath && pathAvailable && gitWorkspaceCheckoutGitPresent(targetPath));
+    const configuration = !targetPath ? 'invalid' : descriptor.declared ? 'configured' : 'index-only';
     const configValue = (key) => {
       const declaredValue = descriptor.declared?.[key] || null;
       const localValue = localConfig?.[key] || null;
@@ -1876,25 +1891,25 @@ async function enumerateGitWorkspaceSubmodules(repository) {
       path: targetPath || path.resolve(repository.repositoryPath, descriptor.path),
       pathAvailable,
       configuration,
-      url: configValue("url"),
-      branch: configValue("branch"),
+      url: configValue('url'),
+      branch: configValue('branch'),
       index: indexState,
-      registration: descriptor.name ? (localConfig?.url ? "initialized" : "uninitialized") : "unknown",
-      checkout: !targetPath || !pathAvailable ? "missing" : "unreadable",
+      registration: descriptor.name ? (localConfig?.url ? 'initialized' : 'uninitialized') : 'unknown',
+      checkout: !checkoutPresent ? 'missing' : 'unreadable',
       objectFormat: null,
-      head: { kind: "unknown", ref: null, name: null, oid: null },
+      head: { kind: 'unknown', ref: null, name: null, oid: null },
       commitMismatch: null,
       status: null,
       failure: !targetPath
-        ? { code: "path-unavailable", operation: "submodule-status", message: "Submodule 路径越出当前仓库。" }
+        ? { code: 'path-unavailable', operation: 'submodule-status', message: 'Submodule 路径越出当前仓库。' }
         : !pathAvailable
-          ? { code: "path-unavailable", operation: "submodule-status", message: "Submodule checkout 当前不可访问。" }
+          ? { code: 'path-unavailable', operation: 'submodule-status', message: 'Submodule checkout 当前不可访问。' }
           : null,
     };
   });
 
   const jobs = entries
-    .filter((entry) => entry.pathAvailable && entry.configuration !== "invalid")
+    .filter((entry) => entry.pathAvailable && entry.configuration !== 'invalid' && entry.checkout !== 'missing')
     .map((entry) => async () => {
       const entryDeadline = Date.now() + gitWorkspaceEntryTimeoutMs;
       const entryCommand = (args, options = {}) =>
@@ -1902,89 +1917,89 @@ async function enumerateGitWorkspaceSubmodules(repository) {
           ...options,
           timeoutMs: Math.max(1, entryDeadline - Date.now()),
         });
-      const formatResult = await entryCommand(["rev-parse", "--show-object-format=storage"]);
+      const formatResult = await entryCommand(['rev-parse', '--show-object-format=storage']);
       const objectFormat = formatResult.stdout.trim();
       if (formatResult.status !== 0) {
-        entry.checkout = entry.registration === "uninitialized" ? "missing" : "not-repository";
+        entry.checkout = entry.registration === 'uninitialized' ? 'missing' : 'not-repository';
         entry.failure = gitWorkspaceFailure(
-          "submodule-status",
+          'submodule-status',
           formatResult,
-          "路径不是当前仓库的 direct submodule checkout.",
+          '路径不是当前仓库的 direct submodule checkout.',
         );
         return;
       }
-      if (objectFormat !== "sha1" && objectFormat !== "sha256") {
-        entry.checkout = "not-repository";
+      if (objectFormat !== 'sha1' && objectFormat !== 'sha256') {
+        entry.checkout = 'not-repository';
         entry.failure = {
-          code: "invalid-output",
-          operation: "submodule-status",
-          message: "Submodule 对象格式无法识别。",
+          code: 'invalid-output',
+          operation: 'submodule-status',
+          message: 'Submodule 对象格式无法识别。',
         };
         return;
       }
-      const superprojectResult = await entryCommand(["rev-parse", "--show-superproject-working-tree"]);
+      const superprojectResult = await entryCommand(['rev-parse', '--show-superproject-working-tree']);
       if (superprojectResult.status !== 0) {
-        entry.checkout = entry.registration === "uninitialized" ? "missing" : "not-repository";
+        entry.checkout = entry.registration === 'uninitialized' ? 'missing' : 'not-repository';
         entry.failure = gitWorkspaceFailure(
-          "submodule-status",
+          'submodule-status',
           superprojectResult,
-          "路径不是当前仓库的 direct submodule checkout.",
+          '路径不是当前仓库的 direct submodule checkout.',
         );
         return;
       }
       if (!gitWorkspacePathsEqual(superprojectResult.stdout.trim(), repository.repositoryPath)) {
-        entry.checkout = entry.registration === "uninitialized" ? "missing" : "not-repository";
+        entry.checkout = entry.registration === 'uninitialized' ? 'missing' : 'not-repository';
         entry.failure = {
-          code: "command-failed",
-          operation: "submodule-status",
-          message: "路径不是当前仓库的 direct submodule checkout.",
+          code: 'command-failed',
+          operation: 'submodule-status',
+          message: '路径不是当前仓库的 direct submodule checkout.',
         };
         return;
       }
-      const headResult = await entryCommand(["rev-parse", "HEAD"]);
-      const branchResult = await entryCommand(["symbolic-ref", "--short", "-q", "HEAD"]);
+      const headResult = await entryCommand(['rev-parse', 'HEAD']);
+      const branchResult = await entryCommand(['symbolic-ref', '--short', '-q', 'HEAD']);
       entry.objectFormat = objectFormat;
       const oid = normalizeGitWorkspaceObjectId(headResult.stdout.trim(), objectFormat);
-      const branchName = branchResult.status === 0 ? branchResult.stdout.trim() : "";
+      const branchName = branchResult.status === 0 ? branchResult.stdout.trim() : '';
       if (headResult.status !== 0 && !branchName) {
-        entry.checkout = "unreadable";
-        entry.failure = gitWorkspaceFailure("submodule-status", headResult, "无法读取 submodule HEAD。");
+        entry.checkout = 'unreadable';
+        entry.failure = gitWorkspaceFailure('submodule-status', headResult, '无法读取 submodule HEAD。');
         return;
       }
       if (headResult.status === 0 && !oid) {
-        entry.checkout = "unreadable";
+        entry.checkout = 'unreadable';
         entry.failure = {
-          code: "invalid-output",
-          operation: "submodule-status",
-          message: "Submodule HEAD 不是完整对象 ID。",
+          code: 'invalid-output',
+          operation: 'submodule-status',
+          message: 'Submodule HEAD 不是完整对象 ID。',
         };
         return;
       }
       entry.head = {
-        kind: branchName ? "branch" : oid ? "detached" : "unborn",
+        kind: branchName ? 'branch' : oid ? 'detached' : 'unborn',
         ref: branchName ? `refs/heads/${branchName}` : null,
         name: branchName || null,
         oid,
       };
-      entry.checkout = "available";
+      entry.checkout = 'available';
       entry.commitMismatch =
-        entry.index.kind === "recorded" && entry.index.recordedOid && oid ? entry.index.recordedOid !== oid : null;
+        entry.index.kind === 'recorded' && entry.index.recordedOid && oid ? entry.index.recordedOid !== oid : null;
       const statusParser = createGitWorkspaceStatusParser(objectFormat);
       const statusResult = await entryCommand(
         [
-          "--no-optional-locks",
-          "status",
-          "--porcelain=v2",
-          "--branch",
-          "--ahead-behind",
-          "--untracked-files=normal",
-          "--ignore-submodules=dirty",
-          "-z",
+          '--no-optional-locks',
+          'status',
+          '--porcelain=v2',
+          '--branch',
+          '--ahead-behind',
+          '--untracked-files=normal',
+          '--ignore-submodules=dirty',
+          '-z',
         ],
         { stdoutRecordHandler: statusParser.consume },
       );
       if (statusResult.status !== 0) {
-        entry.failure = gitWorkspaceFailure("submodule-status", statusResult, "无法读取 submodule 状态。");
+        entry.failure = gitWorkspaceFailure('submodule-status', statusResult, '无法读取 submodule 状态。');
         return;
       }
       entry.status = statusParser.result().status;
@@ -1998,9 +2013,9 @@ async function readGitWorkspaceSnapshot(projectPath) {
   const lastRefreshedAt = new Date().toISOString();
   const repository = await probeGitWorkspaceRepository(projectPath);
   if (repository.failure) {
-    const section = { state: "unavailable", entries: [], failure: repository.failure };
+    const section = { state: 'unavailable', entries: [], failure: repository.failure };
     return {
-      repositoryPath: "",
+      repositoryPath: '',
       objectFormat: null,
       worktrees: section,
       submodules: { ...section },
@@ -2015,10 +2030,10 @@ async function readGitWorkspaceSnapshot(projectPath) {
   await runGitWorkspaceWorkerPool([...worktreeResult.jobs, ...submoduleResult.jobs]);
   const toSection = (result) => ({
     state: result.unavailable
-      ? "unavailable"
+      ? 'unavailable'
       : result.failure || result.entries.some((entry) => entry.failure)
-        ? "partial"
-        : "ready",
+        ? 'partial'
+        : 'ready',
     entries: result.entries,
     failure: result.failure,
   });
@@ -2032,7 +2047,7 @@ async function readGitWorkspaceSnapshot(projectPath) {
 }
 
 function firstGitError(result, fallback) {
-  return String(result.stderr || result.stdout || fallback || "Git 操作失败。").trim();
+  return String(result.stderr || result.stdout || fallback || 'Git 操作失败。').trim();
 }
 
 function collectNumstat(startPath, args) {
@@ -2048,10 +2063,10 @@ function collectNumstat(startPath, args) {
     }
 
     const [additions, deletions, ...rest] = line.split(/\t/);
-    const filePath = rest.join("\t");
+    const filePath = rest.join('\t');
     result.set(filePath, {
-      additions: additions === "-" ? 0 : Number(additions),
-      deletions: deletions === "-" ? 0 : Number(deletions),
+      additions: additions === '-' ? 0 : Number(additions),
+      deletions: deletions === '-' ? 0 : Number(deletions),
     });
   });
 
@@ -2068,7 +2083,7 @@ async function collectNumstatAsyncResult(startPath, args) {
   if (!outputResult.ok) {
     return {
       ok: false,
-      failure: createGitReadFailure("status", outputResult, "读取 Git 文件统计失败"),
+      failure: createGitReadFailure('status', outputResult, '读取 Git 文件统计失败'),
     };
   }
 
@@ -2079,60 +2094,60 @@ async function collectNumstatAsyncResult(startPath, args) {
     }
 
     const [additions, deletions, ...rest] = line.split(/\t/);
-    const filePath = rest.join("\t");
+    const filePath = rest.join('\t');
     result.set(filePath, {
-      additions: additions === "-" ? 0 : Number(additions),
-      deletions: deletions === "-" ? 0 : Number(deletions),
+      additions: additions === '-' ? 0 : Number(additions),
+      deletions: deletions === '-' ? 0 : Number(deletions),
     });
   });
 
   return { ok: true, value: result };
 }
 
-function parseGitStatusRecord(statusCode, filePath, originalPath = "") {
+function parseGitStatusRecord(statusCode, filePath, originalPath = '') {
   if (!statusCode || !filePath) {
     return null;
   }
 
   const status =
-    statusCode === "??"
-      ? "UNTRACKED"
-      : statusCode.includes("R")
-        ? "RENAMED"
-        : statusCode.includes("A")
-          ? "ADDED"
-          : statusCode.includes("D")
-            ? "DELETED"
-            : "MODIFIED";
+    statusCode === '??'
+      ? 'UNTRACKED'
+      : statusCode.includes('R')
+        ? 'RENAMED'
+        : statusCode.includes('A')
+          ? 'ADDED'
+          : statusCode.includes('D')
+            ? 'DELETED'
+            : 'MODIFIED';
 
   return {
     statusCode,
     path: filePath,
     status,
-    staged: statusCode[0] !== " " && statusCode[0] !== "?",
-    unstaged: statusCode[1] !== " " || statusCode === "??",
+    staged: statusCode[0] !== ' ' && statusCode[0] !== '?',
+    unstaged: statusCode[1] !== ' ' || statusCode === '??',
     originalPath: originalPath || undefined,
   };
 }
 
 function readGitStatusEntries(repositoryPath, options = {}) {
   const statusOutput = runGit(repositoryPath, [
-    "status",
-    "--porcelain=v1",
-    "-z",
-    ...(options.untrackedFilesAll ? ["--untracked-files=all"] : []),
+    'status',
+    '--porcelain=v1',
+    '-z',
+    ...(options.untrackedFilesAll ? ['--untracked-files=all'] : []),
   ]);
   if (!statusOutput) {
     return [];
   }
 
-  const records = statusOutput.split("\0").filter(Boolean);
+  const records = statusOutput.split('\0').filter(Boolean);
   const entries = [];
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index];
     const statusCode = record.slice(0, 2);
     const filePath = record.slice(3);
-    const originalPath = statusCode.includes("R") ? records[++index] || "" : "";
+    const originalPath = statusCode.includes('R') ? records[++index] || '' : '';
     const entry = parseGitStatusRecord(statusCode, filePath, originalPath);
     if (entry) {
       entries.push(entry);
@@ -2148,25 +2163,25 @@ async function readGitStatusEntriesAsync(repositoryPath) {
 
 async function readGitStatusEntriesAsyncResult(repositoryPath) {
   const statusResult = await runGitAsyncResult(repositoryPath, [
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
   ]);
   if (!statusResult.ok) {
     return {
       ok: false,
-      failure: createGitReadFailure("status", statusResult, "读取 Git 文件状态失败"),
+      failure: createGitReadFailure('status', statusResult, '读取 Git 文件状态失败'),
     };
   }
 
-  const records = statusResult.stdout.split("\0").filter(Boolean);
+  const records = statusResult.stdout.split('\0').filter(Boolean);
   const entries = [];
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index];
     const statusCode = record.slice(0, 2);
     const filePath = record.slice(3);
-    const originalPath = statusCode.includes("R") ? records[++index] || "" : "";
+    const originalPath = statusCode.includes('R') ? records[++index] || '' : '';
     const entry = parseGitStatusRecord(statusCode, filePath, originalPath);
     if (entry) {
       entries.push(entry);
@@ -2176,7 +2191,7 @@ async function readGitStatusEntriesAsyncResult(repositoryPath) {
 }
 
 function readGitBranches(repositoryPath) {
-  const output = runGit(repositoryPath, ["branch", "--format=%(refname:short)%09%(HEAD)"]);
+  const output = runGit(repositoryPath, ['branch', '--format=%(refname:short)%09%(HEAD)']);
   if (!output) {
     return [];
   }
@@ -2184,9 +2199,9 @@ function readGitBranches(repositoryPath) {
   return output
     .split(/\r?\n/)
     .map((line) => {
-      const [name, marker] = line.split("\t");
-      const branchName = String(name || "").trim();
-      return branchName ? { name: branchName, current: String(marker || "").trim() === "*" } : null;
+      const [name, marker] = line.split('\t');
+      const branchName = String(name || '').trim();
+      return branchName ? { name: branchName, current: String(marker || '').trim() === '*' } : null;
     })
     .filter(Boolean);
 }
@@ -2197,20 +2212,20 @@ async function readGitBranchesAsync(repositoryPath) {
 }
 
 async function readGitBranchesAsyncResult(repositoryPath) {
-  const outputResult = await runGitAsyncResult(repositoryPath, ["branch", "--format=%(refname:short)%09%(HEAD)"]);
+  const outputResult = await runGitAsyncResult(repositoryPath, ['branch', '--format=%(refname:short)%09%(HEAD)']);
   if (!outputResult.ok) {
     return {
       ok: false,
-      failure: createGitReadFailure("status", outputResult, "读取 Git 分支失败"),
+      failure: createGitReadFailure('status', outputResult, '读取 Git 分支失败'),
     };
   }
 
   const branches = outputResult.stdout
     .split(/\r?\n/)
     .map((line) => {
-      const [name, marker] = line.split("\t");
-      const branchName = String(name || "").trim();
-      return branchName ? { name: branchName, current: String(marker || "").trim() === "*" } : null;
+      const [name, marker] = line.split('\t');
+      const branchName = String(name || '').trim();
+      return branchName ? { name: branchName, current: String(marker || '').trim() === '*' } : null;
     })
     .filter(Boolean);
   return { ok: true, value: branches };
@@ -2222,11 +2237,11 @@ async function readGitRemotesAsync(repositoryPath) {
 }
 
 async function readGitRemotesAsyncResult(repositoryPath) {
-  const outputResult = await runGitAsyncResult(repositoryPath, ["remote", "-v"]);
+  const outputResult = await runGitAsyncResult(repositoryPath, ['remote', '-v']);
   if (!outputResult.ok) {
     return {
       ok: false,
-      failure: createGitReadFailure("status", outputResult, "读取 Git remote 失败"),
+      failure: createGitReadFailure('status', outputResult, '读取 Git remote 失败'),
     };
   }
 
@@ -2237,8 +2252,8 @@ async function readGitRemotesAsyncResult(repositoryPath) {
       return;
     }
     const [, name, url, kind] = match;
-    const current = remotes.get(name) || { name, fetchUrl: "", pushUrl: "" };
-    if (kind === "fetch") {
+    const current = remotes.get(name) || { name, fetchUrl: '', pushUrl: '' };
+    if (kind === 'fetch') {
       current.fetchUrl = url.trim();
     } else {
       current.pushUrl = url.trim();
@@ -2259,16 +2274,16 @@ async function readGitRemoteBranchesAsync(repositoryPath, remotes) {
 }
 
 async function readGitRemoteBranchesAsyncResult(repositoryPath, remotes) {
-  const fieldSeparator = "\x1f";
+  const fieldSeparator = '\x1f';
   const outputResult = await runGitAsyncResult(repositoryPath, [
-    "for-each-ref",
+    'for-each-ref',
     `--format=%(refname)${fieldSeparator}%(objectname)`,
-    "refs/remotes",
+    'refs/remotes',
   ]);
   if (!outputResult.ok) {
     return {
       ok: false,
-      failure: createGitReadFailure("status", outputResult, "读取 Git 远端分支失败"),
+      failure: createGitReadFailure('status', outputResult, '读取 Git 远端分支失败'),
     };
   }
 
@@ -2277,21 +2292,21 @@ async function readGitRemoteBranchesAsyncResult(repositoryPath, remotes) {
     .split(/\r?\n/)
     .map((line) => {
       const [fullName, commitHash] = line.split(fieldSeparator);
-      const normalizedName = String(fullName || "").trim();
-      const prefix = "refs/remotes/";
+      const normalizedName = String(fullName || '').trim();
+      const prefix = 'refs/remotes/';
       if (!normalizedName.startsWith(prefix)) {
         return null;
       }
 
       const relativeName = normalizedName.slice(prefix.length);
-      const separatorIndex = relativeName.indexOf("/");
+      const separatorIndex = relativeName.indexOf('/');
       if (separatorIndex <= 0) {
         return null;
       }
 
       const remote = relativeName.slice(0, separatorIndex);
       const branch = relativeName.slice(separatorIndex + 1);
-      if (!remoteNames.has(remote) || !branch || branch === "HEAD") {
+      if (!remoteNames.has(remote) || !branch || branch === 'HEAD') {
         return null;
       }
 
@@ -2303,7 +2318,7 @@ async function readGitRemoteBranchesAsyncResult(repositoryPath, remotes) {
 }
 
 async function readGitUpstreamAsync(repositoryPath) {
-  const branchResult = await runGitAsyncResult(repositoryPath, ["branch", "--show-current"]);
+  const branchResult = await runGitAsyncResult(repositoryPath, ['branch', '--show-current']);
   if (!branchResult.ok) return null;
   const result = await readGitUpstreamAsyncResult(repositoryPath, branchResult.stdout.trim());
   return result.ok ? result.value : null;
@@ -2312,37 +2327,37 @@ async function readGitUpstreamAsync(repositoryPath) {
 async function readGitUpstreamAsyncResult(repositoryPath, branch) {
   if (!branch) return { ok: true, value: null };
   const refResult = await runGitAsyncResult(repositoryPath, [
-    "for-each-ref",
-    "--format=%(upstream:short)",
+    'for-each-ref',
+    '--format=%(upstream:short)',
     `refs/heads/${branch}`,
   ]);
   if (!refResult.ok) {
     return {
       ok: false,
-      failure: createGitReadFailure("status", refResult, "读取 Git upstream 失败"),
+      failure: createGitReadFailure('status', refResult, '读取 Git upstream 失败'),
     };
   }
-  const ref = refResult.stdout.trim().split(/\r?\n/)[0] || "";
-  if (!ref || !ref.includes("/")) {
+  const ref = refResult.stdout.trim().split(/\r?\n/)[0] || '';
+  if (!ref || !ref.includes('/')) {
     return { ok: true, value: null };
   }
 
-  const [remote, ...branchParts] = ref.split("/");
-  const upstreamBranch = branchParts.join("/");
+  const [remote, ...branchParts] = ref.split('/');
+  const upstreamBranch = branchParts.join('/');
   if (!remote || !upstreamBranch) {
     return { ok: true, value: null };
   }
 
   const countsResult = await runGitAsyncResult(repositoryPath, [
-    "rev-list",
-    "--left-right",
-    "--count",
+    'rev-list',
+    '--left-right',
+    '--count',
     `HEAD...${ref}`,
   ]);
   if (!countsResult.ok) {
     return {
       ok: false,
-      failure: createGitReadFailure("status", countsResult, "读取 Git ahead/behind 失败"),
+      failure: createGitReadFailure('status', countsResult, '读取 Git ahead/behind 失败'),
     };
   }
   const counts = countsResult.stdout.trim().split(/\s+/);
@@ -2350,9 +2365,9 @@ async function readGitUpstreamAsyncResult(repositoryPath, branch) {
     return {
       ok: false,
       failure: {
-        code: "invalid-output",
-        operation: "status",
-        message: "Git 返回了无效的 ahead/behind 状态。",
+        code: 'invalid-output',
+        operation: 'status',
+        message: 'Git 返回了无效的 ahead/behind 状态。',
       },
     };
   }
@@ -2363,9 +2378,9 @@ async function readGitUpstreamAsyncResult(repositoryPath, branch) {
 }
 
 function parseGitRemoteBranchRef(ref, remotes) {
-  const normalizedRef = String(ref || "")
+  const normalizedRef = String(ref || '')
     .trim()
-    .replace(/^refs\/remotes\//, "");
+    .replace(/^refs\/remotes\//, '');
   const remote = remotes.find((candidate) => normalizedRef.startsWith(`${candidate.name}/`));
   if (!remote) {
     return null;
@@ -2376,7 +2391,7 @@ function parseGitRemoteBranchRef(ref, remotes) {
 }
 
 async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream) {
-  if (!branch || branch === "HEAD") {
+  if (!branch || branch === 'HEAD') {
     return null;
   }
 
@@ -2386,16 +2401,16 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
       return null;
     }
 
-    const commit = await runGitAsync(repositoryPath, ["rev-parse", "--verify", "--quiet", `${base.ref}^{commit}`]);
+    const commit = await runGitAsync(repositoryPath, ['rev-parse', '--verify', '--quiet', `${base.ref}^{commit}`]);
     return commit ? base : null;
   };
   const rememberBase = async (base) => {
-    await runGitAsync(repositoryPath, ["config", `branch.${branch}.vscode-merge-base`, base.ref]);
+    await runGitAsync(repositoryPath, ['config', `branch.${branch}.vscode-merge-base`, base.ref]);
     return base;
   };
 
   const configuredRef = String(
-    (await runGitAsync(repositoryPath, ["config", "--get", `branch.${branch}.vscode-merge-base`])) || "",
+    (await runGitAsync(repositoryPath, ['config', '--get', `branch.${branch}.vscode-merge-base`])) || '',
   ).trim();
   const configuredBase = await resolveBase(configuredRef);
   if (configuredBase) {
@@ -2404,29 +2419,29 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
 
   const reflogEntries = String(
     (await runGitAsync(repositoryPath, [
-      "reflog",
-      "show",
-      "--format=%gs",
-      "--grep-reflog=^branch: Created from ",
+      'reflog',
+      'show',
+      '--format=%gs',
+      '--grep-reflog=^branch: Created from ',
       `refs/heads/${branch}`,
-    ])) || "",
+    ])) || '',
   )
     .split(/\r?\n/)
     .map((entry) => entry.trim())
     .filter(Boolean);
   if (reflogEntries.length === 1) {
-    const createdFrom = reflogEntries[0].match(/^branch: Created from (.+)$/)?.[1] || "";
+    const createdFrom = reflogEntries[0].match(/^branch: Created from (.+)$/)?.[1] || '';
     const reflogBase = await resolveBase(createdFrom);
     if (reflogBase) {
       return rememberBase(reflogBase);
     }
-    if (createdFrom && createdFrom !== "HEAD") {
+    if (createdFrom && createdFrom !== 'HEAD') {
       const createdBranchUpstream = String(
         (await runGitAsync(repositoryPath, [
-          "for-each-ref",
-          "--format=%(upstream:short)",
+          'for-each-ref',
+          '--format=%(upstream:short)',
           `refs/heads/${createdFrom}`,
-        ])) || "",
+        ])) || '',
       ).trim();
       const upstreamBase = await resolveBase(createdBranchUpstream);
       if (upstreamBase) {
@@ -2437,12 +2452,12 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
 
   const preferredRemoteNames = [
     upstream?.remote,
-    remotes.find((remote) => remote.name === "origin")?.name,
+    remotes.find((remote) => remote.name === 'origin')?.name,
     ...remotes.map((remote) => remote.name),
   ].filter((remote, index, names) => Boolean(remote) && names.indexOf(remote) === index);
   for (const remote of preferredRemoteNames) {
     const defaultRemoteRef = String(
-      (await runGitAsync(repositoryPath, ["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`])) || "",
+      (await runGitAsync(repositoryPath, ['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`])) || '',
     ).trim();
     const defaultBase = await resolveBase(defaultRemoteRef);
     if (defaultBase) {
@@ -2462,20 +2477,20 @@ async function readGitBranchBaseAsync(repositoryPath, branch, remotes, upstream)
 }
 
 function parseGitHubRepository(remoteUrl) {
-  const value = String(remoteUrl || "").trim();
+  const value = String(remoteUrl || '').trim();
   if (!value) {
     return null;
   }
 
   const scpLike = value.match(/^(?:[^@\s/:]+@)?github\.com:([^?#\s]+)$/i);
-  let repositoryPath = scpLike?.[1] || "";
+  let repositoryPath = scpLike?.[1] || '';
   if (!repositoryPath) {
     try {
       const parsed = new URL(value);
-      if (parsed.protocol !== "https:" && parsed.protocol !== "ssh:") {
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'ssh:') {
         return null;
       }
-      if (parsed.hostname.toLowerCase() !== "github.com") {
+      if (parsed.hostname.toLowerCase() !== 'github.com') {
         return null;
       }
       repositoryPath = parsed.pathname;
@@ -2485,16 +2500,16 @@ function parseGitHubRepository(remoteUrl) {
   }
 
   const segments = repositoryPath
-    .replace(/^\/+|\/+$/g, "")
-    .split("/")
+    .replace(/^\/+|\/+$/g, '')
+    .split('/')
     .filter(Boolean);
   if (segments.length !== 2) {
     return null;
   }
 
   const [owner, repositoryWithSuffix] = segments;
-  const repository = repositoryWithSuffix.replace(/\.git$/i, "");
-  if (!owner || !repository || owner === "." || owner === ".." || repository === "." || repository === "..") {
+  const repository = repositoryWithSuffix.replace(/\.git$/i, '');
+  if (!owner || !repository || owner === '.' || owner === '..' || repository === '.' || repository === '..') {
     return null;
   }
 
@@ -2510,7 +2525,7 @@ function selectGitHubRepository(remotes, upstream) {
   };
 
   addCandidate(remotes.find((remote) => remote.name === upstream?.remote));
-  addCandidate(remotes.find((remote) => remote.name === "origin"));
+  addCandidate(remotes.find((remote) => remote.name === 'origin'));
   remotes.forEach(addCandidate);
 
   for (const remote of candidates) {
@@ -2526,12 +2541,20 @@ function selectGitHubRepository(remotes, upstream) {
 function cacheGitCommitAvatar(cacheKey, loader) {
   const cached = gitCommitAvatarResults.get(cacheKey);
   if (cached) {
+    gitCommitAvatarResults.delete(cacheKey);
+    gitCommitAvatarResults.set(cacheKey, cached);
     return cached;
   }
 
   const result = Promise.resolve()
     .then(loader)
-    .catch(() => null);
+    .catch(() => null)
+    .then((avatarUrl) => {
+      if (!avatarUrl && gitCommitAvatarResults.get(cacheKey) === result) {
+        gitCommitAvatarResults.delete(cacheKey);
+      }
+      return avatarUrl;
+    });
   gitCommitAvatarResults.set(cacheKey, result);
   while (gitCommitAvatarResults.size > gitCommitAvatarResultLimit) {
     const oldestKey = gitCommitAvatarResults.keys().next().value;
@@ -2543,21 +2566,33 @@ function cacheGitCommitAvatar(cacheKey, loader) {
   return result;
 }
 
+let gitCommitAvatarRetryAt = 0;
+
 async function fetchGitHubCommitAvatar(owner, repository, commitHash) {
+  if (Date.now() < gitCommitAvatarRetryAt) return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), gitCommitAvatarRequestTimeoutMs);
   try {
     const response = await fetch(
       `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/commits/${encodeURIComponent(commitHash)}`,
-      { headers: { Accept: "application/vnd.github+json" }, signal: controller.signal },
+      { headers: { Accept: 'application/vnd.github+json' }, signal: controller.signal },
     );
     if (!response.ok) {
+      if (response.status === 429 ||
+          (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0')) {
+        const resetAt = Number(response.headers.get('x-ratelimit-reset')) * 1000;
+        const retryAfter = Number(response.headers.get('retry-after')) * 1000;
+        gitCommitAvatarRetryAt = Math.max(
+          Date.now() + (Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60000),
+          Number.isFinite(resetAt) ? resetAt : 0,
+        );
+      }
       return null;
     }
 
     const avatarUrl = (await response.json())?.author?.avatar_url;
-    const parsedAvatarUrl = new URL(String(avatarUrl || ""));
-    return parsedAvatarUrl.protocol === "https:" ? parsedAvatarUrl.toString() : null;
+    const parsedAvatarUrl = new URL(String(avatarUrl || ''));
+    return parsedAvatarUrl.protocol === 'https:' ? parsedAvatarUrl.toString() : null;
   } catch {
     return null;
   } finally {
@@ -2566,7 +2601,7 @@ async function fetchGitHubCommitAvatar(owner, repository, commitHash) {
 }
 
 async function readGitCommitAuthorAvatar(projectPath, commitHash) {
-  const hash = String(commitHash || "").trim();
+  const hash = String(commitHash || '').trim();
   if (!/^[0-9a-f]{40,64}$/i.test(hash)) {
     return null;
   }
@@ -2585,50 +2620,61 @@ async function readGitCommitAuthorAvatar(projectPath, commitHash) {
     return null;
   }
 
-  const cacheKey = `${repository.owner.toLowerCase()}/${repository.repository.toLowerCase()}:${hash.toLowerCase()}`;
+  const authorEmail = (await runGitAsync(repositoryPath, ['show', '-s', '--format=%ae', hash])).trim();
+  const userId = authorEmail.match(/^([0-9]+)\+[^@]+@users\.noreply\.github\.com$/i)?.[1];
+  if (userId) {
+    return `https://avatars.githubusercontent.com/u/${userId}?s=80`;
+  }
+  const login = authorEmail.match(/^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)@users\.noreply\.github\.com$/i)?.[1];
+  if (login) {
+    return `https://github.com/${encodeURIComponent(login)}.png?size=80`;
+  }
+
+  const authorKey = authorEmail ? `email:${authorEmail}` : `commit:${hash.toLowerCase()}`;
+  const cacheKey = `${repository.owner.toLowerCase()}/${repository.repository.toLowerCase()}:${authorKey}`;
   return cacheGitCommitAvatar(cacheKey, () => fetchGitHubCommitAvatar(repository.owner, repository.repository, hash));
 }
 
 function normalizeGitRemoteName(remoteName) {
-  return typeof remoteName === "string" ? remoteName.trim() : "";
+  return typeof remoteName === 'string' ? remoteName.trim() : '';
 }
 
 function normalizeGitRemoteUrl(remoteUrl) {
-  return typeof remoteUrl === "string" ? remoteUrl.trim() : "";
+  return typeof remoteUrl === 'string' ? remoteUrl.trim() : '';
 }
 
 function validateGitRemoteName(remoteName) {
   if (!remoteName) {
-    return "请输入 remote 名称。";
+    return '请输入 remote 名称。';
   }
-  if (remoteName.startsWith("-")) {
-    return "remote 名称不能以 - 开头。";
+  if (remoteName.startsWith('-')) {
+    return 'remote 名称不能以 - 开头。';
   }
   if (!/^[A-Za-z0-9._-]+$/.test(remoteName)) {
-    return "remote 名称只能包含字母、数字、点、下划线和短横线。";
+    return 'remote 名称只能包含字母、数字、点、下划线和短横线。';
   }
-  return "";
+  return '';
 }
 
 function validateGitRemoteUrl(remoteUrl) {
   if (!remoteUrl) {
-    return "请输入 remote URL。";
+    return '请输入 remote URL。';
   }
   if (/[\u0000-\u001f\u007f]/.test(remoteUrl)) {
-    return "remote URL 不能包含控制字符。";
+    return 'remote URL 不能包含控制字符。';
   }
-  return "";
+  return '';
 }
 
 async function resolveGitRemoteOperation(projectPath) {
   const repositoryPath = await findGitRootAsync(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   const upstream = await readGitUpstreamAsync(repositoryPath);
   if (!upstream) {
-    return { ok: false, repositoryPath, message: "当前分支未设置 upstream，无法执行远程操作。" };
+    return { ok: false, repositoryPath, message: '当前分支未设置 upstream，无法执行远程操作。' };
   }
 
   return { ok: true, repositoryPath, upstream };
@@ -2639,7 +2685,7 @@ async function resolveNamedGitRemoteOperation(projectPath, remoteName) {
   const name = normalizeGitRemoteName(remoteName);
   const nameError = validateGitRemoteName(name);
   if (!repositoryPath) {
-    return { ok: false, remote: name, message: "未检测到 Git 仓库。" };
+    return { ok: false, remote: name, message: '未检测到 Git 仓库。' };
   }
   if (nameError) {
     return { ok: false, remote: name, message: nameError };
@@ -2671,12 +2717,12 @@ async function runGitRemoteResult(projectPath, args, successMessage) {
         ok: false,
         remote: remoteContext.upstream.remote,
         branch: remoteContext.upstream.branch,
-        message: firstGitError(result, "远程 Git 操作失败。"),
+        message: firstGitError(result, '远程 Git 操作失败。'),
       };
 }
 
 function readGitLocalBranchTips(repositoryPath) {
-  const output = runGit(repositoryPath, ["for-each-ref", "--format=%(refname:short)%09%(objectname)", "refs/heads"]);
+  const output = runGit(repositoryPath, ['for-each-ref', '--format=%(refname:short)%09%(objectname)', 'refs/heads']);
   if (!output) {
     return [];
   }
@@ -2684,16 +2730,16 @@ function readGitLocalBranchTips(repositoryPath) {
   return output
     .split(/\r?\n/)
     .map((line) => {
-      const [name, hash] = line.split("\t");
-      const branchName = String(name || "").trim();
-      const branchHash = String(hash || "").trim();
+      const [name, hash] = line.split('\t');
+      const branchName = String(name || '').trim();
+      const branchHash = String(hash || '').trim();
       return branchName && branchHash ? { name: branchName, hash: branchHash } : null;
     })
     .filter(Boolean);
 }
 
-function chooseGitBranchTip(repositoryPath, commitHash, preferredBranch = "") {
-  const fullHash = (runGit(repositoryPath, ["rev-parse", `${commitHash}^{commit}`]) || "").trim();
+function chooseGitBranchTip(repositoryPath, commitHash, preferredBranch = '') {
+  const fullHash = (runGit(repositoryPath, ['rev-parse', `${commitHash}^{commit}`]) || '').trim();
   if (!fullHash) {
     return null;
   }
@@ -2703,9 +2749,9 @@ function chooseGitBranchTip(repositoryPath, commitHash, preferredBranch = "") {
     return null;
   }
 
-  const symbolicBranch = (runGit(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]) || "").trim();
-  const preferredNames = [preferredBranch, symbolicBranch, "main", "master", "develop"].filter(
-    (name) => typeof name === "string" && name.trim() && name !== "HEAD",
+  const symbolicBranch = (runGit(repositoryPath, ['symbolic-ref', '--short', '-q', 'HEAD']) || '').trim();
+  const preferredNames = [preferredBranch, symbolicBranch, 'main', 'master', 'develop'].filter(
+    (name) => typeof name === 'string' && name.trim() && name !== 'HEAD',
   );
   for (const preferredName of preferredNames) {
     const match = matchingBranches.find((branch) => branch.name === preferredName);
@@ -2720,15 +2766,15 @@ function chooseGitBranchTip(repositoryPath, commitHash, preferredBranch = "") {
 function resolveGitFilePath(repositoryPath, relativePath) {
   const resolved = resolveProjectChild(repositoryPath, relativePath);
   if (!resolved.relativePath) {
-    throw new Error("请选择一个仓库内文件。");
+    throw new Error('请选择一个仓库内文件。');
   }
   return resolved;
 }
 
 function normalizeGitStatusPath(filePath) {
-  return String(filePath || "")
-    .replace(/\\/g, "/")
-    .replace(/[\\/]+$/, "");
+  return String(filePath || '')
+    .replace(/\\/g, '/')
+    .replace(/[\\/]+$/, '');
 }
 
 function getGitFileStatus(repositoryPath, relativePath) {
@@ -2832,7 +2878,7 @@ function chunkGitPathspecs(paths) {
 function runGitPathspecChunks(repositoryPath, prefixArgs, paths) {
   const completedPaths = [];
   for (const chunk of chunkGitPathspecs(paths)) {
-    const result = runGitResult(repositoryPath, [...prefixArgs, "--", ...chunk]);
+    const result = runGitResult(repositoryPath, [...prefixArgs, '--', ...chunk]);
     if (result.status !== 0) {
       return { failure: result, completedPaths };
     }
@@ -2853,7 +2899,7 @@ function completedGitActionDisplayPaths(actionGroups, completedPaths) {
 }
 
 function readGitWorktreeStatus(repositoryPath) {
-  return runGitResult(repositoryPath, ["status", "--porcelain"]);
+  return runGitResult(repositoryPath, ['status', '--porcelain']);
 }
 
 function hasUncommittedGitChanges(repositoryPath) {
@@ -2862,7 +2908,7 @@ function hasUncommittedGitChanges(repositoryPath) {
 }
 
 function fileExistsInHead(repositoryPath, relativePath) {
-  const result = runGitResult(repositoryPath, ["cat-file", "-e", `HEAD:${relativePath}`]);
+  const result = runGitResult(repositoryPath, ['cat-file', '-e', `HEAD:${relativePath}`]);
   return result.status === 0;
 }
 
@@ -2872,7 +2918,7 @@ function removeGitWorktreePath(targetPath) {
   }
   const stats = fs.statSync(targetPath);
   if (!stats.isFile()) {
-    throw new Error("暂不支持从 Git 面板丢弃未跟踪目录或非普通文件，请在文件系统中确认后手动处理。");
+    throw new Error('暂不支持从 Git 面板丢弃未跟踪目录或非普通文件，请在文件系统中确认后手动处理。');
   }
   fs.rmSync(targetPath, { force: true });
 }
@@ -2889,13 +2935,13 @@ function truncateGitDiff(diff, maxLength = 32000) {
 
 function readUntrackedFileDiffs(repositoryPath) {
   return readGitStatusEntries(repositoryPath)
-    .filter((entry) => entry.status === "UNTRACKED")
+    .filter((entry) => entry.status === 'UNTRACKED')
     .map((entry) => {
       const resolved = resolveProjectChild(repositoryPath, entry.path);
       if (!fs.existsSync(resolved.targetPath) || !fs.statSync(resolved.targetPath).isFile()) {
         return `diff --git a/${entry.path} b/${entry.path}\nnew file mode 000000\n--- /dev/null\n+++ b/${entry.path}\n@@\n[未跟踪目录或非普通文件，已跳过内容 diff]`;
       }
-      return runGitDiff(repositoryPath, ["diff", "--no-index", "--", os.devNull, entry.path]) || "";
+      return runGitDiff(repositoryPath, ['diff', '--no-index', '--', os.devNull, entry.path]) || '';
     })
     .filter(Boolean);
 }
@@ -2903,107 +2949,107 @@ function readUntrackedFileDiffs(repositoryPath) {
 function readGitCommitMessageDiff(projectPath) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, scope: "working-tree", diff: "", message: "未检测到 Git 仓库。" };
+    return { ok: false, scope: 'working-tree', diff: '', message: '未检测到 Git 仓库。' };
   }
 
-  const stagedDiff = runGitDiff(repositoryPath, ["diff", "--cached"]);
+  const stagedDiff = runGitDiff(repositoryPath, ['diff', '--cached']);
   if (stagedDiff && stagedDiff.trim()) {
-    return { ok: true, scope: "staged", ...truncateGitDiff(stagedDiff) };
+    return { ok: true, scope: 'staged', ...truncateGitDiff(stagedDiff) };
   }
 
-  const workingDiff = [runGitDiff(repositoryPath, ["diff"]), ...readUntrackedFileDiffs(repositoryPath)]
+  const workingDiff = [runGitDiff(repositoryPath, ['diff']), ...readUntrackedFileDiffs(repositoryPath)]
     .filter(Boolean)
-    .join("\n");
+    .join('\n');
   if (!workingDiff.trim()) {
-    return { ok: false, scope: "working-tree", diff: "", message: "当前没有可用于生成提交信息的 diff。" };
+    return { ok: false, scope: 'working-tree', diff: '', message: '当前没有可用于生成提交信息的 diff。' };
   }
 
-  return { ok: true, scope: "working-tree", ...truncateGitDiff(workingDiff) };
+  return { ok: true, scope: 'working-tree', ...truncateGitDiff(workingDiff) };
 }
 
 function stageGitFile(projectPath, relativePath) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   try {
     const resolved = resolveGitFilePath(repositoryPath, relativePath);
     const status = getGitFileStatus(repositoryPath, resolved.relativePath);
     const actionPaths = gitFileActionPaths(repositoryPath, status, resolved.relativePath);
-    const result = runGitResult(repositoryPath, ["add", "--", ...actionPaths]);
+    const result = runGitResult(repositoryPath, ['add', '--', ...actionPaths]);
     return result.status === 0
-      ? { ok: true, path: resolved.relativePath, message: "已暂存文件变更。" }
-      : { ok: false, path: resolved.relativePath, message: firstGitError(result, "暂存文件失败。") };
+      ? { ok: true, path: resolved.relativePath, message: '已暂存文件变更。' }
+      : { ok: false, path: resolved.relativePath, message: firstGitError(result, '暂存文件失败。') };
   } catch (error) {
-    return { ok: false, message: error?.message || "暂存文件失败。" };
+    return { ok: false, message: error?.message || '暂存文件失败。' };
   }
 }
 
 function unstageGitFile(projectPath, relativePath) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   try {
     const resolved = resolveGitFilePath(repositoryPath, relativePath);
     const status = getGitFileStatus(repositoryPath, resolved.relativePath);
     const actionPaths = gitFileActionPaths(repositoryPath, status, resolved.relativePath);
-    const result = runGitResult(repositoryPath, ["reset", "-q", "HEAD", "--", ...actionPaths]);
+    const result = runGitResult(repositoryPath, ['reset', '-q', 'HEAD', '--', ...actionPaths]);
     return result.status === 0
-      ? { ok: true, path: resolved.relativePath, message: "已取消暂存文件。" }
-      : { ok: false, path: resolved.relativePath, message: firstGitError(result, "取消暂存失败。") };
+      ? { ok: true, path: resolved.relativePath, message: '已取消暂存文件。' }
+      : { ok: false, path: resolved.relativePath, message: firstGitError(result, '取消暂存失败。') };
   } catch (error) {
-    return { ok: false, message: error?.message || "取消暂存失败。" };
+    return { ok: false, message: error?.message || '取消暂存失败。' };
   }
 }
 
 function discardGitFile(projectPath, relativePath) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   try {
     const resolved = resolveGitFilePath(repositoryPath, relativePath);
     const status = getGitFileStatus(repositoryPath, resolved.relativePath);
     if (!status) {
-      return { ok: true, path: resolved.relativePath, message: "该文件没有可丢弃的变更。" };
+      return { ok: true, path: resolved.relativePath, message: '该文件没有可丢弃的变更。' };
     }
 
     if (
-      status.status === "UNTRACKED" ||
-      (status.statusCode[0] === "A" && !fileExistsInHead(repositoryPath, resolved.relativePath))
+      status.status === 'UNTRACKED' ||
+      (status.statusCode[0] === 'A' && !fileExistsInHead(repositoryPath, resolved.relativePath))
     ) {
       if (status.staged) {
-        const reset = runGitResult(repositoryPath, ["reset", "-q", "HEAD", "--", resolved.relativePath]);
+        const reset = runGitResult(repositoryPath, ['reset', '-q', 'HEAD', '--', resolved.relativePath]);
         if (reset.status !== 0) {
           return {
             ok: false,
             path: resolved.relativePath,
-            message: firstGitError(reset, "丢弃文件变更失败。"),
+            message: firstGitError(reset, '丢弃文件变更失败。'),
           };
         }
       }
       removeGitWorktreePath(resolved.targetPath);
-      return { ok: true, path: resolved.relativePath, message: "已丢弃该文件变更。" };
+      return { ok: true, path: resolved.relativePath, message: '已丢弃该文件变更。' };
     }
 
     const actionPaths = gitFileActionPaths(repositoryPath, status, resolved.relativePath);
-    const result = runGitResult(repositoryPath, ["restore", "--staged", "--worktree", "--", ...actionPaths]);
+    const result = runGitResult(repositoryPath, ['restore', '--staged', '--worktree', '--', ...actionPaths]);
     return result.status === 0
-      ? { ok: true, path: resolved.relativePath, message: "已丢弃该文件变更。" }
-      : { ok: false, path: resolved.relativePath, message: firstGitError(result, "丢弃文件变更失败。") };
+      ? { ok: true, path: resolved.relativePath, message: '已丢弃该文件变更。' }
+      : { ok: false, path: resolved.relativePath, message: firstGitError(result, '丢弃文件变更失败。') };
   } catch (error) {
-    return { ok: false, message: error?.message || "丢弃文件变更失败。" };
+    return { ok: false, message: error?.message || '丢弃文件变更失败。' };
   }
 }
 
 function stageGitFiles(projectPath, relativePaths, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   try {
@@ -3014,16 +3060,16 @@ function stageGitFiles(projectPath, relativePaths, options = {}) {
         ? allGitActionPaths(repositoryPath, filterStatus)
         : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
     if (actionPaths.length === 0) {
-      return { ok: false, count: 0, paths: [], message: "没有可暂存的文件变更。" };
+      return { ok: false, count: 0, paths: [], message: '没有可暂存的文件变更。' };
     }
-    const { failure, completedPaths } = runGitPathspecChunks(repositoryPath, ["add"], actionPaths);
+    const { failure, completedPaths } = runGitPathspecChunks(repositoryPath, ['add'], actionPaths);
     if (failure) {
       const completedDisplayPaths = completedGitActionDisplayPaths(actionGroups, completedPaths);
       return {
         ok: false,
         count: completedDisplayPaths.length,
         paths: completedDisplayPaths,
-        message: firstGitError(failure, "批量暂存失败。"),
+        message: firstGitError(failure, '批量暂存失败。'),
       };
     }
     return {
@@ -3033,14 +3079,14 @@ function stageGitFiles(projectPath, relativePaths, options = {}) {
       message: `已暂存 ${displayPaths.length} 个文件。`,
     };
   } catch (error) {
-    return { ok: false, message: error?.message || "批量暂存失败。" };
+    return { ok: false, message: error?.message || '批量暂存失败。' };
   }
 }
 
 function unstageGitFiles(projectPath, relativePaths, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   try {
@@ -3050,16 +3096,16 @@ function unstageGitFiles(projectPath, relativePaths, options = {}) {
         ? allGitActionPaths(repositoryPath, filterStatus)
         : uniqueGitActionPaths(repositoryPath, relativePaths, filterStatus);
     if (actionPaths.length === 0) {
-      return { ok: false, count: 0, paths: [], message: "没有可取消暂存的文件。" };
+      return { ok: false, count: 0, paths: [], message: '没有可取消暂存的文件。' };
     }
-    const { failure, completedPaths } = runGitPathspecChunks(repositoryPath, ["reset", "-q", "HEAD"], actionPaths);
+    const { failure, completedPaths } = runGitPathspecChunks(repositoryPath, ['reset', '-q', 'HEAD'], actionPaths);
     if (failure) {
       const completedDisplayPaths = completedGitActionDisplayPaths(actionGroups, completedPaths);
       return {
         ok: false,
         count: completedDisplayPaths.length,
         paths: completedDisplayPaths,
-        message: firstGitError(failure, "批量取消暂存失败。"),
+        message: firstGitError(failure, '批量取消暂存失败。'),
       };
     }
     return {
@@ -3069,14 +3115,14 @@ function unstageGitFiles(projectPath, relativePaths, options = {}) {
       message: `已取消暂存 ${displayPaths.length} 个文件。`,
     };
   } catch (error) {
-    return { ok: false, message: error?.message || "批量取消暂存失败。" };
+    return { ok: false, message: error?.message || '批量取消暂存失败。' };
   }
 }
 
 function discardGitFiles(projectPath, relativePaths, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   try {
@@ -3092,7 +3138,7 @@ function discardGitFiles(projectPath, relativePaths, options = {}) {
           ? Array.from(new Set(relativePaths))
           : [];
     if (requestedPaths.length === 0) {
-      return { ok: false, count: 0, paths: [], message: "没有可丢弃的文件变更。" };
+      return { ok: false, count: 0, paths: [], message: '没有可丢弃的文件变更。' };
     }
 
     const resetPaths = new Set();
@@ -3110,7 +3156,7 @@ function discardGitFiles(projectPath, relativePaths, options = {}) {
         displayPathSet.add(resolved.relativePath);
         displayPaths.push(resolved.relativePath);
       }
-      if (status.status === "UNTRACKED" || status.statusCode[0] === "A") {
+      if (status.status === 'UNTRACKED' || status.statusCode[0] === 'A') {
         if (status.staged) {
           resetPaths.add(resolved.relativePath);
         }
@@ -3123,32 +3169,32 @@ function discardGitFiles(projectPath, relativePaths, options = {}) {
     }
 
     if (displayPaths.length === 0) {
-      return { ok: false, count: 0, paths: [], message: "没有可丢弃的文件变更。" };
+      return { ok: false, count: 0, paths: [], message: '没有可丢弃的文件变更。' };
     }
 
     let failure = null;
-    let failureMessage = "";
+    let failureMessage = '';
     if (resetPaths.size > 0) {
-      failure = runGitPathspecChunks(repositoryPath, ["reset", "-q", "HEAD"], Array.from(resetPaths)).failure;
+      failure = runGitPathspecChunks(repositoryPath, ['reset', '-q', 'HEAD'], Array.from(resetPaths)).failure;
       if (failure) {
-        failureMessage = firstGitError(failure, "批量丢弃文件变更失败。");
+        failureMessage = firstGitError(failure, '批量丢弃文件变更失败。');
       }
     }
     if (!failure && restorePaths.size > 0) {
       failure = runGitPathspecChunks(
         repositoryPath,
-        ["restore", "--staged", "--worktree"],
+        ['restore', '--staged', '--worktree'],
         Array.from(restorePaths),
       ).failure;
       if (failure) {
-        failureMessage = firstGitError(failure, "批量丢弃文件变更失败。");
+        failureMessage = firstGitError(failure, '批量丢弃文件变更失败。');
       }
     }
     if (!failure) {
       try {
         removeTargetPaths.forEach((targetPath) => removeGitWorktreePath(targetPath));
       } catch (error) {
-        failureMessage = error?.message || "批量丢弃文件变更失败。";
+        failureMessage = error?.message || '批量丢弃文件变更失败。';
         failure = {};
       }
     }
@@ -3175,134 +3221,134 @@ function discardGitFiles(projectPath, relativePaths, options = {}) {
       message: `已丢弃 ${displayPaths.length} 个文件变更。`,
     };
   } catch (error) {
-    return { ok: false, message: error?.message || "批量丢弃文件变更失败。" };
+    return { ok: false, message: error?.message || '批量丢弃文件变更失败。' };
   }
 }
 
 function readAttachedGitHead(repositoryPath) {
-  const headRef = (runGit(repositoryPath, ["symbolic-ref", "-q", "HEAD"]) || "").trim();
+  const headRef = (runGit(repositoryPath, ['symbolic-ref', '-q', 'HEAD']) || '').trim();
   if (!headRef) {
-    return { ok: false, message: "当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。" };
+    return { ok: false, message: '当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。' };
   }
 
-  const localBranchPrefix = "refs/heads/";
+  const localBranchPrefix = 'refs/heads/';
   if (!headRef.startsWith(localBranchPrefix) || headRef.length === localBranchPrefix.length) {
-    return { ok: false, message: "当前 HEAD 未指向本地分支，请使用外部 Git 工具处理。" };
+    return { ok: false, message: '当前 HEAD 未指向本地分支，请使用外部 Git 工具处理。' };
   }
 
-  const commitHash = (runGit(repositoryPath, ["rev-parse", "--verify", "HEAD^{commit}"]) || "").trim();
+  const commitHash = (runGit(repositoryPath, ['rev-parse', '--verify', 'HEAD^{commit}']) || '').trim();
   if (!commitHash) {
-    return { ok: false, message: "当前分支没有可操作的提交。" };
+    return { ok: false, message: '当前分支没有可操作的提交。' };
   }
 
   return {
     ok: true,
     branch: headRef.slice(localBranchPrefix.length),
     commitHash,
-    commitMessage: (runGit(repositoryPath, ["log", "-1", "--format=%B", "HEAD"]) || "").trim(),
+    commitMessage: (runGit(repositoryPath, ['log', '-1', '--format=%B', 'HEAD']) || '').trim(),
   };
 }
 
 function commitGitStaged(projectPath, message) {
   const repositoryPath = findGitRoot(projectPath);
-  const commitMessage = typeof message === "string" ? message.trim() : "";
+  const commitMessage = typeof message === 'string' ? message.trim() : '';
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
   if (!commitMessage) {
-    return { ok: false, message: "请先填写 commit message。" };
+    return { ok: false, message: '请先填写 commit message。' };
   }
 
-  const merging = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]).status === 0;
-  const stagedDiff = runGitDiff(repositoryPath, ["diff", "--cached"]);
+  const merging = runGitResult(repositoryPath, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']).status === 0;
+  const stagedDiff = runGitDiff(repositoryPath, ['diff', '--cached']);
   if (!merging && (!stagedDiff || !stagedDiff.trim())) {
-    return { ok: false, message: "没有 staged 变更可提交。" };
+    return { ok: false, message: '没有 staged 变更可提交。' };
   }
 
-  const result = runGitResult(repositoryPath, ["commit", "-m", commitMessage]);
+  const result = runGitResult(repositoryPath, ['commit', '-m', commitMessage]);
   if (result.status !== 0) {
-    return { ok: false, message: firstGitError(result, "提交失败。") };
+    return { ok: false, message: firstGitError(result, '提交失败。') };
   }
 
-  const commitHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || "").trim();
-  return { ok: true, commitHash, message: commitHash ? `提交成功：${commitHash}` : "提交成功。" };
+  const commitHash = (runGit(repositoryPath, ['rev-parse', '--short', 'HEAD']) || '').trim();
+  return { ok: true, commitHash, message: commitHash ? `提交成功：${commitHash}` : '提交成功。' };
 }
 
 function amendGitCommit(projectPath, message) {
   const repositoryPath = findGitRoot(projectPath);
-  const commitMessage = typeof message === "string" ? message.trim() : "";
+  const commitMessage = typeof message === 'string' ? message.trim() : '';
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
   if (!commitMessage) {
-    return { ok: false, message: "请先填写 commit message。" };
+    return { ok: false, message: '请先填写 commit message。' };
   }
 
   const head = readAttachedGitHead(repositoryPath);
   if (!head.ok) return head;
 
-  const stagedDiff = runGitResult(repositoryPath, ["diff", "--cached", "--quiet"]);
+  const stagedDiff = runGitResult(repositoryPath, ['diff', '--cached', '--quiet']);
   if (stagedDiff.status > 1) {
-    return { ok: false, message: firstGitError(stagedDiff, "无法读取 staged 变更。") };
+    return { ok: false, message: firstGitError(stagedDiff, '无法读取 staged 变更。') };
   }
   if (stagedDiff.status === 0 && commitMessage === head.commitMessage) {
-    return { ok: false, message: "提交信息未变化且没有 staged 变更，无需修订。" };
+    return { ok: false, message: '提交信息未变化且没有 staged 变更，无需修订。' };
   }
 
-  const result = runGitResult(repositoryPath, ["commit", "--amend", "-m", commitMessage]);
+  const result = runGitResult(repositoryPath, ['commit', '--amend', '-m', commitMessage]);
   if (result.status !== 0) {
-    return { ok: false, message: firstGitError(result, "修订上次提交失败。") };
+    return { ok: false, message: firstGitError(result, '修订上次提交失败。') };
   }
 
   return {
     ok: true,
     branch: head.branch,
-    commitHash: (runGit(repositoryPath, ["rev-parse", "HEAD"]) || head.commitHash).trim(),
-    message: "已修订上次提交。",
+    commitHash: (runGit(repositoryPath, ['rev-parse', 'HEAD']) || head.commitHash).trim(),
+    message: '已修订上次提交。',
   };
 }
 
 function restoreRootGitHead(repositoryPath, commitHash) {
-  const restoreHead = runGitResult(repositoryPath, ["update-ref", "HEAD", commitHash]);
+  const restoreHead = runGitResult(repositoryPath, ['update-ref', 'HEAD', commitHash]);
   if (restoreHead.status !== 0) {
-    return { ok: false, message: firstGitError(restoreHead, "无法恢复 HEAD。") };
+    return { ok: false, message: firstGitError(restoreHead, '无法恢复 HEAD。') };
   }
 
-  const restoreIndex = runGitResult(repositoryPath, ["read-tree", "HEAD"]);
+  const restoreIndex = runGitResult(repositoryPath, ['read-tree', 'HEAD']);
   return restoreIndex.status === 0
     ? { ok: true }
-    : { ok: false, message: firstGitError(restoreIndex, "无法恢复暂存区。") };
+    : { ok: false, message: firstGitError(restoreIndex, '无法恢复暂存区。') };
 }
 
 function undoLastGitCommit(projectPath, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   const head = readAttachedGitHead(repositoryPath);
   if (!head.ok) return head;
 
-  const parentLine = (runGit(repositoryPath, ["rev-list", "--parents", "-n", "1", "HEAD"]) || "").trim();
+  const parentLine = (runGit(repositoryPath, ['rev-list', '--parents', '-n', '1', 'HEAD']) || '').trim();
   const parentParts = parentLine.split(/\s+/).filter(Boolean);
   if (parentParts[0] !== head.commitHash) {
-    return { ok: false, message: "无法读取上次提交的父提交。" };
+    return { ok: false, message: '无法读取上次提交的父提交。' };
   }
   const parents = parentParts.slice(1);
   const isMergeCommit = parents.length > 1;
   if (isMergeCommit && options?.allowMerge !== true) {
     return {
       ok: false,
-      blockReason: "merge-commit",
+      blockReason: 'merge-commit',
       commitHash: head.commitHash,
-      message: "上次提交是 merge commit，需要再次确认后按第一父提交撤销。",
+      message: '上次提交是 merge commit，需要再次确认后按第一父提交撤销。',
     };
   }
 
   if (parents.length > 0) {
-    const reset = runGitResult(repositoryPath, ["reset", "--soft", "HEAD~"]);
+    const reset = runGitResult(repositoryPath, ['reset', '--soft', 'HEAD~']);
     if (reset.status !== 0) {
-      return { ok: false, message: firstGitError(reset, "撤销上次提交失败。") };
+      return { ok: false, message: firstGitError(reset, '撤销上次提交失败。') };
     }
     return {
       ok: true,
@@ -3310,27 +3356,27 @@ function undoLastGitCommit(projectPath, options = {}) {
       commitHash: head.commitHash,
       commitMessage: head.commitMessage,
       message: isMergeCommit
-        ? "已按第一父提交撤销上次 merge 提交，改动保留在 staged 状态。"
-        : "已撤销上次提交，改动保留在 staged 状态。",
+        ? '已按第一父提交撤销上次 merge 提交，改动保留在 staged 状态。'
+        : '已撤销上次提交，改动保留在 staged 状态。',
     };
   }
 
-  const cachedFiles = runGitResult(repositoryPath, ["ls-files", "--cached", "-z"]);
+  const cachedFiles = runGitResult(repositoryPath, ['ls-files', '--cached', '-z']);
   if (cachedFiles.status !== 0) {
-    return { ok: false, message: firstGitError(cachedFiles, "无法读取 root commit 的暂存区。") };
+    return { ok: false, message: firstGitError(cachedFiles, '无法读取 root commit 的暂存区。') };
   }
 
-  const deleteHead = runGitResult(repositoryPath, ["update-ref", "-d", "HEAD", head.commitHash]);
+  const deleteHead = runGitResult(repositoryPath, ['update-ref', '-d', 'HEAD', head.commitHash]);
   if (deleteHead.status !== 0) {
-    return { ok: false, message: firstGitError(deleteHead, "无法移除 root commit。") };
+    return { ok: false, message: firstGitError(deleteHead, '无法移除 root commit。') };
   }
 
   const unstage = cachedFiles.stdout
-    ? runGitResult(repositoryPath, ["rm", "--cached", "-r", "-f", "--", "."])
+    ? runGitResult(repositoryPath, ['rm', '--cached', '-r', '-f', '--', '.'])
     : { status: 0 };
   if (unstage.status !== 0) {
     const recovery = restoreRootGitHead(repositoryPath, head.commitHash);
-    const failure = firstGitError(unstage, "无法取消暂存 root commit 的文件。");
+    const failure = firstGitError(unstage, '无法取消暂存 root commit 的文件。');
     return {
       ok: false,
       message: recovery.ok
@@ -3344,88 +3390,88 @@ function undoLastGitCommit(projectPath, options = {}) {
     branch: head.branch,
     commitHash: head.commitHash,
     commitMessage: head.commitMessage,
-    message: "已撤销上次提交，文件保留在工作区且已取消暂存。",
+    message: '已撤销上次提交，文件保留在工作区且已取消暂存。',
   };
 }
 
 function normalizeGitStashRef(value) {
-  const stashRef = typeof value === "string" ? value.trim() : "";
+  const stashRef = typeof value === 'string' ? value.trim() : '';
   const match = /^(?:refs\/)?stash@\{(0|[1-9]\d*)\}$/.exec(stashRef);
-  return match ? `stash@{${match[1]}}` : "";
+  return match ? `stash@{${match[1]}}` : '';
 }
 
 function validateGitStashRef(repositoryPath, stashRef) {
   const normalized = normalizeGitStashRef(stashRef);
   return normalized &&
-    runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", `${normalized}^{commit}`]).status === 0
+    runGitResult(repositoryPath, ['rev-parse', '--verify', '--quiet', `${normalized}^{commit}`]).status === 0
     ? normalized
-    : "";
+    : '';
 }
 
 function normalizeGitStashScope(value) {
-  return value === "staged" || value === "unstaged" ? value : "all";
+  return value === 'staged' || value === 'unstaged' ? value : 'all';
 }
 
 function createGitStash(projectPath, message, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
-  const stashMessage = typeof message === "string" ? message.trim() : "";
+  const stashMessage = typeof message === 'string' ? message.trim() : '';
   const stashScope = normalizeGitStashScope(options?.scope);
-  const includeUntracked = stashScope !== "staged" && Boolean(options?.includeUntracked);
+  const includeUntracked = stashScope !== 'staged' && Boolean(options?.includeUntracked);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
 
   const hasStashableChanges = readGitStatusEntries(repositoryPath).some((status) => {
-    if (stashScope === "staged") return status.staged;
-    if (stashScope === "unstaged") return status.unstaged && (includeUntracked || status.status !== "UNTRACKED");
-    return includeUntracked || status.status !== "UNTRACKED";
+    if (stashScope === 'staged') return status.staged;
+    if (stashScope === 'unstaged') return status.unstaged && (includeUntracked || status.status !== 'UNTRACKED');
+    return includeUntracked || status.status !== 'UNTRACKED';
   });
   if (!hasStashableChanges) {
     return {
       ok: false,
       message:
-        stashScope === "staged"
-          ? "当前没有已暂存的变更可保存到 stash。"
-          : stashScope === "unstaged"
+        stashScope === 'staged'
+          ? '当前没有已暂存的变更可保存到 stash。'
+          : stashScope === 'unstaged'
             ? includeUntracked
-              ? "当前没有可保存到 stash 的未暂存变更。"
-              : "当前没有可保存到 stash 的未暂存已跟踪文件变更。"
+              ? '当前没有可保存到 stash 的未暂存变更。'
+              : '当前没有可保存到 stash 的未暂存已跟踪文件变更。'
             : includeUntracked
-              ? "当前没有可保存到 stash 的变更。"
-              : "当前没有可保存到 stash 的已跟踪文件变更。",
+              ? '当前没有可保存到 stash 的变更。'
+              : '当前没有可保存到 stash 的已跟踪文件变更。',
     };
   }
 
-  const args = ["stash", "push"];
-  if (stashScope === "staged") args.push("--staged");
-  if (stashScope === "unstaged") args.push("--keep-index");
-  if (includeUntracked) args.push("--include-untracked");
-  if (stashMessage) args.push("--message", stashMessage);
+  const args = ['stash', 'push'];
+  if (stashScope === 'staged') args.push('--staged');
+  if (stashScope === 'unstaged') args.push('--keep-index');
+  if (includeUntracked) args.push('--include-untracked');
+  if (stashMessage) args.push('--message', stashMessage);
   const result = runGitResult(repositoryPath, args);
   return result.status === 0
     ? {
         ok: true,
         message:
-          stashScope === "staged"
-            ? "已保存已暂存变更到 stash。"
-            : stashScope === "unstaged"
-              ? "已保存未暂存变更到 stash。"
-              : "已保存当前变更到 stash。",
+          stashScope === 'staged'
+            ? '已保存已暂存变更到 stash。'
+            : stashScope === 'unstaged'
+              ? '已保存未暂存变更到 stash。'
+              : '已保存当前变更到 stash。',
       }
-    : { ok: false, message: firstGitError(result, "保存到 stash 失败。") };
+    : { ok: false, message: firstGitError(result, '保存到 stash 失败。') };
 }
 
 function applyGitStash(projectPath, stashRef) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
   const normalized = validateGitStashRef(repositoryPath, stashRef);
   if (!normalized) {
-    return { ok: false, message: "指定的 stash 不存在。" };
+    return { ok: false, message: '指定的 stash 不存在。' };
   }
 
-  const result = runGitResult(repositoryPath, ["stash", "apply", normalized]);
+  const result = runGitResult(repositoryPath, ['stash', 'apply', normalized]);
   return result.status === 0
     ? { ok: true, message: `已应用 ${normalized}。` }
     : { ok: false, message: firstGitError(result, `应用 ${normalized} 失败。`) };
@@ -3434,14 +3480,14 @@ function applyGitStash(projectPath, stashRef) {
 function popGitStash(projectPath, stashRef) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
   const normalized = validateGitStashRef(repositoryPath, stashRef);
   if (!normalized) {
-    return { ok: false, message: "指定的 stash 不存在。" };
+    return { ok: false, message: '指定的 stash 不存在。' };
   }
 
-  const result = runGitResult(repositoryPath, ["stash", "pop", normalized]);
+  const result = runGitResult(repositoryPath, ['stash', 'pop', normalized]);
   return result.status === 0
     ? { ok: true, message: `已恢复并移除 ${normalized}。` }
     : { ok: false, message: firstGitError(result, `弹出 ${normalized} 失败。`) };
@@ -3450,14 +3496,14 @@ function popGitStash(projectPath, stashRef) {
 function dropGitStash(projectPath, stashRef) {
   const repositoryPath = findGitRoot(projectPath);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
   const normalized = validateGitStashRef(repositoryPath, stashRef);
   if (!normalized) {
-    return { ok: false, message: "指定的 stash 不存在。" };
+    return { ok: false, message: '指定的 stash 不存在。' };
   }
 
-  const result = runGitResult(repositoryPath, ["stash", "drop", normalized]);
+  const result = runGitResult(repositoryPath, ['stash', 'drop', normalized]);
   return result.status === 0
     ? { ok: true, message: `已删除 ${normalized}。` }
     : { ok: false, message: firstGitError(result, `删除 ${normalized} 失败。`) };
@@ -3465,33 +3511,33 @@ function dropGitStash(projectPath, stashRef) {
 
 function switchGitBranch(projectPath, branchName, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
-  const targetBranch = typeof branchName === "string" ? branchName.trim() : "";
+  const targetBranch = typeof branchName === 'string' ? branchName.trim() : '';
   const force = Boolean(options && options.force);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
   if (!targetBranch) {
-    return { ok: false, message: "请选择要切换的本地分支。" };
+    return { ok: false, message: '请选择要切换的本地分支。' };
   }
   const branches = readGitBranches(repositoryPath);
   const branch = branches.find((item) => item.name === targetBranch);
   if (!branch) {
-    return { ok: false, message: "只能切换到已有本地分支。" };
+    return { ok: false, message: '只能切换到已有本地分支。' };
   }
   if (branch.current) {
-    return { ok: true, branch: targetBranch, message: "已经位于该分支。" };
+    return { ok: true, branch: targetBranch, message: '已经位于该分支。' };
   }
   if (!force && hasUncommittedGitChanges(repositoryPath)) {
     return {
       ok: false,
-      blockReason: "dirty-worktree",
-      message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换分支。",
+      blockReason: 'dirty-worktree',
+      message: '当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换分支。',
     };
   }
 
   const result = runGitResult(
     repositoryPath,
-    force ? ["switch", "--discard-changes", "--", targetBranch] : ["switch", "--", targetBranch],
+    force ? ['switch', '--discard-changes', '--', targetBranch] : ['switch', '--', targetBranch],
   );
   return result.status === 0
     ? {
@@ -3499,31 +3545,31 @@ function switchGitBranch(projectPath, branchName, options = {}) {
         branch: targetBranch,
         message: force ? `已强制切换到 ${targetBranch}。` : `已切换到 ${targetBranch}。`,
       }
-    : { ok: false, branch: targetBranch, message: firstGitError(result, "切换分支失败。") };
+    : { ok: false, branch: targetBranch, message: firstGitError(result, '切换分支失败。') };
 }
 
 function checkoutGitCommit(projectPath, commitHash, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
-  const targetHash = typeof commitHash === "string" ? commitHash.trim() : "";
+  const targetHash = typeof commitHash === 'string' ? commitHash.trim() : '';
   const force = Boolean(options && options.force);
-  const preferredBranch = typeof options?.preferredBranch === "string" ? options.preferredBranch.trim() : "";
+  const preferredBranch = typeof options?.preferredBranch === 'string' ? options.preferredBranch.trim() : '';
   const detach = Boolean(options && options.detach);
   if (!repositoryPath) {
-    return { ok: false, message: "未检测到 Git 仓库。" };
+    return { ok: false, message: '未检测到 Git 仓库。' };
   }
   if (!/^[0-9a-fA-F]{7,64}$/.test(targetHash)) {
-    return { ok: false, message: "请选择一个有效的提交 hash。" };
+    return { ok: false, message: '请选择一个有效的提交 hash。' };
   }
-  const existsResult = runGitResult(repositoryPath, ["cat-file", "-e", `${targetHash}^{commit}`]);
+  const existsResult = runGitResult(repositoryPath, ['cat-file', '-e', `${targetHash}^{commit}`]);
   if (existsResult.status !== 0) {
-    return { ok: false, commitHash: targetHash, message: "该提交不存在或不是有效 commit。" };
+    return { ok: false, commitHash: targetHash, message: '该提交不存在或不是有效 commit。' };
   }
   if (!force && hasUncommittedGitChanges(repositoryPath)) {
     return {
       ok: false,
-      blockReason: "dirty-worktree",
+      blockReason: 'dirty-worktree',
       commitHash: targetHash,
-      message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换提交。",
+      message: '当前工作区存在未提交变更，请先提交、暂存或丢弃后再切换提交。',
     };
   }
 
@@ -3531,18 +3577,18 @@ function checkoutGitCommit(projectPath, commitHash, options = {}) {
   if (branchTip) {
     const branchResult = runGitResult(
       repositoryPath,
-      force ? ["switch", "--discard-changes", "--", branchTip.name] : ["switch", "--", branchTip.name],
+      force ? ['switch', '--discard-changes', '--', branchTip.name] : ['switch', '--', branchTip.name],
     );
     if (branchResult.status !== 0) {
       return {
         ok: false,
         branch: branchTip.name,
         commitHash: targetHash,
-        message: firstGitError(branchResult, "切换分支失败。"),
+        message: firstGitError(branchResult, '切换分支失败。'),
       };
     }
 
-    const headHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || targetHash).trim();
+    const headHash = (runGit(repositoryPath, ['rev-parse', '--short', 'HEAD']) || targetHash).trim();
     return {
       ok: true,
       branch: branchTip.name,
@@ -3556,55 +3602,55 @@ function checkoutGitCommit(projectPath, commitHash, options = {}) {
 
   const result = runGitResult(
     repositoryPath,
-    force ? ["switch", "--discard-changes", "--detach", targetHash] : ["switch", "--detach", targetHash],
+    force ? ['switch', '--discard-changes', '--detach', targetHash] : ['switch', '--detach', targetHash],
   );
   if (result.status !== 0) {
-    return { ok: false, commitHash: targetHash, message: firstGitError(result, "切换到提交失败。") };
+    return { ok: false, commitHash: targetHash, message: firstGitError(result, '切换到提交失败。') };
   }
 
-  const headHash = (runGit(repositoryPath, ["rev-parse", "--short", "HEAD"]) || targetHash).trim();
+  const headHash = (runGit(repositoryPath, ['rev-parse', '--short', 'HEAD']) || targetHash).trim();
   return {
     ok: true,
     commitHash: headHash,
     isDetachedHead: true,
-    message: headHash ? `已切换到提交 ${headHash}，当前为 detached HEAD。` : "已切换到该提交，当前为 detached HEAD。",
+    message: headHash ? `已切换到提交 ${headHash}，当前为 detached HEAD。` : '已切换到该提交，当前为 detached HEAD。',
   };
 }
 
 function normalizeGitRefName(value) {
-  return typeof value === "string" ? value.trim() : "";
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function validateGitRefName(repositoryPath, namespace, name, emptyMessage) {
   if (!name) return emptyMessage;
-  const result = runGitResult(repositoryPath, ["check-ref-format", `${namespace}/${name}`]);
-  return result.status === 0 ? "" : "引用名称不符合 Git 规则。";
+  const result = runGitResult(repositoryPath, ['check-ref-format', `${namespace}/${name}`]);
+  return result.status === 0 ? '' : '引用名称不符合 Git 规则。';
 }
 
 function gitRefExists(repositoryPath, fullName) {
-  return runGitResult(repositoryPath, ["show-ref", "--verify", "--quiet", fullName]).status === 0;
+  return runGitResult(repositoryPath, ['show-ref', '--verify', '--quiet', fullName]).status === 0;
 }
 
 function validateGitCommit(repositoryPath, commitHash) {
   const targetHash = normalizeGitRefName(commitHash);
-  return targetHash && runGitResult(repositoryPath, ["cat-file", "-e", `${targetHash}^{commit}`]).status === 0
+  return targetHash && runGitResult(repositoryPath, ['cat-file', '-e', `${targetHash}^{commit}`]).status === 0
     ? targetHash
-    : "";
+    : '';
 }
 
 function gitHistoryActionStatePathExists(repositoryPath, statePath) {
-  const result = runGitResult(repositoryPath, ["rev-parse", "--git-path", statePath]);
-  const resolvedPath = result.status === 0 ? result.stdout.trim() : "";
+  const result = runGitResult(repositoryPath, ['rev-parse', '--git-path', statePath]);
+  const resolvedPath = result.status === 0 ? result.stdout.trim() : '';
   return Boolean(resolvedPath && fs.existsSync(path.resolve(repositoryPath, resolvedPath)));
 }
 
 function gitHistoryActionRefExists(repositoryPath, refName) {
-  return runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", refName]).status === 0;
+  return runGitResult(repositoryPath, ['rev-parse', '--verify', '--quiet', refName]).status === 0;
 }
 
 function gitHistoryActionInProgressMessage(repositoryPath, action) {
-  const matchingRef = action === "cherry-pick" ? "CHERRY_PICK_HEAD" : "REVERT_HEAD";
-  const matchingLabel = action === "cherry-pick" ? "Cherry-pick" : "Revert";
+  const matchingRef = action === 'cherry-pick' ? 'CHERRY_PICK_HEAD' : 'REVERT_HEAD';
+  const matchingLabel = action === 'cherry-pick' ? 'Cherry-pick' : 'Revert';
   if (
     gitHistoryActionRefExists(repositoryPath, matchingRef) ||
     gitHistoryActionStatePathExists(repositoryPath, matchingRef)
@@ -3612,7 +3658,7 @@ function gitHistoryActionInProgressMessage(repositoryPath, action) {
     return `仓库已有未完成的 ${matchingLabel} 操作，请先使用专业 Git 工具处理。`;
   }
 
-  const otherRefs = ["CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_HEAD", "REBASE_HEAD"].filter(
+  const otherRefs = ['CHERRY_PICK_HEAD', 'REVERT_HEAD', 'MERGE_HEAD', 'REBASE_HEAD'].filter(
     (refName) => refName !== matchingRef,
   );
   if (
@@ -3620,43 +3666,43 @@ function gitHistoryActionInProgressMessage(repositoryPath, action) {
       (refName) =>
         gitHistoryActionRefExists(repositoryPath, refName) || gitHistoryActionStatePathExists(repositoryPath, refName),
     ) ||
-    ["rebase-apply", "rebase-merge", "sequencer", "BISECT_LOG", "index.lock"].some((statePath) =>
+    ['rebase-apply', 'rebase-merge', 'sequencer', 'BISECT_LOG', 'index.lock'].some((statePath) =>
       gitHistoryActionStatePathExists(repositoryPath, statePath),
     )
   ) {
-    return "检测到其他未完成的 Git 操作，请先使用专业 Git 工具处理。";
+    return '检测到其他未完成的 Git 操作，请先使用专业 Git 工具处理。';
   }
 
-  return "";
+  return '';
 }
 
 function validateGitHistoryActionCommit(repositoryPath, commitHash) {
   const requestedHash = normalizeGitRefName(commitHash);
   if (!/^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(requestedHash)) {
-    return { targetHash: "", message: "请选择完整的提交 hash。" };
+    return { targetHash: '', message: '请选择完整的提交 hash。' };
   }
 
-  const resolved = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", `${requestedHash}^{commit}`]);
+  const resolved = runGitResult(repositoryPath, ['rev-parse', '--verify', '--quiet', `${requestedHash}^{commit}`]);
   const targetHash = resolved.stdout.trim();
   if (resolved.status !== 0 || targetHash.toLowerCase() !== requestedHash.toLowerCase()) {
-    return { targetHash: "", message: "目标提交不存在或不是有效 commit。" };
+    return { targetHash: '', message: '目标提交不存在或不是有效 commit。' };
   }
 
-  const stashesResult = runGitResult(repositoryPath, ["stash", "list", "--format=%H"]);
+  const stashesResult = runGitResult(repositoryPath, ['stash', 'list', '--format=%H']);
   if (stashesResult.status !== 0) {
-    return { targetHash, message: firstGitError(stashesResult, "无法检查 stash 提交。") };
+    return { targetHash, message: firstGitError(stashesResult, '无法检查 stash 提交。') };
   }
   if (stashesResult.stdout.split(/\r?\n/).some((stashHash) => stashHash.trim() === targetHash)) {
-    return { targetHash, message: "stash 提交不能用于 Cherry-pick 或 Revert。" };
+    return { targetHash, message: 'stash 提交不能用于 Cherry-pick 或 Revert。' };
   }
 
-  const parentsResult = runGitResult(repositoryPath, ["rev-list", "--parents", "-n", "1", targetHash]);
+  const parentsResult = runGitResult(repositoryPath, ['rev-list', '--parents', '-n', '1', targetHash]);
   if (parentsResult.status !== 0) {
-    return { targetHash, message: firstGitError(parentsResult, "无法读取目标提交。") };
+    return { targetHash, message: firstGitError(parentsResult, '无法读取目标提交。') };
   }
   const parents = parentsResult.stdout.trim().split(/\s+/).slice(1).filter(Boolean);
   if (parents.length > 1) {
-    return { targetHash, blockReason: "merge-commit", message: "合并提交暂不支持 Cherry-pick 或 Revert。" };
+    return { targetHash, blockReason: 'merge-commit', message: '合并提交暂不支持 Cherry-pick 或 Revert。' };
   }
 
   return { targetHash };
@@ -3664,9 +3710,9 @@ function validateGitHistoryActionCommit(repositoryPath, commitHash) {
 
 function runGitHistoryAction(projectPath, action, commitHash) {
   const repositoryPath = findGitRoot(projectPath);
-  const actionLabel = action === "cherry-pick" ? "Cherry-pick" : "Revert";
-  const actionHead = action === "cherry-pick" ? "CHERRY_PICK_HEAD" : "REVERT_HEAD";
-  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  const actionLabel = action === 'cherry-pick' ? 'Cherry-pick' : 'Revert';
+  const actionHead = action === 'cherry-pick' ? 'CHERRY_PICK_HEAD' : 'REVERT_HEAD';
+  if (!repositoryPath) return { ok: false, message: '未检测到 Git 仓库。' };
 
   const target = validateGitHistoryActionCommit(repositoryPath, commitHash);
   if (!target.targetHash) return { ok: false, message: target.message };
@@ -3682,38 +3728,38 @@ function runGitHistoryAction(projectPath, action, commitHash) {
     return {
       ok: false,
       commitHash: target.targetHash,
-      message: `无法检查工作区状态：${firstGitError(worktreeStatus, "Git status 失败。")}`,
+      message: `无法检查工作区状态：${firstGitError(worktreeStatus, 'Git status 失败。')}`,
     };
   }
   if (worktreeStatus.stdout.trim()) {
     return {
       ok: false,
-      blockReason: "dirty-worktree",
+      blockReason: 'dirty-worktree',
       commitHash: target.targetHash,
-      message: "当前工作区存在未提交变更，请先提交、暂存或丢弃后再执行。",
+      message: '当前工作区存在未提交变更，请先提交、暂存或丢弃后再执行。',
     };
   }
-  if (action === "cherry-pick" && target.targetHash === head.commitHash) {
-    return { ok: false, commitHash: target.targetHash, message: "当前 HEAD 不能 Cherry-pick 到自身。" };
+  if (action === 'cherry-pick' && target.targetHash === head.commitHash) {
+    return { ok: false, commitHash: target.targetHash, message: '当前 HEAD 不能 Cherry-pick 到自身。' };
   }
 
   const result = runGitResult(
     repositoryPath,
-    action === "cherry-pick" ? ["cherry-pick", target.targetHash] : ["revert", "--no-edit", target.targetHash],
+    action === 'cherry-pick' ? ['cherry-pick', target.targetHash] : ['revert', '--no-edit', target.targetHash],
   );
   if (result.status === 0) {
     return {
       ok: true,
       commitHash: target.targetHash,
       message:
-        action === "cherry-pick"
+        action === 'cherry-pick'
           ? `已将提交 ${target.targetHash.slice(0, 7)} 应用到当前分支。`
           : `已创建撤销提交以回退 ${target.targetHash.slice(0, 7)}。`,
     };
   }
 
   const operationError = firstGitError(result, `${actionLabel} 失败。`);
-  const actionHeadResult = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", actionHead]);
+  const actionHeadResult = runGitResult(repositoryPath, ['rev-parse', '--verify', '--quiet', actionHead]);
   if (
     actionHeadResult.status !== 0 ||
     actionHeadResult.stdout.trim().toLowerCase() !== target.targetHash.toLowerCase()
@@ -3721,7 +3767,7 @@ function runGitHistoryAction(projectPath, action, commitHash) {
     return { ok: false, commitHash: target.targetHash, message: operationError };
   }
 
-  const abort = runGitResult(repositoryPath, [action, "--abort"]);
+  const abort = runGitResult(repositoryPath, [action, '--abort']);
   if (abort.status === 0) {
     return {
       ok: false,
@@ -3738,11 +3784,11 @@ function runGitHistoryAction(projectPath, action, commitHash) {
 }
 
 function cherryPickGitCommit(projectPath, commitHash) {
-  return runGitHistoryAction(projectPath, "cherry-pick", commitHash);
+  return runGitHistoryAction(projectPath, 'cherry-pick', commitHash);
 }
 
 function revertGitCommit(projectPath, commitHash) {
-  return runGitHistoryAction(projectPath, "revert", commitHash);
+  return runGitHistoryAction(projectPath, 'revert', commitHash);
 }
 
 function createGitBranch(projectPath, branchName, commitHash, options = {}) {
@@ -3750,27 +3796,27 @@ function createGitBranch(projectPath, branchName, commitHash, options = {}) {
   const name = normalizeGitRefName(branchName);
   const checkout = Boolean(options && options.checkout);
   const force = Boolean(options && options.force);
-  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
-  const nameError = validateGitRefName(repositoryPath, "refs/heads", name, "请填写分支名称。");
+  if (!repositoryPath) return { ok: false, message: '未检测到 Git 仓库。' };
+  const nameError = validateGitRefName(repositoryPath, 'refs/heads', name, '请填写分支名称。');
   if (nameError) return { ok: false, message: nameError };
   const targetHash = validateGitCommit(repositoryPath, commitHash);
-  if (!targetHash) return { ok: false, message: "目标提交不存在或不是有效 commit。" };
+  if (!targetHash) return { ok: false, message: '目标提交不存在或不是有效 commit。' };
   if (gitRefExists(repositoryPath, `refs/heads/${name}`))
-    return { ok: false, branch: name, message: "本地分支已存在。" };
+    return { ok: false, branch: name, message: '本地分支已存在。' };
   if (checkout && !force && hasUncommittedGitChanges(repositoryPath)) {
     return {
       ok: false,
       branch: name,
-      blockReason: "dirty-worktree",
-      message: "当前工作区存在未提交变更，无法创建并切换分支。",
+      blockReason: 'dirty-worktree',
+      message: '当前工作区存在未提交变更，无法创建并切换分支。',
     };
   }
 
   const args = checkout
     ? force
-      ? ["switch", "--discard-changes", "-c", name, targetHash]
-      : ["switch", "-c", name, targetHash]
-    : ["branch", "--", name, targetHash];
+      ? ['switch', '--discard-changes', '-c', name, targetHash]
+      : ['switch', '-c', name, targetHash]
+    : ['branch', '--', name, targetHash];
   const result = runGitResult(repositoryPath, args);
   return result.status === 0
     ? {
@@ -3779,107 +3825,107 @@ function createGitBranch(projectPath, branchName, commitHash, options = {}) {
         commitHash: targetHash,
         message: checkout ? `已创建并切换到分支 ${name}。` : `已创建分支 ${name}。`,
       }
-    : { ok: false, branch: name, commitHash: targetHash, message: firstGitError(result, "创建分支失败。") };
+    : { ok: false, branch: name, commitHash: targetHash, message: firstGitError(result, '创建分支失败。') };
 }
 
 function createGitTag(projectPath, tagName, commitHash, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   const name = normalizeGitRefName(tagName);
   const annotated = Boolean(options && options.annotated);
-  const message = typeof options?.message === "string" ? options.message.trim() : "";
-  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
-  const nameError = validateGitRefName(repositoryPath, "refs/tags", name, "请填写标签名称。");
+  const message = typeof options?.message === 'string' ? options.message.trim() : '';
+  if (!repositoryPath) return { ok: false, message: '未检测到 Git 仓库。' };
+  const nameError = validateGitRefName(repositoryPath, 'refs/tags', name, '请填写标签名称。');
   if (nameError) return { ok: false, message: nameError };
-  if (annotated && !message) return { ok: false, message: "请填写附注标签说明。" };
+  if (annotated && !message) return { ok: false, message: '请填写附注标签说明。' };
   const targetHash = validateGitCommit(repositoryPath, commitHash);
-  if (!targetHash) return { ok: false, message: "目标提交不存在或不是有效 commit。" };
-  if (gitRefExists(repositoryPath, `refs/tags/${name}`)) return { ok: false, message: "标签已存在。" };
+  if (!targetHash) return { ok: false, message: '目标提交不存在或不是有效 commit。' };
+  if (gitRefExists(repositoryPath, `refs/tags/${name}`)) return { ok: false, message: '标签已存在。' };
 
   const result = runGitResult(
     repositoryPath,
-    annotated ? ["tag", "-a", "-m", message, "--", name, targetHash] : ["tag", "--", name, targetHash],
+    annotated ? ['tag', '-a', '-m', message, '--', name, targetHash] : ['tag', '--', name, targetHash],
   );
   return result.status === 0
-    ? { ok: true, commitHash: targetHash, message: `已创建${annotated ? "附注" : "轻量"}标签 ${name}。` }
-    : { ok: false, commitHash: targetHash, message: firstGitError(result, "创建标签失败。") };
+    ? { ok: true, commitHash: targetHash, message: `已创建${annotated ? '附注' : '轻量'}标签 ${name}。` }
+    : { ok: false, commitHash: targetHash, message: firstGitError(result, '创建标签失败。') };
 }
 
 function deleteGitTag(projectPath, tagName) {
   const repositoryPath = findGitRoot(projectPath);
   const name = normalizeGitRefName(tagName);
-  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
-  if (!name || !gitRefExists(repositoryPath, `refs/tags/${name}`)) return { ok: false, message: "标签不存在。" };
+  if (!repositoryPath) return { ok: false, message: '未检测到 Git 仓库。' };
+  if (!name || !gitRefExists(repositoryPath, `refs/tags/${name}`)) return { ok: false, message: '标签不存在。' };
 
-  const result = runGitResult(repositoryPath, ["tag", "-d", "--", name]);
+  const result = runGitResult(repositoryPath, ['tag', '-d', '--', name]);
   return result.status === 0
     ? { ok: true, message: `已删除标签 ${name}。` }
-    : { ok: false, message: firstGitError(result, "删除标签失败。") };
+    : { ok: false, message: firstGitError(result, '删除标签失败。') };
 }
 
 function renameGitBranch(projectPath, branchName, nextBranchName) {
   const repositoryPath = findGitRoot(projectPath);
   const name = normalizeGitRefName(branchName);
   const nextName = normalizeGitRefName(nextBranchName);
-  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  if (!repositoryPath) return { ok: false, message: '未检测到 Git 仓库。' };
   if (!gitRefExists(repositoryPath, `refs/heads/${name}`))
-    return { ok: false, branch: name, message: "本地分支不存在。" };
-  const nameError = validateGitRefName(repositoryPath, "refs/heads", nextName, "请填写新的分支名称。");
+    return { ok: false, branch: name, message: '本地分支不存在。' };
+  const nameError = validateGitRefName(repositoryPath, 'refs/heads', nextName, '请填写新的分支名称。');
   if (nameError) return { ok: false, branch: name, message: nameError };
   if (gitRefExists(repositoryPath, `refs/heads/${nextName}`))
-    return { ok: false, branch: nextName, message: "同名本地分支已存在。" };
+    return { ok: false, branch: nextName, message: '同名本地分支已存在。' };
 
-  const result = runGitResult(repositoryPath, ["branch", "-m", "--", name, nextName]);
+  const result = runGitResult(repositoryPath, ['branch', '-m', '--', name, nextName]);
   return result.status === 0
     ? { ok: true, branch: nextName, message: `已将分支 ${name} 重命名为 ${nextName}。` }
-    : { ok: false, branch: name, message: firstGitError(result, "重命名分支失败。") };
+    : { ok: false, branch: name, message: firstGitError(result, '重命名分支失败。') };
 }
 
 function deleteGitBranch(projectPath, branchName, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
   const name = normalizeGitRefName(branchName);
   const force = Boolean(options && options.force);
-  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  if (!repositoryPath) return { ok: false, message: '未检测到 Git 仓库。' };
   const branch = readGitBranches(repositoryPath).find((item) => item.name === name);
-  if (!branch) return { ok: false, branch: name, message: "本地分支不存在。" };
-  if (branch.current) return { ok: false, branch: name, message: "不能删除当前检出的分支。" };
+  if (!branch) return { ok: false, branch: name, message: '本地分支不存在。' };
+  if (branch.current) return { ok: false, branch: name, message: '不能删除当前检出的分支。' };
 
   if (!force) {
-    const upstreamResult = runGitResult(repositoryPath, ["rev-parse", "--verify", "--quiet", `${name}@{upstream}`]);
-    const comparisonRef = upstreamResult.status === 0 ? `${name}@{upstream}` : "HEAD";
+    const upstreamResult = runGitResult(repositoryPath, ['rev-parse', '--verify', '--quiet', `${name}@{upstream}`]);
+    const comparisonRef = upstreamResult.status === 0 ? `${name}@{upstream}` : 'HEAD';
     if (
-      runGitResult(repositoryPath, ["merge-base", "--is-ancestor", `refs/heads/${name}`, comparisonRef]).status !== 0
+      runGitResult(repositoryPath, ['merge-base', '--is-ancestor', `refs/heads/${name}`, comparisonRef]).status !== 0
     ) {
-      return { ok: false, branch: name, blockReason: "unmerged-branch", message: `分支 ${name} 包含尚未合并的提交。` };
+      return { ok: false, branch: name, blockReason: 'unmerged-branch', message: `分支 ${name} 包含尚未合并的提交。` };
     }
   }
 
-  const result = runGitResult(repositoryPath, ["branch", force ? "-D" : "-d", "--", name]);
+  const result = runGitResult(repositoryPath, ['branch', force ? '-D' : '-d', '--', name]);
   return result.status === 0
     ? { ok: true, branch: name, message: force ? `已强制删除分支 ${name}。` : `已删除分支 ${name}。` }
-    : { ok: false, branch: name, message: firstGitError(result, "删除分支失败。") };
+    : { ok: false, branch: name, message: firstGitError(result, '删除分支失败。') };
 }
 
 function checkoutGitRemoteBranch(projectPath, remoteRef, options = {}) {
   const repositoryPath = findGitRoot(projectPath);
-  const name = normalizeGitRefName(remoteRef).replace(/^refs\/remotes\//, "");
+  const name = normalizeGitRefName(remoteRef).replace(/^refs\/remotes\//, '');
   const force = Boolean(options && options.force);
-  if (!repositoryPath) return { ok: false, message: "未检测到 Git 仓库。" };
+  if (!repositoryPath) return { ok: false, message: '未检测到 Git 仓库。' };
   if (!name || !gitRefExists(repositoryPath, `refs/remotes/${name}`))
-    return { ok: false, message: "远程跟踪分支不存在。" };
+    return { ok: false, message: '远程跟踪分支不存在。' };
   if (!force && hasUncommittedGitChanges(repositoryPath)) {
     return {
       ok: false,
       branch: name,
-      blockReason: "dirty-worktree",
-      message: "当前工作区存在未提交变更，无法检出远程分支。",
+      blockReason: 'dirty-worktree',
+      message: '当前工作区存在未提交变更，无法检出远程分支。',
     };
   }
 
   const result = runGitResult(
     repositoryPath,
-    force ? ["switch", "--discard-changes", "--track", "--", name] : ["switch", "--track", "--", name],
+    force ? ['switch', '--discard-changes', '--track', '--', name] : ['switch', '--track', '--', name],
   );
   return result.status === 0
-    ? { ok: true, branch: name.split("/").slice(1).join("/"), message: `已检出远程分支 ${name}。` }
-    : { ok: false, branch: name, message: firstGitError(result, "检出远程分支失败。") };
+    ? { ok: true, branch: name.split('/').slice(1).join('/'), message: `已检出远程分支 ${name}。` }
+    : { ok: false, branch: name, message: firstGitError(result, '检出远程分支失败。') };
 }

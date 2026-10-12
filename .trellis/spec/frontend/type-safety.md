@@ -345,11 +345,13 @@ Keep ref kind and risk reasons structured across every layer; use text only for 
 
 ### 3. Contracts
 
-- Start both detail reads only after the existing tooltip hover delay has made the tooltip visible. File totals use `readGitCommitFiles`; avatar loading must never delay metadata, title, markdown body, or summary loading UI.
+- Read file details only after the existing tooltip hover delay has made the tooltip visible. Prefetch avatars for the open history panel's visible graph window, with at most three active prefetches per component; replace queued work when the window/context changes and clear queued work on close or unmount. Decode avatar images during prefetch so hovering does not start the image download. Avatar loading must never delay the history list, metadata, title, markdown body, or summary UI.
 - Preload selects a GitHub remote in this order: GitHub upstream, GitHub `origin`, then another GitHub remote. It supports HTTPS, SCP-style SSH, and `ssh://` GitHub URLs.
-- The GitHub commit endpoint receives only remote owner, repository, and the full commit hash. Return only an HTTPS `author.avatar_url` or `null`.
-- Cache in-flight and settled avatar results, including `null`, by normalized repository and full commit hash in a bounded in-memory preload cache.
+- Read the commit author email locally in preload. A GitHub noreply email containing a numeric user ID resolves directly to `https://avatars.githubusercontent.com/u/<id>?s=80`; legacy `<login>@users.noreply.github.com` resolves to `https://github.com/<login>.png?size=80`. Otherwise the GitHub commit endpoint receives only remote owner, repository, and the full commit hash. Return only an HTTPS avatar URL or `null`.
+- Cache in-flight and successful avatar results by normalized GitHub repository and exact author email in a bounded in-memory preload cache; use the full commit hash when email is unavailable. Refresh recency on hits. Remove failed/null results so a later hover can retry.
 - Keep the renderer tooltip session bounded by `GIT_COMMIT_TOOLTIP_SESSION_MAX_HASHES`. Switching from A to B replaces the active reactive detail state; returning to A consumes its session promise without retaining B's UI state in the component.
+- Bound the separate avatar prefetch cache to the same maximum, share its promises with visible tooltips, and clear it through the existing repository-prune/project-reset paths. Prefetching must not initialize unavailable file details or trigger file reads.
+- Retry unavailable avatars on the next visible hover, including image-load failures, without discarding file details or duplicating pending avatar requests. The component's same-hash guard may skip only successful or pending avatar state, not a completed failure.
 - Do not use Gravatar, author email, GitHub tokens, persistent cache storage, provider settings, raw remote URLs, or raw HTTP error messages in renderer state.
 - The renderer always has a deterministic initials badge. It replaces a missing, loading, rejected, or image-error avatar; stale async detail results must be ignored after project/repository context changes.
 
@@ -357,10 +359,11 @@ Keep ref kind and risk reasons structured across every layer; use text only for 
 
 - Non-GitHub or malformed remote -> return `null` without an HTTP request.
 - Public commit with a GitHub author -> return a sanitized HTTPS avatar URL.
-- Missing GitHub association, private repository, rate limit, HTTP failure, timeout, or invalid avatar URL -> return and cache `null`; tooltip remains usable.
+- Missing GitHub association, private repository, rate limit, HTTP failure, timeout, or invalid avatar URL -> return `null` without retaining a failed preload entry; tooltip remains usable and can retry on a later hover.
+- HTTP 429 or HTTP 403 with `x-ratelimit-remaining: 0` -> suppress anonymous API requests until the server's reset/retry time (at least 60 seconds when no valid retry-after is present). Successful cache entries and direct noreply avatars remain usable. This does not provide authenticated GitHub access or guarantee availability under exhausted quota.
 - Browser fallback -> return `null` without network work.
 - Local file read pending -> show a neutral loading summary; rejected/unavailable data -> show a neutral unavailable summary, never synthetic zero totals.
-- Avatar image load failure -> remove the URL from local tooltip state and show initials.
+- Avatar image load failure -> remove the URL from local tooltip state, show initials, and allow the next visible hover to reload the image.
 - An A request resolving after a visible switch to B, a repository replacement, or an unmount -> ignore the stale result by active hash, request generation, and context generation.
 
 ### 5. Good/Base/Bad Cases
@@ -368,7 +371,7 @@ Keep ref kind and risk reasons structured across every layer; use text only for 
 - Good: a GitHub-backed public commit opens after the normal delay, immediately shows initials and metadata, then replaces initials with a cached avatar while local additions/deletions load independently.
 - Good: scanning 240 history rows replaces one visible tooltip state at a time while the bounded renderer session reuses eligible detail promises.
 - Base: an offline, private, or non-GitHub repository shows initials and an available local summary without a visible network error.
-- Bad: dispatching avatar or file reads on `mouseenter` before the delay, which creates unnecessary work while scanning dense rows.
+- Bad: prefetching file details, unbounded avatar requests for all history rows, or retrying exhausted anonymous API quota on every hover.
 - Bad: copying a growing reactive hash-to-details record on every hover result, which makes a tooltip update reconcile an increasingly large history view.
 - Bad: sending `authorEmail` to Gravatar or exposing a GitHub URL/error in tooltip copy.
 
@@ -376,7 +379,7 @@ Keep ref kind and risk reasons structured across every layer; use text only for 
 
 - `node --check public/preload.js` after changing GitHub remote parsing, cache behavior, or request timeout handling.
 - `npm run lint`, `npm run type-check`, and `npm run build` after changing the bridge, store proxy, or tooltip template.
-- `npx vitest run src/lib/gitCommitTooltipSession.test.ts` must cover capacity, A-B-A session reuse, and stale-result isolation; manual smoke should include repeated tooltip switching after loading 160 and 240 commits.
+- `npx vitest run tests/gitCommitAvatar.test.ts tests/gitCommitTooltipSession.test.ts` must cover both noreply forms, author/repository cache isolation, concurrent request reuse, quota backoff/recovery, failure recovery, image-error retries, prefetch-to-tooltip reuse, cleanup, and capacity; manual smoke should include repeated tooltip switching after loading 160 and 240 commits.
 - Manual uTools smoke test: hover a GitHub public commit, a non-GitHub/offline commit, and leave before the hover delay; verify delayed loading, initials fallback, summary counts, Escape cleanup, and no stale result after switching projects.
 
 ### 7. Wrong vs Correct
@@ -387,7 +390,7 @@ Keep ref kind and risk reasons structured across every layer; use text only for 
 void store.readGitCommitAuthorAvatar(projectId, commit.hash);
 ```
 
-Starting this on every row entry bypasses the tooltip's scan-friendly delay and can create unnecessary requests.
+Starting this on every row entry bypasses the bounded prefetch queue and shared cache and can create unnecessary requests.
 
 #### Correct
 
@@ -398,7 +401,7 @@ commitTooltipOpenTimer = window.setTimeout(() => {
 }, 450);
 ```
 
-Keep detail loading behind the visible-tooltip transition so cacheable enhancements remain advisory.
+Keep file detail loading behind the visible-tooltip transition. Avatars may already be available from the bounded visible-window prefetch cache.
 
 #### Wrong
 

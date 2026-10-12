@@ -297,6 +297,9 @@ try {
       "\turl = ../conflicted.git",
       '[submodule "missing.path"]',
       "\turl = ../missing-path.git",
+      '[submodule "empty.checkout"]',
+      "\tpath = modules/empty checkout",
+      "\turl = ../missing.git",
       "",
     ].join("\n"),
   );
@@ -325,6 +328,8 @@ try {
 
   run(projectRoot, "update-index", "--add", "--cacheinfo", `160000,${sourceHead},modules/index only`);
   fs.mkdirSync(path.join(projectRoot, "modules"), { recursive: true });
+  run(projectRoot, "update-index", "--add", "--cacheinfo", `160000,${sourceHead},modules/empty checkout`);
+  fs.mkdirSync(path.join(projectRoot, "modules", "empty checkout"), { recursive: true });
   fs.writeFileSync(path.join(projectRoot, "modules", "not gitlink"), "ordinary file\n");
   run(projectRoot, "add", "--", ".gitmodules", "modules/not gitlink");
   execFileSync("git", ["-C", projectRoot, "update-index", "--index-info"], {
@@ -404,6 +409,7 @@ try {
 
   const direct = snapshot.submodules.entries.find((entry) => entry.name === "direct.name");
   const uninitialized = snapshot.submodules.entries.find((entry) => entry.name === "uninitialized.name");
+  const emptyCheckout = snapshot.submodules.entries.find((entry) => entry.name === "empty.checkout");
   const configOnly = snapshot.submodules.entries.find((entry) => entry.name === "config.only");
   const wrongMode = snapshot.submodules.entries.find((entry) => entry.name === "wrong.mode");
   const conflicted = snapshot.submodules.entries.find((entry) => entry.name === "conflicted.name");
@@ -420,6 +426,11 @@ try {
   assert.equal(direct?.status.untrackedEntries, 1);
   assert.equal(uninitialized?.registration, "uninitialized");
   assert.equal(uninitialized?.checkout, "missing");
+  assert.equal(emptyCheckout?.registration, "uninitialized");
+  assert.equal(emptyCheckout?.pathAvailable, true);
+  assert.equal(emptyCheckout?.checkout, "missing");
+  assert.equal(emptyCheckout?.failure, null);
+  assert.equal(emptyCheckout?.head.kind, "unknown");
   assert.equal(configOnly?.index.kind, "missing");
   assert.equal(wrongMode?.index.kind, "not-gitlink");
   assert.equal(conflicted?.index.kind, "conflicted");
