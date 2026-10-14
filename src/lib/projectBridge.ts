@@ -867,6 +867,9 @@ const fallbackBridge: ProjectBridge = {
   async runMigration(): Promise<MigrationRunResult> {
     throw browserPreviewError("执行数据迁移");
   },
+  async stopMigrationService() {
+    throw browserPreviewError("停止迁移服务");
+  },
   readMigrationSummary() {
     return null;
   },

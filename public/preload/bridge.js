@@ -21,6 +21,7 @@ registerProcessCleanupHooks();
 window.projectBridge = {
   preflightStartup,
   runMigration,
+  stopMigrationService,
   readMigrationSummary,
   loadProjects: readProjects,
   saveProjects: writeStoredProjects,

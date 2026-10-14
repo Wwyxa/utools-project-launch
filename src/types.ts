@@ -1597,7 +1597,7 @@ export interface StartupPreflightResult {
 
 export interface MigrationRunResult {
   ok: boolean;
-  blocked?: "unsupported-host" | "active-runs" | "items-failed";
+  blocked?: "unsupported-host" | "active-runs" | "items-failed" | "service-unavailable";
   message?: string;
   ledger: MigrationSummary | null;
 }
@@ -1605,6 +1605,11 @@ export interface MigrationRunResult {
 export interface LocalStateWriteResult {
   ok: boolean;
   error?: string;
+}
+
+export interface MigrationServiceStopProgress {
+  stage: "checking-service" | "stopping-scripts" | "waiting-scripts" | "stopping-service" | "waiting-service" | "stopped";
+  activeRunCount: number;
 }
 
 export interface ProjectEnvironmentOverride {
@@ -1691,6 +1696,7 @@ export interface CleanupResult {
 export interface ProjectBridge {
   preflightStartup(): StartupPreflightResult;
   runMigration(options?: { onProgress?: (summary: MigrationSummary) => void }): Promise<MigrationRunResult>;
+  stopMigrationService(options?: { onProgress?: (progress: MigrationServiceStopProgress) => void }): Promise<LocalStateWriteResult>;
   readMigrationSummary(): MigrationSummary | null;
   loadProjects(): Promise<Project[]>;
   saveProjects(projects: Project[], options?: ProjectSaveProjectsOptions): Promise<void>;

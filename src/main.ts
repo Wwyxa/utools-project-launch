@@ -1,4 +1,4 @@
-import { createApp } from "vue";
+import { createApp, defineComponent, h, ref } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
 import StartupGate from "./components/common/StartupGate.vue";
@@ -36,14 +36,18 @@ if (startupTiming) {
 // synchronously reads preferences from the plugin local data directory, which
 // is only valid once the v8 preflight allows startup.
 const preflightResult = getProjectBridge().preflightStartup();
-const startupBlocked = ["upgrade-required", "migration-required", "migration-incomplete"].includes(
+const startupBlocked = ref(["upgrade-required", "migration-required", "migration-incomplete"].includes(
   preflightResult.status,
-);
+));
 
-const app = createApp(startupBlocked ? StartupGate : App);
-if (startupBlocked) {
-  app.provide(STARTUP_PREFLIGHT_KEY, preflightResult);
-}
+const app = createApp(defineComponent({
+  setup() {
+    return () => startupBlocked.value
+      ? h(StartupGate, { onReady: () => { startupBlocked.value = false; } })
+      : h(App);
+  },
+}));
+app.provide(STARTUP_PREFLIGHT_KEY, preflightResult);
 app.use(createPinia());
 app.directive("overlay-scrollbar", overlayScrollbar);
 app.mount("#root");

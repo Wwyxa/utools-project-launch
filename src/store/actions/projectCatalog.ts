@@ -519,6 +519,10 @@ export const projectCatalogActions = {
           },
         });
         this.migrationProgress = result.ledger;
+        this.cleanupMessage = result.ok ? "迁移完成。" : result.message || "迁移失败，请重试。";
+        if (result.ok) {
+          await this.reloadProjectsFromStorage();
+        }
         await this.refreshStorageOverview();
         return result;
       } catch (error) {

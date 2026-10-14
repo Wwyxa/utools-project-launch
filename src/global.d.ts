@@ -11,6 +11,7 @@ declare global {
       isDarkColors(): boolean;
       onPluginEnter(callback: (action?: unknown) => void): void;
       onPluginOut?(callback: (isKill?: boolean) => void): void;
+      onDbPull?(callback: (docs: unknown[]) => void): void;
       setSubInput?(onChange: (details: { text: string }) => void, placeholder?: string, isFocus?: boolean): boolean;
       removeSubInput?(): boolean;
       subInputFocus?(): boolean;

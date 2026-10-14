@@ -12,6 +12,7 @@ import EnvironmentTab from "./components/environment/EnvironmentTab.vue";
 import WorkActivity from "./components/activity/WorkActivity.vue";
 import { useI18n } from "./lib/i18n";
 import { requestAppEscape } from "./lib/escape";
+import { getProjectBridge } from "./lib/projectBridge";
 import type { ProjectBridgeEvent } from "./types";
 
 const store = useStore();
@@ -22,9 +23,44 @@ const isDashboard = computed(() => activeTab.value === "projects" && !store.sele
 const theme = computed(() => store.theme);
 const { globalActionStatus, isGlobalActionStatusExpanded } = useGlobalActionStatus(store);
 const pluginSearchQuery = ref("");
+const migrationPromptOpen = ref(false);
+const migrationPromptMessage = ref("");
+let migrationPromptShown = false;
 let pluginOutHookRegistered = false;
 let startupProjectLoadId = 0;
 let runtimeResumePromise: Promise<void> | null = null;
+
+const checkStorageMigration = () => {
+  if (store.dataToolsBusy) return;
+  try {
+    const preflight = getProjectBridge().preflightStartup();
+    if (preflight.status !== "migration-required" && preflight.status !== "migration-incomplete") {
+      migrationPromptShown = false;
+      return;
+    }
+    if (migrationPromptShown) return;
+    migrationPromptShown = true;
+    migrationPromptMessage.value = preflight.message;
+    migrationPromptOpen.value = true;
+  } catch (error) {
+    console.warn("[utools-project-launch] Unable to check pending storage migration.", error);
+  }
+};
+
+const handleDatabasePull = () => {
+  checkStorageMigration();
+  void store.scheduleProjectCatalogReload();
+};
+
+const resumeStorageMigration = async () => {
+  const result = await store.retryStorageMigration();
+  if (result?.ok) {
+    migrationPromptOpen.value = false;
+    migrationPromptShown = false;
+  } else if (store.cleanupMessage) {
+    migrationPromptMessage.value = store.cleanupMessage;
+  }
+};
 
 const loadProjectsWithStartupTiming = () => {
   const startupTiming = window.__utoolsProjectLaunchStartupTiming;
@@ -86,6 +122,7 @@ const handlePluginEnter = async (action?: unknown) => {
   } else {
     await store.reloadProjectsFromStorage();
   }
+  checkStorageMigration();
   void store.reconcileRuntimeProcessState();
   if (searchText) {
     store.openProjectByName(searchText);
@@ -98,7 +135,10 @@ const handleRuntimeResume = () => {
   }
   runtimeResumePromise = store
     .reloadProjectsFromStorage()
-    .then(() => store.reconcileRuntimeProcessState())
+    .then(() => {
+      checkStorageMigration();
+      return store.reconcileRuntimeProcessState();
+    })
     .finally(() => {
       runtimeResumePromise = null;
     });
@@ -215,7 +255,8 @@ watch(isDashboard, syncPluginSearchInput);
 onMounted(() => {
   updateTheme();
   syncPluginSearchInput();
-  void loadProjectsWithStartupTiming();
+  void loadProjectsWithStartupTiming().then(checkStorageMigration);
+  window.utools?.onDbPull?.(handleDatabasePull);
   window.utools?.onPluginEnter?.((action) => {
     updateTheme();
     void handlePluginEnter(action);
@@ -291,6 +332,18 @@ onUnmounted(() => {
       v-model:expanded="isGlobalActionStatusExpanded"
     />
     <ProjectFormModal />
+    <ActionDialog
+      :open="migrationPromptOpen"
+      tone="warning"
+      :title="storeMessages.settings.dataMigration"
+      :message="migrationPromptMessage"
+      :primary-label="storeMessages.settings.migrationRetry"
+      :cancel-label="storeMessages.common.cancel"
+      :busy="store.dataToolsBusy"
+      :busy-label="storeMessages.settings.cleanupRunning"
+      @cancel="migrationPromptOpen = false"
+      @primary="resumeStorageMigration"
+    />
     <ActionDialog
       :open="Boolean(store.pendingDeleteProject)"
       tone="danger"
