@@ -1666,12 +1666,15 @@ export interface CleanupPlanItem {
   category: CleanupItemCategory;
   label: string;
   description: string;
+  recommendation: "recommended" | "review" | "keep";
+  safetyHint: string;
+  keys: string[];
   kind: string;
   paths: string[];
   disabledReason: string;
   selectedByDefault: boolean;
   estimatedBytes: number;
-  count: number;
+  count: number | null;
 }
 
 export interface CleanupPlan {

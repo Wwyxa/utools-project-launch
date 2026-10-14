@@ -1,5 +1,5 @@
 import { deriveProjectStatus } from "../../lib/projectRuntimeState";
-import type { ProjectBridgeStopProcessOptions } from "../../types";
+import type { ProjectBridgeRunResult, ProjectBridgeStopProcessOptions } from "../../types";
 import type { AppStore } from "../appStoreShape";
 import { clearPendingRuntimeTerminalEvents, createLogEntry, pendingRuntimeTerminalEventKey, pendingRuntimeTerminalEvents, rememberRuntimeRun, scheduleProcessStop } from "../helpers/automationHelpers";
 import { bridge } from "../helpers/bridge";
@@ -270,7 +270,7 @@ export const scriptRuntimeActions = {
       const launchableScripts = project.scripts.filter(
         (script) => script.status !== "RUNNING" && script.status !== "STOPPING" && script.command.trim(),
       );
-      const results = [];
+      const results: ProjectBridgeRunResult[] = [];
       for (const script of launchableScripts) {
         const result = await this.launchScript(projectId, script.id);
         if (result) {

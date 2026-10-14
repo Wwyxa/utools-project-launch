@@ -1626,12 +1626,35 @@ for (const expectedItem of [
 }
 const tempCleanupItem = cleanupPlan.items.find((item) => item.id === 'cache-temp-directory');
 assert.equal(tempCleanupItem.disabledReason, '', 'the temp directory cleanup must be available');
+assert.equal(tempCleanupItem.recommendation, 'recommended', 'temporary data should be suggested for cleanup');
+const legacyKeysItem = cleanupPlan.items.find((item) => item.id === 'sync-legacy-dbstorage');
+assert.deepEqual(Array.from(legacyKeysItem.keys), [legacyTerminalPreferencesKey], 'key details must list only existing keys');
+assert.equal(legacyKeysItem.count, legacyKeysItem.keys.length, 'the key count must match the expandable details');
+assert.equal(legacyKeysItem.recommendation, 'review', 'legacy keys require review even when labeled legacy');
+assert.equal(JSON.stringify(legacyKeysItem).includes('customCommand'), false, 'cleanup details must not expose preference values');
+for (const item of cleanupPlan.items) {
+  assert.ok(item.safetyHint, `cleanup item ${item.id} must explain the consequences of deletion`);
+  assert.equal(item.selectedByDefault, item.category === 'cache' && item.id !== 'cache-git-activity', 'personal data and useful memory caches must not be selected by default');
+}
+const gitActivityCleanupItem = cleanupPlan.items.find((item) => item.id === 'cache-git-activity');
+assert.equal(gitActivityCleanupItem.recommendation, 'keep', 'useful Git memory caches should be retained');
+assert.equal(gitActivityCleanupItem.selectedByDefault, false, 'Git memory cache cleanup must require an explicit selection');
+assert.equal(cleanupPlan.items.find((item) => item.id === 'sync-public-projects').recommendation, 'keep');
+assert.equal(cleanupPlan.items.find((item) => item.id === 'local-private-projects').recommendation, 'keep');
+assert.equal(cleanupPlan.items.find((item) => item.id === 'local-legacy-directory').recommendation, 'review');
 
+cleanupBridgeFixture.bridge.saveTerminalPreferences({ kind: 'powershell', customCommand: '' });
+const currentTerminalPreferences = cleanupBridgeFixture.bridge.loadTerminalPreferences();
 const legacyKeyCleanup = await cleanupBridgeFixture.bridge.executeCleanup([
   'sync-legacy-dbstorage',
   'cache-temp-directory',
 ]);
 assert.equal(legacyKeyCleanup.ok, true, 'legacy key and temp cleanup must succeed');
+assert.deepEqual(
+  cleanupBridgeFixture.bridge.loadTerminalPreferences(),
+  currentTerminalPreferences,
+  'deleting legacy keys must preserve the current local preferences',
+);
 assert.equal(
   cleanupBridgeFixture.dbStorageValues.has(legacyTerminalPreferencesKey),
   false,

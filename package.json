@@ -14,8 +14,8 @@
     "test:git-diff": "vitest run tests/gitDiff.test.ts",
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "lint": "tsc --noEmit",
-    "type-check": "tsc --noEmit",
+    "lint": "vue-tsc --noEmit",
+    "type-check": "vue-tsc --noEmit",
     "validate:ai-reasoning": "node scripts/validate-ai-reasoning.mjs",
     "benchmark:git-interactions": "node scripts/benchmark-git-interactions.mjs",
     "benchmark:service-resources": "node scripts/benchmark-service-resources.mjs",
@@ -45,9 +45,11 @@
     "@tailwindcss/vite": "^4.1.14",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-vue": "^5.2.1",
+    "happy-dom": "^21.0.1",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "vue-tsc": "^3.3.13"
   }
 }

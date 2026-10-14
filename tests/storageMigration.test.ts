@@ -1,14 +1,19 @@
+// @vitest-environment happy-dom
+
 import { readFileSync } from "node:fs";
+import * as path from "node:path";
 import { runInNewContext } from "node:vm";
 import { parse } from "@vue/compiler-sfc";
-import { compile } from "@vue/compiler-dom";
+import { baseParse, compile } from "@vue/compiler-dom";
 import { renderToString } from "@vue/server-renderer";
 import * as Vue from "vue";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import { computed, ref, type Ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import type { AppStore } from "../src/store/appStoreShape";
-import type { MigrationRunResult, MigrationServiceStopProgress, MigrationSummary } from "../src/types";
+import { overlayScrollbar } from "../src/lib/overlayScrollbar";
+import { OverlayScrollbars } from "overlayscrollbars";
+import type { CleanupPlan, CleanupPlanItem, MigrationRunResult, MigrationServiceStopProgress, MigrationSummary } from "../src/types";
 
 type MigrationStore = Pick<AppStore,
   "dataToolsBusy" | "cleanupMessage" | "migrationProgress" | "refreshStorageOverview" | "reloadProjectsFromStorage"
@@ -18,7 +23,7 @@ type MigrationActions = {
 };
 
 function loadScript<Exports>(file: string, imports: Record<string, unknown>, globals = {}, extra = ""): Exports {
-  const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+  const source = readFileSync(path.resolve(file), "utf8");
   const script = file.endsWith(".vue") ? parse(source).descriptor.scriptSetup?.content : source;
   if (!script) throw new Error(`Missing script: ${file}`);
   const exports = {};
@@ -190,6 +195,261 @@ describe("storage migration recovery", () => {
   });
 });
 
+describe("settings data cleanup", () => {
+  const personalItem: CleanupPlanItem = {
+    id: "sync-legacy-dbstorage", category: "sync", label: "遗留 dbStorage 配置", description: "旧配置",
+    recommendation: "review", safetyHint: "确认所有设备完成迁移后再清理。", keys: ["utools-project-launch.ai-settings.v1"],
+    kind: "dbstorage-keys", paths: [], disabledReason: "", selectedByDefault: false, estimatedBytes: 0, count: 1,
+  };
+  const plan: CleanupPlan = {
+    items: [
+      personalItem,
+      { ...personalItem, id: "local-private-projects", category: "local", label: "私有项目", recommendation: "keep", safetyHint: "仅有本机副本，建议保留。", keys: [], paths: ["C:/test/projects"] },
+      { ...personalItem, id: "cache-temp-directory", category: "cache", label: "临时目录", recommendation: "recommended", keys: [], selectedByDefault: true },
+      { ...personalItem, id: "cache-git-activity", category: "cache", label: "Git 活动缓存", recommendation: "keep", keys: [], selectedByDefault: false },
+      { ...personalItem, id: "cache-service-downloads", category: "cache", label: "服务下载残留", keys: [], selectedByDefault: true, disabledReason: "服务正在运行" },
+    ],
+    serviceRunning: false, syncReplicating: false,
+  };
+
+  function createCleanupSettings() {
+    let finishPaint: () => void = () => {};
+    const paint = new Promise<void>((resolve) => { finishPaint = resolve; });
+    let finishScan: (result: CleanupPlan) => void = () => {};
+    let failScan: (error: Error) => void = () => {};
+    const getCleanupPlan = vi.fn(() => new Promise<CleanupPlan>((resolve, reject) => {
+      finishScan = resolve;
+      failScan = reject;
+    }));
+    const { projectCatalogActions } = loadScript<{
+      projectCatalogActions: { loadCleanupPlan(this: { cleanupPlan: CleanupPlan | null; cleanupMessage: string }): Promise<void> };
+    }>("src/store/actions/projectCatalog.ts", { "../helpers/bridge": { bridge: { getCleanupPlan } } }, { Error });
+    const store = Vue.reactive({
+      cleanupPlan: plan as CleanupPlan | null,
+      cleanupSelectedIds: ["stale-selection"],
+      cleanupResults: [], cleanupMessage: "stale message", cleanupRunning: false,
+      loadCleanupPlan: () => projectCatalogActions.loadCleanupPlan.call(store),
+      runCleanup: vi.fn(),
+    });
+    const { translations } = loadScript<{ translations: { "zh-CN": Record<string, unknown> } }>(
+      "src/lib/i18n.ts", {}, {}, "export const translations = messages;",
+    );
+    const { probe } = loadScript<{
+      probe: {
+        store: typeof store;
+        cleanupDialogOpen: Ref<boolean>;
+        cleanupScanning: Ref<boolean>;
+        cleanupConfirmOpen: Ref<boolean>;
+        cleanupSelection: Ref<Record<string, boolean>>;
+        cleanupRunnable: Ref<boolean>;
+        openCleanupDialog(): Promise<void>;
+        requestCleanupRun(): void;
+        runSelectedCleanup(): void;
+      } & Record<string, unknown>;
+    }>("src/components/layout/SettingsTab.vue", {
+      vue: { computed, ref, watch: vi.fn(), onMounted: vi.fn(), onUnmounted: vi.fn() },
+      "../../store/useStore": { useStore: () => store },
+      "../../lib/i18n": { useI18n: () => ref(translations["zh-CN"]) },
+      "../../store/helpers/automationHelpers": { waitForInitialPaint: () => paint },
+    }, { window: { navigator: { platform: "Win32" } } },
+    "export const probe = { store, t, cleanupDialogOpen, cleanupScanning, cleanupConfirmOpen, cleanupSelection, cleanupRunnable, cleanupItems, openCleanupDialog, requestCleanupRun, runSelectedCleanup, formatDataSize };");
+
+    function cleanupRender() {
+      const source = readFileSync(path.resolve("src/components/layout/SettingsTab.vue"), "utf8");
+      const template = baseParse(parse(source).descriptor.template!.content);
+      template.children = template.children.filter((node) => node.type === 1 && node.tag === "Teleport").slice(0, 1);
+      const compiled = compile(template, { mode: "function", prefixIdentifiers: true, expressionPlugins: ["typescript"] });
+      const renderCode = transpileModule(compiled.code, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText;
+      return runInNewContext(`(function () { ${renderCode} })()`, { Vue });
+    }
+
+    async function renderCleanup() {
+      const render = cleanupRender();
+      const icon = { render: () => null };
+      const app = Vue.createSSRApp({ components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon }, setup: () => probe, render });
+      app.directive("overlay-scrollbar", {});
+      const context: { teleports?: Record<string, string> } = {};
+      await renderToString(app, context);
+      return context.teleports?.body || "";
+    }
+
+    function mountCleanup() {
+      const icon = { render: () => null };
+      const app = Vue.createApp({ components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon }, setup: () => probe, render: cleanupRender() });
+      app.directive("overlay-scrollbar", overlayScrollbar);
+      const root = document.createElement("div");
+      document.body.append(root);
+      app.mount(root);
+      return () => { app.unmount(); root.remove(); };
+    }
+    return { store, probe, getCleanupPlan, finishPaint, finishScan: (result = plan) => finishScan(result), failScan: (error: Error) => failScan(error), renderCleanup, mountCleanup };
+  }
+
+  it("paints scanning feedback before starting work and keeps cleanup disabled until the scan finishes", async () => {
+    const fixture = createCleanupSettings();
+    const pending = fixture.probe.openCleanupDialog();
+    expect(fixture.probe.cleanupScanning.value).toBe(true);
+    expect(fixture.store.cleanupPlan).toBeNull();
+    expect(fixture.store.cleanupSelectedIds).toEqual([]);
+    expect(fixture.getCleanupPlan).not.toHaveBeenCalled();
+    expect(fixture.probe.cleanupRunnable.value).toBe(false);
+    fixture.probe.requestCleanupRun();
+    expect(fixture.store.runCleanup).not.toHaveBeenCalled();
+    expect(await fixture.renderCleanup()).toContain("正在扫描数据…");
+    fixture.finishPaint();
+    await vi.waitFor(() => expect(fixture.getCleanupPlan).toHaveBeenCalledOnce());
+    expect(await fixture.renderCleanup()).toContain('aria-busy="true"');
+    fixture.finishScan();
+    await pending;
+    expect(fixture.probe.cleanupScanning.value).toBe(false);
+    expect(fixture.probe.cleanupSelection.value).toEqual({
+      "sync-legacy-dbstorage": false, "local-private-projects": false, "cache-temp-directory": true, "cache-git-activity": false, "cache-service-downloads": false,
+    });
+    const html = await fixture.renderCleanup();
+    expect(html).not.toContain("正在扫描数据…");
+    for (const text of ["建议保留", "建议清理", "确认后清理", personalItem.keys[0], "C:/test/projects", personalItem.safetyHint]) {
+      expect(html).toContain(text);
+    }
+    expect(html).toMatch(/<\/label>\s*<details/);
+  });
+
+  it("shows measured zero counts without showing uncounted quantities", async () => {
+    const fixture = createCleanupSettings();
+    fixture.finishPaint();
+    fixture.getCleanupPlan.mockResolvedValue({
+      ...plan,
+      items: [
+        { ...personalItem, count: 0, keys: [] },
+        { ...personalItem, id: "local-device-preferences", category: "local", label: "设备配置", count: null, keys: [] },
+      ],
+    });
+    await fixture.probe.openCleanupDialog();
+    const html = await fixture.renderCleanup();
+    expect(html).toContain("数量: 0");
+    expect(html).not.toContain("无需清理");
+    expect(html).not.toContain("数量: null");
+  });
+
+  it("shows a scan failure and allows opening again to retry", async () => {
+    const fixture = createCleanupSettings();
+    const pending = fixture.probe.openCleanupDialog();
+    fixture.finishPaint();
+    await vi.waitFor(() => expect(fixture.getCleanupPlan).toHaveBeenCalledOnce());
+    fixture.failScan(new Error("Cannot read storage"));
+    await pending;
+    expect(fixture.probe.cleanupScanning.value).toBe(false);
+    expect(fixture.probe.cleanupRunnable.value).toBe(false);
+    const html = await fixture.renderCleanup();
+    expect(html).toContain("扫描失败，请关闭弹窗后重试。");
+    expect(html).toContain("Cannot read storage");
+    fixture.getCleanupPlan.mockResolvedValue(plan);
+    await fixture.probe.openCleanupDialog();
+    expect(fixture.probe.cleanupRunnable.value).toBe(true);
+    expect(fixture.store.cleanupMessage).toBe("");
+  });
+
+  it("passes checkbox selections to execution and requires confirmation for sync data", async () => {
+    const fixture = createCleanupSettings();
+    fixture.finishPaint();
+    fixture.getCleanupPlan.mockResolvedValue(plan);
+    await fixture.probe.openCleanupDialog();
+    fixture.probe.requestCleanupRun();
+    expect(fixture.store.cleanupSelectedIds).toEqual(["cache-temp-directory"]);
+    expect(fixture.store.runCleanup).toHaveBeenCalledOnce();
+    fixture.store.runCleanup.mockClear();
+    fixture.probe.cleanupSelection.value["sync-legacy-dbstorage"] = true;
+    fixture.probe.requestCleanupRun();
+    expect(fixture.probe.cleanupConfirmOpen.value).toBe(true);
+    expect(fixture.store.runCleanup).not.toHaveBeenCalled();
+    fixture.probe.runSelectedCleanup();
+    expect(fixture.store.cleanupSelectedIds).toEqual(["sync-legacy-dbstorage", "cache-temp-directory"]);
+    expect(fixture.store.runCleanup).toHaveBeenCalledOnce();
+  });
+
+  it("keeps scanning feedback and results attached after the real scrollbar moves the content", async () => {
+    const fixture = createCleanupSettings();
+    const unmount = fixture.mountCleanup();
+    try {
+      const pending = fixture.probe.openCleanupDialog();
+      await Vue.nextTick();
+      const dialog = document.querySelector<HTMLElement>('[aria-labelledby="cleanup-dialog-title"]')!;
+      const scrollHost = dialog.querySelector<HTMLElement>('[aria-busy="true"]')!;
+      const scrollbar = OverlayScrollbars(scrollHost);
+      expect(scrollbar).toBeDefined();
+      expect(scrollbar!.elements().viewport.textContent).toContain("正在扫描数据…");
+      expect(dialog.querySelectorAll<HTMLButtonElement>('button').item(2).disabled).toBe(true);
+      fixture.finishPaint();
+      await vi.waitFor(() => expect(fixture.getCleanupPlan).toHaveBeenCalledOnce());
+      fixture.finishScan();
+      await pending;
+      await Vue.nextTick();
+      expect(scrollbar!.elements().viewport.textContent).not.toContain("正在扫描数据…");
+      expect(scrollbar!.elements().viewport.textContent).toContain(personalItem.label);
+      expect(scrollbar!.elements().viewport.querySelectorAll('section')).toHaveLength(3);
+      const details = scrollbar!.elements().viewport.querySelector('details')!;
+      details.querySelector('summary')!.click();
+      expect(details.open).toBe(true);
+      expect(details.textContent).toContain(personalItem.keys[0]);
+      expect(dialog.querySelectorAll<HTMLButtonElement>('button').item(2).disabled).toBe(false);
+      dialog.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!.click();
+      await Vue.nextTick();
+      await vi.waitFor(() => expect(document.querySelector('[aria-labelledby="cleanup-dialog-title"]')).toBeNull());
+    } finally {
+      unmount();
+    }
+  });
+
+  it("closes during a pending scan and renders the result when reopened", async () => {
+    const fixture = createCleanupSettings();
+    const unmount = fixture.mountCleanup();
+    try {
+      const pending = fixture.probe.openCleanupDialog();
+      await Vue.nextTick();
+      fixture.finishPaint();
+      await vi.waitFor(() => expect(fixture.getCleanupPlan).toHaveBeenCalledOnce());
+      document.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!.click();
+      await Vue.nextTick();
+      expect(fixture.probe.cleanupScanning.value).toBe(true);
+      await vi.waitFor(() => expect(document.querySelector('[aria-labelledby="cleanup-dialog-title"]')).toBeNull());
+      await fixture.probe.openCleanupDialog();
+      await Vue.nextTick();
+      expect(document.querySelector('[role="status"]')?.textContent).toContain("正在扫描数据…");
+      expect(fixture.getCleanupPlan).toHaveBeenCalledOnce();
+      fixture.finishScan();
+      await pending;
+      await Vue.nextTick();
+      expect(document.querySelector('[aria-labelledby="cleanup-dialog-title"]')?.textContent).toContain(personalItem.label);
+    } finally {
+      unmount();
+    }
+  });
+});
+
+describe("data cleanup directory scanning", () => {
+  it("yields while reading files and measures nested files without following symbolic links", async () => {
+    let finishRead: (stats: unknown) => void = () => {};
+    const rootPath = path.resolve("scan-fixture");
+    const synchronousRead = vi.fn(() => { throw new Error("Synchronous filesystem reads block the dialog"); });
+    const lstat = vi.fn((targetPath: string) => targetPath === rootPath
+      ? new Promise((resolve) => { finishRead = resolve; })
+      : Promise.resolve({ isSymbolicLink: () => targetPath.endsWith("link"), isFile: () => true, size: 42 }));
+    const { probe } = loadScript<{ probe: { directoryEntrySizeBytes(targetPath: string): Promise<number> } }>(
+      "public/preload/data-tools.js", {}, {
+        fs: { promises: { lstat, readdir: vi.fn().mockResolvedValue(["file", "link"]) }, lstatSync: synchronousRead, readdirSync: synchronousRead },
+        path, migrationPreferenceKeys: [], storageKey: "legacy-projects",
+      }, "export const probe = { directoryEntrySizeBytes };");
+    let settled = false;
+    const pending = probe.directoryEntrySizeBytes(rootPath);
+    void pending.then(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(synchronousRead).not.toHaveBeenCalled();
+    finishRead({ isSymbolicLink: () => false, isFile: () => false, isDirectory: () => true });
+    expect(await pending).toBe(42);
+    expect(lstat).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe("migration service asynchronous identity", () => {
   function createIdentityCheck(platform: string) {
     let finishQuery: (error: Error | null, output: string) => void = () => {};
@@ -263,7 +523,7 @@ describe("migration progress rendering", () => {
       vue: { computed, ref, inject: () => ({ status: "migration-incomplete", migration: summary }) },
       "../../lib/projectBridge": { getProjectBridge: () => ({ stopMigrationService: async () => ({ ok: false, error: "Stop failed" }) }) },
     }, {}, "export const probe = { currentPreflight, isUpgradeRequired, isMigrationBlocked, isReady, headline, description, progress, progressPercent, processedCount, successfulCount, skippedCount, stopping, running, itemsProcessed, errorMessage, canEnter, canStartMigration, startButtonLabel, stopFailed, serviceStopMessage, stopStatusText, enterPlugin, startMigration, stopService };");
-    const source = readFileSync(new URL("../src/components/common/StartupGate.vue", import.meta.url), "utf8");
+    const source = readFileSync(path.resolve("src/components/common/StartupGate.vue"), "utf8");
     const template = parse(source).descriptor.template!.content;
     const render = runInNewContext(`(function () { ${compile(template, { mode: "function", prefixIdentifiers: true }).code} })()`, { Vue });
     const icon = { render: () => null };

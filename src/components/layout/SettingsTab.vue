@@ -10,6 +10,7 @@ import {
   FolderOpen,
   Github,
   Info,
+  LoaderCircle,
   Menu,
   Monitor,
   MonitorCog,
@@ -29,8 +30,10 @@ import {
   WandSparkles,
   ChevronDown,
   Check,
+  X,
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
+import { waitForInitialPaint } from "../../store/helpers/automationHelpers";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
@@ -93,6 +96,7 @@ const iconPackAction = ref<"install" | "check" | "verify" | "remove" | null>(nul
 const iconPackSelectingId = ref<IconPackId | null>(null);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 const cleanupDialogOpen = ref(false);
+const cleanupScanning = ref(false);
 const cleanupConfirmOpen = ref(false);
 const cleanupSelection = ref<Record<string, boolean>>({});
 let stopAppEscapeListener = () => {};
@@ -123,14 +127,24 @@ const migrationRetryDisabled = computed(
 
 const openCleanupDialog = async () => {
   cleanupDialogOpen.value = true;
+  if (cleanupScanning.value || store.cleanupRunning) return;
+  cleanupScanning.value = true;
+  cleanupSelection.value = {};
+  store.cleanupSelectedIds = [];
+  store.cleanupPlan = null;
   store.cleanupResults = [];
   store.cleanupMessage = "";
-  await store.loadCleanupPlan();
-  const selection: Record<string, boolean> = {};
-  (store.cleanupPlan?.items || []).forEach((item) => {
-    selection[item.id] = item.category === "cache" && !item.disabledReason;
-  });
-  cleanupSelection.value = selection;
+  try {
+    await waitForInitialPaint();
+    await store.loadCleanupPlan();
+    const selection: Record<string, boolean> = {};
+    cleanupItems.value.forEach((item) => {
+      selection[item.id] = item.selectedByDefault && !item.disabledReason;
+    });
+    cleanupSelection.value = selection;
+  } finally {
+    cleanupScanning.value = false;
+  }
 };
 
 const cleanupItems = computed(() => store.cleanupPlan?.items || []);
@@ -142,7 +156,13 @@ const cleanupHasSyncSelection = computed(() =>
     (item) => cleanupSelection.value[item.id] && !item.disabledReason && item.category === "sync",
   ),
 );
-const cleanupRunnable = computed(() => cleanupSelectedIds.value.length > 0 && !store.cleanupRunning);
+const cleanupRunnable = computed(() => cleanupSelectedIds.value.length > 0 && !cleanupScanning.value && !store.cleanupRunning);
+
+const runSelectedCleanup = () => {
+  if (!cleanupRunnable.value) return;
+  store.cleanupSelectedIds = cleanupSelectedIds.value;
+  void store.runCleanup();
+};
 
 const requestCleanupRun = () => {
   if (!cleanupRunnable.value) return;
@@ -150,7 +170,7 @@ const requestCleanupRun = () => {
     cleanupConfirmOpen.value = true;
     return;
   }
-  void store.runCleanup();
+  runSelectedCleanup();
 };
 
 type EnvironmentSettingsCard = {
@@ -2302,26 +2322,39 @@ watch(
         >
           <div
             class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-surface shadow-lg"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cleanup-dialog-title"
           >
             <div class="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-              <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.dataCleanup }}</h3>
+              <h3 id="cleanup-dialog-title" class="text-sm font-semibold text-on-surface">{{ t.settings.dataCleanup }}</h3>
               <button
                 type="button"
                 class="rounded-lg p-1 text-on-surface-variant hover:bg-surface-container"
+                :aria-label="t.common.close"
                 @click="cleanupDialogOpen = false"
               >
                 <X :size="16" />
               </button>
             </div>
-            <div class="flex-1 space-y-4 overflow-y-auto px-4 py-3" v-overlay-scrollbar>
-              <p v-if="!store.cleanupPlan" class="text-xs text-on-surface-variant">…</p>
-              <template v-else>
-                <fieldset
+            <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto" :aria-busy="cleanupScanning" v-overlay-scrollbar>
+              <div class="space-y-4 px-4 py-4">
+              <div v-if="cleanupScanning" role="status" aria-live="polite" class="flex min-h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
+                <LoaderCircle :size="18" class="animate-spin" aria-hidden="true" />
+                <span>{{ t.settings.cleanupScanning }}</span>
+              </div>
+              <template v-else-if="store.cleanupPlan">
+                <p class="flex items-start gap-2 text-xs leading-5 text-on-surface-variant">
+                  <Info :size="15" class="mt-0.5 shrink-0" aria-hidden="true" />
+                  {{ t.settings.cleanupSafetyHint }}
+                </p>
+                <section
                   v-for="category in (['sync', 'local', 'cache'] as const)"
                   :key="category"
-                  class="space-y-1.5"
+                  :aria-labelledby="`cleanup-category-${category}`"
+                  class="min-w-0 border-t border-border-subtle pt-5"
                 >
-                  <legend class="text-xs font-bold text-on-surface-variant">
+                  <h4 :id="`cleanup-category-${category}`" class="mb-2.5 text-xs font-bold text-on-surface-variant">
                     {{
                       category === "sync"
                         ? t.settings.cleanupCategorySync
@@ -2329,38 +2362,58 @@ watch(
                           ? t.settings.cleanupCategoryLocal
                           : t.settings.cleanupCategoryCache
                     }}
-                  </legend>
-                  <label
-                    v-for="item in cleanupItems.filter((candidate) => candidate.category === category)"
-                    :key="item.id"
-                    class="flex items-start gap-2.5 rounded-lg border border-border-subtle px-3 py-2"
-                    :class="{ 'opacity-50': item.disabledReason }"
-                  >
-                    <input
-                      type="checkbox"
-                      class="mt-0.5"
-                      :checked="cleanupSelection[item.id]"
-                      :disabled="Boolean(item.disabledReason) || store.cleanupRunning"
-                      @change="cleanupSelection[item.id] = ($event.target as HTMLInputElement).checked"
-                    />
-                    <span class="min-w-0 flex-1">
-                      <span class="flex items-baseline justify-between gap-2">
-                        <span class="text-sm font-medium text-on-surface">{{ item.label }}</span>
-                        <span class="shrink-0 text-xs text-on-surface-variant">
-                          <template v-if="item.count > 0">{{ t.settings.cleanupCount }}: {{ item.count }}</template>
-                          <template v-if="item.estimatedBytes > 0">
-                            {{ item.count > 0 ? " · " : "" }}~{{ formatDataSize(item.estimatedBytes) }}
-                          </template>
+                  </h4>
+                  <div class="space-y-2">
+                    <div
+                      v-for="item in cleanupItems.filter((candidate) => candidate.category === category)"
+                      :key="item.id"
+                      class="rounded-lg border border-border-subtle px-3 py-2.5"
+                    >
+                      <label class="flex items-start gap-2.5" :class="{ 'opacity-50': item.disabledReason }">
+                        <input
+                          type="checkbox"
+                          class="mt-0.5"
+                          :checked="cleanupSelection[item.id]"
+                          :disabled="Boolean(item.disabledReason) || store.cleanupRunning || cleanupScanning"
+                          @change="cleanupSelection[item.id] = ($event.target as HTMLInputElement).checked"
+                        />
+                        <span class="min-w-0 flex-1">
+                          <span class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+                            <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                              <span class="text-sm font-medium text-on-surface">{{ item.label }}</span>
+                              <span class="text-[10px] font-medium" :class="item.recommendation === 'recommended' ? 'text-primary' : item.recommendation === 'review' ? 'text-status-warning' : 'text-on-surface-variant'">
+                                {{ item.recommendation === 'recommended' ? t.settings.cleanupRecommended : item.recommendation === 'review' ? t.settings.cleanupReview : t.settings.cleanupKeep }}
+                              </span>
+                            </span>
+                            <span class="text-xs text-on-surface-variant">
+                              <template v-if="item.count !== null">{{ t.settings.cleanupCount }}: {{ item.count }}</template>
+                              <template v-if="item.estimatedBytes > 0">
+                                {{ item.count !== null ? " · " : "" }}~{{ formatDataSize(item.estimatedBytes) }}
+                              </template>
+                            </span>
+                          </span>
+                          <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{ item.description }}</span>
+                          <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{ item.safetyHint }}</span>
+                          <span v-if="item.disabledReason" class="mt-1 block text-xs text-status-error">
+                            {{ item.disabledReason }}
+                          </span>
                         </span>
-                      </span>
-                      <span class="mt-0.5 block text-xs text-on-surface-variant">{{ item.description }}</span>
-                      <span v-if="item.disabledReason" class="mt-0.5 block text-xs text-status-error">
-                        {{ item.disabledReason }}
-                      </span>
-                    </span>
-                  </label>
-                </fieldset>
+                      </label>
+                      <details v-if="item.keys.length || item.paths.length" class="group ml-6 mt-2 border-t border-border-subtle pt-2 text-xs text-on-surface-variant">
+                        <summary class="flex cursor-pointer list-none items-center gap-1 font-medium text-primary [&::-webkit-details-marker]:hidden">
+                          <ChevronDown :size="13" class="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+                          {{ item.keys.length ? t.settings.cleanupViewKeys : t.settings.cleanupViewPaths }}
+                        </summary>
+                        <p v-if="item.keys.length" class="mt-2">{{ t.settings.cleanupKeyNamesOnly }}</p>
+                        <ul class="mt-2 space-y-1 font-mono">
+                          <li v-for="entry in (item.keys.length ? item.keys : item.paths)" :key="entry" class="break-all">{{ entry }}</li>
+                        </ul>
+                      </details>
+                    </div>
+                  </div>
+                </section>
               </template>
+              <p v-else role="alert" class="text-sm text-status-error">{{ t.settings.cleanupScanFailed }}</p>
 
               <div v-if="store.cleanupResults.length" class="space-y-1 rounded-lg bg-surface-container-low px-3 py-2">
                 <div
@@ -2374,6 +2427,7 @@ watch(
                 </div>
               </div>
               <p v-if="store.cleanupMessage" class="text-xs text-on-surface-variant">{{ store.cleanupMessage }}</p>
+              </div>
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-border-subtle px-4 py-3">
               <button
@@ -2410,7 +2464,7 @@ watch(
         @primary="
           () => {
             cleanupConfirmOpen = false;
-            void store.runCleanup();
+            runSelectedCleanup();
           }
         "
       />
