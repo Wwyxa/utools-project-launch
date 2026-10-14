@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import type { ProjectBridge } from "../src/types";
 
@@ -42,7 +44,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     (
       _executable: string,
       _args: string[],
-      _options: { cwd: string; detached: boolean; stdio: string; env?: NodeJS.ProcessEnv },
+      _options: { cwd: string; detached: boolean; stdio: string; env?: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean },
     ) => {
       const outcome = spawnOutcomes.shift() || "spawn";
       const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
@@ -304,19 +306,117 @@ describe("native project launchers", () => {
       "/v:off",
       "/s",
       "/c",
-      '"%UTOOLS_PROJECT_LAUNCH_COMMAND%" "%UTOOLS_PROJECT_LAUNCH_ARGUMENT_0%" "%UTOOLS_PROJECT_LAUNCH_ARGUMENT_1%"',
+      '""%UTOOLS_PROJECT_LAUNCH_COMMAND%" "%UTOOLS_PROJECT_LAUNCH_ARGUMENT_0%" "%UTOOLS_PROJECT_LAUNCH_ARGUMENT_1%""',
     ]);
     expect(commandArgs.join(" ")).not.toContain(projectPath);
     expect(commandOptions).toMatchObject({
       cwd: projectPath,
       detached: true,
       stdio: "ignore",
+      windowsVerbatimArguments: true,
       env: {
         UTOOLS_PROJECT_LAUNCH_COMMAND: codeShim,
         UTOOLS_PROJECT_LAUNCH_ARGUMENT_0: "--reuse-window",
         UTOOLS_PROJECT_LAUNCH_ARGUMENT_1: projectPath,
       },
     });
+  });
+
+  it.each([
+    { kind: "vscode", command: "code", executableName: "Code.exe" },
+    { kind: "cursor", command: "cursor", executableName: "Cursor.exe" },
+  ])("opens $kind directly from its PATH shim installation", async ({ kind, command, executableName }) => {
+    const projectPath = "C:\\Projects\\workspace & %USERPROFILE% !unsafe!";
+    const installationPath = `D:\\Custom Software\\${kind}`;
+    const editorShim = `${installationPath}\\bin\\${command}.cmd`;
+    const editorExecutable = `${installationPath}\\${executableName}`;
+    const { bridge, spawn } = loadPreloadBridge("win32", {
+      directories: [projectPath],
+      files: [editorShim, editorExecutable],
+      where: { [`${command}.cmd`]: editorShim },
+    });
+
+    const commands = [`${command} {path}`, `${command} "{path}"`, `${command} --reuse-window "{path}"`];
+    for (const [index, launchCommand] of commands.entries()) {
+      await expect(
+        bridge.openExternalApplication({
+          projectPath,
+          application: { id: kind, name: kind, kind: kind as "vscode" | "cursor", command: launchCommand, enabled: true },
+        }),
+      ).resolves.toMatchObject({ launched: true, code: "launched", resolvedApplicationId: kind });
+      expect(spawn).toHaveBeenNthCalledWith(
+        index + 1,
+        editorExecutable,
+        index === 2 ? ["--reuse-window", projectPath] : [projectPath],
+        { cwd: projectPath, detached: true, stdio: "ignore" },
+      );
+    }
+    expect(spawn).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    { kind: "vscode", command: "code", shimName: "code.cmd" },
+    { kind: "cursor", command: "cursor", shimName: "cursor.cmd" },
+  ])("opens the default $kind launcher through its Windows command shim", async ({ kind, command, shimName }) => {
+    const projectPath = "C:\\Projects\\workspace & %USERPROFILE% !unsafe!";
+    const editorShim = `D:\\Custom Software\\${kind}\\bin\\${shimName}`;
+    const { bridge, spawn } = loadPreloadBridge("win32", {
+      directories: [projectPath],
+      files: [editorShim],
+      where: { [shimName]: editorShim },
+    });
+
+    await expect(
+      bridge.openExternalApplication({
+        projectPath,
+        application: { id: kind, name: kind, kind: kind as "vscode" | "cursor", command: `${command} {path}`, enabled: true },
+      }),
+    ).resolves.toMatchObject({ launched: true, code: "launched", resolvedApplicationId: kind });
+    expect(spawn).toHaveBeenCalledExactlyOnceWith(
+      "C:\\Windows\\System32\\cmd.exe",
+      ["/d", "/v:off", "/s", "/c", '""%UTOOLS_PROJECT_LAUNCH_COMMAND%" "%UTOOLS_PROJECT_LAUNCH_ARGUMENT_0%""'],
+      {
+        cwd: projectPath,
+        detached: true,
+        stdio: "ignore",
+        windowsVerbatimArguments: true,
+        env: expect.objectContaining({
+          UTOOLS_PROJECT_LAUNCH_COMMAND: editorShim,
+          UTOOLS_PROJECT_LAUNCH_ARGUMENT_0: projectPath,
+        }),
+      },
+    );
+  });
+
+  it.runIf(process.platform === "win32")("passes literal paths through a real Windows batch launcher", async () => {
+    const projectPath = mkdtempSync(join(tmpdir(), "project launcher & %USERPROFILE% !unsafe! "));
+    const scriptPath = join(projectPath, "launcher.cmd");
+    try {
+      writeFileSync(scriptPath, '@echo off\r\nsetlocal DisableDelayedExpansion\r\nset "received=%~1"\r\nset received\r\n');
+      const { bridge, spawn } = loadPreloadBridge("win32", {
+        directories: [projectPath],
+        files: [scriptPath],
+        env: { ComSpec: process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe" },
+      });
+      await bridge.openExternalApplication({
+        projectPath,
+        application: { id: "vscode", name: "VS Code", kind: "vscode", command: `"${scriptPath}" "{path}"`, enabled: true },
+      });
+      const [executable, args, options] = spawn.mock.calls[0]!;
+      const result = spawnSync(executable, args, {
+        cwd: options.cwd,
+        env: options.env,
+        windowsVerbatimArguments: options.windowsVerbatimArguments,
+        stdio: "pipe",
+        encoding: "utf8",
+        timeout: 10000,
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim()).toBe(`received=${projectPath}`);
+    } finally {
+      rmSync(projectPath, { recursive: true, force: true });
+    }
   });
 
   it("starts PowerShell in cwd without placing the project path in a command", async () => {
@@ -393,7 +493,8 @@ describe("native project launchers", () => {
       applicationId: "vscode",
     });
     expect(spawn).toHaveBeenCalledOnce();
-    expect(spawn.mock.calls[0]?.[0]).toBe(codeShim);
+    expect(spawn.mock.calls[0]?.[0]).toBe("C:\\Windows\\System32\\cmd.exe");
+    expect(spawn.mock.calls[0]?.[2].env?.UTOOLS_PROJECT_LAUNCH_COMMAND).toBe(codeShim);
   });
 
   it("keeps one stable identity across direct process lifecycle events", async () => {

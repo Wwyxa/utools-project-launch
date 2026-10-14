@@ -64,7 +64,7 @@ function quoteShellToken(token) {
   return `'${String(token).replace(/'/g, `'\\''`)}'`;
 }
 
-function launchDetachedProcess(executable, args, cwd, environment) {
+function launchDetachedProcess(executable, args, cwd, environment, windowsVerbatimArguments = false) {
   return new Promise((resolve) => {
     let child;
 
@@ -75,6 +75,7 @@ function launchDetachedProcess(executable, args, cwd, environment) {
         stdio: "ignore",
       };
       if (environment) options.env = environment;
+      if (windowsVerbatimArguments) options.windowsVerbatimArguments = true;
       child = spawn(executable, args, options);
     } catch (error) {
       resolve({
@@ -225,7 +226,17 @@ function findWindowsExecutable(kind) {
         .split(/\r?\n/)
         .map((item) => item.trim())
         .find((targetPath) => fileExists(targetPath) || isWindowsAppExecutionAlias(targetPath));
-      if (executable) return executable;
+      if (executable) {
+        if ((kind === "vscode" || kind === "cursor") && /\.(?:cmd|bat)$/i.test(executable)) {
+          const editorExecutable = path.resolve(
+            path.dirname(executable),
+            "..",
+            kind === "vscode" ? "Code.exe" : "Cursor.exe",
+          );
+          if (fileExists(editorExecutable)) return editorExecutable;
+        }
+        return executable;
+      }
     } catch (error) {
       // Try the next known executable without exposing a shell to the user path.
     }
@@ -284,9 +295,10 @@ function launchCommandExecutable(executable, args, cwd) {
     }
     return launchDetachedProcess(
       commandInterpreter,
-      ["/d", "/v:off", "/s", "/c", commandParts.join(" ")],
+      ["/d", "/v:off", "/s", "/c", `"${commandParts.join(" ")}"`],
       cwd,
       environment,
+      true,
     );
   }
   return launchDetachedProcess(executable, args, cwd);
@@ -322,7 +334,7 @@ function launchNativeTarget(kind, resolvedPath) {
   if (kind === "windows-terminal") return launchDetachedProcess(executable, ["-d", resolvedPath], resolvedPath);
   if (kind === "powershell") return launchDetachedProcess(executable, ["-NoExit"], resolvedPath);
   if (kind === "cmd") return launchDetachedProcess(executable, ["/d", "/k"], resolvedPath);
-  return launchDetachedProcess(executable, [resolvedPath], resolvedPath);
+  return launchCommandExecutable(executable, [resolvedPath], resolvedPath);
 }
 
 async function openTerminal(payload) {
