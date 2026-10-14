@@ -34,7 +34,8 @@ The repo currently exposes:
 - Keep feature folders aligned with the current domain split
 - Use `lucide-vue-next` icons already available in the repo
 - Keep text, spacing, and color aligned with the design tokens in `src/index.css`
-- For host-critical selected, focused, error, compact metadata, and action-control states, use explicit semantic token values per theme. Do not rely on `color-mix()` or Tailwind color opacity modifiers as the only dark-theme declaration because the uTools host may render them substantially dimmer than the development browser.
+- Target uTools 8's documented Chromium 132 runtime. Define base semantic colors per theme, then derive state tints, translucent borders, and control colors with `color-mix()` and shared tokens. Do not add duplicate light/dark literal palettes for the former Chromium < 111 workaround; verify contrast in both themes instead.
+- Keep the dashboard toolbar on `--color-background` so scrolling content and the plugin's top edge share the same opaque base. Use neutral surface levels and the shared `--project-card-*` shadow tokens for dashboard cards.
 - Keep main scroll containers on `.themed-scrollbar` for consistent fallback styling, and add `v-overlay-scrollbar` to full-page scrollers and height-constrained popup lists so their overlay scrollbar does not reserve layout space or shift content when overflow changes
 
 ---
@@ -140,11 +141,11 @@ const top = clamp(rowCenter - popupHeight / 2, viewportInset, viewportHeight - p
 
 **Symptom**: A `dark:*` utility is present, but the rendered text still uses the original opacity or muted color.
 
-**Cause**: This renderer toggles a root `.dark` class but does not configure Tailwind's `dark` variant to match that class. A utility can compile without matching the actual theme state.
+**Cause**: Tailwind's default `dark` variant follows the system media query, whereas this renderer toggles a root `.dark` class for its auto/light/dark preference. Without an explicit variant, a utility can compile without matching the actual theme state.
 
-**Fix**: Put dark-only overrides in `src/index.css` under an explicit `.dark ...` selector and use the shared semantic token. Reuse `.dark-readable-meta` for compact metadata; keep same-role controls on the same base color instead of adding per-control classes for cosmetic differences.
+**Fix**: Keep `@custom-variant dark (&:where(.dark, .dark *));` in `src/index.css`. Use shared semantic tokens and `dark:*` utilities for theme differences. Reuse `.dark-readable-meta` for compact metadata; keep same-role controls on the same base color instead of adding per-control classes for cosmetic differences.
 
-**Prevention**: Check the computed style in a dark browser viewport for each new theme rule, especially placeholder and compact metadata text.
+**Prevention**: Check computed styles with both root class states under both system media preferences, especially placeholders, compact metadata, and running-card backgrounds. The root class must control the result even when the system preference differs. Verify that action-status tints recompute after changing the root class and remain opaque.
 
 ### Common Mistake: Relying on Native Popups Inside Dense Panels
 

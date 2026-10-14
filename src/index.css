@@ -1,24 +1,25 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "Microsoft YaHei Mono", ui-monospace, monospace;
 
-  /* Semantic Colors from Kinetic Developer System */
-  --color-surface: #fbf9f8;
-  --color-surface-dim: #dcd9d9;
-  --color-surface-bright: #fbf9f8;
+  --color-surface: #ffffff;
+  --color-surface-dim: #dedede;
+  --color-surface-bright: #ffffff;
   --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f5f3f2;
-  --color-surface-container: #f0eded;
-  --color-surface-container-high: #eae8e7;
-  --color-surface-container-highest: #e4e2e1;
-  --color-on-surface: #1b1c1c;
-  --color-on-surface-variant: #3d4a42;
+  --color-surface-container-low: #f7f7f7;
+  --color-surface-container: #f0f0f0;
+  --color-surface-container-high: #eaeaea;
+  --color-surface-container-highest: #e4e4e4;
+  --color-on-surface: #242424;
+  --color-on-surface-variant: #616161;
   --color-inverse-surface: #303030;
-  --color-inverse-on-surface: #f3f0f0;
-  --color-outline: #6d7a72;
-  --color-outline-variant: #bccac0;
+  --color-inverse-on-surface: #f5f5f5;
+  --color-outline: #767676;
+  --color-outline-variant: #d0d0d0;
   --color-surface-tint: #006c49;
 
   --color-primary: #006c49;
@@ -58,8 +59,8 @@
   --color-on-tertiary-fixed-variant: #81262b;
 
   --color-background: #f4f4f4;
-  --color-on-background: #1b1c1c;
-  --color-surface-variant: #e4e2e1;
+  --color-on-background: var(--color-on-surface);
+  --color-surface-variant: var(--color-surface-container-high);
 
   --color-status-running: #2eaf7d;
   --color-status-stopped: #8e8e93;
@@ -69,22 +70,25 @@
   --color-status-positive: #1e8054;
   --color-status-negative: #bb4a42;
 
-  --color-bg-soft-gray: #f6f6f7;
-  --color-border-subtle: #e2e2e3;
+  --color-bg-soft-gray: var(--color-surface-container-low);
+  --color-border-subtle: #e2e2e2;
   --color-scrim: #000000;
 
   --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(109, 122, 114, 0.34);
-  --scrollbar-thumb-hover: rgba(109, 122, 114, 0.58);
-  --dashboard-toolbar-bg: rgba(244, 244, 244, 0.96);
-  --dashboard-filter-active-border: #2eaf7d;
-  --dashboard-filter-active-bg: #ddf6ea;
-  --dashboard-filter-active-count-bg: rgba(0, 108, 73, 0.12);
-  --toolbar-control-bg: #ffffff;
-  --toolbar-control-bg-hover: #f0eded;
-  --toolbar-primary-bg: #006c49;
-  --toolbar-primary-fg: #ffffff;
-  --toolbar-primary-bg-hover: #005236;
+  --scrollbar-thumb: color-mix(in srgb, var(--color-on-surface-variant) 34%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--color-on-surface-variant) 58%, transparent);
+  --dashboard-toolbar-bg: var(--color-background);
+  --dashboard-filter-active-border: color-mix(in srgb, var(--color-primary) 40%, var(--color-border-subtle));
+  --dashboard-filter-active-bg: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  --dashboard-filter-active-count-bg: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  --toolbar-control-bg: var(--color-surface-container-low);
+  --toolbar-control-bg-hover: var(--color-surface-container);
+  --toolbar-primary-bg: var(--color-primary);
+  --toolbar-primary-fg: var(--color-on-primary);
+  --toolbar-primary-bg-hover: color-mix(in srgb, var(--color-primary) 88%, var(--color-on-primary));
+  --project-card-shadow: 0 1px 3px rgb(0 0 0 / 4%);
+  --project-card-hover-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+  --project-card-running-shadow: 0 1px 4px color-mix(in srgb, var(--color-status-running) 10%, transparent);
   --code-preview-bg: #ffffff;
   --code-preview-gutter-bg: #f6f8fa;
   --code-preview-border: #d0d7de;
@@ -112,20 +116,20 @@
 
 @layer base {
   .dark {
-    --color-surface: #3c3f44;
-    --color-surface-dim: #2b2d30;
-    --color-surface-bright: #52575f;
-    --color-surface-container-lowest: #35373b;
-    --color-surface-container-low: #383b40;
-    --color-surface-container: #41444a;
-    --color-surface-container-high: #474b52;
-    --color-surface-container-highest: #4d525a;
-    --color-on-surface: #e0e4e8;
-    --color-on-surface-variant: #c1c7cf;
-    --color-inverse-surface: #e4e2e1;
+    --color-surface: #262626;
+    --color-surface-dim: #181818;
+    --color-surface-bright: #383838;
+    --color-surface-container-lowest: #222222;
+    --color-surface-container-low: #252525;
+    --color-surface-container: #2b2b2b;
+    --color-surface-container-high: #313131;
+    --color-surface-container-highest: #383838;
+    --color-on-surface: #ececec;
+    --color-on-surface-variant: #b8b8b8;
+    --color-inverse-surface: #e4e4e4;
     --color-inverse-on-surface: #303030;
-    --color-outline: #7c838d;
-    --color-outline-variant: #555a62;
+    --color-outline: #858585;
+    --color-outline-variant: #484848;
     --color-surface-tint: #63dca6;
 
     --color-primary: #63dca6;
@@ -144,31 +148,15 @@
     --color-tertiary-container: #81262b;
     --color-on-tertiary-container: #ffdad8;
 
-    --color-on-error: #ded8d8;
-    --color-background: #303133;
-    --color-on-background: #e0e4e8;
-    --color-surface-variant: #474b52;
+    --color-on-error: #ffffff;
+    --color-background: #1e1e1e;
 
     --color-status-warning: #f4b860;
     --color-status-info: #b7c4ff;
     --color-status-positive: #57cd97;
     --color-status-negative: #f2a89f;
 
-    --color-bg-soft-gray: #35373b;
-    --color-border-subtle: #484c53;
-
-    --scrollbar-track: transparent;
-    --scrollbar-thumb: rgba(173, 180, 190, 0.34);
-    --scrollbar-thumb-hover: rgba(173, 180, 190, 0.58);
-    --dashboard-toolbar-bg: rgba(51, 51, 51, 0.96);
-    --dashboard-filter-active-border: #4f8f70;
-    --dashboard-filter-active-bg: #345444;
-    --dashboard-filter-active-count-bg: #375a48;
-    --toolbar-control-bg: #383b40;
-    --toolbar-control-bg-hover: #474b52;
-    --toolbar-primary-bg: #32664d;
-    --toolbar-primary-fg: #d8dedb;
-    --toolbar-primary-bg-hover: #2f6249;
+    --color-border-subtle: #353535;
     --code-preview-bg: var(--color-surface-container-lowest);
     --code-preview-gutter-bg: var(--color-surface-container-low);
     --code-preview-border: var(--color-border-subtle);
@@ -332,7 +320,6 @@
 
 .dashboard-toolbar {
   background: var(--dashboard-toolbar-bg);
-  backdrop-filter: blur(12px);
 }
 
 .dashboard-group-region {
@@ -412,7 +399,7 @@
   border-color: var(--dashboard-filter-active-border);
   background: var(--dashboard-filter-active-bg);
   color: var(--color-primary);
-  box-shadow: inset 0 0 0 1px rgba(0, 108, 73, 0.12);
+  box-shadow: inset 0 0 0 1px var(--dashboard-filter-active-count-bg);
 }
 
 .dashboard-filter-chip-count {
@@ -421,35 +408,6 @@
 }
 
 .dashboard-filter-chip-count.is-active {
-  background: var(--dashboard-filter-active-count-bg);
-  color: var(--color-primary);
-}
-
-.dark .dashboard-filter-chip {
-  border-color: var(--color-border-subtle);
-  background: var(--color-surface-container-low);
-  color: var(--color-on-surface-variant);
-}
-
-.dark .dashboard-filter-chip:hover {
-  border-color: var(--color-outline-variant);
-  background: var(--color-surface-container);
-  color: var(--color-on-surface);
-}
-
-.dark .dashboard-filter-chip.is-active {
-  border-color: var(--dashboard-filter-active-border);
-  background: var(--dashboard-filter-active-bg);
-  color: var(--color-primary);
-  box-shadow: inset 0 0 0 1px rgba(99, 220, 166, 0.12);
-}
-
-.dark .dashboard-filter-chip-count {
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-variant);
-}
-
-.dark .dashboard-filter-chip-count.is-active {
   background: var(--dashboard-filter-active-count-bg);
   color: var(--color-primary);
 }
@@ -1760,47 +1718,24 @@
   animation: action-status-indeterminate 1.3s ease-in-out infinite;
 }
 
-/* Action status toast: theme-explicit state tints. The uTools host webview may lack
-   color-mix() support (Chromium < 111), and its build-time fallback is resolved from
-   light-theme values only, so dark mode must not depend on either. */
 :root {
-  --action-status-tint-loading: #d9e9e4;
-  --action-status-tint-success: #e0f3ec;
-  --action-status-tint-warning: #f3e9d9;
-  --action-status-tint-error: #ffe3e1;
-  --action-status-border-idle: rgba(188, 202, 192, 0.8);
-  --action-status-border-loading: rgba(0, 108, 73, 0.3);
-  --action-status-border-loading-hover: rgba(0, 108, 73, 0.5);
-  --action-status-border-success: rgba(46, 175, 125, 0.4);
-  --action-status-border-success-hover: rgba(46, 175, 125, 0.6);
-  --action-status-border-warning: rgba(178, 106, 0, 0.4);
-  --action-status-border-warning-hover: rgba(178, 106, 0, 0.6);
-  --action-status-border-error: rgba(255, 69, 58, 0.45);
-  --action-status-border-error-hover: rgba(255, 69, 58, 0.65);
-  --action-status-panel-border-loading: rgba(0, 108, 73, 0.4);
-  --action-status-panel-border-success: rgba(46, 175, 125, 0.4);
-  --action-status-panel-border-warning: rgba(178, 106, 0, 0.4);
-  --action-status-panel-border-error: rgba(255, 69, 58, 0.5);
-}
-
-.dark {
-  --action-status-tint-loading: #3c504b;
-  --action-status-tint-success: #344945;
-  --action-status-tint-warning: #524a41;
-  --action-status-tint-error: #533a3b;
-  --action-status-border-idle: rgba(85, 90, 98, 0.8);
-  --action-status-border-loading: rgba(99, 220, 166, 0.3);
-  --action-status-border-loading-hover: rgba(99, 220, 166, 0.5);
-  --action-status-border-success: rgba(46, 175, 125, 0.4);
-  --action-status-border-success-hover: rgba(46, 175, 125, 0.6);
-  --action-status-border-warning: rgba(244, 184, 96, 0.4);
-  --action-status-border-warning-hover: rgba(244, 184, 96, 0.6);
-  --action-status-border-error: rgba(255, 69, 58, 0.45);
-  --action-status-border-error-hover: rgba(255, 69, 58, 0.65);
-  --action-status-panel-border-loading: rgba(99, 220, 166, 0.4);
-  --action-status-panel-border-success: rgba(46, 175, 125, 0.4);
-  --action-status-panel-border-warning: rgba(244, 184, 96, 0.4);
-  --action-status-panel-border-error: rgba(255, 69, 58, 0.5);
+  --action-status-tint-loading: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-container-lowest));
+  --action-status-tint-success: color-mix(in srgb, var(--color-status-running) 12%, var(--color-surface-container-lowest));
+  --action-status-tint-warning: color-mix(in srgb, var(--color-status-warning) 12%, var(--color-surface-container-lowest));
+  --action-status-tint-error: color-mix(in srgb, var(--color-status-error) 12%, var(--color-surface-container-lowest));
+  --action-status-border-idle: color-mix(in srgb, var(--color-outline-variant) 80%, transparent);
+  --action-status-border-loading: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  --action-status-border-loading-hover: color-mix(in srgb, var(--color-primary) 50%, transparent);
+  --action-status-border-success: color-mix(in srgb, var(--color-status-running) 40%, transparent);
+  --action-status-border-success-hover: color-mix(in srgb, var(--color-status-running) 60%, transparent);
+  --action-status-border-warning: color-mix(in srgb, var(--color-status-warning) 40%, transparent);
+  --action-status-border-warning-hover: color-mix(in srgb, var(--color-status-warning) 60%, transparent);
+  --action-status-border-error: color-mix(in srgb, var(--color-status-error) 45%, transparent);
+  --action-status-border-error-hover: color-mix(in srgb, var(--color-status-error) 65%, transparent);
+  --action-status-panel-border-loading: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  --action-status-panel-border-success: color-mix(in srgb, var(--color-status-running) 40%, transparent);
+  --action-status-panel-border-warning: color-mix(in srgb, var(--color-status-warning) 40%, transparent);
+  --action-status-panel-border-error: color-mix(in srgb, var(--color-status-error) 50%, transparent);
 }
 
 .action-status-tint-loading {
