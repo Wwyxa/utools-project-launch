@@ -284,51 +284,6 @@ async function pickQuickLinkPath() {
   return filePath ? { path: filePath } : { canceled: true };
 }
 
-async function exportProjects(config) {
-  const defaultPath = path.join(os.homedir(), `utools-projects-${new Date().toISOString().slice(0, 10)}.json`);
-  const selected = window.utools?.showSaveDialog
-    ? await window.utools.showSaveDialog({
-        title: "导出项目配置",
-        defaultPath,
-        filters: [{ name: "JSON", extensions: ["json"] }],
-      })
-    : defaultPath;
-  const targetPath = typeof selected === "string" ? selected : selected?.filePath;
-
-  if (!targetPath) {
-    return { canceled: true };
-  }
-
-  fs.writeFileSync(targetPath, JSON.stringify(config, null, 2), "utf8");
-  return { path: targetPath };
-}
-
-async function importProjects() {
-  const selected = window.utools?.showOpenDialog
-    ? await window.utools.showOpenDialog({
-        title: "导入项目配置",
-        properties: ["openFile"],
-        filters: [{ name: "JSON", extensions: ["json"] }],
-      })
-    : null;
-  const filePath = Array.isArray(selected) ? selected[0] : selected?.filePaths?.[0];
-
-  if (!filePath) {
-    return { canceled: true };
-  }
-
-  try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    if (parsed.schemaVersion !== schemaVersion || !Array.isArray(parsed.projects)) {
-      return { canceled: true, message: "配置文件格式不受支持。" };
-    }
-
-    return { config: parsed };
-  } catch (error) {
-    return { canceled: true, message: "无法读取配置文件。" };
-  }
-}
-
 function parseGitWorkingTreeFiles(statusEntries, numstatOutput, cachedNumstatOutput) {
   const fileMap = new Map();
 
@@ -432,16 +387,23 @@ async function readGitStatusSnapshotResult(projectPath) {
   }
 
   const repositoryPath = rootResult.repositoryPath;
-  const [branchOutput, symbolicBranchOutput, headHashOutput, workingTreeResult, branchesResult, remotesResult, mergeHeadOutput] =
-    await Promise.all([
-      runGitAsyncResult(repositoryPath, ["status", "--short", "--branch"]),
-      runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
-      runGitAsync(repositoryPath, ["rev-parse", "--short", "HEAD"]),
-      readGitWorkingTreeDataResult(repositoryPath),
-      readGitBranchesAsyncResult(repositoryPath),
-      readGitRemotesAsyncResult(repositoryPath),
-      runGitAsyncResult(repositoryPath, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]),
-    ]);
+  const [
+    branchOutput,
+    symbolicBranchOutput,
+    headHashOutput,
+    workingTreeResult,
+    branchesResult,
+    remotesResult,
+    mergeHeadOutput,
+  ] = await Promise.all([
+    runGitAsyncResult(repositoryPath, ["status", "--short", "--branch"]),
+    runGitAsync(repositoryPath, ["symbolic-ref", "--short", "-q", "HEAD"]),
+    runGitAsync(repositoryPath, ["rev-parse", "--short", "HEAD"]),
+    readGitWorkingTreeDataResult(repositoryPath),
+    readGitBranchesAsyncResult(repositoryPath),
+    readGitRemotesAsyncResult(repositoryPath),
+    runGitAsyncResult(repositoryPath, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]),
+  ]);
   if (!branchOutput.ok) {
     return {
       ok: false,
@@ -620,13 +582,17 @@ async function pushGitRemote(projectPath, options = {}) {
     const context = await resolveGitRemoteOperation(projectPath);
     if (!context.ok) return { ok: false, message: context.message };
     const confirmedHead = await runGitAsyncResult(context.repositoryPath, [
-      "rev-parse", "--verify", `${lease.headHash}^{commit}`,
+      "rev-parse",
+      "--verify",
+      `${lease.headHash}^{commit}`,
     ]);
     const head = await runGitAsyncResult(context.repositoryPath, ["rev-parse", "--verify", "HEAD"]);
     if (
       context.upstream.remote !== lease.remote ||
       context.upstream.branch !== lease.branch ||
-      !confirmedHead.ok || !head.ok || head.stdout.trim() !== confirmedHead.stdout.trim()
+      !confirmedHead.ok ||
+      !head.ok ||
+      head.stdout.trim() !== confirmedHead.stdout.trim()
     ) {
       return { ok: false, message: "当前分支或推送目标已变化，请重新确认强制推送。" };
     }
@@ -643,9 +609,10 @@ async function pushGitRemote(projectPath, options = {}) {
       ok: result.status === 0,
       remote: lease.remote,
       branch: lease.branch,
-      message: result.status === 0
-        ? `已通过租约保护强制推送到 ${context.upstream.ref}。`
-        : firstGitError(result, "强制推送失败，请检查远端分支是否已变化。"),
+      message:
+        result.status === 0
+          ? `已通过租约保护强制推送到 ${context.upstream.ref}。`
+          : firstGitError(result, "强制推送失败，请检查远端分支是否已变化。"),
     };
   }
   const tagNames = normalizeGitPushTagNames(options);

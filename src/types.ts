@@ -1608,7 +1608,13 @@ export interface LocalStateWriteResult {
 }
 
 export interface MigrationServiceStopProgress {
-  stage: "checking-service" | "stopping-scripts" | "waiting-scripts" | "stopping-service" | "waiting-service" | "stopped";
+  stage:
+    | "checking-service"
+    | "stopping-scripts"
+    | "waiting-scripts"
+    | "stopping-service"
+    | "waiting-service"
+    | "stopped";
   activeRunCount: number;
 }
 
@@ -1630,7 +1636,39 @@ export interface WorkspaceState {
 
 export interface WorkspaceStatePatch {
   dashboardProjectGroup?: string;
-  workActivity?: Partial<Pick<WorkspaceState["workActivity"], "selectionInitialized" | "preferences" | "selectedProjectIds">>;
+  workActivity?: Partial<
+    Pick<WorkspaceState["workActivity"], "selectionInitialized" | "preferences" | "selectedProjectIds">
+  >;
+}
+
+export interface BackupSummary {
+  createdAt: string;
+  source: { hostname: string; platform: string; arch: string };
+  projectCount: number;
+  bytes: number;
+}
+
+export interface BackupEntry extends BackupSummary {
+  id: string;
+  name: string;
+  complete: boolean;
+}
+
+export interface BackupCreateOptions {
+  destination: "local" | "utools";
+}
+
+export interface BackupPrepareOptions {
+  source: "local" | "utools";
+  id?: string;
+}
+
+export interface BackupRestoreOptions {
+  projects: boolean;
+  configuration: boolean;
+  projectMode: "merge" | "replace";
+  pathFrom: string;
+  pathTo: string;
 }
 
 export interface StorageOverview {
@@ -1699,7 +1737,9 @@ export interface CleanupResult {
 export interface ProjectBridge {
   preflightStartup(): StartupPreflightResult;
   runMigration(options?: { onProgress?: (summary: MigrationSummary) => void }): Promise<MigrationRunResult>;
-  stopMigrationService(options?: { onProgress?: (progress: MigrationServiceStopProgress) => void }): Promise<LocalStateWriteResult>;
+  stopMigrationService(options?: {
+    onProgress?: (progress: MigrationServiceStopProgress) => void;
+  }): Promise<LocalStateWriteResult>;
   readMigrationSummary(): MigrationSummary | null;
   loadProjects(): Promise<Project[]>;
   saveProjects(projects: Project[], options?: ProjectSaveProjectsOptions): Promise<void>;
@@ -1722,6 +1762,12 @@ export interface ProjectBridge {
   executeCleanup(itemIds: string[]): Promise<CleanupResult>;
   openPluginLocalDataDirectory(): Promise<void>;
   openLegacyDataDirectory(): Promise<void>;
+  listBackups(): Promise<{ entries: BackupEntry[]; syncState: null | 0 | 1 }>;
+  createBackup(options: BackupCreateOptions): Promise<{ canceled?: boolean; path?: string; id?: string }>;
+  prepareBackup(options: BackupPrepareOptions): Promise<{ canceled?: boolean; summary?: BackupSummary }>;
+  restoreBackup(options: BackupRestoreOptions): Promise<{ ok: boolean; recoveryPath: string }>;
+  deleteBackup(id: string): Promise<{ ok: boolean }>;
+  exportCloudBackup(id: string): Promise<{ canceled?: boolean; path?: string }>;
   loadTerminalPreferences(): TerminalPreferences;
   saveTerminalPreferences(preferences: TerminalPreferences): LocalStateWriteResult;
   loadExternalApplicationPreferences(): ExternalApplicationPreferences;
@@ -1777,8 +1823,6 @@ export interface ProjectBridge {
   pickProjectPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pickQuickLinkPath(): Promise<{ canceled?: boolean; path?: string; message?: string }>;
   pathExists(projectPath: string): Promise<boolean>;
-  exportProjects(config: ProjectConfigFile): Promise<{ canceled?: boolean; path?: string }>;
-  importProjects(): Promise<{ canceled?: boolean; config?: ProjectConfigFile; message?: string }>;
   readPackageScripts(
     projectPath: string,
   ): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }>;

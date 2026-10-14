@@ -14,6 +14,7 @@ const preloadModuleFiles = [
   "projects.js",
   "migration.js",
   "data-tools.js",
+  "backups.js",
   "agent-tools.js",
   "git-diff.js",
   "processes.js",

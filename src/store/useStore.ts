@@ -24,7 +24,7 @@ import type {
   ProjectLaunchServicePreferences,
   ProjectLaunchServiceStatus,
   StorageOverview,
-  TodoItem
+  TodoItem,
 } from "../types";
 import { aiActions } from "./actions/ai";
 import { automationRunActions } from "./actions/automationRun";
@@ -85,7 +85,6 @@ export const useStore = defineStore("app", {
       supportsBridge: supportsRealProjectBridge(),
       projectsLoaded: false,
       projectStorageMessage: "",
-      projectConfigMessage: "",
       projectFormInspectionMessage: "",
       projectFormInspecting: false,
       projectFormCwdSuggestions: ["."] as string[],

@@ -4,9 +4,7 @@ import {
   ArrowLeft,
   Brain,
   Code2,
-  Database,
   Download,
-  FolderCog,
   FolderOpen,
   Github,
   Info,
@@ -26,7 +24,6 @@ import {
   SquareTerminal,
   Sun,
   Trash2,
-  Upload,
   WandSparkles,
   ChevronDown,
   Check,
@@ -38,6 +35,7 @@ import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import ActionDialog from "../common/ActionDialog.vue";
+import BackupTools from "./BackupTools.vue";
 import { showActionStatus } from "../common/actionStatus";
 import { getProjectBridge } from "../../lib/projectBridge";
 import { VSCODE_ICON_PACK_ID } from "../../lib/fileIconTheme";
@@ -121,9 +119,7 @@ const migrationStatusLabel = computed(() => {
   return t.value.settings.migrationStatusNone;
 });
 
-const migrationRetryDisabled = computed(
-  () => store.dataToolsBusy || store.storageOverview?.serviceRunning === true,
-);
+const migrationRetryDisabled = computed(() => store.dataToolsBusy || store.storageOverview?.serviceRunning === true);
 
 const openCleanupDialog = async () => {
   cleanupDialogOpen.value = true;
@@ -156,7 +152,9 @@ const cleanupHasSyncSelection = computed(() =>
     (item) => cleanupSelection.value[item.id] && !item.disabledReason && item.category === "sync",
   ),
 );
-const cleanupRunnable = computed(() => cleanupSelectedIds.value.length > 0 && !cleanupScanning.value && !store.cleanupRunning);
+const cleanupRunnable = computed(
+  () => cleanupSelectedIds.value.length > 0 && !cleanupScanning.value && !store.cleanupRunning,
+);
 
 const runSelectedCleanup = () => {
   if (!cleanupRunnable.value) return;
@@ -1126,11 +1124,7 @@ watch(
             <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.environment }}</h3>
           </div>
           <div class="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              :class="serviceActionButtonClass('secondary', 'sm')"
-              @click="openEnvironmentDialog()"
-            >
+            <button type="button" :class="serviceActionButtonClass('secondary', 'sm')" @click="openEnvironmentDialog()">
               <Plus :size="12" />
               {{ t.settings.addEnvironment }}
             </button>
@@ -1895,35 +1889,17 @@ watch(
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center justify-between gap-3">
-          <div class="flex items-center gap-2">
-            <FolderCog :size="15" class="shrink-0 text-primary" />
-            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectConfig }}</h3>
-          </div>
-          <p
-            v-if="store.projectConfigMessage || store.projectStorageMessage"
-            class="truncate text-xs text-on-surface-variant"
-          >
-            {{ store.projectConfigMessage || store.projectStorageMessage }}
+          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectConfig }}</h3>
+          <p v-if="store.projectStorageMessage" class="truncate text-xs text-on-surface-variant">
+            {{ store.projectStorageMessage }}
           </p>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" :class="serviceActionButtonClass()" @click="store.importProjectConfig">
-            <Download :size="13" />
-            {{ t.settings.importProjectConfig }}
-          </button>
-          <button type="button" :class="serviceActionButtonClass()" @click="store.exportProjectConfig">
-            <Upload :size="13" />
-            {{ t.settings.exportProjectConfig }}
-          </button>
-        </div>
+        <BackupTools />
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center justify-between gap-3">
-          <div class="flex items-center gap-2">
-            <Database :size="15" class="shrink-0 text-primary" />
-            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.dataTools }}</h3>
-          </div>
+          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.dataTools }}</h3>
           <p class="truncate text-xs text-on-surface-variant">{{ t.settings.dataToolsDescription }}</p>
         </div>
         <p
@@ -1971,7 +1947,9 @@ watch(
               </div>
               <div class="flex justify-between gap-2">
                 <dt>{{ t.settings.storageSyncEstimate }}</dt>
-                <dd>{{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.syncDocumentBytes) : "—" }}</dd>
+                <dd>
+                  {{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.syncDocumentBytes) : "—" }}
+                </dd>
               </div>
             </dl>
           </div>
@@ -2134,7 +2112,11 @@ watch(
                 </button>
               </div>
               <div class="flex gap-2">
-                <button type="button" :class="serviceActionButtonClass()" @click="externalApplicationDialogOpen = false">
+                <button
+                  type="button"
+                  :class="serviceActionButtonClass()"
+                  @click="externalApplicationDialogOpen = false"
+                >
                   {{ t.common.cancel }}
                 </button>
                 <button type="submit" :class="serviceActionButtonClass('primary')">
@@ -2313,33 +2295,40 @@ watch(
       @primary="confirmDeleteCustomEnvironment"
     />
   </div>
-    <Teleport to="body">
-      <Transition name="scale">
+  <Teleport to="body">
+    <Transition name="scale">
+      <div
+        v-if="cleanupDialogOpen"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        @click.self="cleanupDialogOpen = false"
+      >
         <div
-          v-if="cleanupDialogOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          @click.self="cleanupDialogOpen = false"
+          class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-surface shadow-lg"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cleanup-dialog-title"
         >
-          <div
-            class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-surface shadow-lg"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cleanup-dialog-title"
-          >
-            <div class="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-              <h3 id="cleanup-dialog-title" class="text-sm font-semibold text-on-surface">{{ t.settings.dataCleanup }}</h3>
-              <button
-                type="button"
-                class="rounded-lg p-1 text-on-surface-variant hover:bg-surface-container"
-                :aria-label="t.common.close"
-                @click="cleanupDialogOpen = false"
+          <div class="flex items-center justify-between border-b border-border-subtle px-4 py-3">
+            <h3 id="cleanup-dialog-title" class="text-sm font-semibold text-on-surface">
+              {{ t.settings.dataCleanup }}
+            </h3>
+            <button
+              type="button"
+              class="rounded-lg p-1 text-on-surface-variant hover:bg-surface-container"
+              :aria-label="t.common.close"
+              @click="cleanupDialogOpen = false"
+            >
+              <X :size="16" />
+            </button>
+          </div>
+          <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto" :aria-busy="cleanupScanning" v-overlay-scrollbar>
+            <div class="space-y-4 px-4 py-4">
+              <div
+                v-if="cleanupScanning"
+                role="status"
+                aria-live="polite"
+                class="flex min-h-32 items-center justify-center gap-2 text-sm text-on-surface-variant"
               >
-                <X :size="16" />
-              </button>
-            </div>
-            <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto" :aria-busy="cleanupScanning" v-overlay-scrollbar>
-              <div class="space-y-4 px-4 py-4">
-              <div v-if="cleanupScanning" role="status" aria-live="polite" class="flex min-h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
                 <LoaderCircle :size="18" class="animate-spin" aria-hidden="true" />
                 <span>{{ t.settings.cleanupScanning }}</span>
               </div>
@@ -2349,7 +2338,7 @@ watch(
                   {{ t.settings.cleanupSafetyHint }}
                 </p>
                 <section
-                  v-for="category in (['sync', 'local', 'cache'] as const)"
+                  v-for="category in ['sync', 'local', 'cache'] as const"
                   :key="category"
                   :aria-labelledby="`cleanup-category-${category}`"
                   class="min-w-0 border-t border-border-subtle pt-5"
@@ -2373,6 +2362,7 @@ watch(
                         <input
                           type="checkbox"
                           class="mt-0.5"
+                          :aria-label="item.label"
                           :checked="cleanupSelection[item.id]"
                           :disabled="Boolean(item.disabledReason) || store.cleanupRunning || cleanupScanning"
                           @change="cleanupSelection[item.id] = ($event.target as HTMLInputElement).checked"
@@ -2381,32 +2371,75 @@ watch(
                           <span class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                             <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                               <span class="text-sm font-medium text-on-surface">{{ item.label }}</span>
-                              <span class="text-[10px] font-medium" :class="item.recommendation === 'recommended' ? 'text-primary' : item.recommendation === 'review' ? 'text-status-warning' : 'text-on-surface-variant'">
-                                {{ item.recommendation === 'recommended' ? t.settings.cleanupRecommended : item.recommendation === 'review' ? t.settings.cleanupReview : t.settings.cleanupKeep }}
+                              <span
+                                class="text-[10px] font-medium"
+                                :class="
+                                  item.recommendation === 'recommended'
+                                    ? 'text-primary'
+                                    : item.recommendation === 'review'
+                                      ? 'text-status-warning'
+                                      : 'text-on-surface-variant'
+                                "
+                              >
+                                {{
+                                  item.recommendation === "recommended"
+                                    ? t.settings.cleanupRecommended
+                                    : item.recommendation === "review"
+                                      ? t.settings.cleanupReview
+                                      : t.settings.cleanupKeep
+                                }}
                               </span>
+                              <button
+                                type="button"
+                                class="group relative inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                :title="item.safetyHint"
+                                :aria-label="`${item.label}：${item.safetyHint}`"
+                                @click.prevent.stop
+                              >
+                                <Info :size="13" aria-hidden="true" />
+                                <span
+                                  class="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 hidden w-64 -translate-x-1/2 rounded-md border border-border-subtle bg-surface-container-high px-2.5 py-2 text-left text-[11px] font-normal leading-4 text-on-surface shadow-lg group-hover:block group-focus-visible:block"
+                                >
+                                  {{ item.safetyHint }}
+                                </span>
+                              </button>
                             </span>
                             <span class="text-xs text-on-surface-variant">
-                              <template v-if="item.count !== null">{{ t.settings.cleanupCount }}: {{ item.count }}</template>
+                              <template v-if="item.count !== null"
+                                >{{ t.settings.cleanupCount }}: {{ item.count }}</template
+                              >
                               <template v-if="item.estimatedBytes > 0">
                                 {{ item.count !== null ? " · " : "" }}~{{ formatDataSize(item.estimatedBytes) }}
                               </template>
                             </span>
                           </span>
-                          <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{ item.description }}</span>
-                          <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{ item.safetyHint }}</span>
+                          <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{
+                            item.description
+                          }}</span>
                           <span v-if="item.disabledReason" class="mt-1 block text-xs text-status-error">
                             {{ item.disabledReason }}
                           </span>
                         </span>
                       </label>
-                      <details v-if="item.keys.length || item.paths.length" class="group ml-6 mt-2 border-t border-border-subtle pt-2 text-xs text-on-surface-variant">
-                        <summary class="flex cursor-pointer list-none items-center gap-1 font-medium text-primary [&::-webkit-details-marker]:hidden">
-                          <ChevronDown :size="13" class="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+                      <details
+                        v-if="item.keys.length || item.paths.length"
+                        class="group ml-6 mt-2 border-t border-border-subtle pt-2 text-xs text-on-surface-variant"
+                      >
+                        <summary
+                          class="flex cursor-pointer list-none items-center gap-1 font-medium text-primary [&::-webkit-details-marker]:hidden"
+                        >
+                          <ChevronDown
+                            :size="13"
+                            class="shrink-0 transition-transform group-open:rotate-180"
+                            aria-hidden="true"
+                          />
                           {{ item.keys.length ? t.settings.cleanupViewKeys : t.settings.cleanupViewPaths }}
                         </summary>
                         <p v-if="item.keys.length" class="mt-2">{{ t.settings.cleanupKeyNamesOnly }}</p>
                         <ul class="mt-2 space-y-1 font-mono">
-                          <li v-for="entry in (item.keys.length ? item.keys : item.paths)" :key="entry" class="break-all">{{ entry }}</li>
+                          <li v-for="entry in item.keys.length ? item.keys : item.paths" :key="entry" class="break-all">
+                            {{ entry }}
+                          </li>
                         </ul>
                       </details>
                     </div>
@@ -2427,46 +2460,46 @@ watch(
                 </div>
               </div>
               <p v-if="store.cleanupMessage" class="text-xs text-on-surface-variant">{{ store.cleanupMessage }}</p>
-              </div>
-            </div>
-            <div class="flex items-center justify-end gap-2 border-t border-border-subtle px-4 py-3">
-              <button
-                type="button"
-                class="rounded-lg border border-border-subtle px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
-                @click="cleanupDialogOpen = false"
-              >
-                {{ t.common.close }}
-              </button>
-              <button
-                type="button"
-                class="rounded-lg bg-status-error px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                :disabled="!cleanupRunnable"
-                @click="requestCleanupRun"
-              >
-                {{ store.cleanupRunning ? t.settings.cleanupRunning : t.settings.cleanupRun }}
-              </button>
             </div>
           </div>
+          <div class="flex items-center justify-end gap-2 border-t border-border-subtle px-4 py-3">
+            <button
+              type="button"
+              class="rounded-lg border border-border-subtle px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
+              @click="cleanupDialogOpen = false"
+            >
+              {{ t.common.close }}
+            </button>
+            <button
+              type="button"
+              class="rounded-lg bg-status-error px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              :disabled="!cleanupRunnable"
+              @click="requestCleanupRun"
+            >
+              {{ store.cleanupRunning ? t.settings.cleanupRunning : t.settings.cleanupRun }}
+            </button>
+          </div>
         </div>
-      </Transition>
-    </Teleport>
+      </div>
+    </Transition>
+  </Teleport>
 
-    <Teleport to="body">
-      <ActionDialog
-        :open="cleanupConfirmOpen"
-        tone="danger"
-        icon="trash"
-        :title="t.settings.cleanupConfirm"
-        :message="t.settings.cleanupSyncWarning"
-        :primary-label="t.settings.cleanupConfirm"
-        :cancel-label="t.common.cancel"
-        @cancel="cleanupConfirmOpen = false"
-        @primary="
-          () => {
-            cleanupConfirmOpen = false;
-            runSelectedCleanup();
-          }
-        "
-      />
-    </Teleport>
+  <Teleport to="body">
+    <ActionDialog
+      :open="cleanupConfirmOpen"
+      tone="danger"
+      icon="trash"
+      :title="t.settings.cleanupConfirm"
+      :message="t.settings.cleanupSyncWarning"
+      :primary-label="t.settings.cleanupConfirm"
+      :cancel-label="t.common.cancel"
+      @cancel="cleanupConfirmOpen = false"
+      @primary="
+        () => {
+          cleanupConfirmOpen = false;
+          runSelectedCleanup();
+        }
+      "
+    />
+  </Teleport>
 </template>

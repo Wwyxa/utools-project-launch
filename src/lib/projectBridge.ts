@@ -53,6 +53,9 @@ import type {
   ProjectBridgeExternalApplicationLaunchResult,
   ProjectBridgeRunResult,
   ProjectBridgeStopProcessOptions,
+  BackupCreateOptions,
+  BackupPrepareOptions,
+  BackupRestoreOptions,
   ProjectGitReadResult,
   ProjectGitTagInfo,
   ProjectFileListResult,
@@ -770,8 +773,7 @@ const browserPreflightResult = (): StartupPreflightResult => ({
   message: "浏览器开发预览模式：使用本地 fallback 存储，不执行真实迁移。",
 });
 
-const browserPreviewError = (action: string): Error =>
-  new Error(`浏览器预览无法${action}，请在 uTools 中使用。`);
+const browserPreviewError = (action: string): Error => new Error(`浏览器预览无法${action}，请在 uTools 中使用。`);
 
 const fallbackWorkspaceState = (): WorkspaceState => ({
   dashboardProjectGroup: "all",
@@ -789,9 +791,10 @@ const readFallbackWorkspaceState = (): WorkspaceState => {
     const parsed = JSON.parse(raw) as Partial<WorkspaceState>;
     const workActivity = parsed.workActivity ?? fallbackWorkspaceState().workActivity;
     return {
-      dashboardProjectGroup: typeof parsed.dashboardProjectGroup === "string" && parsed.dashboardProjectGroup
-        ? parsed.dashboardProjectGroup
-        : "all",
+      dashboardProjectGroup:
+        typeof parsed.dashboardProjectGroup === "string" && parsed.dashboardProjectGroup
+          ? parsed.dashboardProjectGroup
+          : "all",
       workActivity: {
         selectionInitialized: workActivity.selectionInitialized === true,
         preferences:
@@ -816,7 +819,10 @@ const writeFallbackWorkspaceState = (patch: WorkspaceStatePatch): LocalStateWrit
           : current.dashboardProjectGroup,
       workActivity: {
         selectionInitialized: patch.workActivity?.selectionInitialized ?? current.workActivity.selectionInitialized,
-        preferences: patch.workActivity?.preferences !== undefined ? patch.workActivity.preferences : current.workActivity.preferences,
+        preferences:
+          patch.workActivity?.preferences !== undefined
+            ? patch.workActivity.preferences
+            : current.workActivity.preferences,
         selectedProjectIds: patch.workActivity?.selectedProjectIds ?? current.workActivity.selectedProjectIds,
       },
     };
@@ -861,6 +867,24 @@ const writeFallbackProjectEnvironmentOverrides = (
 };
 
 const fallbackBridge: ProjectBridge = {
+  async listBackups() {
+    throw browserPreviewError("读取 uTools 备份");
+  },
+  async createBackup() {
+    throw browserPreviewError("创建备份");
+  },
+  async prepareBackup() {
+    throw browserPreviewError("导入备份");
+  },
+  async restoreBackup() {
+    throw browserPreviewError("恢复备份");
+  },
+  async deleteBackup() {
+    throw browserPreviewError("删除备份");
+  },
+  async exportCloudBackup() {
+    throw browserPreviewError("导出 uTools 备份");
+  },
   preflightStartup() {
     return browserPreflightResult();
   },
@@ -1110,19 +1134,6 @@ const fallbackBridge: ProjectBridge = {
   },
   async pathExists(projectPath: string): Promise<boolean> {
     return Boolean(projectPath.trim());
-  },
-  async exportProjects(config) {
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `utools-projects-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    return {};
-  },
-  async importProjects() {
-    return { canceled: true, message: "浏览器预览暂不支持文件导入，请在 uTools 环境中使用。" };
   },
   async readPackageScripts(): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }> {
     return { scripts: [], packagePath: null };

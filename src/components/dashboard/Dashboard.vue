@@ -20,7 +20,6 @@ import {
   ArrowUpDown,
   MonitorCog,
   PackageOpen,
-  Download,
   Check,
   CheckSquare,
   GripVertical,
@@ -1276,13 +1275,6 @@ const handleProjectDragEnd = () => {
         >
           <Plus :size="16" aria-hidden="true" />
           {{ t.dashboard.createHint }}
-        </button>
-        <button
-          @click="store.importProjectConfig"
-          class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle bg-surface-container-lowest px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-low"
-        >
-          <Download :size="16" aria-hidden="true" />
-          {{ t.dashboard.emptyImport }}
         </button>
       </div>
     </div>
