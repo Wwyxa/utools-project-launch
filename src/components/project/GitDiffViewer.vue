@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
   ChevronDown,
   ChevronUp,
@@ -9,19 +9,22 @@ import {
   Minimize2,
   Pilcrow,
   Rows2,
+  Space,
   WrapText,
 } from "lucide-vue-next";
 import {
   findGitDiffBlockInlineRanges,
   findGitDiffChangeBlocks,
+  highlightGitDiffRows,
   markGitDiffInlineRanges,
+  markGitDiffWhitespace,
   parseGitDiff,
   toGitDiffSideBySideRows,
   type GitDiffInlineRange,
   type GitDiffRow,
   type GitDiffSideBySideRow,
 } from "../../lib/gitDiff";
-import { highlightCode, languageForFilePath } from "../../lib/markdown";
+import { languageForFilePath } from "../../lib/markdown";
 import { cn } from "../../lib/utils";
 
 type GitDiffViewMode = "unified" | "side-by-side";
@@ -65,8 +68,14 @@ const unifiedScrollRef = ref<HTMLDivElement | null>(null);
 const oldScrollRef = ref<HTMLDivElement | null>(null);
 const newScrollRef = ref<HTMLDivElement | null>(null);
 const wrapsLongLines = ref(false);
+const showsWhitespace = ref(false);
 const diffViewMode = ref<GitDiffViewMode>("unified");
 const activeHunkIndex = ref(0);
+const sideRowHeights = ref(new Map<string, number>());
+let rowResizeObserver: ResizeObserver | undefined;
+let rowMeasureFrame = 0;
+let scrollSyncFrame = 0;
+let scrollSyncSource: "old" | "new" | undefined;
 const parsedDiff = computed(() => parseGitDiff(props.diff));
 const sideBySideRows = computed(() => toGitDiffSideBySideRows(parsedDiff.value.rows));
 const changeBlocks = computed(() => findGitDiffChangeBlocks(parsedDiff.value.rows));
@@ -90,13 +99,20 @@ const changeBlockStartIdByRowId = computed(() => {
   return ids;
 });
 const diffLanguage = computed(() => languageForFilePath(props.path));
-const highlightedCodeByRowId = computed(() => {
-  const language = diffLanguage.value;
-  return new Map(
-    parsedDiff.value.rows
-      .filter((row) => row.kind === "addition" || row.kind === "deletion" || row.kind === "context")
-      .map((row) => [row.id, highlightCode(row.content, language)]),
+const highlightedCodeByRowId = computed(() => highlightGitDiffRows(parsedDiff.value.rows, diffLanguage.value));
+const oldHighlightedCodeByRowId = computed(() =>
+  highlightGitDiffRows(parsedDiff.value.rows, diffLanguage.value, "old"),
+);
+const diffStats = computed(() => ({
+  additions: parsedDiff.value.rows.filter((row) => row.kind === "addition").length,
+  deletions: parsedDiff.value.rows.filter((row) => row.kind === "deletion").length,
+}));
+const lineNumberWidth = computed(() => {
+  const maxLineNumber = parsedDiff.value.rows.reduce(
+    (maximum, row) => Math.max(maximum, row.oldLineNumber || 0, row.newLineNumber || 0),
+    0,
   );
+  return `calc(${Math.max(4, String(maxLineNumber).length)}ch + 1rem)`;
 });
 const inlineHighlightsByRowId = computed(() => {
   const highlights = new Map<string, InlineRowHighlight>();
@@ -104,6 +120,7 @@ const inlineHighlightsByRowId = computed(() => {
     const changedRows = parsedDiff.value.rows.slice(block.startRowIndex, block.endRowIndex + 1);
     const oldRows = changedRows.filter((row) => row.kind === "deletion");
     const newRows = changedRows.filter((row) => row.kind === "addition");
+    if (!oldRows.length || !newRows.length) return;
     const rangesByRowId = findGitDiffBlockInlineRanges(oldRows, newRows);
     if (!rangesByRowId) return;
 
@@ -131,22 +148,16 @@ const rowPrefix = (row: GitDiffRow) => {
   return "";
 };
 
-const highlightedCode = (row: GitDiffRow) => highlightedCodeByRowId.value.get(row.id) || "";
-const renderedCode = (row: GitDiffRow | null) => {
+const renderedCode = (row: GitDiffRow | null, side: "old" | "new" = "new") => {
   if (!row) return " ";
   const inlineHighlight = inlineHighlightsByRowId.value.get(row.id);
+  const highlighted = (side === "old" ? oldHighlightedCodeByRowId : highlightedCodeByRowId).value.get(row.id) || "";
   const code = inlineHighlight
-    ? markGitDiffInlineRanges(highlightedCode(row), inlineHighlight.ranges, inlineHighlight.kind)
-    : highlightedCode(row);
-  return `${rowPrefix(row)}${code}` || " ";
+    ? markGitDiffInlineRanges(highlighted, inlineHighlight.ranges, inlineHighlight.kind)
+    : highlighted;
+  return (showsWhitespace.value ? markGitDiffWhitespace(code) : code) || " ";
 };
 
-const displayLineNumber = (row: GitDiffRow) => row.newLineNumber ?? row.oldLineNumber;
-const lineNumberLabel = (row: GitDiffRow) => {
-  const lineNumber = displayLineNumber(row);
-  if (lineNumber == null) return "无对应行号";
-  return row.newLineNumber != null ? `新文件第 ${lineNumber} 行` : `原文件第 ${lineNumber} 行`;
-};
 const sideLineNumber = (row: GitDiffRow | null, side: "old" | "new") =>
   side === "old" ? row?.oldLineNumber : row?.newLineNumber;
 const sideLineNumberLabel = (row: GitDiffRow | null, side: "old" | "new") => {
@@ -157,7 +168,7 @@ const sideLineNumberLabel = (row: GitDiffRow | null, side: "old" | "new") => {
 
 const rowClass = (row: GitDiffRow) =>
   cn(
-    "grid grid-cols-[3.5rem_minmax(0,1fr)] font-mono text-xs leading-5",
+    "diff-code-row diff-unified-row grid font-mono text-xs leading-5",
     row.kind === "addition" && "bg-[var(--syntax-addition-bg)]",
     row.kind === "deletion" && "bg-[var(--syntax-deletion-bg)]",
     row.kind === "hunk" && "bg-primary/10 text-primary",
@@ -167,7 +178,7 @@ const rowClass = (row: GitDiffRow) =>
 
 const sidePaneRowClass = (row: GitDiffSideBySideRow) =>
   cn(
-    "grid min-h-5 grid-cols-[3.5rem_minmax(10rem,1fr)] font-mono text-xs leading-5",
+    "diff-code-row diff-side-row grid min-h-5 font-mono text-xs leading-5",
     row.kind === "hunk" && "bg-primary/10 text-primary",
     row.kind === "meta" && "bg-[var(--code-preview-gutter-bg)] text-on-surface-variant",
     row.kind === "context" && "text-on-surface",
@@ -195,25 +206,45 @@ const sideChangeBlockStartId = (row?: GitDiffSideBySideRow) => {
   return startRowId && (row?.oldRow?.id === startRowId || row?.newRow?.id === startRowId) ? blockId : undefined;
 };
 
-const sideLineNumberClass = (row: GitDiffRow | null, side: "old" | "new") =>
+const sideLineNumberClass = (row: GitDiffRow | null) =>
   cn(
-    "diff-line-number select-none bg-[var(--code-preview-gutter-bg)] px-2 text-right tabular-nums",
+    "diff-line-number sticky left-0 z-10 flex select-none items-start justify-end gap-1 bg-[var(--code-preview-gutter-bg)] pl-2 text-right tabular-nums",
     "border-r",
     "border-[var(--code-preview-border)]",
     row?.kind === "deletion" && "text-[var(--syntax-deletion-fg)]",
     row?.kind === "addition" && "text-[var(--syntax-addition-fg)]",
     row?.kind === "context" && "diff-line-number-context",
-    !row && "text-transparent",
+    !row && "diff-empty-cell text-transparent",
   );
 
 const sideContentClass = (row: GitDiffRow | null) =>
   cn(
-    "min-w-0 px-3",
-    row?.kind === "addition" && "bg-[var(--syntax-addition-bg)]",
-    row?.kind === "deletion" && "bg-[var(--syntax-deletion-bg)]",
+    "min-w-0 self-start px-3",
     row?.kind === "context" && "text-on-surface",
-    "whitespace-pre",
+    !row && "self-stretch",
+    wrapsLongLines.value ? "whitespace-pre-wrap break-all" : "whitespace-pre",
   );
+
+const measureSideRows = () => {
+  cancelAnimationFrame(rowMeasureFrame);
+  rowMeasureFrame = requestAnimationFrame(() => {
+    const heights = new Map<string, number>();
+    [oldScrollRef.value, newScrollRef.value].forEach((pane) => {
+      pane?.querySelectorAll<HTMLElement>("[data-diff-measure]").forEach((element) => {
+        const id = element.dataset.diffMeasure!;
+        heights.set(id, Math.max(heights.get(id) || 20, Math.ceil(element.getBoundingClientRect().height)));
+      });
+    });
+    if (
+      heights.size !== sideRowHeights.value.size ||
+      [...heights].some(([id, height]) => sideRowHeights.value.get(id) !== height)
+    ) {
+      sideRowHeights.value = heights;
+    }
+  });
+};
+
+const sideRowStyle = (row: GitDiffSideBySideRow) => ({ minHeight: `${sideRowHeights.value.get(row.id) || 20}px` });
 
 const reviewScrollElement = () => (diffViewMode.value === "unified" ? unifiedScrollRef.value : oldScrollRef.value);
 
@@ -229,10 +260,7 @@ const setReviewScrollTop = (scrollTop: number, behavior?: ScrollBehavior) => {
 
 const navigateHunk = async (direction: -1 | 1) => {
   const currentIndex = Math.min(Math.max(activeHunkIndex.value, 0), changeBlocks.value.length - 1);
-  const targetIndex =
-    direction > 0
-      ? Math.min(changeBlocks.value.length - 1, currentIndex + 1)
-      : Math.max(0, currentIndex <= 0 ? 0 : currentIndex - 1);
+  const targetIndex = (currentIndex + direction + changeBlocks.value.length) % changeBlocks.value.length;
   const targetBlock = changeBlocks.value[targetIndex];
   if (!targetBlock) return;
 
@@ -264,6 +292,12 @@ const handleSideScroll = (side: "old" | "new") => {
   const source = side === "old" ? oldScrollRef.value : newScrollRef.value;
   const target = side === "old" ? newScrollRef.value : oldScrollRef.value;
   if (!source) return;
+  if (scrollSyncSource && scrollSyncSource !== side) return;
+  scrollSyncSource = side;
+  cancelAnimationFrame(scrollSyncFrame);
+  scrollSyncFrame = requestAnimationFrame(() => {
+    scrollSyncSource = undefined;
+  });
   if (target) {
     if (Math.abs(target.scrollTop - source.scrollTop) > 1) target.scrollTop = source.scrollTop;
     if (Math.abs(target.scrollLeft - source.scrollLeft) > 1) target.scrollLeft = source.scrollLeft;
@@ -271,12 +305,47 @@ const handleSideScroll = (side: "old" | "new") => {
   emit("update:scrollTop", source.scrollTop);
 };
 
+const handleKeydown = (event: KeyboardEvent) => {
+  if (event.defaultPrevented || props.loading || !changeBlocks.value.length) return;
+  if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true']"))
+    return;
+  if (event.ctrlKey || event.metaKey) return;
+  if ((event.key === "F7" && !event.altKey) || (event.key === "F5" && event.altKey)) {
+    event.preventDefault();
+    event.stopPropagation();
+    void navigateHunk(event.shiftKey ? -1 : 1);
+  }
+};
+
 const toggleDiffViewMode = () => {
-  const scrollTop = reviewScrollElement()?.scrollTop ?? props.scrollTop;
+  const source = reviewScrollElement();
+  const scrollTop = source?.scrollTop ?? props.scrollTop;
+  const viewportTop = source?.getBoundingClientRect().top ?? 0;
+  const anchor =
+    source &&
+    Array.from(source.querySelectorAll<HTMLElement>("[data-diff-row-id]")).find(
+      (element) => element.getBoundingClientRect().bottom > viewportTop,
+    );
+  const anchorId = anchor?.dataset.diffRowId;
+  const anchorOffset = anchor ? anchor.getBoundingClientRect().top - viewportTop : 0;
   diffViewMode.value = diffViewMode.value === "unified" ? "side-by-side" : "unified";
   void nextTick(() => {
-    setReviewScrollTop(scrollTop);
-    emit("update:scrollTop", scrollTop);
+    const target = reviewScrollElement();
+    const targetRow =
+      anchorId &&
+      target?.querySelector<HTMLElement>(`[data-diff-row-id="${anchorId}"], [data-diff-new-row-id="${anchorId}"]`);
+    const targetTop =
+      target && targetRow
+        ? Math.max(
+            0,
+            target.scrollTop +
+              targetRow.getBoundingClientRect().top -
+              target.getBoundingClientRect().top -
+              anchorOffset,
+          )
+        : scrollTop;
+    setReviewScrollTop(targetTop);
+    emit("update:scrollTop", targetTop);
   });
 };
 
@@ -302,18 +371,54 @@ watch([() => props.diff, () => props.loading], async () => {
   await nextTick();
   setReviewScrollTop(props.scrollTop);
 });
+
+watch(
+  [sideBySideRows, diffViewMode, wrapsLongLines, showsWhitespace, () => props.loading],
+  async () => {
+    rowResizeObserver?.disconnect();
+    cancelAnimationFrame(rowMeasureFrame);
+    await nextTick();
+    if (
+      diffViewMode.value !== "side-by-side" ||
+      !wrapsLongLines.value ||
+      props.loading ||
+      !oldScrollRef.value ||
+      !newScrollRef.value
+    ) {
+      sideRowHeights.value = new Map();
+      return;
+    }
+    rowResizeObserver ??= new ResizeObserver(measureSideRows);
+    [oldScrollRef.value, newScrollRef.value].forEach((pane) => {
+      pane
+        ?.querySelectorAll<HTMLElement>("[data-diff-measure]")
+        .forEach((element) => rowResizeObserver?.observe(element));
+    });
+    measureSideRows();
+  },
+  { flush: "post" },
+);
+
+onBeforeUnmount(() => {
+  rowResizeObserver?.disconnect();
+  cancelAnimationFrame(rowMeasureFrame);
+  cancelAnimationFrame(scrollSyncFrame);
+});
 </script>
 
 <template>
   <div
-    class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--code-preview-bg)]"
+    class="git-diff-viewer relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--code-preview-bg)]"
+    :style="{ '--diff-line-width': lineNumberWidth }"
     role="region"
     aria-label="Git diff"
+    tabindex="0"
+    @keydown="handleKeydown"
   >
     <div
-      class="flex h-10 shrink-0 min-w-0 items-center justify-between gap-2 border-b border-[var(--code-preview-border)] bg-surface-container-low px-2.5"
+      class="flex min-h-10 shrink-0 min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-[var(--code-preview-border)] bg-surface-container-low px-2.5 py-1"
     >
-      <div class="min-w-0 flex-1 leading-tight">
+      <div class="min-w-20 flex-1 leading-tight">
         <div class="truncate font-mono text-[10px] font-bold text-on-surface" :title="path || 'Git diff'">
           {{ path || "Git diff" }}
         </div>
@@ -323,7 +428,19 @@ watch([() => props.diff, () => props.loading], async () => {
           <span v-if="subtitle" class="min-w-0 truncate" :title="subtitle">{{ subtitle }}</span>
         </div>
       </div>
-      <div class="flex shrink-0 items-center gap-0.5" role="toolbar" aria-label="Diff 工具栏">
+      <div
+        class="ml-auto flex max-w-full shrink-0 flex-wrap items-center gap-0.5"
+        role="toolbar"
+        aria-label="Diff 工具栏"
+      >
+        <span
+          v-if="!loading && changeBlocks.length"
+          class="mr-1 whitespace-nowrap font-mono text-[10px] tabular-nums"
+          :aria-label="`新增 ${diffStats.additions} 行，删除 ${diffStats.deletions} 行`"
+        >
+          <span class="text-[var(--syntax-addition-fg)]">+{{ diffStats.additions }}</span>
+          <span class="ml-1 text-[var(--syntax-deletion-fg)]">-{{ diffStats.deletions }}</span>
+        </span>
         <span
           class="min-w-9 select-none px-1 text-center font-mono text-[10px] font-semibold tabular-nums text-on-surface-variant"
           :title="`${changeBlocks.length} 个变更块`"
@@ -333,8 +450,8 @@ watch([() => props.diff, () => props.loading], async () => {
         <button
           type="button"
           class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface disabled:opacity-35"
-          title="上一个 hunk"
-          aria-label="上一个 hunk"
+          title="上一个变更 (Shift+F7)"
+          aria-label="上一个变更"
           :disabled="loading || !changeBlocks.length"
           @click="navigateHunk(-1)"
         >
@@ -343,8 +460,8 @@ watch([() => props.diff, () => props.loading], async () => {
         <button
           type="button"
           class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface disabled:opacity-35"
-          title="下一个 hunk"
-          aria-label="下一个 hunk"
+          title="下一个变更 (F7)"
+          aria-label="下一个变更"
           :disabled="loading || !changeBlocks.length"
           @click="navigateHunk(1)"
         >
@@ -361,17 +478,31 @@ watch([() => props.diff, () => props.loading], async () => {
                 : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
             )
           "
-          :title="
-            diffViewMode === 'side-by-side' ? '双栏对比固定不换行' : wrapsLongLines ? '关闭长行换行' : '开启长行换行'
-          "
-          :aria-label="
-            diffViewMode === 'side-by-side' ? '双栏对比固定不换行' : wrapsLongLines ? '关闭长行换行' : '开启长行换行'
-          "
-          :aria-pressed="diffViewMode === 'unified' && wrapsLongLines"
-          :disabled="loading || diffViewMode === 'side-by-side'"
+          :title="wrapsLongLines ? '关闭长行换行' : '开启长行换行'"
+          :aria-label="wrapsLongLines ? '关闭长行换行' : '开启长行换行'"
+          :aria-pressed="wrapsLongLines"
+          :disabled="loading"
           @click="wrapsLongLines = !wrapsLongLines"
         >
           <WrapText :size="14" />
+        </button>
+        <button
+          type="button"
+          :class="
+            cn(
+              'flex h-7 w-7 items-center justify-center rounded transition-colors disabled:opacity-35',
+              showsWhitespace
+                ? 'bg-primary/10 text-primary'
+                : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
+            )
+          "
+          :title="showsWhitespace ? '隐藏空白字符' : '显示空白字符'"
+          :aria-label="showsWhitespace ? '隐藏空白字符' : '显示空白字符'"
+          :aria-pressed="showsWhitespace"
+          :disabled="loading"
+          @click="showsWhitespace = !showsWhitespace"
+        >
+          <Space :size="14" />
         </button>
         <span class="mx-1 h-4 w-px bg-border-subtle" aria-hidden="true" />
         <button
@@ -435,6 +566,18 @@ watch([() => props.diff, () => props.loading], async () => {
     </div>
 
     <div
+      v-if="diffViewMode === 'side-by-side' && !loading && parsedDiff.rows.length && !isBinaryDiff"
+      class="grid shrink-0 grid-cols-2 border-b border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] text-[10px] text-on-surface-variant"
+    >
+      <div class="border-r border-[var(--code-preview-border)] px-3 py-1">
+        原文件 <span class="ml-1 font-mono text-[var(--syntax-deletion-fg)]">-{{ diffStats.deletions }}</span>
+      </div>
+      <div class="px-3 py-1">
+        新文件 <span class="ml-1 font-mono text-[var(--syntax-addition-fg)]">+{{ diffStats.additions }}</span>
+      </div>
+    </div>
+
+    <div
       ref="unifiedScrollRef"
       :class="
         diffViewMode === 'unified'
@@ -463,6 +606,7 @@ watch([() => props.diff, () => props.loading], async () => {
             v-for="(row, index) in parsedDiff.rows"
             :key="row.id"
             :data-diff-change-block="changeBlockStartIdByRowId.get(row.id)"
+            :data-diff-row-id="row.id"
             :class="
               cn(
                 rowClass(row),
@@ -475,7 +619,9 @@ watch([() => props.diff, () => props.loading], async () => {
             "
           >
             <template v-if="row.kind === 'hunk' || row.kind === 'meta'">
-              <span class="border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)]" />
+              <span
+                class="sticky left-0 z-10 col-span-2 border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)]"
+              />
               <span :class="cn('px-3', wrapsLongLines ? 'whitespace-pre-wrap break-words' : 'whitespace-pre')">
                 {{ row.content || " " }}
               </span>
@@ -484,19 +630,30 @@ watch([() => props.diff, () => props.loading], async () => {
               <span
                 :class="
                   cn(
-                    'diff-line-number select-none border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 text-right tabular-nums',
+                    'diff-line-number sticky left-0 z-10 select-none border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)] px-2 text-right tabular-nums',
                     row.kind === 'deletion' && 'text-[var(--syntax-deletion-fg)]',
                     row.kind === 'addition' && 'text-[var(--syntax-addition-fg)]',
                     row.kind === 'context' && 'diff-line-number-context',
                   )
                 "
-                :title="lineNumberLabel(row)"
-                :aria-label="lineNumberLabel(row)"
+                :title="sideLineNumberLabel(row, row.newLineNumber != null ? 'new' : 'old')"
+                :aria-label="sideLineNumberLabel(row, row.newLineNumber != null ? 'new' : 'old')"
               >
-                {{ displayLineNumber(row) ?? "" }}
+                {{ row.newLineNumber ?? row.oldLineNumber ?? "" }}
               </span>
               <span
-                :class="cn('px-3', wrapsLongLines ? 'whitespace-pre-wrap break-words' : 'whitespace-pre')"
+                :class="
+                  cn(
+                    'diff-change-sign sticky z-10 select-none text-center',
+                    row.kind === 'addition' && 'diff-change-sign-addition',
+                    row.kind === 'deletion' && 'diff-change-sign-deletion',
+                  )
+                "
+                aria-hidden="true"
+                >{{ rowPrefix(row) }}</span
+              >
+              <span
+                :class="cn('min-w-0 px-3', wrapsLongLines ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')"
                 v-html="renderedCode(row)"
               />
             </template>
@@ -509,14 +666,19 @@ watch([() => props.diff, () => props.loading], async () => {
             aria-label="旧版代码"
             @scroll="handleSideScroll('old')"
           >
-            <div class="min-w-max">
+            <div :class="wrapsLongLines ? 'min-w-0' : 'min-w-max'">
               <div
                 v-for="(row, index) in sideBySideRows"
                 :key="row.id"
                 :data-diff-change-block="sideChangeBlockStartId(row)"
+                :data-diff-row-id="row.oldRow?.id || row.newRow?.id"
+                :data-diff-new-row-id="row.newRow?.id"
+                :style="sideRowStyle(row)"
                 :class="
                   cn(
                     sidePaneRowClass(row),
+                    row.oldRow?.kind === 'deletion' && 'bg-[var(--syntax-deletion-bg)]',
+                    !row.oldRow && 'diff-empty-cell',
                     activeHunkRowClass(
                       sideChangeBlockId(row),
                       sideChangeBlockId(sideBySideRows[index - 1]),
@@ -526,18 +688,33 @@ watch([() => props.diff, () => props.loading], async () => {
                 "
               >
                 <template v-if="row.kind === 'hunk' || row.kind === 'meta'">
-                  <span class="border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)]" />
-                  <span class="px-3 whitespace-pre">{{ row.oldRow?.content || " " }}</span>
+                  <span
+                    class="sticky left-0 z-10 border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)]"
+                  />
+                  <span
+                    :data-diff-measure="row.id"
+                    :class="
+                      cn('min-w-0 self-start px-3', wrapsLongLines ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')
+                    "
+                    >{{ row.oldRow?.content || " " }}</span
+                  >
                 </template>
                 <template v-else>
                   <span
-                    :class="sideLineNumberClass(row.oldRow, 'old')"
+                    :class="sideLineNumberClass(row.oldRow)"
                     :title="sideLineNumberLabel(row.oldRow, 'old')"
                     :aria-label="sideLineNumberLabel(row.oldRow, 'old')"
                   >
                     {{ sideLineNumber(row.oldRow, "old") ?? "" }}
+                    <span class="w-4 shrink-0 text-center" aria-hidden="true">{{
+                      row.oldRow ? rowPrefix(row.oldRow) : ""
+                    }}</span>
                   </span>
-                  <span :class="sideContentClass(row.oldRow)" v-html="renderedCode(row.oldRow)" />
+                  <span
+                    :data-diff-measure="row.oldRow ? row.id : undefined"
+                    :class="sideContentClass(row.oldRow)"
+                    v-html="renderedCode(row.oldRow, 'old')"
+                  />
                 </template>
               </div>
             </div>
@@ -548,14 +725,19 @@ watch([() => props.diff, () => props.loading], async () => {
             aria-label="新版代码"
             @scroll="handleSideScroll('new')"
           >
-            <div class="min-w-max">
+            <div :class="wrapsLongLines ? 'min-w-0' : 'min-w-max'">
               <div
                 v-for="(row, index) in sideBySideRows"
                 :key="row.id"
                 :data-diff-change-block="sideChangeBlockStartId(row)"
+                :data-diff-row-id="row.oldRow?.id || row.newRow?.id"
+                :data-diff-new-row-id="row.newRow?.id"
+                :style="sideRowStyle(row)"
                 :class="
                   cn(
                     sidePaneRowClass(row),
+                    row.newRow?.kind === 'addition' && 'bg-[var(--syntax-addition-bg)]',
+                    !row.newRow && 'diff-empty-cell',
                     activeHunkRowClass(
                       sideChangeBlockId(row),
                       sideChangeBlockId(sideBySideRows[index - 1]),
@@ -565,18 +747,33 @@ watch([() => props.diff, () => props.loading], async () => {
                 "
               >
                 <template v-if="row.kind === 'hunk' || row.kind === 'meta'">
-                  <span class="border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)]" />
-                  <span class="px-3 whitespace-pre">{{ row.newRow?.content || " " }}</span>
+                  <span
+                    class="sticky left-0 z-10 border-r border-[var(--code-preview-border)] bg-[var(--code-preview-gutter-bg)]"
+                  />
+                  <span
+                    :data-diff-measure="row.id"
+                    :class="
+                      cn('min-w-0 self-start px-3', wrapsLongLines ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')
+                    "
+                    >{{ row.newRow?.content || " " }}</span
+                  >
                 </template>
                 <template v-else>
                   <span
-                    :class="sideLineNumberClass(row.newRow, 'new')"
+                    :class="sideLineNumberClass(row.newRow)"
                     :title="sideLineNumberLabel(row.newRow, 'new')"
                     :aria-label="sideLineNumberLabel(row.newRow, 'new')"
                   >
                     {{ sideLineNumber(row.newRow, "new") ?? "" }}
+                    <span class="w-4 shrink-0 text-center" aria-hidden="true">{{
+                      row.newRow ? rowPrefix(row.newRow) : ""
+                    }}</span>
                   </span>
-                  <span :class="sideContentClass(row.newRow)" v-html="renderedCode(row.newRow)" />
+                  <span
+                    :data-diff-measure="row.newRow ? row.id : undefined"
+                    :class="sideContentClass(row.newRow)"
+                    v-html="renderedCode(row.newRow)"
+                  />
                 </template>
               </div>
             </div>

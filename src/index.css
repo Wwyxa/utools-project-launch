@@ -1451,6 +1451,68 @@
   font-weight: 500;
 }
 
+.git-diff-viewer:focus-visible {
+  outline: 1px solid var(--color-primary);
+  outline-offset: -1px;
+}
+
+.diff-code-row {
+  tab-size: 4;
+}
+
+.diff-unified-row {
+  grid-template-columns: var(--diff-line-width) 1.25rem minmax(0, 1fr);
+}
+
+.diff-side-row {
+  grid-template-columns: calc(var(--diff-line-width) + 1rem) minmax(0, 1fr);
+}
+
+.diff-line-number.diff-empty-cell {
+  background-color: var(--code-preview-gutter-bg);
+}
+
+.diff-change-sign {
+  left: var(--diff-line-width);
+  background: var(--code-preview-bg);
+}
+
+.diff-change-sign-addition {
+  background: var(--code-preview-gutter-bg);
+  color: var(--syntax-addition-fg);
+}
+
+.diff-change-sign-deletion {
+  background: var(--code-preview-gutter-bg);
+  color: var(--syntax-deletion-fg);
+}
+
+.diff-whitespace-space {
+  background: radial-gradient(circle at center, var(--diff-context-line-number) 0.7px, transparent 1px);
+}
+
+.diff-whitespace-tab {
+  position: relative;
+}
+
+.diff-whitespace-tab::before {
+  position: absolute;
+  inset: 0;
+  content: "\2192";
+  color: var(--diff-context-line-number);
+  pointer-events: none;
+}
+
+.diff-empty-cell {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 3px,
+    color-mix(in srgb, var(--code-preview-border) 35%, transparent) 3px,
+    color-mix(in srgb, var(--code-preview-border) 35%, transparent) 4px
+  );
+}
+
 .diff-inline-addition,
 .diff-inline-deletion {
   box-decoration-break: clone;
@@ -1478,12 +1540,12 @@
 
 .diff-inline-addition {
   background: var(--diff-inline-addition-bg);
-  color: var(--diff-inline-addition-fg);
+  color: inherit;
 }
 
 .diff-inline-deletion {
   background: var(--diff-inline-deletion-bg);
-  color: var(--diff-inline-deletion-fg);
+  color: inherit;
 }
 
 .diff-active-hunk-start > :last-child {
@@ -1720,8 +1782,16 @@
 
 :root {
   --action-status-tint-loading: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-container-lowest));
-  --action-status-tint-success: color-mix(in srgb, var(--color-status-running) 12%, var(--color-surface-container-lowest));
-  --action-status-tint-warning: color-mix(in srgb, var(--color-status-warning) 12%, var(--color-surface-container-lowest));
+  --action-status-tint-success: color-mix(
+    in srgb,
+    var(--color-status-running) 12%,
+    var(--color-surface-container-lowest)
+  );
+  --action-status-tint-warning: color-mix(
+    in srgb,
+    var(--color-status-warning) 12%,
+    var(--color-surface-container-lowest)
+  );
   --action-status-tint-error: color-mix(in srgb, var(--color-status-error) 12%, var(--color-surface-container-lowest));
   --action-status-border-idle: color-mix(in srgb, var(--color-outline-variant) 80%, transparent);
   --action-status-border-loading: color-mix(in srgb, var(--color-primary) 30%, transparent);

@@ -66,6 +66,18 @@ outer shell and constrain an inner scroller with `min-h-0` in a flex column.
 - Diff views preserve original text and derive inline ranges from the complete
   changed block. Hunk navigation owns the active block even when scrolling does
   not move; scrolling alone must not overwrite that navigation state.
+- Diff syntax highlighting runs on each hunk's old/new sequences independently;
+  split highlighted HTML into balanced lines, preserving the correct side's
+  syntax state on context rows. Keep signs and whitespace decorations outside
+  copied source text; pure insert/delete blocks need only line shading.
+- Wrapped side-by-side rows share the maximum measured code height. Measure
+  intrinsic code spans, excluding empty stretched counterparts, so rows can
+  shrink after resizing. Disconnect observers and cancel animation frames on
+  teardown. Mode changes preserve the visible source-row anchor.
+- `\ No newline at end of file` annotations retain their side and do not split
+  replacement blocks. Keep regression coverage in `tests/gitDiff.test.ts` and
+  `tests/GitDiffViewer.test.ts` for syntax state, source preservation, annotation
+  pairing, keyboard navigation, wrapping, and scroll synchronization.
 
 Sources: `src/lib/gitCommitGraph.ts`, `src/lib/gitCommitRefs.ts`,
 `src/lib/gitCommitTooltipSession.ts`, `src/lib/gitDiff.ts`, and their `tests/`
