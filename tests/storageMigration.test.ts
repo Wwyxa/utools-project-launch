@@ -73,6 +73,7 @@ describe("storage migration recovery", () => {
         "../../store/useStore": { useStore: () => store },
         "../../lib/i18n": { useI18n: () => ref({}) },
         "../../lib/escape": { addAppEscapeRequestListener: () => stopEscape },
+        "../../lib/overlayScrollbar": { getOverlayScrollbarScrollElements: () => null },
       },
       {
         window: {

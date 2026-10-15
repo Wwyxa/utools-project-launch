@@ -23,7 +23,7 @@ const options = ref<BackupRestoreOptions>({
   pathTo: "",
 });
 const buttonClass =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg border border-border-subtle px-3 py-2 text-xs font-semibold text-on-surface hover:bg-surface-variant disabled:opacity-50";
+  "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-subtle bg-surface px-3 py-1.5 text-xs font-medium leading-5 text-on-surface transition-colors hover:bg-surface-variant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-55";
 const iconButtonClass =
   "inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-variant hover:text-on-surface disabled:opacity-50";
 const inputClass =
@@ -136,12 +136,12 @@ onMounted(() => {
         <Download :size="14" />导出本地备份
       </button>
     </div>
-    <p class="text-xs text-on-surface-variant">
+    <p class="text-xs leading-5 text-on-surface-variant">
       备份包含所有项目、插件配置及其中的环境变量和密钥；项目源文件不包含在内。
     </p>
     <p v-if="!store.supportsBridge" class="text-xs text-on-surface-variant">请在 uTools 中管理备份。</p>
 
-    <div class="flex min-h-8 items-center justify-start gap-3">
+    <div class="flex min-h-9 flex-wrap items-center justify-start gap-3">
       <button type="button" :class="buttonClass" :disabled="busy || !store.supportsBridge" @click="create('utools')">
         <CloudUpload :size="14" />备份到 uTools
       </button>
