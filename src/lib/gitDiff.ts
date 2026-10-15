@@ -1,3 +1,5 @@
+import { highlightCode } from "./markdown";
+
 export type GitDiffRowKind = "meta" | "hunk" | "context" | "addition" | "deletion";
 
 export interface GitDiffRow {
@@ -52,6 +54,58 @@ export interface GitDiffSideBySideRow {
   isReliablePair?: boolean;
 }
 
+export const highlightGitDiffRows = (
+  rows: readonly GitDiffRow[],
+  language: string,
+  contextSide: "old" | "new" = "new",
+) => {
+  const highlighted = new Map<string, string>();
+  let oldRows: GitDiffRow[] = [];
+  let newRows: GitDiffRow[] = [];
+
+  const highlightSide = (sideRows: GitDiffRow[], side: "old" | "new") => {
+    if (!sideRows.length) return;
+    const htmlLines = highlightCode(sideRows.map((row) => row.content).join("\n"), language).split("\n");
+    const openSpans: string[] = [];
+    htmlLines.forEach((line, index) => {
+      const prefix = openSpans.join("");
+      for (const match of line.matchAll(/<span\b[^>]*>|<\/span>/g)) {
+        if (match[0] === "</span>") openSpans.pop();
+        else openSpans.push(match[0]);
+      }
+      const row = sideRows[index];
+      if (row && (row.kind !== "context" || side === contextSide)) {
+        highlighted.set(row.id, prefix + line + "</span>".repeat(openSpans.length));
+      }
+    });
+  };
+
+  const flush = () => {
+    highlightSide(oldRows, "old");
+    highlightSide(newRows, "new");
+    oldRows = [];
+    newRows = [];
+  };
+
+  rows.forEach((row) => {
+    if (row.kind === "hunk" || (row.kind === "meta" && row.content.startsWith("diff --git "))) flush();
+    if (row.kind === "deletion" || row.kind === "context") oldRows.push(row);
+    if (row.kind === "addition" || row.kind === "context") newRows.push(row);
+  });
+  flush();
+  return highlighted;
+};
+
+export const markGitDiffWhitespace = (highlightedHtml: string) =>
+  highlightedHtml.replace(/<[^>]*>|[ \t]+/g, (part) => {
+    if (part.startsWith("<")) return part;
+    return part.replace(
+      /[ \t]/g,
+      (character) =>
+        `<span class="${character === "\t" ? "diff-whitespace-tab" : "diff-whitespace-space"}">${character}</span>`,
+    );
+  });
+
 const HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
 const INLINE_TOKEN_PATTERN = /[\p{L}\p{N}_$]+|\s+|[^\s\p{L}\p{N}_$]+/gu;
 const MAX_INLINE_LINE_LENGTH = 1024;
@@ -89,13 +143,9 @@ const tokenizeGitDiffRows = (rows: readonly Pick<GitDiffRow, "id" | "content">[]
   const tokens: GitDiffSequenceToken[] = [];
   let totalLength = 0;
 
-  rows.forEach((row, rowIndex) => {
-    if (row.content.length > MAX_INLINE_LINE_LENGTH) {
-      totalLength = MAX_INLINE_BLOCK_LENGTH + 1;
-      return;
-    }
-
-    totalLength += row.content.length;
+  for (const [rowIndex, row] of rows.entries()) {
+    totalLength += row.content.length + (rowIndex > 0 ? 1 : 0);
+    if (row.content.length > MAX_INLINE_LINE_LENGTH || totalLength > MAX_INLINE_BLOCK_LENGTH) return null;
     tokenizeGitDiffLine(row.content).forEach((token) => {
       const kind = sequenceTokenKind(token.value);
       const lineBreakBefore = token.start === 0 && rowIndex > 0;
@@ -114,7 +164,6 @@ const tokenizeGitDiffRows = (rows: readonly Pick<GitDiffRow, "id" | "content">[]
     });
 
     if (rowIndex < rows.length - 1) {
-      totalLength += 1;
       tokens.push({
         value: "\n",
         start: row.content.length,
@@ -125,9 +174,8 @@ const tokenizeGitDiffRows = (rows: readonly Pick<GitDiffRow, "id" | "content">[]
         lineBreakAfter: false,
       });
     }
-  });
-
-  if (totalLength > MAX_INLINE_BLOCK_LENGTH || tokens.length > MAX_INLINE_BLOCK_TOKENS) return null;
+    if (tokens.length > MAX_INLINE_BLOCK_TOKENS) return null;
+  }
   return tokens;
 };
 
@@ -146,23 +194,37 @@ const addSequenceTokenRange = (rangesByRowId: Map<string, GitDiffInlineRange[]>,
 };
 
 const trimGitDiffSequenceTokenPair = (oldToken: GitDiffSequenceToken, newToken: GitDiffSequenceToken) => {
+  const oldCharacters = Array.from(oldToken.value);
+  const newCharacters = Array.from(newToken.value);
   let oldStart = 0;
-  let oldEnd = oldToken.value.length;
+  let oldEnd = oldCharacters.length;
   let newStart = 0;
-  let newEnd = newToken.value.length;
+  let newEnd = newCharacters.length;
 
-  while (oldStart < oldEnd && newStart < newEnd && oldToken.value[oldStart] === newToken.value[newStart]) {
+  while (oldStart < oldEnd && newStart < newEnd && oldCharacters[oldStart] === newCharacters[newStart]) {
     oldStart += 1;
     newStart += 1;
   }
-  while (oldStart < oldEnd && newStart < newEnd && oldToken.value[oldEnd - 1] === newToken.value[newEnd - 1]) {
+  while (oldStart < oldEnd && newStart < newEnd && oldCharacters[oldEnd - 1] === newCharacters[newEnd - 1]) {
     oldEnd -= 1;
     newEnd -= 1;
   }
 
   return {
-    oldRange: oldStart < oldEnd ? { start: oldToken.start + oldStart, end: oldToken.start + oldEnd } : null,
-    newRange: newStart < newEnd ? { start: newToken.start + newStart, end: newToken.start + newEnd } : null,
+    oldRange:
+      oldStart < oldEnd
+        ? {
+            start: oldToken.start + oldCharacters.slice(0, oldStart).join("").length,
+            end: oldToken.start + oldCharacters.slice(0, oldEnd).join("").length,
+          }
+        : null,
+    newRange:
+      newStart < newEnd
+        ? {
+            start: newToken.start + newCharacters.slice(0, newStart).join("").length,
+            end: newToken.start + newCharacters.slice(0, newEnd).join("").length,
+          }
+        : null,
   };
 };
 
@@ -517,6 +579,8 @@ export const findGitDiffChangeBlocks = (rows: GitDiffRow[]): GitDiffChangeBlock[
       return;
     }
 
+    if (startRowIndex !== -1 && row.kind === "meta" && row.content.startsWith("\\ No newline")) return;
+
     if (startRowIndex === -1) return;
     blocks.push({ id: `change-block-${blocks.length}`, startRowIndex, endRowIndex: rowIndex - 1 });
     startRowIndex = -1;
@@ -538,6 +602,10 @@ export const toGitDiffSideBySideRows = (rows: GitDiffRow[]): GitDiffSideBySideRo
 
     const deletions = changeBlock.filter((row) => row.kind === "deletion");
     const additions = changeBlock.filter((row) => row.kind === "addition");
+    const annotations = new Map<string, GitDiffRow>();
+    changeBlock.forEach((row, index) => {
+      if (row.kind === "meta" && index > 0) annotations.set(changeBlock[index - 1].id, row);
+    });
     const rowCount = Math.max(deletions.length, additions.length);
     const isReliablePair = deletions.length === additions.length;
     for (let index = 0; index < rowCount; index += 1) {
@@ -548,12 +616,26 @@ export const toGitDiffSideBySideRows = (rows: GitDiffRow[]): GitDiffSideBySideRo
         newRow: additions[index] || null,
         isReliablePair: isReliablePair && Boolean(deletions[index] && additions[index]),
       });
+      const oldAnnotation = deletions[index] ? annotations.get(deletions[index].id) : undefined;
+      const newAnnotation = additions[index] ? annotations.get(additions[index].id) : undefined;
+      if (oldAnnotation || newAnnotation) {
+        sideBySideRows.push({
+          id: `${changeBlock[0].id}-annotation-${index}`,
+          kind: "meta",
+          oldRow: oldAnnotation || null,
+          newRow: newAnnotation || null,
+        });
+      }
     }
     changeBlock = [];
   };
 
   rows.forEach((row) => {
-    if (row.kind === "deletion" || row.kind === "addition") {
+    if (
+      row.kind === "deletion" ||
+      row.kind === "addition" ||
+      (changeBlock.length > 0 && row.kind === "meta" && row.content.startsWith("\\ No newline"))
+    ) {
       changeBlock.push(row);
       return;
     }

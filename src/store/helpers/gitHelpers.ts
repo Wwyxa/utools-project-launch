@@ -1,158 +1,12 @@
-import type { Project, ProjectGitFileChange, ProjectGitSnapshot, ProjectGitRepositoryContext, ProjectGitReadOperation, ProjectGitReadFailure, ProjectGitStatusSnapshot, ProjectBridgeGitWorkingTreeSnapshot, ProjectGitCommitPage } from "../../types";
-
-export const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
-
-export const gitStatusRefreshPromises = new Map<string, Promise<void>>();
-
-export const gitWorkingTreeRefreshPromises = new Map<string, Promise<void>>();
-
-export const gitLoadMorePromises = new Map<string, Promise<void>>();
-
-export const gitWorkspaceRefreshPromises = new Map<string, Promise<void>>();
-
-export const gitWriteLocks = new Map<string, Promise<void>>();
-
-export const gitSnapshotRefreshTokens = new Map<string, symbol>();
-
-export const gitStatusRefreshTokens = new Map<string, symbol>();
-
-export const gitWorkingTreeRefreshTokens = new Map<string, symbol>();
-
-export const gitLoadMoreTokens = new Map<string, symbol>();
-
-export const gitWorkspaceRefreshTokens = new Map<string, symbol>();
-
-export const gitMutationVersions = new Map<string, number>();
-
-export const gitRefMutationVersions = new Map<string, number>();
-
-export const queueGitWriteLock = (contextKey: string) => {
-  const previousWrite = gitWriteLocks.get(contextKey) || Promise.resolve();
-  let release: () => void = () => { };
-  const currentWrite = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const queuedWrite = previousWrite.catch(() => undefined).then(() => currentWrite);
-  gitWriteLocks.set(contextKey, queuedWrite);
-  return {
-    waitForPrevious: previousWrite.catch(() => undefined),
-    release: () => {
-      release();
-      if (gitWriteLocks.get(contextKey) === queuedWrite) {
-        gitWriteLocks.delete(contextKey);
-      }
-    },
-  };
-};
-
-export function gitMutationVersion(contextKey: string) {
-  return gitMutationVersions.get(contextKey) || 0;
-}
-
-export function bumpGitMutationVersion(contextKey: string) {
-  gitMutationVersions.set(contextKey, gitMutationVersion(contextKey) + 1);
-}
-
-export function gitRefMutationVersion(projectId: string) {
-  return gitRefMutationVersions.get(projectId) || 0;
-}
-
-export function bumpGitRefMutationVersion(projectId: string) {
-  gitRefMutationVersions.set(projectId, gitRefMutationVersion(projectId) + 1);
-}
-
-export function clearGitRepositoryCoordination(projectId: string, preserveStatusRefresh = false) {
-  const contextPrefix = `${projectId}::`;
-  [
-    gitSnapshotRefreshPromises,
-    gitStatusRefreshPromises,
-    gitWorkingTreeRefreshPromises,
-    gitLoadMorePromises,
-    gitSnapshotRefreshTokens,
-    gitStatusRefreshTokens,
-    gitWorkingTreeRefreshTokens,
-    gitLoadMoreTokens,
-    gitMutationVersions,
-  ].forEach((state) => {
-    if (preserveStatusRefresh && (state === gitStatusRefreshPromises || state === gitStatusRefreshTokens)) return;
-    [...state.keys()].forEach((key) => {
-      if (key.startsWith(contextPrefix)) state.delete(key);
-    });
-  });
-  gitRefMutationVersions.delete(projectId);
-}
-
-export function clearGitRepositoryRecord(record: Record<string, unknown>, projectId: string) {
-  const contextPrefix = `${projectId}::`;
-  Object.keys(record).forEach((key) => {
-    if (key.startsWith(contextPrefix)) delete record[key];
-  });
-}
-
-export function clearGitSnapshotForRepository(
-  projects: Project[],
-  stagedFiles: Record<string, ProjectGitFileChange[]>,
-  repositorySnapshots: Record<string, ProjectGitSnapshot | undefined>,
-  projectId: string,
-  context: ProjectGitRepositoryContext,
-) {
-  const project = projects.find((item) => item.id === projectId);
-  if (!project) return false;
-  if (context.target.kind === "main") {
-    project.git = null;
-    project.gitLatestCommitAt = "";
-    stagedFiles[projectId] = [];
-  } else {
-    delete repositorySnapshots[context.contextKey];
-  }
-  return true;
-}
-
-export type GitReadFailureState = Partial<Record<ProjectGitReadOperation, ProjectGitReadFailure>>;
-
-export function setGitReadFailure(
-  record: Record<string, GitReadFailureState | undefined>,
-  contextKey: string,
-  failure: ProjectGitReadFailure,
-) {
-  record[contextKey] = { ...(record[contextKey] || {}), [failure.operation]: failure };
-}
-
-export function clearGitReadFailure(
-  record: Record<string, GitReadFailureState | undefined>,
-  contextKey: string,
-  operation?: ProjectGitReadOperation,
-) {
-  if (!operation) {
-    delete record[contextKey];
-    return;
-  }
-
-  const current = record[contextKey];
-  if (!current) return;
-  const next = { ...current };
-  delete next[operation];
-  if (Object.keys(next).length === 0) delete record[contextKey];
-  else record[contextKey] = next;
-}
-
-export function createGitReadFailureFromError(
-  operation: ProjectGitReadOperation,
-  error: unknown,
-  fallbackMessage: string,
-): ProjectGitReadFailure {
-  return {
-    code: "command-failed",
-    operation,
-    message: error instanceof Error && error.message ? error.message : fallbackMessage,
-  };
-}
+import type { Project, ProjectBridgeGitWorkingTreeSnapshot, ProjectGitCommitPage, ProjectGitFileChange, ProjectGitReadFailure, ProjectGitReadOperation, ProjectGitRepositoryContext, ProjectGitSnapshot, ProjectGitStatusSnapshot } from "../../types";
 
 export const normalizeGitCommitSkip = (value: unknown, fallback: number) =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
 
+
 export const normalizeGitCommitCount = (value: unknown, fallback: number) =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+
 
 export function isCompleteGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): snapshot is ProjectGitSnapshot {
   return Boolean(
@@ -162,6 +16,7 @@ export function isCompleteGitSnapshot(snapshot: ProjectGitSnapshot | null | unde
     snapshot.commitCount >= 0,
   );
 }
+
 
 export function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undefined): ProjectGitSnapshot | null {
   if (!isCompleteGitSnapshot(snapshot)) {
@@ -194,6 +49,7 @@ export function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undef
   };
 }
 
+
 export function gitHistorySnapshotSignature(
   snapshot: ProjectGitSnapshot | null | undefined,
   commits = snapshot?.commits || [],
@@ -217,16 +73,17 @@ export function gitHistorySnapshotSignature(
     remoteBranches: (snapshot.remoteBranches || []).map((branch) => [branch.remote, branch.branch, branch.ref, branch.commitHash || ""]),
     upstream: snapshot.upstream
       ? [
-        snapshot.upstream.remote,
-        snapshot.upstream.branch,
-        snapshot.upstream.ref,
-        snapshot.upstream.ahead,
-        snapshot.upstream.behind,
-      ]
+          snapshot.upstream.remote,
+          snapshot.upstream.branch,
+          snapshot.upstream.ref,
+          snapshot.upstream.ahead,
+          snapshot.upstream.behind,
+        ]
       : null,
     base: snapshot.base ? [snapshot.base.remote, snapshot.base.branch, snapshot.base.ref] : null,
   });
 }
+
 
 export function gitHistoryPageMatches(currentSnapshot: ProjectGitSnapshot, nextSnapshot: ProjectGitSnapshot): boolean {
   const currentCommits = currentSnapshot.commits || [];
@@ -240,6 +97,7 @@ export function gitHistoryPageMatches(currentSnapshot: ProjectGitSnapshot, nextS
     gitHistorySnapshotSignature(nextSnapshot, nextCommits)
   );
 }
+
 
 export function mergeGitSnapshotPreservingHistory(
   currentSnapshot: ProjectGitSnapshot | null | undefined,
@@ -259,6 +117,7 @@ export function mergeGitSnapshotPreservingHistory(
   currentSnapshot.statusText = nextSnapshot.statusText;
   return currentSnapshot;
 }
+
 
 export function mergeGitStatusSnapshot(
   currentSnapshot: ProjectGitSnapshot | null | undefined,
@@ -321,6 +180,7 @@ export function mergeGitStatusSnapshot(
   return currentSnapshot;
 }
 
+
 export function mergeGitWorkingTreeSnapshot(
   currentSnapshot: ProjectGitSnapshot | null | undefined,
   workingTreeSnapshot: ProjectBridgeGitWorkingTreeSnapshot,
@@ -340,6 +200,7 @@ export function mergeGitWorkingTreeSnapshot(
   return currentSnapshot;
 }
 
+
 export function mergeGitCommitPage(currentSnapshot: ProjectGitSnapshot, commitPage: ProjectGitCommitPage): ProjectGitSnapshot {
   return {
     ...currentSnapshot,
@@ -354,6 +215,7 @@ export function mergeGitCommitPage(currentSnapshot: ProjectGitSnapshot, commitPa
     lastRefreshedAt: commitPage.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
   };
 }
+
 
 export function replaceGitCommitPage(
   currentSnapshot: ProjectGitSnapshot,
@@ -370,5 +232,164 @@ export function replaceGitCommitPage(
     ),
     repositoryPath: commitPage.repositoryPath || currentSnapshot.repositoryPath,
     lastRefreshedAt: commitPage.lastRefreshedAt || currentSnapshot.lastRefreshedAt,
+  };
+}
+
+export const gitSnapshotRefreshPromises = new Map<string, Promise<void>>();
+
+export const gitStatusRefreshPromises = new Map<string, Promise<void>>();
+
+export const gitWorkingTreeRefreshPromises = new Map<string, Promise<void>>();
+
+export const gitLoadMorePromises = new Map<string, Promise<void>>();
+
+export const gitWorkspaceRefreshPromises = new Map<string, Promise<void>>();
+
+export const gitWriteLocks = new Map<string, Promise<void>>();
+
+export const gitSnapshotRefreshTokens = new Map<string, symbol>();
+
+export const gitStatusRefreshTokens = new Map<string, symbol>();
+
+export const gitWorkingTreeRefreshTokens = new Map<string, symbol>();
+
+export const gitLoadMoreTokens = new Map<string, symbol>();
+
+export const gitWorkspaceRefreshTokens = new Map<string, symbol>();
+
+export const gitMutationVersions = new Map<string, number>();
+
+export const gitRefMutationVersions = new Map<string, number>();
+
+
+export const queueGitWriteLock = (contextKey: string) => {
+  const previousWrite = gitWriteLocks.get(contextKey) || Promise.resolve();
+  let release: () => void = () => {};
+  const currentWrite = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queuedWrite = previousWrite.catch(() => undefined).then(() => currentWrite);
+  gitWriteLocks.set(contextKey, queuedWrite);
+  return {
+    waitForPrevious: previousWrite.catch(() => undefined),
+    release: () => {
+      release();
+      if (gitWriteLocks.get(contextKey) === queuedWrite) {
+        gitWriteLocks.delete(contextKey);
+      }
+    },
+  };
+};
+
+export function gitMutationVersion(contextKey: string) {
+  return gitMutationVersions.get(contextKey) || 0;
+}
+
+
+export function bumpGitMutationVersion(contextKey: string) {
+  gitMutationVersions.set(contextKey, gitMutationVersion(contextKey) + 1);
+}
+
+
+export function gitRefMutationVersion(projectId: string) {
+  return gitRefMutationVersions.get(projectId) || 0;
+}
+
+
+export function bumpGitRefMutationVersion(projectId: string) {
+  gitRefMutationVersions.set(projectId, gitRefMutationVersion(projectId) + 1);
+}
+
+
+export function clearGitRepositoryCoordination(projectId: string, preserveStatusRefresh = false) {
+  const contextPrefix = `${projectId}::`;
+  [
+    gitSnapshotRefreshPromises,
+    gitStatusRefreshPromises,
+    gitWorkingTreeRefreshPromises,
+    gitLoadMorePromises,
+    gitSnapshotRefreshTokens,
+    gitStatusRefreshTokens,
+    gitWorkingTreeRefreshTokens,
+    gitLoadMoreTokens,
+    gitMutationVersions,
+  ].forEach((state) => {
+    if (preserveStatusRefresh && (state === gitStatusRefreshPromises || state === gitStatusRefreshTokens)) return;
+    [...state.keys()].forEach((key) => {
+      if (key.startsWith(contextPrefix)) state.delete(key);
+    });
+  });
+  gitRefMutationVersions.delete(projectId);
+}
+
+
+export function clearGitRepositoryRecord(record: Record<string, unknown>, projectId: string) {
+  const contextPrefix = `${projectId}::`;
+  Object.keys(record).forEach((key) => {
+    if (key.startsWith(contextPrefix)) delete record[key];
+  });
+}
+
+
+export function clearGitSnapshotForRepository(
+  projects: Project[],
+  stagedFiles: Record<string, ProjectGitFileChange[]>,
+  repositorySnapshots: Record<string, ProjectGitSnapshot | undefined>,
+  projectId: string,
+  context: ProjectGitRepositoryContext,
+) {
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) return false;
+  if (context.target.kind === "main") {
+    project.git = null;
+    project.gitLatestCommitAt = "";
+    stagedFiles[projectId] = [];
+  } else {
+    delete repositorySnapshots[context.contextKey];
+  }
+  return true;
+}
+
+
+export type GitReadFailureState = Partial<Record<ProjectGitReadOperation, ProjectGitReadFailure>>;
+
+
+export function setGitReadFailure(
+  record: Record<string, GitReadFailureState | undefined>,
+  contextKey: string,
+  failure: ProjectGitReadFailure,
+) {
+  record[contextKey] = { ...(record[contextKey] || {}), [failure.operation]: failure };
+}
+
+
+export function clearGitReadFailure(
+  record: Record<string, GitReadFailureState | undefined>,
+  contextKey: string,
+  operation?: ProjectGitReadOperation,
+) {
+  if (!operation) {
+    delete record[contextKey];
+    return;
+  }
+
+  const current = record[contextKey];
+  if (!current) return;
+  const next = { ...current };
+  delete next[operation];
+  if (Object.keys(next).length === 0) delete record[contextKey];
+  else record[contextKey] = next;
+}
+
+
+export function createGitReadFailureFromError(
+  operation: ProjectGitReadOperation,
+  error: unknown,
+  fallbackMessage: string,
+): ProjectGitReadFailure {
+  return {
+    code: "command-failed",
+    operation,
+    message: error instanceof Error && error.message ? error.message : fallbackMessage,
   };
 }

@@ -1,41 +1,13 @@
-# Frontend Development Guidelines
+# Frontend Guidelines
 
-> Best practices for frontend development in this project.
+The frontend uses Vue 3, Pinia, TypeScript, and Vite. Host operations go through
+`src/lib/projectBridge.ts` into the uTools preload bridge.
 
----
-
-## Overview
-
-This project is a Vite + Vue 3 frontend. The app shell, project dashboard, project details, memo editor, embedded terminal, and all current mock project data live on the client side.
-
-The frontend spec below captures the actual composition pattern used in `src/`, including the Pinia store, Tailwind-based styling, shared types, and feature folders.
-
----
-
-## Guidelines Index
-
-| Guide                                             | Description                             | Status     |
-| ------------------------------------------------- | --------------------------------------- | ---------- |
-| [Directory Structure](./directory-structure.md)   | Module organization and file layout     | Documented |
-| [Component Guidelines](./component-guidelines.md) | Component patterns, props, composition  | Documented |
-| [Hook Guidelines](./hook-guidelines.md)           | Custom hooks, data fetching patterns    | Documented |
-| [State Management](./state-management.md)         | Local state, global state, server state | Documented |
-| [Quality Guidelines](./quality-guidelines.md)     | Code standards, forbidden patterns      | Documented |
-| [Type Safety](./type-safety.md)                   | Type patterns, validation               | Documented |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+| Guide                                             | Scope                             |
+| ------------------------------------------------- | --------------------------------- |
+| [Directory Structure](./directory-structure.md)   | Module ownership                  |
+| [Component Guidelines](./component-guidelines.md) | Components and styling            |
+| [Hook Guidelines](./hook-guidelines.md)           | Composables and lifecycle         |
+| [State Management](./state-management.md)         | Shared and local state            |
+| [Quality Guidelines](./quality-guidelines.md)     | Frontend validation               |
+| [Type Safety](./type-safety.md)                   | Shared types and bridge contracts |

@@ -2,14 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import vm from "node:vm";
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { createPreloadSandbox } from "./helpers/preload-sandbox.mjs";
 
-const require = createRequire(import.meta.url);
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "git bulk actions-"));
 
 const run = (cwd, ...args) =>
@@ -62,30 +57,7 @@ const createMixedFixture = (label) => {
   return projectRoot;
 };
 
-const sandbox = {
-  Buffer,
-  TextDecoder,
-  clearTimeout,
-  console: { warn() {}, error() {}, log() {} },
-  process: { env: { ...process.env }, execPath: process.execPath, platform: process.platform, once() {}, exit() {} },
-  require(moduleName) {
-    if (moduleName === "electron") {
-      return {
-        shell: { openExternal: () => Promise.resolve(), openPath: () => Promise.resolve(), showItemInFolder() {} },
-      };
-    }
-    return require(moduleName);
-  },
-  setTimeout,
-  window: {
-    dispatchEvent() {},
-    localStorage: { getItem: () => null, setItem() {} },
-    utools: { onPluginOut() {} },
-  },
-};
-sandbox.globalThis = sandbox;
-vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
-
+const sandbox = createPreloadSandbox();
 const { chunkGitPathspecs } = sandbox;
 
 // Chunking keeps pathspec batches inside Windows command-line length limits.

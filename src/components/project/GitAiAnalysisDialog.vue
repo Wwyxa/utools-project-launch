@@ -618,7 +618,7 @@ watch(
     <Transition name="scale">
       <div
         v-if="open"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-5 backdrop-blur-sm"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-5"
         @click.self="requestClose"
       >
         <div
@@ -796,6 +796,7 @@ watch(
                 class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
               >
                 <div
+                  v-overlay-scrollbar
                   :class="['ai-result-panel min-h-0 flex-1 overflow-auto p-3', aiDialogHasVersions && 'pb-16']"
                   :aria-busy="isAiDialogGenerating"
                 >

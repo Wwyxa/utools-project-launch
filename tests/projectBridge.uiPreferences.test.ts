@@ -68,7 +68,13 @@ const loadPreloadBridge = (
       platform: process.platform,
       arch: process.arch,
       pid: process.pid,
-      env: { ...process.env, ...environment },
+      env: {
+        ...process.env,
+        ...(environment.UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR
+          ? { UTOOLS_PROJECT_LAUNCH_LEGACY_DATA_DIR: join(environment.UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR, "legacy") }
+          : {}),
+        ...environment,
+      },
       kill: process.kill.bind(process),
       once: () => undefined,
       exit: () => undefined,
@@ -187,31 +193,6 @@ describe("browser UI preferences fallback", () => {
     vi.resetModules();
   });
 
-  it("returns and persists complete defaults without stored preferences", () => {
-    expect(getProjectBridge().loadUiPreferences()).toEqual({
-      schemaVersion: 1,
-      iconPackId: "builtin",
-      projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
-      dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-    });
-    expect(JSON.parse(storage.get(uiPreferencesKey)!)).toMatchObject({ schemaVersion: 1 });
-  });
-
-  it.each([
-    [defaultTabOrder, 0],
-    [["scripts", "info", "automation", "files", "git", "memo"], 1],
-  ])("migrates legacy order %j with coach mark version %i", (legacyOrder, expectedVersion) => {
-    storage.set(legacyTabOrderKey, JSON.stringify(legacyOrder));
-
-    const preferences = getProjectBridge().loadUiPreferences();
-
-    expect(preferences.projectDetails.tabOrder).toEqual(legacyOrder);
-    expect(preferences.coachMarks.projectDetailsTabReorder).toBe(expectedVersion);
-    expect(JSON.parse(storage.get(uiPreferencesKey)!)).toEqual(preferences);
-    expect(storage.has(legacyTabOrderKey)).toBe(false);
-  });
-
   it("normalizes duplicate and unknown tabs and an invalid coach mark version", () => {
     storage.set(
       uiPreferencesKey,
@@ -245,52 +226,6 @@ describe("browser UI preferences fallback", () => {
       projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
       dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-    });
-  });
-
-  it("prefers an existing new configuration over the legacy order", () => {
-    storage.set(
-      uiPreferencesKey,
-      JSON.stringify({
-        schemaVersion: 1,
-        projectDetails: { tabOrder: ["memo", "info"] },
-        coachMarks: { projectDetailsTabReorder: 1 },
-      }),
-    );
-    storage.set(legacyTabOrderKey, JSON.stringify(["scripts", "info"]));
-
-    expect(getProjectBridge().loadUiPreferences().projectDetails.tabOrder).toEqual([
-      "memo",
-      "info",
-      "scripts",
-      "automation",
-      "files",
-      "git",
-    ]);
-  });
-
-  it("keeps readable current preferences when legacy cleanup fails", () => {
-    storage.set(
-      uiPreferencesKey,
-      JSON.stringify({
-        schemaVersion: 1,
-        projectDetails: { tabOrder: ["memo", "info"] },
-        coachMarks: { projectDetailsTabReorder: 1 },
-      }),
-    );
-    window.localStorage.removeItem = vi.fn(() => {
-      throw new Error("storage unavailable");
-    });
-
-    expect(getProjectBridge().loadUiPreferences()).toEqual({
-      schemaVersion: 1,
-      iconPackId: "builtin",
-      projectDetails: {
-        tabOrder: ["memo", "info", "scripts", "automation", "files", "git"],
-        defaultTab: defaultOpenTab,
-      },
-      dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 0 },
     });
   });
 
@@ -475,55 +410,6 @@ describe("browser UI preferences fallback", () => {
       state: "unavailable",
       message: "service rejected automation configuration",
     });
-  });
-
-  it("starts Project Launch Service before synchronizing the first enabled handoff", async () => {
-    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
-    const startProjectLaunchService = vi.fn<ProjectBridge["startProjectLaunchService"]>();
-    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>();
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>();
-    const healthyStatus = {
-      state: "healthy" as const,
-      installed: true,
-      running: true,
-      platform: "windows",
-      architecture: "amd64",
-      expectedAssetName: "project-launch-service-windows-amd64.exe",
-      directoryPath: "C:\\service",
-      executablePath: "C:\\service\\project-launch-service.exe",
-      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
-      automationRevision: 0,
-    };
-    startProjectLaunchService.mockResolvedValue(healthyStatus);
-    reconcileProjectLaunchService.mockResolvedValue(healthyStatus);
-    syncProjectLaunchServiceAutomation.mockImplementation(async (config) => ({
-      accepted: true,
-      revision: config.revision,
-    }));
-    window.projectBridge = {
-      ...getProjectBridge(),
-      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
-      saveProjectLaunchServicePreferences,
-      startProjectLaunchService,
-      reconcileProjectLaunchService,
-      syncProjectLaunchServiceAutomation,
-    };
-
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-
-    await store.setProjectLaunchServiceEnabled(true);
-
-    expect(startProjectLaunchService).toHaveBeenCalledTimes(1);
-    expect(startProjectLaunchService.mock.invocationCallOrder[0]).toBeLessThan(
-      reconcileProjectLaunchService.mock.invocationCallOrder[0]!,
-    );
-    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
-      expect.objectContaining({ schemaVersion: 1, revision: 1 }),
-    );
-    expect(store.projectLaunchServicePreferences.enabled).toBe(true);
-    expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
   });
 
   it("sends a schedule-driven schema v1 automation configuration", async () => {
@@ -841,6 +727,11 @@ describe("browser UI preferences fallback", () => {
       releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 0,
     };
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const startProjectLaunchService = vi.fn<ProjectBridge["startProjectLaunchService"]>(async () => healthyStatus);
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>(
+      async () => healthyStatus,
+    );
     let acceptHandoff: (result: { accepted: boolean; revision: number }) => void = () => undefined;
     const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       () =>
@@ -858,8 +749,9 @@ describe("browser UI preferences fallback", () => {
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
-      startProjectLaunchService: async () => healthyStatus,
-      reconcileProjectLaunchService: async () => healthyStatus,
+      saveProjectLaunchServicePreferences,
+      startProjectLaunchService,
+      reconcileProjectLaunchService,
       syncProjectLaunchServiceAutomation,
       runCommand,
     };
@@ -902,6 +794,14 @@ describe("browser UI preferences fallback", () => {
     const enabling = store.setProjectLaunchServiceEnabled(true);
     await vi.waitFor(() => expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(1));
 
+    expect(startProjectLaunchService).toHaveBeenCalledOnce();
+    expect(startProjectLaunchService.mock.invocationCallOrder[0]).toBeLessThan(
+      reconcileProjectLaunchService.mock.invocationCallOrder[0]!,
+    );
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
+      expect.objectContaining({ schemaVersion: 1, revision: 1 }),
+    );
+    expect(saveProjectLaunchServicePreferences).not.toHaveBeenCalled();
     await store.runDueAutomationPlans();
     expect(runCommand).not.toHaveBeenCalled();
     await expect(store.launchScript("handoff-project", "handoff-script")).resolves.toBeNull();
@@ -910,6 +810,7 @@ describe("browser UI preferences fallback", () => {
     acceptHandoff({ accepted: true, revision: 1 });
     await enabling;
     expect(store.projectLaunchServicePreferences.enabled).toBe(true);
+    expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
   });
 
   it("synchronizes enabled automation changes with Project Launch Service", async () => {
@@ -1573,62 +1474,6 @@ describe("browser UI preferences fallback", () => {
     expect(script.runtimeOwner).toBeUndefined();
   });
 
-  it("retains service-owned script identity when the service is unavailable", async () => {
-    window.projectBridge = {
-      ...getProjectBridge(),
-      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
-    };
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-    store.projects = [
-      {
-        id: "restarted-service-project",
-        name: "Restarted service project",
-        path: "/workspace/restarted-service-project",
-        type: "Custom",
-        kind: "custom",
-        status: ProjectStatus.RUNNING,
-        scripts: [
-          {
-            id: "restarted-service-script",
-            name: "dev",
-            command: "npm run dev",
-            status: "RUNNING",
-            pid: 4242,
-            runId: "1234567890abcdef1234567890abcdef",
-            runtimeOwner: "service",
-          },
-        ],
-        env: {},
-      },
-    ];
-    const unavailableStatus: ProjectLaunchServiceStatus = {
-      state: "unavailable",
-      installed: true,
-      running: false,
-      platform: "windows",
-      architecture: "amd64",
-      expectedAssetName: "project-launch-service-windows-amd64.exe",
-      directoryPath: "C:\\service",
-      executablePath: "C:\\service\\project-launch-service.exe",
-      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
-      message: "Project Launch Service is unavailable.",
-    };
-
-    store.reconcileProjectLaunchServiceRuntime(unavailableStatus);
-
-    const project = store.projects[0]!;
-    const script = project.scripts[0]!;
-    expect(project.status).toBe(ProjectStatus.RUNNING);
-    expect(script).toMatchObject({
-      status: "RUNNING",
-      pid: 4242,
-      runId: "1234567890abcdef1234567890abcdef",
-      runtimeOwner: "service",
-    });
-  });
-
   it("keeps a service run identity when refresh cannot reach the service", async () => {
     const unavailableStatus: ProjectLaunchServiceStatus = {
       state: "unavailable",
@@ -1683,6 +1528,7 @@ describe("browser UI preferences fallback", () => {
     await store.refreshProjectLaunchServiceStatus();
 
     expect(store.projectLaunchServiceStatus).toMatchObject({ state: "unavailable" });
+    expect(store.projects[0]?.status).toBe(ProjectStatus.RUNNING);
     expect(store.projects[0]?.scripts[0]).toMatchObject({
       status: "RUNNING",
       pid: 8801,
@@ -1696,28 +1542,9 @@ describe("Project Launch Service preload installation", () => {
   const binaryContents = Buffer.from("verified-project-launch-service");
 
   const createBridge = (serviceRoot: string, moduleOverrides: Record<string, unknown> = {}) =>
-    loadPreloadBridge(new Map(), undefined, { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot }, moduleOverrides);
+    loadPreloadBridge(new Map(), undefined, { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot }, moduleOverrides);
 
-  it("reports a manually placed executable as installed", async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
-    try {
-      const bridge = createBridge(serviceRoot);
-      const beforeInstall = await bridge.getProjectLaunchServiceStatus();
-      mkdirSync(beforeInstall.directoryPath, { recursive: true });
-      writeFileSync(beforeInstall.executablePath, binaryContents);
-
-      await expect(bridge.getProjectLaunchServiceStatus()).resolves.toMatchObject({
-        state: "installed",
-        installed: true,
-        running: false,
-        message: "项目启动服务已安装，尚未运行。",
-      });
-    } finally {
-      rmSync(serviceRoot, { recursive: true, force: true });
-    }
-  });
-
-  it("normalizes null persisted automation and run log events", async () => {
+  it("normalizes null automation results and keeps log queries independent of service HTTP", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const requestedPaths: string[] = [];
     const requestedBodies: string[] = [];
@@ -1741,7 +1568,7 @@ describe("Project Launch Service preload installation", () => {
             options.path === "/v1/sync?after=0"
               ? {
                   health: {
-                    protocolVersion: 2,
+                    protocolVersion: 3,
                     serviceVersion: "test",
                     instanceId: "existing-service",
                     pid: process.pid,
@@ -1808,7 +1635,7 @@ describe("Project Launch Service preload installation", () => {
       writeFileSync(
         join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion: 3,
           serviceVersion: "test",
           instanceId: "existing-service",
           pid: process.pid,
@@ -1828,25 +1655,17 @@ describe("Project Launch Service preload installation", () => {
         automation: { revision: 7 },
       });
       expect(reconciled.automation?.executions?.[0]?.scriptResults).toEqual([]);
-      await expect(bridge.getProjectLaunchServiceRunLogPage(runID, 0)).resolves.toMatchObject({
-        runId: runID,
-        events: [],
+      await expect(bridge.readRuntimeRecordLogPage(runID, 0)).rejects.toThrow("运行记录不可用");
+      await expect(bridge.clearRuntimeRecords({ runId: runID })).resolves.toMatchObject({
+        deletedCount: 0,
+        releasedBytes: 0,
       });
-      await expect(bridge.clearProjectLaunchServiceLogs({ runId: runID })).resolves.toMatchObject({
-        deletedCount: 1,
-        releasedBytes: 128,
+      await expect(bridge.clearRuntimeRecords()).resolves.toMatchObject({
+        deletedCount: 0,
+        releasedBytes: 0,
       });
-      await expect(bridge.clearProjectLaunchServiceLogs()).resolves.toMatchObject({
-        deletedCount: 1,
-        releasedBytes: 128,
-      });
-      expect(requestedPaths).toEqual([
-        "/v1/sync?after=0",
-        `/v1/runs/${runID}/log?before=0`,
-        "/v1/logs/clear",
-        "/v1/logs/clear",
-      ]);
-      expect(requestedBodies).toEqual([JSON.stringify({ runId: runID }), JSON.stringify({})]);
+      expect(requestedPaths).toEqual(["/v1/sync?after=0"]);
+      expect(requestedBodies).toEqual([]);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
@@ -1856,9 +1675,11 @@ describe("Project Launch Service preload installation", () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const requestedPaths: string[] = [];
     const https = createProjectLaunchServiceDownloadHttps(Buffer.from("updated-project-launch-service"));
-    const storage = new Map<string, unknown>([
-      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
-    ]);
+    writeFileSync(
+      join(serviceRoot, "local-state.v1.json"),
+      JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
+      "utf8",
+    );
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
         requestedPaths.push(options.path);
@@ -1873,7 +1694,7 @@ describe("Project Launch Service preload installation", () => {
           const payload = options.path.startsWith("/v1/sync?after=")
             ? {
                 health: {
-                  protocolVersion: 2,
+                  protocolVersion: 3,
                   serviceVersion: "test",
                   instanceId: "sync-service",
                   pid: process.pid,
@@ -1920,9 +1741,9 @@ describe("Project Launch Service preload installation", () => {
 
     try {
       const bridge = loadPreloadBridge(
-        storage,
+        new Map(),
         undefined,
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { http, https },
       );
       const installed = await bridge.getProjectLaunchServiceStatus();
@@ -1932,7 +1753,7 @@ describe("Project Launch Service preload installation", () => {
       writeFileSync(
         join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion: 3,
           serviceVersion: "test",
           instanceId: "sync-service",
           pid: process.pid,
@@ -1974,11 +1795,13 @@ describe("Project Launch Service preload installation", () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus; message?: string }> = [];
     const requestedPaths: string[] = [];
-    const storage = new Map<string, unknown>([
-      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
-    ]);
+    writeFileSync(
+      join(serviceRoot, "local-state.v1.json"),
+      JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
+      "utf8",
+    );
     const health = {
-      protocolVersion: 2,
+      protocolVersion: 3,
       serviceVersion: "test",
       instanceId: "paged-service",
       pid: process.pid,
@@ -2089,9 +1912,9 @@ describe("Project Launch Service preload installation", () => {
 
     try {
       const bridge = loadPreloadBridge(
-        storage,
+        new Map(),
         undefined,
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { http },
         (detail) => {
           if (detail && typeof detail === "object") {
@@ -2106,7 +1929,7 @@ describe("Project Launch Service preload installation", () => {
       writeFileSync(
         join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion: 3,
           serviceVersion: "test",
           instanceId: "paged-service",
           pid: process.pid,
@@ -2139,9 +1962,11 @@ describe("Project Launch Service preload installation", () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus }> = [];
     const requestedPaths: string[] = [];
-    const storage = new Map<string, unknown>([
-      [projectLaunchServicePreferencesKey, { schemaVersion: 1, enabled: true }],
-    ]);
+    writeFileSync(
+      join(serviceRoot, "local-state.v1.json"),
+      JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
+      "utf8",
+    );
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
         requestedPaths.push(options.path);
@@ -2159,7 +1984,7 @@ describe("Project Launch Service preload installation", () => {
             Buffer.from(
               JSON.stringify({
                 health: {
-                  protocolVersion: 2,
+                  protocolVersion: 3,
                   serviceVersion: "test",
                   instanceId: "quiet-service",
                   pid: process.pid,
@@ -2191,9 +2016,9 @@ describe("Project Launch Service preload installation", () => {
 
     try {
       const bridge = loadPreloadBridge(
-        storage,
+        new Map(),
         undefined,
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { http },
         (detail) => {
           if (detail && typeof detail === "object") {
@@ -2208,7 +2033,7 @@ describe("Project Launch Service preload installation", () => {
       writeFileSync(
         join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion: 3,
           serviceVersion: "test",
           instanceId: "quiet-service",
           pid: process.pid,
@@ -2291,7 +2116,7 @@ describe("Project Launch Service preload installation", () => {
       const bridge = loadPreloadBridge(
         new Map(),
         undefined,
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: serviceRoot },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { https },
         (detail) => {
           if (detail && typeof detail === "object") {
@@ -2366,7 +2191,7 @@ describe("Project Launch Service preload installation", () => {
     }
   });
 
-  it("records spawned service process exit and error details in service.log", async () => {
+  it("records spawned service process exit and error details in common diagnostic records", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const child = Object.assign(new EventEmitter(), { pid: 43210, unref: vi.fn() });
     const spawn = vi.fn(() => child);
@@ -2384,10 +2209,11 @@ describe("Project Launch Service preload installation", () => {
       child.emit("exit", 7, "SIGTERM");
       child.emit("error", Object.assign(new Error("service launch failed"), { code: "EACCES" }));
 
-      const entries = readFileSync(join(installed.directoryPath, "service.log"), "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line));
+      const records = await bridge.listRuntimeRecords("__plugin__");
+      const diagnostic = records.find((record) => record.source === "diagnostic");
+      expect(diagnostic).toBeDefined();
+      const output = await bridge.readRuntimeRecordLogPage(diagnostic!.runId, 0);
+      const entries = output.events.map((event) => JSON.parse(event.message || "{}"));
       expect(entries).toEqual([
         expect.objectContaining({
           event: "process.spawned",
@@ -2565,39 +2391,6 @@ describe("store startup timing", () => {
     vi.resetModules();
   });
 
-  it("marks project loading subphases only when timing is enabled", async () => {
-    const mark = vi.fn<(phase: string) => void>();
-    window.__utoolsProjectLaunchStartupTiming = { preloadStartedAtEpochMs: 0, mark };
-    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
-
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-
-    await store.loadProjects();
-
-    expect(mark.mock.calls.map(([phase]) => phase)).toEqual([
-      "projects-load-preferences-start",
-      "projects-load-preferences-complete",
-      "projects-load-storage-hydration-start",
-      "projects-load-storage-hydration-complete",
-      "projects-load-state-setup-start",
-      "projects-load-state-setup-complete",
-      "projects-load-path-availability-start",
-      "projects-load-path-availability-complete",
-      "projects-load-runtime-reconciliation-start",
-      "projects-load-runtime-reconciliation-complete",
-      "projects-load-automation-plan-recomputation-start",
-      "projects-load-automation-plan-recomputation-complete",
-    ]);
-
-    mark.mockClear();
-    window.__utoolsProjectLaunchStartupTiming = undefined;
-    await store.loadProjects();
-
-    expect(mark).not.toHaveBeenCalled();
-  });
-
   it("keeps caught storage errors and immediate completion without animation frames", async () => {
     const loadProjects = vi.fn<ProjectBridge["loadProjects"]>(async () => {
       throw new Error("storage unavailable");
@@ -2632,7 +2425,6 @@ describe("store startup timing", () => {
       await Promise.resolve();
       paintedFrameCount += 1;
     };
-    const mark = vi.fn<(phase: string) => void>();
     const project: Project = {
       id: "startup-project",
       name: "Startup project",
@@ -2654,7 +2446,6 @@ describe("store startup timing", () => {
       return pathExistsResult;
     });
     window.requestAnimationFrame = requestAnimationFrame;
-    window.__utoolsProjectLaunchStartupTiming = { preloadStartedAtEpochMs: 0, mark };
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects: vi.fn(async () => [project]),
@@ -2693,23 +2484,12 @@ describe("store startup timing", () => {
 
     expect(loadCompleted).toBe(true);
     expect(store.projects[0]?.pathExists).toBe(true);
-    expect(mark.mock.calls.map(([phase]) => phase)).toEqual([
-      "projects-load-preferences-start",
-      "projects-load-preferences-complete",
-      "projects-load-storage-hydration-start",
-      "projects-load-storage-hydration-complete",
-      "projects-load-state-setup-start",
-      "projects-load-state-setup-complete",
-      "projects-load-path-availability-start",
-      "projects-load-path-availability-complete",
-      "projects-load-runtime-reconciliation-start",
-      "projects-load-runtime-reconciliation-complete",
-      "projects-load-automation-plan-recomputation-start",
-      "projects-load-automation-plan-recomputation-complete",
-    ]);
   });
 
-  it("surfaces service download percentage progress through the global action status", async () => {
+  it.each([
+    ["service-download-progress", "正在下载并安装（42%）", "Downloading and installing (75%)"],
+    ["icon-pack-download-progress", "正在下载图标包（42%）", "Downloading icon pack (75%)"],
+  ] as const)("surfaces %s through the global action status", async (type, chinese, english) => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
     const { useStore } = await import("../src/store/useStore");
@@ -2718,51 +2498,23 @@ describe("store startup timing", () => {
     const store = useStore();
 
     store.handleBridgeEvent({
-      type: "service-download-progress",
+      type,
       receivedBytes: 42,
       totalBytes: 100,
       percent: 42,
     });
 
-    expect(activeActionStatus.value).toMatchObject({ state: "loading", message: "正在下载并安装（42%）" });
+    expect(activeActionStatus.value).toMatchObject({ state: "loading", message: chinese });
 
     store.setLocale("en-US");
     store.handleBridgeEvent({
-      type: "service-download-progress",
+      type,
       receivedBytes: 75,
       totalBytes: 100,
       percent: 75,
     });
 
-    expect(activeActionStatus.value?.message).toBe("Downloading and installing (75%)");
-  });
-
-  it("surfaces icon-pack download percentage progress through the global action status", async () => {
-    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
-
-    const { useStore } = await import("../src/store/useStore");
-    const { activeActionStatus } = await import("../src/components/common/actionStatus");
-    setActivePinia(createPinia());
-    const store = useStore();
-
-    store.handleBridgeEvent({
-      type: "icon-pack-download-progress",
-      receivedBytes: 42,
-      totalBytes: 100,
-      percent: 42,
-    });
-
-    expect(activeActionStatus.value).toMatchObject({ state: "loading", message: "正在下载图标包（42%）" });
-
-    store.setLocale("en-US");
-    store.handleBridgeEvent({
-      type: "icon-pack-download-progress",
-      receivedBytes: 75,
-      totalBytes: 100,
-      percent: 75,
-    });
-
-    expect(activeActionStatus.value?.message).toBe("Downloading icon pack (75%)");
+    expect(activeActionStatus.value?.message).toBe(english);
   });
 
   it("ignores terminal events from an older script run", async () => {
@@ -4444,137 +4196,294 @@ describe("store project catalog refresh", () => {
 });
 
 describe("uTools preload UI preferences", () => {
+  const localDataDirEnv = "UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR";
+  const localStateFileName = "local-state.v1.json";
+
+  const readLocalStateFile = (directory: string) =>
+    JSON.parse(readFileSync(join(directory, localStateFileName), "utf8"));
+
   it.each([
     [defaultTabOrder, 0],
     [["scripts", "info", "automation", "files", "git", "memo"], 1],
-  ])("migrates legacy order %j with coach mark version %i", (legacyOrder, expectedVersion) => {
-    const storage = new Map<string, unknown>([[legacyTabOrderKey, legacyOrder]]);
-    const bridge = loadPreloadBridge(storage);
+  ])("migrates legacy order %j with coach mark version %i", async (legacyOrder, expectedVersion) => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const storage = new Map<string, unknown>([[legacyTabOrderKey, legacyOrder]]);
+      const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
+      await expect(bridge.runMigration()).resolves.toMatchObject({ ok: true });
 
-    const preferences = bridge.loadUiPreferences();
+      const preferences = bridge.loadUiPreferences();
+      expect(preferences.projectDetails.tabOrder).toEqual(legacyOrder);
+      expect(preferences.coachMarks.projectDetailsTabReorder).toBe(expectedVersion);
+      // Migration keeps legacy data intact; data cleanup owns its removal.
+      expect(storage.has(legacyTabOrderKey)).toBe(true);
 
-    expect(preferences.projectDetails.tabOrder).toEqual(legacyOrder);
-    expect(preferences.coachMarks.projectDetailsTabReorder).toBe(expectedVersion);
-    expect(storage.get(uiPreferencesKey)).toEqual(preferences);
-    expect(storage.has(legacyTabOrderKey)).toBe(false);
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      expect(restartedBridge.loadUiPreferences()).toEqual(preferences);
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
-  it("prefers and normalizes the new configuration, then removes the legacy key", () => {
-    const storage = new Map<string, unknown>([
-      [
-        uiPreferencesKey,
-        {
-          schemaVersion: 1,
-          projectDetails: { tabOrder: ["memo", "unknown", "memo"], defaultTab: "unknown" },
-          dashboard: { tinyCardActionTrigger: "unsupported" },
-          coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1.5 },
-        },
-      ],
-      [legacyTabOrderKey, ["scripts", "info"]],
-    ]);
-    const bridge = loadPreloadBridge(storage);
+  it("migrates the released configuration, normalizes it, and keeps the legacy key", async () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const storage = new Map<string, unknown>([
+        [
+          uiPreferencesKey,
+          {
+            schemaVersion: 1,
+            projectDetails: { tabOrder: ["memo", "unknown", "memo"], defaultTab: "unknown" },
+            dashboard: { tinyCardActionTrigger: "unsupported" },
+            coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1.5 },
+          },
+        ],
+        [legacyTabOrderKey, ["scripts", "info"]],
+      ]);
+      const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
+      await bridge.runMigration();
 
-    expect(bridge.loadUiPreferences().projectDetails.tabOrder).toEqual([
-      "memo",
-      "info",
-      "scripts",
-      "automation",
-      "files",
-      "git",
-    ]);
-    expect(bridge.loadUiPreferences().dashboard.tinyCardActionTrigger).toBe("hover");
-    expect(bridge.loadUiPreferences().projectDetails.defaultTab).toBe(defaultOpenTab);
-    expect(bridge.loadUiPreferences().coachMarks.projectDetailsTabDefault).toBe(0);
-    expect(storage.has(legacyTabOrderKey)).toBe(false);
+      const preferences = bridge.loadUiPreferences();
+      expect(preferences.projectDetails.tabOrder).toEqual(["memo", "info", "scripts", "automation", "files", "git"]);
+      expect(preferences.dashboard.tinyCardActionTrigger).toBe("hover");
+      expect(preferences.projectDetails.defaultTab).toBe(defaultOpenTab);
+      expect(preferences.coachMarks.projectDetailsTabDefault).toBe(0);
+      expect(storage.has(legacyTabOrderKey)).toBe(true);
 
-    bridge.saveUiPreferences({
-      schemaVersion: 1,
-      iconPackId: "builtin",
-      projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
-      dashboard: { tinyCardActionTrigger: "contextmenu" },
-      coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
-    });
-    const saved = storage.get(uiPreferencesKey) as UiPreferences;
-    expect(saved.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
-    expect(saved.projectDetails.defaultTab).toBe("memo");
-    expect(saved.dashboard.tinyCardActionTrigger).toBe("contextmenu");
-    expect(saved.coachMarks.projectDetailsTabDefault).toBe(3);
-    expect(storage.has(legacyTabOrderKey)).toBe(false);
+      bridge.saveUiPreferences({
+        schemaVersion: 1,
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
+        dashboard: { tinyCardActionTrigger: "contextmenu" },
+        coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
+      });
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      const saved = restartedBridge.loadUiPreferences();
+      expect(saved.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
+      expect(saved.projectDetails.defaultTab).toBe("memo");
+      expect(saved.dashboard.tinyCardActionTrigger).toBe("contextmenu");
+      expect(saved.coachMarks.projectDetailsTabDefault).toBe(3);
+      const storedState = readLocalStateFile(localDataDirectory);
+      expect(storedState.preferences.ui).toEqual(saved);
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
-  it("uses defaults instead of legacy data when the new configuration is invalid", () => {
-    const storage = new Map<string, unknown>([
-      [uiPreferencesKey, { schemaVersion: 2 }],
-      [legacyTabOrderKey, ["scripts", "info", "automation", "files", "git", "memo"]],
-    ]);
+  it("uses defaults instead of legacy data when the released configuration is invalid", async () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const storage = new Map<string, unknown>([
+        [uiPreferencesKey, { schemaVersion: 2 }],
+        [legacyTabOrderKey, ["scripts", "info", "automation", "files", "git", "memo"]],
+      ]);
+      const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
+      await bridge.runMigration();
 
-    expect(loadPreloadBridge(storage).loadUiPreferences()).toEqual({
-      schemaVersion: 1,
-      iconPackId: "builtin",
-      projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
-      dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-    });
+      expect(bridge.loadUiPreferences()).toEqual({
+        schemaVersion: 1,
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
+        dashboard: { tinyCardActionTrigger: "hover" },
+        coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
+      });
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
-  it("keeps readable current preferences when legacy cleanup fails", () => {
-    const preferences: UiPreferences = {
-      schemaVersion: 1,
-      iconPackId: "builtin",
-      projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"], defaultTab: "memo" },
-      dashboard: { tinyCardActionTrigger: "hover" },
-      coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1 },
-    };
-    const storage = new Map<string, unknown>([[uiPreferencesKey, preferences]]);
-    const bridge = loadPreloadBridge(storage, () => {
-      throw new Error("storage unavailable");
-    });
+  it("round-trips current preferences through the local state file", () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const preferences: UiPreferences = {
+        schemaVersion: 1,
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"], defaultTab: "memo" },
+        dashboard: { tinyCardActionTrigger: "hover" },
+        coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1 },
+      };
+      const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
 
-    expect(bridge.loadUiPreferences()).toEqual(preferences);
+      expect(bridge.saveUiPreferences(preferences)).toMatchObject({ ok: true });
+      expect(bridge.loadUiPreferences()).toEqual(preferences);
+
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      expect(restartedBridge.loadUiPreferences()).toEqual(preferences);
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
   it("persists Project Launch Service preferences separately from project data", () => {
-    const storage = new Map<string, unknown>();
-    const bridge = loadPreloadBridge(storage);
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
 
-    expect(bridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
+      expect(bridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
+      expect(bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true })).toMatchObject({
+        ok: true,
+      });
+      expect(bridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: true });
 
-    bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
-    expect(storage.get(projectLaunchServicePreferencesKey)).toEqual({ schemaVersion: 1, enabled: true });
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      expect(restartedBridge.loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: true });
+      const storedState = readLocalStateFile(localDataDirectory);
+      expect(storedState.preferences.projectLaunchService).toEqual({ schemaVersion: 1, enabled: true });
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
   });
 
-  it("removes stale service discovery when a live PID has a different process identity", async () => {
-    const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
-    const serviceDirectory = join(applicationDirectory, "service");
-    const executableName = `project-launch-service${process.platform === "win32" ? ".exe" : ""}`;
-    const discoveryPath = join(serviceDirectory, "discovery.json");
+  it.each([2, 3])(
+    "removes stale protocol %s discovery when a live PID has a different process identity",
+    async (protocolVersion) => {
+      const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+      const serviceDirectory = join(applicationDirectory, "service");
+      const executableName = `project-launch-service${process.platform === "win32" ? ".exe" : ""}`;
+      const discoveryPath = join(serviceDirectory, "discovery.json");
+      const nodeRequire = createRequire(import.meta.url);
+      const nativeFs = nodeRequire("fs");
+      const nativeChildProcess = nodeRequire("child_process");
+      const identityOutput = process.platform === "win32" ? "12345" : "test-start";
+      const processFiles = new Map([
+        ["/proc/sys/kernel/random/boot_id", "test-boot"],
+        [`/proc/${process.pid}/stat`, `(test) ${Array(19).fill("0").join(" ")} 12345`],
+      ]);
 
-    try {
-      mkdirSync(serviceDirectory, { recursive: true });
-      writeFileSync(join(serviceDirectory, executableName), "");
-      writeFileSync(join(serviceDirectory, "token"), `${"a".repeat(64)}\n`);
-      writeFileSync(
-        discoveryPath,
-        JSON.stringify({
+      try {
+        mkdirSync(serviceDirectory, { recursive: true });
+        writeFileSync(join(serviceDirectory, executableName), "");
+        writeFileSync(join(serviceDirectory, "token"), `${"a".repeat(64)}\n`);
+        writeFileSync(join(serviceDirectory, "state.json"), '{"retained":"execution state"}');
+        writeFileSync(join(serviceDirectory, "install.json"), '{"retained":"installation trust"}');
+        writeFileSync(
+          discoveryPath,
+          JSON.stringify({
+            protocolVersion,
+            serviceVersion: "test",
+            instanceId: "stale-instance",
+            pid: process.pid,
+            processIdentity: "reused-pid-identity",
+            startedAt: new Date().toISOString(),
+            host: "127.0.0.1",
+            port: 1,
+            tokenPath: join(serviceDirectory, "token"),
+          }),
+        );
+
+        const status = await loadPreloadBridge(
+          new Map(),
+          undefined,
+          { [localDataDirEnv]: applicationDirectory },
+          {
+            fs: {
+              ...nativeFs,
+              readFileSync: (target: string, ...args: unknown[]) =>
+                processFiles.get(target) ?? nativeFs.readFileSync(target, ...args),
+              promises: {
+                ...nativeFs.promises,
+                readFile: async (target: string, ...args: unknown[]) =>
+                  processFiles.get(target) ?? nativeFs.promises.readFile(target, ...args),
+              },
+            },
+            child_process: {
+              ...nativeChildProcess,
+              spawnSync: () => ({ status: 0, stdout: identityOutput }),
+              execFile: (
+                _command: string,
+                _args: string[],
+                _options: unknown,
+                callback: (error: Error | null, stdout: string) => void,
+              ) => {
+                callback(null, identityOutput);
+              },
+            },
+          },
+        ).getProjectLaunchServiceStatus();
+
+        expect(existsSync(discoveryPath)).toBe(false);
+        if (protocolVersion === 2) expect(status.state).toBe("installed");
+        expect(readFileSync(join(serviceDirectory, "token"), "utf8")).toBe(`${"a".repeat(64)}\n`);
+        expect(readFileSync(join(serviceDirectory, "state.json"), "utf8")).toBe('{"retained":"execution state"}');
+        expect(readFileSync(join(serviceDirectory, "install.json"), "utf8")).toBe('{"retained":"installation trust"}');
+      } finally {
+        rmSync(applicationDirectory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([true, false])(
+    "preserves old protocol discovery when process identity is matching or unknown (%s)",
+    async (matching) => {
+      const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-old-protocol-"));
+      const serviceDirectory = join(applicationDirectory, "service");
+      const discoveryPath = join(serviceDirectory, "discovery.json");
+      const nodeRequire = createRequire(import.meta.url);
+      const nativeFs = nodeRequire("fs");
+      const nativeChildProcess = nodeRequire("child_process");
+      const identity =
+        process.platform === "win32"
+          ? "windows:12345"
+          : process.platform === "darwin"
+            ? "darwin:test-start"
+            : "linux:test-boot:12345";
+      const readProc = async (target: string, ...args: unknown[]) => {
+        if (target === "/proc/sys/kernel/random/boot_id") return matching ? "test-boot" : "";
+        if (target === `/proc/${process.pid}/stat`) return `(test) ${Array(19).fill("0").join(" ")} 12345`;
+        return nativeFs.promises.readFile(target, ...args);
+      };
+      try {
+        mkdirSync(serviceDirectory, { recursive: true });
+        writeFileSync(join(serviceDirectory, projectLaunchServiceExecutableName()), "");
+        writeFileSync(join(serviceDirectory, "token"), `${"a".repeat(64)}\n`);
+        const contents = JSON.stringify({
           protocolVersion: 2,
-          serviceVersion: "test",
-          instanceId: "stale-instance",
+          serviceVersion: "service-v1.0.0",
+          instanceId: "old-service",
           pid: process.pid,
-          processIdentity: "reused-pid-identity",
+          processIdentity: identity,
           startedAt: new Date().toISOString(),
           host: "127.0.0.1",
           port: 1,
           tokenPath: join(serviceDirectory, "token"),
-        }),
-      );
-
-      await loadPreloadBridge(new Map(), undefined, {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
-      }).getProjectLaunchServiceStatus();
-
-      expect(existsSync(discoveryPath)).toBe(false);
-    } finally {
-      rmSync(applicationDirectory, { recursive: true, force: true });
-    }
-  });
+        });
+        writeFileSync(discoveryPath, contents);
+        const spawn = vi.fn();
+        const bridge = loadPreloadBridge(
+          new Map(),
+          undefined,
+          { [localDataDirEnv]: applicationDirectory },
+          {
+            fs: { ...nativeFs, promises: { ...nativeFs.promises, readFile: readProc } },
+            child_process: {
+              ...nativeChildProcess,
+              spawn,
+              execFile: (
+                _command: string,
+                _args: string[],
+                _options: unknown,
+                callback: (error: Error | null, stdout: string) => void,
+              ) => {
+                callback(
+                  matching ? null : new Error("identity unavailable"),
+                  process.platform === "win32" ? "12345" : "test-start",
+                );
+              },
+            },
+          },
+        );
+        await expect(bridge.getProjectLaunchServiceStatus()).resolves.toMatchObject({
+          state: "incompatible",
+          running: false,
+        });
+        await expect(bridge.startProjectLaunchService({ requireVerifiedInstall: false })).resolves.toMatchObject({
+          state: "incompatible",
+        });
+        expect(spawn).not.toHaveBeenCalled();
+        expect(readFileSync(discoveryPath, "utf8")).toBe(contents);
+      } finally {
+        rmSync(applicationDirectory, { recursive: true, force: true });
+      }
+    },
+  );
 });

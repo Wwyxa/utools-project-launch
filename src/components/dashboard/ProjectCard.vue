@@ -9,7 +9,6 @@ import {
   Copy,
   TerminalSquare,
   Trash2,
-  ChevronDown,
   ChevronRight,
   AppWindow,
   GripVertical,
@@ -106,6 +105,9 @@ const tinyCardApplicationMenuRef = ref<HTMLElement | null>(null);
 let tinyCardApplicationMenuCloseTimer: number | null = null;
 const moreScriptsOpen = ref(false);
 const moreScriptsRef = ref<HTMLElement | null>(null);
+const moreScriptsMenuRef = ref<HTMLElement | null>(null);
+const moreScriptsPosition = ref({ left: 8, top: 8 });
+let moreScriptsCloseTimer: number | null = null;
 const scriptRowRef = ref<HTMLElement | null>(null);
 const scriptMeasureRef = ref<HTMLElement | null>(null);
 let stopAppEscapeListener = () => {};
@@ -477,8 +479,8 @@ const handleDocumentPointerDown = (event: PointerEvent) => {
   const target = event.target as Node;
   const isWithinTinyCardMenu =
     tinyCardContextMenuRef.value?.contains(target) || tinyCardApplicationMenuRef.value?.contains(target);
-  if (!moreScriptsRef.value?.contains(target)) {
-    moreScriptsOpen.value = false;
+  if (!moreScriptsRef.value?.contains(target) && !moreScriptsMenuRef.value?.contains(target)) {
+    closeMoreScripts();
   }
   if (!isWithinTinyCardMenu) {
     tinyCardContextMenu.value = null;
@@ -492,7 +494,7 @@ const handleDocumentPointerDown = (event: PointerEvent) => {
 
 const handleDocumentKeyDown = (event: KeyboardEvent) => {
   if (event.key === "Escape") {
-    moreScriptsOpen.value = false;
+    closeMoreScripts();
     tinyCardContextMenu.value = null;
     closeTinyCardApplicationMenu();
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
@@ -500,8 +502,17 @@ const handleDocumentKeyDown = (event: KeyboardEvent) => {
   }
 };
 
+const clearMoreScriptsClose = () => {
+  if (moreScriptsCloseTimer === null) return;
+  window.clearTimeout(moreScriptsCloseTimer);
+  moreScriptsCloseTimer = null;
+};
+
 const closeMoreScripts = () => {
+  clearMoreScriptsClose();
   moreScriptsOpen.value = false;
+  window.removeEventListener("resize", closeMoreScripts);
+  document.removeEventListener("scroll", handleMoreScriptsScroll, true);
   if (!tinyCardContextMenu.value && !tinyCardApplicationMenu.value) {
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     document.removeEventListener("keydown", handleDocumentKeyDown);
@@ -519,17 +530,54 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   event.detail.handle();
 };
 
-const toggleMoreScripts = (event: MouseEvent) => {
-  event.stopPropagation();
-  moreScriptsOpen.value = !moreScriptsOpen.value;
-  if (moreScriptsOpen.value) {
-    closeTinyCardContextMenu();
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-    document.addEventListener("keydown", handleDocumentKeyDown);
-  } else {
-    closeMoreScripts();
-  }
+const handleMoreScriptsScroll = (event: Event) => {
+  if (event.target instanceof Node && moreScriptsMenuRef.value?.contains(event.target)) return;
+  closeMoreScripts();
 };
+
+const openMoreScripts = async () => {
+  if (props.isSorting) return;
+  clearMoreScriptsClose();
+  if (moreScriptsOpen.value) return;
+  moreScriptsOpen.value = true;
+  closeTinyCardContextMenu();
+  document.addEventListener("pointerdown", handleDocumentPointerDown);
+  document.addEventListener("keydown", handleDocumentKeyDown);
+  window.addEventListener("resize", closeMoreScripts);
+  document.addEventListener("scroll", handleMoreScriptsScroll, true);
+  await nextTick();
+  const opener = moreScriptsRef.value;
+  const menu = moreScriptsMenuRef.value;
+  if (!moreScriptsOpen.value || !opener || !menu) return;
+  const openerRect = opener.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  const top = openerRect.bottom + 4 + menuRect.height <= viewportHeight - 8
+    ? openerRect.bottom + 4
+    : openerRect.top - menuRect.height - 4;
+  moreScriptsPosition.value = {
+    left: Math.max(8, Math.min(openerRect.right - menuRect.width, viewportWidth - menuRect.width - 8)),
+    top: Math.max(8, Math.min(top, viewportHeight - menuRect.height - 8)),
+  };
+};
+
+const scheduleMoreScriptsClose = () => {
+  clearMoreScriptsClose();
+  moreScriptsCloseTimer = window.setTimeout(closeMoreScripts, 120);
+};
+
+const handleMoreScriptsFocusOut = (event: FocusEvent) => {
+  if (
+    event.relatedTarget instanceof Node &&
+    (moreScriptsRef.value?.contains(event.relatedTarget) || moreScriptsMenuRef.value?.contains(event.relatedTarget))
+  ) return;
+  closeMoreScripts();
+};
+
+watch([hiddenScriptCount, isTiny, () => props.isSorting, () => props.project.id], () => {
+  closeMoreScripts();
+});
 
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
@@ -621,10 +669,10 @@ const updateTinyToolbarAlignment = (event: Event) => {
       @focusin="updateTinyToolbarAlignment"
       :class="
         cn(
-          'relative border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
+          'relative border border-border-subtle rounded-lg bg-surface shadow-[var(--project-card-shadow)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[var(--project-card-hover-shadow)] focus-within:border-primary/50',
           'flex shrink-0 min-w-[4rem] max-w-[20rem] hover:after:absolute hover:after:inset-x-0 hover:after:top-full hover:after:h-8',
           isRunning &&
-            'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
+            'border-status-running/55 bg-status-running/[0.035] shadow-[var(--project-card-running-shadow)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
           isDragging && 'opacity-55 scale-[0.99]',
           isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
           isDragOver &&
@@ -804,9 +852,9 @@ const updateTinyToolbarAlignment = (event: Event) => {
     @click="handleCardSelect"
     :class="
       cn(
-        'group relative border border-border-subtle rounded-lg bg-surface shadow-[0_8px_22px_rgba(15,23,42,0.045),0_1px_3px_rgba(15,23,42,0.04)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085),0_0_0_1px_rgba(46,175,125,0.12)] focus-within:border-primary/50',
+        'group relative border border-border-subtle rounded-lg bg-surface shadow-[var(--project-card-shadow)] transition-all overflow-visible hover:bg-surface-container hover:border-primary/35 hover:shadow-[var(--project-card-hover-shadow)] focus-within:border-primary/50',
         isRunning &&
-          'border-status-running/55 bg-status-running/[0.035] shadow-[0_12px_30px_rgba(46,175,125,0.13),0_1px_4px_rgba(15,23,42,0.045)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
+          'border-status-running/55 bg-status-running/[0.035] shadow-[var(--project-card-running-shadow)] hover:bg-status-running/[0.07] dark:bg-status-running/[0.08] dark:hover:bg-status-running/[0.12]',
         isDragging && 'opacity-55 scale-[0.99]',
         isSorting ? 'cursor-grab ring-1 ring-primary/30 border-primary/60 active:cursor-grabbing' : 'cursor-pointer',
         isDragOver &&
@@ -916,11 +964,27 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <Play v-else :size="9" class="shrink-0" fill="currentColor" />
           <span>{{ script.name }}</span>
         </button>
-        <div v-if="hiddenScriptCount > 0" ref="moreScriptsRef" class="relative shrink-0">
+        <div
+          v-if="hiddenScriptCount > 0"
+          ref="moreScriptsRef"
+          class="relative shrink-0"
+          @mouseenter="openMoreScripts"
+          @mouseleave="scheduleMoreScriptsClose"
+          @focusin="openMoreScripts"
+          @focusout="handleMoreScriptsFocusOut"
+          @click.stop
+        >
           <button
             type="button"
-            @click="toggleMoreScripts"
-            class="inline-flex h-[21px] w-5 flex-none items-center justify-center whitespace-nowrap rounded border border-transparent bg-surface-variant p-0 text-[10px] font-bold text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            @click="openMoreScripts"
+            :class="cn(
+              'inline-flex h-[21px] w-5 flex-none items-center justify-center whitespace-nowrap rounded-full border border-dashed text-[10px] font-bold tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+              moreScriptsOpen
+                ? 'border-primary/40 bg-primary/10 text-primary'
+                : hiddenRunningCount > 0
+                  ? 'border-status-running/40 text-status-running hover:bg-status-running/10'
+                  : 'border-outline-variant bg-surface-variant text-on-surface-variant hover:border-primary/40 hover:bg-primary/10 hover:text-primary',
+            )"
             aria-haspopup="menu"
             :aria-expanded="moreScriptsOpen"
             :aria-label="`显示 ${hiddenScriptCount} 个隐藏脚本`"
@@ -930,41 +994,66 @@ const updateTinyToolbarAlignment = (event: Event) => {
                 : undefined
             "
           >
-            <ChevronDown :size="10" />
+            <span>{{ hiddenScriptCount > 99 ? '99+' : hiddenScriptCount }}</span>
           </button>
-          <div
-            v-if="moreScriptsOpen"
-            class="menu-pop absolute right-0 top-[calc(100%+0.25rem)] z-30 w-max max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-1 shadow-[0_18px_44px_rgba(0,0,0,0.20),0_0_0_1px_rgba(255,255,255,0.45)] dark:shadow-[0_18px_44px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
-            @click.stop
-            role="menu"
-          >
-            <button
-              v-for="script in hiddenScripts"
-              :key="script.id"
-              type="button"
-              @click="handleScriptToggle($event, script.id, script.status)"
-              :disabled="isUnavailable || script.status === 'STOPPING'"
-              class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-on-surface-variant hover:bg-surface-container hover:text-on-surface disabled:opacity-50"
-              :title="script.command"
-              :aria-label="
-                script.status === 'RUNNING'
-                  ? `${t.scripts.stopScript}: ${script.name}`
-                  : script.status === 'STOPPING'
-                    ? `${t.common.stopping}: ${script.name}`
-                    : `${t.scripts.startScript}: ${script.name}`
-              "
-              role="menuitem"
+          <Teleport to="body">
+            <div
+              v-if="moreScriptsOpen"
+              ref="moreScriptsMenuRef"
+              class="menu-pop fixed z-[75] w-max max-w-[min(20rem,calc(100vw-1rem))] rounded-lg border border-outline-variant/80 bg-surface-container-lowest p-2 shadow-lg"
+              :style="{ left: `${moreScriptsPosition.left}px`, top: `${moreScriptsPosition.top}px` }"
+              @click.stop
+              @mouseenter="clearMoreScriptsClose"
+              @mouseleave="scheduleMoreScriptsClose"
+              @focusin="clearMoreScriptsClose"
+              @focusout="handleMoreScriptsFocusOut"
+              role="menu"
+              :aria-label="`其他命令 (${hiddenScriptCount})`"
             >
-              <Square
-                v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
-                :size="9"
-                :class="script.status === 'STOPPING' ? 'shrink-0 text-status-warning' : 'shrink-0 text-status-running'"
-                fill="currentColor"
-              />
-              <Play v-else :size="10" class="shrink-0" fill="currentColor" />
-              <span class="truncate">{{ script.name }}</span>
-            </button>
-          </div>
+              <div
+                :class="cn(
+                  'grid max-h-[min(12rem,calc(100vh-2rem))] gap-1.5 overflow-y-auto',
+                  hiddenScripts.length === 1 ? 'grid-cols-1' : 'grid-cols-2',
+                )"
+              >
+                <button
+                  v-for="script in hiddenScripts"
+                  :key="script.id"
+                  type="button"
+                  @click="handleScriptToggle($event, script.id, script.status)"
+                  :disabled="isUnavailable || script.status === 'STOPPING'"
+                  :class="
+                    cn(
+                      'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded border px-2 py-1 text-left text-[10px] font-bold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      script.status === 'RUNNING'
+                        ? 'border-status-running/30 bg-status-running/10 text-status-running hover:bg-status-running/15'
+                        : script.status === 'STOPPING'
+                          ? 'border-status-warning/30 bg-status-warning/10 text-status-warning cursor-wait'
+                          : 'border-transparent bg-surface-variant text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface',
+                    )
+                  "
+                  :title="script.command"
+                  :aria-label="
+                    script.status === 'RUNNING'
+                      ? `${t.scripts.stopScript}: ${script.name}`
+                      : script.status === 'STOPPING'
+                        ? `${t.common.stopping}: ${script.name}`
+                        : `${t.scripts.startScript}: ${script.name}`
+                  "
+                  role="menuitem"
+                >
+                  <Square
+                    v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
+                    :size="9"
+                    :class="script.status === 'STOPPING' ? 'shrink-0 text-status-warning' : 'shrink-0 text-status-running'"
+                    fill="currentColor"
+                  />
+                  <Play v-else :size="10" class="shrink-0" fill="currentColor" />
+                  <span class="truncate">{{ script.name }}</span>
+                </button>
+              </div>
+            </div>
+          </Teleport>
         </div>
       </div>
 
@@ -1000,10 +1089,8 @@ const updateTinyToolbarAlignment = (event: Event) => {
         </span>
         <span
           data-script-more-measure
-          class="inline-flex h-[21px] w-5 flex-none items-center justify-center whitespace-nowrap rounded border border-transparent p-0 text-[10px] font-bold"
-        >
-          <ChevronDown :size="10" />
-        </span>
+          class="inline-flex h-[21px] w-5 flex-none items-center justify-center whitespace-nowrap rounded-full border p-0 text-[10px] font-bold tabular-nums"
+        />
       </div>
 
       <div class="mt-auto flex min-h-7 items-center border-t border-border-subtle pt-2">

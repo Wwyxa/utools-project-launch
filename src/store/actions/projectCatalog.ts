@@ -1,16 +1,71 @@
-import type { AppStore } from "../appStoreShape";
-import { bridge } from "../helpers/bridge";
-import type { Project, Locale, IconPackColorMode, ProjectConfigFile } from "../../types";
-import { hydrateProject, isProjectVisibleOnCurrentDevice, setProjectCatalogStorageSnapshot, toPersistedProject, cloneProjectCatalogSnapshot, projectCatalogStorageSnapshot, isImportableProject, createProjectId } from "../helpers/projectHelpers";
-import { mergeScriptRuntimeState, deriveProjectStatus } from "../../lib/projectRuntimeState";
-import { waitForInitialPaint } from "../helpers/automationHelpers";
+import type { BackupCreateOptions, BackupPrepareOptions, BackupRestoreOptions } from "../../types";
+import { mergeWorkActivityPreferences } from "../helpers/workspaceState";
+import { deriveProjectStatus, mergeScriptRuntimeState } from "../../lib/projectRuntimeState";
 import { ProjectStatus } from "../../types";
+import type { IconPackColorMode, LocalStateWriteResult, Locale, Project, WorkspaceStatePatch } from "../../types";
+import type { AppStore } from "../appStoreShape";
+import { waitForInitialPaint } from "../helpers/automationHelpers";
+import { bridge } from "../helpers/bridge";
+import {
+  cloneProjectCatalogSnapshot,
+  hydrateProject,
+  projectCatalogStorageSnapshot,
+  setProjectCatalogStorageSnapshot,
+  toPersistedProject,
+} from "../helpers/projectHelpers";
 
-export let projectCatalogReloadPromise: Promise<void> | null = null;
+let projectCatalogReloadPromise: Promise<void> | null = null;
 
-export let projectCatalogReloadQueued = false;
+let projectCatalogReloadQueued = false;
 
 export const projectCatalogActions = {
+  async listBackups(this: AppStore) {
+    return bridge.listBackups();
+  },
+
+  async createBackup(this: AppStore, options: BackupCreateOptions) {
+    return bridge.createBackup(options);
+  },
+
+  async prepareBackup(this: AppStore, options: BackupPrepareOptions) {
+    return bridge.prepareBackup(options);
+  },
+
+  async deleteBackup(this: AppStore, id: string) {
+    return bridge.deleteBackup(id);
+  },
+
+  async exportCloudBackup(this: AppStore, id: string) {
+    return bridge.exportCloudBackup(id);
+  },
+
+  async restoreBackup(this: AppStore, options: BackupRestoreOptions) {
+    let result;
+    try {
+      result = await bridge.restoreBackup(options);
+    } finally {
+      await this.reloadProjectsFromStorage();
+      for (const project of this.projects) {
+        this.memoContent[project.id] = project.memo || "";
+        this.todos[project.id] = project.todos || [];
+      }
+      this.terminalPreferences = bridge.loadTerminalPreferences();
+      this.externalApplicationPreferences = bridge.loadExternalApplicationPreferences();
+      this.environmentPreferences = bridge.loadEnvironmentPreferences();
+      this.aiPreferences = bridge.loadAiPreferences();
+      this.projectLaunchServicePreferences = bridge.loadProjectLaunchServicePreferences();
+      this.uiPreferences = bridge.loadUiPreferences();
+      const workspace = bridge.loadWorkspaceState();
+      this.dashboardProjectGroup = workspace.dashboardProjectGroup;
+      this.workActivityPreferences = mergeWorkActivityPreferences(workspace.workActivity.preferences);
+      this.workActivitySelectedProjectIds = workspace.workActivity.selectedProjectIds;
+      this.workActivitySelectionInitialized = workspace.workActivity.selectionInitialized;
+      await this.loadIconPack();
+      this.recomputeAutomationPlans(undefined, false);
+    }
+    return result;
+  },
+
   initializeProjectSessionState(this: AppStore) {
     this.projects.forEach((project) => {
       this.memoContent[project.id] = project.memo || this.memoContent[project.id] || "";
@@ -19,6 +74,34 @@ export const projectCatalogActions = {
       this.scriptLogs[project.id] = this.scriptLogs[project.id] || {};
       this.stagedFiles[project.id] = project.git?.files || this.stagedFiles[project.id] || [];
     });
+  },
+
+  persistRuntimeAutomationState(this: AppStore, projectId: string) {
+    const project = this.projects.find((item) => item.id === projectId);
+    if (!project || !this.supportsBridge || this.projectLaunchServicePreferences.enabled) return true;
+    const result = bridge.saveRuntimeAutomationState(projectId, (project.automationTasks || []).map((task) => ({
+      taskId: task.id, dailyPlans: task.dailyPlans, history: task.history,
+    })));
+    this.recordLocalStateWrite(result);
+    return result.ok;
+  },
+
+  restoreRuntimeAutomationState(this: AppStore) {
+    if (!this.supportsBridge) return;
+    for (const project of this.projects) {
+      try {
+        const states = bridge.loadRuntimeAutomationState?.(project.id) || [];
+        for (const task of project.automationTasks || []) {
+          const stored = states.find((state) => state.taskId === task.id);
+          if (!stored) continue;
+          task.dailyPlans = stored.dailyPlans;
+          task.history = stored.history;
+        }
+      } catch (error) {
+        this.localStateWriteError = error instanceof Error ? error.message : "自动任务状态读取失败。";
+        for (const task of project.automationTasks || []) task.enabled = false;
+      }
+    }
   },
 
   async reloadProjectsFromStorage(this: AppStore) {
@@ -38,6 +121,10 @@ export const projectCatalogActions = {
           const mergedProject = {
             ...nextProject,
             scripts: mergeScriptRuntimeState(nextProject.scripts, previousProject.scripts),
+            automationTasks: (nextProject.automationTasks || []).map((task) => {
+              const previous = previousProject.automationTasks?.find((candidate) => candidate.id === task.id);
+              return previous ? { ...task, dailyPlans: previous.dailyPlans, history: previous.history } : task;
+            }),
             git: previousProject.git || nextProject.git,
             gitLatestCommitAt: nextProject.gitLatestCommitAt || previousProject.gitLatestCommitAt,
             pathExists: previousProject.pathExists,
@@ -45,9 +132,7 @@ export const projectCatalogActions = {
           };
           return { ...mergedProject, status: deriveProjectStatus(mergedProject) };
         });
-        this.selectedProjectId = this.projects.some(
-          (project) => project.id === this.selectedProjectId && isProjectVisibleOnCurrentDevice(project),
-        )
+        this.selectedProjectId = this.projects.some((project) => project.id === this.selectedProjectId)
           ? this.selectedProjectId
           : null;
       }
@@ -56,6 +141,11 @@ export const projectCatalogActions = {
       this.projectsLoaded = true;
       this.initializeProjectSessionState();
       this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
+      try {
+        await this.loadRuntimeAutomationHistory();
+      } catch (error) {
+        this.localStateWriteError = error instanceof Error ? error.message : "自动任务执行历史读取失败。";
+      }
       await this.refreshProjectAvailability();
       this.projectStorageMessage = "";
     } catch (error) {
@@ -102,9 +192,7 @@ export const projectCatalogActions = {
       const storedProjects = await bridge.loadProjects();
       if (this.supportsBridge || storedProjects.length > 0) {
         this.projects = storedProjects.map(hydrateProject);
-        this.selectedProjectId = this.projects.some(
-          (project) => project.id === this.selectedProjectId && isProjectVisibleOnCurrentDevice(project),
-        )
+        this.selectedProjectId = this.projects.some((project) => project.id === this.selectedProjectId)
           ? this.selectedProjectId
           : null;
       }
@@ -117,6 +205,7 @@ export const projectCatalogActions = {
     this.projectsLoaded = true;
 
     markStartupPhase?.("projects-load-state-setup-start");
+    this.restoreRuntimeAutomationState();
     this.initializeProjectSessionState();
     markStartupPhase?.("projects-load-state-setup-complete");
 
@@ -125,6 +214,9 @@ export const projectCatalogActions = {
       : bridge.getProjectLaunchServiceStatus();
 
     await waitForInitialPaint();
+    const runtimeAutomationHistoryLoad = this.loadRuntimeAutomationHistory().catch((error) => {
+      this.localStateWriteError = error instanceof Error ? error.message : "自动任务执行历史读取失败。";
+    });
     this.projectLaunchServiceStatus = await projectLaunchServiceStatusLoad;
     this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
 
@@ -138,6 +230,7 @@ export const projectCatalogActions = {
     await this.reconcileRuntimeProcessState();
     markStartupPhase?.("projects-load-runtime-reconciliation-complete");
 
+    await runtimeAutomationHistoryLoad;
     markStartupPhase?.("projects-load-automation-plan-recomputation-start");
     this.recomputeAutomationPlans(undefined, false);
     markStartupPhase?.("projects-load-automation-plan-recomputation-complete");
@@ -164,12 +257,38 @@ export const projectCatalogActions = {
     }
   },
 
+  recordLocalStateWrite(this: AppStore, result?: LocalStateWriteResult | null) {
+    // Bridge mocks and legacy callers may return void; only an explicit
+    // failure result is surfaced to the settings page.
+    if (!result) return result;
+    this.localStateWriteError = result.ok ? "" : result.error || "本地状态写入失败，本次修改仅保留在内存中。";
+    return result;
+  },
+
+  persistWorkspaceState(this: AppStore, patch: WorkspaceStatePatch = {}) {
+    const result = bridge.saveWorkspaceState({
+      dashboardProjectGroup: patch.dashboardProjectGroup ?? this.dashboardProjectGroup,
+      workActivity: {
+        selectionInitialized: patch.workActivity?.selectionInitialized ?? this.workActivitySelectionInitialized,
+        preferences:
+          patch.workActivity?.preferences !== undefined ? patch.workActivity.preferences : this.workActivityPreferences,
+        selectedProjectIds: patch.workActivity?.selectedProjectIds ?? this.workActivitySelectedProjectIds,
+      },
+    });
+    this.recordLocalStateWrite(result);
+    return result;
+  },
+
+  setDashboardProjectGroup(this: AppStore, groupKey: string) {
+    const nextGroup = groupKey.trim() || "all";
+    if (this.dashboardProjectGroup === nextGroup) return;
+    this.dashboardProjectGroup = nextGroup;
+    this.persistWorkspaceState();
+  },
+
   async refreshProjectAvailability(this: AppStore) {
     await Promise.all(
       this.projects.map(async (project) => {
-        if (!isProjectVisibleOnCurrentDevice(project)) {
-          return;
-        }
         const exists = await bridge.pathExists(project.path);
         project.pathExists = exists;
         project.unavailableReason = exists ? "" : "当前设备无法访问该路径";
@@ -215,12 +334,8 @@ export const projectCatalogActions = {
     }
 
     const matchedProject =
-      this.projects.find(
-        (project) => isProjectVisibleOnCurrentDevice(project) && project.name.toLowerCase() === normalizedQuery,
-      ) ||
-      this.projects.find(
-        (project) => isProjectVisibleOnCurrentDevice(project) && project.name.toLowerCase().includes(normalizedQuery),
-      );
+      this.projects.find((project) => project.name.toLowerCase() === normalizedQuery) ||
+      this.projects.find((project) => project.name.toLowerCase().includes(normalizedQuery));
     if (!matchedProject) {
       return false;
     }
@@ -246,9 +361,7 @@ export const projectCatalogActions = {
     }
 
     const isUnavailable = project.pathExists === false;
-    const isSameSection = (item: Project) =>
-      isProjectVisibleOnCurrentDevice(item) &&
-      (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+    const isSameSection = (item: Project) => (isUnavailable ? item.pathExists === false : item.pathExists !== false);
     const sectionProjects = this.projects.filter(isSameSection);
     const sectionProjectIds = new Set(sectionProjects.map((item) => item.id));
     const scopedSectionProjects = (scopeProjectIds || [])
@@ -297,7 +410,8 @@ export const projectCatalogActions = {
     return true;
   },
 
-  async reorderProject(this: AppStore,
+  async reorderProject(
+    this: AppStore,
     projectId: string,
     targetProjectId: string,
     scopeProjectIds?: string[],
@@ -309,14 +423,12 @@ export const projectCatalogActions = {
 
     const project = this.projects.find((item) => item.id === projectId);
     const targetProject = this.projects.find((item) => item.id === targetProjectId);
-    if (!project || !targetProject || !isProjectVisibleOnCurrentDevice(project)) {
+    if (!project || !targetProject) {
       return false;
     }
 
     const isUnavailable = project.pathExists === false;
-    const isSameSection = (item: Project) =>
-      isProjectVisibleOnCurrentDevice(item) &&
-      (isUnavailable ? item.pathExists === false : item.pathExists !== false);
+    const isSameSection = (item: Project) => (isUnavailable ? item.pathExists === false : item.pathExists !== false);
     if (!isSameSection(targetProject)) {
       return false;
     }
@@ -387,53 +499,87 @@ export const projectCatalogActions = {
     return true;
   },
 
-  async exportProjectConfig(this: AppStore) {
-    const config: ProjectConfigFile = {
-      schemaVersion: 1,
-      exportedAt: new Date().toISOString(),
-      projects: this.projects.map((project, index) => toPersistedProject(project, index)),
-    };
-    const result = await bridge.exportProjects(config);
-    this.setProjectConfigMessage(
-      result.canceled ? "已取消导出" : result.path ? `已导出到 ${result.path}` : "已导出项目配置",
-    );
+  async refreshStorageOverview(this: AppStore) {
+    this.dataToolsBusy = true;
+    try {
+      this.storageOverview = await bridge.getStorageOverview();
+    } catch (error) {
+      this.cleanupMessage = error instanceof Error ? error.message : "无法读取存储概览。";
+    } finally {
+      this.dataToolsBusy = false;
+    }
   },
 
-  async importProjectConfig(this: AppStore) {
-    const result = await bridge.importProjects();
-    if (result.canceled || !result.config) {
-      this.setProjectConfigMessage(result.message || "已取消导入");
-      return;
+  async loadCleanupPlan(this: AppStore) {
+    try {
+      this.cleanupPlan = await bridge.getCleanupPlan();
+    } catch (error) {
+      this.cleanupPlan = null;
+      this.cleanupMessage = error instanceof Error ? error.message : "无法读取清理计划。";
     }
+  },
 
-    const existingKeys = new Set(
-      this.projects.map((project) => `${project.path.toLowerCase()}::${project.name.toLowerCase()}`),
-    );
-    if (result.config.schemaVersion !== 1 || !Array.isArray(result.config.projects)) {
-      this.setProjectConfigMessage("配置文件格式不受支持");
-      return;
+  async runCleanup(this: AppStore) {
+    if (this.cleanupRunning || this.cleanupSelectedIds.length === 0) return null;
+    this.cleanupRunning = true;
+    this.cleanupMessage = "";
+    this.cleanupResults = [];
+    try {
+      const result = await bridge.executeCleanup(this.cleanupSelectedIds);
+      this.cleanupResults = result.results;
+      this.cleanupMessage = result.ok
+        ? "清理完成。"
+        : result.partial
+          ? "部分项目清理失败，详见逐项结果。"
+          : "清理未执行成功，详见逐项结果。";
+      await Promise.all([this.refreshStorageOverview(), this.loadCleanupPlan()]);
+      return result;
+    } catch (error) {
+      this.cleanupMessage = error instanceof Error ? error.message : "清理执行失败。";
+      return null;
+    } finally {
+      this.cleanupRunning = false;
     }
+  },
 
-    const incoming = result.config.projects
-      .filter(isImportableProject)
-      .map((project, index) => hydrateProject(toPersistedProject(project, index)));
-    const accepted: Project[] = [];
-    let skipped = result.config.projects.length - incoming.length;
-
-    incoming.forEach((project) => {
-      const key = `${project.path.toLowerCase()}::${project.name.toLowerCase()}`;
-      if (this.projects.some((item) => item.id === project.id) || existingKeys.has(key)) {
-        skipped += 1;
-        return;
+  async retryStorageMigration(this: AppStore) {
+    if (this.dataToolsBusy) return null;
+    this.dataToolsBusy = true;
+    this.cleanupMessage = "";
+    try {
+      const result = await bridge.runMigration({
+        onProgress: (summary) => {
+          this.migrationProgress = summary;
+        },
+      });
+      this.migrationProgress = result.ledger;
+      this.cleanupMessage = result.ok ? "迁移完成。" : result.message || "迁移失败，请重试。";
+      if (result.ok) {
+        await this.reloadProjectsFromStorage();
       }
-      existingKeys.add(key);
-      accepted.push({ ...project, id: project.id || createProjectId() });
-    });
+      await this.refreshStorageOverview();
+      return result;
+    } catch (error) {
+      this.cleanupMessage = error instanceof Error ? error.message : "迁移执行失败。";
+      return null;
+    } finally {
+      this.dataToolsBusy = false;
+    }
+  },
 
-    this.projects = [...accepted, ...this.projects];
-    await this.refreshProjectAvailability();
-    this.recomputeAutomationPlans();
-    await this.persistProjects();
-    this.setProjectConfigMessage(`已导入 ${accepted.length} 个项目，跳过 ${skipped} 个重复项目`);
-  }
+  async openLocalDataDirectory(this: AppStore) {
+    try {
+      await bridge.openPluginLocalDataDirectory();
+    } catch (error) {
+      this.cleanupMessage = error instanceof Error ? error.message : "无法打开本地数据目录。";
+    }
+  },
+
+  async openLegacyDataDirectory(this: AppStore) {
+    try {
+      await bridge.openLegacyDataDirectory();
+    } catch (error) {
+      this.cleanupMessage = error instanceof Error ? error.message : "无法打开旧数据目录。";
+    }
+  },
 };

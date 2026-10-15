@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Check,
+  ChevronDown,
   ClipboardCopy,
   Eraser,
   History,
@@ -17,13 +19,14 @@ import { useI18n } from "../../lib/i18n";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
-import type { LogEntry, ProjectLaunchServiceLogDescriptor, ProjectScript } from "../../types";
+import type { LogEntry, RuntimeRecord, ProjectScript } from "../../types";
 import ActionDialog from "../common/ActionDialog.vue";
 import { showActionStatus } from "../common/actionStatus";
 
 const props = defineProps<{
   projectId: string;
   scripts?: Pick<ProjectScript, "id" | "name" | "status">[];
+  historyOnly?: boolean;
 }>();
 
 const store = useStore();
@@ -46,7 +49,10 @@ const historyFeedback = ref("");
 const historyFeedbackTone = ref<"success" | "error">("success");
 const historyQuery = ref("");
 const selectedHistoryRunId = ref("");
-const historyRuns = ref<ProjectLaunchServiceLogDescriptor[]>([]);
+const historyRuns = ref<RuntimeRecord[]>([]);
+const historySource = ref<RuntimeRecord["source"] | "all">("all");
+const historySourceMenuOpen = ref(false);
+const historySourceControl = ref<HTMLElement | null>(null);
 const historyLogs = ref<LogEntry[]>([]);
 const historyTruncated = ref(false);
 const historyHasMore = ref(false);
@@ -110,7 +116,7 @@ const hasCurrentLogs = computed(() => filteredLogs.value.length > 0);
 const hasAnyLogs = computed(() =>
   Object.values(store.scriptLogs[props.projectId] || {}).some((logs) => logs.length > 0),
 );
-const serviceHistoryRuns = computed(() => historyRuns.value);
+const serviceHistoryRuns = computed(() => historyRuns.value.filter((run) => historySource.value === "all" || run.source === historySource.value));
 const selectedHistoryRun = computed(
   () => serviceHistoryRuns.value.find((run) => run.runId === selectedHistoryRunId.value) || null,
 );
@@ -192,22 +198,52 @@ const formatHistoryBytes = (bytes: number) => {
   return `${Math.round(bytes)} B`;
 };
 
-const historyRunScriptName = (run: ProjectLaunchServiceLogDescriptor) =>
+const historyRunScriptName = (run: RuntimeRecord) =>
   props.scripts?.find((script) => script.id === run.scriptId)?.name || run.label || run.scriptId;
-const historyRunCommand = (run: ProjectLaunchServiceLogDescriptor) =>
-  store.projectLaunchServiceStatus?.runs?.find((candidate) => candidate.id === run.runId)?.command || run.label;
+const historyRunCommand = (run: RuntimeRecord) => run.command || run.label;
 
-const historyStatusClass = (status: ProjectLaunchServiceLogDescriptor["status"]) => {
+const historyStatusClass = (status: RuntimeRecord["status"]) => {
   if (status === "failed" || status === "lost") return "border-status-error/30 bg-status-error/10 text-status-error";
   if (status === "exited") return "border-status-running/30 bg-status-running/10 text-status-running";
   if (status === "stopped") return "border-border-subtle bg-surface-container-low text-on-surface-variant";
   return "border-status-warning/30 bg-status-warning/10 text-status-warning";
 };
 
-const historyStatusLabel = (status: ProjectLaunchServiceLogDescriptor["status"]) =>
+const historyStatusLabel = (status: RuntimeRecord["status"]) =>
   historyStatusKeys.includes(status) ? t.value.terminal.historyStatus[status] : status;
 
+const closeHistorySourceMenu = (restoreFocus = false) => {
+  historySourceMenuOpen.value = false;
+  if (restoreFocus) historySourceControl.value?.querySelector<HTMLButtonElement>("button")?.focus();
+};
+
+const openHistorySourceMenu = async () => {
+  historySourceMenuOpen.value = true;
+  await nextTick();
+  historySourceControl.value?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]')?.focus();
+};
+
+const selectHistorySource = (source: typeof historySource.value) => {
+  historySource.value = source;
+  closeHistorySourceMenu(true);
+};
+
+const handleHistorySourceKeydown = (event: KeyboardEvent) => {
+  if (!["ArrowDown", "ArrowUp", "Home", "End", "Escape", "Tab"].includes(event.key)) return;
+  if (event.key === "Tab") { closeHistorySourceMenu(); return; }
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.key === "Escape") { closeHistorySourceMenu(true); return; }
+  if (!historySourceMenuOpen.value) { void openHistorySourceMenu(); return; }
+  const options = Array.from(historySourceControl.value?.querySelectorAll<HTMLButtonElement>('[role="option"]') || []);
+  const current = options.indexOf(document.activeElement as HTMLButtonElement);
+  const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 :
+    (current + (event.key === "ArrowUp" ? -1 : 1) + options.length) % options.length;
+  options[next]?.focus();
+};
+
 const closeHistoryDialog = () => {
+  closeHistorySourceMenu();
   historyLoadGeneration += 1;
   historyDialogOpen.value = false;
   selectedHistoryRunId.value = "";
@@ -225,7 +261,7 @@ const closeHistoryDialog = () => {
   copiedHistory.value = false;
 };
 
-const loadHistoryRun = async (run: ProjectLaunchServiceLogDescriptor) => {
+const loadHistoryRun = async (run: RuntimeRecord) => {
   if (historyClearBusy.value) return;
   const requestGeneration = historyLoadGeneration + 1;
   historyLoadGeneration = requestGeneration;
@@ -240,7 +276,7 @@ const loadHistoryRun = async (run: ProjectLaunchServiceLogDescriptor) => {
   historyHasMore.value = false;
   historyNextOffset.value = 0;
   try {
-    const result = await store.loadProjectLaunchServiceRunLogPage(run.runId, 0);
+    const result = await store.loadRuntimeRecordLogPage(run.runId, 0);
     if (requestGeneration !== historyLoadGeneration) return;
     historyLogs.value = result.logs;
     historyTruncated.value = run.truncated || result.truncated;
@@ -261,7 +297,7 @@ const loadOlderHistory = async () => {
   historyLoadingOlder.value = true;
   historyOlderError.value = "";
   try {
-    const result = await store.loadProjectLaunchServiceRunLogPage(run.runId, historyNextOffset.value);
+    const result = await store.loadRuntimeRecordLogPage(run.runId, historyNextOffset.value);
     if (requestGeneration !== historyLoadGeneration) return;
     historyLogs.value = [...result.logs, ...historyLogs.value];
     historyTruncated.value = historyTruncated.value || result.truncated;
@@ -290,12 +326,7 @@ const openHistoryDialog = async () => {
   historyHasMore.value = false;
   historyNextOffset.value = 0;
   try {
-    const status = await store.refreshProjectLaunchServiceStatus();
-    if (requestGeneration !== historyLoadGeneration) return;
-    if (status.state !== "healthy" || !status.running) {
-      throw new Error(status.message || t.value.terminal.historyUnavailable);
-    }
-    historyRuns.value = await store.listProjectLaunchServiceLogs(props.projectId);
+    historyRuns.value = await store.listRuntimeRecords(props.projectId);
     if (requestGeneration !== historyLoadGeneration) return;
     const firstRun = serviceHistoryRuns.value[0];
     if (firstRun) {
@@ -322,17 +353,17 @@ const confirmClearHistory = async () => {
   historyError.value = "";
   showActionStatus({ state: "loading", message: t.value.terminal.historyClearBusy });
   try {
-    const result = await store.clearProjectLaunchServiceLogs({
+    const result = await store.clearRuntimeRecords({
       runId: run.runId,
     });
-    historyRuns.value = await store.listProjectLaunchServiceLogs(props.projectId);
+    historyRuns.value = await store.listRuntimeRecords(props.projectId);
     selectedHistoryRunId.value = "";
     historyLogs.value = [];
     historyTruncated.value = false;
     historyHasMore.value = false;
     historyNextOffset.value = 0;
     try {
-      await store.refreshProjectLaunchServiceLogRetention();
+      await store.refreshRuntimeRecordRetention();
     } catch {
       // The clear result remains authoritative even if the follow-up usage read fails.
     }
@@ -353,6 +384,7 @@ const confirmClearHistory = async () => {
 
 const closeContextMenu = () => {
   contextMenuPosition.value = null;
+  closeHistorySourceMenu();
 };
 
 const openContextMenu = (event: MouseEvent) => {
@@ -372,6 +404,11 @@ const handleWindowKeydown = (event: KeyboardEvent) => {
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (historySourceMenuOpen.value) {
+    closeHistorySourceMenu(true);
+    event.detail.handle();
+    return;
+  }
   if (historyDialogOpen.value) {
     closeHistoryDialog();
     event.detail.handle();
@@ -457,7 +494,7 @@ const refreshOpenHistory = async () => {
   if (!historyDialogOpen.value) return;
   const requestGeneration = historyLoadGeneration;
   try {
-    const runs = await store.listProjectLaunchServiceLogs(props.projectId);
+    const runs = await store.listRuntimeRecords(props.projectId);
     if (requestGeneration !== historyLoadGeneration || !historyDialogOpen.value) return;
     historyRuns.value = runs;
     if (!selectedHistoryRunId.value && serviceHistoryRuns.value[0]) {
@@ -468,6 +505,20 @@ const refreshOpenHistory = async () => {
     historyError.value = error instanceof Error ? error.message : t.value.terminal.historyUnavailable;
   }
 };
+
+watch(historySource, () => {
+  if (!historyDialogOpen.value || historyClearBusy.value) return;
+  const first = serviceHistoryRuns.value[0];
+  if (first) void loadHistoryRun(first);
+  else {
+    historyLoadGeneration += 1;
+    selectedHistoryRunId.value = "";
+    historyLogs.value = [];
+    historyLoading.value = false;
+    historyLoadingOlder.value = false;
+    historyHasMore.value = false;
+  }
+});
 
 watch(
   () => filteredLogs.value.length,
@@ -528,8 +579,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="h-full min-h-[12rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm"
+    :class="historyOnly ? '' : 'h-full min-h-[12rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm'"
   >
+    <button v-if="historyOnly" type="button" class="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-semibold text-on-surface" @click="openHistoryDialog">
+      <History :size="13" /> {{ t.terminal.history }}
+    </button>
+    <template v-else>
     <div
       class="bg-surface-container-low px-3 py-2 flex items-center justify-between border-b border-border-subtle gap-3"
     >
@@ -614,10 +669,9 @@ onBeforeUnmount(() => {
           <Trash2 :size="12" />
         </button>
         <button
-          v-if="store.projectLaunchServicePreferences.enabled"
+          v-if="store.supportsBridge"
           type="button"
           class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="store.projectLaunchServiceStatus?.state !== 'healthy'"
           :title="t.terminal.history"
           :aria-label="t.terminal.history"
           @click="openHistoryDialog"
@@ -672,11 +726,12 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+    </template>
     <Teleport to="body">
       <Transition name="scale">
         <div
           v-if="historyDialogOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           @click.self="closeHistoryDialog"
         >
           <section
@@ -712,7 +767,33 @@ onBeforeUnmount(() => {
                 <div
                   class="flex h-9 shrink-0 items-center justify-between border-b border-border-subtle px-3 text-[10px] font-semibold text-on-surface-variant"
                 >
-                  <span>{{ t.terminal.history }}</span>
+                  <div ref="historySourceControl" class="relative w-36 max-w-full min-w-0" @click.stop @keydown="handleHistorySourceKeydown" @focusout="(event) => { if (!historySourceControl?.contains(event.relatedTarget as Node)) closeHistorySourceMenu(); }">
+                    <button
+                      type="button"
+                      class="flex h-7 w-full items-center gap-2 rounded border border-border-subtle bg-surface px-2 text-xs font-medium text-on-surface hover:bg-surface-container-low focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      aria-haspopup="listbox"
+                      :aria-expanded="historySourceMenuOpen"
+                      :aria-label="t.terminal.history"
+                      @click="historySourceMenuOpen ? closeHistorySourceMenu() : openHistorySourceMenu()"
+                    >
+                      <span class="min-w-0 flex-1 truncate text-left">{{ t.terminal.historySources[historySource] }}</span>
+                      <ChevronDown class="h-3.5 w-3.5 shrink-0" />
+                    </button>
+                    <div v-if="historySourceMenuOpen" role="listbox" :aria-label="t.terminal.history" class="absolute left-0 right-0 top-full z-20 mt-1 rounded-md border border-border-subtle bg-surface p-1 shadow-lg">
+                      <button
+                        v-for="(label, source) in t.terminal.historySources"
+                        :key="source"
+                        type="button"
+                        role="option"
+                        :aria-selected="historySource === source"
+                        :class="cn('flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40', historySource === source ? 'bg-primary/10 text-primary' : 'text-on-surface hover:bg-surface-container-low')"
+                        @click="selectHistorySource(source)"
+                      >
+                        <span class="flex-1">{{ label }}</span>
+                        <Check v-if="historySource === source" class="h-3.5 w-3.5 shrink-0" />
+                      </button>
+                    </div>
+                  </div>
                   <span>{{ serviceHistoryRuns.length }}</span>
                 </div>
                 <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-y-auto">
@@ -764,6 +845,7 @@ onBeforeUnmount(() => {
                         {{ historyRunCommand(run) }}
                       </span>
                       <span class="mt-1 flex items-center justify-between gap-2 text-[9px] text-on-surface-variant">
+                        <span>{{ t.terminal.historySources[run.source] }}</span>
                         <span>{{ t.terminal.historySize }} {{ formatHistoryBytes(run.sizeBytes) }}</span>
                         <span
                           v-if="run.truncated"
@@ -773,6 +855,7 @@ onBeforeUnmount(() => {
                           {{ t.terminal.historyOutputTruncated }}
                         </span>
                       </span>
+                      <span v-if="run.durableWriteError" class="mt-1 block break-words text-[9px] text-status-error">{{ run.durableWriteError }}</span>
                     </button>
                     <p
                       v-if="!historyLoading && serviceHistoryRuns.length === 0"
@@ -804,7 +887,7 @@ onBeforeUnmount(() => {
                     <button
                       type="button"
                       class="inline-flex h-7 w-7 items-center justify-center rounded border border-status-error/30 bg-surface text-status-error transition-colors hover:bg-status-error/10 disabled:cursor-not-allowed disabled:opacity-45"
-                      :disabled="!selectedHistoryRun || historyClearBusy"
+                      :disabled="!selectedHistoryRun || historyClearBusy || ['starting', 'running', 'stopping'].includes(selectedHistoryRun.status)"
                       :title="t.terminal.historyClear"
                       :aria-label="t.terminal.historyClear"
                       @click="historyClearOpen = true"
@@ -954,6 +1037,7 @@ onBeforeUnmount(() => {
       </Transition>
     </Teleport>
     <form
+      v-if="!historyOnly"
       class="flex shrink-0 items-center gap-1.5 border-t border-border-subtle bg-surface-container-low px-2 py-1"
       @submit.prevent="handleInputSubmit"
     >

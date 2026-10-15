@@ -55,7 +55,7 @@ const completedProcessResults = new Map();
 const completedAutomationProcessResults = new Map();
 const completedProcessResultLimit = 100;
 const processStopGracePeriodMs = 3500;
-const projectLaunchServiceProtocolVersion = 2;
+const projectLaunchServiceProtocolVersion = 3;
 const projectLaunchServiceStartupTimeoutMs = 7000;
 const projectLaunchServiceRequestTimeoutMs = 3000;
 const projectLaunchServiceEventPollIntervalMs = 750;
@@ -63,7 +63,6 @@ const projectLaunchServiceDownloadTimeoutMs = 30000;
 const projectLaunchServiceMetadataLimitBytes = 1024 * 1024;
 const projectLaunchServiceExecutableLimitBytes = 12 * 1024 * 1024;
 const projectLaunchServiceSyncResponseLimitBytes = 512 * 1024;
-const projectLaunchServiceRunLogResponseLimitBytes = 8 * 1024 * 1024;
 const projectLaunchServiceUpcomingLimit = 100;
 const projectLaunchServiceDownloadRedirectLimit = 3;
 const projectLaunchServiceReleaseApiUrl =
@@ -97,6 +96,16 @@ const gitActivityDayCacheVersions = new Map();
 const gitActivityDayCacheLimit = 32;
 const gitActivityDayCacheRecordLimit = 500;
 const gitActivityDayPageLimit = 50;
+
+// Memory-only caches (git reports, detail caches, avatars) never touch disk;
+// data cleanup clears them on demand.
+function clearGitActivityCaches() {
+  gitActivityCache.clear();
+  gitActivityChangesCache.clear();
+  gitActivityDayCache.clear();
+  gitActivityDayCacheVersions.clear();
+  gitCommitAvatarResults.clear();
+}
 const gitRemoteProgressDispatchIntervalMs = 60;
 const gitRemoteProgressQueueLimit = 16;
 const gitEnvironmentBootstrapTimeoutMs = 2500;
@@ -115,9 +124,8 @@ const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
 const projectDetailsTabOrderStorageKey = "utools-project-launch.project-details-tab-order.v1";
 const projectLaunchServicePreferencesStorageKey = "utools-project-launch.project-launch-service.v1";
-const deviceIdStorageKey = "utools-project-launch.device-id.v1";
-const deviceIdFileName = "device-id.v1";
 const projectDocPrefix = "utools-project-launch/project/";
+const localDataDirectoryEnvOverride = "UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR";
 const schemaVersion = 1;
 const gitCommitFieldSeparator = "\x1f";
 const gitCommitRecordSeparator = "\x1e";
@@ -672,71 +680,68 @@ function migrateEditorPreferences(value) {
   };
 }
 
-function normalizeDeviceId(value) {
-  return typeof value === "string" ? value.trim() : "";
+function pluginV8Capabilities() {
+  const utools = typeof window === "undefined" ? undefined : window.utools;
+  return {
+    hasUtools: Boolean(utools),
+    getAppVersion: typeof utools?.getAppVersion === "function",
+    getPluginLocalDataPath: typeof utools?.getPluginLocalDataPath === "function",
+    getPluginTempPath: typeof utools?.getPluginTempPath === "function",
+  };
 }
 
-function getDeviceIdFilePath() {
-  const overrideDir = normalizeDeviceId(process.env.UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR);
-  const baseDir = overrideDir || path.join(os.homedir(), ".utools-project-launch");
-  return path.join(baseDir, deviceIdFileName);
+function normalizeConfiguredDirectory(value) {
+  return typeof value === "string" && value.trim() ? path.resolve(value.trim()) : "";
 }
 
-function readDeviceIdFile() {
+// uTools v8 provides a plugin-scoped local data directory that never syncs.
+// The environment override exists for automated tests and explicit development
+// previews; production always uses the host-provided path.
+function pluginLocalDataDirectory() {
+  const override = normalizeConfiguredDirectory(process.env?.[localDataDirectoryEnvOverride]);
+  if (override) {
+    return override;
+  }
   try {
-    return normalizeDeviceId(fs.readFileSync(getDeviceIdFilePath(), "utf8"));
+    return normalizeConfiguredDirectory(window.utools?.getPluginLocalDataPath?.());
   } catch (error) {
     return "";
   }
 }
 
-function writeDeviceIdFile(deviceId) {
+function pluginTempDirectory() {
   try {
-    const filePath = getDeviceIdFilePath();
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, `${deviceId}\n`, "utf8");
-  } catch (error) {
-    // The renderer localStorage fallback still keeps browser preview usable if the file cannot be written.
-  }
-}
-
-function readBrowserDeviceId() {
-  try {
-    return normalizeDeviceId(window.localStorage?.getItem(deviceIdStorageKey));
+    return normalizeConfiguredDirectory(window.utools?.getPluginTempPath?.());
   } catch (error) {
     return "";
   }
 }
 
-function writeBrowserDeviceId(deviceId) {
+function readJsonFile(filePath) {
   try {
-    window.localStorage?.setItem(deviceIdStorageKey, deviceId);
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
   } catch (error) {
-    // Keep device id persistence best-effort for browser preview and restricted webviews.
+    return null;
   }
 }
 
-function createDeviceId() {
-  return globalThis.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function getCurrentDeviceId() {
-  const fileDeviceId = readDeviceIdFile();
-  if (fileDeviceId) {
-    writeBrowserDeviceId(fileDeviceId);
-    return fileDeviceId;
+// Crash-safe JSON persistence: write a sibling temporary file first, then
+// atomically replace the target so a mid-write crash never truncates state.
+function writeJsonFileAtomic(filePath, value) {
+  const directory = path.dirname(filePath);
+  fs.mkdirSync(directory, { recursive: true });
+  const temporaryPath = path.join(directory, `${path.basename(filePath)}.tmp-${process.pid}-${Date.now()}`);
+  fs.writeFileSync(temporaryPath, JSON.stringify(value, null, 2), "utf8");
+  try {
+    fs.renameSync(temporaryPath, filePath);
+  } catch (error) {
+    try {
+      fs.rmSync(temporaryPath, { force: true });
+    } catch (cleanupError) {
+      // The temporary file must never mask the original rename failure.
+    }
+    throw error;
   }
-
-  const browserDeviceId = readBrowserDeviceId();
-  if (browserDeviceId) {
-    writeDeviceIdFile(browserDeviceId);
-    return browserDeviceId;
-  }
-
-  const nextId = createDeviceId();
-  writeDeviceIdFile(nextId);
-  writeBrowserDeviceId(nextId);
-  return nextId;
 }
 
 function getDefaultEnvironmentPreferences() {

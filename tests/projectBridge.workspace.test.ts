@@ -112,8 +112,16 @@ const workingTreeSnapshot = (
 
 describe("browser Git workspace fallback", () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.resetModules();
+  });
+
+  it("reports a missing real bridge in production instead of using browser preview", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubGlobal("window", { projectBridge: undefined });
+
+    expect(() => getProjectBridge()).toThrow("本地桥接加载失败");
   });
 
   it("reports both sections as unavailable without simulating a local repository", async () => {
@@ -939,81 +947,56 @@ describe("browser Git workspace fallback", () => {
     expect(saveProjects.mock.calls[1]?.[0][0]?.gitLatestCommitAt).toBe("");
   });
 
-  it("keeps repository removal authoritative over an older full-refresh success", async () => {
-    vi.stubGlobal("window", {
-      navigator: { platform: "Win32", userAgent: "vitest" },
-      localStorage: { getItem: () => null, setItem: () => undefined },
-      projectBridge: undefined,
-    });
-    const projectPath = "C:\\project";
-    const staleFull = createDeferred<Awaited<ReturnType<ProjectBridge["readGitSnapshotResult"]>>>();
-    const repositoryFailure = {
-      code: "not-a-repository" as const,
-      operation: "repository" as const,
-      message: "未检测到 Git 仓库。",
-    };
-    window.projectBridge = {
-      ...getProjectBridge(),
-      readGitSnapshotResult: vi.fn(() => staleFull.promise),
-      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false as const, value: null, failure: repositoryFailure })),
-    };
+  it.each([true, false])(
+    "keeps repository removal authoritative over an older full refresh (success=%s)",
+    async (succeeds) => {
+      vi.stubGlobal("window", {
+        navigator: { platform: "Win32", userAgent: "vitest" },
+        localStorage: { getItem: () => null, setItem: () => undefined },
+        projectBridge: undefined,
+      });
+      const projectPath = "C:\\project";
+      const staleFull = createDeferred<Awaited<ReturnType<ProjectBridge["readGitSnapshotResult"]>>>();
+      const repositoryFailure = {
+        code: "not-a-repository" as const,
+        operation: "repository" as const,
+        message: "未检测到 Git 仓库。",
+      };
+      window.projectBridge = {
+        ...getProjectBridge(),
+        readGitSnapshotResult: vi.fn(() => staleFull.promise),
+        readGitStatusSnapshotResult: vi.fn(async () => ({
+          ok: false as const,
+          value: null,
+          failure: repositoryFailure,
+        })),
+      };
 
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-    const project = createProject("project-removal-stale-success", projectPath);
-    project.git = gitSnapshot(projectPath, "old");
-    store.projects = [project];
-    const contextKey = store.resolveGitRepositoryContext(project.id)!.contextKey;
+      const { useStore } = await import("../src/store/useStore");
+      setActivePinia(createPinia());
+      const store = useStore();
+      const project = createProject("project-removal-stale-result", projectPath);
+      project.git = gitSnapshot(projectPath, "old");
+      store.projects = [project];
+      const contextKey = store.resolveGitRepositoryContext(project.id)!.contextKey;
 
-    const fullRefresh = store.refreshGitSnapshot(project.id, { force: true });
-    await store.refreshGitStatusSnapshot(project.id);
-    staleFull.resolve({ ok: true, value: gitSnapshot(projectPath, "stale-success") });
-    await fullRefresh;
+      const fullRefresh = store.refreshGitSnapshot(project.id, { force: true });
+      await store.refreshGitStatusSnapshot(project.id);
+      staleFull.resolve(
+        succeeds
+          ? { ok: true, value: gitSnapshot(projectPath, "stale-success") }
+          : {
+              ok: false,
+              value: null,
+              failure: { code: "command-failed", operation: "history", message: "stale full failure" },
+            },
+      );
+      await fullRefresh;
 
-    expect(project.git).toBeNull();
-    expect(store.gitRepositoryReadFailures[contextKey]).toEqual({ repository: repositoryFailure });
-  });
-
-  it("keeps repository removal authoritative over an older full-refresh failure", async () => {
-    vi.stubGlobal("window", {
-      navigator: { platform: "Win32", userAgent: "vitest" },
-      localStorage: { getItem: () => null, setItem: () => undefined },
-      projectBridge: undefined,
-    });
-    const projectPath = "C:\\project";
-    const staleFull = createDeferred<Awaited<ReturnType<ProjectBridge["readGitSnapshotResult"]>>>();
-    const repositoryFailure = {
-      code: "not-a-repository" as const,
-      operation: "repository" as const,
-      message: "未检测到 Git 仓库。",
-    };
-    window.projectBridge = {
-      ...getProjectBridge(),
-      readGitSnapshotResult: vi.fn(() => staleFull.promise),
-      readGitStatusSnapshotResult: vi.fn(async () => ({ ok: false as const, value: null, failure: repositoryFailure })),
-    };
-
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-    const project = createProject("project-removal-stale-failure", projectPath);
-    project.git = gitSnapshot(projectPath, "old");
-    store.projects = [project];
-    const contextKey = store.resolveGitRepositoryContext(project.id)!.contextKey;
-
-    const fullRefresh = store.refreshGitSnapshot(project.id, { force: true });
-    await store.refreshGitStatusSnapshot(project.id);
-    staleFull.resolve({
-      ok: false,
-      value: null,
-      failure: { code: "command-failed", operation: "history", message: "stale full failure" },
-    });
-    await fullRefresh;
-
-    expect(project.git).toBeNull();
-    expect(store.gitRepositoryReadFailures[contextKey]).toEqual({ repository: repositoryFailure });
-  });
+      expect(project.git).toBeNull();
+      expect(store.gitRepositoryReadFailures[contextKey]).toEqual({ repository: repositoryFailure });
+    },
+  );
 
   it("clears Git state when an existing project path changes", async () => {
     vi.stubGlobal("window", {
@@ -1064,121 +1047,81 @@ describe("browser Git workspace fallback", () => {
     expect(store.gitStatusRefreshing[project.id]).toBeUndefined();
   });
 
-  it("ignores an old status failure after the project path changes away and back", async () => {
-    vi.stubGlobal("window", {
-      navigator: { platform: "Win32", userAgent: "vitest" },
-      localStorage: { getItem: () => null, setItem: () => undefined },
-      projectBridge: undefined,
-    });
-    const projectPath = "C:\\project";
-    const staleStatus = createDeferred<Awaited<ReturnType<ProjectBridge["readGitStatusSnapshotResult"]>>>();
-    const freshStatus = createDeferred<Awaited<ReturnType<ProjectBridge["readGitStatusSnapshotResult"]>>>();
-    const bridge = getProjectBridge();
-    const readGitStatusSnapshotResult = vi.fn<ProjectBridge["readGitStatusSnapshotResult"]>();
-    readGitStatusSnapshotResult.mockReturnValueOnce(staleStatus.promise).mockReturnValueOnce(freshStatus.promise);
-    window.projectBridge = {
-      ...bridge,
-      pathExists: vi.fn(async () => true),
-      listProjectSubdirectories: vi.fn(async () => []),
-      readGitStatusSnapshotResult,
-    };
+  it.each([true, false])(
+    "ignores an old status result after the project path changes away and back (success=%s)",
+    async (staleSucceeds) => {
+      vi.stubGlobal("window", {
+        navigator: { platform: "Win32", userAgent: "vitest" },
+        localStorage: { getItem: () => null, setItem: () => undefined },
+        projectBridge: undefined,
+      });
+      const projectPath = "C:\\project";
+      const staleStatus = createDeferred<Awaited<ReturnType<ProjectBridge["readGitStatusSnapshotResult"]>>>();
+      const freshStatus = createDeferred<Awaited<ReturnType<ProjectBridge["readGitStatusSnapshotResult"]>>>();
+      const bridge = getProjectBridge();
+      const readGitStatusSnapshotResult = vi.fn<ProjectBridge["readGitStatusSnapshotResult"]>();
+      readGitStatusSnapshotResult.mockReturnValueOnce(staleStatus.promise).mockReturnValueOnce(freshStatus.promise);
+      window.projectBridge = {
+        ...bridge,
+        pathExists: vi.fn(async () => true),
+        listProjectSubdirectories: vi.fn(async () => []),
+        readGitStatusSnapshotResult,
+      };
 
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-    const project = createProject("project-status-path-reset", projectPath);
-    project.scripts = [{ id: "script-start", name: "start", command: "npm start", status: "IDLE" }];
-    project.git = gitSnapshot(projectPath, "old");
-    store.projects = [project];
+      const { useStore } = await import("../src/store/useStore");
+      setActivePinia(createPinia());
+      const store = useStore();
+      const project = createProject("project-status-path-reset", projectPath);
+      project.scripts = [{ id: "script-start", name: "start", command: "npm start", status: "IDLE" }];
+      project.git = gitSnapshot(projectPath, "old");
+      store.projects = [project];
 
-    const staleRefresh = store.refreshGitStatusSnapshot(project.id);
-    store.openEditProjectForm(project.id);
-    store.updateProjectForm({ path: "C:\\other-project" });
-    await store.saveProjectForm();
-    store.openEditProjectForm(project.id);
-    store.updateProjectForm({ path: projectPath });
-    await store.saveProjectForm();
+      const staleRefresh = store.refreshGitStatusSnapshot(project.id);
+      store.openEditProjectForm(project.id);
+      store.updateProjectForm({ path: "C:\\other-project" });
+      await store.saveProjectForm();
+      store.openEditProjectForm(project.id);
+      store.updateProjectForm({ path: projectPath });
+      await store.saveProjectForm();
 
-    const currentProject = store.projects.find((item) => item.id === project.id)!;
-    currentProject.git = gitSnapshot(projectPath, "current");
-    const contextKey = store.resolveGitRepositoryContext(project.id)!.contextKey;
-    const freshRefresh = store.refreshGitStatusSnapshot(project.id);
+      const currentProject = store.projects.find((item) => item.id === project.id)!;
+      currentProject.git = gitSnapshot(projectPath, "current");
+      const contextKey = store.resolveGitRepositoryContext(project.id)!.contextKey;
+      const freshRefresh = store.refreshGitStatusSnapshot(project.id);
 
-    staleStatus.resolve({
-      ok: false,
-      value: null,
-      failure: { code: "command-failed", operation: "status", message: "stale status failure" },
-    });
-    await staleRefresh;
+      staleStatus.resolve(
+        staleSucceeds
+          ? { ok: true, value: gitSnapshot(projectPath, "stale") }
+          : {
+              ok: false,
+              value: null,
+              failure: { code: "command-failed", operation: "status", message: "stale status failure" },
+            },
+      );
+      await staleRefresh;
 
-    expect(store.gitRepositoryReadFailures[contextKey]).toBeUndefined();
-    expect(store.gitStatusRefreshing[project.id]).toBe(true);
+      expect(currentProject.git?.branch).toBe("current");
+      expect(store.gitRepositoryReadFailures[contextKey]).toBeUndefined();
+      expect(store.gitStatusRefreshing[project.id]).toBe(true);
 
-    freshStatus.resolve({ ok: true, value: gitSnapshot(projectPath, "fresh") });
-    await freshRefresh;
+      freshStatus.resolve(
+        staleSucceeds
+          ? {
+              ok: false,
+              value: null,
+              failure: { code: "command-failed", operation: "status", message: "fresh status failure" },
+            }
+          : { ok: true, value: gitSnapshot(projectPath, "fresh") },
+      );
+      await freshRefresh;
 
-    expect(currentProject.git?.branch).toBe("fresh");
-    expect(store.gitRepositoryReadFailures[contextKey]).toBeUndefined();
-    expect(store.gitStatusRefreshing[project.id]).toBe(false);
-  });
-
-  it("ignores an old status success after the project path changes away and back", async () => {
-    vi.stubGlobal("window", {
-      navigator: { platform: "Win32", userAgent: "vitest" },
-      localStorage: { getItem: () => null, setItem: () => undefined },
-      projectBridge: undefined,
-    });
-    const projectPath = "C:\\project";
-    const staleStatus = createDeferred<Awaited<ReturnType<ProjectBridge["readGitStatusSnapshotResult"]>>>();
-    const freshStatus = createDeferred<Awaited<ReturnType<ProjectBridge["readGitStatusSnapshotResult"]>>>();
-    const bridge = getProjectBridge();
-    const readGitStatusSnapshotResult = vi.fn<ProjectBridge["readGitStatusSnapshotResult"]>();
-    readGitStatusSnapshotResult.mockReturnValueOnce(staleStatus.promise).mockReturnValueOnce(freshStatus.promise);
-    window.projectBridge = {
-      ...bridge,
-      pathExists: vi.fn(async () => true),
-      listProjectSubdirectories: vi.fn(async () => []),
-      readGitStatusSnapshotResult,
-    };
-
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-    const project = createProject("project-status-success-path-reset", projectPath);
-    project.scripts = [{ id: "script-start", name: "start", command: "npm start", status: "IDLE" }];
-    project.git = gitSnapshot(projectPath, "old");
-    store.projects = [project];
-
-    const staleRefresh = store.refreshGitStatusSnapshot(project.id);
-    store.openEditProjectForm(project.id);
-    store.updateProjectForm({ path: "C:\\other-project" });
-    await store.saveProjectForm();
-    store.openEditProjectForm(project.id);
-    store.updateProjectForm({ path: projectPath });
-    await store.saveProjectForm();
-
-    const currentProject = store.projects.find((item) => item.id === project.id)!;
-    currentProject.git = gitSnapshot(projectPath, "current");
-    const contextKey = store.resolveGitRepositoryContext(project.id)!.contextKey;
-    const freshRefresh = store.refreshGitStatusSnapshot(project.id);
-
-    staleStatus.resolve({ ok: true, value: gitSnapshot(projectPath, "stale") });
-    await staleRefresh;
-
-    expect(currentProject.git?.branch).toBe("current");
-    expect(store.gitStatusRefreshing[project.id]).toBe(true);
-
-    freshStatus.resolve({
-      ok: false,
-      value: null,
-      failure: { code: "command-failed", operation: "status", message: "fresh status failure" },
-    });
-    await freshRefresh;
-
-    expect(currentProject.git?.branch).toBe("current");
-    expect(store.gitRepositoryReadFailures[contextKey]?.status?.message).toBe("fresh status failure");
-    expect(store.gitStatusRefreshing[project.id]).toBe(false);
-  });
+      expect(currentProject.git?.branch).toBe(staleSucceeds ? "current" : "fresh");
+      expect(store.gitRepositoryReadFailures[contextKey]?.status?.message).toBe(
+        staleSucceeds ? "fresh status failure" : undefined,
+      );
+      expect(store.gitStatusRefreshing[project.id]).toBe(false);
+    },
+  );
 
   it("updates remote tracking branches during status refresh, including an empty prune result", async () => {
     vi.stubGlobal("window", {

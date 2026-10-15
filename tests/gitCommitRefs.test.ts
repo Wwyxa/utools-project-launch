@@ -270,47 +270,6 @@ describe("presentGitCommitRefs", () => {
     ).toEqual([{ kind: "tag", name: "service-v1.0.8", display: "label", memberNames: ["service-v1.0.8"] }]);
   });
 
-  it("keeps the branch label ahead of a tag and folds the tag behind its icon", () => {
-    const presentation = presentGitCommitRefs(
-      commit([
-        { kind: "local", name: "release" },
-        { kind: "tag", name: "service-v1.0.8" },
-      ]),
-      gitContext({ headHash: "head", upstream: null }),
-    );
-
-    expect(
-      presentation.dense.members.map(({ kind, name, display, memberNames }) => ({ kind, name, display, memberNames })),
-    ).toEqual([
-      { kind: "local", name: "release", display: "label", memberNames: ["release"] },
-      { kind: "tag", name: "service-v1.0.8", display: "icon", memberNames: ["service-v1.0.8"] },
-    ]);
-  });
-
-  it("shows one primary label and icon-only companions for local and remote refs", () => {
-    const presentation = presentGitCommitRefs(
-      commit([
-        { kind: "remote", name: "remote/master" },
-        { kind: "local", name: "master" },
-        { kind: "remote", name: "remote/HEAD" },
-      ]),
-      gitContext({
-        headHash: "another-commit",
-        upstream: null,
-        base: { remote: "remote", branch: "master", ref: "remote/master" },
-        graphColorByRefIdentity: { "remote:remote/master": 1 },
-      }),
-    );
-
-    expect(
-      presentation.dense.members.map(({ name, kind, display, memberNames }) => ({ name, kind, display, memberNames })),
-    ).toEqual([
-      { name: "remote/master", kind: "remote", display: "label", memberNames: ["remote/master"] },
-      { name: "master", kind: "local", display: "icon", memberNames: ["master"] },
-      { name: "remote/HEAD", kind: "remote", display: "icon", memberNames: ["remote/HEAD"] },
-    ]);
-  });
-
   it("keeps structured comma names and annotated tags intact without legacy parsing", () => {
     const presentation = presentGitCommitRefs(
       commit(

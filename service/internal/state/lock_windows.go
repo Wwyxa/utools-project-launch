@@ -22,6 +22,22 @@ var (
 	unlockFileExProc = kernel32.NewProc("UnlockFileEx")
 )
 
+func runtimeWriterAlive(pid int) bool {
+	if pid <= 0 {
+		return true
+	}
+	handle, err := syscall.OpenProcess(0x1000, false, uint32(pid))
+	if err != nil {
+		return err != syscall.Errno(87)
+	}
+	defer syscall.CloseHandle(handle)
+	var code uint32
+	if err := syscall.GetExitCodeProcess(handle, &code); err != nil {
+		return true
+	}
+	return code == 259
+}
+
 func acquireFileLock(file *os.File) error {
 	if err := syscall.SetHandleInformation(syscall.Handle(file.Fd()), handleFlagInherit, 0); err != nil {
 		return fmt.Errorf("disable service directory lock inheritance: %w", err)

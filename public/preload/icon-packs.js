@@ -249,7 +249,7 @@ function iconPackManifestIsOfficial(manifest, version = "") {
 }
 
 function iconPackRootDirectory() {
-  return path.join(path.dirname(getDeviceIdFilePath()), iconPackInstallDirectoryName);
+  return path.join(pluginLocalDataDirectory(), iconPackInstallDirectoryName);
 }
 
 function iconPackDirectory() {
@@ -837,10 +837,11 @@ async function removeIconPack() {
   try {
     if (iconPackSelectedId() !== iconPackBuiltinId) {
       const currentPreferences = readUiPreferences();
-      const nextPreferences = normalizeUiPreferences({ ...currentPreferences, iconPackId: iconPackBuiltinId });
-      writeStoredValue(uiPreferencesStorageKey, nextPreferences);
-      const confirmedPreferences = normalizeUiPreferences(readStoredValue(uiPreferencesStorageKey));
-      if (confirmedPreferences.iconPackId !== iconPackBuiltinId) {
+      const writeResult = saveUiPreferences({ ...currentPreferences, iconPackId: iconPackBuiltinId });
+      if (!writeResult.ok) {
+        throw iconPackError("无法先切换回内置图标，已保留外部图标包。", "preference-write-failed");
+      }
+      if (readUiPreferences().iconPackId !== iconPackBuiltinId) {
         throw iconPackError("无法先切换回内置图标，已保留外部图标包。", "preference-write-failed");
       }
     }

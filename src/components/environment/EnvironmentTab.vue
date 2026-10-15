@@ -213,8 +213,8 @@ onBeforeUnmount(() => stopColumnResize());
 </script>
 
 <template>
-  <div v-overlay-scrollbar class="themed-scrollbar h-full overflow-y-auto p-2">
-    <header class="mb-2 flex flex-wrap items-center justify-between gap-2">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden p-2">
+    <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex min-w-0 items-center gap-2">
         <button
           type="button"
@@ -285,7 +285,7 @@ onBeforeUnmount(() => stopColumnResize());
       </div>
     </header>
 
-    <section :aria-busy="store.environmentRefreshing">
+    <section class="themed-scrollbar min-h-0 flex-1 overflow-auto" :aria-busy="store.environmentRefreshing">
       <div
         v-if="enabledDefinitions.length === 0"
         class="rounded border border-dashed border-border-subtle px-3 py-2 text-sm text-on-surface-variant"
@@ -294,7 +294,7 @@ onBeforeUnmount(() => stopColumnResize());
       </div>
       <div v-else :style="{ '--environment-grid-columns': desktopGridTemplate }">
         <div
-          class="environment-grid hidden items-center gap-3 border-b border-border-subtle px-2 pb-1.5 text-[10px] font-bold text-on-surface-variant md:grid"
+          class="environment-grid sticky top-0 z-20 hidden items-center gap-3 border-b border-border-subtle bg-background px-2 pb-1.5 text-[10px] font-bold text-on-surface-variant md:grid"
         >
           <span ref="toolHeaderRef" class="relative min-w-0">
             {{ t.environment.tool }}

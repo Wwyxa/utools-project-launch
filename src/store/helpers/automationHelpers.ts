@@ -1,5 +1,5 @@
-import type { ProjectAutomationSchedule, ProjectAutomationMissedPolicy, ProjectAutomationInputStep, ProjectAutomationExitConfig, ProjectAutomationScriptResult, ProjectBridgeEvent, LogEntry, ProjectBridgeProcessEvent, ProjectBridgeProcessStatusResult, ProjectAutomationScriptInputConfig, ProjectAutomationDailyPlan, ProjectAutomationPlanEntry, ProjectAutomationHistoryEntry, ProjectAutomationTask, ProjectBridgeStopProcessOptions, ProjectLaunchServiceRunLog } from "../../types";
 import { validateAutomationSchedule } from "../../lib/automationScheduler";
+import type { LogEntry, ProjectAutomationDailyPlan, ProjectAutomationExitConfig, ProjectAutomationHistoryEntry, ProjectAutomationInputStep, ProjectAutomationMissedPolicy, ProjectAutomationPlanEntry, ProjectAutomationSchedule, ProjectAutomationScriptInputConfig, ProjectAutomationScriptResult, ProjectAutomationTask, ProjectBridgeEvent, ProjectBridgeProcessEvent, ProjectBridgeProcessStatusResult, ProjectBridgeStopProcessOptions, ProjectLaunchServiceRunLog } from "../../types";
 import { bridge } from "./bridge";
 
 export const defaultAutomationSchedule = (): ProjectAutomationSchedule => ({
@@ -15,189 +15,7 @@ export const DEFAULT_AUTOMATION_MAX_RUNTIME_MINUTES = 30;
 
 export const DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES = 5;
 
-export const LIVE_PROJECT_LOG_ENTRY_LIMIT = 2_000;
-
-export const waitForInitialPaint = (): Promise<void> => {
-  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => {
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => resolve());
-    });
-  });
-};
-
 export const automationMissedPolicies = new Set<ProjectAutomationMissedPolicy>(["grace-run", "run-now", "mark-missed"]);
-
-export const automationSchedulerState = { timer: null as number | null };
-
-export const ansiControlPattern =
-  /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
-
-export interface AutomationScriptRuntimeContext {
-  runId: string;
-  projectId: string;
-  scriptId: string;
-  scriptName: string;
-  startedAt: string;
-  steps: ProjectAutomationInputStep[];
-  exitConfig?: ProjectAutomationExitConfig;
-  continueAfterInput: boolean;
-  output: string;
-  stepIndex: number;
-  waitingStepIndex: number | null;
-  inputCompleted: boolean;
-  settled: boolean;
-  stopRequestedByAutomationExit: boolean;
-  timers: number[];
-  runtimeTimer: number | null;
-  resolve: (result: ProjectAutomationScriptResult) => void;
-}
-
-export const automationScriptContexts = new Map<string, AutomationScriptRuntimeContext>();
-
-export type PendingRuntimeTerminalEvent = ProjectBridgeEvent & { type: "exit" | "error" };
-
-export const pendingRuntimeTerminalEvents = new Map<string, PendingRuntimeTerminalEvent>();
-
-export const pendingRuntimeTerminalEventLimit = 64;
-
-export type RuntimeRunObservation = "active" | "pending-terminal" | "terminal";
-
-export const runtimeRunObservations = new Map<string, RuntimeRunObservation>();
-
-export const runtimeRunObservationLimit = 128;
-
-export const observedServiceEvents = new Map<string, true>();
-
-export const observedServiceEventLimit = 512;
-
-export const liveLogScriptIds = new WeakMap<LogEntry, string>();
-
-export function trimLiveProjectLogs(projectLogs: LogEntry[], scriptLogs?: Record<string, LogEntry[]>) {
-  const overflow = projectLogs.length - LIVE_PROJECT_LOG_ENTRY_LIMIT;
-  if (overflow <= 0) {
-    return;
-  }
-
-  const removedLogs = projectLogs.splice(0, overflow);
-  for (const log of removedLogs) {
-    const scriptId = liveLogScriptIds.get(log);
-    const scriptEntries = scriptId ? scriptLogs?.[scriptId] : undefined;
-    if (!scriptEntries) {
-      continue;
-    }
-    if (scriptEntries[0] === log) {
-      scriptEntries.shift();
-      continue;
-    }
-    const entryIndex = scriptEntries.indexOf(log);
-    if (entryIndex >= 0) {
-      scriptEntries.splice(entryIndex, 1);
-    }
-  }
-}
-
-export function automationScriptContextKey(projectId: string, scriptId: string) {
-  return `${projectId}::${scriptId}`;
-}
-
-export function pendingRuntimeTerminalEventKey(projectId: string, scriptId: string, runId: string) {
-  return `${projectId}\u0000${scriptId}\u0000${runId}`;
-}
-
-export function rememberRuntimeRun(key: string, observation: RuntimeRunObservation) {
-  runtimeRunObservations.delete(key);
-  runtimeRunObservations.set(key, observation);
-  while (runtimeRunObservations.size > runtimeRunObservationLimit) {
-    const oldestKey = runtimeRunObservations.keys().next().value;
-    if (oldestKey === undefined) break;
-    runtimeRunObservations.delete(oldestKey);
-  }
-}
-
-export function hasObservedServiceEvent(event: ProjectBridgeProcessEvent) {
-  const { cursor, runId } = event;
-  if (
-    event.runtimeOwner !== "service" ||
-    !runId ||
-    typeof cursor !== "number" ||
-    !Number.isSafeInteger(cursor) ||
-    cursor < 0
-  ) {
-    return false;
-  }
-
-  const key = `${runId}\u0000${cursor}`;
-  if (observedServiceEvents.has(key)) {
-    return true;
-  }
-  observedServiceEvents.set(key, true);
-  while (observedServiceEvents.size > observedServiceEventLimit) {
-    const oldestKey = observedServiceEvents.keys().next().value;
-    if (oldestKey === undefined) break;
-    observedServiceEvents.delete(oldestKey);
-  }
-  return false;
-}
-
-export function isPendingRuntimeTerminalEvent(event: ProjectBridgeEvent): event is PendingRuntimeTerminalEvent {
-  return event.type === "exit" || event.type === "error";
-}
-
-export function clearPendingRuntimeTerminalEvents(projectId: string, scriptId: string) {
-  const prefix = `${projectId}\u0000${scriptId}\u0000`;
-  for (const key of pendingRuntimeTerminalEvents.keys()) {
-    if (key.startsWith(prefix)) {
-      pendingRuntimeTerminalEvents.delete(key);
-    }
-  }
-}
-
-export function clearAutomationSchedulerTimer() {
-  if (automationSchedulerState.timer) {
-    window.clearTimeout(automationSchedulerState.timer);
-    automationSchedulerState.timer = null;
-  }
-}
-
-export function clearAutomationContextTimers(context: AutomationScriptRuntimeContext) {
-  context.timers.forEach((timer) => window.clearTimeout(timer));
-  context.timers = [];
-  if (context.runtimeTimer) {
-    window.clearTimeout(context.runtimeTimer);
-    context.runtimeTimer = null;
-  }
-}
-
-export function clearAutomationStepTimers(context: AutomationScriptRuntimeContext) {
-  context.timers.forEach((timer) => window.clearTimeout(timer));
-  context.timers = [];
-  context.waitingStepIndex = null;
-}
-
-export function settleAutomationScriptContext(context: AutomationScriptRuntimeContext, result: ProjectAutomationScriptResult) {
-  if (context.settled) {
-    return;
-  }
-  context.settled = true;
-  clearAutomationContextTimers(context);
-  automationScriptContexts.delete(automationScriptContextKey(context.projectId, context.scriptId));
-  context.resolve(result);
-}
-
-export function shouldAutomationExitOnOutput(context: AutomationScriptRuntimeContext) {
-  return Boolean(
-    context.inputCompleted && context.exitConfig?.matchText && context.output.includes(context.exitConfig.matchText),
-  );
-}
-
-export function isSuccessfulAutomationProcessResult(
-  result: Pick<ProjectBridgeProcessStatusResult, "code" | "error" | "automationExitMatched"> | null | undefined,
-) {
-  return Boolean(result && !result.error && (result.code === 0 || result.automationExitMatched === true));
-}
 
 export function normalizeAutomationSchedule(value: unknown): ProjectAutomationSchedule {
   if (!value || typeof value !== "object") {
@@ -235,15 +53,18 @@ export function normalizeAutomationSchedule(value: unknown): ProjectAutomationSc
   return validateAutomationSchedule(schedule).valid ? schedule : defaultAutomationSchedule();
 }
 
+
 export function normalizeAutomationMissedPolicy(value: unknown): ProjectAutomationMissedPolicy {
   return typeof value === "string" && automationMissedPolicies.has(value as ProjectAutomationMissedPolicy)
     ? (value as ProjectAutomationMissedPolicy)
     : "grace-run";
 }
 
+
 export function normalizeAutomationMissedGraceMinutes(value: unknown): number {
   return Number.isFinite(value) ? Math.max(0, Math.floor(Number(value))) : DEFAULT_AUTOMATION_MISSED_GRACE_MINUTES;
 }
+
 
 export function normalizeAutomationInputSteps(value: unknown): ProjectAutomationInputStep[] {
   const steps = Array.isArray(value) ? value : [];
@@ -265,6 +86,7 @@ export function normalizeAutomationInputSteps(value: unknown): ProjectAutomation
   }, []);
 }
 
+
 export function normalizeAutomationInputConfigs(value: unknown): ProjectAutomationScriptInputConfig[] {
   const configs = Array.isArray(value) ? value : [];
   return configs.reduce<ProjectAutomationScriptInputConfig[]>((normalizedConfigs, config) => {
@@ -280,6 +102,7 @@ export function normalizeAutomationInputConfigs(value: unknown): ProjectAutomati
     return normalizedConfigs;
   }, []);
 }
+
 
 export function normalizeAutomationExitConfigs(value: unknown): ProjectAutomationExitConfig[] {
   const configs = Array.isArray(value) ? value : [];
@@ -301,6 +124,7 @@ export function normalizeAutomationExitConfigs(value: unknown): ProjectAutomatio
   }, []);
 }
 
+
 export function normalizeAutomationDailyPlans(value: unknown): ProjectAutomationDailyPlan[] {
   const plans = Array.isArray(value) ? value : [];
   return plans.reduce<ProjectAutomationDailyPlan[]>((normalizedPlans, plan) => {
@@ -311,29 +135,29 @@ export function normalizeAutomationDailyPlans(value: unknown): ProjectAutomation
     const candidate = plan as Partial<ProjectAutomationDailyPlan>;
     const entries = Array.isArray(candidate.entries)
       ? candidate.entries.reduce<ProjectAutomationPlanEntry[]>((normalizedEntries, entry, index) => {
-        if (!entry || typeof entry !== "object") {
-          return normalizedEntries;
-        }
-        const planEntry = entry as Partial<ProjectAutomationPlanEntry>;
-        if (typeof planEntry.plannedAt !== "string" || !planEntry.plannedAt.trim()) {
-          return normalizedEntries;
-        }
-        normalizedEntries.push({
-          id: typeof planEntry.id === "string" && planEntry.id.trim() ? planEntry.id : `plan-entry-${index + 1}`,
-          plannedAt: planEntry.plannedAt,
-          status:
-            planEntry.status === "running" ||
+          if (!entry || typeof entry !== "object") {
+            return normalizedEntries;
+          }
+          const planEntry = entry as Partial<ProjectAutomationPlanEntry>;
+          if (typeof planEntry.plannedAt !== "string" || !planEntry.plannedAt.trim()) {
+            return normalizedEntries;
+          }
+          normalizedEntries.push({
+            id: typeof planEntry.id === "string" && planEntry.id.trim() ? planEntry.id : `plan-entry-${index + 1}`,
+            plannedAt: planEntry.plannedAt,
+            status:
+              planEntry.status === "running" ||
               planEntry.status === "completed" ||
               planEntry.status === "failed" ||
               planEntry.status === "skipped" ||
               planEntry.status === "missed"
-              ? planEntry.status
-              : "pending",
-          runId: typeof planEntry.runId === "string" ? planEntry.runId : undefined,
-          reason: typeof planEntry.reason === "string" ? planEntry.reason : undefined,
-        });
-        return normalizedEntries;
-      }, [])
+                ? planEntry.status
+                : "pending",
+            runId: typeof planEntry.runId === "string" ? planEntry.runId : undefined,
+            reason: typeof planEntry.reason === "string" ? planEntry.reason : undefined,
+          });
+          return normalizedEntries;
+        }, [])
       : [];
     if (typeof candidate.date === "string" && candidate.date.trim()) {
       normalizedPlans.push({ date: candidate.date, entries });
@@ -341,6 +165,7 @@ export function normalizeAutomationDailyPlans(value: unknown): ProjectAutomation
     return normalizedPlans;
   }, []);
 }
+
 
 export function normalizeAutomationHistory(value: unknown): ProjectAutomationHistoryEntry[] {
   const history = Array.isArray(value) ? value : [];
@@ -376,6 +201,7 @@ export function normalizeAutomationHistory(value: unknown): ProjectAutomationHis
     .slice(0, AUTOMATION_HISTORY_LIMIT);
 }
 
+
 export function normalizeAutomationTasks(projectId: string, value: unknown): ProjectAutomationTask[] {
   const tasks = Array.isArray(value) ? value : [];
   return tasks.reduce<ProjectAutomationTask[]>((normalizedTasks, task, index) => {
@@ -387,8 +213,8 @@ export function normalizeAutomationTasks(projectId: string, value: unknown): Pro
     const now = new Date().toISOString();
     const scriptIds = Array.isArray(candidate.scriptIds)
       ? candidate.scriptIds.filter(
-        (scriptId): scriptId is string => typeof scriptId === "string" && scriptId.trim().length > 0,
-      )
+          (scriptId): scriptId is string => typeof scriptId === "string" && scriptId.trim().length > 0,
+        )
       : [];
     const automationTask: ProjectAutomationTask = {
       id:
@@ -398,9 +224,9 @@ export function normalizeAutomationTasks(projectId: string, value: unknown): Pro
       scriptIds,
       continuousScriptIds: Array.isArray(candidate.continuousScriptIds)
         ? candidate.continuousScriptIds.filter(
-          (scriptId): scriptId is string =>
-            typeof scriptId === "string" && scriptId.trim().length > 0 && scriptIds.includes(scriptId),
-        )
+            (scriptId): scriptId is string =>
+              typeof scriptId === "string" && scriptId.trim().length > 0 && scriptIds.includes(scriptId),
+          )
         : [],
       schedule: normalizeAutomationSchedule(candidate.schedule),
       missedPolicy: normalizeAutomationMissedPolicy(candidate.missedPolicy),
@@ -415,12 +241,12 @@ export function normalizeAutomationTasks(projectId: string, value: unknown): Pro
       history: normalizeAutomationHistory(candidate.history),
       observedServiceExecutionIds: Array.isArray(candidate.observedServiceExecutionIds)
         ? [
-          ...new Set(
-            candidate.observedServiceExecutionIds.filter(
-              (id): id is string => typeof id === "string" && Boolean(id.trim()),
+            ...new Set(
+              candidate.observedServiceExecutionIds.filter(
+                (id): id is string => typeof id === "string" && Boolean(id.trim()),
+              ),
             ),
-          ),
-        ].slice(-AUTOMATION_HISTORY_LIMIT)
+          ].slice(-AUTOMATION_HISTORY_LIMIT)
         : [],
       createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : now,
       updatedAt: typeof candidate.updatedAt === "string" ? candidate.updatedAt : now,
@@ -429,6 +255,194 @@ export function normalizeAutomationTasks(projectId: string, value: unknown): Pro
     return normalizedTasks;
   }, []);
 }
+
+export const LIVE_PROJECT_LOG_ENTRY_LIMIT = 2_000;
+
+export const waitForInitialPaint = (): Promise<void> => {
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  });
+};
+
+export const ansiControlPattern =
+  /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+
+
+export interface AutomationScriptRuntimeContext {
+  runId: string;
+  projectId: string;
+  scriptId: string;
+  scriptName: string;
+  startedAt: string;
+  steps: ProjectAutomationInputStep[];
+  exitConfig?: ProjectAutomationExitConfig;
+  continueAfterInput: boolean;
+  output: string;
+  stepIndex: number;
+  waitingStepIndex: number | null;
+  inputCompleted: boolean;
+  settled: boolean;
+  stopRequestedByAutomationExit: boolean;
+  timers: number[];
+  runtimeTimer: number | null;
+  resolve: (result: ProjectAutomationScriptResult) => void;
+}
+
+
+export const automationScriptContexts = new Map<string, AutomationScriptRuntimeContext>();
+
+export type PendingRuntimeTerminalEvent = ProjectBridgeEvent & { type: "exit" | "error" };
+
+export const pendingRuntimeTerminalEvents = new Map<string, PendingRuntimeTerminalEvent>();
+
+export const pendingRuntimeTerminalEventLimit = 64;
+
+export type RuntimeRunObservation = "active" | "pending-terminal" | "terminal";
+
+export const runtimeRunObservations = new Map<string, RuntimeRunObservation>();
+
+export const runtimeRunObservationLimit = 128;
+
+export const observedServiceEvents = new Map<string, true>();
+
+export const observedServiceEventLimit = 512;
+
+export const liveLogScriptIds = new WeakMap<LogEntry, string>();
+
+
+export function trimLiveProjectLogs(projectLogs: LogEntry[], scriptLogs?: Record<string, LogEntry[]>) {
+  const overflow = projectLogs.length - LIVE_PROJECT_LOG_ENTRY_LIMIT;
+  if (overflow <= 0) {
+    return;
+  }
+
+  const removedLogs = projectLogs.splice(0, overflow);
+  for (const log of removedLogs) {
+    const scriptId = liveLogScriptIds.get(log);
+    const scriptEntries = scriptId ? scriptLogs?.[scriptId] : undefined;
+    if (!scriptEntries) {
+      continue;
+    }
+    if (scriptEntries[0] === log) {
+      scriptEntries.shift();
+      continue;
+    }
+    const entryIndex = scriptEntries.indexOf(log);
+    if (entryIndex >= 0) {
+      scriptEntries.splice(entryIndex, 1);
+    }
+  }
+}
+
+
+export function automationScriptContextKey(projectId: string, scriptId: string) {
+  return `${projectId}::${scriptId}`;
+}
+
+
+export function pendingRuntimeTerminalEventKey(projectId: string, scriptId: string, runId: string) {
+  return `${projectId}\u0000${scriptId}\u0000${runId}`;
+}
+
+
+export function rememberRuntimeRun(key: string, observation: RuntimeRunObservation) {
+  runtimeRunObservations.delete(key);
+  runtimeRunObservations.set(key, observation);
+  while (runtimeRunObservations.size > runtimeRunObservationLimit) {
+    const oldestKey = runtimeRunObservations.keys().next().value;
+    if (oldestKey === undefined) break;
+    runtimeRunObservations.delete(oldestKey);
+  }
+}
+
+
+export function hasObservedServiceEvent(event: ProjectBridgeProcessEvent) {
+  const { cursor, runId } = event;
+  if (
+    event.runtimeOwner !== "service" ||
+    !runId ||
+    typeof cursor !== "number" ||
+    !Number.isSafeInteger(cursor) ||
+    cursor < 0
+  ) {
+    return false;
+  }
+
+  const key = `${runId}\u0000${cursor}`;
+  if (observedServiceEvents.has(key)) {
+    return true;
+  }
+  observedServiceEvents.set(key, true);
+  while (observedServiceEvents.size > observedServiceEventLimit) {
+    const oldestKey = observedServiceEvents.keys().next().value;
+    if (oldestKey === undefined) break;
+    observedServiceEvents.delete(oldestKey);
+  }
+  return false;
+}
+
+
+export function isPendingRuntimeTerminalEvent(event: ProjectBridgeEvent): event is PendingRuntimeTerminalEvent {
+  return event.type === "exit" || event.type === "error";
+}
+
+
+export function clearPendingRuntimeTerminalEvents(projectId: string, scriptId: string) {
+  const prefix = `${projectId}\u0000${scriptId}\u0000`;
+  for (const key of pendingRuntimeTerminalEvents.keys()) {
+    if (key.startsWith(prefix)) {
+      pendingRuntimeTerminalEvents.delete(key);
+    }
+  }
+}
+
+
+export function clearAutomationContextTimers(context: AutomationScriptRuntimeContext) {
+  context.timers.forEach((timer) => window.clearTimeout(timer));
+  context.timers = [];
+  if (context.runtimeTimer) {
+    window.clearTimeout(context.runtimeTimer);
+    context.runtimeTimer = null;
+  }
+}
+
+
+export function clearAutomationStepTimers(context: AutomationScriptRuntimeContext) {
+  context.timers.forEach((timer) => window.clearTimeout(timer));
+  context.timers = [];
+  context.waitingStepIndex = null;
+}
+
+
+export function settleAutomationScriptContext(context: AutomationScriptRuntimeContext, result: ProjectAutomationScriptResult) {
+  if (context.settled) {
+    return;
+  }
+  context.settled = true;
+  clearAutomationContextTimers(context);
+  automationScriptContexts.delete(automationScriptContextKey(context.projectId, context.scriptId));
+  context.resolve(result);
+}
+
+
+export function shouldAutomationExitOnOutput(context: AutomationScriptRuntimeContext) {
+  return Boolean(
+    context.inputCompleted && context.exitConfig?.matchText && context.output.includes(context.exitConfig.matchText),
+  );
+}
+
+
+export function isSuccessfulAutomationProcessResult(
+  result: Pick<ProjectBridgeProcessStatusResult, "code" | "error" | "automationExitMatched"> | null | undefined,
+) {
+  return Boolean(result && !result.error && (result.code === 0 || result.automationExitMatched === true));
+}
+
 
 export function createLogEntry(message: string, type: LogEntry["type"], eventTimestamp?: string): LogEntry {
   const eventTime = eventTimestamp ? new Date(eventTimestamp) : null;
@@ -442,6 +456,7 @@ export function createLogEntry(message: string, type: LogEntry["type"], eventTim
   };
 }
 
+
 export function scheduleProcessStop(pid: number, options?: ProjectBridgeStopProcessOptions) {
   if (options?.automationExitMatched === true) {
     void bridge.stopProcess(pid, options).catch(() => undefined);
@@ -452,6 +467,7 @@ export function scheduleProcessStop(pid: number, options?: ProjectBridgeStopProc
   }, 0);
 }
 
+
 export function normalizeLogLines(message: string): string[] {
   const normalized = message.replace(ansiControlPattern, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
@@ -460,6 +476,7 @@ export function normalizeLogLines(message: string): string[] {
     .map((line) => line.trimEnd())
     .filter((line) => line.trim().length > 0);
 }
+
 
 export function classifyProcessOutputLine(line: string, source: "stdout" | "stderr"): LogEntry["type"] {
   const normalized = line.toLowerCase();
@@ -483,7 +500,8 @@ export function classifyProcessOutputLine(line: string, source: "stdout" | "stde
   return source === "stderr" ? "INFO" : "INFO";
 }
 
-export function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog): LogEntry[] {
+
+export function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog & { events: (ProjectLaunchServiceRunLog["events"][number] & { level?: LogEntry["type"] })[] }): LogEntry[] {
   const entries: LogEntry[] = [];
   for (const event of runLog.events) {
     const createEntry = (message: string, type: LogEntry["type"]) => createLogEntry(message, type, event.timestamp);
@@ -501,7 +519,7 @@ export function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog): LogEn
     if (event.type === "stdout" || event.type === "stderr") {
       const outputSource = event.type;
       normalizeLogLines(event.message || "").forEach((line) => {
-        entries.push(createEntry(line, classifyProcessOutputLine(line, outputSource)));
+        entries.push(createEntry(line, event.level || classifyProcessOutputLine(line, outputSource)));
       });
       continue;
     }
@@ -523,4 +541,13 @@ export function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog): LogEn
     entries.push(createEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"));
   }
   return entries;
+}
+
+export const automationSchedulerState = { timer: null as number | null };
+
+export function clearAutomationSchedulerTimer() {
+  if (automationSchedulerState.timer) {
+    window.clearTimeout(automationSchedulerState.timer);
+    automationSchedulerState.timer = null;
+  }
 }

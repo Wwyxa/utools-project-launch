@@ -1,31 +1,31 @@
 function readPackageScripts(projectPath) {
   const resolvedPath = expandPath(projectPath);
-  const packagePath = path.join(resolvedPath, "package.json");
+  const packagePath = path.join(resolvedPath, 'package.json');
 
   if (!fs.existsSync(packagePath)) {
     return { scripts: [], packagePath: null };
   }
 
   try {
-    const raw = fs.readFileSync(packagePath, "utf8");
+    const raw = fs.readFileSync(packagePath, 'utf8');
     const parsed = JSON.parse(raw);
     const scripts = Object.entries(parsed.scripts || {}).map(([name, command]) => ({
       name,
       command: `npm run ${name}`,
       note: String(command),
-      source: "package-json",
+      source: 'package-json',
     }));
 
-    return { scripts, packagePath, error: "" };
+    return { scripts, packagePath, error: '' };
   } catch (error) {
-    const reason = error instanceof Error && error.message ? error.message : "未知错误";
+    const reason = error instanceof Error && error.message ? error.message : '未知错误';
     return { scripts: [], packagePath, error: `无法解析 ${packagePath}：${reason}` };
   }
 }
 
 function readMakefileScripts(projectPath) {
   const resolvedPath = expandPath(projectPath);
-  const makefilePath = ["Makefile", "makefile", "GNUmakefile"]
+  const makefilePath = ['Makefile', 'makefile', 'GNUmakefile']
     .map((name) => path.join(resolvedPath, name))
     .find((candidate) => fs.existsSync(candidate));
 
@@ -35,7 +35,7 @@ function readMakefileScripts(projectPath) {
 
   try {
     const targets = new Set();
-    fs.readFileSync(makefilePath, "utf8")
+    fs.readFileSync(makefilePath, 'utf8')
       .split(/\r?\n/)
       .forEach((line) => {
         const phonyMatch = /^\s*\.PHONY\s*:\s*(.*)$/.exec(line);
@@ -52,8 +52,8 @@ function readMakefileScripts(projectPath) {
         ) {
           return;
         }
-        const separator = line.indexOf(":");
-        if (separator <= 0 || line[separator + 1] === "=") {
+        const separator = line.indexOf(':');
+        if (separator <= 0 || line[separator + 1] === '=') {
           return;
         }
         const targetList = line.slice(0, separator).trim();
@@ -61,7 +61,7 @@ function readMakefileScripts(projectPath) {
           return;
         }
         targetList.split(/\s+/).forEach((target) => {
-          if (!target || target.startsWith(".") || !makeTargetPattern.test(target)) {
+          if (!target || target.startsWith('.') || !makeTargetPattern.test(target)) {
             return;
           }
           targets.add(target);
@@ -72,22 +72,22 @@ function readMakefileScripts(projectPath) {
       scripts: [...targets].map((target) => ({
         name: target,
         command: `make ${target}`,
-        cwd: ".",
+        cwd: '.',
         note: `Makefile: ${path.basename(makefilePath)}`,
-        source: "makefile",
+        source: 'makefile',
       })),
       makefilePath,
-      error: "",
+      error: '',
     };
   } catch (error) {
-    const reason = error instanceof Error && error.message ? error.message : "未知错误";
+    const reason = error instanceof Error && error.message ? error.message : '未知错误';
     return { scripts: [], makefilePath, error: `无法读取 ${makefilePath}：${reason}` };
   }
 }
 
 function toRelativeCwd(rootPath, targetPath) {
   const relativePath = path.relative(expandPath(rootPath), expandPath(targetPath));
-  return relativePath ? relativePath.replace(/\\/g, "/") : ".";
+  return relativePath ? relativePath.replace(/\\/g, '/') : '.';
 }
 
 function resolveProjectSortOrder(project, fallbackIndex = 0) {
@@ -107,19 +107,19 @@ function sortProjectsByStoredOrder(projects) {
 }
 
 function normalizeQuickLink(value) {
-  return typeof value === "string" ? value.trim() : "";
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function normalizeProjectGroup(value) {
-  return typeof value === "string" ? value.trim() : "";
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function normalizeProjectRelations(value) {
   const relations = Array.isArray(value) ? value : [];
   const seenProjectIds = new Set();
   return relations.reduce((normalizedRelations, relation) => {
-    if (!relation || typeof relation !== "object") return normalizedRelations;
-    const projectId = typeof relation.projectId === "string" ? relation.projectId.trim() : "";
+    if (!relation || typeof relation !== 'object') return normalizedRelations;
+    const projectId = typeof relation.projectId === 'string' ? relation.projectId.trim() : '';
     if (!projectId || seenProjectIds.has(projectId) || normalizedRelations.length >= 5) {
       return normalizedRelations;
     }
@@ -134,54 +134,53 @@ function isExternalUrl(value) {
 }
 
 function openPath(targetPath) {
-  const normalizedPath = String(targetPath || "").trim();
+  const normalizedPath = String(targetPath || '').trim();
   if (!normalizedPath) {
     return Promise.resolve();
   }
 
   if (isExternalUrl(normalizedPath)) {
-    return shell.openExternal(normalizedPath.startsWith("//") ? `https:${normalizedPath}` : normalizedPath);
+    return shell.openExternal(normalizedPath.startsWith('//') ? `https:${normalizedPath}` : normalizedPath);
   }
 
   return shell.openPath(expandPath(normalizedPath));
 }
 
 function toStoredProject(project, index = 0) {
-  const visibility = project.visibility === "private" ? "private" : "public";
+  const visibility = project.visibility === 'private' ? 'private' : 'public';
   return {
     id: project.id,
     name: project.name,
     path: project.path,
     visibility,
-    ownerDeviceId: project.ownerDeviceId || getCurrentDeviceId(),
-    type: project.type || "Custom",
-    kind: project.kind || "custom",
-    icon: project.icon || "custom",
-    cardStyle: project.cardStyle || "default",
+    type: project.type || 'Custom',
+    kind: project.kind || 'custom',
+    icon: project.icon || 'custom',
+    cardStyle: project.cardStyle || 'default',
     tinyCardButtonCount: Number.isFinite(project.tinyCardButtonCount)
       ? Math.min(3, Math.max(0, Math.floor(project.tinyCardButtonCount)))
       : 1,
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     relatedProjects: normalizeProjectRelations(project.relatedProjects),
-    status: "STOPPED",
-    description: project.description || "",
-    lastUpdated: project.lastUpdated || "",
+    status: 'STOPPED',
+    description: project.description || '',
+    lastUpdated: project.lastUpdated || '',
     scripts: Array.isArray(project.scripts)
       ? project.scripts.map((script) => ({
           id: script.id,
           name: script.name,
           command: script.command,
-          cwd: script.cwd || ".",
-          note: script.note || "",
-          source: script.source || "manual",
-          status: "IDLE",
+          cwd: script.cwd || '.',
+          note: script.note || '',
+          source: script.source || 'manual',
+          status: 'IDLE',
         }))
       : [],
     automationTasks: Array.isArray(project.automationTasks)
       ? project.automationTasks.map((task) => ({
           ...task,
-          missedPolicy: task.missedPolicy || "grace-run",
+          missedPolicy: task.missedPolicy || 'grace-run',
           missedGraceMinutes: Number.isFinite(task.missedGraceMinutes)
             ? Math.max(0, Math.floor(task.missedGraceMinutes))
             : 5,
@@ -189,7 +188,7 @@ function toStoredProject(project, index = 0) {
           ...(Array.isArray(task.observedServiceExecutionIds)
             ? {
                 observedServiceExecutionIds: Array.from(
-                  new Set(task.observedServiceExecutionIds.filter((id) => typeof id === "string" && id.trim())),
+                  new Set(task.observedServiceExecutionIds.filter((id) => typeof id === 'string' && id.trim())),
                 ).slice(-20),
               }
             : {}),
@@ -199,9 +198,9 @@ function toStoredProject(project, index = 0) {
         }))
       : [],
     env: project.env || {},
-    memo: project.memo || "",
+    memo: project.memo || '',
     todos: Array.isArray(project.todos) ? project.todos : [],
-    gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || "",
+    gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || '',
     sortOrder: resolveProjectSortOrder(project, index),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
@@ -212,34 +211,20 @@ function toPlainJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function writeLegacyStoredProjects(projects) {
-  const payload = {
-    schemaVersion,
-    updatedAt: new Date().toISOString(),
-    projects: projects.map(toStoredProject),
-  };
-
-  if (window.utools?.dbStorage) {
-    window.utools.dbStorage.setItem(storageKey, payload);
-    return;
-  }
-  window.localStorage?.setItem(storageKey, JSON.stringify(payload));
-}
-
 function detectNodeUnit(rootPath, targetPath) {
   const packageResult = readPackageScripts(targetPath);
   if (!packageResult.packagePath) {
-    return { scripts: [], error: "" };
+    return { scripts: [], error: '' };
   }
 
   const cwd = toRelativeCwd(rootPath, targetPath);
   return {
     scripts: packageResult.scripts.map((script) => ({
-      name: cwd === "." ? script.name : `${cwd}:${script.name}`,
+      name: cwd === '.' ? script.name : `${cwd}:${script.name}`,
       command: script.command,
       cwd,
       note: `package.json: ${toRelativeCwd(rootPath, packageResult.packagePath)}`,
-      source: "package-json",
+      source: 'package-json',
     })),
     error: packageResult.error,
   };
@@ -248,48 +233,29 @@ function detectNodeUnit(rootPath, targetPath) {
 function discoverProjectScripts(projectPath, options = {}) {
   const resolvedPath = expandPath(projectPath);
   if (!pathExists(projectPath)) {
-    return { scripts: [], message: "路径不存在或当前设备无法访问。" };
+    return { scripts: [], message: '路径不存在或当前设备无法访问。' };
   }
 
-  const requestedSources = Array.isArray(options.sources) ? options.sources : ["package-json", "makefile"];
-  const sources = new Set(requestedSources.filter((source) => source === "package-json" || source === "makefile"));
+  const requestedSources = Array.isArray(options.sources) ? options.sources : ['package-json', 'makefile'];
+  const sources = new Set(requestedSources.filter((source) => source === 'package-json' || source === 'makefile'));
   if (sources.size === 0) {
-    return { scripts: [], message: "请至少选择一种识别来源。" };
+    return { scripts: [], message: '请至少选择一种识别来源。' };
   }
 
-  const packageResults = sources.has("package-json")
+  const packageResults = sources.has('package-json')
     ? commonProjectDirs.map((dirName) => {
-        const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
+        const targetPath = dirName === '.' ? resolvedPath : path.join(resolvedPath, dirName);
         return detectNodeUnit(resolvedPath, targetPath);
       })
     : [];
-  const makefileResult = sources.has("makefile")
+  const makefileResult = sources.has('makefile')
     ? readMakefileScripts(resolvedPath)
-    : { scripts: [], makefilePath: null, error: "" };
+    : { scripts: [], makefilePath: null, error: '' };
   const errors = [...packageResults.map((result) => result.error), makefileResult.error].filter(Boolean);
   return {
     scripts: [...packageResults.flatMap((result) => result.scripts), ...makefileResult.scripts],
-    ...(errors.length > 0 ? { message: errors.join("；") } : {}),
+    ...(errors.length > 0 ? { message: errors.join('；') } : {}),
   };
-}
-
-function readLegacyStoredProjects() {
-  try {
-    if (window.utools?.dbStorage) {
-      const stored = window.utools.dbStorage.getItem(storageKey);
-      return Array.isArray(stored?.projects) ? stored.projects : Array.isArray(stored) ? stored : [];
-    }
-
-    const raw = window.localStorage?.getItem(storageKey);
-    if (!raw) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed.projects) ? parsed.projects : [];
-  } catch (error) {
-    return [];
-  }
 }
 
 function readProjectDocs() {
@@ -299,7 +265,7 @@ function readProjectDocs() {
 
   const result = window.utools.db.allDocs(projectDocPrefix);
   if (result?.error) {
-    throw new Error(result.message || result.reason || "无法读取项目文档目录。");
+    throw new Error(result.message || result.reason || '无法读取项目文档目录。');
   }
   const rows = Array.isArray(result)
     ? result
@@ -307,7 +273,7 @@ function readProjectDocs() {
       ? result.rows
       : Array.isArray(result?.docs)
         ? result.docs
-        : result && typeof result === "object"
+        : result && typeof result === 'object'
           ? Object.values(result)
           : [];
   return rows
@@ -317,7 +283,7 @@ function readProjectDocs() {
       if (summary?.project) {
         return summary;
       }
-      if (typeof docId === "string" && window.utools?.db?.get) {
+      if (typeof docId === 'string' && window.utools?.db?.get) {
         const doc = window.utools.db.get(docId);
         if (doc?.error) {
           if (isMissingProjectDocument(doc)) {
@@ -329,13 +295,13 @@ function readProjectDocs() {
       }
       return summary;
     })
-    .filter((doc) => doc && typeof doc._id === "string" && doc._id.startsWith(projectDocPrefix));
+    .filter((doc) => doc && typeof doc._id === 'string' && doc._id.startsWith(projectDocPrefix));
 }
 
 const projectDocumentMutationMaxAttempts = 3;
 
 function normalizeProjectId(projectId) {
-  return typeof projectId === "string" ? projectId.trim() : "";
+  return typeof projectId === 'string' ? projectId.trim() : '';
 }
 
 function hasProjectDocumentCatalog() {
@@ -348,7 +314,7 @@ function supportsProjectDocumentWrites() {
 
 function hasStoredProjectSortOrder(project) {
   const value = project?.sortOrder;
-  return value !== undefined && value !== null && value !== "" && Number.isFinite(Number(value));
+  return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value));
 }
 
 function projectDocumentId(projectId) {
@@ -359,7 +325,7 @@ function isMissingProjectDocument(result) {
   if (!result?.error) {
     return false;
   }
-  const message = [result.message, result.reason].filter((value) => typeof value === "string").join(" ");
+  const message = [result.message, result.reason].filter((value) => typeof value === 'string').join(' ');
   return /(?:not[\s-]*found|missing)/i.test(message);
 }
 
@@ -376,7 +342,7 @@ function readCurrentProjectDocument(projectId) {
     }
     throw new Error(document.message || `无法读取项目 ${normalizedProjectId} 的当前版本。`);
   }
-  return document && typeof document === "object" ? document : null;
+  return document && typeof document === 'object' ? document : null;
 }
 
 function createStoredProjectDocument(project, index = 0, options = {}) {
@@ -393,9 +359,9 @@ function createStoredProjectDocument(project, index = 0, options = {}) {
 }
 
 function projectDocumentWriteError(projectId, result) {
-  const detail = result?.message || result?.reason || "未知错误";
+  const detail = result?.message || result?.reason || '未知错误';
   const error = new Error(`保存项目配置失败（${projectId}）：${detail}`);
-  error.isProjectDocumentWriteConflict = result?.error === "conflict" || /conflict/i.test(detail);
+  error.isProjectDocumentWriteConflict = result?.error === 'conflict' || /conflict/i.test(detail);
   return error;
 }
 
@@ -419,85 +385,29 @@ function normalizeStoredProjects(projects, fallbackIndexOffset = 0) {
     : [];
 }
 
-function mergeStoredProjects(legacyProjects, docProjects) {
-  const mergedByProjectId = new Map();
-
-  normalizeStoredProjects(legacyProjects).forEach((project) => {
-    if (typeof project.id === "string" && project.id) {
-      mergedByProjectId.set(project.id, project);
-    }
-  });
-
-  normalizeStoredProjects(docProjects, Array.isArray(legacyProjects) ? legacyProjects.length : 0).forEach((project) => {
-    if (typeof project.id === "string" && project.id) {
-      mergedByProjectId.set(project.id, project);
-    }
-  });
-
-  return sortProjectsByStoredOrder(Array.from(mergedByProjectId.values()));
+function storedProjectVisibility(project) {
+  return project?.visibility === 'private' ? 'private' : 'public';
 }
 
-function hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects) {
-  const docProjectIds = new Set(
-    docProjects.map((project) => project?.id).filter((projectId) => typeof projectId === "string" && projectId),
-  );
-  return legacyProjects.some(
-    (project) => typeof project?.id === "string" && project.id && !docProjectIds.has(project.id),
-  );
-}
-
-function migrateMissingLegacyProjectDocuments(legacyProjects, docProjects) {
-  const documentProjectIds = new Set(
-    docProjects.map((project) => project?.id).filter((projectId) => typeof projectId === "string" && projectId),
-  );
-
-  legacyProjects.forEach((project, index) => {
-    if (!project?.id || documentProjectIds.has(project.id)) {
-      return;
-    }
-    for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
-      const current = readCurrentProjectDocument(project.id);
-      if (current) {
-        return;
-      }
-      const document = createStoredProjectDocument(project, index);
-      try {
-        putProjectDocument(document, project.id);
-        return;
-      } catch (error) {
-        if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
-          throw error;
-        }
-      }
-    }
-  });
-}
-
+// The catalog is public documents from the syncing database plus private
+// projects from the plugin local data directory. Private documents that still
+// exist inside the sync database (leftovers owned by other devices before the
+// v8 migration) are ignored on purpose: a private project only ever comes from
+// this device's local files, so deleted projects can never be resurrected by a
+// legacy aggregate key or a foreign private document again.
 function readProjects() {
-  if (!hasProjectDocumentCatalog()) {
-    return sortProjectsByStoredOrder(normalizeStoredProjects(readLegacyStoredProjects()));
-  }
-
   try {
-    const docs = readProjectDocs();
-    const docProjects = docs.map((doc) => doc.project).filter(Boolean);
-    const legacyProjects = readLegacyStoredProjects();
-    const mergedProjects = mergeStoredProjects(legacyProjects, docProjects);
-
-    if (
-      legacyProjects.length > 0 &&
-      supportsProjectDocumentWrites() &&
-      hasLegacyProjectsMissingFromDocs(legacyProjects, docProjects)
-    ) {
-      try {
-        migrateMissingLegacyProjectDocuments(legacyProjects, docProjects);
-      } catch (error) {
-        logStorageError("migrate legacy projects to uTools db", error);
-      }
-    }
-    return mergedProjects;
+    const docs = hasProjectDocumentCatalog() ? readProjectDocs() : [];
+    const publicDocProjects = docs
+      .map((document) => document.project)
+      .filter((project) => project && storedProjectVisibility(project) !== 'private');
+    const localPrivateProjects = readLocalPrivateProjects();
+    const projectsById = new Map(
+      [...publicDocProjects, ...localPrivateProjects].map((project) => [project.id, project]),
+    );
+    return sortProjectsByStoredOrder(normalizeStoredProjects([...projectsById.values()]));
   } catch (error) {
-    logStorageError("read projects", error);
+    logStorageError('read projects', error);
     throw error;
   }
 }
@@ -509,130 +419,158 @@ function readCanonicalStoredProject(projectId) {
   }
 
   const document = readCurrentProjectDocument(normalizedProjectId);
-  if (document?.project) {
+  if (document?.project && storedProjectVisibility(document.project) !== 'private') {
     const project = toStoredProject(document.project);
     return project.id === normalizedProjectId ? project : null;
   }
   return null;
 }
 
-function readLegacyStoredProject(projectId) {
-  const normalizedProjectId = normalizeProjectId(projectId);
-  if (!normalizedProjectId) {
-    return null;
-  }
-  const legacyProjects = readLegacyStoredProjects();
-  const legacyIndex = legacyProjects.findIndex((project) => project?.id === normalizedProjectId);
-  return legacyIndex >= 0 ? toStoredProject(legacyProjects[legacyIndex], legacyIndex) : null;
-}
-
-function readStoredProject(projectId) {
-  return readCanonicalStoredProject(projectId) || readLegacyStoredProject(projectId);
-}
-
 function readPersistedProject(projectId) {
-  return supportsProjectDocumentWrites() ? readCanonicalStoredProject(projectId) : readStoredProject(projectId);
+  return readLocalPrivateProject(projectId) || readCanonicalStoredProject(projectId);
 }
 
-function writeStoredProject(project) {
-  const normalizedProject = toStoredProject(project, resolveProjectSortOrder(project));
-  if (!normalizeProjectId(normalizedProject.id)) {
-    throw new Error("项目 ID 不能为空。");
+function completePublishedProjectWrite(project) {
+  const verified = readCanonicalStoredProject(project.id);
+  if (!verified) throw new Error(`项目配置保存后无法重新读取（${project.id}）。`);
+  if (!storedValueEquals(toPlainJson(verified), toPlainJson(toStoredProject(project)))) {
+    throw new Error(`项目配置保存后回读校验失败（${project.id}）。`);
   }
-  if (supportsProjectDocumentWrites()) {
+  const removed = removeLocalPrivateProject(project.id);
+  if (!removed.ok) throw new Error(removed.error || `项目 ${project.id} 的本地私有副本删除失败。`);
+}
+
+function writePublicProjectDocument(project, options = {}) {
+  for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
+    const current = readCurrentProjectDocument(project.id);
+    const document = createStoredProjectDocument(project, resolveProjectSortOrder(project), {
+      preserveMissingSortOrder:
+        options.preserveMissingSortOrder ??
+        (Boolean(current) && !hasStoredProjectSortOrder(project) && !hasStoredProjectSortOrder(current.project)),
+    });
+    if (current?._rev) {
+      document._rev = current._rev;
+    }
     try {
-      const current = readCurrentProjectDocument(normalizedProject.id);
-      const document = createStoredProjectDocument(normalizedProject, resolveProjectSortOrder(normalizedProject), {
-        preserveMissingSortOrder:
-          Boolean(current) && !hasStoredProjectSortOrder(project) && !hasStoredProjectSortOrder(current.project),
-      });
-      if (current?._rev) {
-        document._rev = current._rev;
-      }
-      putProjectDocument(document, normalizedProject.id);
+      putProjectDocument(document, project.id);
       return;
     } catch (error) {
-      logStorageError("save project to uTools db", error);
-      throw error;
+      if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
+        throw error;
+      }
     }
   }
+}
 
-  const projects = readProjects();
-  const projectIndex = projects.findIndex((candidate) => candidate.id === normalizedProject.id);
-  const nextProjects = projectIndex >= 0 ? [...projects] : [...projects, normalizedProject];
-  if (projectIndex >= 0) {
-    nextProjects[projectIndex] = normalizedProject;
+function writeStoredProject(project, options = {}) {
+  const normalizedProject = toStoredProject(project, resolveProjectSortOrder(project));
+  if (!normalizeProjectId(normalizedProject.id)) {
+    throw new Error('项目 ID 不能为空。');
   }
-  writeStoredProjects(nextProjects);
+
+  if (normalizedProject.visibility === 'private') {
+    // Public → private transition: the local file is written and verified
+    // first; only then may the syncing document be removed.
+    const writeResult = writeLocalPrivateProject(normalizedProject);
+    if (!writeResult.ok) {
+      const error = new Error(writeResult.error || '私有项目写入本地数据目录失败。');
+      logStorageError('save private project to local data', error);
+      throw error;
+    }
+    if (readCurrentProjectDocument(normalizedProject.id)) {
+      try {
+        removeStoredProjectDocument(normalizedProject.id);
+      } catch (error) {
+        logStorageError('remove syncing document after privatizing project', error);
+        throw error;
+      }
+    }
+    return normalizedProject;
+  }
+
+  try {
+    writePublicProjectDocument(normalizedProject, options);
+  } catch (error) {
+    logStorageError('save project to uTools db', error);
+    throw error;
+  }
+
+  // Private → public transition: the document is confirmed in the sync
+  // database, so the local-only copy can be dropped.
+  completePublishedProjectWrite(normalizedProject);
+  return normalizedProject;
 }
 
 function mutateStoredProject(projectId, mutateProject) {
   const normalizedProjectId = normalizeProjectId(projectId);
   if (!normalizedProjectId) {
-    throw new Error("项目 ID 不能为空。");
+    throw new Error('项目 ID 不能为空。');
   }
-  if (typeof mutateProject !== "function") {
-    throw new Error("项目更新函数无效。");
+  if (typeof mutateProject !== 'function') {
+    throw new Error('项目更新函数无效。');
   }
 
-  if (supportsProjectDocumentWrites()) {
-    try {
-      for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
-        const currentDocument = readCurrentProjectDocument(normalizedProjectId);
-        const preserveMissingSortOrder =
-          Boolean(currentDocument) && !hasStoredProjectSortOrder(currentDocument.project);
-        const currentProject = currentDocument?.project
+  try {
+    for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
+      const currentDocument = readCurrentProjectDocument(normalizedProjectId);
+      const currentLocalProject = readLocalPrivateProject(normalizedProjectId);
+      const currentProject = currentLocalProject
+        ? toStoredProject(currentLocalProject)
+        : currentDocument?.project && storedProjectVisibility(currentDocument.project) !== 'private'
           ? toStoredProject(currentDocument.project)
-          : readLegacyStoredProject(normalizedProjectId);
-        if (!currentProject) {
-          return null;
-        }
+          : null;
+      if (!currentProject) {
+        return null;
+      }
 
-        const nextProject = mutateProject(toPlainJson(currentProject));
-        const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
-        if (normalizedProject.id !== normalizedProjectId) {
-          throw new Error("项目更新不能修改项目 ID。");
-        }
+      const nextProject = mutateProject(toPlainJson(currentProject));
+      const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
+      if (normalizedProject.id !== normalizedProjectId) {
+        throw new Error('项目更新不能修改项目 ID。');
+      }
 
-        const document = createStoredProjectDocument(normalizedProject, resolveProjectSortOrder(normalizedProject), {
-          preserveMissingSortOrder,
-        });
-        if (currentDocument?._rev) {
-          document._rev = currentDocument._rev;
-        }
-        try {
-          putProjectDocument(document, normalizedProjectId);
-          return normalizedProject;
-        } catch (error) {
-          if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
-            throw error;
+      try {
+        if (normalizedProject.visibility === 'private') {
+          // Private projects live in local files; the syncing document (when
+          // one is still left over) is dropped after the local write verifies.
+          const writeResult = writeLocalPrivateProject(normalizedProject);
+          if (!writeResult.ok) {
+            throw new Error(writeResult.error || '私有项目写入本地数据目录失败。');
           }
+          if (readCurrentProjectDocument(normalizedProjectId)) {
+            removeStoredProjectDocument(normalizedProjectId);
+          }
+        } else {
+          // Put against the exact revision that was read above so a concurrent
+          // writer conflicts and the whole read-mutate cycle retries.
+          const document = createStoredProjectDocument(normalizedProject, resolveProjectSortOrder(normalizedProject), {
+            preserveMissingSortOrder: Boolean(currentDocument) && !hasStoredProjectSortOrder(currentDocument.project),
+          });
+          if (currentDocument?._rev) {
+            document._rev = currentDocument._rev;
+          }
+          putProjectDocument(document, normalizedProjectId);
+          completePublishedProjectWrite(normalizedProject);
+        }
+        return normalizedProject;
+      } catch (error) {
+        if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
+          throw error;
         }
       }
-    } catch (error) {
-      logStorageError("mutate project in uTools db", error);
-      throw error;
     }
+  } catch (error) {
+    logStorageError('mutate project', error);
+    throw error;
   }
-
-  const currentProject = readStoredProject(normalizedProjectId);
-  if (!currentProject) {
-    return null;
-  }
-  const nextProject = mutateProject(toPlainJson(currentProject));
-  const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
-  if (normalizedProject.id !== normalizedProjectId) {
-    throw new Error("项目更新不能修改项目 ID。");
-  }
-  writeStoredProject(normalizedProject);
-  return normalizedProject;
+  return null;
 }
 
 function storedValueEquals(left, right) {
   if (left === right) {
     return true;
   }
-  if (!left || !right || typeof left !== "object" || typeof right !== "object") {
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
     return false;
   }
   if (Array.isArray(left) || Array.isArray(right)) {
@@ -654,9 +592,9 @@ function storedValueEquals(left, right) {
 }
 
 function mergeStoredProjectEnvironment(baseEnvironment, nextEnvironment, currentEnvironment) {
-  const base = baseEnvironment && typeof baseEnvironment === "object" ? baseEnvironment : {};
-  const next = nextEnvironment && typeof nextEnvironment === "object" ? nextEnvironment : {};
-  const merged = { ...(currentEnvironment && typeof currentEnvironment === "object" ? currentEnvironment : {}) };
+  const base = baseEnvironment && typeof baseEnvironment === 'object' ? baseEnvironment : {};
+  const next = nextEnvironment && typeof nextEnvironment === 'object' ? nextEnvironment : {};
+  const merged = { ...(currentEnvironment && typeof currentEnvironment === 'object' ? currentEnvironment : {}) };
   const keys = new Set([...Object.keys(base), ...Object.keys(next)]);
 
   keys.forEach((key) => {
@@ -745,13 +683,13 @@ function automationTaskConfigurations(tasks) {
 function mergeStoredProjectCatalogChange(baseProject, nextProject, currentProject) {
   const mergedProject = { ...currentProject };
   let appliedLocalChange = false;
-  const ignoredFields = new Set(["id", "createdAt", "updatedAt", "lastUpdated"]);
+  const ignoredFields = new Set(['id', 'createdAt', 'updatedAt', 'lastUpdated']);
 
   Object.keys(nextProject).forEach((field) => {
     if (ignoredFields.has(field) || storedValueEquals(nextProject[field], baseProject[field])) {
       return;
     }
-    if (field === "scripts") {
+    if (field === 'scripts') {
       mergedProject.scripts = mergeStoredProjectScripts(
         baseProject.scripts,
         nextProject.scripts,
@@ -760,12 +698,12 @@ function mergeStoredProjectCatalogChange(baseProject, nextProject, currentProjec
       appliedLocalChange = true;
       return;
     }
-    if (field === "env") {
+    if (field === 'env') {
       mergedProject.env = mergeStoredProjectEnvironment(baseProject.env, nextProject.env, currentProject.env);
       appliedLocalChange = true;
       return;
     }
-    if (field === "automationTasks") {
+    if (field === 'automationTasks') {
       const baseConfiguration = automationTaskConfigurations(baseProject.automationTasks);
       const nextConfiguration = automationTaskConfigurations(nextProject.automationTasks);
       const currentConfiguration = automationTaskConfigurations(currentProject.automationTasks);
@@ -799,26 +737,35 @@ function mergeStoredProjectCatalogChange(baseProject, nextProject, currentProjec
 function writeStoredProjectCatalogEntry(project, baseProject, fallbackIndex) {
   for (let attempt = 0; attempt < projectDocumentMutationMaxAttempts; attempt += 1) {
     const currentDocument = readCurrentProjectDocument(project.id);
-    if (!currentDocument && baseProject) {
+    const currentLocalProject = readLocalPrivateProject(project.id);
+    const currentProject = currentLocalProject
+      ? toStoredProject(currentLocalProject, fallbackIndex)
+      : currentDocument?.project && storedProjectVisibility(currentDocument.project) !== 'private'
+        ? toStoredProject(currentDocument.project, fallbackIndex)
+        : null;
+    if (!currentProject && baseProject) {
       throw new Error(`项目配置已被其他窗口删除（${project.id}），请刷新后重试。`);
     }
-    const currentProject = currentDocument?.project ? toStoredProject(currentDocument.project, fallbackIndex) : null;
     if (currentProject && !baseProject) {
       throw new Error(`项目 ID 已存在（${project.id}），请刷新后重试。`);
     }
     const nextProject =
       currentProject && baseProject ? mergeStoredProjectCatalogChange(baseProject, project, currentProject) : project;
 
-    if (currentProject && storedValueEquals(currentProject, nextProject)) {
+    const needsVisibilityCleanup =
+      nextProject.visibility === 'private' ? Boolean(currentDocument) : Boolean(currentLocalProject);
+    if (currentProject && storedValueEquals(currentProject, nextProject) && !needsVisibilityCleanup) {
       return currentProject;
     }
 
+    if (nextProject.visibility === 'private') return writeStoredProject(nextProject);
     const document = createStoredProjectDocument(nextProject, fallbackIndex);
     if (currentDocument?._rev) {
       document._rev = currentDocument._rev;
     }
     try {
       putProjectDocument(document, project.id);
+      completePublishedProjectWrite(nextProject);
       return nextProject;
     } catch (error) {
       if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
@@ -842,8 +789,8 @@ function removeStoredProjectDocument(projectId) {
     if (result?.ok === true) {
       return true;
     }
-    const error = new Error(`删除项目配置失败（${projectId}）：${result?.message || "未知错误"}`);
-    error.isProjectDocumentWriteConflict = result?.error === "conflict" || /conflict/i.test(result?.message || "");
+    const error = new Error(`删除项目配置失败（${projectId}）：${result?.message || '未知错误'}`);
+    error.isProjectDocumentWriteConflict = result?.error === 'conflict' || /conflict/i.test(result?.message || '');
     if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
       throw error;
     }
@@ -861,48 +808,47 @@ function normalizeProjectCatalogWriteOptions(options) {
 }
 
 function writeStoredProjects(projects, options = {}) {
-  if (window.utools?.db?.put) {
-    if (!hasProjectDocumentCatalog() || !supportsProjectDocumentWrites()) {
-      throw new Error("无法读取项目文档目录，已取消保存以避免覆盖现有项目。");
-    }
-    try {
-      const { hasBaseProjects, baseProjects, removedProjectIds } = normalizeProjectCatalogWriteOptions(options);
-      const normalizedProjects = normalizeStoredProjects(projects);
-      const submittedProjectIds = new Set(normalizedProjects.map((project) => project.id));
-      const baseProjectsById = new Map(normalizeStoredProjects(baseProjects).map((project) => [project.id, project]));
+  try {
+    const { hasBaseProjects, baseProjects, removedProjectIds } = normalizeProjectCatalogWriteOptions(options);
+    const normalizedProjects = normalizeStoredProjects(projects);
+    const submittedProjectIds = new Set(normalizedProjects.map((project) => project.id));
+    const baseProjectsById = new Map(normalizeStoredProjects(baseProjects).map((project) => [project.id, project]));
 
-      // Fail before any write when the canonical catalog cannot be read.
-      const existingDocuments = readProjectDocs();
-      const existingProjectsById = new Map(
-        existingDocuments
-          .filter((document) => document?.project?.id)
-          .map((document, index) => [document.project.id, toStoredProject(document.project, index)]),
-      );
-      normalizedProjects.forEach((project, index) => {
-        const baseProject = hasBaseProjects
-          ? baseProjectsById.get(project.id) || null
-          : existingProjectsById.get(project.id) || null;
-        writeStoredProjectCatalogEntry(project, baseProject, index);
-      });
-      const deletionProjectIds = hasBaseProjects
-        ? removedProjectIds
-        : existingDocuments
-            .map((document) => normalizeProjectId(document?.project?.id))
-            .filter((projectId) => projectId && !submittedProjectIds.has(projectId));
-      deletionProjectIds.forEach((projectId) => {
-        if (!submittedProjectIds.has(projectId)) {
+    // Fail before any write when the canonical catalog cannot be read.
+    const existingDocuments = readProjectDocs();
+    const existingProjectsById = new Map(
+      existingDocuments
+        .filter((document) => document?.project?.id && storedProjectVisibility(document.project) !== 'private')
+        .map((document, index) => [document.project.id, toStoredProject(document.project, index)]),
+    );
+    readLocalPrivateProjects().forEach((project) => existingProjectsById.set(project.id, toStoredProject(project)));
+
+    const savedProjects = normalizedProjects.map((project, index) => {
+      const baseProject = hasBaseProjects
+        ? baseProjectsById.get(project.id) || null
+        : existingProjectsById.get(project.id) || null;
+      return writeStoredProjectCatalogEntry(project, baseProject, index);
+    });
+
+    const deletionProjectIds = hasBaseProjects
+      ? removedProjectIds
+      : [...existingProjectsById.keys()]
+          .map(normalizeProjectId)
+          .filter((projectId) => projectId && !submittedProjectIds.has(projectId));
+    deletionProjectIds.forEach((projectId) => {
+      if (!submittedProjectIds.has(projectId)) {
+        if (readCurrentProjectDocument(projectId)) {
           removeStoredProjectDocument(projectId);
         }
-      });
-      return normalizedProjects;
-    } catch (error) {
-      logStorageError("save projects to uTools db", error);
-      throw error;
-    }
+        const removed = removeLocalPrivateProject(projectId);
+        if (!removed.ok) throw new Error(removed.error || `项目 ${projectId} 的本地私有副本删除失败。`);
+      }
+    });
+    return savedProjects;
+  } catch (error) {
+    logStorageError('save projects', error);
+    throw error;
   }
-
-  writeLegacyStoredProjects(projects);
-  return normalizeStoredProjects(projects);
 }
 
 function pathExists(projectPath) {
@@ -915,71 +861,71 @@ function pathExists(projectPath) {
 
 function resolveProjectChild(projectPath, relativePath) {
   const rootPath = expandPath(projectPath);
-  const normalizedRelativePath = typeof relativePath === "string" ? relativePath : "";
-  const targetPath = path.resolve(rootPath, normalizedRelativePath || ".");
+  const normalizedRelativePath = typeof relativePath === 'string' ? relativePath : '';
+  const targetPath = path.resolve(rootPath, normalizedRelativePath || '.');
   const relative = path.relative(rootPath, targetPath);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error("目标路径不在项目目录内。");
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('目标路径不在项目目录内。');
   }
-  return { rootPath, targetPath, relativePath: relative === "" ? "" : relative.replace(/\\/g, "/") };
+  return { rootPath, targetPath, relativePath: relative === '' ? '' : relative.replace(/\\/g, '/') };
 }
 
 function isPathWithinRoot(rootPath, targetPath) {
   const relative = path.relative(rootPath, targetPath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function resolveCanonicalProjectRoot(projectPath) {
   const rootPath = fs.realpathSync(expandPath(projectPath));
   if (!fs.statSync(rootPath).isDirectory()) {
-    throw new Error("项目路径不是目录。");
+    throw new Error('项目路径不是目录。');
   }
   return rootPath;
 }
 
 function resolveCanonicalProjectEntry(projectPath, relativePath, allowRoot = false) {
   const rootPath = resolveCanonicalProjectRoot(projectPath);
-  const lexicalTarget = path.resolve(rootPath, typeof relativePath === "string" ? relativePath : "");
+  const lexicalTarget = path.resolve(rootPath, typeof relativePath === 'string' ? relativePath : '');
   if (!isPathWithinRoot(rootPath, lexicalTarget)) {
-    throw new Error("目标路径不在项目目录内。");
+    throw new Error('目标路径不在项目目录内。');
   }
   if (!allowRoot && lexicalTarget === rootPath) {
-    throw new Error("不能修改项目根目录。");
+    throw new Error('不能修改项目根目录。');
   }
   if (lexicalTarget !== rootPath && fs.lstatSync(lexicalTarget).isSymbolicLink()) {
-    throw new Error("不支持操作符号链接。");
+    throw new Error('不支持操作符号链接。');
   }
   const targetPath = fs.realpathSync(lexicalTarget);
   if (!isPathWithinRoot(rootPath, targetPath)) {
-    throw new Error("目标路径通过符号链接指向项目目录外。");
+    throw new Error('目标路径通过符号链接指向项目目录外。');
   }
-  return { rootPath, targetPath, relativePath: path.relative(rootPath, lexicalTarget).replace(/\\/g, "/") };
+  return { rootPath, targetPath, relativePath: path.relative(rootPath, lexicalTarget).replace(/\\/g, '/') };
 }
 
 function resolveCanonicalProjectParent(projectPath, parentRelativePath) {
   const rootPath = resolveCanonicalProjectRoot(projectPath);
-  const lexicalParent = path.resolve(rootPath, typeof parentRelativePath === "string" ? parentRelativePath : "");
+  const lexicalParent = path.resolve(rootPath, typeof parentRelativePath === 'string' ? parentRelativePath : '');
   if (!isPathWithinRoot(rootPath, lexicalParent)) {
-    throw new Error("目标路径不在项目目录内。");
+    throw new Error('目标路径不在项目目录内。');
   }
   const parentPath = fs.realpathSync(lexicalParent);
   if (!isPathWithinRoot(rootPath, parentPath) || !fs.statSync(parentPath).isDirectory()) {
-    throw new Error("目标目录无效或位于项目目录外。");
+    throw new Error('目标目录无效或位于项目目录外。');
   }
-  return { rootPath, parentPath, parentRelativePath: path.relative(rootPath, lexicalParent).replace(/\\/g, "/") };
+  return { rootPath, parentPath, parentRelativePath: path.relative(rootPath, lexicalParent).replace(/\\/g, '/') };
 }
 
 function validateProjectEntryName(name) {
-  const normalizedName = typeof name === "string" ? name : "";
-  if (!normalizedName || normalizedName === "." || normalizedName === "..") {
-    throw new Error("名称不能为空或使用保留目录名。");
+  const normalizedName = typeof name === 'string' ? name : '';
+  if (!normalizedName || normalizedName === '.' || normalizedName === '..') {
+    throw new Error('名称不能为空或使用保留目录名。');
   }
   if (/[<>:"/\\|?*\u0000-\u001f\u007f]/.test(normalizedName) || /[. ]$/.test(normalizedName)) {
-    throw new Error("名称包含无效字符或以点、空格结尾。");
+    throw new Error('名称包含无效字符或以点、空格结尾。');
   }
-  const basename = normalizedName.split(".")[0].toUpperCase();
+  const basename = normalizedName.split('.')[0].toUpperCase();
   if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(basename)) {
-    throw new Error("名称是系统保留名称。");
+    throw new Error('名称是系统保留名称。');
   }
   return normalizedName;
 }
@@ -989,19 +935,19 @@ function projectFileTreeEntry(rootPath, targetPath, stats) {
   return {
     name,
     path: targetPath,
-    relativePath: path.relative(rootPath, targetPath).replace(/\\/g, "/"),
-    kind: stats.isDirectory() ? "directory" : "file",
+    relativePath: path.relative(rootPath, targetPath).replace(/\\/g, '/'),
+    kind: stats.isDirectory() ? 'directory' : 'file',
     size: stats.size,
     extension: path.extname(name).toLowerCase(),
-    hidden: name.startsWith("."),
+    hidden: name.startsWith('.'),
   };
 }
 
-function listProjectFiles(projectPath, relativePath = "") {
+function listProjectFiles(projectPath, relativePath = '') {
   const resolved = resolveCanonicalProjectEntry(projectPath, relativePath, true);
   const stats = fs.statSync(resolved.targetPath);
   if (!stats.isDirectory()) {
-    throw new Error("目标路径不是目录。");
+    throw new Error('目标路径不是目录。');
   }
 
   const entries = fs
@@ -1010,20 +956,20 @@ function listProjectFiles(projectPath, relativePath = "") {
     .map((entry) => {
       const childPath = path.join(resolved.targetPath, entry.name);
       const childStats = fs.statSync(childPath);
-      const childRelativePath = path.relative(resolved.rootPath, childPath).replace(/\\/g, "/");
+      const childRelativePath = path.relative(resolved.rootPath, childPath).replace(/\\/g, '/');
       return {
         name: entry.name,
         path: childPath,
         relativePath: childRelativePath,
-        kind: entry.isDirectory() ? "directory" : "file",
+        kind: entry.isDirectory() ? 'directory' : 'file',
         size: childStats.size,
         extension: path.extname(entry.name).toLowerCase(),
-        hidden: entry.name.startsWith("."),
+        hidden: entry.name.startsWith('.'),
       };
     })
     .sort((left, right) => {
       if (left.kind !== right.kind) {
-        return left.kind === "directory" ? -1 : 1;
+        return left.kind === 'directory' ? -1 : 1;
       }
       return left.name.localeCompare(right.name);
     });
@@ -1033,7 +979,7 @@ function listProjectFiles(projectPath, relativePath = "") {
 
 async function searchProjectFiles(projectPath, query, options = {}) {
   const rootPath = resolveCanonicalProjectRoot(projectPath);
-  const normalizedQuery = typeof query === "string" ? query.trim() : "";
+  const normalizedQuery = typeof query === 'string' ? query.trim() : '';
   const limit = Math.max(1, Math.min(500, Number.isFinite(options.limit) ? Math.floor(options.limit) : 200));
   if (!normalizedQuery) return { rootPath, query: normalizedQuery, entries: [], truncated: false };
 
@@ -1070,49 +1016,49 @@ async function searchProjectFiles(projectPath, query, options = {}) {
 }
 
 function createProjectEntry(projectPath, parentRelativePath, name, kind) {
-  const normalizedKind = kind === "directory" ? "directory" : "file";
+  const normalizedKind = kind === 'directory' ? 'directory' : 'file';
   try {
     const parent = resolveCanonicalProjectParent(projectPath, parentRelativePath);
     const normalizedName = validateProjectEntryName(name);
     const targetPath = path.join(parent.parentPath, normalizedName);
-    if (normalizedKind === "directory") {
+    if (normalizedKind === 'directory') {
       fs.mkdirSync(targetPath, { recursive: false });
     } else {
-      fs.writeFileSync(targetPath, "", { flag: "wx" });
+      fs.writeFileSync(targetPath, '', { flag: 'wx' });
     }
     return {
       ok: true,
       kind: normalizedKind,
       path: targetPath,
-      relativePath: path.relative(parent.rootPath, targetPath).replace(/\\/g, "/"),
+      relativePath: path.relative(parent.rootPath, targetPath).replace(/\\/g, '/'),
     };
   } catch (error) {
-    return { ok: false, kind: normalizedKind, path: "", relativePath: "", message: error?.message || String(error) };
+    return { ok: false, kind: normalizedKind, path: '', relativePath: '', message: error?.message || String(error) };
   }
 }
 
 function renameProjectEntry(projectPath, relativePath, name) {
-  let kind = "file";
+  let kind = 'file';
   try {
     const source = resolveCanonicalProjectEntry(projectPath, relativePath);
     const sourceStats = fs.statSync(source.targetPath);
-    kind = sourceStats.isDirectory() ? "directory" : "file";
+    kind = sourceStats.isDirectory() ? 'directory' : 'file';
     const normalizedName = validateProjectEntryName(name);
     const targetPath = path.join(path.dirname(source.targetPath), normalizedName);
-    if (fs.existsSync(targetPath)) throw new Error("同名文件或目录已存在。");
+    if (fs.existsSync(targetPath)) throw new Error('同名文件或目录已存在。');
     fs.renameSync(source.targetPath, targetPath);
     return {
       ok: true,
       kind,
       path: targetPath,
-      relativePath: path.relative(source.rootPath, targetPath).replace(/\\/g, "/"),
+      relativePath: path.relative(source.rootPath, targetPath).replace(/\\/g, '/'),
       previousRelativePath: source.relativePath,
     };
   } catch (error) {
     return {
       ok: false,
       kind,
-      path: "",
+      path: '',
       relativePath,
       previousRelativePath: relativePath,
       message: error?.message || String(error),
@@ -1121,15 +1067,15 @@ function renameProjectEntry(projectPath, relativePath, name) {
 }
 
 function deleteProjectEntry(projectPath, relativePath) {
-  let kind = "file";
+  let kind = 'file';
   try {
     const resolved = resolveCanonicalProjectEntry(projectPath, relativePath);
     const stats = fs.statSync(resolved.targetPath);
-    kind = stats.isDirectory() ? "directory" : "file";
-    fs.rmSync(resolved.targetPath, { recursive: kind === "directory", force: false });
+    kind = stats.isDirectory() ? 'directory' : 'file';
+    fs.rmSync(resolved.targetPath, { recursive: kind === 'directory', force: false });
     return { ok: true, kind, path: resolved.targetPath, relativePath: resolved.relativePath };
   } catch (error) {
-    return { ok: false, kind, path: "", relativePath, message: error?.message || String(error) };
+    return { ok: false, kind, path: '', relativePath, message: error?.message || String(error) };
   }
 }
 
@@ -1139,13 +1085,13 @@ function showProjectEntryInFolder(projectPath, relativePath) {
 }
 
 function getMime(extension) {
-  if (extension === ".svg") return "image/svg+xml";
-  if (extension === ".png") return "image/png";
-  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
-  if (extension === ".gif") return "image/gif";
-  if (extension === ".webp") return "image/webp";
-  if (extension === ".bmp") return "image/bmp";
-  return textFileExtensions.has(extension) ? "text/plain" : "application/octet-stream";
+  if (extension === '.svg') return 'image/svg+xml';
+  if (extension === '.png') return 'image/png';
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+  if (extension === '.gif') return 'image/gif';
+  if (extension === '.webp') return 'image/webp';
+  if (extension === '.bmp') return 'image/bmp';
+  return textFileExtensions.has(extension) ? 'text/plain' : 'application/octet-stream';
 }
 
 function isKnownTextFileName(fileName) {
@@ -1159,9 +1105,9 @@ function isLikelyTextBuffer(buffer) {
     if (buffer[index] === 0) return false;
   }
 
-  const decoded = buffer.toString("utf8");
+  const decoded = buffer.toString('utf8');
   for (const char of decoded) {
-    if (char === "\uFFFD") {
+    if (char === '\uFFFD') {
       replacementCount += 1;
     }
   }
@@ -1183,9 +1129,9 @@ function readProjectFile(projectPath, relativePath) {
       size: stats.size,
       extension,
       mime,
-      previewKind: "none",
+      previewKind: 'none',
       editable: false,
-      message: "请选择文件预览。",
+      message: '请选择文件预览。',
     };
   }
 
@@ -1197,9 +1143,9 @@ function readProjectFile(projectPath, relativePath) {
       size: stats.size,
       extension,
       mime,
-      previewKind: "image",
+      previewKind: 'image',
       editable: false,
-      dataUrl: `data:${mime};base64,${fs.readFileSync(resolved.targetPath).toString("base64")}`,
+      dataUrl: `data:${mime};base64,${fs.readFileSync(resolved.targetPath).toString('base64')}`,
     };
   }
 
@@ -1215,9 +1161,9 @@ function readProjectFile(projectPath, relativePath) {
         size: stats.size,
         extension,
         mime,
-        previewKind: "none",
+        previewKind: 'none',
         editable: false,
-        message: "文件过大，已跳过轻量预览。",
+        message: '文件过大，已跳过轻量预览。',
       };
     }
     return {
@@ -1227,9 +1173,9 @@ function readProjectFile(projectPath, relativePath) {
       size: stats.size,
       extension,
       mime,
-      previewKind: "text",
+      previewKind: 'text',
       editable: true,
-      content: fs.readFileSync(resolved.targetPath, "utf8"),
+      content: fs.readFileSync(resolved.targetPath, 'utf8'),
     };
   }
 
@@ -1240,9 +1186,9 @@ function readProjectFile(projectPath, relativePath) {
     size: stats.size,
     extension,
     mime,
-    previewKind: "none",
+    previewKind: 'none',
     editable: false,
-    message: "此文件类型暂不支持轻量预览。",
+    message: '此文件类型暂不支持轻量预览。',
   };
 }
 
@@ -1250,8 +1196,8 @@ function writeProjectFile(projectPath, relativePath, content) {
   const resolved = resolveCanonicalProjectEntry(projectPath, relativePath);
   const stats = fs.statSync(resolved.targetPath);
   if (!stats.isFile()) {
-    throw new Error("只能保存文件。");
+    throw new Error('只能保存文件。');
   }
-  fs.writeFileSync(resolved.targetPath, String(content), "utf8");
+  fs.writeFileSync(resolved.targetPath, String(content), 'utf8');
   return { path: resolved.targetPath, relativePath: resolved.relativePath, savedAt: new Date().toISOString() };
 }

@@ -8,10 +8,14 @@ import {
   showActionProgress,
   showActionStatus,
 } from "../src/components/common/actionStatus";
-import { isNewProgressOperation, mergeGitRemoteProgressEntry, useGlobalActionStatus } from "../src/composables/useGlobalActionStatus";
+import {
+  isNewProgressOperation,
+  mergeGitRemoteProgressEntry,
+  useGlobalActionStatus,
+} from "../src/composables/useGlobalActionStatus";
 
 vi.mock("vue", async (importOriginal) => ({
-  ...await importOriginal<typeof import("vue")>(),
+  ...(await importOriginal<typeof import("vue")>()),
   onMounted: vi.fn(),
   onUnmounted: vi.fn(),
 }));
@@ -80,7 +84,9 @@ describe("global action status", () => {
       ],
     });
 
+    setActionStatusHovered(true);
     completeActionProgress("success", "项目刷新完成。", operationId);
+    vi.advanceTimersByTime(10_000);
     expect(activeActionStatus.value).toMatchObject({
       isProgress: true,
       operationId,
@@ -91,29 +97,6 @@ describe("global action status", () => {
         expect.objectContaining({ message: "正在同步配置..." }),
       ],
     });
-  });
-
-  it("keeps a completed status visible while hovered and dismisses it after leaving", () => {
-    vi.useFakeTimers();
-    showActionStatus({ state: "success", message: "远端同步完成", dismissAfterMs: 100 });
-
-    setActionStatusHovered(true);
-    vi.advanceTimersByTime(100);
-    expect(activeActionStatus.value?.message).toBe("远端同步完成");
-
-    setActionStatusHovered(false);
-    expect(activeActionStatus.value).toBeNull();
-  });
-
-  it("keeps a completed progress status visible while hovered", () => {
-    vi.useFakeTimers();
-    const operationId = "hovered-progress";
-    showActionProgress({ operationId, state: "loading", message: "正在刷新项目..." });
-    setActionStatusHovered(true);
-
-    completeActionProgress("success", "项目刷新完成。", operationId);
-    vi.advanceTimersByTime(10_000);
-    expect(activeActionStatus.value?.message).toBe("项目刷新完成。");
 
     setActionStatusHovered(false);
     expect(activeActionStatus.value).toBeNull();

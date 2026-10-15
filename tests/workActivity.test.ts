@@ -137,12 +137,15 @@ describe("work activity Store", () => {
     expect(store.workActivitySelectedProjectIds).toEqual([alpha.id, nonGit.id]);
 
     await store.loadGitActivity({ startDate: "2026-01-01", endDate: "2026-12-31" });
-    expect(readGitActivity).toHaveBeenCalledWith([alpha.path, nonGit.path], expect.objectContaining({
-      startDate: "2026-01-01",
-      endDate: "2026-12-31",
-      refScope: "all",
-      timeZone: "local",
-    }));
+    expect(readGitActivity).toHaveBeenCalledWith(
+      [alpha.path, nonGit.path],
+      expect.objectContaining({
+        startDate: "2026-01-01",
+        endDate: "2026-12-31",
+        refScope: "all",
+        timeZone: "local",
+      }),
+    );
     expect(store.workActivityUnavailableProjectIds).toEqual([nonGit.id]);
     expect(store.workActivitySelectedProjectIds).toEqual([alpha.id]);
 
@@ -305,7 +308,8 @@ describe("work activity Store", () => {
     });
     const first = createDeferred<ProjectGitActivityDayReport>();
     const second = createDeferred<ProjectGitActivityDayReport>();
-    const readGitActivityDay = vi.fn<ProjectBridge["readGitActivityDay"]>()
+    const readGitActivityDay = vi
+      .fn<ProjectBridge["readGitActivityDay"]>()
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise);
     window.projectBridge = { ...getProjectBridge(), readGitActivityDay };
@@ -357,35 +361,6 @@ describe("work activity Store", () => {
     expect(store.workActivityPreferences.projectGroups[0].name).toBe("Primary");
     expect(store.deleteWorkActivityProjectGroup(group.id)).toBe(true);
     expect(store.workActivityPreferences.projectGroups).toEqual([]);
-    expect(saveUiPreferences).not.toHaveBeenCalled();
-  });
-
-  it("resets work activity session state when a new Store is created", async () => {
-    vi.stubGlobal("window", {
-      navigator: { platform: "Win32", userAgent: "vitest" },
-      localStorage: { getItem: () => null, setItem: () => undefined },
-      projectBridge: undefined,
-    });
-    const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
-    window.projectBridge = { ...getProjectBridge(), saveUiPreferences };
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const firstStore = useStore();
-    firstStore.projects = [createProject("alpha", "C:\\alpha")];
-    firstStore.openWorkActivity();
-    firstStore.setWorkActivityProjectIds([]);
-    firstStore.setWorkActivityPreferences({ rangeMode: "days7", selectedAuthorId: "" });
-    firstStore.saveWorkActivityProjectGroup("Session group");
-
-    setActivePinia(createPinia());
-    const restartedStore = useStore();
-
-    expect(restartedStore.workActivityPreferences).toMatchObject({
-      rangeMode: "rolling",
-      selectedAuthorId: "current",
-      projectGroups: [],
-    });
-    expect(restartedStore.workActivitySelectedProjectIds).toEqual([]);
     expect(saveUiPreferences).not.toHaveBeenCalled();
   });
 
@@ -476,5 +451,48 @@ describe("work activity Store", () => {
     expect(readGitActivity).toHaveBeenCalledWith(["C:\\beta"], expect.objectContaining({ force: true }));
     expect(store.workActivityReport.repositories[0].state).toBe("failed");
     expect(store.workActivityReport.repositories[1]).toEqual(betaReport.repositories[0]);
+  });
+
+  it("persists work activity preferences, selections and the dashboard group across store recreation", async () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+      projectBridge: undefined,
+    });
+    window.projectBridge = { ...getProjectBridge() };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const alpha = createProject("alpha", "C:\\alpha");
+    const beta = createProject("beta", "C:\\beta");
+    store.projects = [alpha, beta];
+
+    store.setDashboardProjectGroup("group:frontend");
+    store.setWorkActivityProjectIds(["alpha"]);
+    store.saveWorkActivityProjectGroup("Release work");
+    store.setWorkActivityPreferences({ rangeMode: "days30", hideMerges: true });
+    expect(store.workActivitySelectionInitialized).toBe(true);
+
+    // A recreated store (plugin restart) restores the persisted workspace state.
+    setActivePinia(createPinia());
+    const restartedStore = useStore();
+    restartedStore.projects = [alpha, beta];
+    expect(restartedStore.dashboardProjectGroup).toBe("group:frontend");
+    expect(restartedStore.workActivitySelectionInitialized).toBe(true);
+    expect(restartedStore.workActivitySelectedProjectIds).toEqual(["alpha"]);
+    expect(restartedStore.workActivityPreferences.rangeMode).toBe("days30");
+    expect(restartedStore.workActivityPreferences.hideMerges).toBe(true);
+    expect(restartedStore.workActivityPreferences.projectGroups.some((group) => group.name === "Release work")).toBe(
+      true,
+    );
+
+    // Transient state (focus, reports) is never persisted.
+    expect(restartedStore.workActivityFocusProjectId).toBeNull();
+    expect(restartedStore.workActivityReport).toBeNull();
   });
 });

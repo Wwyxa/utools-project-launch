@@ -1,8 +1,6 @@
-import type { ProjectAutomationTask, ProjectAutomationHistoryEntry, Project, ProjectLaunchServiceAutomationConfig } from "../../types";
-import { resolveScriptCwd } from "./projectHelpers";
+import type { Project, ProjectAutomationHistoryEntry, ProjectAutomationTask, ProjectLaunchServiceAutomationConfig } from "../../types";
 import { normalizeAutomationTasks } from "./automationHelpers";
-
-export const serviceOwnershipState = { handoff: false };
+import { resolveProjectEnvironment, resolveScriptCwd } from "./projectHelpers";
 
 export type ServiceAutomationSubmission = { taskId: string; entryId: string; manualPlannedAt?: string };
 
@@ -16,6 +14,7 @@ export function beginServiceAutomationSubmission(projectId: string, taskId: stri
   return true;
 }
 
+
 export function updateServiceAutomationSubmission(projectId: string, entryId: string, manualPlannedAt?: string) {
   const submission = serviceAutomationSubmissions.get(projectId);
   if (submission) {
@@ -27,9 +26,11 @@ export function updateServiceAutomationSubmission(projectId: string, entryId: st
   }
 }
 
+
 export function releaseServiceAutomationSubmission(projectId: string) {
   serviceAutomationSubmissions.delete(projectId);
 }
+
 
 export function notifyAutomationTaskCompletion(
   task: Pick<ProjectAutomationTask, "name" | "notifyEnabled">,
@@ -44,8 +45,9 @@ export function notifyAutomationTaskCompletion(
     status === "completed" ? "已完成" : status === "missed" ? "已错过" : status === "skipped" ? "已跳过" : "失败";
   try {
     window.utools?.showNotification?.(`任务“${task.name}”${outcome}${reason ? `：${reason}` : ""}`);
-  } catch { }
+  } catch {}
 }
+
 
 export function buildProjectLaunchServiceAutomationConfig(
   projects: Project[],
@@ -55,7 +57,7 @@ export function buildProjectLaunchServiceAutomationConfig(
     id: project.id,
     name: project.name,
     path: project.path,
-    env: { ...project.env },
+    env: resolveProjectEnvironment(project),
     scripts: project.scripts.map((script) => ({
       id: script.id,
       name: script.name,
@@ -83,11 +85,11 @@ export function buildProjectLaunchServiceAutomationConfig(
           scheduleAlgorithmVersion: 1,
           ...(taskSubmission?.entryId && taskSubmission.manualPlannedAt
             ? {
-              manualRun: {
-                id: taskSubmission.entryId,
-                plannedAt: taskSubmission.manualPlannedAt,
-              },
-            }
+                manualRun: {
+                  id: taskSubmission.entryId,
+                  plannedAt: taskSubmission.manualPlannedAt,
+                },
+              }
             : taskSubmission?.entryId
               ? { runEarlyEntryId: taskSubmission.entryId }
               : {}),
@@ -104,3 +106,5 @@ export function buildProjectLaunchServiceAutomationConfig(
     })),
   };
 }
+
+export const serviceOwnershipState = { handoff: false };

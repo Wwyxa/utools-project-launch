@@ -1,21 +1,20 @@
-import type { AppStore } from "../appStoreShape";
-import type { ProjectDetailsTabId, TinyCardActionTrigger, DefaultTerminalKind, ExternalApplicationPreferences, EnvironmentToolKey, EnvironmentPreferences, CustomEnvironmentTool, BuiltinEnvironmentToolOverride, EnvironmentToolResult } from "../../types";
-import { normalizeUiPreferences, normalizeExternalApplicationPreferences } from "../../lib/projectBridge";
-import { bridge } from "../helpers/bridge";
-import { createExternalApplicationId, createCustomEnvironmentToolId } from "../helpers/projectHelpers";
+import { environmentToolRequest, validateCustomEnvironmentToolInput } from "../../lib/environmentTools";
 import type { CustomEnvironmentToolInput } from "../../lib/environmentTools";
-import { validateCustomEnvironmentToolInput, environmentToolRequest } from "../../lib/environmentTools";
-
-export const PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS = 4000;
-
-export let projectConfigMessageClearTimer: number | null = null;
-
-export function cancelProjectConfigMessageClear() {
-  if (projectConfigMessageClearTimer) {
-    window.clearTimeout(projectConfigMessageClearTimer);
-    projectConfigMessageClearTimer = null;
-  }
-}
+import { normalizeExternalApplicationPreferences, normalizeUiPreferences } from "../../lib/projectBridge";
+import type {
+  BuiltinEnvironmentToolOverride,
+  CustomEnvironmentTool,
+  DefaultTerminalKind,
+  EnvironmentPreferences,
+  EnvironmentToolKey,
+  EnvironmentToolResult,
+  ExternalApplicationPreferences,
+  ProjectDetailsTabId,
+  TinyCardActionTrigger,
+} from "../../types";
+import type { AppStore } from "../appStoreShape";
+import { bridge } from "../helpers/bridge";
+import { createCustomEnvironmentToolId, createExternalApplicationId } from "../helpers/projectHelpers";
 
 export const settingsActions = {
   setProjectDetailsTabOrder(this: AppStore, order: ProjectDetailsTabId[]) {
@@ -30,7 +29,7 @@ export const settingsActions = {
       return;
     }
     this.uiPreferences = nextPreferences;
-    bridge.saveUiPreferences(this.uiPreferences);
+    this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
   },
 
   setProjectDetailsDefaultTab(this: AppStore, tab: ProjectDetailsTabId) {
@@ -42,7 +41,7 @@ export const settingsActions = {
       return;
     }
     this.uiPreferences = nextPreferences;
-    bridge.saveUiPreferences(this.uiPreferences);
+    this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
   },
 
   setTinyCardActionTrigger(this: AppStore, trigger: TinyCardActionTrigger) {
@@ -53,7 +52,7 @@ export const settingsActions = {
       ...this.uiPreferences,
       dashboard: { tinyCardActionTrigger: trigger },
     });
-    bridge.saveUiPreferences(this.uiPreferences);
+    this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
   },
 
   acknowledgeProjectDetailsTabReorderHint(this: AppStore, version: number) {
@@ -68,7 +67,7 @@ export const settingsActions = {
       ...this.uiPreferences,
       coachMarks: { ...this.uiPreferences.coachMarks, projectDetailsTabReorder: version },
     });
-    bridge.saveUiPreferences(this.uiPreferences);
+    this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
   },
 
   acknowledgeProjectDetailsTabDefaultHint(this: AppStore, version: number) {
@@ -83,40 +82,27 @@ export const settingsActions = {
       ...this.uiPreferences,
       coachMarks: { ...this.uiPreferences.coachMarks, projectDetailsTabDefault: version },
     });
-    bridge.saveUiPreferences(this.uiPreferences);
-  },
-
-  setProjectConfigMessage(this: AppStore, message: string) {
-    cancelProjectConfigMessageClear();
-    this.projectConfigMessage = message;
-    if (!message) {
-      return;
-    }
-
-    projectConfigMessageClearTimer = window.setTimeout(() => {
-      if (this.projectConfigMessage === message) {
-        this.projectConfigMessage = "";
-      }
-      projectConfigMessageClearTimer = null;
-    }, PROJECT_CONFIG_MESSAGE_CLEAR_DELAY_MS);
+    this.recordLocalStateWrite(bridge.saveUiPreferences(this.uiPreferences));
   },
 
   setDefaultTerminal(this: AppStore, kind: DefaultTerminalKind) {
     this.terminalPreferences = { ...this.terminalPreferences, kind };
-    bridge.saveTerminalPreferences(this.terminalPreferences);
+    this.recordLocalStateWrite(bridge.saveTerminalPreferences(this.terminalPreferences));
   },
 
   setDefaultTerminalCustomCommand(this: AppStore, command: string) {
     this.terminalPreferences = { ...this.terminalPreferences, kind: "custom", customCommand: command };
-    bridge.saveTerminalPreferences(this.terminalPreferences);
+    this.recordLocalStateWrite(bridge.saveTerminalPreferences(this.terminalPreferences));
   },
 
   persistExternalApplicationPreferences(this: AppStore, preferences: ExternalApplicationPreferences) {
     this.externalApplicationPreferences = normalizeExternalApplicationPreferences(preferences);
-    bridge.saveExternalApplicationPreferences({
-      ...this.externalApplicationPreferences,
-      applications: this.externalApplicationPreferences.applications.map((application) => ({ ...application })),
-    });
+    this.recordLocalStateWrite(
+      bridge.saveExternalApplicationPreferences({
+        ...this.externalApplicationPreferences,
+        applications: this.externalApplicationPreferences.applications.map((application) => ({ ...application })),
+      }),
+    );
   },
 
   addExternalApplication(this: AppStore, name: string, command: string) {
@@ -242,7 +228,7 @@ export const settingsActions = {
       enabledToolKeys: Array.from(keys),
     };
     this.environmentPreferences = nextPreferences;
-    bridge.saveEnvironmentPreferences(nextPreferences);
+    this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(nextPreferences));
     this.invalidateEnvironmentTool(key);
   },
 
@@ -264,7 +250,7 @@ export const settingsActions = {
       ...this.environmentPreferences,
       customTools: [...this.environmentPreferences.customTools, tool],
     };
-    bridge.saveEnvironmentPreferences(this.environmentPreferences);
+    this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
     return { ok: true as const, tool };
   },
 
@@ -277,7 +263,7 @@ export const settingsActions = {
       ...this.environmentPreferences,
       customTools: this.environmentPreferences.customTools.map((item) => (item.id === id ? tool : item)),
     };
-    bridge.saveEnvironmentPreferences(this.environmentPreferences);
+    this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
     this.invalidateEnvironmentTool(id);
     return { ok: true as const, tool };
   },
@@ -291,7 +277,7 @@ export const settingsActions = {
         tool.id === id ? { ...tool, enabled } : tool,
       ),
     };
-    bridge.saveEnvironmentPreferences(this.environmentPreferences);
+    this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
     this.invalidateEnvironmentTool(id);
   },
 
@@ -301,11 +287,12 @@ export const settingsActions = {
       ...this.environmentPreferences,
       customTools: this.environmentPreferences.customTools.filter((tool) => tool.id !== id),
     };
-    bridge.saveEnvironmentPreferences(this.environmentPreferences);
+    this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
     this.invalidateEnvironmentTool(id);
   },
 
-  saveBuiltinEnvironmentToolOverride(this: AppStore,
+  saveBuiltinEnvironmentToolOverride(
+    this: AppStore,
     key: EnvironmentToolKey,
     input: Pick<CustomEnvironmentToolInput, "command" | "versionArgs">,
   ) {
@@ -325,7 +312,7 @@ export const settingsActions = {
         ...(override ? [override] : []),
       ],
     };
-    bridge.saveEnvironmentPreferences(this.environmentPreferences);
+    this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
     this.invalidateEnvironmentTool(key);
     return { ok: true as const, override };
   },
@@ -336,7 +323,7 @@ export const settingsActions = {
       ...this.environmentPreferences,
       builtinOverrides: this.environmentPreferences.builtinOverrides.filter((item) => item.key !== key),
     };
-    bridge.saveEnvironmentPreferences(this.environmentPreferences);
+    this.recordLocalStateWrite(bridge.saveEnvironmentPreferences(this.environmentPreferences));
     this.invalidateEnvironmentTool(key);
   },
 
@@ -426,5 +413,5 @@ export const settingsActions = {
       this.environmentActiveRefreshes = Math.max(0, this.environmentActiveRefreshes - 1);
       this.environmentRefreshing = this.environmentActiveRefreshes > 0;
     }
-  }
+  },
 };

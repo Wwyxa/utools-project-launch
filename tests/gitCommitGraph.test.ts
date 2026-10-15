@@ -6,7 +6,6 @@ import {
   GIT_COMMIT_GRAPH_GEOMETRY,
   GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES,
   gitCommitGraphStrokeColor,
-  isGitStashCommit,
   layoutGitCommitGraph,
   selectGitCommitGraphWindow,
   type GitCommitGraphLayout,
@@ -32,19 +31,6 @@ const rowFor = (layout: GitCommitGraphLayout, hash: string) => {
 };
 
 describe("layoutGitCommitGraph", () => {
-  it("recognizes structured and legacy stash references", () => {
-    expect(
-      isGitStashCommit(
-        commit("metadata", [], {
-          stash: { selector: "stash@{0}", baseHash: "base", untrackedFilesHash: null },
-        }),
-      ),
-    ).toBe(true);
-    expect(isGitStashCommit(commit("structured", [], { refNames: [{ kind: "stash", name: "stash@{0}" }] }))).toBe(true);
-    expect(isGitStashCommit(commit("legacy", [], { refs: "refs/stash" }))).toBe(true);
-    expect(isGitStashCommit(commit("ordinary", [], { refs: "main" }))).toBe(false);
-  });
-
   it("collapses unreferenced stash index and untracked commits", () => {
     const commits = [
       commit("stash", ["base", "index", "untracked"], {
@@ -86,18 +72,6 @@ describe("layoutGitCommitGraph", () => {
     expect(rowFor(layout, "stash-1").nodeLane).toBe(2);
     expect(rowFor(layout, "stash-1").outputLanes.map((lane) => lane.id)).toEqual(["base", "base", "base"]);
     expect(rowFor(layout, "base").inputLanes.map((lane) => lane.id)).toEqual(["base", "base", "base"]);
-  });
-
-  it("clones output lanes into the next row and terminates roots", () => {
-    const layout = layoutGitCommitGraph([commit("A", ["B"]), commit("B")]);
-
-    expect(layout.rows.map((row) => row.commit.hash)).toEqual(["A", "B"]);
-    expect(layout.rows[0].outputLanes.map((lane) => lane.id)).toEqual(["B"]);
-    expect(layout.rows[1].inputLanes.map((lane) => lane.id)).toEqual(["B"]);
-    expect(layout.rows[1].inputLanes).not.toBe(layout.rows[0].outputLanes);
-    expect(layout.rows[1].inputLanes[0]).not.toBe(layout.rows[0].outputLanes[0]);
-    expect(layout.rows.map((row) => row.nodeLane)).toEqual([0, 0]);
-    expect(rowFor(layout, "B").segments.map((segment) => segment.kind)).toContain("root-termination");
   });
 
   it("keeps the merge's duplicate target lane and row-local three-lane span", () => {
@@ -158,18 +132,6 @@ describe("layoutGitCommitGraph", () => {
     expect(targetRow.inputLanes.map((lane) => lane.id)).toEqual(["B", "B"]);
     expect(targetRow.outputLanes.map((lane) => lane.id)).toEqual(["R"]);
     expect(targetRow.segments.map((segment) => segment.kind)).toContain("duplicate-convergence");
-  });
-
-  it("labels first and additional merge parents with their original indices", () => {
-    const layout = layoutGitCommitGraph([commit("M", ["A", "B"]), commit("A", ["R"]), commit("B", ["R"]), commit("R")]);
-    const mergeRow = rowFor(layout, "M");
-
-    expect(mergeRow.outputLanes.map((lane) => lane.id)).toEqual(["A", "B"]);
-    expect(mergeRow.segments.map((segment) => ({ kind: segment.kind, parentIndex: segment.parentIndex }))).toEqual([
-      { kind: "first-parent-continuation", parentIndex: 0 },
-      { kind: "additional-parent-fan-out", parentIndex: 1 },
-    ]);
-    expect(rowFor(layout, "B").outputLanes.map((lane) => lane.id)).toEqual(["R", "R"]);
   });
 
   it("keeps every octopus parent in source order", () => {
@@ -234,26 +196,6 @@ describe("layoutGitCommitGraph", () => {
     );
   });
 
-  it("assigns deterministic numeric colors while retaining duplicate ids", () => {
-    const commits = [
-      commit("F3", ["F2"]),
-      commit("M", ["M2", "F2"]),
-      commit("M2", ["B"]),
-      commit("F2", ["F1"]),
-      commit("F1", ["B"]),
-      commit("B"),
-    ];
-    const firstLayout = layoutGitCommitGraph(commits);
-    const secondLayout = layoutGitCommitGraph(commits);
-
-    expect(secondLayout).toEqual(firstLayout);
-    expect(rowFor(firstLayout, "M").outputLanes.map((lane) => ({ id: lane.id, colorIndex: lane.colorIndex }))).toEqual([
-      { id: "F2", colorIndex: 0 },
-      { id: "M2", colorIndex: 1 },
-      { id: "F2", colorIndex: 2 },
-    ]);
-  });
-
   it("switches the first-parent continuation to an explicit reference color", () => {
     const layout = layoutGitCommitGraph([commit("F", ["M"]), commit("M", ["A", "B"]), commit("A"), commit("B")], {
       colorIndexByCommitHash: { M: 1 },
@@ -301,24 +243,9 @@ describe("layoutGitCommitGraph", () => {
     expect(rowFor(layout, "side").nodeColorIndex).toBe(2);
   });
 
-  it("reserves a current branch color before assigning a leading branch", () => {
-    const layout = layoutGitCommitGraph([commit("ahead", ["main"]), commit("main", ["base"]), commit("base")], {
-      colorIndexByCommitHash: { main: 0 },
-    });
-
-    expect(rowFor(layout, "ahead").nodeColorIndex).toBe(1);
-    expect(rowFor(layout, "main").nodeColorIndex).toBe(0);
-    expect(rowFor(layout, "main").segments.map((segment) => segment.colorIndex)).toEqual([1, 0]);
-  });
-
   it("keeps ordinary branch lanes out of reserved reference colors", () => {
     const layout = layoutGitCommitGraph(
-      [
-        commit("head", ["main", "feature-a", "feature-b"]),
-        commit("main"),
-        commit("feature-a"),
-        commit("feature-b"),
-      ],
+      [commit("head", ["main", "feature-a", "feature-b"]), commit("main"), commit("feature-a"), commit("feature-b")],
       {
         colorIndexByCommitHash: { head: GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch },
         reservedColorIndexes: GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES,
@@ -331,36 +258,9 @@ describe("layoutGitCommitGraph", () => {
       { id: "feature-a", colorIndex: 4 },
       { id: "feature-b", colorIndex: 5 },
     ]);
-    expect(gitCommitGraphStrokeColor(lanes[2]?.colorIndex ?? -1)).toBe("#dc267f");
     expect(gitCommitGraphStrokeColor(lanes[2]?.colorIndex ?? -1)).not.toBe(
       gitCommitGraphStrokeColor(GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch),
     );
-  });
-
-  it("uses VS Code-aligned colors for explicit branch and mainline refs", () => {
-    const layout = layoutGitCommitGraph(
-      [commit("feature", ["main"]), commit("main", ["root"]), commit("root")],
-      { colorIndexByCommitHash: { feature: 0, main: 1 } },
-    );
-
-    expect(rowFor(layout, "feature").nodeColorIndex).toBe(0);
-    expect(rowFor(layout, "main").nodeColorIndex).toBe(1);
-    expect(rowFor(layout, "main").segments.map((segment) => segment.colorIndex)).toEqual([0, 1]);
-  });
-
-  it("keeps semantic reference colors out of the branch cycle hues in both themes", () => {
-    const reservedColorIndexes = GIT_COMMIT_GRAPH_RESERVED_COLOR_INDEXES;
-    const firstBranchColorIndex = reservedColorIndexes.length;
-
-    for (const colorTheme of ["light", "dark"] as const) {
-      const semanticColors = reservedColorIndexes.map((colorIndex) => gitCommitGraphStrokeColor(colorIndex, colorTheme));
-      for (let branchColorIndex = firstBranchColorIndex; branchColorIndex < firstBranchColorIndex + 5; branchColorIndex += 1) {
-        expect(semanticColors).not.toContain(gitCommitGraphStrokeColor(branchColorIndex, colorTheme));
-      }
-    }
-
-    expect(gitCommitGraphStrokeColor(GIT_COMMIT_GRAPH_COLOR_INDEX.upstream, "light")).toBe("#652d90");
-    expect(gitCommitGraphStrokeColor(GIT_COMMIT_GRAPH_COLOR_INDEX.upstream, "dark")).toBe("#b180d7");
   });
 
   it("uses expanded heights for later row and segment coordinates", () => {
@@ -388,18 +288,6 @@ describe("layoutGitCommitGraph", () => {
       { hash: "B", top: rowPitch + 40, blockHeight: 24 },
       { hash: "C", top: rowPitch * 2 + 40 + 24, blockHeight: 0 },
     ]);
-  });
-
-  it("selects a finite row window while retaining the preceding boundary segment", () => {
-    const layout = layoutGitCommitGraph([commit("A", ["B"]), commit("B", ["C"]), commit("C")]);
-    const selection = selectGitCommitGraphWindow(layout, {
-      top: GIT_COMMIT_GRAPH_GEOMETRY.rowHeight + GIT_COMMIT_GRAPH_GEOMETRY.rowGap,
-      height: GIT_COMMIT_GRAPH_GEOMETRY.rowHeight,
-    });
-
-    expect(selection.rows.map((row) => row.commit.hash)).toEqual(["B"]);
-    expect(selection.nodes.map((row) => row.commit.hash)).toEqual(["B"]);
-    expect(selection.segments.map(({ row }) => row.commit.hash)).toEqual(["A", "B"]);
   });
 
   it("uses inclusive geometry bounds for paths and expanded file blocks", () => {

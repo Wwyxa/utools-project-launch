@@ -6,6 +6,8 @@ import {
 } from "./environmentTools";
 import { BUILTIN_ICON_PACK_ID, normalizeIconPackId } from "./fileIconTheme";
 import type {
+  CleanupPlan,
+  CleanupResult,
   DefaultTerminalKind,
   AiAnalyzePayload,
   AiPreferences,
@@ -19,11 +21,15 @@ import type {
   EnvironmentToolDefinition,
   EnvironmentToolRequest,
   EnvironmentToolKey,
+  LocalStateWriteResult,
+  MigrationRunResult,
+  MigrationSummary,
   ProjectBridge,
   ProjectBridgeGitCommitPage,
   ProjectBridgeGitWorkingTreeSnapshot,
   ProjectBridgeGitWorkspaceSnapshot,
   ProjectConfigFile,
+  ProjectEnvironmentOverride,
   ProjectGitFileChange,
   ProjectGitFileDiffOptions,
   ProjectGitStash,
@@ -47,6 +53,9 @@ import type {
   ProjectBridgeExternalApplicationLaunchResult,
   ProjectBridgeRunResult,
   ProjectBridgeStopProcessOptions,
+  BackupCreateOptions,
+  BackupPrepareOptions,
+  BackupRestoreOptions,
   ProjectGitReadResult,
   ProjectGitTagInfo,
   ProjectFileListResult,
@@ -62,31 +71,33 @@ import type {
   IconPackStatus,
   IconPackUpdateResult,
   ProjectLaunchServicePreferences,
-  ProjectLaunchServiceLogClearResult,
-  ProjectLaunchServiceLogClearScope,
-  ProjectLaunchServiceLogDescriptor,
-  ProjectLaunchServiceLogRetentionPolicy,
-  ProjectLaunchServiceLogRetentionStatus,
-  ProjectLaunchServiceRunLog,
   ProjectLaunchServiceStatus,
   ProjectLaunchServiceAutomationConfig,
   ProjectLaunchServiceAutomationSyncResult,
+  StartupPreflightLegacySummary,
+  StartupPreflightResult,
+  StorageOverview,
   TerminalPreferences,
   UiPreferences,
+  WorkspaceState,
+  WorkspaceStatePatch,
 } from "../types";
 
 const fallbackStorageKey = "utools-project-launch.projects.v1";
-const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
+const fallbackWorkspaceStorageKey = "utools-project-launch.workspace.v1";
+const fallbackEnvironmentOverridesStorageKey = "utools-project-launch.env-overrides.v1";
+// Browser-preview fallback keys. In uTools these payloads live in the plugin
+// local data directory; the fallback bridge is only a development preview.
 const localTerminalPreferencesStorageKey = "utools-project-launch.local-settings.v1";
-const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
+const terminalPreferencesStorageKey = "utools-project-launch.settings.v1";
 const localEditorPreferencesStorageKey = "utools-project-launch.local-editor-settings.v1";
+const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const externalApplicationPreferencesStorageKey = "utools-project-launch.local-external-applications.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
 const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
 const projectDetailsTabOrderStorageKey = "utools-project-launch.project-details-tab-order.v1";
 const projectLaunchServicePreferencesStorageKey = "utools-project-launch.project-launch-service.v1";
-const deviceIdStorageKey = "utools-project-launch.device-id.v1";
 const legacyDefaultAiCommitMessagePrompt = `请根据以下 {diffScope} 生成一个简洁、可直接使用的 Git commit message。
 
 要求：
@@ -409,7 +420,7 @@ const readStoredTerminalPreferences = (): TerminalPreferences => {
   }
 };
 
-const writeStoredTerminalPreferences = (preferences: TerminalPreferences) => {
+const writeStoredTerminalPreferences = (preferences: TerminalPreferences): LocalStateWriteResult => {
   const normalized = normalizeTerminalPreferences(preferences);
 
   try {
@@ -417,15 +428,19 @@ const writeStoredTerminalPreferences = (preferences: TerminalPreferences) => {
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
+  return { ok: true };
 };
 
-const writeStoredExternalApplicationPreferences = (preferences: ExternalApplicationPreferences) => {
+const writeStoredExternalApplicationPreferences = (
+  preferences: ExternalApplicationPreferences,
+): LocalStateWriteResult => {
   const normalized = normalizeExternalApplicationPreferences(preferences);
   try {
     window.localStorage?.setItem(externalApplicationPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
+  return { ok: true };
 };
 
 const readStoredExternalApplicationPreferences = (): ExternalApplicationPreferences => {
@@ -532,7 +547,7 @@ export const normalizeProjectLaunchServicePreferences = (value: unknown): Projec
   };
 };
 
-const writeStoredUiPreferences = (preferences: UiPreferences) => {
+const writeStoredUiPreferences = (preferences: UiPreferences): LocalStateWriteResult => {
   const normalized = normalizeUiPreferences(preferences);
   try {
     window.localStorage?.setItem(uiPreferencesStorageKey, JSON.stringify(normalized));
@@ -540,6 +555,7 @@ const writeStoredUiPreferences = (preferences: UiPreferences) => {
   } catch {
     // Keep UI preference updates non-blocking when browser storage is unavailable.
   }
+  return { ok: true };
 };
 
 const readStoredUiPreferences = (): UiPreferences => {
@@ -582,13 +598,16 @@ const readStoredProjectLaunchServicePreferences = (): ProjectLaunchServicePrefer
   }
 };
 
-const writeStoredProjectLaunchServicePreferences = (preferences: ProjectLaunchServicePreferences) => {
+const writeStoredProjectLaunchServicePreferences = (
+  preferences: ProjectLaunchServicePreferences,
+): LocalStateWriteResult => {
   const normalized = normalizeProjectLaunchServicePreferences(preferences);
   try {
     window.localStorage?.setItem(projectLaunchServicePreferencesStorageKey, JSON.stringify(normalized));
   } catch {
     // Keep service preference updates non-blocking when browser storage is unavailable.
   }
+  return { ok: true };
 };
 
 const browserProjectLaunchServiceStatus = (): ProjectLaunchServiceStatus => ({
@@ -606,9 +625,6 @@ const browserProjectLaunchServiceStatus = (): ProjectLaunchServiceStatus => ({
 
 const readStoredEnvironmentPreferences = (): EnvironmentPreferences => {
   try {
-    if (window.utools?.dbStorage) {
-      return normalizeEnvironmentPreferences(window.utools.dbStorage.getItem(environmentPreferencesStorageKey));
-    }
     const raw = window.localStorage?.getItem(environmentPreferencesStorageKey);
     return raw ? normalizeEnvironmentPreferences(JSON.parse(raw)) : defaultEnvironmentPreferences();
   } catch (error) {
@@ -616,24 +632,18 @@ const readStoredEnvironmentPreferences = (): EnvironmentPreferences => {
   }
 };
 
-const writeStoredEnvironmentPreferences = (preferences: EnvironmentPreferences) => {
+const writeStoredEnvironmentPreferences = (preferences: EnvironmentPreferences): LocalStateWriteResult => {
   const normalized = normalizeEnvironmentPreferences(preferences);
   try {
-    if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(environmentPreferencesStorageKey, normalized);
-      return;
-    }
     window.localStorage?.setItem(environmentPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
+  return { ok: true };
 };
 
 const readStoredAiPreferences = (): AiPreferences => {
   try {
-    if (window.utools?.dbStorage) {
-      return normalizeAiPreferences(window.utools.dbStorage.getItem(aiPreferencesStorageKey));
-    }
     const raw = window.localStorage?.getItem(aiPreferencesStorageKey);
     return raw ? normalizeAiPreferences(JSON.parse(raw)) : defaultAiPreferences();
   } catch (error) {
@@ -641,17 +651,14 @@ const readStoredAiPreferences = (): AiPreferences => {
   }
 };
 
-const writeStoredAiPreferences = (preferences: AiPreferences) => {
+const writeStoredAiPreferences = (preferences: AiPreferences): LocalStateWriteResult => {
   const normalized = normalizeAiPreferences(preferences);
   try {
-    if (window.utools?.dbStorage) {
-      window.utools.dbStorage.setItem(aiPreferencesStorageKey, normalized);
-      return;
-    }
     window.localStorage?.setItem(aiPreferencesStorageKey, JSON.stringify(normalized));
   } catch (error) {
     // Keep settings updates non-blocking in browser preview and uTools fallback modes.
   }
+  return { ok: true };
 };
 
 const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
@@ -738,24 +745,151 @@ const unavailableGitAction = (message = "浏览器预览无法执行 Git 写操�
   message,
 });
 
-const loadFallbackDeviceId = (): string => {
-  try {
-    const stored = window.localStorage?.getItem(deviceIdStorageKey)?.trim();
-    if (stored) {
-      return stored;
-    }
+const emptyLegacySummary = (): StartupPreflightLegacySummary => ({
+  legacyDirectoryHasData: false,
+  legacyDbStorageKeys: [],
+  legacyAggregateProjects: 0,
+  legacyPrivateProjectDocs: 0,
+});
 
-    const nextId = window.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    window.localStorage?.setItem(deviceIdStorageKey, nextId);
-    return nextId;
+const browserPreflightResult = (): StartupPreflightResult => ({
+  status: "browser-preview",
+  browserPreview: true,
+  appVersion: "",
+  capabilities: {
+    hasUtools: false,
+    getAppVersion: false,
+    getPluginLocalDataPath: false,
+    getPluginTempPath: false,
+  },
+  migration: null,
+  legacy: emptyLegacySummary(),
+  message: "浏览器开发预览模式：使用本地 fallback 存储，不执行真实迁移。",
+});
+
+const browserPreviewError = (action: string): Error => new Error(`浏览器预览无法${action}，请在 uTools 中使用。`);
+
+const fallbackWorkspaceState = (): WorkspaceState => ({
+  dashboardProjectGroup: "all",
+  workActivity: {
+    selectionInitialized: false,
+    preferences: null,
+    selectedProjectIds: [],
+  },
+});
+
+const readFallbackWorkspaceState = (): WorkspaceState => {
+  try {
+    const raw = window.localStorage?.getItem(fallbackWorkspaceStorageKey);
+    if (!raw) return fallbackWorkspaceState();
+    const parsed = JSON.parse(raw) as Partial<WorkspaceState>;
+    const workActivity = parsed.workActivity ?? fallbackWorkspaceState().workActivity;
+    return {
+      dashboardProjectGroup:
+        typeof parsed.dashboardProjectGroup === "string" && parsed.dashboardProjectGroup
+          ? parsed.dashboardProjectGroup
+          : "all",
+      workActivity: {
+        selectionInitialized: workActivity.selectionInitialized === true,
+        preferences:
+          workActivity.preferences && typeof workActivity.preferences === "object" ? workActivity.preferences : null,
+        selectedProjectIds: Array.isArray(workActivity.selectedProjectIds)
+          ? workActivity.selectedProjectIds.filter((projectId): projectId is string => Boolean(projectId))
+          : [],
+      },
+    };
   } catch (error) {
-    return "device-fallback";
+    return fallbackWorkspaceState();
   }
 };
 
+const writeFallbackWorkspaceState = (patch: WorkspaceStatePatch): LocalStateWriteResult => {
+  try {
+    const current = readFallbackWorkspaceState();
+    const next: WorkspaceState = {
+      dashboardProjectGroup:
+        typeof patch.dashboardProjectGroup === "string" && patch.dashboardProjectGroup
+          ? patch.dashboardProjectGroup
+          : current.dashboardProjectGroup,
+      workActivity: {
+        selectionInitialized: patch.workActivity?.selectionInitialized ?? current.workActivity.selectionInitialized,
+        preferences:
+          patch.workActivity?.preferences !== undefined
+            ? patch.workActivity.preferences
+            : current.workActivity.preferences,
+        selectedProjectIds: patch.workActivity?.selectedProjectIds ?? current.workActivity.selectedProjectIds,
+      },
+    };
+    window.localStorage?.setItem(fallbackWorkspaceStorageKey, JSON.stringify(next));
+  } catch (error) {
+    // Browser preview keeps working with in-memory state when storage fails.
+  }
+  return { ok: true };
+};
+
+const readFallbackProjectEnvironmentOverrides = (projectId: string): ProjectEnvironmentOverride => {
+  try {
+    const raw = window.localStorage?.getItem(fallbackEnvironmentOverridesStorageKey);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, ProjectEnvironmentOverride>) : {};
+    const override = parsed[projectId];
+    return override && typeof override === "object"
+      ? { env: override.env ?? {}, localOnlyEnvKeys: override.localOnlyEnvKeys ?? [] }
+      : { env: {}, localOnlyEnvKeys: [] };
+  } catch (error) {
+    return { env: {}, localOnlyEnvKeys: [] };
+  }
+};
+
+const writeFallbackProjectEnvironmentOverrides = (
+  projectId: string,
+  override: ProjectEnvironmentOverride,
+): LocalStateWriteResult => {
+  try {
+    const raw = window.localStorage?.getItem(fallbackEnvironmentOverridesStorageKey);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, ProjectEnvironmentOverride>) : {};
+    const hasValues = Object.keys(override.env).length > 0 || override.localOnlyEnvKeys.length > 0;
+    if (hasValues) {
+      parsed[projectId] = override;
+    } else {
+      delete parsed[projectId];
+    }
+    window.localStorage?.setItem(fallbackEnvironmentOverridesStorageKey, JSON.stringify(parsed));
+  } catch (error) {
+    // Browser preview keeps working with in-memory state when storage fails.
+  }
+  return { ok: true };
+};
+
 const fallbackBridge: ProjectBridge = {
-  loadDeviceId() {
-    return loadFallbackDeviceId();
+  async listBackups() {
+    throw browserPreviewError("读取 uTools 备份");
+  },
+  async createBackup() {
+    throw browserPreviewError("创建备份");
+  },
+  async prepareBackup() {
+    throw browserPreviewError("导入备份");
+  },
+  async restoreBackup() {
+    throw browserPreviewError("恢复备份");
+  },
+  async deleteBackup() {
+    throw browserPreviewError("删除备份");
+  },
+  async exportCloudBackup() {
+    throw browserPreviewError("导出 uTools 备份");
+  },
+  preflightStartup() {
+    return browserPreflightResult();
+  },
+  async runMigration(): Promise<MigrationRunResult> {
+    throw browserPreviewError("执行数据迁移");
+  },
+  async stopMigrationService() {
+    throw browserPreviewError("停止迁移服务");
+  },
+  readMigrationSummary() {
+    return null;
   },
   async loadProjects() {
     try {
@@ -785,7 +919,34 @@ const fallbackBridge: ProjectBridge = {
     return readStoredUiPreferences();
   },
   saveUiPreferences(preferences) {
-    writeStoredUiPreferences(preferences);
+    return writeStoredUiPreferences(preferences);
+  },
+  loadWorkspaceState() {
+    return readFallbackWorkspaceState();
+  },
+  saveWorkspaceState(patch) {
+    return writeFallbackWorkspaceState(patch);
+  },
+  loadProjectEnvironmentOverrides(projectId) {
+    return readFallbackProjectEnvironmentOverrides(projectId);
+  },
+  saveProjectEnvironmentOverrides(projectId, override) {
+    return writeFallbackProjectEnvironmentOverrides(projectId, override);
+  },
+  async getStorageOverview(): Promise<StorageOverview> {
+    throw browserPreviewError("读取存储概览");
+  },
+  async getCleanupPlan(): Promise<CleanupPlan> {
+    throw browserPreviewError("读取清理计划");
+  },
+  async executeCleanup(): Promise<CleanupResult> {
+    throw browserPreviewError("执行数据清理");
+  },
+  async openPluginLocalDataDirectory() {
+    throw browserPreviewError("打开本地数据目录");
+  },
+  async openLegacyDataDirectory() {
+    throw browserPreviewError("打开旧数据目录");
   },
   async loadInstalledIconPack() {
     return browserIconPackLoadResult();
@@ -815,7 +976,7 @@ const fallbackBridge: ProjectBridge = {
     return readStoredProjectLaunchServicePreferences();
   },
   saveProjectLaunchServicePreferences(preferences) {
-    writeStoredProjectLaunchServicePreferences(preferences);
+    return writeStoredProjectLaunchServicePreferences(preferences);
   },
   async getProjectLaunchServiceStatus() {
     return browserProjectLaunchServiceStatus();
@@ -838,27 +999,32 @@ const fallbackBridge: ProjectBridge = {
   async reconcileProjectLaunchService() {
     return browserProjectLaunchServiceStatus();
   },
-  async getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog> {
-    throw new Error(`浏览器预览无法读取运行日志：${runId}`);
+  async listRuntimeRecords() {
+    throw browserPreviewError("读取运行记录");
   },
-  async getProjectLaunchServiceRunLogPage(runId: string): Promise<ProjectLaunchServiceRunLog> {
-    throw new Error(`浏览器预览无法读取运行日志：${runId}`);
+  async readRuntimeRecordLogPage() {
+    throw browserPreviewError("读取运行日志");
   },
-  async getProjectLaunchServiceLogRetention(): Promise<ProjectLaunchServiceLogRetentionStatus> {
-    throw new Error("浏览器预览无法读取日志保留策略。");
+  async getRuntimeRecordRetention() {
+    throw browserPreviewError("读取日志保留策略");
   },
-  async updateProjectLaunchServiceLogRetention(
-    _policy: ProjectLaunchServiceLogRetentionPolicy,
-  ): Promise<ProjectLaunchServiceLogRetentionStatus> {
-    throw new Error("浏览器预览无法更新日志保留策略。");
+  async updateRuntimeRecordRetention() {
+    throw browserPreviewError("更新日志保留策略");
   },
-  async listProjectLaunchServiceLogs(_projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]> {
-    throw new Error("浏览器预览无法读取运行日志列表。");
+  async clearRuntimeRecords() {
+    throw browserPreviewError("清理运行记录");
   },
-  async clearProjectLaunchServiceLogs(
-    _scope?: ProjectLaunchServiceLogClearScope,
-  ): Promise<ProjectLaunchServiceLogClearResult> {
-    throw new Error("浏览器预览无法清除运行日志。");
+  appendRuntimeOperationLog() {
+    return { ok: false, error: "浏览器预览无法保存运行记录。" };
+  },
+  loadRuntimeAutomationState() {
+    return [];
+  },
+  saveRuntimeAutomationState() {
+    return { ok: false, error: "浏览器预览无法保存自动任务运行状态。" };
+  },
+  saveRuntimeAutomationExecution() {
+    return { ok: false, error: "浏览器预览无法保存自动任务运行记录。" };
   },
   async syncProjectLaunchServiceAutomation(
     config: ProjectLaunchServiceAutomationConfig,
@@ -885,19 +1051,19 @@ const fallbackBridge: ProjectBridge = {
     return readStoredTerminalPreferences();
   },
   saveTerminalPreferences(preferences) {
-    writeStoredTerminalPreferences(preferences);
+    return writeStoredTerminalPreferences(preferences);
   },
   loadExternalApplicationPreferences() {
     return readStoredExternalApplicationPreferences();
   },
   saveExternalApplicationPreferences(preferences) {
-    writeStoredExternalApplicationPreferences(preferences);
+    return writeStoredExternalApplicationPreferences(preferences);
   },
   loadEnvironmentPreferences() {
     return readStoredEnvironmentPreferences();
   },
   saveEnvironmentPreferences(preferences) {
-    writeStoredEnvironmentPreferences(preferences);
+    return writeStoredEnvironmentPreferences(preferences);
   },
   loadBuiltinEnvironmentTools() {
     return BUILTIN_ENVIRONMENT_TOOLS.map(
@@ -924,7 +1090,7 @@ const fallbackBridge: ProjectBridge = {
     return readStoredAiPreferences();
   },
   saveAiPreferences(preferences) {
-    writeStoredAiPreferences(preferences);
+    return writeStoredAiPreferences(preferences);
   },
   async listAiModels() {
     return [];
@@ -967,19 +1133,6 @@ const fallbackBridge: ProjectBridge = {
   },
   async pathExists(projectPath: string): Promise<boolean> {
     return Boolean(projectPath.trim());
-  },
-  async exportProjects(config) {
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `utools-projects-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    return {};
-  },
-  async importProjects() {
-    return { canceled: true, message: "浏览器预览暂不支持文件导入，请在 uTools 环境中使用。" };
   },
   async readPackageScripts(): Promise<{ scripts: ProjectBridgePackageScript[]; packagePath: string | null }> {
     return { scripts: [], packagePath: null };
@@ -1410,7 +1563,9 @@ const fallbackBridge: ProjectBridge = {
 };
 
 export function getProjectBridge(): ProjectBridge {
-  return window.projectBridge ?? fallbackBridge;
+  if (window.projectBridge) return window.projectBridge;
+  if (import.meta.env.DEV) return fallbackBridge;
+  throw new Error("本地桥接加载失败，请重新打开插件；若仍然失败，请重新安装插件。");
 }
 
 export function supportsRealProjectBridge() {

@@ -6,10 +6,13 @@ function runCommand(payload) {
   const runId = createPreloadRunId();
   const runtimeOwner = "preload";
   const resolvedCwd = expandPath(payload.cwd);
+  beginRuntimeRecord(payload, "preload", runId);
   const decodeStdout = createProcessOutputDecoder();
   const decodeStderr = createProcessOutputDecoder();
   const invocation = shellCommandInvocation(payload.command);
-  const child = spawn(invocation.executable, invocation.args, {
+  let child;
+  try {
+    child = spawn(invocation.executable, invocation.args, {
     cwd: resolvedCwd,
     env: { ...process.env, ...payload.env },
     shell: false,
@@ -17,7 +20,11 @@ function runCommand(payload) {
     // Stop can terminate make, package managers, and their descendants.
     detached: process.platform !== "win32",
     windowsHide: true,
-  });
+    });
+  } catch (error) {
+    appendRuntimeRecordEvent({ runId, type: "error", message: error?.message || "command failed" });
+    throw error;
+  }
   const childPid = typeof child.pid === "number" ? child.pid : -1;
   let processSettled = false;
 

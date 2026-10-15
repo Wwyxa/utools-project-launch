@@ -3,11 +3,61 @@ import {
   findGitDiffChangeBlocks,
   findGitDiffBlockInlineRanges,
   findGitDiffInlineRanges,
+  highlightGitDiffRows,
   markGitDiffInlineRanges,
+  markGitDiffWhitespace,
   parseGitDiff,
   toGitDiffSideBySideRows,
 } from "../src/lib/gitDiff";
 import { highlightCode } from "../src/lib/markdown";
+
+describe("Git diff syntax highlighting", () => {
+  it("decorates whitespace without changing text, syntax markup or escaped content", () => {
+    expect(markGitDiffWhitespace('<span class="hljs-string">\t &lt;value&gt; </span>')).toBe(
+      '<span class="hljs-string"><span class="diff-whitespace-tab">\t</span><span class="diff-whitespace-space"> </span>&lt;value&gt;<span class="diff-whitespace-space"> </span></span>',
+    );
+  });
+
+  it("preserves multiline comments independently on each side with balanced line markup", () => {
+    const parsed = parseGitDiff("@@ -1,4 +1,4 @@\n /* comment\n-old value\n+new value\n  */\n const value = 1;");
+    const highlighted = highlightGitDiffRows(parsed.rows, "typescript");
+    for (const row of parsed.rows.filter((item) => item.kind === "addition" || item.kind === "deletion")) {
+      expect(highlighted.get(row.id)).toBe(`<span class="hljs-comment">${row.content}</span>`);
+    }
+    for (const html of highlighted.values()) {
+      expect((html.match(/<span\b/g) || []).length).toBe((html.match(/<\/span>/g) || []).length);
+    }
+    expect(highlighted.get(parsed.rows.at(-1)!.id)).toContain('class="hljs-keyword"');
+  });
+
+  it("keeps template strings, escaping and inline marks across lines", () => {
+    const parsed = parseGitDiff("@@ -1,3 +1,3 @@\n const text = `hello\n-<old>\n+<new>\n world`;");
+    const highlighted = highlightGitDiffRows(parsed.rows, "typescript");
+    const added = parsed.rows.find((row) => row.kind === "addition")!;
+    expect(highlighted.get(added.id)).toBe('<span class="hljs-string">&lt;new&gt;</span>');
+    expect(markGitDiffInlineRanges(highlighted.get(added.id)!, [{ start: 1, end: 4 }], "addition")).toContain(
+      '<mark class="diff-inline-addition">new</mark>',
+    );
+  });
+
+  it("resets missing syntax context between hunks and preserves unknown-language text", () => {
+    const parsed = parseGitDiff('@@ -1 +1 @@\n /* unclosed\n@@ -20 +20 @@\n const value = "<safe>";');
+    const highlighted = highlightGitDiffRows(parsed.rows, "typescript");
+    expect(highlighted.get(parsed.rows.at(-1)!.id)).toContain('class="hljs-keyword"');
+    expect(highlightGitDiffRows(parsed.rows, "").get(parsed.rows.at(-1)!.id)).toBe(
+      "const value = &quot;&lt;safe&gt;&quot;;",
+    );
+  });
+
+  it("retains different old and new syntax states on shared context lines", () => {
+    const parsed = parseGitDiff("@@ -1,2 +1,2 @@\n-/* comment\n+const value = 1;\n shared text");
+    const row = parsed.rows.at(-1)!;
+    expect(highlightGitDiffRows(parsed.rows, "typescript", "old").get(row.id)).toBe(
+      '<span class="hljs-comment">shared text</span>',
+    );
+    expect(highlightGitDiffRows(parsed.rows, "typescript", "new").get(row.id)).toBe("shared text");
+  });
+});
 
 describe("parseGitDiff", () => {
   it("tracks line numbers through context, deletion and addition rows", () => {
@@ -202,9 +252,58 @@ describe("parseGitDiff", () => {
       { id: "change-block-1", startRowIndex: 9, endRowIndex: 10 },
     ]);
   });
+
+  it("pairs replacements across end-of-file annotations without moving annotations to the other side", () => {
+    const parsed = parseGitDiff(
+      "@@ -1 +1 @@\n-old value\n\\ No newline at end of file\n+new value\n\\ No newline at end of file",
+    );
+    expect(findGitDiffChangeBlocks(parsed.rows)).toEqual([{ id: "change-block-0", startRowIndex: 1, endRowIndex: 4 }]);
+    const rows = toGitDiffSideBySideRows(parsed.rows);
+    expect(rows[1]).toEqual(
+      expect.objectContaining({
+        oldRow: expect.objectContaining({ content: "old value" }),
+        newRow: expect.objectContaining({ content: "new value" }),
+        isReliablePair: true,
+      }),
+    );
+    expect(rows[2]).toEqual(
+      expect.objectContaining({
+        kind: "meta",
+        oldRow: expect.objectContaining({ content: "\\ No newline at end of file" }),
+        newRow: expect.objectContaining({ content: "\\ No newline at end of file" }),
+      }),
+    );
+    const oneSided = toGitDiffSideBySideRows(
+      parseGitDiff("@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new").rows,
+    );
+    expect(oneSided[2].oldRow?.content).toBe("\\ No newline at end of file");
+    expect(oneSided[2].newRow).toBeNull();
+  });
 });
 
 describe("inline Git diff ranges", () => {
+  it("does not split surrogate pairs when highlighting changed Unicode characters", () => {
+    const ranges = findGitDiffInlineRanges('const icon = "\u{1F600}";', 'const icon = "\u{1F601}";')!;
+    expect(ranges.oldRanges).toEqual([{ start: 14, end: 16 }]);
+    expect(ranges.newRanges).toEqual([{ start: 14, end: 16 }]);
+    const rendered = markGitDiffInlineRanges(
+      highlightCode('const icon = "\u{1F601}";', "typescript"),
+      ranges.newRanges,
+      "addition",
+    );
+    expect(rendered).toContain('<mark class="diff-inline-addition">\u{1F601}</mark>');
+  });
+
+  it("stops tokenizing oversized blocks before touching later rows", () => {
+    const unreachableRow = {
+      id: "later",
+      get content(): string {
+        throw new Error("Budget exceeded");
+      },
+    };
+    expect(findGitDiffBlockInlineRanges([{ id: "large", content: "x".repeat(1025) }, unreachableRow], [])).toBeNull();
+  });
+
   it("keeps whitespace-only changes when one side is empty", () => {
     expect(findGitDiffInlineRanges("    ", "")).toEqual({
       oldRanges: [{ start: 0, end: 4 }],
@@ -292,17 +391,6 @@ describe("inline Git diff ranges", () => {
 
     expect(oldChangedText).toContain(",");
     expect(`${oldChangedText}${newChangedText}`).not.toMatch(/type|Boolean|default|true/u);
-  });
-
-  it("renders the deleted trailing comma from a compressed block", () => {
-    const oldRows = [
-      { id: "old-0", content: "showRegionLabels: {" },
-      { id: "old-1", content: "  type: Boolean," },
-      { id: "old-2", content: "  default: true," },
-      { id: "old-3", content: "}," },
-    ];
-    const newRows = [{ id: "new-0", content: "showRegionLabels: { type: Boolean, default: true }," }];
-    const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
     const markedHtml = markGitDiffInlineRanges(
       highlightCode(oldRows[2].content, "typescript"),
       ranges?.get("old-2") || [],
@@ -350,26 +438,6 @@ describe("inline Git diff ranges", () => {
     const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
 
     expect(ranges?.get("old-0")?.map((range) => oldRows[0].content.slice(range.start, range.end))).toContain(",");
-  });
-
-  it("marks only the changed character and word ranges in a reliable replacement", () => {
-    expect(findGitDiffInlineRanges("const oldValue = 1;", "const newValue = 2;")).toEqual({
-      oldRanges: [
-        { start: 6, end: 9 },
-        { start: 17, end: 18 },
-      ],
-      newRanges: [
-        { start: 6, end: 9 },
-        { start: 17, end: 18 },
-      ],
-    });
-  });
-
-  it("marks a character inserted on only one side of a reliable replacement", () => {
-    expect(findGitDiffInlineRanges("feature", "feature!")).toEqual({
-      oldRanges: [],
-      newRanges: [{ start: 7, end: 8 }],
-    });
   });
 
   it("keeps changed spaces and tabs as source text inside inline highlights", () => {

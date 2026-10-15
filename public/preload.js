@@ -3,6 +3,8 @@ const path = require("path");
 
 const preloadModuleFiles = [
   "foundation.js",
+  "local-state.js",
+  "runtime-records.js",
   "icon-packs.js",
   "preferences.js",
   "project-launch-service.js",
@@ -11,6 +13,9 @@ const preloadModuleFiles = [
   "platform.js",
   "git.js",
   "projects.js",
+  "migration.js",
+  "data-tools.js",
+  "backups.js",
   "agent-tools.js",
   "git-diff.js",
   "processes.js",

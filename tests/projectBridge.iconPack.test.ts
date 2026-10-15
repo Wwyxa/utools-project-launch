@@ -225,7 +225,7 @@ describe("uTools icon-pack preload", () => {
       writeFileSync(join(installDirectory, assetName), packageBytes);
 
       const bridge = loadPreloadBridge(new Map(), createHttpsMock([]), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
 
       expect(await bridge.verifyIconPackInstall()).toMatchObject({ ok: true, state: "loaded", manifest });
@@ -242,7 +242,7 @@ describe("uTools icon-pack preload", () => {
     try {
       const manifest = createManifest("1.0.0");
       const bridge = loadPreloadBridge(new Map(), createHttpsMock(createReleaseResponses(manifest)), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
 
       expect(await bridge.getIconPackStatus()).toMatchObject({ state: "unavailable", active: false });
@@ -251,7 +251,7 @@ describe("uTools icon-pack preload", () => {
 
       const storage = new Map<string, unknown>([[uiPreferencesKey, defaultUiPreferences]]);
       const activeBridge = loadPreloadBridge(storage, createHttpsMock([]), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
       activeBridge.saveUiPreferences({ ...defaultUiPreferences, iconPackId: "vscode-icons-derived" });
       expect(await activeBridge.getIconPackStatus()).toMatchObject({
@@ -287,7 +287,7 @@ describe("uTools icon-pack preload", () => {
       const bridge = loadPreloadBridge(
         new Map(),
         createHttpsMock(downloadResponses),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory },
         (detail) => {
           if (detail && typeof detail === "object") {
             progressEvents.push(
@@ -332,7 +332,7 @@ describe("uTools icon-pack preload", () => {
     try {
       const manifest = createManifest("2.0.0");
       const bridge = loadPreloadBridge(new Map(), createHttpsMock(createReleaseResponses(manifest)), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
 
       await expect(bridge.checkIconPackUpdate()).resolves.toMatchObject({
@@ -352,7 +352,7 @@ describe("uTools icon-pack preload", () => {
     const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-icon-pack-"));
     try {
       const bridge = loadPreloadBridge(storage, createHttpsMock([]), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
       expect(bridge.loadUiPreferences().iconPackId).toBe("builtin");
     } finally {
@@ -367,7 +367,7 @@ describe("uTools icon-pack preload", () => {
       const secondManifest = createManifest("2.0.0");
       const storage = new Map<string, unknown>();
       const bridge = loadPreloadBridge(storage, createHttpsMock(createReleaseResponses(firstManifest)), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
       expect((await bridge.downloadIconPack()).ok).toBe(true);
 
@@ -375,7 +375,7 @@ describe("uTools icon-pack preload", () => {
       const failedUpdateBridge = loadPreloadBridge(
         storage,
         createHttpsMock(createReleaseResponses(secondManifest, "0".repeat(64), secondPackage)),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory },
       );
       const result = await failedUpdateBridge.downloadIconPack();
       expect(result).toMatchObject({ ok: false, state: "loaded", manifest: firstManifest });
@@ -392,7 +392,7 @@ describe("uTools icon-pack preload", () => {
       const secondManifest = createManifest("2.0.0");
       const storage = new Map<string, unknown>();
       const bridge = loadPreloadBridge(storage, createHttpsMock(createReleaseResponses(firstManifest)), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
       expect((await bridge.downloadIconPack()).ok).toBe(true);
 
@@ -400,7 +400,7 @@ describe("uTools icon-pack preload", () => {
       const failedUpdateBridge = loadPreloadBridge(
         storage,
         createHttpsMock(createReleaseResponses(secondManifest, "", invalidPackage)),
-        { UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory },
+        { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory },
       );
       expect(await failedUpdateBridge.downloadIconPack()).toMatchObject({
         ok: false,
@@ -418,7 +418,7 @@ describe("uTools icon-pack preload", () => {
     try {
       const manifest = createManifest("1.0.0");
       const bridge = loadPreloadBridge(new Map(), createHttpsMock(createReleaseResponses(manifest)), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
       expect((await bridge.downloadIconPack()).ok).toBe(true);
 
@@ -443,7 +443,7 @@ describe("uTools icon-pack preload", () => {
       const manifest = createManifest("1.0.0");
       manifest.mappings.fileNames = { "nested/readme.md": { dark: "file" } };
       const bridge = loadPreloadBridge(new Map(), createHttpsMock(createReleaseResponses(manifest)), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
 
       await expect(bridge.downloadIconPack()).resolves.toMatchObject({
@@ -462,7 +462,7 @@ describe("uTools icon-pack preload", () => {
     try {
       writeFileSync(join(applicationDirectory, "icon-packs"), "not a directory");
       const bridge = loadPreloadBridge(new Map(), createHttpsMock([]), {
-        UTOOLS_PROJECT_LAUNCH_DEVICE_ID_DIR: applicationDirectory,
+        UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: applicationDirectory,
       });
 
       await expect(bridge.getIconPackStatus()).resolves.toMatchObject({

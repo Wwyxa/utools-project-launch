@@ -1,14 +1,9 @@
-import { PROJECT_TINY_CARD_BUTTON_COUNT_MAX, PROJECT_TINY_CARD_BUTTON_COUNT_MIN, PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT, ProjectStatus } from "../../types";
-import type { ProjectKind, ProjectScript, Project, Locale, ExternalApplication, ProjectVisibility, ProjectScriptFormValue, ProjectFormValue, ProjectEnvironmentEntry, ProjectIconKey } from "../../types";
-import { bridge } from "./bridge";
 import { normalizeProjectRelations } from "../../lib/projectRelations";
+import type { ExternalApplication, Locale, Project, ProjectEnvironmentEntry, ProjectEnvironmentOverride, ProjectFormValue, ProjectIconKey, ProjectKind, ProjectScript, ProjectScriptFormValue, ProjectVisibility } from "../../types";
+import { PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT, PROJECT_TINY_CARD_BUTTON_COUNT_MAX, PROJECT_TINY_CARD_BUTTON_COUNT_MIN, ProjectStatus } from "../../types";
 import { normalizeAutomationTasks } from "./automationHelpers";
+import { bridge } from "./bridge";
 import { normalizeGitSnapshot } from "./gitHelpers";
-
-export const normalizeTinyCardButtonCount = (value: unknown) =>
-  typeof value === "number" && Number.isFinite(value)
-    ? Math.min(PROJECT_TINY_CARD_BUTTON_COUNT_MAX, Math.max(PROJECT_TINY_CARD_BUTTON_COUNT_MIN, Math.floor(value)))
-    : PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT;
 
 export const createScriptId = (projectId: string, index: number) => `${projectId}-script-${index + 1}`;
 
@@ -30,18 +25,30 @@ export const createAutomationTaskId = () => `automation-${Date.now()}-${Math.ran
 
 export const createAutomationRunId = () => `automation-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-export const projectKinds = new Set<ProjectKind>(["node", "python", "go", "executable", "custom"]);
+export const sensitiveEnvironmentKeyPattern = /(TOKEN|SECRET|PASSWORD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|API[_-]?KEY)/i;
 
-export const projectScriptStatuses = new Set<ProjectScript["status"]>(["IDLE", "RUNNING", "STOPPING", "ERROR", "STOPPED"]);
 
-export const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>([
-  "manual",
-  "package-json",
-  "makefile",
-  "preset",
-]);
+export function isSensitiveEnvironmentKey(key: string): boolean {
+  return sensitiveEnvironmentKeyPattern.test(key.trim());
+}
 
-export let projectCatalogStorageSnapshot: Project[] = [];
+
+export function getProjectEnvironmentOverride(projectId: string): ProjectEnvironmentOverride {
+  try {
+    const override = bridge.loadProjectEnvironmentOverrides(projectId);
+    return override && typeof override === "object" ? override : { env: {}, localOnlyEnvKeys: [] };
+  } catch (error) {
+    return { env: {}, localOnlyEnvKeys: [] };
+  }
+}
+
+// Effective runtime environment: shared values from the project document are
+// merged with device-local overrides and local-only variables (local wins).
+
+export function resolveProjectEnvironment(project: Pick<Project, "id" | "env">): Record<string, string> {
+  const override = getProjectEnvironmentOverride(project.id);
+  return { ...project.env, ...override.env };
+}
 
 export const launchMessage = (locale: Locale, code: string, target: string) => {
   const zh = locale === "zh-CN";
@@ -69,33 +76,56 @@ export const resolvedExternalApplicationName = (
   fallbackName: string,
 ) => applications.find((application) => application.id === applicationId)?.name || fallbackName;
 
+export const normalizeTinyCardButtonCount = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? Math.min(PROJECT_TINY_CARD_BUTTON_COUNT_MAX, Math.max(PROJECT_TINY_CARD_BUTTON_COUNT_MIN, Math.floor(value)))
+    : PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT;
+
+
+export const projectKinds = new Set<ProjectKind>(["node", "python", "go", "executable", "custom"]);
+
+export const projectScriptStatuses = new Set<ProjectScript["status"]>(["IDLE", "RUNNING", "STOPPING", "ERROR", "STOPPED"]);
+
+export const projectScriptSources = new Set<NonNullable<ProjectScript["source"]>>([
+  "manual",
+  "package-json",
+  "makefile",
+  "preset",
+]);
+
 export function resolveProjectSortOrder(project: Project, fallbackIndex = 0): number {
   return typeof project.sortOrder === "number" && Number.isFinite(project.sortOrder)
     ? project.sortOrder
     : fallbackIndex;
 }
 
+
 export function normalizeQuickLink(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
+
 
 export function normalizeProjectGroup(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+
 export function normalizeProjectVisibility(value: unknown): ProjectVisibility {
   return value === "private" ? "private" : "public";
 }
 
+
 export function normalizeProjectKind(value: unknown): ProjectKind {
   return typeof value === "string" && projectKinds.has(value as ProjectKind) ? (value as ProjectKind) : "custom";
 }
+
 
 export function normalizeProjectStatus(value: unknown): ProjectStatus {
   return Object.values(ProjectStatus).includes(value as ProjectStatus)
     ? (value as ProjectStatus)
     : ProjectStatus.STOPPED;
 }
+
 
 export function normalizeProjectEnv(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -107,6 +137,7 @@ export function normalizeProjectEnv(value: unknown): Record<string, string> {
     return env;
   }, {});
 }
+
 
 export function normalizeProjectScripts(projectId: string, value: unknown): ProjectScript[] {
   const scripts = Array.isArray(value) ? value : [];
@@ -146,11 +177,171 @@ export function normalizeProjectScripts(projectId: string, value: unknown): Proj
   }, []);
 }
 
-export const currentDeviceId = bridge.loadDeviceId();
 
-export function isProjectVisibleOnCurrentDevice(project: Project): boolean {
-  return normalizeProjectVisibility(project.visibility) === "public" || project.ownerDeviceId === currentDeviceId;
+export function isImportableProject(project: Project): boolean {
+  const scripts = Array.isArray(project.scripts) ? project.scripts : [];
+  return Boolean(
+    project &&
+    typeof project.id === "string" &&
+    typeof project.name === "string" &&
+    project.name.trim() &&
+    typeof project.path === "string" &&
+    project.path.trim() &&
+    scripts.every((script) => typeof script.name === "string" && typeof script.command === "string"),
+  );
 }
+
+
+export function resolveScriptCwd(projectPath: string, scriptCwd: string | undefined): string {
+  const cwd = scriptCwd?.trim();
+  if (!cwd || cwd === ".") {
+    return projectPath;
+  }
+
+  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(cwd)) {
+    return cwd;
+  }
+
+  return `${projectPath.replace(/[\\/]$/, "")}/${cwd}`;
+}
+
+
+export function scriptFromForm(projectId: string, script: ProjectScriptFormValue, index: number): ProjectScript {
+  return {
+    id: script.id || createScriptId(projectId, index),
+    name: script.name.trim(),
+    command: script.command.trim(),
+    status: "IDLE",
+    cwd: script.cwd.trim() || ".",
+    note: script.note.trim(),
+    source: script.source,
+  };
+}
+
+
+export function scriptDiscoveryKey(script: Pick<ProjectScriptFormValue, "source" | "cwd" | "command">): string {
+  return `${script.source}\u0000${script.cwd.trim() || "."}\u0000${script.command.trim()}`;
+}
+
+
+export function formFromProject(project: Project): ProjectFormValue {
+  const projectKind = normalizeProjectKind(project.kind);
+  const projectType = typeof project.type === "string" && project.type.trim() ? project.type : "Custom";
+  const projectEnv = normalizeProjectEnv(project.env);
+  const projectScripts = normalizeProjectScripts(project.id, project.scripts);
+  const relatedProjects = normalizeProjectRelations(project.relatedProjects);
+  const isPublicProject = normalizeProjectVisibility(project.visibility) === "public";
+  const environmentOverride = isPublicProject ? getProjectEnvironmentOverride(project.id) : { env: {}, localOnlyEnvKeys: [] };
+  const localOnlyEnvKeys = new Set(environmentOverride.localOnlyEnvKeys);
+  const environmentKeys = [...new Set([...Object.keys(projectEnv), ...Object.keys(environmentOverride.env)])];
+
+  return {
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    visibility: normalizeProjectVisibility(project.visibility),
+    type: projectType,
+    kind: projectKind,
+    icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
+    cardStyle: project.cardStyle || "default",
+    tinyCardButtonCount: normalizeTinyCardButtonCount(project.tinyCardButtonCount),
+    quickLink: normalizeQuickLink(project.quickLink),
+    group: normalizeProjectGroup(project.group),
+    description: project.description || "",
+    relatedProjects,
+    relatedProjectsBidirectional:
+      relatedProjects.length > 0 && relatedProjects.every((relation) => relation.bidirectional),
+    memo: project.memo || "",
+    envEntries: environmentKeys.map((key) => {
+      const isLocalOnly = localOnlyEnvKeys.has(key);
+      const sharedValue = Object.prototype.hasOwnProperty.call(projectEnv, key) ? projectEnv[key] : null;
+      return {
+        id: `${project.id}-${key}`,
+        key,
+        value: isLocalOnly ? environmentOverride.env[key] ?? "" : sharedValue ?? "",
+        localOnly: isLocalOnly,
+        sharedValue,
+      };
+    }),
+    scripts: projectScripts.map((script) => ({
+      id: script.id,
+      name: script.name,
+      command: script.command,
+      cwd: script.cwd || ".",
+      note: script.note || "",
+      source: script.source || "manual",
+    })),
+  };
+}
+
+
+export function envFromEntries(entries: ProjectEnvironmentEntry[]): Record<string, string> {
+  return entries.reduce<Record<string, string>>((accumulator, entry) => {
+    const key = entry.key.trim();
+    if (key) {
+      accumulator[key] = entry.value;
+    }
+    return accumulator;
+  }, {});
+}
+
+
+export function inferProjectIcon(kind: ProjectKind, type = "", name = ""): ProjectIconKey {
+  const source = `${kind} ${type} ${name}`.toLowerCase();
+  if (/\b(vue|vite|nuxt)\b/.test(source)) return "vue";
+  if (/\b(react|next)\b/.test(source)) return "react";
+  if (/\bpython|py\b/.test(source)) return "python";
+  if (/\bgo(lang)?\b/.test(source)) return "go";
+  if (/\brust|cargo\b/.test(source)) return "rust";
+  if (/\bjava|spring\b/.test(source)) return "java";
+  if (/\bdocker|compose\b/.test(source)) return "docker";
+  if (/\b(android|apk)\b/.test(source)) return "android";
+  if (/\b(linux|ubuntu|debian|fedora|arch)\b/.test(source)) return "linux";
+  if (/\b(macos|osx|darwin|swift|xcode)\b/.test(source)) return "macos";
+  if (/\b(windows|win32|win64)\b/.test(source)) return "windows";
+  if (/\b(db|sql|mysql|postgres|redis|mongo)\b/.test(source)) return "database";
+  if (/\b(browser|web|frontend)\b/.test(source)) return "browser";
+  if (/\b(ai|llm|gpt|claude)\b/.test(source)) return "ai";
+  if (kind === "node") return "node";
+  if (kind === "python") return "python";
+  if (kind === "go") return "go";
+  if (kind === "executable") return "executable";
+  return "custom";
+}
+
+
+export function createBlankProjectForm(): ProjectFormValue {
+  return {
+    id: null,
+    name: "",
+    path: "",
+    visibility: "private",
+    type: "Node.js",
+    kind: "node",
+    icon: "node",
+    cardStyle: "default",
+    tinyCardButtonCount: PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT,
+    quickLink: "",
+    group: "",
+    description: "",
+    relatedProjects: [],
+    relatedProjectsBidirectional: false,
+    memo: "",
+    envEntries: [],
+    scripts: [
+      {
+        id: `script-${Date.now()}`,
+        name: "dev",
+        command: "npm run dev",
+        cwd: ".",
+        note: "",
+        source: "manual",
+      },
+    ],
+  };
+}
+
+export let projectCatalogStorageSnapshot: Project[] = [];
 
 export function toPersistedProject(project: Project, sortOrder?: number): Project {
   const projectKind = normalizeProjectKind(project.kind);
@@ -165,7 +356,6 @@ export function toPersistedProject(project: Project, sortOrder?: number): Projec
     name: project.name,
     path: project.path,
     visibility: normalizeProjectVisibility(project.visibility),
-    ownerDeviceId: project.ownerDeviceId || currentDeviceId,
     type: projectType,
     kind: projectKind,
     icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
@@ -202,128 +392,16 @@ export function toPersistedProject(project: Project, sortOrder?: number): Projec
   };
 }
 
+
 export function cloneProjectCatalogSnapshot(projects: Project[]): Project[] {
   return JSON.parse(JSON.stringify(projects.map((project, index) => toPersistedProject(project, index)))) as Project[];
 }
+
 
 export function setProjectCatalogStorageSnapshot(projects: Project[]): void {
   projectCatalogStorageSnapshot = cloneProjectCatalogSnapshot(projects);
 }
 
-export function isImportableProject(project: Project): boolean {
-  const scripts = Array.isArray(project.scripts) ? project.scripts : [];
-  return Boolean(
-    project &&
-    typeof project.id === "string" &&
-    typeof project.name === "string" &&
-    project.name.trim() &&
-    typeof project.path === "string" &&
-    project.path.trim() &&
-    scripts.every((script) => typeof script.name === "string" && typeof script.command === "string"),
-  );
-}
-
-export function resolveScriptCwd(projectPath: string, scriptCwd: string | undefined): string {
-  const cwd = scriptCwd?.trim();
-  if (!cwd || cwd === ".") {
-    return projectPath;
-  }
-
-  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(cwd)) {
-    return cwd;
-  }
-
-  return `${projectPath.replace(/[\\/]$/, "")}/${cwd}`;
-}
-
-export function scriptFromForm(projectId: string, script: ProjectScriptFormValue, index: number): ProjectScript {
-  return {
-    id: script.id || createScriptId(projectId, index),
-    name: script.name.trim(),
-    command: script.command.trim(),
-    status: "IDLE",
-    cwd: script.cwd.trim() || ".",
-    note: script.note.trim(),
-    source: script.source,
-  };
-}
-
-export function scriptDiscoveryKey(script: Pick<ProjectScriptFormValue, "source" | "cwd" | "command">): string {
-  return `${script.source}\u0000${script.cwd.trim() || "."}\u0000${script.command.trim()}`;
-}
-
-export function formFromProject(project: Project): ProjectFormValue {
-  const projectKind = normalizeProjectKind(project.kind);
-  const projectType = typeof project.type === "string" && project.type.trim() ? project.type : "Custom";
-  const projectEnv = normalizeProjectEnv(project.env);
-  const projectScripts = normalizeProjectScripts(project.id, project.scripts);
-  const relatedProjects = normalizeProjectRelations(project.relatedProjects);
-
-  return {
-    id: project.id,
-    name: project.name,
-    path: project.path,
-    visibility: normalizeProjectVisibility(project.visibility),
-    type: projectType,
-    kind: projectKind,
-    icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
-    cardStyle: project.cardStyle || "default",
-    tinyCardButtonCount: normalizeTinyCardButtonCount(project.tinyCardButtonCount),
-    quickLink: normalizeQuickLink(project.quickLink),
-    group: normalizeProjectGroup(project.group),
-    description: project.description || "",
-    relatedProjects,
-    relatedProjectsBidirectional:
-      relatedProjects.length > 0 && relatedProjects.every((relation) => relation.bidirectional),
-    memo: project.memo || "",
-    envEntries: Object.entries(projectEnv).map(([key, value]) => ({
-      id: `${project.id}-${key}`,
-      key,
-      value,
-    })),
-    scripts: projectScripts.map((script) => ({
-      id: script.id,
-      name: script.name,
-      command: script.command,
-      cwd: script.cwd || ".",
-      note: script.note || "",
-      source: script.source || "manual",
-    })),
-  };
-}
-
-export function envFromEntries(entries: ProjectEnvironmentEntry[]): Record<string, string> {
-  return entries.reduce<Record<string, string>>((accumulator, entry) => {
-    const key = entry.key.trim();
-    if (key) {
-      accumulator[key] = entry.value;
-    }
-    return accumulator;
-  }, {});
-}
-
-export function inferProjectIcon(kind: ProjectKind, type = "", name = ""): ProjectIconKey {
-  const source = `${kind} ${type} ${name}`.toLowerCase();
-  if (/\b(vue|vite|nuxt)\b/.test(source)) return "vue";
-  if (/\b(react|next)\b/.test(source)) return "react";
-  if (/\bpython|py\b/.test(source)) return "python";
-  if (/\bgo(lang)?\b/.test(source)) return "go";
-  if (/\brust|cargo\b/.test(source)) return "rust";
-  if (/\bjava|spring\b/.test(source)) return "java";
-  if (/\bdocker|compose\b/.test(source)) return "docker";
-  if (/\b(android|apk)\b/.test(source)) return "android";
-  if (/\b(linux|ubuntu|debian|fedora|arch)\b/.test(source)) return "linux";
-  if (/\b(macos|osx|darwin|swift|xcode)\b/.test(source)) return "macos";
-  if (/\b(windows|win32|win64)\b/.test(source)) return "windows";
-  if (/\b(db|sql|mysql|postgres|redis|mongo)\b/.test(source)) return "database";
-  if (/\b(browser|web|frontend)\b/.test(source)) return "browser";
-  if (/\b(ai|llm|gpt|claude)\b/.test(source)) return "ai";
-  if (kind === "node") return "node";
-  if (kind === "python") return "python";
-  if (kind === "go") return "go";
-  if (kind === "executable") return "executable";
-  return "custom";
-}
 
 export function hydrateProject(project: Project): Project {
   const projectKind = normalizeProjectKind(project.kind);
@@ -340,7 +418,6 @@ export function hydrateProject(project: Project): Project {
     type: projectType,
     kind: projectKind,
     visibility: normalizeProjectVisibility(project.visibility),
-    ownerDeviceId: project.ownerDeviceId || currentDeviceId,
     icon: project.icon || inferProjectIcon(projectKind, projectType, project.name),
     cardStyle: project.cardStyle || "default",
     tinyCardButtonCount: normalizeTinyCardButtonCount(project.tinyCardButtonCount),
@@ -363,12 +440,14 @@ export function hydrateProject(project: Project): Project {
   };
 }
 
+
 export function demoProject(id: string, project: Project): Project {
   return hydrateProject({
     ...project,
     id,
   });
 }
+
 
 export const demoProjects: Project[] = [
   demoProject("project-node-1", {
@@ -513,34 +592,3 @@ export const demoProjects: Project[] = [
     },
   }),
 ];
-
-export function createBlankProjectForm(): ProjectFormValue {
-  return {
-    id: null,
-    name: "",
-    path: "",
-    visibility: "private",
-    type: "Node.js",
-    kind: "node",
-    icon: "node",
-    cardStyle: "default",
-    tinyCardButtonCount: PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT,
-    quickLink: "",
-    group: "",
-    description: "",
-    relatedProjects: [],
-    relatedProjectsBidirectional: false,
-    memo: "",
-    envEntries: [],
-    scripts: [
-      {
-        id: `script-${Date.now()}`,
-        name: "dev",
-        command: "npm run dev",
-        cwd: ".",
-        note: "",
-        source: "manual",
-      },
-    ],
-  };
-}

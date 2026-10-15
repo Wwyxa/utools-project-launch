@@ -30,20 +30,12 @@ const resultFor = (content: string, reasoning = "", rawContent = content): AiRea
 });
 
 describe("Git AI analysis session", () => {
-  it("appends the first successful result as version one", () => {
-    const result = resultFor("Initial report");
-    const session = appendGitAiAnalysisVersion(createSession(), result);
-
-    expect(session).toMatchObject({ activeVersionId: 1, nextVersionId: 2 });
-    expect(session.versions).toEqual([
-      expect.objectContaining({ id: 1, sourceVersionId: null, instruction: "", result }),
-    ]);
-  });
-
-  it("records a refinement from the selected source version", () => {
+  it("preserves results and monotonic ids through refinement and restoration", () => {
     const first = appendGitAiAnalysisVersion(createSession(), resultFor("Initial report"));
     const refined = appendGitAiAnalysisVersion(first, resultFor("Risk-focused report"), 1, "  explain risks  ");
 
+    expect(first).toMatchObject({ activeVersionId: 1, nextVersionId: 2 });
+    expect(first.versions).toEqual([expect.objectContaining({ id: 1, sourceVersionId: null, instruction: "" })]);
     expect(resolveGitAiAnalysisVersion(refined)).toMatchObject({
       id: 2,
       sourceVersionId: 1,
@@ -51,11 +43,6 @@ describe("Git AI analysis session", () => {
       result: expect.objectContaining({ content: "Risk-focused report" }),
     });
     expect(resolveGitAiAnalysisVersion(refined, 1)?.result.content).toBe("Initial report");
-  });
-
-  it("restores an older version by appending it as the new latest version", () => {
-    const first = appendGitAiAnalysisVersion(createSession(), resultFor("Initial report"));
-    const refined = appendGitAiAnalysisVersion(first, resultFor("Refined report"), 1, "add risks");
     const restored = restoreGitAiAnalysisVersion(refined, 1);
 
     expect(restored.versions.slice(0, 2)).toEqual(refined.versions);
@@ -66,12 +53,6 @@ describe("Git AI analysis session", () => {
       result: expect.objectContaining({ content: "Initial report" }),
     });
     expect(restored.activeVersionId).toBe(3);
-  });
-
-  it("keeps version ids monotonic after restoring and refining", () => {
-    const first = appendGitAiAnalysisVersion(createSession(), resultFor("Version one"));
-    const second = appendGitAiAnalysisVersion(first, resultFor("Version two"), 1, "refine one");
-    const restored = restoreGitAiAnalysisVersion(second, 1);
     const fourth = appendGitAiAnalysisVersion(restored, resultFor("Version four"), 2, "refine two");
 
     expect(fourth.versions.map((version) => version.id)).toEqual([1, 2, 3, 4]);

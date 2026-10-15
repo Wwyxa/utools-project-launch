@@ -20,7 +20,6 @@ import {
   ArrowUpDown,
   MonitorCog,
   PackageOpen,
-  Download,
   Check,
   CheckSquare,
   GripVertical,
@@ -56,7 +55,10 @@ const draggingProjectId = ref<string | null>(null);
 type ProjectDropPosition = "before" | "after";
 const dragOverProjectId = ref<string | null>(null);
 const dragOverProjectPosition = ref<ProjectDropPosition | null>(null);
-const selectedProjectGroupKey = ref("all");
+const selectedProjectGroupKey = computed({
+  get: () => store.dashboardProjectGroup,
+  set: (groupKey: string) => store.setDashboardProjectGroup(groupKey),
+});
 const normalizedSearchQuery = computed(() => props.searchQuery.trim().toLowerCase());
 let stopAppEscapeListener = () => {};
 const projectCardsMounted = ref(false);
@@ -363,9 +365,7 @@ const sortedAutomationHistory = (history: ProjectAutomationHistoryEntry[]) =>
 const automationTasks = computed(() =>
   store.visibleProjects.flatMap((project) =>
     (project.automationTasks || []).map((task) => {
-      const latestHistory = store.projectLaunchServicePreferences.enabled
-        ? sortedAutomationHistory(task.history)[0]
-        : undefined;
+      const latestHistory = sortedAutomationHistory(task.history)[0];
       const entries =
         store.serviceAutomationTaskEntries(project.id, task.id) ?? task.dailyPlans.flatMap((plan) => plan.entries);
       const runningEntry = entries.find((entry) => entry.status === "running") || null;
@@ -820,7 +820,7 @@ const handleProjectDragEnd = () => {
       <Transition name="scale">
         <div
           v-if="todoOverviewOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           @click.self="todoOverviewOpen = false"
         >
           <section
@@ -947,7 +947,7 @@ const handleProjectDragEnd = () => {
                 </button>
               </div>
             </div>
-            <div class="themed-scrollbar min-h-0 overflow-auto p-3">
+            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-auto p-3">
               <div
                 v-if="todoProjectGroups.length === 0"
                 class="rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-sm text-on-surface-variant"
@@ -1013,7 +1013,7 @@ const handleProjectDragEnd = () => {
       <Transition name="scale">
         <div
           v-if="automationOverviewOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           @click.self="automationOverviewOpen = false"
         >
           <section
@@ -1043,7 +1043,7 @@ const handleProjectDragEnd = () => {
                 <X :size="16" />
               </button>
             </div>
-            <div class="themed-scrollbar min-h-0 overflow-auto px-4 pb-4">
+            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-auto px-4 pb-4">
               <p
                 v-if="automationOverviewFeedback"
                 class="border-b border-status-info/30 pb-2 pt-3 text-xs font-semibold text-status-info"
@@ -1273,13 +1273,6 @@ const handleProjectDragEnd = () => {
         >
           <Plus :size="16" aria-hidden="true" />
           {{ t.dashboard.createHint }}
-        </button>
-        <button
-          @click="store.importProjectConfig"
-          class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle bg-surface-container-lowest px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-low"
-        >
-          <Download :size="16" aria-hidden="true" />
-          {{ t.dashboard.emptyImport }}
         </button>
       </div>
     </div>

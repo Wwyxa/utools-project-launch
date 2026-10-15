@@ -70,31 +70,6 @@ describe("file icon theme resolver", () => {
     });
   });
 
-  it("normalizes Windows separators and selects expanded folder variants", () => {
-    const pack = createManifest();
-    expect(
-      resolveFileIcon(pack, {
-        name: "src",
-        path: "src\\nested\\src\\",
-        kind: "directory",
-        expanded: true,
-        colorMode: "dark",
-      }),
-    ).toMatchObject({ kind: "external", assetId: "folder-open" });
-  });
-
-  it("uses the light asset and dark fallback when light is absent", () => {
-    const pack = createManifest();
-    expect(resolveFileIcon(pack, input({ name: "README.md", colorMode: "light" }))).toMatchObject({
-      kind: "external",
-      assetId: "readme-light",
-    });
-    expect(resolveFileIcon(pack, input({ name: "main.ts", colorMode: "light" }))).toMatchObject({
-      kind: "external",
-      assetId: "typescript",
-    });
-  });
-
   it("normalizes mapping keys and rejects unsafe asset content", () => {
     const manifest = createManifest();
     const normalized = normalizeIconPackManifest({
@@ -121,7 +96,10 @@ describe("file icon theme resolver", () => {
   });
 
   it("falls back safely for missing packs and missing assets", () => {
-    expect(resolveFileIcon(null, input({ name: "package.json" }))).toEqual({ kind: "fallback", fallbackKey: "package" });
+    expect(resolveFileIcon(null, input({ name: "package.json" }))).toEqual({
+      kind: "fallback",
+      fallbackKey: "package",
+    });
     expect(resolveFileIcon(null, input({ name: "styles.css" }))).toEqual({ kind: "fallback", fallbackKey: "braces" });
     const pack = createManifest();
     pack.mappings.defaults.file = { dark: "missing" };

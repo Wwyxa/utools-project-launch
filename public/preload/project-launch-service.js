@@ -1,66 +1,52 @@
 function projectLaunchServiceTarget() {
   const architecture =
-    process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : process.arch || "unknown";
-  const platform = process.platform === "win32" ? "windows" : process.platform;
+    process.arch === 'x64' ? 'amd64' : process.arch === 'arm64' ? 'arm64' : process.arch || 'unknown';
+  const platform = process.platform === 'win32' ? 'windows' : process.platform;
   const supported =
-    (platform === "windows" || platform === "linux" || platform === "darwin") &&
-    (architecture === "amd64" || architecture === "arm64");
+    (platform === 'windows' || platform === 'linux' || platform === 'darwin') &&
+    (architecture === 'amd64' || architecture === 'arm64');
   const assetName = supported
-    ? `project-launch-service-${platform}-${architecture}${platform === "windows" ? ".exe" : ""}`
-    : "";
+    ? `project-launch-service-${platform}-${architecture}${platform === 'windows' ? '.exe' : ''}`
+    : '';
   return { platform, architecture, supported, assetName };
 }
 
 function projectLaunchServiceDirectoryPath() {
-  return path.join(path.dirname(getDeviceIdFilePath()), "service");
+  return path.join(pluginLocalDataDirectory(), 'service');
 }
 
 function projectLaunchServiceExecutablePath() {
   return path.join(
     projectLaunchServiceDirectoryPath(),
-    `project-launch-service${process.platform === "win32" ? ".exe" : ""}`,
+    `project-launch-service${process.platform === 'win32' ? '.exe' : ''}`,
   );
 }
 
 function projectLaunchServiceDiscoveryPath() {
-  return path.join(projectLaunchServiceDirectoryPath(), "discovery.json");
+  return path.join(projectLaunchServiceDirectoryPath(), 'discovery.json');
 }
 
 function projectLaunchServiceInstallMetadataPath() {
-  return path.join(projectLaunchServiceDirectoryPath(), "install.json");
+  return path.join(projectLaunchServiceDirectoryPath(), 'install.json');
 }
 
 function projectLaunchServiceTokenPath() {
-  return path.join(projectLaunchServiceDirectoryPath(), "token");
+  return path.join(projectLaunchServiceDirectoryPath(), 'token');
 }
 
 function appendProjectLaunchServiceDiagnostic(event, fields = {}) {
-  try {
-    fs.appendFileSync(
-      path.join(projectLaunchServiceDirectoryPath(), "service.log"),
-      `${JSON.stringify({
-        timestamp: new Date().toISOString(),
-        event,
-        source: "preload",
-        hostPid: process.pid,
-        ...fields,
-      })}\n`,
-      { encoding: "utf8", mode: 0o600 },
-    );
-  } catch (error) {
-    // Diagnostics must never prevent service startup or recovery.
-  }
+  appendRuntimeDiagnostic(JSON.stringify({ event, source: 'preload', hostPid: process.pid, ...fields }));
 }
 
 function projectLaunchServiceReleaseUrl() {
-  return "https://github.com/Wwyxa/utools-project-launch/releases";
+  return 'https://github.com/Wwyxa/utools-project-launch/releases';
 }
 
 function projectLaunchServiceBaseStatus() {
   const target = projectLaunchServiceTarget();
   const directoryPath = projectLaunchServiceDirectoryPath();
   return {
-    state: target.supported ? "not-installed" : "unavailable",
+    state: target.supported ? 'not-installed' : 'unavailable',
     installed: false,
     running: false,
     platform: target.platform,
@@ -69,14 +55,14 @@ function projectLaunchServiceBaseStatus() {
     directoryPath,
     executablePath: projectLaunchServiceExecutablePath(),
     releaseUrl: projectLaunchServiceReleaseUrl(),
-    message: target.supported ? "项目启动服务尚未安装。" : "当前系统或 CPU 架构暂不支持项目启动服务。",
+    message: target.supported ? '项目启动服务尚未安装。' : '当前系统或 CPU 架构暂不支持项目启动服务。',
   };
 }
 
 function isAllowedProjectLaunchServiceUrl(value) {
   try {
     const parsed = new URL(value);
-    return parsed.protocol === "https:" && projectLaunchServiceAllowedDownloadHosts.has(parsed.hostname.toLowerCase());
+    return parsed.protocol === 'https:' && projectLaunchServiceAllowedDownloadHosts.has(parsed.hostname.toLowerCase());
   } catch (error) {
     return false;
   }
@@ -87,13 +73,13 @@ function fetchProjectLaunchServiceBytes(url, options = {}, redirectCount = 0) {
   const expectedTotalBytes =
     Number.isFinite(options.totalBytes) && options.totalBytes > 0 ? Math.floor(options.totalBytes) : undefined;
   if (!isAllowedProjectLaunchServiceUrl(url)) {
-    const error = new Error("项目启动服务下载地址不受支持。");
-    error.code = "invalid-download-url";
+    const error = new Error('项目启动服务下载地址不受支持。');
+    error.code = 'invalid-download-url';
     return Promise.reject(error);
   }
   if (redirectCount > projectLaunchServiceDownloadRedirectLimit) {
-    const error = new Error("项目启动服务下载重定向次数过多。");
-    error.code = "too-many-redirects";
+    const error = new Error('项目启动服务下载重定向次数过多。');
+    error.code = 'too-many-redirects';
     return Promise.reject(error);
   }
 
@@ -120,8 +106,8 @@ function fetchProjectLaunchServiceBytes(url, options = {}, redirectCount = 0) {
         path: `${parsedUrl.pathname}${parsedUrl.search}`,
         timeout: projectLaunchServiceDownloadTimeoutMs,
         headers: {
-          Accept: "application/octet-stream, application/json",
-          "User-Agent": "utools-project-launch",
+          Accept: 'application/octet-stream, application/json',
+          'User-Agent': 'utools-project-launch',
         },
       },
       (response) => {
@@ -143,11 +129,11 @@ function fetchProjectLaunchServiceBytes(url, options = {}, redirectCount = 0) {
           return;
         }
 
-        const contentLength = Number(response.headers["content-length"]);
+        const contentLength = Number(response.headers['content-length']);
         if (Number.isFinite(contentLength) && contentLength > maxBytes) {
           response.resume();
-          const error = new Error("项目启动服务响应超过大小限制。");
-          error.code = "response-too-large";
+          const error = new Error('项目启动服务响应超过大小限制。');
+          error.code = 'response-too-large';
           finish(reject, error);
           return;
         }
@@ -156,34 +142,34 @@ function fetchProjectLaunchServiceBytes(url, options = {}, redirectCount = 0) {
 
         const chunks = [];
         let totalBytes = 0;
-        response.on("data", (chunk) => {
+        response.on('data', (chunk) => {
           totalBytes += Buffer.byteLength(chunk);
           if (totalBytes > maxBytes) {
             response.destroy();
-            const error = new Error("项目启动服务响应超过大小限制。");
-            error.code = "response-too-large";
+            const error = new Error('项目启动服务响应超过大小限制。');
+            error.code = 'response-too-large';
             finish(reject, error);
             return;
           }
           chunks.push(chunk);
           if (
-            typeof options.onProgress === "function" &&
+            typeof options.onProgress === 'function' &&
             Number.isFinite(progressTotalBytes) &&
             progressTotalBytes > 0
           ) {
             options.onProgress(totalBytes, progressTotalBytes);
           }
         });
-        response.on("end", () => finish(resolve, Buffer.concat(chunks)));
-        response.on("error", (error) => finish(reject, error));
+        response.on('end', () => finish(resolve, Buffer.concat(chunks)));
+        response.on('error', (error) => finish(reject, error));
       },
     );
-    request.on("timeout", () => {
-      const error = new Error("项目启动服务下载超时。");
-      error.code = "download-timeout";
+    request.on('timeout', () => {
+      const error = new Error('项目启动服务下载超时。');
+      error.code = 'download-timeout';
       request.destroy(error);
     });
-    request.on("error", (error) => finish(reject, error));
+    request.on('error', (error) => finish(reject, error));
   });
 }
 
@@ -192,14 +178,14 @@ function projectLaunchServiceReleaseAsset(release, assetName) {
   const asset = assets.find((candidate) => candidate?.name === assetName);
   if (
     !asset ||
-    typeof asset.browser_download_url !== "string" ||
+    typeof asset.browser_download_url !== 'string' ||
     !isAllowedProjectLaunchServiceUrl(asset.browser_download_url)
   ) {
     return null;
   }
   if (Number.isFinite(asset.size) && asset.size > projectLaunchServiceExecutableLimitBytes) {
-    const error = new Error("项目启动服务文件超过 12 MiB 大小限制。");
-    error.code = "asset-too-large";
+    const error = new Error('项目启动服务文件超过 12 MiB 大小限制。');
+    error.code = 'asset-too-large';
     throw error;
   }
   return asset;
@@ -210,10 +196,10 @@ function projectLaunchServiceChecksum(checksumContents, assetName) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .map((line) => line.match(/^([0-9a-f]{64})\s+\*?(.+)$/i))
-    .find((candidate) => candidate && candidate[2].replace(/^\.\//, "") === assetName);
+    .find((candidate) => candidate && candidate[2].replace(/^\.\//, '') === assetName);
   if (!match) {
     const error = new Error(`checksums.txt 中缺少 ${assetName} 的校验值。`);
-    error.code = "checksum-not-found";
+    error.code = 'checksum-not-found';
     throw error;
   }
   return match[1].toLowerCase();
@@ -221,14 +207,14 @@ function projectLaunchServiceChecksum(checksumContents, assetName) {
 
 function projectLaunchServiceInstallVerificationError(message) {
   const error = new Error(message);
-  error.code = "unverified-install";
+  error.code = 'unverified-install';
   return error;
 }
 
 function projectLaunchServiceInstallMetadata(expectedHash) {
   const target = projectLaunchServiceTarget();
   if (!target.supported || !/^[0-9a-f]{64}$/i.test(expectedHash)) {
-    throw projectLaunchServiceInstallVerificationError("项目启动服务安装元数据无效。");
+    throw projectLaunchServiceInstallVerificationError('项目启动服务安装元数据无效。');
   }
   return {
     schemaVersion: 1,
@@ -241,14 +227,14 @@ function readProjectLaunchServiceInstallMetadata() {
   const directoryPath = projectLaunchServiceDirectoryPath();
   const metadataPath = projectLaunchServiceInstallMetadataPath();
   if (!isPathWithin(directoryPath, metadataPath)) {
-    throw projectLaunchServiceInstallVerificationError("项目启动服务安装元数据路径无效。");
+    throw projectLaunchServiceInstallVerificationError('项目启动服务安装元数据路径无效。');
   }
 
   let metadata;
   try {
-    metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+    metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
   } catch (error) {
-    throw projectLaunchServiceInstallVerificationError("项目启动服务缺少可信安装记录。请重新下载或手动验证后再启用。");
+    throw projectLaunchServiceInstallVerificationError('项目启动服务缺少可信安装记录。请重新下载或手动验证后再启用。');
   }
 
   const target = projectLaunchServiceTarget();
@@ -256,10 +242,10 @@ function readProjectLaunchServiceInstallMetadata() {
     !metadata ||
     metadata.schemaVersion !== 1 ||
     metadata.assetName !== target.assetName ||
-    typeof metadata.sha256 !== "string" ||
+    typeof metadata.sha256 !== 'string' ||
     !/^[0-9a-f]{64}$/i.test(metadata.sha256)
   ) {
-    throw projectLaunchServiceInstallVerificationError("项目启动服务安装记录无效。请重新下载或手动验证后再启用。");
+    throw projectLaunchServiceInstallVerificationError('项目启动服务安装记录无效。请重新下载或手动验证后再启用。');
   }
   return metadata;
 }
@@ -269,15 +255,15 @@ function verifyProjectLaunchServiceInstalledExecutable() {
   let actualHash;
   try {
     actualHash = crypto
-      .createHash("sha256")
+      .createHash('sha256')
       .update(fs.readFileSync(projectLaunchServiceExecutablePath()))
-      .digest("hex");
+      .digest('hex');
   } catch (error) {
-    throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请重新下载或手动验证后再启用。");
+    throw projectLaunchServiceInstallVerificationError('无法读取项目启动服务文件。请重新下载或手动验证后再启用。');
   }
   if (actualHash !== metadata.sha256) {
     throw projectLaunchServiceInstallVerificationError(
-      "项目启动服务文件已变更，无法自动启动。请重新下载或手动验证后再启用。",
+      '项目启动服务文件已变更，无法自动启动。请重新下载或手动验证后再启用。',
     );
   }
 }
@@ -288,44 +274,44 @@ function verifyProjectLaunchServiceManually() {
   const metadataPartialPath = `${metadataPath}.partial`;
   const executablePath = projectLaunchServiceExecutablePath();
   const target = projectLaunchServiceTarget();
-  const releaseAssetPath = target.assetName ? path.join(directoryPath, target.assetName) : "";
+  const releaseAssetPath = target.assetName ? path.join(directoryPath, target.assetName) : '';
   if (
     !isPathWithin(directoryPath, metadataPath) ||
     !isPathWithin(directoryPath, metadataPartialPath) ||
     !isPathWithin(directoryPath, executablePath) ||
     (releaseAssetPath && !isPathWithin(directoryPath, releaseAssetPath))
   ) {
-    throw new Error("项目启动服务安装路径无效。");
+    throw new Error('项目启动服务安装路径无效。');
   }
 
-  let sourcePath = "";
+  let sourcePath = '';
   for (const candidatePath of [executablePath, releaseAssetPath]) {
     if (!candidatePath || sourcePath) continue;
     try {
       const stats = fs.lstatSync(candidatePath);
       if (stats.isFile() && !stats.isSymbolicLink()) sourcePath = candidatePath;
     } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+      if (error?.code !== 'ENOENT') throw error;
     }
   }
   if (!sourcePath) {
-    throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请先放置可执行文件后重试。");
+    throw projectLaunchServiceInstallVerificationError('无法读取项目启动服务文件。请先放置可执行文件后重试。');
   }
 
   let contents;
   try {
     contents = fs.readFileSync(sourcePath);
   } catch (error) {
-    throw projectLaunchServiceInstallVerificationError("无法读取项目启动服务文件。请先放置可执行文件后重试。");
+    throw projectLaunchServiceInstallVerificationError('无法读取项目启动服务文件。请先放置可执行文件后重试。');
   }
   if (contents.length > projectLaunchServiceExecutableLimitBytes) {
-    const error = new Error("项目启动服务文件超过 12 MiB 大小限制。");
-    error.code = "asset-too-large";
+    const error = new Error('项目启动服务文件超过 12 MiB 大小限制。');
+    error.code = 'asset-too-large';
     throw error;
   }
 
   const installMetadata = projectLaunchServiceInstallMetadata(
-    crypto.createHash("sha256").update(contents).digest("hex"),
+    crypto.createHash('sha256').update(contents).digest('hex'),
   );
   let movedReleaseAsset = false;
   try {
@@ -334,21 +320,21 @@ function verifyProjectLaunchServiceManually() {
       fs.renameSync(sourcePath, executablePath);
       movedReleaseAsset = true;
     }
-    if (process.platform !== "win32") fs.chmodSync(executablePath, 0o755);
+    if (process.platform !== 'win32') fs.chmodSync(executablePath, 0o755);
     fs.writeFileSync(metadataPartialPath, `${JSON.stringify(installMetadata)}\n`, { mode: 0o600 });
     fs.renameSync(metadataPartialPath, metadataPath);
   } catch (error) {
     try {
       fs.unlinkSync(metadataPartialPath);
     } catch (cleanupError) {
-      if (cleanupError?.code !== "ENOENT")
-        console.warn("[utools-project-launch] failed to clean service metadata partial file");
+      if (cleanupError?.code !== 'ENOENT')
+        console.warn('[utools-project-launch] failed to clean service metadata partial file');
     }
     if (movedReleaseAsset) {
       try {
         fs.renameSync(executablePath, sourcePath);
       } catch (restoreError) {
-        console.warn("[utools-project-launch] failed to restore manually placed service asset");
+        console.warn('[utools-project-launch] failed to restore manually placed service asset');
       }
     }
     throw error;
@@ -361,32 +347,32 @@ async function fetchProjectLaunchServiceRelease() {
   });
   let releases;
   try {
-    releases = JSON.parse(releaseContents.toString("utf8"));
+    releases = JSON.parse(releaseContents.toString('utf8'));
   } catch (error) {
-    const parseError = new Error("GitHub Release 响应不是有效 JSON。");
-    parseError.code = "invalid-release-metadata";
+    const parseError = new Error('GitHub Release 响应不是有效 JSON。');
+    parseError.code = 'invalid-release-metadata';
     throw parseError;
   }
   if (!Array.isArray(releases)) {
-    releases = releases && typeof releases === "object" ? [releases] : null;
+    releases = releases && typeof releases === 'object' ? [releases] : null;
   }
   if (!Array.isArray(releases)) {
-    const metadataError = new Error("GitHub Release 响应格式无效。");
-    metadataError.code = "invalid-release-metadata";
+    const metadataError = new Error('GitHub Release 响应格式无效。');
+    metadataError.code = 'invalid-release-metadata';
     throw metadataError;
   }
 
   const candidates = releases.filter((release) => !release?.draft && !release?.prerelease);
   candidates.sort((left, right) => {
-    const leftDate = Date.parse(left?.published_at || left?.created_at || "");
-    const rightDate = Date.parse(right?.published_at || right?.created_at || "");
+    const leftDate = Date.parse(left?.published_at || left?.created_at || '');
+    const rightDate = Date.parse(right?.published_at || right?.created_at || '');
     return (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
   });
 
   const assetName = projectLaunchServiceTarget().assetName;
   for (const release of candidates) {
     const binaryAsset = projectLaunchServiceReleaseAsset(release, assetName);
-    const checksumAsset = projectLaunchServiceReleaseAsset(release, "checksums.txt");
+    const checksumAsset = projectLaunchServiceReleaseAsset(release, 'checksums.txt');
     if (!binaryAsset || !checksumAsset) continue;
     const checksumContents = await fetchProjectLaunchServiceBytes(checksumAsset.browser_download_url, {
       maxBytes: projectLaunchServiceMetadataLimitBytes,
@@ -394,32 +380,32 @@ async function fetchProjectLaunchServiceRelease() {
     return {
       release,
       binaryAsset,
-      expectedHash: projectLaunchServiceChecksum(checksumContents.toString("utf8"), binaryAsset.name),
+      expectedHash: projectLaunchServiceChecksum(checksumContents.toString('utf8'), binaryAsset.name),
     };
   }
 
   const assetError = new Error(`当前发布未提供兼容的项目启动服务文件：${assetName}`);
-  assetError.code = "asset-not-found";
+  assetError.code = 'asset-not-found';
   throw assetError;
 }
 
 function projectLaunchServiceReleaseVersion(release) {
-  const tagName = typeof release?.tag_name === "string" ? release.tag_name.trim() : "";
+  const tagName = typeof release?.tag_name === 'string' ? release.tag_name.trim() : '';
   return tagName || undefined;
 }
 
 async function checkProjectLaunchServiceUpdate() {
   const status = await readProjectLaunchServiceStatus({ includeState: true });
   if (!status.installed) {
-    return { ...status, updateCheckError: false, message: "项目启动服务尚未安装，无法检查更新。" };
+    return { ...status, updateCheckError: false, message: '项目启动服务尚未安装，无法检查更新。' };
   }
 
   try {
     const { release, expectedHash } = await fetchProjectLaunchServiceRelease();
     const currentHash = crypto
-      .createHash("sha256")
+      .createHash('sha256')
       .update(fs.readFileSync(projectLaunchServiceExecutablePath()))
-      .digest("hex");
+      .digest('hex');
     const updateAvailable = currentHash !== expectedHash;
     const latestServiceVersion = projectLaunchServiceReleaseVersion(release);
     return {
@@ -429,27 +415,27 @@ async function checkProjectLaunchServiceUpdate() {
       ...(latestServiceVersion ? { latestServiceVersion } : {}),
       message: updateAvailable
         ? status.running
-          ? "发现项目启动服务更新。请先停止正在运行的项目，再下载并安装。"
-          : "发现项目启动服务更新，可以下载并安装。"
+          ? '发现项目启动服务更新。请先停止正在运行的项目，再下载并安装。'
+          : '发现项目启动服务更新，可以下载并安装。'
         : status.running
-          ? ""
-          : "项目启动服务已是最新版本。",
+          ? ''
+          : '项目启动服务已是最新版本。',
     };
   } catch (error) {
     return {
       ...status,
       updateCheckError: true,
-      message: error instanceof Error ? error.message : "项目启动服务更新检查失败。",
+      message: error instanceof Error ? error.message : '项目启动服务更新检查失败。',
     };
   }
 }
 
 function installProjectLaunchServiceExecutable(contents, expectedHash) {
   const directoryPath = projectLaunchServiceDirectoryPath();
-  const downloadsPath = path.join(directoryPath, "downloads");
+  const downloadsPath = path.join(directoryPath, 'downloads');
   const executablePath = projectLaunchServiceExecutablePath();
   const installMetadataPath = projectLaunchServiceInstallMetadataPath();
-  const backupPath = path.join(directoryPath, "update.backup");
+  const backupPath = path.join(directoryPath, 'update.backup');
   const partialPath = path.join(downloadsPath, `${path.basename(executablePath)}.partial`);
   const metadataPartialPath = `${installMetadataPath}.partial`;
   if (
@@ -458,23 +444,23 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
     !isPathWithin(directoryPath, installMetadataPath) ||
     !isPathWithin(directoryPath, metadataPartialPath)
   ) {
-    throw new Error("项目启动服务安装路径无效。");
+    throw new Error('项目启动服务安装路径无效。');
   }
 
   let backupCreated = false;
   let executableInstalled = false;
   try {
     fs.mkdirSync(downloadsPath, { recursive: true });
-    fs.writeFileSync(partialPath, contents, { mode: process.platform === "win32" ? 0o700 : 0o755 });
-    const actualHash = crypto.createHash("sha256").update(contents).digest("hex");
+    fs.writeFileSync(partialPath, contents, { mode: process.platform === 'win32' ? 0o700 : 0o755 });
+    const actualHash = crypto.createHash('sha256').update(contents).digest('hex');
     if (actualHash !== expectedHash) {
-      const error = new Error("项目启动服务校验失败，文件未安装。");
-      error.code = "checksum-mismatch";
+      const error = new Error('项目启动服务校验失败，文件未安装。');
+      error.code = 'checksum-mismatch';
       throw error;
     }
     if (contents.length > projectLaunchServiceExecutableLimitBytes) {
-      const error = new Error("项目启动服务文件超过 12 MiB 大小限制。");
-      error.code = "asset-too-large";
+      const error = new Error('项目启动服务文件超过 12 MiB 大小限制。');
+      error.code = 'asset-too-large';
       throw error;
     }
     const installMetadata = projectLaunchServiceInstallMetadata(expectedHash);
@@ -482,23 +468,23 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
     try {
       fs.unlinkSync(backupPath);
     } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+      if (error?.code !== 'ENOENT') throw error;
     }
     try {
       fs.renameSync(executablePath, backupPath);
       backupCreated = true;
     } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+      if (error?.code !== 'ENOENT') throw error;
     }
     fs.renameSync(partialPath, executablePath);
     executableInstalled = true;
-    const installedHash = crypto.createHash("sha256").update(fs.readFileSync(executablePath)).digest("hex");
+    const installedHash = crypto.createHash('sha256').update(fs.readFileSync(executablePath)).digest('hex');
     if (installedHash !== installMetadata.sha256) {
-      const error = new Error("项目启动服务校验失败，文件未安装。");
-      error.code = "checksum-mismatch";
+      const error = new Error('项目启动服务校验失败，文件未安装。');
+      error.code = 'checksum-mismatch';
       throw error;
     }
-    if (process.platform !== "win32") {
+    if (process.platform !== 'win32') {
       fs.chmodSync(executablePath, 0o755);
     }
     fs.writeFileSync(metadataPartialPath, `${JSON.stringify(installMetadata)}\n`, { mode: 0o600 });
@@ -511,8 +497,8 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
       try {
         fs.unlinkSync(candidatePath);
       } catch (cleanupError) {
-        if (cleanupError?.code !== "ENOENT")
-          console.warn("[utools-project-launch] failed to clean service partial file");
+        if (cleanupError?.code !== 'ENOENT')
+          console.warn('[utools-project-launch] failed to clean service partial file');
       }
     });
     if (backupCreated) {
@@ -520,14 +506,14 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
         if (executableInstalled) fs.unlinkSync(executablePath);
         fs.renameSync(backupPath, executablePath);
       } catch (restoreError) {
-        console.warn("[utools-project-launch] failed to restore service executable backup");
+        console.warn('[utools-project-launch] failed to restore service executable backup');
       }
     } else if (executableInstalled) {
       try {
         fs.unlinkSync(executablePath);
       } catch (cleanupError) {
-        if (cleanupError?.code !== "ENOENT")
-          console.warn("[utools-project-launch] failed to remove unverified service executable");
+        if (cleanupError?.code !== 'ENOENT')
+          console.warn('[utools-project-launch] failed to remove unverified service executable');
       }
     }
     throw error;
@@ -537,14 +523,14 @@ function installProjectLaunchServiceExecutable(contents, expectedHash) {
 async function downloadProjectLaunchService() {
   const target = projectLaunchServiceTarget();
   if (!target.supported) {
-    const error = new Error("当前系统或 CPU 架构暂不支持项目启动服务。");
-    error.code = "unsupported-platform";
+    const error = new Error('当前系统或 CPU 架构暂不支持项目启动服务。');
+    error.code = 'unsupported-platform';
     throw error;
   }
   const current = await readProjectLaunchServiceStatus();
   if (current.running) {
-    const error = new Error("请先停止项目启动服务，再更新服务文件。");
-    error.code = "service-running";
+    const error = new Error('请先停止项目启动服务，再更新服务文件。');
+    error.code = 'service-running';
     throw error;
   }
 
@@ -556,7 +542,7 @@ async function downloadProjectLaunchService() {
     if (percent === lastProgress) return;
     lastProgress = percent;
     emit({
-      type: "service-download-progress",
+      type: 'service-download-progress',
       receivedBytes: Math.max(0, Math.floor(receivedBytes)),
       totalBytes: Math.floor(totalBytes),
       percent,
@@ -576,7 +562,7 @@ async function downloadProjectLaunchService() {
 async function verifyProjectLaunchServiceInstall() {
   const status = await readProjectLaunchServiceStatus();
   if (status.running) {
-    return serviceStatusWithError(status, new Error("请先停止项目启动服务，再验证服务文件。"));
+    return serviceStatusWithError(status, new Error('请先停止项目启动服务，再验证服务文件。'));
   }
   try {
     verifyProjectLaunchServiceManually();
@@ -592,63 +578,68 @@ function isPathWithin(parentPath, childPath) {
   return child === path.resolve(parentPath) || child.startsWith(parent);
 }
 
-function readProjectLaunchServiceDiscovery() {
-  const discoveryPath = projectLaunchServiceDiscoveryPath();
-  if (!isPathWithin(projectLaunchServiceDirectoryPath(), discoveryPath)) {
-    throw new Error("服务发现路径无效。");
+function readProjectLaunchServiceDiscovery(directoryPath = projectLaunchServiceDirectoryPath(), allowOtherProtocol = false) {
+  const discoveryPath = path.join(directoryPath, 'discovery.json');
+  if (!isPathWithin(directoryPath, discoveryPath)) {
+    throw new Error('服务发现路径无效。');
   }
-  const discovery = JSON.parse(fs.readFileSync(discoveryPath, "utf8"));
+  const discovery = JSON.parse(fs.readFileSync(discoveryPath, 'utf8'));
   if (
     !discovery ||
-    discovery.protocolVersion !== projectLaunchServiceProtocolVersion ||
-    typeof discovery.serviceVersion !== "string" ||
+    !Number.isInteger(discovery.protocolVersion) || discovery.protocolVersion <= 0 ||
+    typeof discovery.serviceVersion !== 'string' ||
     !discovery.serviceVersion.trim() ||
-    typeof discovery.instanceId !== "string" ||
+    typeof discovery.instanceId !== 'string' ||
     !discovery.instanceId.trim() ||
-    typeof discovery.processIdentity !== "string" ||
+    typeof discovery.processIdentity !== 'string' ||
     !discovery.processIdentity.trim() ||
     !Number.isInteger(discovery.pid) ||
     discovery.pid <= 0 ||
-    typeof discovery.startedAt !== "string" ||
+    typeof discovery.startedAt !== 'string' ||
     !Number.isFinite(Date.parse(discovery.startedAt)) ||
-    discovery.host !== "127.0.0.1" ||
+    discovery.host !== '127.0.0.1' ||
     !Number.isInteger(discovery.port) ||
     discovery.port < 1 ||
     discovery.port > 65535 ||
-    typeof discovery.tokenPath !== "string" ||
-    path.resolve(discovery.tokenPath) !== path.resolve(projectLaunchServiceTokenPath())
+    typeof discovery.tokenPath !== 'string' ||
+    path.resolve(discovery.tokenPath) !== path.resolve(path.join(directoryPath, 'token'))
   ) {
-    const error = new Error("服务发现信息无效或协议不兼容。");
+    const error = new Error('服务发现信息无效或协议不兼容。');
     error.code =
       discovery?.protocolVersion && discovery.protocolVersion !== projectLaunchServiceProtocolVersion
-        ? "protocol-mismatch"
-        : "invalid-discovery";
+        ? 'protocol-mismatch'
+        : 'invalid-discovery';
+    throw error;
+  }
+  if (!allowOtherProtocol && discovery.protocolVersion !== projectLaunchServiceProtocolVersion) {
+    const error = new Error('服务发现信息无效或协议不兼容。');
+    error.code = 'protocol-mismatch';
     throw error;
   }
   return discovery;
 }
 
-function readProjectLaunchServiceToken() {
-  const tokenPath = projectLaunchServiceTokenPath();
-  if (!isPathWithin(projectLaunchServiceDirectoryPath(), tokenPath)) {
-    throw new Error("服务令牌路径无效。");
+function readProjectLaunchServiceToken(directoryPath = projectLaunchServiceDirectoryPath()) {
+  const tokenPath = path.join(directoryPath, 'token');
+  if (!isPathWithin(directoryPath, tokenPath)) {
+    throw new Error('服务令牌路径无效。');
   }
-  const token = fs.readFileSync(tokenPath, "utf8").trim();
+  const token = fs.readFileSync(tokenPath, 'utf8').trim();
   if (!/^[0-9a-f]{64}$/i.test(token)) {
-    throw new Error("服务令牌无效。");
+    throw new Error('服务令牌无效。');
   }
   return token;
 }
 
 function projectLaunchServiceProcessAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0 || typeof process.kill !== "function") {
+  if (!Number.isInteger(pid) || pid <= 0 || typeof process.kill !== 'function') {
     return null;
   }
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return error?.code === "ESRCH" ? false : null;
+    return error?.code === 'ESRCH' ? false : null;
   }
 }
 
@@ -657,43 +648,43 @@ function projectLaunchServiceProcessIdentity(pid) {
     return null;
   }
   try {
-    if (process.platform === "win32") {
+    if (process.platform === 'win32') {
       const result = spawnSync(
-        "powershell.exe",
+        'powershell.exe',
         [
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          "$process = Get-Process -Id $env:UTOOLS_PROJECT_LAUNCH_SERVICE_PROCESS_ID -ErrorAction Stop; [Console]::Out.Write($process.StartTime.ToUniversalTime().ToFileTimeUtc())",
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          '$process = Get-Process -Id $env:UTOOLS_PROJECT_LAUNCH_SERVICE_PROCESS_ID -ErrorAction Stop; [Console]::Out.Write($process.StartTime.ToUniversalTime().ToFileTimeUtc())',
         ],
         {
-          encoding: "utf8",
+          encoding: 'utf8',
           env: { ...process.env, UTOOLS_PROJECT_LAUNCH_SERVICE_PROCESS_ID: String(pid) },
           timeout: projectLaunchServiceRequestTimeoutMs,
           windowsHide: true,
         },
       );
-      const startTicks = String(result.stdout || "").trim();
+      const startTicks = String(result.stdout || '').trim();
       return /^\d+$/.test(startTicks) ? `windows:${startTicks}` : null;
     }
-    if (process.platform === "linux") {
-      const bootId = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
-      const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
-      const closingName = stat.lastIndexOf(")");
+    if (process.platform === 'linux') {
+      const bootId = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const closingName = stat.lastIndexOf(')');
       if (!bootId || closingName < 0) return null;
       const startTicks = stat
         .slice(closingName + 1)
         .trim()
         .split(/\s+/)[19];
-      return /^\d+$/.test(startTicks || "") ? `linux:${bootId}:${startTicks}` : null;
+      return /^\d+$/.test(startTicks || '') ? `linux:${bootId}:${startTicks}` : null;
     }
-    if (process.platform === "darwin") {
-      const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], {
-        encoding: "utf8",
+    if (process.platform === 'darwin') {
+      const result = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+        encoding: 'utf8',
         timeout: projectLaunchServiceRequestTimeoutMs,
         windowsHide: true,
       });
-      const startedAt = String(result.stdout || "").trim();
+      const startedAt = String(result.stdout || '').trim();
       return result.status === 0 && startedAt ? `darwin:${startedAt}` : null;
     }
   } catch (error) {
@@ -714,12 +705,56 @@ function projectLaunchServiceProcessMatches(discovery) {
   return identity === discovery.processIdentity;
 }
 
+async function projectLaunchServiceProcessMatchesAsync(discovery) {
+  const alive = projectLaunchServiceProcessAlive(discovery.pid);
+  if (alive !== true) return alive;
+  let identity = null;
+  try {
+    if (process.platform === 'linux') {
+      const [bootIdText, stat] = await Promise.all([
+        fs.promises.readFile('/proc/sys/kernel/random/boot_id', 'utf8'),
+        fs.promises.readFile(`/proc/${discovery.pid}/stat`, 'utf8'),
+      ]);
+      const bootId = bootIdText.trim();
+      const closingName = stat.lastIndexOf(')');
+      const startTicks = closingName >= 0 ? stat.slice(closingName + 1).trim().split(/\s+/)[19] : '';
+      if (bootId && /^\d+$/.test(startTicks || '')) identity = `linux:${bootId}:${startTicks}`;
+    } else if (process.platform === 'win32' || process.platform === 'darwin') {
+      const windows = process.platform === 'win32';
+      const output = await new Promise((resolve) => {
+        execFile(
+          windows ? 'powershell.exe' : 'ps',
+          windows ? [
+            '-NoProfile', '-NonInteractive', '-Command',
+            '$process = Get-Process -Id $env:UTOOLS_PROJECT_LAUNCH_SERVICE_PROCESS_ID -ErrorAction Stop; [Console]::Out.Write($process.StartTime.ToUniversalTime().ToFileTimeUtc())',
+          ] : ['-o', 'lstart=', '-p', String(discovery.pid)],
+          {
+            encoding: 'utf8',
+            timeout: projectLaunchServiceRequestTimeoutMs,
+            windowsHide: true,
+            env: { ...process.env, UTOOLS_PROJECT_LAUNCH_SERVICE_PROCESS_ID: String(discovery.pid) },
+          },
+          (error, stdout) => resolve(error ? '' : String(stdout || '').trim()),
+        );
+      });
+      if (windows ? /^\d+$/.test(output) : Boolean(output)) {
+        identity = `${windows ? 'windows' : 'darwin'}:${output}`;
+      }
+    }
+  } catch (error) {
+    identity = null;
+  }
+  const remaining = projectLaunchServiceProcessAlive(discovery.pid);
+  if (remaining !== true) return remaining;
+  return identity ? identity === discovery.processIdentity : null;
+}
+
 function removeStaleProjectLaunchServiceDiscovery(discovery) {
   if (projectLaunchServiceProcessMatches(discovery) !== false) {
     return;
   }
   try {
-    const current = readProjectLaunchServiceDiscovery();
+    const current = readProjectLaunchServiceDiscovery(projectLaunchServiceDirectoryPath(), true);
     if (
       current.instanceId === discovery.instanceId &&
       current.pid === discovery.pid &&
@@ -728,7 +763,7 @@ function removeStaleProjectLaunchServiceDiscovery(discovery) {
       fs.unlinkSync(projectLaunchServiceDiscoveryPath());
     }
   } catch (error) {
-    if (error?.code !== "ENOENT") {
+    if (error?.code !== 'ENOENT') {
       return;
     }
   }
@@ -736,53 +771,53 @@ function removeStaleProjectLaunchServiceDiscovery(discovery) {
 
 function requestProjectLaunchService(discovery, token, method, requestPath, body, options = {}) {
   return new Promise((resolve, reject) => {
-    const requestBody = body === undefined ? "" : JSON.stringify(body);
+    const requestBody = body === undefined ? '' : JSON.stringify(body);
     const maxResponseBytes = Number.isFinite(options.maxResponseBytes)
       ? Math.max(1, Math.floor(options.maxResponseBytes))
       : 256 * 1024;
     const request = http.request(
       {
-        host: "127.0.0.1",
+        host: '127.0.0.1',
         port: discovery.port,
         method,
         path: requestPath,
         timeout: projectLaunchServiceRequestTimeoutMs,
         headers: {
-          Accept: "application/json",
+          Accept: 'application/json',
           Authorization: `Bearer ${token}`,
-          "X-Protocol-Version": String(projectLaunchServiceProtocolVersion),
-          ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+          'X-Protocol-Version': String(projectLaunchServiceProtocolVersion),
+          ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
           ...(body === undefined
             ? {}
             : {
-                "Content-Type": "application/json",
-                "Content-Length": Buffer.byteLength(requestBody),
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(requestBody),
               }),
         },
       },
       (response) => {
         const chunks = [];
         let responseBytes = 0;
-        response.on("data", (chunk) => {
+        response.on('data', (chunk) => {
           responseBytes += Buffer.byteLength(chunk);
           if (responseBytes <= maxResponseBytes) {
             chunks.push(chunk);
           }
         });
-        response.on("end", () => {
+        response.on('end', () => {
           if (responseBytes > maxResponseBytes) {
-            const error = new Error("服务响应超过大小限制。");
-            error.code = "response-too-large";
+            const error = new Error('服务响应超过大小限制。');
+            error.code = 'response-too-large';
             reject(error);
             return;
           }
-          const text = Buffer.concat(chunks).toString("utf8");
+          const text = Buffer.concat(chunks).toString('utf8');
           let payload = null;
           try {
             payload = text ? JSON.parse(text) : null;
           } catch (error) {
-            const parseError = new Error("服务响应不是有效 JSON。");
-            parseError.code = "invalid-response";
+            const parseError = new Error('服务响应不是有效 JSON。');
+            parseError.code = 'invalid-response';
             reject(parseError);
             return;
           }
@@ -790,8 +825,8 @@ function requestProjectLaunchService(discovery, token, method, requestPath, body
         });
       },
     );
-    request.on("timeout", () => request.destroy(new Error("服务请求超时。")));
-    request.on("error", (error) => reject(error));
+    request.on('timeout', () => request.destroy(new Error('服务请求超时。')));
+    request.on('error', (error) => reject(error));
     if (body !== undefined) {
       request.write(requestBody);
     }
@@ -799,16 +834,12 @@ function requestProjectLaunchService(discovery, token, method, requestPath, body
   });
 }
 
-function projectLaunchServiceIdempotencyKey(prefix = "request") {
+function projectLaunchServiceIdempotencyKey(prefix = 'request') {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}-${process.pid}`;
 }
 
 function createPreloadRunId() {
-  return (
-    globalThis.crypto?.randomUUID?.() ||
-    crypto.randomUUID?.() ||
-    `preload-${Date.now()}-${Math.random().toString(36).slice(2)}-${process.pid}`
-  );
+  return crypto.randomBytes(16).toString('hex');
 }
 
 function projectLaunchServiceResponseError(response, fallbackMessage) {
@@ -817,37 +848,17 @@ function projectLaunchServiceResponseError(response, fallbackMessage) {
   return error;
 }
 
-function normalizeProjectLaunchServiceRunLog(payload, runId) {
-  const fallback = {
-    runId,
-    events: [],
-    truncated: false,
-    sizeBytes: 0,
-    hasMore: false,
-    nextOffset: 0,
-  };
-  if (payload === null || payload === undefined) {
-    return fallback;
-  }
-  if (typeof payload !== "object" || Array.isArray(payload)) {
-    const error = new Error("项目启动服务返回了无效的运行日志。");
-    error.code = "invalid-run-log-response";
-    throw error;
-  }
-  if (payload.events !== null && payload.events !== undefined && !Array.isArray(payload.events)) {
-    const error = new Error("项目启动服务返回了无效的运行日志事件。");
-    error.code = "invalid-run-log-response";
-    throw error;
-  }
-  return {
-    ...payload,
-    runId: typeof payload.runId === "string" && payload.runId ? payload.runId : runId,
-    events: Array.isArray(payload.events) ? payload.events : [],
-  };
-}
-
 async function projectLaunchServiceConnection() {
-  const discovery = readProjectLaunchServiceDiscovery();
+  let discovery;
+  try {
+    discovery = readProjectLaunchServiceDiscovery();
+  } catch (error) {
+    if (error?.code !== 'protocol-mismatch') throw error;
+    const previous = readProjectLaunchServiceDiscovery(projectLaunchServiceDirectoryPath(), true);
+    if (await projectLaunchServiceProcessMatchesAsync(previous) !== false) throw error;
+    removeStaleProjectLaunchServiceDiscovery(previous);
+    discovery = readProjectLaunchServiceDiscovery();
+  }
   const token = readProjectLaunchServiceToken();
   return { discovery, token };
 }
@@ -860,9 +871,9 @@ function validateProjectLaunchServiceHealth(health, connection) {
     health.pid !== connection.discovery.pid ||
     health.processIdentity !== connection.discovery.processIdentity
   ) {
-    const error = new Error("项目启动服务身份或协议校验失败。");
+    const error = new Error('项目启动服务身份或协议校验失败。');
     error.code =
-      health?.protocolVersion !== projectLaunchServiceProtocolVersion ? "protocol-mismatch" : "identity-mismatch";
+      health?.protocolVersion !== projectLaunchServiceProtocolVersion ? 'protocol-mismatch' : 'identity-mismatch';
     throw error;
   }
   return health;
@@ -886,17 +897,17 @@ function projectLaunchServiceEventBatch(payload, after) {
 }
 
 async function requestProjectLaunchServiceHealth(connection) {
-  const response = await requestProjectLaunchService(connection.discovery, connection.token, "GET", "/v1/health");
+  const response = await requestProjectLaunchService(connection.discovery, connection.token, 'GET', '/v1/health');
   if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务健康检查失败。");
+    throw projectLaunchServiceResponseError(response, '项目启动服务健康检查失败。');
   }
   return validateProjectLaunchServiceHealth(response.payload, connection);
 }
 
 async function requestProjectLaunchServiceState(connection) {
-  const response = await requestProjectLaunchService(connection.discovery, connection.token, "GET", "/v1/state");
+  const response = await requestProjectLaunchService(connection.discovery, connection.token, 'GET', '/v1/state');
   if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务状态读取失败。");
+    throw projectLaunchServiceResponseError(response, '项目启动服务状态读取失败。');
   }
   return projectLaunchServiceStateSnapshot(response.payload);
 }
@@ -905,11 +916,11 @@ async function requestProjectLaunchServiceEvents(connection, after) {
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
-    "GET",
+    'GET',
     `/v1/events?after=${encodeURIComponent(String(after))}`,
   );
   if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务事件读取失败。");
+    throw projectLaunchServiceResponseError(response, '项目启动服务事件读取失败。');
   }
   return projectLaunchServiceEventBatch(response.payload, after);
 }
@@ -918,28 +929,28 @@ async function requestProjectLaunchServiceSync(connection, after) {
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
-    "GET",
+    'GET',
     `/v1/sync?after=${encodeURIComponent(String(after))}`,
     undefined,
     { maxResponseBytes: projectLaunchServiceSyncResponseLimitBytes },
   );
   if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务同步失败。");
+    throw projectLaunchServiceResponseError(response, '项目启动服务同步失败。');
   }
   const payload = response.payload;
   if (
     !payload ||
-    typeof payload !== "object" ||
+    typeof payload !== 'object' ||
     Array.isArray(payload) ||
     !payload.state ||
-    typeof payload.state !== "object" ||
+    typeof payload.state !== 'object' ||
     Array.isArray(payload.state) ||
     !payload.events ||
-    typeof payload.events !== "object" ||
+    typeof payload.events !== 'object' ||
     Array.isArray(payload.events)
   ) {
-    const error = new Error("项目启动服务返回了无效的同步响应。");
-    error.code = "invalid-sync-response";
+    const error = new Error('项目启动服务返回了无效的同步响应。');
+    error.code = 'invalid-sync-response';
     throw error;
   }
   return {
@@ -947,144 +958,6 @@ async function requestProjectLaunchServiceSync(connection, after) {
     state: projectLaunchServiceStateSnapshot(payload.state),
     events: projectLaunchServiceEventBatch(payload.events, after),
   };
-}
-
-async function getProjectLaunchServiceRunLog(runId) {
-  if (!/^[0-9a-f]{32}$/.test(String(runId || ""))) {
-    const error = new Error("运行日志标识无效。");
-    error.code = "invalid-run-id";
-    throw error;
-  }
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    "GET",
-    `/v1/runs/${runId}/log`,
-    undefined,
-    { maxResponseBytes: projectLaunchServiceRunLogResponseLimitBytes },
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "运行日志读取失败。");
-  }
-  return normalizeProjectLaunchServiceRunLog(response.payload, runId);
-}
-
-async function getProjectLaunchServiceRunLogPage(runId, beforeOffset) {
-  if (!/^[0-9a-f]{32}$/.test(String(runId || ""))) {
-    const error = new Error("运行日志标识无效。");
-    error.code = "invalid-run-id";
-    throw error;
-  }
-  if (!Number.isSafeInteger(beforeOffset) || beforeOffset < 0) {
-    const error = new Error("运行日志分页位置无效。");
-    error.code = "invalid-log-page";
-    throw error;
-  }
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    "GET",
-    `/v1/runs/${runId}/log?before=${encodeURIComponent(String(beforeOffset))}`,
-    undefined,
-    { maxResponseBytes: projectLaunchServiceRunLogResponseLimitBytes },
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "运行日志分页读取失败。");
-  }
-  return normalizeProjectLaunchServiceRunLog(response.payload, runId);
-}
-
-async function getProjectLaunchServiceLogRetention() {
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    "GET",
-    "/v1/log-retention",
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "日志保留策略读取失败。");
-  }
-  if (!response.payload || typeof response.payload !== "object") {
-    const error = new Error("项目启动服务返回了无效的日志保留策略。");
-    error.code = "invalid-log-retention-response";
-    throw error;
-  }
-  return response.payload;
-}
-
-async function updateProjectLaunchServiceLogRetention(policy) {
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    "PUT",
-    "/v1/log-retention",
-    policy,
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "日志保留策略更新失败。");
-  }
-  if (!response.payload || typeof response.payload !== "object") {
-    const error = new Error("项目启动服务返回了无效的日志保留策略。");
-    error.code = "invalid-log-retention-response";
-    throw error;
-  }
-  return response.payload;
-}
-
-async function listProjectLaunchServiceLogs(projectId) {
-  const normalizedProjectId = String(projectId || "").trim();
-  if (!normalizedProjectId) {
-    const error = new Error("项目标识无效。");
-    error.code = "invalid-project-id";
-    throw error;
-  }
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    "GET",
-    `/v1/logs?projectId=${encodeURIComponent(normalizedProjectId)}`,
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "运行日志列表读取失败。");
-  }
-  if (!Array.isArray(response.payload?.logs)) {
-    const error = new Error("项目启动服务返回了无效的运行日志列表。");
-    error.code = "invalid-log-list-response";
-    throw error;
-  }
-  return response.payload.logs;
-}
-
-async function clearProjectLaunchServiceLogs(scope) {
-  const hasScope = scope !== undefined;
-  const runId = typeof scope?.runId === "string" ? scope.runId.trim() : "";
-  if (hasScope && !/^[0-9a-f]{32}$/.test(runId)) {
-    const error = new Error("运行标识无效。");
-    error.code = "invalid-log-scope";
-    throw error;
-  }
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    "POST",
-    "/v1/logs/clear",
-    hasScope ? { runId } : {},
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "运行日志清除失败。");
-  }
-  if (!response.payload || typeof response.payload !== "object") {
-    const error = new Error("项目启动服务返回了无效的日志清除结果。");
-    error.code = "invalid-log-clear-response";
-    throw error;
-  }
-  return response.payload;
 }
 
 function advanceProjectLaunchServiceEventCursor(batch) {
@@ -1098,15 +971,15 @@ function advanceProjectLaunchServiceEventCursor(batch) {
 
 async function syncProjectLaunchServiceAutomation(config) {
   if (!config || !Number.isInteger(config.revision) || config.revision < 1) {
-    const error = new Error("项目启动服务自动化配置 revision 无效。");
-    error.code = "invalid-automation-revision";
+    const error = new Error('项目启动服务自动化配置 revision 无效。');
+    error.code = 'invalid-automation-revision';
     throw error;
   }
 
   const status = await readProjectLaunchServiceStatus({ includeState: true });
-  if (status.state !== "healthy" || !status.running) {
-    const error = new Error(status.message || "项目启动服务不可用，无法同步自动化配置。");
-    error.code = "service-unavailable";
+  if (status.state !== 'healthy' || !status.running) {
+    const error = new Error(status.message || '项目启动服务不可用，无法同步自动化配置。');
+    error.code = 'service-unavailable';
     throw error;
   }
 
@@ -1114,18 +987,18 @@ async function syncProjectLaunchServiceAutomation(config) {
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
-    "PUT",
-    "/v1/automation/config",
+    'PUT',
+    '/v1/automation/config',
     { revision: config.revision, config },
   );
   if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务拒绝了自动化配置。");
+    throw projectLaunchServiceResponseError(response, '项目启动服务拒绝了自动化配置。');
   }
 
   const revision = Number(response.payload?.revision);
   if (!Number.isInteger(revision) || revision !== config.revision) {
-    const error = new Error("项目启动服务返回了无效的自动化 revision。");
-    error.code = "invalid-automation-response";
+    const error = new Error('项目启动服务返回了无效的自动化 revision。');
+    error.code = 'invalid-automation-response';
     throw error;
   }
 
@@ -1141,17 +1014,17 @@ async function ignoreMissedProjectLaunchServiceAutomationExecution(executionId) 
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
-    "POST",
-    "/v1/automation/executions/ignore",
+    'POST',
+    '/v1/automation/executions/ignore',
     { executionId },
   );
   if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "忽略已错过任务失败。");
+    throw projectLaunchServiceResponseError(response, '忽略已错过任务失败。');
   }
   const execution = projectLaunchServiceAutomationSnapshot({ executions: [response.payload] }).executions?.[0];
   if (!execution?.id) {
-    const error = new Error("项目启动服务返回了无效的自动化执行结果。");
-    error.code = "invalid-automation-execution-response";
+    const error = new Error('项目启动服务返回了无效的自动化执行结果。');
+    error.code = 'invalid-automation-execution-response';
     throw error;
   }
   return execution;
@@ -1162,16 +1035,16 @@ async function listProjectLaunchServiceAutomationExecutions(projectId, taskId) {
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
-    "GET",
+    'GET',
     `/v1/automation/executions?projectId=${encodeURIComponent(projectId)}&taskId=${encodeURIComponent(taskId)}`,
   );
   if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "读取自动化执行历史失败。");
+    throw projectLaunchServiceResponseError(response, '读取自动化执行历史失败。');
   }
   const executions = Array.isArray(response.payload?.executions) ? response.payload.executions : null;
   if (!executions) {
-    const error = new Error("项目启动服务返回了无效的自动化执行历史。");
-    error.code = "invalid-automation-executions-response";
+    const error = new Error('项目启动服务返回了无效的自动化执行历史。');
+    error.code = 'invalid-automation-executions-response';
     throw error;
   }
   return executions;
@@ -1179,19 +1052,19 @@ async function listProjectLaunchServiceAutomationExecutions(projectId, taskId) {
 
 function serviceRunCount(runs) {
   return Array.isArray(runs)
-    ? runs.filter((run) => ["starting", "running", "stopping"].includes(run.status)).length
+    ? runs.filter((run) => ['starting', 'running', 'stopping'].includes(run.status)).length
     : 0;
 }
 
 function projectLaunchServiceEventToBridgeEvent(event) {
   return {
     type: event.type,
-    projectId: event.projectId || "",
-    scriptId: event.scriptId || "",
+    projectId: event.projectId || '',
+    scriptId: event.scriptId || '',
     pid: Number.isInteger(event.pid) ? event.pid : 0,
     ...(Number.isSafeInteger(event.cursor) && event.cursor >= 0 ? { cursor: event.cursor } : {}),
     runId: event.runId,
-    runtimeOwner: "service",
+    runtimeOwner: 'service',
     timestamp: event.timestamp,
     message: event.message,
     cwd: event.cwd,
@@ -1208,11 +1081,11 @@ function projectLaunchServiceAutomationSnapshot(automation) {
   const executionSource = Array.isArray(automation?.executions) ? automation.executions : automation?.latestExecutions;
   const executions = Array.isArray(executionSource)
     ? executionSource
-        .filter((execution) => execution && typeof execution === "object" && !Array.isArray(execution))
+        .filter((execution) => execution && typeof execution === 'object' && !Array.isArray(execution))
         .map((execution) => ({
           ...execution,
           scriptResults: Array.isArray(execution.scriptResults)
-            ? execution.scriptResults.filter((result) => result && typeof result === "object" && !Array.isArray(result))
+            ? execution.scriptResults.filter((result) => result && typeof result === 'object' && !Array.isArray(result))
             : [],
         }))
     : undefined;
@@ -1221,12 +1094,12 @@ function projectLaunchServiceAutomationSnapshot(automation) {
         .filter(
           (entry) =>
             entry &&
-            typeof entry === "object" &&
+            typeof entry === 'object' &&
             !Array.isArray(entry) &&
-            typeof entry.projectId === "string" &&
-            typeof entry.taskId === "string" &&
-            typeof entry.planEntryId === "string" &&
-            typeof entry.plannedAt === "string" &&
+            typeof entry.projectId === 'string' &&
+            typeof entry.taskId === 'string' &&
+            typeof entry.planEntryId === 'string' &&
+            typeof entry.plannedAt === 'string' &&
             Number.isFinite(Date.parse(entry.plannedAt)),
         )
         .map((entry) => ({
@@ -1252,13 +1125,13 @@ function projectLaunchServiceAutomationSnapshot(automation) {
 }
 
 function projectLaunchServiceSchedulerSnapshot(scheduler) {
-  if (!scheduler || typeof scheduler !== "object") return undefined;
-  if (scheduler.state !== "running" && scheduler.state !== "degraded") return undefined;
+  if (!scheduler || typeof scheduler !== 'object') return undefined;
+  if (scheduler.state !== 'running' && scheduler.state !== 'degraded') return undefined;
   return {
     state: scheduler.state,
-    ...(typeof scheduler.lastRunAt === "string" ? { lastRunAt: scheduler.lastRunAt } : {}),
-    ...(typeof scheduler.lastSuccessAt === "string" ? { lastSuccessAt: scheduler.lastSuccessAt } : {}),
-    ...(typeof scheduler.lastError === "string" ? { lastError: scheduler.lastError } : {}),
+    ...(typeof scheduler.lastRunAt === 'string' ? { lastRunAt: scheduler.lastRunAt } : {}),
+    ...(typeof scheduler.lastSuccessAt === 'string' ? { lastSuccessAt: scheduler.lastSuccessAt } : {}),
+    ...(typeof scheduler.lastError === 'string' ? { lastError: scheduler.lastError } : {}),
   };
 }
 
@@ -1291,8 +1164,8 @@ async function readProjectLaunchServiceStatus(options = {}) {
     try {
       status.installed = fs.statSync(status.executablePath).isFile();
       if (status.installed) {
-        status.state = "installed";
-        status.message = "项目启动服务已安装，尚未运行。";
+        status.state = 'installed';
+        status.message = '项目启动服务已安装，尚未运行。';
       }
     } catch (error) {
       return projectLaunchServiceStatusResult(status, null, options);
@@ -1303,10 +1176,10 @@ async function readProjectLaunchServiceStatus(options = {}) {
   try {
     connection = await projectLaunchServiceConnection();
   } catch (error) {
-    if (error?.code === "ENOENT") return projectLaunchServiceStatusResult(status, null, options);
-    if (error?.code === "protocol-mismatch") status.state = "incompatible";
-    else status.state = readProjectLaunchServicePreferences().enabled ? "unavailable" : "installed";
-    status.message = error instanceof Error ? error.message : "项目启动服务发现失败。";
+    if (error?.code === 'ENOENT') return projectLaunchServiceStatusResult(status, null, options);
+    if (error?.code === 'protocol-mismatch') status.state = 'incompatible';
+    else status.state = readProjectLaunchServicePreferences().enabled ? 'unavailable' : 'installed';
+    status.message = error instanceof Error ? error.message : '项目启动服务发现失败。';
     return projectLaunchServiceStatusResult(status, null, options);
   }
 
@@ -1321,9 +1194,9 @@ async function readProjectLaunchServiceStatus(options = {}) {
         ? sync?.events
         : await requestProjectLaunchServiceEvents(connection, projectLaunchServiceEventCursor);
     const state = sync ? sync.state : await requestProjectLaunchServiceState(connection);
-    status.state = "healthy";
+    status.state = 'healthy';
     status.running = true;
-    status.message = "";
+    status.message = '';
     status.protocolVersion = health.protocolVersion;
     status.serviceVersion = health.serviceVersion;
     status.activeRunCount = serviceRunCount(state.runs);
@@ -1347,9 +1220,9 @@ async function readProjectLaunchServiceStatus(options = {}) {
     }
     return projectLaunchServiceStatusResult(status, batch || null, options);
   } catch (error) {
-    if (error?.code === "protocol-mismatch") status.state = "incompatible";
-    else status.state = "unavailable";
-    status.message = error instanceof Error ? error.message : "项目启动服务不可用。";
+    if (error?.code === 'protocol-mismatch') status.state = 'incompatible';
+    else status.state = 'unavailable';
+    status.message = error instanceof Error ? error.message : '项目启动服务不可用。';
     try {
       removeStaleProjectLaunchServiceDiscovery(connection.discovery);
     } catch (cleanupError) {
@@ -1359,11 +1232,11 @@ async function readProjectLaunchServiceStatus(options = {}) {
   }
 }
 
-function serviceStatusWithError(status, error, state = "unavailable") {
+function serviceStatusWithError(status, error, state = 'unavailable') {
   return {
     ...status,
     state,
-    message: error instanceof Error ? error.message : String(error || "项目启动服务不可用。"),
+    message: error instanceof Error ? error.message : String(error || '项目启动服务不可用。'),
   };
 }
 
@@ -1372,7 +1245,7 @@ function waitForProjectLaunchService() {
   return new Promise((resolve) => {
     const check = async () => {
       const status = await readProjectLaunchServiceStatus();
-      if (status.running && status.state === "healthy") {
+      if (status.running && status.state === 'healthy') {
         resolve(status);
         return;
       }
@@ -1404,36 +1277,36 @@ async function startProjectLaunchService(options = {}) {
   }
 
   const current = await readProjectLaunchServiceStatus();
-  if (current.state === "healthy" && current.running) return current;
-  if (current.state === "incompatible") return current;
+  if (current.state === 'healthy' && current.running) return current;
+  if (current.state === 'incompatible') return current;
 
   try {
     fs.mkdirSync(initial.directoryPath, { recursive: true });
-    const child = spawn(initial.executablePath, ["--state-dir", initial.directoryPath], {
+    const child = spawn(initial.executablePath, ['--state-dir', initial.directoryPath, '--runtime-dir', runtimeRecordsDirectory()], {
       cwd: initial.directoryPath,
       detached: true,
-      stdio: "ignore",
+      stdio: 'ignore',
       windowsHide: true,
     });
     projectLaunchServiceProcess = child;
     const servicePid = Number.isInteger(child.pid) && child.pid > 0 ? child.pid : undefined;
-    appendProjectLaunchServiceDiagnostic("process.spawned", {
+    appendProjectLaunchServiceDiagnostic('process.spawned', {
       ...(servicePid === undefined ? {} : { servicePid }),
     });
-    child.once("exit", (code, signal) => {
-      appendProjectLaunchServiceDiagnostic("process.exit", {
+    child.once('exit', (code, signal) => {
+      appendProjectLaunchServiceDiagnostic('process.exit', {
         ...(servicePid === undefined ? {} : { servicePid }),
-        code: typeof code === "number" ? code : null,
-        signal: typeof signal === "string" ? signal : null,
+        code: typeof code === 'number' ? code : null,
+        signal: typeof signal === 'string' ? signal : null,
       });
       if (projectLaunchServiceProcess === child) projectLaunchServiceProcess = null;
     });
-    child.once("error", (error) => {
-      appendProjectLaunchServiceDiagnostic("process.error", {
+    child.once('error', (error) => {
+      appendProjectLaunchServiceDiagnostic('process.error', {
         ...(servicePid === undefined ? {} : { servicePid }),
-        name: typeof error?.name === "string" ? error.name : "Error",
-        code: typeof error?.code === "string" || typeof error?.code === "number" ? error.code : null,
-        message: typeof error?.message === "string" ? error.message : String(error || "Service process error."),
+        name: typeof error?.name === 'string' ? error.name : 'Error',
+        code: typeof error?.code === 'string' || typeof error?.code === 'number' ? error.code : null,
+        message: typeof error?.message === 'string' ? error.message : String(error || 'Service process error.'),
       });
       if (projectLaunchServiceProcess === child) projectLaunchServiceProcess = null;
     });
@@ -1453,12 +1326,12 @@ async function stopProjectLaunchService() {
     const response = await requestProjectLaunchService(
       connection.discovery,
       connection.token,
-      "POST",
-      "/v1/shutdown",
+      'POST',
+      '/v1/shutdown',
       {},
     );
     if (response.statusCode !== 202 && response.statusCode !== 200) {
-      return serviceStatusWithError(status, projectLaunchServiceResponseError(response, "项目启动服务停止失败。"));
+      return serviceStatusWithError(status, projectLaunchServiceResponseError(response, '项目启动服务停止失败。'));
     }
     const deadline = Date.now() + projectLaunchServiceStartupTimeoutMs;
     while (Date.now() < deadline) {
@@ -1469,7 +1342,7 @@ async function stopProjectLaunchService() {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    return serviceStatusWithError(status, new Error("项目启动服务停止超时。"));
+    return serviceStatusWithError(status, new Error('项目启动服务停止超时。'));
   } catch (error) {
     return serviceStatusWithError(status, error);
   }
@@ -1488,10 +1361,10 @@ async function reconcileProjectLaunchService() {
   });
   let status = result.status;
   let batch = result.batch;
-  if (status.state !== "healthy" || !status.running) {
+  if (status.state !== 'healthy' || !status.running) {
     status = await startProjectLaunchService({ requireVerifiedInstall: true });
   }
-  if (status.state !== "healthy" || !status.running) return status;
+  if (status.state !== 'healthy' || !status.running) return status;
 
   if (!batch) {
     result = await readProjectLaunchServiceStatus({
@@ -1502,7 +1375,7 @@ async function reconcileProjectLaunchService() {
     status = result.status;
     batch = result.batch;
   }
-  if (status.state !== "healthy" || !status.running) return status;
+  if (status.state !== 'healthy' || !status.running) return status;
   scheduleProjectLaunchServiceEventPoll(batch?.hasMore === true ? 0 : projectLaunchServiceEventPollIntervalMs);
   rememberProjectLaunchServiceState(status);
   return status;
@@ -1526,9 +1399,9 @@ async function pollProjectLaunchServiceEvents(emitEvents = true) {
     });
     status = result.status;
     const batch = result.batch;
-    if (status.state !== "healthy" || !status.running) {
+    if (status.state !== 'healthy' || !status.running) {
       if (emitEvents && shouldEmitProjectLaunchServiceState(status)) {
-        emit({ type: "service-state", status, timestamp: new Date().toISOString() });
+        emit({ type: 'service-state', status, timestamp: new Date().toISOString() });
       }
       return false;
     }
@@ -1541,14 +1414,14 @@ async function pollProjectLaunchServiceEvents(emitEvents = true) {
       events.forEach((event) => emit(projectLaunchServiceEventToBridgeEvent(event)));
     }
     if (emitEvents && batch?.hasMore !== true && shouldEmitProjectLaunchServiceState(snapshot, events.length)) {
-      emit({ type: "service-state", status: snapshot, timestamp: new Date().toISOString() });
+      emit({ type: 'service-state', status: snapshot, timestamp: new Date().toISOString() });
     }
     return batch?.hasMore === true;
   } catch (error) {
     const failedStatus = serviceStatusWithError(status, error);
     if (emitEvents && shouldEmitProjectLaunchServiceState(failedStatus)) {
       emit({
-        type: "service-state",
+        type: 'service-state',
         status: failedStatus,
         timestamp: new Date().toISOString(),
       });
@@ -1571,8 +1444,8 @@ function scheduleProjectLaunchServiceEventPoll(delay = projectLaunchServiceEvent
 
 async function runProjectLaunchServiceCommand(payload) {
   const status = await reconcileProjectLaunchService();
-  if (status.state !== "healthy" || !status.running) {
-    throw new Error(status.message || "项目启动服务不可用。请修复服务或在设置中关闭服务模式。");
+  if (status.state !== 'healthy' || !status.running) {
+    throw new Error(status.message || '项目启动服务不可用。请修复服务或在设置中关闭服务模式。');
   }
   const connection = await projectLaunchServiceConnection();
   const idempotencyKey =
@@ -1580,8 +1453,8 @@ async function runProjectLaunchServiceCommand(payload) {
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
-    "POST",
-    "/v1/runs",
+    'POST',
+    '/v1/runs',
     {
       projectId: payload.projectId,
       scriptId: payload.scriptId,
@@ -1591,14 +1464,14 @@ async function runProjectLaunchServiceCommand(payload) {
       label: payload.label,
       automationRunId: payload.automationRunId,
     },
-    { idempotencyKey: projectLaunchServiceIdempotencyKey("run") },
+    { idempotencyKey: projectLaunchServiceIdempotencyKey('run') },
   );
   if (response.statusCode !== 200 && response.statusCode !== 201) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务无法启动脚本。");
+    throw projectLaunchServiceResponseError(response, '项目启动服务无法启动脚本。');
   }
   const run = response.payload?.run;
-  if (!run || typeof run.id !== "string" || !run.id.trim()) {
-    throw new Error("项目启动服务返回了无效的运行记录。");
+  if (!run || typeof run.id !== 'string' || !run.id.trim()) {
+    throw new Error('项目启动服务返回了无效的运行记录。');
   }
   await pollProjectLaunchServiceEvents(true);
   return {
@@ -1607,7 +1480,7 @@ async function runProjectLaunchServiceCommand(payload) {
     command: run.command,
     cwd: run.cwd,
     runId: run.id,
-    runtimeOwner: "service",
+    runtimeOwner: 'service',
   };
 }
 
@@ -1616,9 +1489,9 @@ function projectLaunchServiceRunToProcessStatus(run) {
     return { active: false };
   }
   return {
-    active: ["starting", "running", "stopping"].includes(run.status),
+    active: ['starting', 'running', 'stopping'].includes(run.status),
     runId: run.id,
-    runtimeOwner: "service",
+    runtimeOwner: 'service',
     code: run.code,
     signal: run.signal,
     stoppedByUser: run.stoppedByUser,
@@ -1630,22 +1503,22 @@ function projectLaunchServiceRunToProcessStatus(run) {
 }
 
 function shouldUseProjectLaunchServiceRuntime(options = {}) {
-  if (options.runtimeOwner === "preload") {
+  if (options.runtimeOwner === 'preload') {
     return false;
   }
-  return options.runtimeOwner === "service" || (readProjectLaunchServicePreferences().enabled && options.runId);
+  return options.runtimeOwner === 'service' || (readProjectLaunchServicePreferences().enabled && options.runId);
 }
 
 async function getProjectLaunchServiceRunStatus(runId) {
-  if (typeof runId !== "string" || !runId) {
-    return { active: false, error: "服务运行记录缺少 runId。" };
+  if (typeof runId !== 'string' || !runId) {
+    return { active: false, error: '服务运行记录缺少 runId。' };
   }
   const status = await readProjectLaunchServiceStatus({ includeState: true });
-  if (status.state !== "healthy" || !status.running) {
+  if (status.state !== 'healthy' || !status.running) {
     return {
       active: false,
       serviceState: status.state,
-      error: status.message || "项目启动服务不可用。",
+      error: status.message || '项目启动服务不可用。',
     };
   }
   return projectLaunchServiceRunToProcessStatus(status.runs?.find((run) => run.id === runId));
@@ -1656,12 +1529,12 @@ async function stopProjectLaunchServiceRun(runId) {
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
-    "POST",
+    'POST',
     `/v1/runs/${encodeURIComponent(runId)}/stop`,
     {},
   );
   if (response.statusCode !== 202 && response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务停止脚本失败。");
+    throw projectLaunchServiceResponseError(response, '项目启动服务停止脚本失败。');
   }
   await pollProjectLaunchServiceEvents(true);
 }
@@ -1671,13 +1544,13 @@ async function sendProjectLaunchServiceRunInput(runId, input) {
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
-    "POST",
+    'POST',
     `/v1/runs/${encodeURIComponent(runId)}/input`,
-    { input: String(input ?? "") },
+    { input: String(input ?? '') },
   );
   if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, "项目启动服务发送输入失败。");
+    throw projectLaunchServiceResponseError(response, '项目启动服务发送输入失败。');
   }
   await pollProjectLaunchServiceEvents(true);
-  return response.payload || { sent: false, message: "项目启动服务没有返回输入结果。" };
+  return response.payload || { sent: false, message: '项目启动服务没有返回输入结果。' };
 }

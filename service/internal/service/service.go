@@ -18,8 +18,9 @@ import (
 )
 
 type Config struct {
-	StateDir string
-	Version  string
+	StateDir   string
+	RuntimeDir string
+	Version    string
 }
 
 type Service struct {
@@ -49,6 +50,9 @@ func New(config Config) (*Service, error) {
 	if strings.TrimSpace(config.Version) == "" {
 		return nil, errors.New("service version is required")
 	}
+	if strings.TrimSpace(config.RuntimeDir) == "" {
+		config.RuntimeDir = state.DefaultRuntimeDirectory(config.StateDir)
+	}
 
 	return &Service{
 		config: config,
@@ -64,7 +68,7 @@ func (service *Service) Start() error {
 	}
 	closeDiagnostics := false
 	if service.diagnostics == nil {
-		diagnostics, err := openDiagnosticLogger(service.config.StateDir)
+		diagnostics, err := openDiagnosticLogger(service.config.RuntimeDir)
 		if err != nil {
 			return err
 		}
@@ -105,7 +109,7 @@ func (service *Service) Start() error {
 		return fmt.Errorf("check existing discovery: %w", err)
 	}
 
-	store, err := state.Open(service.config.StateDir)
+	store, err := state.OpenWithRuntimeRecords(service.config.StateDir, service.config.RuntimeDir)
 	if err != nil {
 		service.log("start.failed", map[string]any{"stage": "state_open", "error": err.Error()})
 		return err
