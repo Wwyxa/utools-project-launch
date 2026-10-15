@@ -31,6 +31,17 @@ export const automationRunActions = {
       let finalReason = "";
       const startedAt = new Date().toISOString();
 
+      if (!this.persistRuntimeAutomationState(projectId)) {
+        entry.status = "failed";
+        entry.reason = "自动任务运行状态保存失败。";
+        delete this.automationActiveProjectRuns[projectId];
+        return;
+      }
+      if (this.supportsBridge) this.recordLocalStateWrite(bridge.saveRuntimeAutomationExecution({
+        id: runId, projectId, taskId, planEntryId: entry.id, plannedAt: entry.plannedAt,
+        startedAt, status: "running", currentScriptIndex: 0, scriptResults: [],
+      }));
+
       try {
         for (const scriptId of task.scriptIds) {
           const script = project.scripts.find((item) => item.id === scriptId);
@@ -121,6 +132,13 @@ export const automationRunActions = {
         ...task.history,
       ].slice(0, AUTOMATION_HISTORY_LIMIT);
       entry.reason = finalReason || undefined;
+      const currentTask = this.projects.find((item) => item.id === projectId)?.automationTasks?.find((item) => item.id === taskId);
+      if (currentTask && currentTask !== task) currentTask.history = task.history;
+      this.persistRuntimeAutomationState(projectId);
+      if (this.supportsBridge) this.recordLocalStateWrite(bridge.saveRuntimeAutomationExecution({
+        id: runId, projectId, taskId, planEntryId: entry.id, plannedAt: entry.plannedAt,
+        startedAt, endedAt, status: finalStatus, reason: finalReason, currentScriptIndex: scriptResults.length, scriptResults,
+      }));
       notifyAutomationTaskCompletion(task, finalStatus, finalReason);
       this.scheduleAutomationTimer();
     },
@@ -444,6 +462,7 @@ export const automationRunActions = {
         event.type === "service-state" ||
         event.type === "service-download-progress" ||
         event.type === "icon-pack-download-progress" ||
+        event.type === "runtime-record-error" ||
         event.type === "projects-changed"
       ) {
         return;

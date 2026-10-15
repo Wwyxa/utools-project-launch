@@ -25,3 +25,10 @@ func releaseFileLock(file *os.File) error {
 	}
 	return nil
 }
+
+func runtimeWriterAlive(pid int) bool {
+	if pid <= 0 {
+		return true
+	}
+	return !errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
+}

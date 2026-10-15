@@ -119,6 +119,7 @@ async function collectStorageOverview() {
     sizes: {
       localDataBytes: localDataDirectory ? await directoryEntrySizeBytes(localDataDirectory) : 0,
       serviceBytes: localDataDirectory ? await directoryEntrySizeBytes(localServiceDirectoryPath()) : 0,
+      runtimeBytes: localDataDirectory ? await directoryEntrySizeBytes(path.join(localDataDirectory, "runtime")) : 0,
       iconPacksBytes: localDataDirectory
         ? await directoryEntrySizeBytes(path.join(localDataDirectory, "icon-packs"))
         : 0,
@@ -263,9 +264,9 @@ async function buildCleanupPlan() {
       "local-service-directory",
       "local",
       "项目启动服务数据",
-      "service 目录中的服务程序、认证文件、状态、日志和下载文件。",
+      "service 目录中的服务程序、认证文件、状态和下载文件；统一运行日志单独管理。",
       {
-        safetyHint: "会删除整个 service 目录，需重新安装或初始化；只想清理缓存请选下面的项目。",
+        safetyHint: "会删除整个 service 目录，需重新安装或初始化服务；统一日志、保留策略和直接运行自动任务认领状态不受影响。",
         paths: serviceDirectory ? [serviceDirectory] : [],
         estimatedBytes: await directoryEntrySizeBytes(serviceDirectory),
         disabledReason: serviceRunning ? "服务正在运行，请先停止服务。" : "",
@@ -309,15 +310,12 @@ async function buildCleanupPlan() {
           : "本地数据目录不可用。",
       },
     ),
-    cleanupItem("cache-diagnostics", "cache", "诊断与服务运行日志", "service.log 和服务运行日志。", {
-      safetyHint: "无需排障记录时可清理；不影响项目配置、自动任务或源码。",
-      kind: "service-diagnostics",
-      paths: serviceDirectory ? [serviceDirectory] : [],
-      disabledReason: serviceDirectory
-        ? serviceRunning
-          ? "服务正在运行，请先停止服务。"
-          : ""
-        : "本地数据目录不可用。",
+    cleanupItem("cache-runtime-records", "cache", "运行日志与操作记录", "统一日志目录中所有执行来源的已完成运行日志、操作记录和诊断记录。", {
+      kind: "runtime-records",
+      safetyHint: "只清理已完成记录，保留活动运行和自动任务认领状态。",
+      selectedByDefault: false,
+      disabledReason: localDataDirectory ? "" : "本地数据目录不可用。",
+      estimatedBytes: localDataDirectory ? await directoryEntrySizeBytes(path.join(localDataDirectory, "runtime", "logs")) : 0,
     }),
     cleanupItem("cache-git-activity", "cache", "Git 活动缓存", "内存中的 Git 报告、明细和头像缓存。", {
       recommendation: "keep",
@@ -435,26 +433,14 @@ async function executeCleanupItem(item) {
     return { ok: true, message: `已清理 ${targets.length} 个下载残留文件。` };
   }
 
-  if (item.kind === "service-diagnostics") {
-    const serviceDirectory = localServiceDirectoryPath();
-    const targets = ["service.log", "logs"]
-      .map((entry) => path.join(serviceDirectory, entry))
-      .filter((entry) => fs.existsSync(entry));
-    if (targets.length === 0) {
-      return { ok: true, message: "没有可清理的诊断日志。" };
-    }
-    for (const targetPath of targets) {
-      const trashed = await trashFileSystemPath(targetPath);
-      if (!trashed.ok) {
-        return { ok: false, message: trashed.message || "清理诊断日志失败。" };
-      }
-    }
-    return { ok: true, message: "已清理诊断与服务运行日志。" };
-  }
-
   if (item.kind === "memory-caches") {
     clearGitActivityCaches();
     return { ok: true, message: "已清理内存中的 Git 活动缓存。" };
+  }
+
+  if (item.kind === "runtime-records") {
+    const result = await clearRuntimeRecords();
+    return { ok: true, message: `已清理 ${result.deletedCount} 份运行记录，释放 ${result.releasedBytes} 字节。` };
   }
 
   // Default: file/directory paths moved to the system trash (preferred).

@@ -37,6 +37,38 @@ function loadScript<Exports>(file: string, imports: Record<string, unknown>, glo
 }
 
 describe("storage migration recovery", () => {
+  it("defers settings disk scans until after the first paint and cancels initialization on unmount", async () => {
+    const frames: FrameRequestCallback[] = [];
+    const cancelAnimationFrame = vi.fn();
+    const store = {
+      refreshAiModels: vi.fn().mockResolvedValue(undefined),
+      aiPreferences: { provider: "custom" },
+      refreshRuntimeRecordRetention: vi.fn().mockResolvedValue({ policy: {} }),
+      refreshStorageOverview: vi.fn().mockResolvedValue(undefined),
+    };
+    let mount = () => {};
+    let unmount = () => {};
+    const stopEscape = vi.fn();
+    loadScript("src/components/layout/SettingsTab.vue", {
+      vue: { computed, ref, watch: vi.fn(), onMounted: (callback: () => void) => { mount = callback; }, onUnmounted: (callback: () => void) => { unmount = callback; } },
+      "../../store/useStore": { useStore: () => store },
+      "../../lib/i18n": { useI18n: () => ref({}) },
+      "../../lib/escape": { addAppEscapeRequestListener: () => stopEscape },
+    }, { window: { navigator: { platform: "Win32" }, requestAnimationFrame: (callback: FrameRequestCallback) => frames.push(callback), cancelAnimationFrame } });
+    mount();
+    expect(store.refreshRuntimeRecordRetention).not.toHaveBeenCalled();
+    expect(store.refreshStorageOverview).not.toHaveBeenCalled();
+    frames[0]!(0);
+    expect(store.refreshRuntimeRecordRetention).not.toHaveBeenCalled();
+    frames[1]!(16);
+    await Vue.nextTick();
+    expect(store.refreshRuntimeRecordRetention).toHaveBeenCalledOnce();
+    expect(store.refreshStorageOverview).toHaveBeenCalledOnce();
+    unmount();
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(2);
+    expect(stopEscape).toHaveBeenCalledOnce();
+  });
+
   it("blocks migration while stopping the service and restores the entry after completion", async () => {
     let finishStop: (result: { ok: boolean; error?: string }) => void = () => {};
     const stopMigrationService = vi.fn(() => new Promise<{ ok: boolean; error?: string }>((resolve) => {

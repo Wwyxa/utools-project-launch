@@ -125,18 +125,16 @@ const closeForm = () => {
 const openHistory = async (task: ProjectAutomationTask) => {
   historyDialogTaskId.value = task.id;
   historyDialogEntries.value = taskHistory(task);
-  if (!store.projectLaunchServicePreferences.enabled) {
-    return;
-  }
   historyDialogLoading.value = true;
   try {
-    const entries = await store.loadProjectLaunchServiceAutomationHistory(props.project.id, task.id);
+    const entries = await store.loadRuntimeAutomationHistory(props.project.id, task.id);
     if (historyDialogTaskId.value === task.id) {
-      historyDialogEntries.value = entries;
+      const merged = new Map([...taskHistory(task), ...entries].map((entry) => [entry.id, entry]));
+      historyDialogEntries.value = [...merged.values()].sort((left, right) => historyTime(right) - historyTime(left));
     }
   } catch (error) {
     if (historyDialogTaskId.value === task.id) {
-      historyDialogEntries.value = [];
+      historyDialogEntries.value = taskHistory(task);
     }
   } finally {
     if (historyDialogTaskId.value === task.id) {
@@ -370,9 +368,7 @@ const formatMinutes = (minutes: number) => t.value.automation.minutes.replace("{
 const historyTime = (entry: ProjectAutomationHistoryEntry) =>
   new Date(entry.endedAt || entry.startedAt || entry.plannedAt || 0).getTime();
 const taskHistory = (task: ProjectAutomationTask) =>
-  store.projectLaunchServicePreferences.enabled
-    ? [...task.history].sort((left, right) => historyTime(right) - historyTime(left))
-    : [];
+  [...task.history].sort((left, right) => historyTime(right) - historyTime(left));
 const latestHistory = (task: ProjectAutomationTask) => taskHistory(task)[0];
 const latestResultStatus = (task: ProjectAutomationTask) => latestHistory(task)?.status || "pending";
 const latestResultAt = (task: ProjectAutomationTask) => {
@@ -694,7 +690,7 @@ const taskSummaryText = computed(() =>
     <Teleport to="body">
       <Transition name="scale">
         <div
-          v-if="historyDialogTask && store.projectLaunchServicePreferences.enabled"
+          v-if="historyDialogTask"
           class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
           @click.self="closeHistory"
         >
@@ -721,7 +717,7 @@ const taskSummaryText = computed(() =>
                 <X :size="16" />
               </button>
             </div>
-            <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-2">
+            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-2">
               <div v-if="historyDialogLoading" class="py-6 text-xs text-on-surface-variant">
                 {{ t.common.loading }}
               </div>
@@ -790,7 +786,7 @@ const taskSummaryText = computed(() =>
                 <X :size="16" />
               </button>
             </div>
-            <div class="themed-scrollbar min-h-0 flex-1 overflow-auto p-4">
+            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-auto p-4">
               <div class="space-y-4 text-xs">
                 <section class="border-b border-border-subtle pb-4">
                   <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem]">

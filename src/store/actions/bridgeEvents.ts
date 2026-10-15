@@ -7,6 +7,11 @@ import { iconPackDownloadProgressMessage, projectLaunchServiceDownloadProgressMe
 
 export const bridgeEventsActions = {
     handleBridgeEvent(this: AppStore, event: ProjectBridgeEvent) {
+      if (event.type === "runtime-record-error") {
+        this.localStateWriteError = event.message;
+        showActionStatus({ state: "error", message: event.message });
+        return;
+      }
       if (event.type === "projects-changed") {
         void this.scheduleProjectCatalogReload();
         return;
@@ -110,7 +115,7 @@ export const bridgeEventsActions = {
         ]
           .filter(Boolean)
           .join(" · ");
-        this.addLog(event.projectId, createBridgeLogEntry(launchContext, "SUCCESS"), event.scriptId);
+        this.addLog(event.projectId, createBridgeLogEntry(launchContext, "SUCCESS"), event.scriptId, false);
         if (event.runId) {
           const pendingKey = pendingRuntimeTerminalEventKey(event.projectId, event.scriptId, event.runId);
           const pendingEvent = pendingRuntimeTerminalEvents.get(pendingKey);
@@ -134,12 +139,13 @@ export const bridgeEventsActions = {
             event.projectId,
             createBridgeLogEntry(line, classifyProcessOutputLine(line, outputSource)),
             event.scriptId,
+            false,
           );
         });
       }
 
       if (event.type === "stdin") {
-        this.addLog(event.projectId, createBridgeLogEntry(`> ${event.message || ""}`, "INFO"), event.scriptId);
+        this.addLog(event.projectId, createBridgeLogEntry(`> ${event.message || ""}`, "INFO"), event.scriptId, false);
       }
 
       if (event.type === "exit") {
@@ -165,6 +171,7 @@ export const bridgeEventsActions = {
             isSuccess || isStopped ? "SUCCESS" : "ERROR",
           ),
           event.scriptId,
+          false,
         );
       }
 
@@ -186,6 +193,7 @@ export const bridgeEventsActions = {
           event.projectId,
           createBridgeLogEntry(normalizeLogLines(event.message || "command failed")[0] || "command failed", "ERROR"),
           event.scriptId,
+          false,
         );
       }
       this.handleAutomationBridgeEvent(event);

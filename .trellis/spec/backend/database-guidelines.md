@@ -11,9 +11,10 @@ the explicit fallback in `src/lib/projectBridge.ts`.
 | Public project configuration                                              | One `utools.db` document per project, under `utools-project-launch/project/<id>` |
 | Private project configuration                                             | `<plugin-local-data>/projects/*.json`                                            |
 | Device preferences, workspace state, public-project environment overrides | `<plugin-local-data>/local-state.v1.json`                                        |
-| Service state, retained logs, icon packs                                  | Subdirectories of the plugin local data directory                                |
+| Service execution state, common runtime records, icon packs                | Separate `service/`, `runtime/`, and `icon-packs/` directories                      |
 | Disposable files                                                          | `utools.getPluginTempPath()`                                                     |
-| Live processes, logs, Git snapshots, generated automation plans           | Runtime memory; retained service state belongs to the service                    |
+| Live processes, live UI logs, Git snapshots                               | Runtime memory                                                                   |
+| Direct automation plans and claims                                       | `runtime/scheduler/<sha256-project-id>.json`; not log-retention controlled          |
 
 `dbStorage`, renderer storage, the old home-directory root, and device ownership
 ids are legacy migration inputs, not the normal uTools persistence path. Browser
@@ -37,7 +38,8 @@ preview storage does not prove persistence across a uTools restart.
 - Agent tools report success only after persisted read-back, then emit
   `projects-changed`. A failed canonical write cannot fall back to legacy data.
 - Persist configuration and manual ordering, not PID/run identity, live logs,
-  full Git snapshots, generated plans, execution history, or notification receipts.
+  full Git snapshots, generated plans, execution history, or notification receipts in project documents.
+  Runtime records and direct scheduler claims belong to the separate local runtime adapter.
   Local-only environment values stay outside public project documents.
 
 ## Migration
@@ -48,6 +50,14 @@ before cleaning its source. Preserve other devices' legacy private data and
 existing local targets; normal reads do not perform legacy fallback migration.
 Local state replacements are atomic, and an unavailable local directory must
 fail writes rather than use the process working directory.
+
+Service-directory migration copies installation and execution state, and migrates
+old run logs, diagnostics and policy directly from the source into shared runtime
+storage before marking the item verified. It never creates a new `service/logs`
+intermediate directory. Source files remain intact; conflicts and busy runtime
+maintenance fail visibly and are retryable. Existing current policy is preserved.
+Old-format conversion is confined to initial migration, never normal runtime
+queries or cleanup. Shared records and policy survive service-directory deletion.
 
 ## Verification
 

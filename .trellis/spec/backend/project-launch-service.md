@@ -15,6 +15,10 @@ discovery, validation, and HTTP. Vue never reads discovery or sends raw requests
   retains service ownership and blocks delegated work without fallback.
 - Disable only after service-owned active work has stopped and shutdown succeeds.
   Unrelated plugin features remain usable when the service is unavailable.
+- `RuntimeDir` defaults to `runtime` beside `StateDir` when omitted, including
+  manual CLI startup. Explicit overrides remain supported. Run output and service
+  diagnostics always use the shared record format; there is no production
+  `service/logs` or `service.log` fallback.
 
 ## Installation and Trust
 
@@ -30,11 +34,19 @@ files are migration inputs, not the current service root.
 - Listen only on `127.0.0.1` with an assigned port. Validate discovery, token path,
   process identity, health identity, and protocol before use. Remove discovery only
   when its recorded owner is proven absent or the service shuts down cleanly.
+- On protocol upgrade, validate the old discovery shape separately from protocol
+  compatibility. For a structurally valid old record, prove the process absent or
+  its identity different, re-read its identity fields, and remove only that stale
+  discovery file. A live matching owner or unknown identity remains incompatible;
+  never delete tokens, execution state, logs, or installation metadata to upgrade.
+- Local builds use `git describe --tags --match service-v* --always --dirty`.
+  Untagged builds are `local-<hash>[-dirty]`; unrelated icon-pack tags must never
+  appear as service versions. `PROJECT_LAUNCH_SERVICE_VERSION` overrides this.
 
 ## Protocol and Synchronization
 
 - Authenticate every endpoint with the restricted bearer token and transport
-  `X-Protocol-Version: 2`. JSON mutations validate media type, size, complete body,
+  `X-Protocol-Version: 3`. JSON mutations validate media type, size, complete body,
   and known fields. Invalid protocol/input produces typed errors.
 - Full synchronization uses `/v1/sync?after=<cursor>` with validated health,
   state, and event page. A failed or malformed sync is unavailable/incompatible;
@@ -81,3 +93,6 @@ Bridge ownership/sync behavior is covered by
 `tests/projectRuntimeState.test.ts`. Use the existing release CI for target names,
 checksums, and binary limits. Real uTools lifecycle behavior requires host smoke;
 browser tests do not establish full host shutdown/reconnect behavior.
+Protocol changes require old-protocol discovery tests for stale/reused PIDs,
+matching live owners and unknown identity, with preserved state/token/install
+assertions. `tests/serviceBuildVersion.test.ts` covers build version selection.

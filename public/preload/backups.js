@@ -24,6 +24,7 @@ function validateBackupPayload(value) {
   if (!Array.isArray(value.projects) || !backupObject(value.localState)) {
     throw new Error("备份缺少项目或配置数据。");
   }
+  if (value.runtimeRecordPolicy !== undefined) validateRuntimeRecordPolicy(value.runtimeRecordPolicy);
   const seen = new Set();
   value.projects.forEach((project) => {
     if (
@@ -116,6 +117,7 @@ function collectBackupPayload() {
     source: { hostname: os.hostname(), platform: process.platform, arch: process.arch },
     projects,
     localState: readLocalState(),
+    runtimeRecordPolicy: readRuntimeRecordPolicy(),
   });
 }
 
@@ -416,6 +418,10 @@ async function restoreBackup(options) {
       if (!result.ok) throw new Error(result.error || "本机配置保存失败。");
       if (JSON.stringify(readLocalState()) !== JSON.stringify(normalizeLocalState(nextState)))
         throw new Error("恢复后的本机配置回读校验失败。");
+      if (options.configuration && payload.runtimeRecordPolicy !== undefined) {
+        await updateRuntimeRecordRetention(payload.runtimeRecordPolicy);
+        if (!storedValueEquals(readRuntimeRecordPolicy(), payload.runtimeRecordPolicy)) throw new Error("恢复后的日志策略回读校验失败。");
+      }
     } catch (error) {
       throw new Error(`导入未完成，部分数据可能已写入。恢复前备份：${recoveryPath}。${error.message || error}`);
     }

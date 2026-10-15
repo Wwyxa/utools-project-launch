@@ -328,6 +328,7 @@ const handleScriptDrop = (targetScriptId: string) => {
           </header>
 
           <div
+            v-overlay-scrollbar
             class="themed-scrollbar bg-surface p-5 overflow-y-auto space-y-6 [color-scheme:inherit]"
             @click="closeMenus"
           >

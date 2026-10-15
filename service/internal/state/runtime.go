@@ -360,14 +360,19 @@ type RunLog struct {
 }
 
 type Store struct {
-	stateDir   string
-	secretKey  [32]byte
-	mutex      sync.RWMutex
-	data       RuntimeState
-	liveEvents []Event
-	logFiles   map[string]retainedLogFile
-	logUsage   LogUsage
-	writers    map[string]*runLogWriter
+	stateDir              string
+	runtimeDir            string
+	recordSnapshots       map[string]string
+	lastCommonMaintenance time.Time
+	policyInfo            os.FileInfo
+	stagedTerminalRunID   string
+	secretKey             [32]byte
+	mutex                 sync.RWMutex
+	data                  RuntimeState
+	liveEvents            []Event
+	logFiles              map[string]retainedLogFile
+	logUsage              LogUsage
+	writers               map[string]*runLogWriter
 
 	nextWriterGeneration  uint64
 	logFlushInterval      time.Duration
@@ -378,6 +383,10 @@ type Store struct {
 }
 
 func Open(stateDir string) (*Store, error) {
+	return openStore(stateDir, "")
+}
+
+func openStore(stateDir, runtimeDir string) (*Store, error) {
 	if err := EnsureDirectory(stateDir); err != nil {
 		return nil, err
 	}
@@ -388,6 +397,8 @@ func Open(stateDir string) (*Store, error) {
 
 	store := &Store{
 		stateDir:         stateDir,
+		runtimeDir:       runtimeDir,
+		recordSnapshots:  map[string]string{},
 		secretKey:        runtimeStateSecretKey(token),
 		logFiles:         map[string]retainedLogFile{},
 		writers:          map[string]*runLogWriter{},
@@ -397,6 +408,9 @@ func Open(stateDir string) (*Store, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		store.data = newRuntimeState()
 		store.liveEvents = []Event{}
+		if err := store.initializeRuntimeRecordsLocked(); err != nil {
+			return nil, err
+		}
 		if err := store.initializeLogAccountingLocked(); err != nil {
 			return nil, err
 		}
@@ -419,6 +433,9 @@ func Open(stateDir string) (*Store, error) {
 	}
 	if store.discardPersistedOutputEventsLocked() {
 		migrated = true
+	}
+	if err := store.initializeRuntimeRecordsLocked(); err != nil {
+		return nil, err
 	}
 	if err := store.initializeLogAccountingLocked(); err != nil {
 		return nil, err
@@ -451,6 +468,9 @@ func NewRunID() (string, error) {
 func (store *Store) CreateRun(run Run, idempotencyKey string, requestFingerprint string) (Run, bool, error) {
 	store.mutex.Lock()
 	defer store.mutex.Unlock()
+	if err := store.refreshRuntimeRecordPolicyLocked(); err != nil {
+		return Run{}, false, err
+	}
 
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return Run{}, false, errors.New("idempotency key is required")
@@ -529,8 +549,9 @@ func (store *Store) automationSnapshotLocked() AutomationState {
 }
 
 func (store *Store) LogRetention() LogRetentionPolicy {
-	store.mutex.RLock()
-	defer store.mutex.RUnlock()
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
+	_ = store.refreshRuntimeRecordPolicyLocked()
 
 	return store.data.LogRetention
 }
@@ -609,6 +630,9 @@ func (store *Store) UpdateLogRetention(policy LogRetentionPolicy) (LogRetentionP
 		}
 	}
 	store.data.LogRetention = policy
+	if err := store.writeCommonPolicyLocked(policy); err != nil {
+		return LogRetentionPolicy{}, err
+	}
 	if err := store.persistLocked(); err != nil {
 		return LogRetentionPolicy{}, err
 	}
@@ -704,6 +728,9 @@ func (store *Store) clearPersistedLogsLocked(runID string) (LogClearResult, erro
 			continue
 		}
 		if file.active {
+			if store.runtimeDir != "" {
+				continue
+			}
 			logFile, err := os.OpenFile(file.path, os.O_WRONLY|os.O_TRUNC, 0)
 			if errors.Is(err, os.ErrNotExist) {
 				continue
@@ -1110,6 +1137,7 @@ func (store *Store) UpdateRunAndAppendEvent(
 ) (Run, error) {
 	store.mutex.Lock()
 	defer store.mutex.Unlock()
+	defer func() { store.stagedTerminalRunID = "" }()
 
 	for index := range store.data.Runs {
 		if store.data.Runs[index].ID != runID {
@@ -1135,6 +1163,9 @@ func (store *Store) UpdateRunAndAppendEvent(
 		if err != nil {
 			return Run{}, err
 		}
+		if store.data.Runs[index].Status.IsCompleted() {
+			store.stagedTerminalRunID = runID
+		}
 		if err := store.persistLocked(); err != nil {
 			return Run{}, err
 		}
@@ -1152,6 +1183,10 @@ func (store *Store) UpdateRunAndAppendEvent(
 				eventErr = errors.Join(eventErr, err)
 			}
 			if err := store.trimRunLogsLocked(); err != nil {
+				eventErr = errors.Join(eventErr, err)
+			}
+			store.stagedTerminalRunID = ""
+			if err := store.persistRuntimeRecordsLocked(); err != nil {
 				eventErr = errors.Join(eventErr, err)
 			}
 		}
@@ -1184,6 +1219,9 @@ func (store *Store) AppendEvent(event Event) (Event, error) {
 }
 
 func (store *Store) prepareEventLocked(event Event) (Event, error) {
+	if err := store.refreshRuntimeRecordPolicyLocked(); err != nil {
+		return Event{}, err
+	}
 	if strings.TrimSpace(event.Type) == "" {
 		return Event{}, errors.New("event type is required")
 	}
@@ -1476,6 +1514,9 @@ func (store *Store) statePath() string {
 }
 
 func (store *Store) logDirectoryPath() string {
+	if store.runtimeDir != "" {
+		return filepath.Join(store.runtimeDir, LogDirectoryName)
+	}
 	return filepath.Join(store.stateDir, LogDirectoryName)
 }
 
@@ -1523,8 +1564,7 @@ func (store *Store) persistLocked() error {
 		return fmt.Errorf("write runtime state: %w", err)
 	}
 	store.stateWriteCount++
-
-	return nil
+	return store.persistRuntimeRecordsLocked()
 }
 
 func (store *Store) queueRunLogEventLocked(event Event) error {
@@ -1559,7 +1599,15 @@ func (store *Store) openRunLogWriterLocked(runID string) (*runLogWriter, error) 
 	if err := os.MkdirAll(store.logDirectoryPath(), 0o700); err != nil {
 		return nil, fmt.Errorf("create run log directory: %w", err)
 	}
+	if store.runtimeDir != "" {
+		if err := store.persistRuntimeRecordsLocked(); err != nil {
+			return nil, err
+		}
+	}
 	logPath := filepath.Join(store.logDirectoryPath(), runID+".log")
+	if info, err := os.Lstat(logPath); err == nil && !info.Mode().IsRegular() {
+		return nil, errors.New("run log must be a regular file")
+	}
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open run log: %w", err)
@@ -1632,6 +1680,9 @@ func (store *Store) flushRunLogWriterLocked(runID string, enforceThresholds bool
 	writer.pending = nil
 	store.recordRetainedLogFileLocked(runID, filepath.Join(store.logDirectoryPath(), runID+".log"), info)
 	store.outputFlushCount++
+	if err := store.maintainCommonRecordsLocked(); err != nil {
+		return err
+	}
 
 	runtimeStateChanged := false
 	if enforceThresholds {
@@ -1749,7 +1800,15 @@ func (store *Store) enforceOutputRetentionAfterFlushLocked(runID string) (bool, 
 			runtimeStateChanged = true
 		}
 	}
-	if store.logUsage.TotalBytes <= policy.MaxBytesTotal && store.logUsage.FileCount <= MaxRunLogFiles {
+	totalBytes := store.logUsage.TotalBytes
+	if store.runtimeDir != "" {
+		var err error
+		totalBytes, err = store.commonRecordUsageLocked()
+		if err != nil {
+			return runtimeStateChanged, err
+		}
+	}
+	if totalBytes <= policy.MaxBytesTotal && store.logUsage.FileCount <= MaxRunLogFiles {
 		return runtimeStateChanged, nil
 	}
 	if err := store.flushAllRunLogWritersLocked(); err != nil {
@@ -1866,6 +1925,9 @@ func (store *Store) initializeLogAccountingLocked() error {
 			return fmt.Errorf("read run log metadata: %w", err)
 		}
 		run, found := runs[runID]
+		if store.runtimeDir != "" && !found {
+			continue
+		}
 		logPath := filepath.Join(store.logDirectoryPath(), entry.Name())
 		store.recordRetainedLogFileLocked(runID, logPath, info)
 		file := store.logFiles[runID]
@@ -1912,6 +1974,25 @@ func (store *Store) recordRetainedLogFileLocked(runID string, path string, info 
 }
 
 func (store *Store) enforceLogRetentionLocked(policy LogRetentionPolicy) (LogClearResult, bool, error) {
+	release, acquired, err := store.acquireRecordMaintenanceLocked()
+	if err != nil {
+		return LogClearResult{}, false, err
+	}
+	if !acquired {
+		return LogClearResult{}, false, nil
+	}
+	defer release()
+	if store.runtimeDir != "" {
+		if err := store.initializeLogAccountingLocked(); err != nil {
+			return LogClearResult{}, false, err
+		}
+		sharedBytes, err := store.commonRecordUsageLocked()
+		if err != nil {
+			return LogClearResult{}, false, err
+		}
+		foreignBytes := max(sharedBytes-store.logUsage.TotalBytes, 0)
+		policy.MaxBytesTotal = max(policy.MaxBytesTotal-foreignBytes, 0)
+	}
 	store.retentionPassCount++
 	files := store.retainedLogFilesLocked()
 	result := LogClearResult{}
@@ -2014,6 +2095,9 @@ func (store *Store) enforceLogRetentionLocked(policy LogRetentionPolicy) (LogCle
 }
 
 func (store *Store) removeRetainedLogFileLocked(file retainedLogFile, result *LogClearResult) error {
+	if err := store.markRuntimeRecordClearedLocked(file.runID); err != nil {
+		return err
+	}
 	if err := os.Remove(file.path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			store.removeRetainedLogFileFromAccountingLocked(file.runID)

@@ -39,6 +39,10 @@ session memory, and cleanup. Preserve a constrained flex height chain and
 Keep scrollbars on the actual scrolling region. A fixed popup shell must keep
 its positioning; put overlay-scrollbar behavior on its inner scroller. Validate
 compact layouts with short/long content and loaded/empty/loading states.
+Scrollable dialog bodies and floating-menu content use `v-overlay-scrollbar`
+with the shared theme; `themed-scrollbar` alone does not initialize the component.
+For fixed menus and date pickers, keep positioning and measurement refs on the
+outer shell and constrain an inner scroller with `min-h-0` in a flex column.
 
 ## Git Surface Ownership
 

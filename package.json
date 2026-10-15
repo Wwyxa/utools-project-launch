@@ -27,6 +27,7 @@
     "validate:project-files": "node scripts/validate-project-files.mjs",
     "validate:project-storage": "node scripts/validate-project-storage-compat.mjs",
     "validate:process-results": "node scripts/validate-process-result-batches.mjs",
+    "validate:runtime-records": "node scripts/validate-runtime-records.mjs",
     "icon-pack:build": "node scripts/build-icon-pack.mjs",
     "icon-pack:validate": "node scripts/validate-icon-pack.mjs"
   },

@@ -1,4 +1,8 @@
 function emit(detail) {
+  if (detail.runtimeOwner === 'preload' && detail.runId) {
+    detail.timestamp = detail.timestamp || new Date().toISOString();
+    appendRuntimeRecordEvent(detail);
+  }
   window.dispatchEvent(new CustomEvent('project-bridge-event', { detail }));
 }
 

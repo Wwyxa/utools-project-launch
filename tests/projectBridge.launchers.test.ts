@@ -32,6 +32,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   const nodeRequire = createRequire(import.meta.url);
   const spawnOutcomes = [...(fixture.spawnOutcomes || [])];
   const bridgeEvents: unknown[] = [];
+  const runtimeRecordErrors: unknown[] = [];
   const bridgeEventTypes: string[] = [];
   const servicePreferenceStorage = new Map<string, unknown>();
   if (fixture.serviceEnabled !== undefined) {
@@ -160,6 +161,10 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
       },
     },
     dispatchEvent: (event) => {
+      if (event.detail && typeof event.detail === "object" && "type" in event.detail && event.detail.type === "runtime-record-error") {
+        runtimeRecordErrors.push(event.detail);
+        return true;
+      }
       if (event.type) bridgeEventTypes.push(event.type);
       bridgeEvents.push(event.detail);
       return true;
@@ -198,7 +203,7 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
   createContext(sandbox);
   runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
   if (!sandboxWindow.projectBridge) throw new Error("The real preload did not register projectBridge.");
-  return { bridge: sandboxWindow.projectBridge, spawn, execFile, execFileSync, bridgeEvents, bridgeEventTypes };
+  return { bridge: sandboxWindow.projectBridge, spawn, execFile, execFileSync, bridgeEvents, bridgeEventTypes, runtimeRecordErrors };
 };
 
 describe("native project launchers", () => {
@@ -517,7 +522,7 @@ describe("native project launchers", () => {
 
     const processEvents = bridgeEvents.filter(
       (event): event is { type: string; runId?: string; runtimeOwner?: string } =>
-        Boolean(event && typeof event === "object" && "type" in event),
+        Boolean(event && typeof event === "object" && "type" in event && event.type !== "runtime-record-error"),
     );
     expect(processEvents.map((event) => event.type)).toEqual(["started", "stdout", "stderr", "exit"]);
     expect(new Set(processEvents.map((event) => `${event.runId}:${event.runtimeOwner}`)).size).toBe(1);

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
+  Archive,
   ArrowLeft,
   Brain,
   Code2,
+  Database,
   Download,
+  FileText,
   FolderOpen,
   Github,
   Info,
@@ -35,6 +38,7 @@ import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import ActionDialog from "../common/ActionDialog.vue";
+import Terminal from "../terminal/Terminal.vue";
 import BackupTools from "./BackupTools.vue";
 import { showActionStatus } from "../common/actionStatus";
 import { getProjectBridge } from "../../lib/projectBridge";
@@ -316,7 +320,7 @@ const projectLaunchServiceStatusClass = computed(() => {
 });
 const projectLaunchServiceLogRetentionStatus = computed(() => store.projectLaunchServiceLogRetentionStatus);
 const logRetentionReady = computed(
-  () => projectLaunchServiceStatus.value?.state === "healthy" && projectLaunchServiceStatus.value.running,
+  () => store.supportsBridge,
 );
 const formatLogBytes = (bytes: number) => {
   if (!Number.isFinite(bytes) || bytes < 0) return "-";
@@ -622,16 +626,8 @@ const handleToggleProjectLaunchService = async (event: Event) => {
 };
 
 const refreshLogRetention = async () => {
-  let status = store.projectLaunchServiceStatus;
-  if (!status) {
-    status = await store.refreshProjectLaunchServiceStatus();
-  }
-  if (status.state !== "healthy" || !status.running) {
-    logRetentionDraft.value = null;
-    return;
-  }
   try {
-    const retention = await store.refreshProjectLaunchServiceLogRetention();
+    const retention = await store.refreshRuntimeRecordRetention();
     logRetentionDraft.value = { ...retention.policy };
     logRetentionFeedback.value = "";
   } catch (error) {
@@ -688,7 +684,7 @@ const saveLogRetention = async () => {
   logRetentionSaving.value = true;
   logRetentionFeedback.value = "";
   try {
-    const retention = await store.updateProjectLaunchServiceLogRetention({ ...draft });
+    const retention = await store.updateRuntimeRecordRetention({ ...draft });
     logRetentionDraft.value = { ...retention.policy };
     logRetentionFeedbackTone.value = "success";
     logRetentionFeedback.value = t.value.settings.projectLaunchServiceLogSaveSuccess;
@@ -708,7 +704,7 @@ const confirmClearLogRetention = async () => {
   logRetentionFeedback.value = "";
   showActionStatus({ state: "loading", message: t.value.settings.projectLaunchServiceLogClearBusy });
   try {
-    const result = await store.clearProjectLaunchServiceLogs();
+    const result = await store.clearRuntimeRecords();
     try {
       await refreshLogRetention();
     } catch (error) {
@@ -881,14 +877,20 @@ const aiTestTitle = computed(() => {
   return store.aiModelTestMessage;
 });
 
+let initializationFrame = 0;
 onMounted(() => {
-  void loadAiModels();
-  void refreshLogRetention();
-  void store.refreshStorageOverview();
+  initializationFrame = window.requestAnimationFrame(() => {
+    initializationFrame = window.requestAnimationFrame(() => {
+      void loadAiModels();
+      void refreshLogRetention();
+      void store.refreshStorageOverview();
+    });
+  });
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 
 onUnmounted(() => {
+  window.cancelAnimationFrame(initializationFrame);
   stopAppEscapeListener();
 });
 
@@ -1705,15 +1707,47 @@ watch(
           </div>
         </div>
 
-        <div class="mt-3 border-t border-border-subtle pt-3">
-          <div class="flex flex-wrap items-start justify-between gap-3">
+        <div
+          v-if="projectLaunchServiceHasNotice"
+          :class="cn('mt-3 rounded-md border px-3 py-2 text-xs leading-5', projectLaunchServiceNoticeClass)"
+          role="status"
+          aria-live="polite"
+        >
+          <p class="font-semibold">{{ projectLaunchServiceStatusLabel }}</p>
+          <p v-if="projectLaunchServiceStatus?.message" class="mt-0.5 break-words text-on-surface-variant">
+            {{ projectLaunchServiceStatus.message }}
+          </p>
+          <p v-if="projectLaunchServiceStatus?.eventsTruncated" class="mt-1 text-status-warning">
+            {{ t.settings.projectLaunchServiceLogsTruncated }}
+          </p>
+          <p v-if="projectLaunchServiceStatus?.scheduler?.lastError" class="mt-1 break-words text-status-error">
+            {{ t.settings.projectLaunchServiceSchedulerLastError }}: {{ projectLaunchServiceStatus.scheduler.lastError }}
+          </p>
+        </div>
+        <div v-if="store.projectLaunchServicePreferences.enabled" class="mt-2 text-xs leading-5 text-status-warning">
+          {{ t.settings.projectLaunchServiceEnabledHint }}
+        </div>
+        <details class="group mt-3 border-t border-border-subtle pt-2.5">
+          <summary class="cursor-pointer text-xs font-semibold text-on-surface-variant">
+            {{ t.settings.projectLaunchServiceNotes }}
+          </summary>
+          <p class="mt-2 text-[11px] leading-4 text-on-surface-variant">{{ t.settings.projectLaunchServiceManualHint }}</p>
+        </details>
+      </section>
+
+      <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
+        <div>
+          <div class="space-y-3">
             <div class="min-w-0">
-              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceLogPersistence }}</p>
+              <div class="flex items-center gap-2">
+                <FileText :size="15" class="shrink-0 text-primary" />
+                <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectLaunchServiceLogPersistence }}</h3>
+              </div>
               <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
                 {{ t.settings.projectLaunchServiceLogPersistenceHint }}
               </p>
             </div>
-            <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            <div class="flex flex-wrap items-center gap-1.5">
               <label
                 class="inline-flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface px-2.5 text-xs font-semibold text-on-surface"
               >
@@ -1749,6 +1783,7 @@ watch(
                 <Trash2 :size="13" />
                 {{ t.settings.projectLaunchServiceLogClear }}
               </button>
+              <Terminal v-if="store.supportsBridge" project-id="" history-only />
             </div>
           </div>
 
@@ -1830,66 +1865,14 @@ watch(
           </p>
         </div>
 
-        <div
-          v-if="projectLaunchServiceHasNotice"
-          :class="cn('mt-3 rounded-md border px-3 py-2 text-xs leading-5', projectLaunchServiceNoticeClass)"
-          role="status"
-          aria-live="polite"
-        >
-          <div class="flex items-start gap-2">
-            <Info :size="14" class="mt-0.5 shrink-0" />
-            <div class="min-w-0">
-              <p class="font-semibold">{{ projectLaunchServiceStatusLabel }}</p>
-              <p v-if="projectLaunchServiceStatus?.message" class="mt-0.5 break-words text-on-surface-variant">
-                {{ projectLaunchServiceStatus.message }}
-              </p>
-              <p v-if="projectLaunchServiceStatus?.eventsTruncated" class="mt-1 text-status-warning">
-                {{ t.settings.projectLaunchServiceLogsTruncated }}
-              </p>
-              <p v-if="projectLaunchServiceStatus?.scheduler?.lastError" class="mt-1 break-words text-status-error">
-                <span class="font-semibold">{{ t.settings.projectLaunchServiceSchedulerLastError }}:</span>
-                {{ projectLaunchServiceStatus.scheduler.lastError }}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div
-          v-if="store.projectLaunchServicePreferences.enabled"
-          class="mt-2 flex items-start gap-2 rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs leading-5 text-status-warning"
-        >
-          <ServerCog :size="14" class="mt-0.5 shrink-0" />
-          <p>{{ t.settings.projectLaunchServiceEnabledHint }}</p>
-        </div>
-        <details class="group mt-3 border-t border-border-subtle pt-2.5">
-          <summary
-            class="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-on-surface-variant transition-colors hover:text-on-surface [&::-webkit-details-marker]:hidden"
-          >
-            <span class="flex items-center gap-1.5">
-              <Info :size="13" class="shrink-0" />
-              {{ t.settings.projectLaunchServiceNotes }}
-            </span>
-            <ChevronDown :size="14" class="shrink-0 transition-transform group-open:rotate-180" />
-          </summary>
-          <div class="mt-2 grid gap-2 border-t border-border-subtle pt-2 sm:grid-cols-2">
-            <div class="rounded-md bg-surface-container-low px-3 py-2">
-              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceLogRetention }}</p>
-              <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
-                {{ t.settings.projectLaunchServiceLogHint }}
-              </p>
-            </div>
-            <div class="rounded-md bg-surface-container-low px-3 py-2">
-              <p class="text-xs font-semibold text-on-surface">{{ t.settings.projectLaunchServiceInstallNote }}</p>
-              <p class="mt-0.5 text-[11px] leading-4 text-on-surface-variant">
-                {{ t.settings.projectLaunchServiceManualHint }}
-              </p>
-            </div>
-          </div>
-        </details>
       </section>
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center justify-between gap-3">
-          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectConfig }}</h3>
+          <div class="flex shrink-0 items-center gap-2">
+            <Archive :size="15" class="shrink-0 text-primary" />
+            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectConfig }}</h3>
+          </div>
           <p v-if="store.projectStorageMessage" class="truncate text-xs text-on-surface-variant">
             {{ store.projectStorageMessage }}
           </p>
@@ -1899,7 +1882,10 @@ watch(
 
       <section class="lg:col-span-2 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm">
         <div class="mb-2.5 flex items-center justify-between gap-3">
-          <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.dataTools }}</h3>
+          <div class="flex shrink-0 items-center gap-2">
+            <Database :size="15" class="shrink-0 text-primary" />
+            <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.dataTools }}</h3>
+          </div>
           <p class="truncate text-xs text-on-surface-variant">{{ t.settings.dataToolsDescription }}</p>
         </div>
         <p
@@ -1940,6 +1926,10 @@ watch(
               <div class="flex justify-between gap-2">
                 <dt>{{ t.settings.storageLocalDataSize }}</dt>
                 <dd>{{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.localDataBytes) : "—" }}</dd>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <dt>{{ t.settings.projectLaunchServiceLogPersistence }}</dt>
+                <dd>{{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.runtimeBytes || 0) : "—" }}</dd>
               </div>
               <div class="flex justify-between gap-2">
                 <dt>{{ t.settings.storageLegacySize }}</dt>

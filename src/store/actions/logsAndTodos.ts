@@ -2,9 +2,13 @@ import type { LogEntry } from "../../types";
 import type { AppStore } from "../appStoreShape";
 import { liveLogScriptIds, trimLiveProjectLogs } from "../helpers/automationHelpers";
 import { createTodoId } from "../helpers/projectHelpers";
+import { bridge } from "../helpers/bridge";
 
 export const logsAndTodosActions = {
-    addLog(this: AppStore, projectId: string, log: LogEntry, scriptId?: string) {
+    addLog(this: AppStore, projectId: string, log: LogEntry, scriptId?: string, persist = true) {
+      if (persist && this.supportsBridge && bridge.appendRuntimeOperationLog) {
+        this.recordLocalStateWrite(bridge.appendRuntimeOperationLog(projectId, log, scriptId));
+      }
       if (!this.logs[projectId]) {
         this.logs[projectId] = [];
       }

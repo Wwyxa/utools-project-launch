@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 type Discovery struct {
 	ProtocolVersion int    `json:"protocolVersion"`

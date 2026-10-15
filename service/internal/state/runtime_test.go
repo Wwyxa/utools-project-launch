@@ -12,6 +12,107 @@ import (
 	"time"
 )
 
+func TestCommonRuntimeRecordsSurviveWithoutServiceAndReadSharedPolicy(t *testing.T) {
+	root := t.TempDir()
+	runtimeDir := filepath.Join(root, "runtime")
+	store, err := OpenWithRuntimeRecords(filepath.Join(root, "service"), runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	runID := "abababababababababababababababab"
+	_, _, err = store.CreateRun(Run{ID: runID, ProjectID: "project", ScriptID: "script", Status: RunStatusRunning,
+		StartedAt: time.Now().UTC().Format(time.RFC3339Nano)}, "request", "fingerprint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AppendEvent(Event{RunID: runID, Type: "stdout", Message: "common output"}); err != nil {
+		t.Fatal(err)
+	}
+	code := 0
+	if _, err := store.UpdateRunAndAppendEvent(runID, func(run *Run) { run.Status = RunStatusExited; run.EndedAt = time.Now().UTC().Format(time.RFC3339Nano) }, "exit", Event{Code: &code}); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(filepath.Join(runtimeDir, "logs", runID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record RuntimeRecord
+	if err := json.Unmarshal(contents, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.SchemaVersion != 1 || record.Source != "service" || record.Status != RunStatusExited {
+		t.Fatalf("record = %#v", record)
+	}
+	output, err := os.ReadFile(filepath.Join(runtimeDir, "logs", runID+".log"))
+	if err != nil || !bytes.Contains(output, []byte("common output")) {
+		t.Fatalf("output = %s, err = %v", output, err)
+	}
+	policy := DefaultLogRetentionPolicy()
+	policy.Persist = false
+	encoded, _ := json.Marshal(runtimeRecordPolicy{SchemaVersion: 1, Policy: policy})
+	if err := writeFileAtomic(filepath.Join(runtimeDir, "policy.v1.json"), encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AppendEvent(Event{RunID: runID, Type: "stdout", Message: "disabled"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	output, _ = os.ReadFile(filepath.Join(runtimeDir, "logs", runID+".log"))
+	if bytes.Contains(output, []byte("disabled")) {
+		t.Fatal("disabled output was persisted")
+	}
+	if err := store.markRuntimeRecordClearedLocked(runID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.persistLocked(); err != nil {
+		t.Fatal(err)
+	}
+	contents, _ = os.ReadFile(filepath.Join(runtimeDir, "logs", runID+".json"))
+	if err := json.Unmarshal(contents, &record); err != nil || !record.Cleared {
+		t.Fatalf("cleared record = %s, err = %v", contents, err)
+	}
+}
+
+func TestCommonRuntimeIgnoresDeveloperLogRemnants(t *testing.T) {
+	root := t.TempDir()
+	stateDir := filepath.Join(root, "service")
+	runtimeDir := filepath.Join(root, "runtime")
+	store, err := Open(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+	_, _, err = store.CreateRun(Run{ID: runID, ProjectID: "project", ScriptID: "script", Status: RunStatusExited,
+		StartedAt: time.Now().UTC().Format(time.RFC3339Nano)}, "request", "fingerprint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AppendEvent(Event{RunID: runID, Type: "stdout", Message: "developer remnant"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(stateDir, LogDirectoryName, runID+".log")
+	if _, err := os.Stat(outputPath); err != nil {
+		t.Fatal(err)
+	}
+	store, err = OpenWithRuntimeRecords(stateDir, runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := os.Stat(filepath.Join(runtimeDir, "logs", runID+".log")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("developer log was imported: %v", err)
+	}
+	if _, err := os.Stat(outputPath); err != nil {
+		t.Fatalf("developer remnant was changed: %v", err)
+	}
+}
+
 func TestAutomationConfigurationPersistsAndRejectsStaleRevision(t *testing.T) {
 	stateDir := t.TempDir()
 	store, err := Open(stateDir)

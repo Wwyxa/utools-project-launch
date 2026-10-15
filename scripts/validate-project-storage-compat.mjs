@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -180,6 +181,7 @@ function createBridge({
         };
 
   const sandbox = {
+    Buffer,
     CustomEvent: CustomEventStub,
     TextDecoder,
     clearTimeout,
@@ -997,11 +999,22 @@ migrationBridge.dbStorageValues.set(storageKey, {
   ],
 });
 
-// Legacy service directory: token/state must be copied; runtime files must not.
+// Initial migration writes old logs directly to runtime without an intermediate log directory.
 const legacyServiceDir = path.join(migrationBridge.legacyDataDir, 'service');
 fs.mkdirSync(legacyServiceDir, { recursive: true });
 fs.writeFileSync(path.join(legacyServiceDir, 'token'), `${'a'.repeat(64)}\n`);
-fs.writeFileSync(path.join(legacyServiceDir, 'state.json'), JSON.stringify({ schemaVersion: 1, nextCursor: 7 }));
+const migrationLogRunId = 'a1234567890123456789012345678901';
+const migrationLogPolicy = { persist: true, maxCompletedRunsPerProject: 23, maxBytesPerRun: 2 * 1024 * 1024, maxBytesTotal: 8 * 1024 * 1024 };
+fs.writeFileSync(path.join(legacyServiceDir, 'state.json'), JSON.stringify({
+  schemaVersion: 1, nextCursor: 7, logRetention: migrationLogPolicy,
+  runs: [{ id: migrationLogRunId, projectId: 'migrated-project', scriptId: 'script', status: 'exited', startedAt: new Date().toISOString() }],
+}));
+fs.mkdirSync(path.join(legacyServiceDir, 'logs'), { recursive: true });
+fs.writeFileSync(path.join(legacyServiceDir, 'logs', `${migrationLogRunId}.log`), JSON.stringify({ runId: migrationLogRunId, type: 'stdout', timestamp: new Date().toISOString(), message: 'migrated output' }) + '\n');
+const migrationOrphanRunId = 'c1234567890123456789012345678901';
+fs.writeFileSync(path.join(legacyServiceDir, 'logs', `${migrationOrphanRunId}.log`), JSON.stringify({ runId: migrationOrphanRunId, projectId: 'migrated-project', scriptId: 'orphan', type: 'stdout', timestamp: new Date().toISOString(), message: 'output without service state' }) + '\n');
+const migrationDiagnosticText = '旧服务诊断：中文😀\n'.repeat(20000);
+fs.writeFileSync(path.join(legacyServiceDir, 'service.log'), migrationDiagnosticText);
 fs.writeFileSync(
   path.join(legacyServiceDir, 'discovery.json'),
   JSON.stringify({
@@ -1025,9 +1038,59 @@ fs.mkdirSync(legacyIconPackDir, { recursive: true });
 fs.writeFileSync(path.join(legacyIconPackDir, 'pack.json.gz'), Buffer.from('icon-pack-bytes'));
 fs.writeFileSync(path.join(legacyIconPackDir, 'install.json'), JSON.stringify({ assetName: 'pack.iconpack.json.gz' }));
 
+const migrationRecordLock = path.join(migrationBridge.localDataDir, 'runtime', 'maintenance.lock');
+fs.mkdirSync(migrationRecordLock, { recursive: true });
+fs.writeFileSync(path.join(migrationRecordLock, 'owner.json'), JSON.stringify({ pid: process.pid, nonce: 'busy-migration' }));
+const lockedMigration = await migrationBridge.bridge.runMigration();
+assert.equal(lockedMigration.ok, false, 'migration must fail visibly when the runtime maintenance lock is busy');
+assert.equal(lockedMigration.ledger.items.find((item) => item.kind === 'service-directory').status, 'failed');
+assert.equal(fs.existsSync(path.join(legacyServiceDir, 'logs', `${migrationLogRunId}.log`)), true, 'failed migration must preserve source output');
+fs.rmSync(migrationRecordLock, { recursive: true });
+const diagnosticRunId = createHash('sha256').update(`migration:service.log:${path.resolve(legacyServiceDir)}`).digest('hex').slice(0, 32);
+const diagnosticTargetPath = path.join(migrationBridge.localDataDir, 'runtime', 'logs', `${diagnosticRunId}.log`);
+fs.mkdirSync(path.dirname(diagnosticTargetPath), { recursive: true });
+fs.writeFileSync(diagnosticTargetPath, 'conflicting partial migration');
+const conflictMigration = await migrationBridge.bridge.runMigration();
+assert.equal(conflictMigration.ok, false, 'a conflicting target must prevent migration completion');
+assert.match(conflictMigration.ledger.failedItems[0].error, /内容不一致/);
+assert.equal(fs.readFileSync(diagnosticTargetPath, 'utf8'), 'conflicting partial migration', 'migration must not overwrite a conflicting target');
+assert.equal(fs.readFileSync(path.join(legacyServiceDir, 'service.log'), 'utf8'), migrationDiagnosticText, 'source diagnostics must survive partial migration');
+assert.equal(fs.existsSync(path.join(migrationBridge.localDataDir, 'runtime', 'logs', `${migrationLogRunId}.json`)), true, 'run metadata may already be published before a later migration step fails');
+fs.unlinkSync(diagnosticTargetPath);
+const currentPolicy = { ...migrationLogPolicy, maxCompletedRunsPerProject: 42 };
+fs.writeFileSync(path.join(migrationBridge.localDataDir, 'runtime', 'policy.v1.json'), JSON.stringify({ schemaVersion: 1, policy: currentPolicy }));
 const migrationResult = await migrationBridge.bridge.runMigration();
-assert.equal(migrationResult.ok, true, 'the full migration must complete successfully');
+assert.equal(migrationResult.ok, true, `the full migration must complete successfully: ${JSON.stringify(migrationResult.ledger.failedItems)}`);
 assert.equal(migrationResult.ledger.status, 'completed', 'the migration ledger must record completion');
+const migratedLogPath = path.join(migrationBridge.localDataDir, 'runtime', 'logs', `${migrationLogRunId}.log`);
+assert.equal(fs.readFileSync(migratedLogPath).equals(fs.readFileSync(path.join(legacyServiceDir, 'logs', `${migrationLogRunId}.log`))), true, 'migration must copy old logs directly into runtime and verify their contents');
+assert.equal(fs.existsSync(path.join(migrationBridge.localDataDir, 'service', 'logs')), false, 'migration must not create an intermediate service log directory');
+assert.equal(fs.existsSync(path.join(migrationBridge.localDataDir, 'service', 'service.log')), false, 'migration must not copy developer diagnostics');
+assert.equal(fs.existsSync(path.join(legacyServiceDir, 'logs', `${migrationLogRunId}.log`)), true, 'migration must retain original source logs');
+assert.deepEqual(clone((await migrationBridge.bridge.getRuntimeRecordRetention()).policy), currentPolicy, 'migration must preserve an existing runtime policy');
+assert.equal((await migrationBridge.bridge.readRuntimeRecordLogPage(migrationLogRunId)).events[0].message, 'migrated output');
+assert.equal((await migrationBridge.bridge.readRuntimeRecordLogPage(migrationOrphanRunId)).events[0].message, 'output without service state', 'orphan output must remain accessible');
+const migratedRecords = await migrationBridge.bridge.listRuntimeRecords('');
+assert.equal(migratedRecords.filter((record) => [migrationLogRunId, migrationOrphanRunId, diagnosticRunId].includes(record.runId)).length, 3, 'retry must not duplicate imported records');
+assert.equal(migratedRecords.find((record) => record.runId === diagnosticRunId).source, 'diagnostic');
+let diagnosticPage = await migrationBridge.bridge.readRuntimeRecordLogPage(diagnosticRunId);
+assert.equal(diagnosticPage.hasMore, true, 'large migrated diagnostics must support bounded pages');
+let diagnosticEvents = diagnosticPage.events;
+while (diagnosticPage.hasMore) {
+  diagnosticPage = await migrationBridge.bridge.readRuntimeRecordLogPage(diagnosticRunId, diagnosticPage.nextOffset);
+  diagnosticEvents = [...diagnosticPage.events, ...diagnosticEvents];
+}
+assert.equal(diagnosticEvents.map((event) => event.message).join(''), migrationDiagnosticText, 'diagnostic conversion must preserve all Unicode content');
+
+const policyMigrationFixture = createBridge();
+const policySource = path.join(policyMigrationFixture.legacyDataDir, 'service');
+fs.mkdirSync(policySource, { recursive: true });
+fs.writeFileSync(path.join(policySource, 'token'), `${'b'.repeat(64)}\n`);
+fs.writeFileSync(path.join(policySource, 'state.json'), JSON.stringify({ logRetention: migrationLogPolicy, runs: [] }));
+const policyMigration = await policyMigrationFixture.bridge.runMigration();
+assert.equal(policyMigration.ok, true, 'policy-only service migration must succeed');
+assert.deepEqual(clone((await policyMigrationFixture.bridge.getRuntimeRecordRetention()).policy), migrationLogPolicy, 'initial migration must materialize legacy policy when no runtime policy exists');
+cleanupBridge(policyMigrationFixture);
 
 const migratedLocalState = readLocalStateFile(migrationBridge.localDataDir);
 assert.deepEqual(
@@ -1269,7 +1332,7 @@ for (const serviceMode of [
   fs.writeFileSync(path.join(targetDirectory, 'token'), 'c'.repeat(64));
   fs.writeFileSync(path.join(sourceDirectory, 'state.json'), JSON.stringify({ beforeShutdown: true }));
   const discovery = {
-    protocolVersion: 2,
+    protocolVersion: 3,
     serviceVersion: 'test',
     instanceId: 'legacy-instance',
     processIdentity: 'legacy-identity',
@@ -1341,7 +1404,7 @@ for (const stopMode of ['success', 'stop-failure', 'state-failure', 'invalid-id'
     fs.mkdirSync(directory);
     fs.writeFileSync(path.join(directory, 'token'), 'b'.repeat(64));
     const discovery = {
-      protocolVersion: 2,
+      protocolVersion: 3,
       serviceVersion: 'test',
       instanceId: 'legacy-stop-instance',
       processIdentity: 'legacy-stop-identity',
@@ -1619,12 +1682,12 @@ for (const expectedItem of [
   'local-legacy-directory',
   'cache-temp-directory',
   'cache-service-downloads',
-  'cache-diagnostics',
   'cache-git-activity',
 ]) {
   assert.ok(planItemIds.has(expectedItem), `cleanup plan must offer ${expectedItem}`);
 }
 const tempCleanupItem = cleanupPlan.items.find((item) => item.id === 'cache-temp-directory');
+assert.equal(planItemIds.has('cache-diagnostics'), false, 'developer-only legacy log cleanup must not be exposed');
 assert.equal(tempCleanupItem.disabledReason, '', 'the temp directory cleanup must be available');
 assert.equal(tempCleanupItem.recommendation, 'recommended', 'temporary data should be suggested for cleanup');
 const legacyKeysItem = cleanupPlan.items.find((item) => item.id === 'sync-legacy-dbstorage');
@@ -1634,7 +1697,7 @@ assert.equal(legacyKeysItem.recommendation, 'review', 'legacy keys require revie
 assert.equal(JSON.stringify(legacyKeysItem).includes('customCommand'), false, 'cleanup details must not expose preference values');
 for (const item of cleanupPlan.items) {
   assert.ok(item.safetyHint, `cleanup item ${item.id} must explain the consequences of deletion`);
-  assert.equal(item.selectedByDefault, item.category === 'cache' && item.id !== 'cache-git-activity', 'personal data and useful memory caches must not be selected by default');
+  assert.equal(item.selectedByDefault, item.category === 'cache' && !['cache-git-activity', 'cache-runtime-records'].includes(item.id), 'personal data, runtime history and useful memory caches must not be selected by default');
 }
 const gitActivityCleanupItem = cleanupPlan.items.find((item) => item.id === 'cache-git-activity');
 assert.equal(gitActivityCleanupItem.recommendation, 'keep', 'useful Git memory caches should be retained');
@@ -1666,6 +1729,35 @@ assert.equal(
   'temp directory contents must be removed by cleanup',
 );
 cleanupBridge(cleanupBridgeFixture);
+
+{
+  const fixture = createBridge();
+  const serviceDirectory = path.join(fixture.localDataDir, 'service');
+  fs.mkdirSync(serviceDirectory, { recursive: true });
+  fs.writeFileSync(path.join(serviceDirectory, 'state.json'), '{"schemaVersion":1}');
+  await fixture.bridge.updateRuntimeRecordRetention(migrationLogPolicy);
+  fixture.bridge.appendRuntimeOperationLog('cleanup-project', { type: 'INFO', message: 'preserved history' });
+  const runId = (await fixture.bridge.listRuntimeRecords('cleanup-project'))[0].runId;
+  const schedulerPath = path.join(fixture.localDataDir, 'runtime', 'scheduler', 'retained-claim.json');
+  fs.mkdirSync(path.dirname(schedulerPath), { recursive: true });
+  fs.writeFileSync(schedulerPath, '{"claim":"preserved"}');
+  const lock = path.join(fixture.localDataDir, 'runtime', 'maintenance.lock');
+  fs.mkdirSync(lock);
+  fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, nonce: 'busy-cleanup' }));
+  const result = await fixture.bridge.executeCleanup(['local-service-directory']);
+  assert.equal(result.ok, true, 'service removal must not depend on a legacy log import or runtime maintenance lock');
+  assert.equal(fs.existsSync(serviceDirectory), false, 'successful service cleanup must remove the service directory');
+  fs.rmSync(lock, { recursive: true });
+  assert.equal(fs.existsSync(path.join(fixture.localDataDir, 'runtime', 'logs', `${runId}.log`)), true, 'cleanup must preserve unified output');
+  assert.equal(JSON.parse(fs.readFileSync(schedulerPath, 'utf8')).claim, 'preserved', 'cleanup must preserve direct scheduler state');
+  assert.deepEqual(clone((await fixture.bridge.getRuntimeRecordRetention()).policy), migrationLogPolicy, 'cleanup must retain unified policy');
+  assert.equal((await fixture.bridge.readRuntimeRecordLogPage(runId)).events[0].message, 'preserved history', 'history remains readable without old log files');
+  const runtimeCleanup = await fixture.bridge.executeCleanup(['cache-runtime-records']);
+  assert.equal(runtimeCleanup.ok, true, 'unified cleanup must succeed independently of old service files');
+  assert.equal((await fixture.bridge.listRuntimeRecords('cleanup-project')).length, 0, 'cleared history must not return from retained service state');
+  assert.equal(fs.existsSync(schedulerPath), true, 'unified log cleanup must preserve direct scheduler state');
+  cleanupBridge(fixture);
+}
 
 // Sync cleanup is blocked while the cloud replication is in progress.
 const replicatingBridge = createBridge({

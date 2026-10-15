@@ -35,21 +35,7 @@ function projectLaunchServiceTokenPath() {
 }
 
 function appendProjectLaunchServiceDiagnostic(event, fields = {}) {
-  try {
-    fs.appendFileSync(
-      path.join(projectLaunchServiceDirectoryPath(), 'service.log'),
-      `${JSON.stringify({
-        timestamp: new Date().toISOString(),
-        event,
-        source: 'preload',
-        hostPid: process.pid,
-        ...fields,
-      })}\n`,
-      { encoding: 'utf8', mode: 0o600 },
-    );
-  } catch (error) {
-    // Diagnostics must never prevent service startup or recovery.
-  }
+  appendRuntimeDiagnostic(JSON.stringify({ event, source: 'preload', hostPid: process.pid, ...fields }));
 }
 
 function projectLaunchServiceReleaseUrl() {
@@ -592,7 +578,7 @@ function isPathWithin(parentPath, childPath) {
   return child === path.resolve(parentPath) || child.startsWith(parent);
 }
 
-function readProjectLaunchServiceDiscovery(directoryPath = projectLaunchServiceDirectoryPath()) {
+function readProjectLaunchServiceDiscovery(directoryPath = projectLaunchServiceDirectoryPath(), allowOtherProtocol = false) {
   const discoveryPath = path.join(directoryPath, 'discovery.json');
   if (!isPathWithin(directoryPath, discoveryPath)) {
     throw new Error('服务发现路径无效。');
@@ -600,7 +586,7 @@ function readProjectLaunchServiceDiscovery(directoryPath = projectLaunchServiceD
   const discovery = JSON.parse(fs.readFileSync(discoveryPath, 'utf8'));
   if (
     !discovery ||
-    discovery.protocolVersion !== projectLaunchServiceProtocolVersion ||
+    !Number.isInteger(discovery.protocolVersion) || discovery.protocolVersion <= 0 ||
     typeof discovery.serviceVersion !== 'string' ||
     !discovery.serviceVersion.trim() ||
     typeof discovery.instanceId !== 'string' ||
@@ -623,6 +609,11 @@ function readProjectLaunchServiceDiscovery(directoryPath = projectLaunchServiceD
       discovery?.protocolVersion && discovery.protocolVersion !== projectLaunchServiceProtocolVersion
         ? 'protocol-mismatch'
         : 'invalid-discovery';
+    throw error;
+  }
+  if (!allowOtherProtocol && discovery.protocolVersion !== projectLaunchServiceProtocolVersion) {
+    const error = new Error('服务发现信息无效或协议不兼容。');
+    error.code = 'protocol-mismatch';
     throw error;
   }
   return discovery;
@@ -763,7 +754,7 @@ function removeStaleProjectLaunchServiceDiscovery(discovery) {
     return;
   }
   try {
-    const current = readProjectLaunchServiceDiscovery();
+    const current = readProjectLaunchServiceDiscovery(projectLaunchServiceDirectoryPath(), true);
     if (
       current.instanceId === discovery.instanceId &&
       current.pid === discovery.pid &&
@@ -848,11 +839,7 @@ function projectLaunchServiceIdempotencyKey(prefix = 'request') {
 }
 
 function createPreloadRunId() {
-  return (
-    globalThis.crypto?.randomUUID?.() ||
-    crypto.randomUUID?.() ||
-    `preload-${Date.now()}-${Math.random().toString(36).slice(2)}-${process.pid}`
-  );
+  return crypto.randomBytes(16).toString('hex');
 }
 
 function projectLaunchServiceResponseError(response, fallbackMessage) {
@@ -861,37 +848,17 @@ function projectLaunchServiceResponseError(response, fallbackMessage) {
   return error;
 }
 
-function normalizeProjectLaunchServiceRunLog(payload, runId) {
-  const fallback = {
-    runId,
-    events: [],
-    truncated: false,
-    sizeBytes: 0,
-    hasMore: false,
-    nextOffset: 0,
-  };
-  if (payload === null || payload === undefined) {
-    return fallback;
-  }
-  if (typeof payload !== 'object' || Array.isArray(payload)) {
-    const error = new Error('项目启动服务返回了无效的运行日志。');
-    error.code = 'invalid-run-log-response';
-    throw error;
-  }
-  if (payload.events !== null && payload.events !== undefined && !Array.isArray(payload.events)) {
-    const error = new Error('项目启动服务返回了无效的运行日志事件。');
-    error.code = 'invalid-run-log-response';
-    throw error;
-  }
-  return {
-    ...payload,
-    runId: typeof payload.runId === 'string' && payload.runId ? payload.runId : runId,
-    events: Array.isArray(payload.events) ? payload.events : [],
-  };
-}
-
 async function projectLaunchServiceConnection() {
-  const discovery = readProjectLaunchServiceDiscovery();
+  let discovery;
+  try {
+    discovery = readProjectLaunchServiceDiscovery();
+  } catch (error) {
+    if (error?.code !== 'protocol-mismatch') throw error;
+    const previous = readProjectLaunchServiceDiscovery(projectLaunchServiceDirectoryPath(), true);
+    if (await projectLaunchServiceProcessMatchesAsync(previous) !== false) throw error;
+    removeStaleProjectLaunchServiceDiscovery(previous);
+    discovery = readProjectLaunchServiceDiscovery();
+  }
   const token = readProjectLaunchServiceToken();
   return { discovery, token };
 }
@@ -991,144 +958,6 @@ async function requestProjectLaunchServiceSync(connection, after) {
     state: projectLaunchServiceStateSnapshot(payload.state),
     events: projectLaunchServiceEventBatch(payload.events, after),
   };
-}
-
-async function getProjectLaunchServiceRunLog(runId) {
-  if (!/^[0-9a-f]{32}$/.test(String(runId || ''))) {
-    const error = new Error('运行日志标识无效。');
-    error.code = 'invalid-run-id';
-    throw error;
-  }
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    'GET',
-    `/v1/runs/${runId}/log`,
-    undefined,
-    { maxResponseBytes: projectLaunchServiceRunLogResponseLimitBytes },
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, '运行日志读取失败。');
-  }
-  return normalizeProjectLaunchServiceRunLog(response.payload, runId);
-}
-
-async function getProjectLaunchServiceRunLogPage(runId, beforeOffset) {
-  if (!/^[0-9a-f]{32}$/.test(String(runId || ''))) {
-    const error = new Error('运行日志标识无效。');
-    error.code = 'invalid-run-id';
-    throw error;
-  }
-  if (!Number.isSafeInteger(beforeOffset) || beforeOffset < 0) {
-    const error = new Error('运行日志分页位置无效。');
-    error.code = 'invalid-log-page';
-    throw error;
-  }
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    'GET',
-    `/v1/runs/${runId}/log?before=${encodeURIComponent(String(beforeOffset))}`,
-    undefined,
-    { maxResponseBytes: projectLaunchServiceRunLogResponseLimitBytes },
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, '运行日志分页读取失败。');
-  }
-  return normalizeProjectLaunchServiceRunLog(response.payload, runId);
-}
-
-async function getProjectLaunchServiceLogRetention() {
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    'GET',
-    '/v1/log-retention',
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, '日志保留策略读取失败。');
-  }
-  if (!response.payload || typeof response.payload !== 'object') {
-    const error = new Error('项目启动服务返回了无效的日志保留策略。');
-    error.code = 'invalid-log-retention-response';
-    throw error;
-  }
-  return response.payload;
-}
-
-async function updateProjectLaunchServiceLogRetention(policy) {
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    'PUT',
-    '/v1/log-retention',
-    policy,
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, '日志保留策略更新失败。');
-  }
-  if (!response.payload || typeof response.payload !== 'object') {
-    const error = new Error('项目启动服务返回了无效的日志保留策略。');
-    error.code = 'invalid-log-retention-response';
-    throw error;
-  }
-  return response.payload;
-}
-
-async function listProjectLaunchServiceLogs(projectId) {
-  const normalizedProjectId = String(projectId || '').trim();
-  if (!normalizedProjectId) {
-    const error = new Error('项目标识无效。');
-    error.code = 'invalid-project-id';
-    throw error;
-  }
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    'GET',
-    `/v1/logs?projectId=${encodeURIComponent(normalizedProjectId)}`,
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, '运行日志列表读取失败。');
-  }
-  if (!Array.isArray(response.payload?.logs)) {
-    const error = new Error('项目启动服务返回了无效的运行日志列表。');
-    error.code = 'invalid-log-list-response';
-    throw error;
-  }
-  return response.payload.logs;
-}
-
-async function clearProjectLaunchServiceLogs(scope) {
-  const hasScope = scope !== undefined;
-  const runId = typeof scope?.runId === 'string' ? scope.runId.trim() : '';
-  if (hasScope && !/^[0-9a-f]{32}$/.test(runId)) {
-    const error = new Error('运行标识无效。');
-    error.code = 'invalid-log-scope';
-    throw error;
-  }
-  const connection = await projectLaunchServiceConnection();
-  const response = await requestProjectLaunchService(
-    connection.discovery,
-    connection.token,
-    'POST',
-    '/v1/logs/clear',
-    hasScope ? { runId } : {},
-  );
-  if (response.statusCode !== 200) {
-    throw projectLaunchServiceResponseError(response, '运行日志清除失败。');
-  }
-  if (!response.payload || typeof response.payload !== 'object') {
-    const error = new Error('项目启动服务返回了无效的日志清除结果。');
-    error.code = 'invalid-log-clear-response';
-    throw error;
-  }
-  return response.payload;
 }
 
 function advanceProjectLaunchServiceEventCursor(batch) {
@@ -1453,7 +1282,7 @@ async function startProjectLaunchService(options = {}) {
 
   try {
     fs.mkdirSync(initial.directoryPath, { recursive: true });
-    const child = spawn(initial.executablePath, ['--state-dir', initial.directoryPath], {
+    const child = spawn(initial.executablePath, ['--state-dir', initial.directoryPath, '--runtime-dir', runtimeRecordsDirectory()], {
       cwd: initial.directoryPath,
       detached: true,
       stdio: 'ignore',

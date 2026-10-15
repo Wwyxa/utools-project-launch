@@ -18,8 +18,12 @@ import (
 )
 
 func TestServiceWritesAndRemovesDiscovery(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := filepath.Join(t.TempDir(), "service")
 	runtime, discovery, token := startService(t, stateDir)
+	diagnosticRunID := runtime.diagnostics.record.RunID
+	if runtime.config.RuntimeDir != filepath.Join(filepath.Dir(stateDir), "runtime") {
+		t.Fatalf("unexpected default runtime directory: %s", runtime.config.RuntimeDir)
+	}
 
 	if discovery.ProtocolVersion != state.ProtocolVersion {
 		t.Fatalf("protocol version = %d, want %d", discovery.ProtocolVersion, state.ProtocolVersion)
@@ -45,15 +49,29 @@ func TestServiceWritesAndRemovesDiscovery(t *testing.T) {
 	if _, err := os.Stat(state.DiscoveryPath(stateDir)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("discovery file still exists or could not be checked: %v", err)
 	}
-	contents, err := os.ReadFile(filepath.Join(stateDir, "service.log"))
+	contents, err := os.ReadFile(filepath.Join(runtime.config.RuntimeDir, "logs", diagnosticRunID+".log"))
 	if err != nil {
 		t.Fatalf("read service diagnostic log: %v", err)
 	}
-	logContents := string(contents)
+	var messages []string
+	for _, line := range bytes.Split(bytes.TrimSpace(contents), []byte{'\n'}) {
+		var event state.Event
+		if err := json.Unmarshal(line, &event); err != nil {
+			t.Fatalf("decode diagnostic event: %v", err)
+		}
+		messages = append(messages, event.Message)
+	}
+	logContents := strings.Join(messages, "\n")
 	for _, event := range []string{"start.ready", "shutdown.requested", "shutdown.complete"} {
 		if !strings.Contains(logContents, `"event":"`+event+`"`) {
 			t.Fatalf("service diagnostic log missing %q: %s", event, logContents)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "service.log")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old diagnostic path was used: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "logs")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old run log path was used: %v", err)
 	}
 }
 

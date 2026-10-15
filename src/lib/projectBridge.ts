@@ -71,12 +71,6 @@ import type {
   IconPackStatus,
   IconPackUpdateResult,
   ProjectLaunchServicePreferences,
-  ProjectLaunchServiceLogClearResult,
-  ProjectLaunchServiceLogClearScope,
-  ProjectLaunchServiceLogDescriptor,
-  ProjectLaunchServiceLogRetentionPolicy,
-  ProjectLaunchServiceLogRetentionStatus,
-  ProjectLaunchServiceRunLog,
   ProjectLaunchServiceStatus,
   ProjectLaunchServiceAutomationConfig,
   ProjectLaunchServiceAutomationSyncResult,
@@ -1005,27 +999,32 @@ const fallbackBridge: ProjectBridge = {
   async reconcileProjectLaunchService() {
     return browserProjectLaunchServiceStatus();
   },
-  async getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog> {
-    throw new Error(`浏览器预览无法读取运行日志：${runId}`);
+  async listRuntimeRecords() {
+    throw browserPreviewError("读取运行记录");
   },
-  async getProjectLaunchServiceRunLogPage(runId: string): Promise<ProjectLaunchServiceRunLog> {
-    throw new Error(`浏览器预览无法读取运行日志：${runId}`);
+  async readRuntimeRecordLogPage() {
+    throw browserPreviewError("读取运行日志");
   },
-  async getProjectLaunchServiceLogRetention(): Promise<ProjectLaunchServiceLogRetentionStatus> {
-    throw new Error("浏览器预览无法读取日志保留策略。");
+  async getRuntimeRecordRetention() {
+    throw browserPreviewError("读取日志保留策略");
   },
-  async updateProjectLaunchServiceLogRetention(
-    _policy: ProjectLaunchServiceLogRetentionPolicy,
-  ): Promise<ProjectLaunchServiceLogRetentionStatus> {
-    throw new Error("浏览器预览无法更新日志保留策略。");
+  async updateRuntimeRecordRetention() {
+    throw browserPreviewError("更新日志保留策略");
   },
-  async listProjectLaunchServiceLogs(_projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]> {
-    throw new Error("浏览器预览无法读取运行日志列表。");
+  async clearRuntimeRecords() {
+    throw browserPreviewError("清理运行记录");
   },
-  async clearProjectLaunchServiceLogs(
-    _scope?: ProjectLaunchServiceLogClearScope,
-  ): Promise<ProjectLaunchServiceLogClearResult> {
-    throw new Error("浏览器预览无法清除运行日志。");
+  appendRuntimeOperationLog() {
+    return { ok: false, error: "浏览器预览无法保存运行记录。" };
+  },
+  loadRuntimeAutomationState() {
+    return [];
+  },
+  saveRuntimeAutomationState() {
+    return { ok: false, error: "浏览器预览无法保存自动任务运行状态。" };
+  },
+  saveRuntimeAutomationExecution() {
+    return { ok: false, error: "浏览器预览无法保存自动任务运行记录。" };
   },
   async syncProjectLaunchServiceAutomation(
     config: ProjectLaunchServiceAutomationConfig,

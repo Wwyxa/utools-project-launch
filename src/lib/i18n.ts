@@ -433,7 +433,8 @@ const messages = {
       historyClearError: "本次运行日志删除失败。",
       historySize: "大小",
       historyOutputTruncated: "已截断",
-      historyRetention: "仅显示服务当前保留的日志。",
+      historyRetention: "显示当前保留的运行日志、操作记录和诊断记录。",
+      historySources: { all: "全部记录", preload: "直接运行", service: "后台运行", operation: "插件操作", automation: "自动任务", diagnostic: "诊断" },
       historyStatus: {
         starting: "启动中",
         running: "运行中",
@@ -507,7 +508,7 @@ const messages = {
       projectLaunchServiceLogHint: "超限时优先清理最早完成的日志；可在项目运行日志中点击“历史日志”查看保留输出。",
       projectLaunchServiceLogPersistence: "运行日志持久化",
       projectLaunchServiceLogPersistenceHint:
-        "控制服务是否把后续运行日志保存到磁盘；运行期间仍可查看实时输出，已有日志不会自动删除。",
+        "保存脚本、自动任务和插件操作记录，适用于所有执行方式。",
       projectLaunchServiceLogPersistLabel: "保存后续运行日志",
       projectLaunchServiceLogPersistOn: "持久化开启",
       projectLaunchServiceLogPersistOff: "持久化关闭",
@@ -522,12 +523,12 @@ const messages = {
       projectLaunchServiceLogSaveSuccess: "日志保留策略已更新。",
       projectLaunchServiceLogSaveError: "日志保留策略更新失败。",
       projectLaunchServiceLogInvalid: "请输入有效的数量和大小。",
-      projectLaunchServiceLogUnavailable: "服务运行正常后可配置日志保留策略。",
+      projectLaunchServiceLogUnavailable: "本地运行记录不可用。",
       projectLaunchServiceLogPersistenceOff: "持久化已关闭；已有日志仍会保留，直到你主动清除。",
       projectLaunchServiceLogClear: "清除已保存日志",
       projectLaunchServiceLogClearTitle: "清除所有持久化日志",
       projectLaunchServiceLogClearMessage:
-        "将删除所有项目的已完成运行日志，并清空所有活动运行的持久化文件；不会停止进程或清除当前实时终端。",
+        "将清除所有项目的已完成运行日志和操作记录；保留活动运行、自动任务认领状态及当前实时终端。",
       projectLaunchServiceLogClearBusy: "清除中",
       projectLaunchServiceLogClearResult: "已清除 {count} 个已完成日志，释放 {size}。",
       projectLaunchServiceLogClearError: "日志清除失败。",
@@ -1170,7 +1171,8 @@ const messages = {
       historyClearError: "Failed to delete this run's log.",
       historySize: "Size",
       historyOutputTruncated: "Truncated",
-      historyRetention: "Only logs currently retained by the service are shown.",
+      historyRetention: "Shows retained run logs, operation records, and diagnostics.",
+      historySources: { all: "All records", preload: "Direct runs", service: "Background runs", operation: "Operations", automation: "Automation", diagnostic: "Diagnostics" },
       historyStatus: {
         starting: "Starting",
         running: "Running",
@@ -1251,7 +1253,7 @@ const messages = {
         "When limits are exceeded, the oldest completed logs are removed first. Use Log history in a project runtime log to view retained output.",
       projectLaunchServiceLogPersistence: "Runtime log persistence",
       projectLaunchServiceLogPersistenceHint:
-        "Controls whether later run logs are saved to disk. Live output remains available while runs are active, and existing logs are not deleted automatically.",
+        "Save script, automation, and plugin operation records for all execution modes.",
       projectLaunchServiceLogPersistLabel: "Save later run logs",
       projectLaunchServiceLogPersistOn: "Persistence on",
       projectLaunchServiceLogPersistOff: "Persistence off",
@@ -1266,13 +1268,13 @@ const messages = {
       projectLaunchServiceLogSaveSuccess: "Log retention policy updated.",
       projectLaunchServiceLogSaveError: "Log retention policy update failed.",
       projectLaunchServiceLogInvalid: "Enter valid count and size values.",
-      projectLaunchServiceLogUnavailable: "Log retention can be configured when the service is healthy.",
+      projectLaunchServiceLogUnavailable: "Local runtime records are unavailable.",
       projectLaunchServiceLogPersistenceOff:
         "Persistence is off; existing logs remain until you explicitly clear them.",
       projectLaunchServiceLogClear: "Clear saved logs",
       projectLaunchServiceLogClearTitle: "Clear all persisted logs",
       projectLaunchServiceLogClearMessage:
-        "This deletes logs for completed runs across all projects and clears all active persisted files. It does not stop processes or clear the current live terminal.",
+        "Clear completed logs and operation records across all projects. Active runs, automation claims, and the live terminal are preserved.",
       projectLaunchServiceLogClearBusy: "Clearing",
       projectLaunchServiceLogClearResult: "Cleared {count} completed logs and released {size}.",
       projectLaunchServiceLogClearError: "Log clear failed.",

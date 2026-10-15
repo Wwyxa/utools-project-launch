@@ -234,7 +234,7 @@ onMounted(() => {
               {{ sourceLabel(preview) }} · {{ dateLabel(preview.createdAt) }} · {{ preview.projectCount }} 个项目
             </p>
           </div>
-          <div class="min-h-0 space-y-4 overflow-y-auto px-4 py-4">
+          <div v-overlay-scrollbar class="themed-scrollbar min-h-0 space-y-4 overflow-y-auto px-4 py-4">
             <fieldset :disabled="busy" class="flex flex-wrap gap-5 text-sm text-on-surface">
               <legend class="mb-2 text-xs font-semibold text-on-surface-variant">导入内容</legend>
               <label class="inline-flex items-center gap-2"

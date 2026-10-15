@@ -1723,7 +1723,7 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('normalizes null persisted automation and run log events', async () => {
+  it('normalizes null automation results and keeps log queries independent of service HTTP', async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
     const requestedPaths: string[] = [];
     const requestedBodies: string[] = [];
@@ -1747,7 +1747,7 @@ describe('Project Launch Service preload installation', () => {
             options.path === '/v1/sync?after=0'
               ? {
                   health: {
-                    protocolVersion: 2,
+                    protocolVersion: 3,
                     serviceVersion: 'test',
                     instanceId: 'existing-service',
                     pid: process.pid,
@@ -1814,7 +1814,7 @@ describe('Project Launch Service preload installation', () => {
       writeFileSync(
         join(installed.directoryPath, 'discovery.json'),
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion: 3,
           serviceVersion: 'test',
           instanceId: 'existing-service',
           pid: process.pid,
@@ -1834,25 +1834,17 @@ describe('Project Launch Service preload installation', () => {
         automation: { revision: 7 },
       });
       expect(reconciled.automation?.executions?.[0]?.scriptResults).toEqual([]);
-      await expect(bridge.getProjectLaunchServiceRunLogPage(runID, 0)).resolves.toMatchObject({
-        runId: runID,
-        events: [],
+      await expect(bridge.readRuntimeRecordLogPage(runID, 0)).rejects.toThrow('运行记录不可用');
+      await expect(bridge.clearRuntimeRecords({ runId: runID })).resolves.toMatchObject({
+        deletedCount: 0,
+        releasedBytes: 0,
       });
-      await expect(bridge.clearProjectLaunchServiceLogs({ runId: runID })).resolves.toMatchObject({
-        deletedCount: 1,
-        releasedBytes: 128,
+      await expect(bridge.clearRuntimeRecords()).resolves.toMatchObject({
+        deletedCount: 0,
+        releasedBytes: 0,
       });
-      await expect(bridge.clearProjectLaunchServiceLogs()).resolves.toMatchObject({
-        deletedCount: 1,
-        releasedBytes: 128,
-      });
-      expect(requestedPaths).toEqual([
-        '/v1/sync?after=0',
-        `/v1/runs/${runID}/log?before=0`,
-        '/v1/logs/clear',
-        '/v1/logs/clear',
-      ]);
-      expect(requestedBodies).toEqual([JSON.stringify({ runId: runID }), JSON.stringify({})]);
+      expect(requestedPaths).toEqual(['/v1/sync?after=0']);
+      expect(requestedBodies).toEqual([]);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
@@ -1881,7 +1873,7 @@ describe('Project Launch Service preload installation', () => {
           const payload = options.path.startsWith('/v1/sync?after=')
             ? {
                 health: {
-                  protocolVersion: 2,
+                  protocolVersion: 3,
                   serviceVersion: 'test',
                   instanceId: 'sync-service',
                   pid: process.pid,
@@ -1940,7 +1932,7 @@ describe('Project Launch Service preload installation', () => {
       writeFileSync(
         join(installed.directoryPath, 'discovery.json'),
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion: 3,
           serviceVersion: 'test',
           instanceId: 'sync-service',
           pid: process.pid,
@@ -1988,7 +1980,7 @@ describe('Project Launch Service preload installation', () => {
       'utf8',
     );
     const health = {
-      protocolVersion: 2,
+      protocolVersion: 3,
       serviceVersion: 'test',
       instanceId: 'paged-service',
       pid: process.pid,
@@ -2116,7 +2108,7 @@ describe('Project Launch Service preload installation', () => {
       writeFileSync(
         join(installed.directoryPath, 'discovery.json'),
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion: 3,
           serviceVersion: 'test',
           instanceId: 'paged-service',
           pid: process.pid,
@@ -2171,7 +2163,7 @@ describe('Project Launch Service preload installation', () => {
             Buffer.from(
               JSON.stringify({
                 health: {
-                  protocolVersion: 2,
+                  protocolVersion: 3,
                   serviceVersion: 'test',
                   instanceId: 'quiet-service',
                   pid: process.pid,
@@ -2220,7 +2212,7 @@ describe('Project Launch Service preload installation', () => {
       writeFileSync(
         join(installed.directoryPath, 'discovery.json'),
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion: 3,
           serviceVersion: 'test',
           instanceId: 'quiet-service',
           pid: process.pid,
@@ -2378,7 +2370,7 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('records spawned service process exit and error details in service.log', async () => {
+  it('records spawned service process exit and error details in common diagnostic records', async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
     const child = Object.assign(new EventEmitter(), { pid: 43210, unref: vi.fn() });
     const spawn = vi.fn(() => child);
@@ -2396,10 +2388,11 @@ describe('Project Launch Service preload installation', () => {
       child.emit('exit', 7, 'SIGTERM');
       child.emit('error', Object.assign(new Error('service launch failed'), { code: 'EACCES' }));
 
-      const entries = readFileSync(join(installed.directoryPath, 'service.log'), 'utf8')
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line));
+      const records = await bridge.listRuntimeRecords('__plugin__');
+      const diagnostic = records.find((record) => record.source === 'diagnostic');
+      expect(diagnostic).toBeDefined();
+      const output = await bridge.readRuntimeRecordLogPage(diagnostic!.runId, 0);
+      const entries = output.events.map((event) => JSON.parse(event.message || '{}'));
       expect(entries).toEqual([
         expect.objectContaining({
           event: 'process.spawned',
@@ -4594,7 +4587,7 @@ describe('uTools preload UI preferences', () => {
     }
   });
 
-  it('removes stale service discovery when a live PID has a different process identity', async () => {
+  it.each([2, 3])('removes stale protocol %s discovery when a live PID has a different process identity', async (protocolVersion) => {
     const applicationDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
     const serviceDirectory = join(applicationDirectory, 'service');
     const executableName = `project-launch-service${process.platform === 'win32' ? '.exe' : ''}`;
@@ -4604,10 +4597,12 @@ describe('uTools preload UI preferences', () => {
       mkdirSync(serviceDirectory, { recursive: true });
       writeFileSync(join(serviceDirectory, executableName), '');
       writeFileSync(join(serviceDirectory, 'token'), `${'a'.repeat(64)}\n`);
+      writeFileSync(join(serviceDirectory, 'state.json'), '{"retained":"execution state"}');
+      writeFileSync(join(serviceDirectory, 'install.json'), '{"retained":"installation trust"}');
       writeFileSync(
         discoveryPath,
         JSON.stringify({
-          protocolVersion: 2,
+          protocolVersion,
           serviceVersion: 'test',
           instanceId: 'stale-instance',
           pid: process.pid,
@@ -4619,11 +4614,56 @@ describe('uTools preload UI preferences', () => {
         }),
       );
 
-      await loadPreloadBridge(new Map(), undefined, {
+      const status = await loadPreloadBridge(new Map(), undefined, {
         [localDataDirEnv]: applicationDirectory,
       }).getProjectLaunchServiceStatus();
 
       expect(existsSync(discoveryPath)).toBe(false);
+      if (protocolVersion === 2) expect(status.state).toBe('installed');
+      expect(readFileSync(join(serviceDirectory, 'token'), 'utf8')).toBe(`${'a'.repeat(64)}\n`);
+      expect(readFileSync(join(serviceDirectory, 'state.json'), 'utf8')).toBe('{"retained":"execution state"}');
+      expect(readFileSync(join(serviceDirectory, 'install.json'), 'utf8')).toBe('{"retained":"installation trust"}');
+    } finally {
+      rmSync(applicationDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it.each([true, false])('preserves old protocol discovery when process identity is matching or unknown (%s)', async (matching) => {
+    const applicationDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-old-protocol-'));
+    const serviceDirectory = join(applicationDirectory, 'service');
+    const discoveryPath = join(serviceDirectory, 'discovery.json');
+    const nodeRequire = createRequire(import.meta.url);
+    const nativeFs = nodeRequire('fs');
+    const nativeChildProcess = nodeRequire('child_process');
+    const identity = process.platform === 'win32' ? 'windows:12345' : process.platform === 'darwin' ? 'darwin:test-start' : 'linux:test-boot:12345';
+    const readProc = async (target: string, ...args: unknown[]) => {
+      if (target === '/proc/sys/kernel/random/boot_id') return matching ? 'test-boot' : '';
+      if (target === `/proc/${process.pid}/stat`) return `(test) ${Array(19).fill('0').join(' ')} 12345`;
+      return nativeFs.promises.readFile(target, ...args);
+    };
+    try {
+      mkdirSync(serviceDirectory, { recursive: true });
+      writeFileSync(join(serviceDirectory, projectLaunchServiceExecutableName()), '');
+      writeFileSync(join(serviceDirectory, 'token'), `${'a'.repeat(64)}\n`);
+      const contents = JSON.stringify({
+        protocolVersion: 2, serviceVersion: 'service-v1.0.0', instanceId: 'old-service',
+        pid: process.pid, processIdentity: identity, startedAt: new Date().toISOString(),
+        host: '127.0.0.1', port: 1, tokenPath: join(serviceDirectory, 'token'),
+      });
+      writeFileSync(discoveryPath, contents);
+      const spawn = vi.fn();
+      const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: applicationDirectory }, {
+        fs: { ...nativeFs, promises: { ...nativeFs.promises, readFile: readProc } },
+        child_process: { ...nativeChildProcess, spawn,
+          execFile: (_command: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string) => void) => {
+            callback(matching ? null : new Error('identity unavailable'), process.platform === 'win32' ? '12345' : 'test-start');
+          },
+        },
+      });
+      await expect(bridge.getProjectLaunchServiceStatus()).resolves.toMatchObject({ state: 'incompatible', running: false });
+      await expect(bridge.startProjectLaunchService({ requireVerifiedInstall: false })).resolves.toMatchObject({ state: 'incompatible' });
+      expect(spawn).not.toHaveBeenCalled();
+      expect(readFileSync(discoveryPath, 'utf8')).toBe(contents);
     } finally {
       rmSync(applicationDirectory, { recursive: true, force: true });
     }

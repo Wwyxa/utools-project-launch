@@ -37,7 +37,9 @@ func serviceVersion() string {
 
 func main() {
 	var stateDir string
+	var runtimeDir string
 	flag.StringVar(&stateDir, "state-dir", "", "directory for Project Launch Service state")
+	flag.StringVar(&runtimeDir, "runtime-dir", "", "directory for common runtime records (default: runtime beside the state directory)")
 	flag.Parse()
 
 	if stateDir == "" {
@@ -46,8 +48,9 @@ func main() {
 	}
 
 	runtime, err := service.New(service.Config{
-		StateDir: stateDir,
-		Version:  serviceVersion(),
+		StateDir:   stateDir,
+		RuntimeDir: runtimeDir,
+		Version:    serviceVersion(),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Project Launch Service configuration error: %v\n", err)

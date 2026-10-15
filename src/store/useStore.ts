@@ -40,6 +40,7 @@ import { projectCrudActions } from "./actions/projectCrud";
 import { projectFilesActions } from "./actions/projectFiles";
 import { projectFormActions } from "./actions/projectForm";
 import { projectLaunchServiceActions } from "./actions/projectLaunchService";
+import { runtimeRecordsActions } from "./actions/runtimeRecords";
 import { projectOpenersActions } from "./actions/projectOpeners";
 import { scriptRuntimeActions } from "./actions/scriptRuntime";
 import { workActivityActions } from "./actions/workActivity";
@@ -294,6 +295,7 @@ export const useStore = defineStore("app", {
     ...scriptRuntimeActions,
     ...projectOpenersActions,
     ...logsAndTodosActions,
+    ...runtimeRecordsActions,
     ...bridgeEventsActions,
   },
 });

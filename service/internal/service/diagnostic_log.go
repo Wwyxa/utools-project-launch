@@ -2,26 +2,34 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"project-launch-service/internal/state"
 )
 
-const diagnosticLogFileName = "service.log"
-
 type diagnosticLogger struct {
-	mutex sync.Mutex
-	file  *os.File
+	mutex      sync.Mutex
+	runtimeDir string
+	record     state.RuntimeRecord
+	cursor     uint64
 }
 
-func openDiagnosticLogger(stateDir string) (*diagnosticLogger, error) {
-	file, err := os.OpenFile(filepath.Join(stateDir, diagnosticLogFileName), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("open service diagnostic log: %w", err)
+func openDiagnosticLogger(runtimeDir string) (*diagnosticLogger, error) {
+	if runtimeDir == "" {
+		return nil, errors.New("runtime directory is required for diagnostics")
 	}
-	return &diagnosticLogger{file: file}, nil
+	runID, err := state.NewRunID()
+	if err != nil {
+		return nil, err
+	}
+	return &diagnosticLogger{runtimeDir: runtimeDir, record: state.RuntimeRecord{
+		SchemaVersion: 1, Source: "diagnostic", RunID: runID, ProjectID: "__plugin__", ScriptID: "",
+		Label: "后台执行器诊断", Status: state.RunStatusRunning, StartedAt: time.Now().UTC().Format(time.RFC3339Nano), WriterPID: os.Getpid(),
+	}}, nil
 }
 
 func (logger *diagnosticLogger) write(event string, fields map[string]any) {
@@ -42,20 +50,23 @@ func (logger *diagnosticLogger) write(event string, fields map[string]any) {
 
 	logger.mutex.Lock()
 	defer logger.mutex.Unlock()
-	if logger.file == nil {
-		return
+	logger.cursor++
+	err = state.WriteRuntimeDiagnostic(logger.runtimeDir, &logger.record, &state.Event{
+		Cursor: logger.cursor, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Type: "stdout",
+		RunID: logger.record.RunID, ProjectID: logger.record.ProjectID, ScriptID: "", Message: string(contents),
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Runtime diagnostic persistence failed.")
 	}
-	_, _ = logger.file.Write(append(contents, '\n'))
-	_ = logger.file.Sync()
 }
 
 func (logger *diagnosticLogger) close() error {
-	if logger == nil || logger.file == nil {
+	if logger == nil {
 		return nil
 	}
 	logger.mutex.Lock()
 	defer logger.mutex.Unlock()
-	err := logger.file.Close()
-	logger.file = nil
-	return err
+	logger.record.Status = state.RunStatusExited
+	logger.record.EndedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	return state.WriteRuntimeDiagnostic(logger.runtimeDir, &logger.record, nil)
 }

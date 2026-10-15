@@ -388,6 +388,10 @@ globalThis.window = {
   projectBridge: {
     loadProjects: async () => structuredClone(storedProjects),
     saveProjects: async () => undefined,
+    loadRuntimeAutomationState: () => [],
+    saveRuntimeAutomationState: () => ({ ok: true }),
+    saveRuntimeAutomationExecution: () => ({ ok: true }),
+    appendRuntimeOperationLog: () => ({ ok: true }),
     loadUiPreferences: () => ({
       schemaVersion: 1,
       projectDetails: { tabOrder: ["info", "scripts", "automation", "files", "git", "memo"] },

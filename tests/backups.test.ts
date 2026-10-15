@@ -227,7 +227,7 @@ describe("project backups through the real preload", () => {
 
   it("excludes service and icon pack directories from backup content", async () => {
     const context = fixture();
-    for (const name of ["service", "icon-packs"]) {
+    for (const name of ["service", "icon-packs", "runtime"]) {
       const directory = join(context.directory, name);
       mkdirSync(directory);
       writeFileSync(join(directory, "resource.bin"), randomBytes(6 * 1024 * 1024));
@@ -238,7 +238,8 @@ describe("project backups through the real preload", () => {
     const bytes = [...context.attachments.values()][0];
     expect(bytes.length).toBeLessThan(10_000);
     const payload = JSON.parse(gunzipSync(bytes).toString("utf8"));
-    expect(Object.keys(payload).sort()).toEqual(["createdAt", "format", "localState", "projects", "source", "version"]);
+    expect(Object.keys(payload).sort()).toEqual(["createdAt", "format", "localState", "projects", "runtimeRecordPolicy", "source", "version"]);
+    expect(payload.runtimeRecordPolicy).toEqual({ persist: true, maxCompletedRunsPerProject: 200, maxBytesPerRun: 5 * 1024 * 1024, maxBytesTotal: 100 * 1024 * 1024 });
     expect(payload.projects).toHaveLength(1);
     expect(payload.localState).toEqual({
       schemaVersion: 1,

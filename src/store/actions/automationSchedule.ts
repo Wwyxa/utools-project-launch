@@ -297,6 +297,9 @@ export const automationScheduleActions = {
           });
         });
       this.markMissedAutomationPlans(notifyMissed);
+      this.projects.filter((project) => !projectId || project.id === projectId).forEach((project) => {
+        this.persistRuntimeAutomationState(project.id);
+      });
       void this.runDueAutomationPlans(notifyMissed);
     },
 
@@ -477,6 +480,12 @@ export const automationScheduleActions = {
         },
         ...task.history,
       ].slice(0, AUTOMATION_HISTORY_LIMIT);
+      this.persistRuntimeAutomationState(project.id);
+      if (this.supportsBridge) this.recordLocalStateWrite(bridge.saveRuntimeAutomationExecution({
+        id: runId, projectId: project.id, taskId: task.id, planEntryId: entry.id,
+        plannedAt: entry.plannedAt, startedAt: task.history[0]?.startedAt, endedAt,
+        status, reason, currentScriptIndex: scriptResults.length, scriptResults,
+      }));
       if (notify) {
         notifyAutomationTaskCompletion(task, status, reason);
       }

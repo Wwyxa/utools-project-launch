@@ -2387,66 +2387,68 @@ onBeforeUnmount(() => {
                 <div
                   v-if="openDatePickerKind === 'since'"
                   ref="commitDatePickerPopoverRef"
-                  class="date-picker-popover themed-scrollbar max-h-[calc(100vh-1rem)] overflow-y-auto"
+                  class="date-picker-popover flex max-h-[calc(100vh-1rem)] flex-col overflow-hidden"
                   :style="floatingMenuStyle(commitDatePickerPosition)"
                   @click.stop
                 >
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      class="popover-icon-button"
-                      title="上个月"
-                      aria-label="上个月"
-                      @click="shiftDatePickerMonth(-1)"
-                    >
-                      <ChevronLeft :size="14" />
-                    </button>
-                    <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
-                    <button
-                      type="button"
-                      class="popover-icon-button"
-                      title="下个月"
-                      aria-label="下个月"
-                      @click="shiftDatePickerMonth(1)"
-                    >
-                      <ChevronRight :size="14" />
-                    </button>
-                  </div>
-                  <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-                    <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
-                  </div>
-                  <div class="mt-1 grid grid-cols-7 gap-1">
-                    <button
-                      v-for="day in datePickerDays"
-                      :key="`since-${day.value}`"
-                      type="button"
-                      :class="
-                        cn(
-                          'date-picker-day',
-                          !day.isCurrentMonth && 'text-on-surface-variant/35',
-                          day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                          day.isSelected && 'border-primary bg-primary text-on-primary',
-                        )
-                      "
-                      @click="selectDatePickerDay(day.value)"
-                    >
-                      {{ day.label }}
-                    </button>
-                  </div>
-                  <div class="mt-2 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                      @click="selectDatePickerDay(formatDateValue(new Date()))"
-                    >
-                      今天</button
-                    ><button
-                      type="button"
-                      class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                      @click="clearDatePickerValue"
-                    >
-                      清除日期
-                    </button>
+                  <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
+                    <div class="mb-2 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        class="popover-icon-button"
+                        title="上个月"
+                        aria-label="上个月"
+                        @click="shiftDatePickerMonth(-1)"
+                      >
+                        <ChevronLeft :size="14" />
+                      </button>
+                      <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
+                      <button
+                        type="button"
+                        class="popover-icon-button"
+                        title="下个月"
+                        aria-label="下个月"
+                        @click="shiftDatePickerMonth(1)"
+                      >
+                        <ChevronRight :size="14" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                      <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
+                    </div>
+                    <div class="mt-1 grid grid-cols-7 gap-1">
+                      <button
+                        v-for="day in datePickerDays"
+                        :key="`since-${day.value}`"
+                        type="button"
+                        :class="
+                          cn(
+                            'date-picker-day',
+                            !day.isCurrentMonth && 'text-on-surface-variant/35',
+                            day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                            day.isSelected && 'border-primary bg-primary text-on-primary',
+                          )
+                        "
+                        @click="selectDatePickerDay(day.value)"
+                      >
+                        {{ day.label }}
+                      </button>
+                    </div>
+                    <div class="mt-2 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                        @click="selectDatePickerDay(formatDateValue(new Date()))"
+                      >
+                        今天</button
+                      ><button
+                        type="button"
+                        class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                        @click="clearDatePickerValue"
+                      >
+                        清除日期
+                      </button>
+                    </div>
                   </div>
                 </div>
               </Teleport>
@@ -2469,66 +2471,68 @@ onBeforeUnmount(() => {
                 <div
                   v-if="openDatePickerKind === 'until'"
                   ref="commitDatePickerPopoverRef"
-                  class="date-picker-popover themed-scrollbar max-h-[calc(100vh-1rem)] overflow-y-auto"
+                  class="date-picker-popover flex max-h-[calc(100vh-1rem)] flex-col overflow-hidden"
                   :style="floatingMenuStyle(commitDatePickerPosition)"
                   @click.stop
                 >
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      class="popover-icon-button"
-                      title="上个月"
-                      aria-label="上个月"
-                      @click="shiftDatePickerMonth(-1)"
-                    >
-                      <ChevronLeft :size="14" />
-                    </button>
-                    <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
-                    <button
-                      type="button"
-                      class="popover-icon-button"
-                      title="下个月"
-                      aria-label="下个月"
-                      @click="shiftDatePickerMonth(1)"
-                    >
-                      <ChevronRight :size="14" />
-                    </button>
-                  </div>
-                  <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-                    <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
-                  </div>
-                  <div class="mt-1 grid grid-cols-7 gap-1">
-                    <button
-                      v-for="day in datePickerDays"
-                      :key="`until-${day.value}`"
-                      type="button"
-                      :class="
-                        cn(
-                          'date-picker-day',
-                          !day.isCurrentMonth && 'text-on-surface-variant/35',
-                          day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                          day.isSelected && 'border-primary bg-primary text-on-primary',
-                        )
-                      "
-                      @click="selectDatePickerDay(day.value)"
-                    >
-                      {{ day.label }}
-                    </button>
-                  </div>
-                  <div class="mt-2 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                      @click="selectDatePickerDay(formatDateValue(new Date()))"
-                    >
-                      今天</button
-                    ><button
-                      type="button"
-                      class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                      @click="clearDatePickerValue"
-                    >
-                      清除日期
-                    </button>
+                  <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
+                    <div class="mb-2 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        class="popover-icon-button"
+                        title="上个月"
+                        aria-label="上个月"
+                        @click="shiftDatePickerMonth(-1)"
+                      >
+                        <ChevronLeft :size="14" />
+                      </button>
+                      <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
+                      <button
+                        type="button"
+                        class="popover-icon-button"
+                        title="下个月"
+                        aria-label="下个月"
+                        @click="shiftDatePickerMonth(1)"
+                      >
+                        <ChevronRight :size="14" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                      <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
+                    </div>
+                    <div class="mt-1 grid grid-cols-7 gap-1">
+                      <button
+                        v-for="day in datePickerDays"
+                        :key="`until-${day.value}`"
+                        type="button"
+                        :class="
+                          cn(
+                            'date-picker-day',
+                            !day.isCurrentMonth && 'text-on-surface-variant/35',
+                            day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                            day.isSelected && 'border-primary bg-primary text-on-primary',
+                          )
+                        "
+                        @click="selectDatePickerDay(day.value)"
+                      >
+                        {{ day.label }}
+                      </button>
+                    </div>
+                    <div class="mt-2 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                        @click="selectDatePickerDay(formatDateValue(new Date()))"
+                      >
+                        今天</button
+                      ><button
+                        type="button"
+                        class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                        @click="clearDatePickerValue"
+                      >
+                        清除日期
+                      </button>
+                    </div>
                   </div>
                 </div>
               </Teleport>
@@ -3413,10 +3417,9 @@ onBeforeUnmount(() => {
                     >轻量标签没有附注说明</span
                   >
                 </div>
-                <pre
-                  class="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-surface-container-low px-3 py-3 font-mono text-xs leading-5 text-on-surface"
-                  >{{ tagInfoDialogInfo.message || '此标签没有附注说明。' }}</pre
-                >
+                <div v-overlay-scrollbar class="themed-scrollbar max-h-56 overflow-y-auto rounded border border-border-subtle bg-surface-container-low px-3 py-3">
+                  <pre class="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-on-surface">{{ tagInfoDialogInfo.message || '此标签没有附注说明。' }}</pre>
+                </div>
               </div>
             </template>
           </div>

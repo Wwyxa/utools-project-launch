@@ -1,6 +1,7 @@
 function handlePluginOut(isKill) {
   if (isKill === true) {
     stopAllProcesses();
+    flushRuntimeRecords();
   }
 }
 
@@ -8,10 +9,12 @@ function registerProcessCleanupHooks() {
   window.utools?.onPluginOut?.(handlePluginOut);
   process.once?.("SIGINT", () => {
     stopAllProcesses();
+    flushRuntimeRecords();
     process.exit(130);
   });
   process.once?.("SIGTERM", () => {
     stopAllProcesses();
+    flushRuntimeRecords();
     process.exit(143);
   });
 }
@@ -74,12 +77,6 @@ window.projectBridge = {
   startProjectLaunchService,
   stopProjectLaunchService,
   reconcileProjectLaunchService,
-  getProjectLaunchServiceRunLog,
-  getProjectLaunchServiceRunLogPage,
-  getProjectLaunchServiceLogRetention,
-  updateProjectLaunchServiceLogRetention,
-  listProjectLaunchServiceLogs,
-  clearProjectLaunchServiceLogs,
   syncProjectLaunchServiceAutomation,
   ignoreMissedProjectLaunchServiceAutomationExecution,
   listProjectLaunchServiceAutomationExecutions,
@@ -161,8 +158,42 @@ window.projectBridge = {
   getAutomationProcessResult,
   sendProcessInput,
   stopAllProcesses,
+  listRuntimeRecords,
+  readRuntimeRecordLogPage,
+  getRuntimeRecordRetention,
+  updateRuntimeRecordRetention,
+  clearRuntimeRecords,
+  appendRuntimeOperationLog,
+  loadRuntimeAutomationState,
+  saveRuntimeAutomationState,
+  saveRuntimeAutomationExecution,
   openPath,
   showItemInFolder: (targetPath) => shell.showItemInFolder(expandPath(targetPath)),
 };
+
+const runtimeOperationLabels = {
+  stageGitFile: "Git 暂存", unstageGitFile: "Git 取消暂存", discardGitFile: "Git 丢弃修改",
+  stageGitFiles: "Git 批量暂存", unstageGitFiles: "Git 批量取消暂存", discardGitFiles: "Git 批量丢弃修改",
+  commitGitStaged: "Git 提交", amendGitCommit: "Git 修改提交", undoLastGitCommit: "Git 撤回提交",
+  cherryPickGitCommit: "Git Cherry-pick", revertGitCommit: "Git Revert",
+  createGitStash: "Git 保存 Stash", applyGitStash: "Git 应用 Stash", popGitStash: "Git 弹出 Stash", dropGitStash: "Git 删除 Stash",
+  switchGitBranch: "Git 切换分支", checkoutGitCommit: "Git 检出提交", createGitBranch: "Git 创建分支",
+  createGitTag: "Git 创建标签", deleteGitTag: "Git 删除标签", pushGitTag: "Git 推送标签",
+  renameGitBranch: "Git 重命名分支", deleteGitBranch: "Git 删除分支", checkoutGitRemoteBranch: "Git 检出远端分支",
+  fetchGitRemote: "Git Fetch", fetchGitRemoteByName: "Git Fetch", pullGitRemote: "Git Pull", pushGitRemote: "Git Push",
+  mergeGitBaseBranch: "Git 合并分支", abortGitMerge: "Git 中止合并", initializeGitRepository: "Git 初始化仓库",
+  publishGitBranch: "Git 发布分支", addGitRemote: "Git 添加远端", setGitRemoteUrl: "Git 修改远端",
+  removeGitRemote: "Git 删除远端", deleteGitRemoteBranch: "Git 删除远端分支",
+  createProjectEntry: "创建项目文件", renameProjectEntry: "重命名项目文件", deleteProjectEntry: "删除项目文件", writeProjectFile: "保存项目文件",
+  openTerminal: "打开终端", openExternalApplication: "打开外部应用",
+  downloadIconPack: "安装图标包", verifyIconPackInstall: "验证图标包", removeIconPack: "移除图标包",
+  downloadProjectLaunchService: "安装后台执行器", verifyProjectLaunchServiceInstall: "验证后台执行器",
+  startProjectLaunchService: "启动后台执行器", stopProjectLaunchService: "停止后台执行器",
+  createBackup: "创建备份", restoreBackup: "恢复备份", deleteBackup: "删除备份", exportCloudBackup: "导出备份",
+  runMigration: "迁移存储", executeCleanup: "清理数据", testAiConnection: "测试 AI 连接", analyzeWithAi: "AI 分析", analyzeWithAiStream: "流式 AI 分析",
+};
+Object.entries(runtimeOperationLabels).forEach(([method, label]) => {
+  window.projectBridge[method] = wrapRuntimeOperation(label, window.projectBridge[method]);
+});
 
 recordStartupTiming("preload-bridge-ready");

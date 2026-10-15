@@ -1,7 +1,7 @@
 import { deriveProjectStatus } from "../../lib/projectRuntimeState";
-import type { ProjectAutomationHistoryEntry, ProjectBridgeEvent, ProjectBridgeProcessEvent, ProjectLaunchServiceAutomationExecution, ProjectLaunchServiceAutomationExecutionStatus, ProjectLaunchServiceLogClearResult, ProjectLaunchServiceLogClearScope, ProjectLaunchServiceLogDescriptor, ProjectLaunchServiceLogRetentionPolicy, ProjectLaunchServiceStatus } from "../../types";
+import type { ProjectAutomationHistoryEntry, ProjectBridgeEvent, ProjectBridgeProcessEvent, ProjectLaunchServiceAutomationExecution, ProjectLaunchServiceAutomationExecutionStatus, ProjectLaunchServiceStatus } from "../../types";
 import type { AppStore } from "../appStoreShape";
-import { clearAutomationSchedulerTimer, hasObservedServiceEvent, normalizeAutomationHistory, pendingRuntimeTerminalEventKey, rememberRuntimeRun, retainedRunLogEntries } from "../helpers/automationHelpers";
+import { clearAutomationSchedulerTimer, hasObservedServiceEvent, normalizeAutomationHistory, pendingRuntimeTerminalEventKey, rememberRuntimeRun } from "../helpers/automationHelpers";
 import { bridge } from "../helpers/bridge";
 import { buildProjectLaunchServiceAutomationConfig, notifyAutomationTaskCompletion, releaseServiceAutomationSubmission, serviceAutomationSubmissions, serviceOwnershipState } from "../helpers/serviceAutomationState";
 
@@ -15,37 +15,6 @@ let serviceAutomationExecutionStatuses: Map<string, ProjectLaunchServiceAutomati
 
 
 export const projectLaunchServiceActions = {
-    async loadProjectLaunchServiceAutomationHistory(this: AppStore, projectId: string, taskId: string) {
-      const project = this.projects.find((item) => item.id === projectId);
-      if (!project || !this.projectLaunchServicePreferences.enabled) {
-        return [];
-      }
-      const executions = await bridge.listProjectLaunchServiceAutomationExecutions(projectId, taskId);
-      return executions
-        .filter((execution) => execution.status !== "running")
-        .map(
-          (execution: ProjectLaunchServiceAutomationExecution): ProjectAutomationHistoryEntry => ({
-            id: execution.id,
-            taskId,
-            taskName: project.automationTasks?.find((task) => task.id === taskId)?.name || taskId,
-            projectId,
-            projectName: project.name,
-            plannedAt: execution.plannedAt || execution.startedAt || execution.endedAt || "",
-            startedAt: execution.startedAt,
-            endedAt: execution.endedAt,
-            status:
-              execution.status === "failed" || execution.status === "skipped" || execution.status === "missed"
-                ? execution.status
-                : "completed",
-            reason: execution.reason || undefined,
-            scriptResults: execution.scriptResults.map((result) => ({
-              ...result,
-              scriptName: project.scripts.find((script) => script.id === result.scriptId)?.name || result.scriptId,
-            })),
-          }),
-        );
-    },
-
     reconcileProjectLaunchServiceRuntime(this: AppStore, status: ProjectLaunchServiceStatus | null) {
       if (!this.projectLaunchServicePreferences.enabled) {
         serviceAutomationExecutionStatuses = null;
@@ -287,42 +256,6 @@ export const projectLaunchServiceActions = {
     async checkProjectLaunchServiceUpdate(this: AppStore) {
       this.projectLaunchServiceStatus = await bridge.checkProjectLaunchServiceUpdate();
       return this.projectLaunchServiceStatus;
-    },
-
-    async loadProjectLaunchServiceRunLog(this: AppStore, runId: string) {
-      const runLog = await bridge.getProjectLaunchServiceRunLog(runId);
-      return {
-        ...runLog,
-        logs: retainedRunLogEntries(runLog),
-      };
-    },
-
-    async loadProjectLaunchServiceRunLogPage(this: AppStore, runId: string, beforeOffset: number) {
-      const runLog = await bridge.getProjectLaunchServiceRunLogPage(runId, beforeOffset);
-      return {
-        ...runLog,
-        logs: retainedRunLogEntries(runLog),
-      };
-    },
-
-    async refreshProjectLaunchServiceLogRetention(this: AppStore) {
-      this.projectLaunchServiceLogRetentionStatus = await bridge.getProjectLaunchServiceLogRetention();
-      return this.projectLaunchServiceLogRetentionStatus;
-    },
-
-    async updateProjectLaunchServiceLogRetention(this: AppStore, policy: ProjectLaunchServiceLogRetentionPolicy) {
-      this.projectLaunchServiceLogRetentionStatus = await bridge.updateProjectLaunchServiceLogRetention(policy);
-      return this.projectLaunchServiceLogRetentionStatus;
-    },
-
-    async listProjectLaunchServiceLogs(this: AppStore, projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]> {
-      return bridge.listProjectLaunchServiceLogs(projectId);
-    },
-
-    async clearProjectLaunchServiceLogs(this: AppStore,
-      scope?: ProjectLaunchServiceLogClearScope,
-    ): Promise<ProjectLaunchServiceLogClearResult> {
-      return bridge.clearProjectLaunchServiceLogs(scope);
     },
 
     async downloadProjectLaunchService(this: AppStore) {

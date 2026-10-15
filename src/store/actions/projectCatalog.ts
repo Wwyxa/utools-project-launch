@@ -76,6 +76,34 @@ export const projectCatalogActions = {
     });
   },
 
+  persistRuntimeAutomationState(this: AppStore, projectId: string) {
+    const project = this.projects.find((item) => item.id === projectId);
+    if (!project || !this.supportsBridge || this.projectLaunchServicePreferences.enabled) return true;
+    const result = bridge.saveRuntimeAutomationState(projectId, (project.automationTasks || []).map((task) => ({
+      taskId: task.id, dailyPlans: task.dailyPlans, history: task.history,
+    })));
+    this.recordLocalStateWrite(result);
+    return result.ok;
+  },
+
+  restoreRuntimeAutomationState(this: AppStore) {
+    if (!this.supportsBridge) return;
+    for (const project of this.projects) {
+      try {
+        const states = bridge.loadRuntimeAutomationState?.(project.id) || [];
+        for (const task of project.automationTasks || []) {
+          const stored = states.find((state) => state.taskId === task.id);
+          if (!stored) continue;
+          task.dailyPlans = stored.dailyPlans;
+          task.history = stored.history;
+        }
+      } catch (error) {
+        this.localStateWriteError = error instanceof Error ? error.message : "自动任务状态读取失败。";
+        for (const task of project.automationTasks || []) task.enabled = false;
+      }
+    }
+  },
+
   async reloadProjectsFromStorage(this: AppStore) {
     try {
       const storedProjects = await bridge.loadProjects();
@@ -93,6 +121,10 @@ export const projectCatalogActions = {
           const mergedProject = {
             ...nextProject,
             scripts: mergeScriptRuntimeState(nextProject.scripts, previousProject.scripts),
+            automationTasks: (nextProject.automationTasks || []).map((task) => {
+              const previous = previousProject.automationTasks?.find((candidate) => candidate.id === task.id);
+              return previous ? { ...task, dailyPlans: previous.dailyPlans, history: previous.history } : task;
+            }),
             git: previousProject.git || nextProject.git,
             gitLatestCommitAt: nextProject.gitLatestCommitAt || previousProject.gitLatestCommitAt,
             pathExists: previousProject.pathExists,
@@ -109,6 +141,11 @@ export const projectCatalogActions = {
       this.projectsLoaded = true;
       this.initializeProjectSessionState();
       this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
+      try {
+        await this.loadRuntimeAutomationHistory();
+      } catch (error) {
+        this.localStateWriteError = error instanceof Error ? error.message : "自动任务执行历史读取失败。";
+      }
       await this.refreshProjectAvailability();
       this.projectStorageMessage = "";
     } catch (error) {
@@ -168,6 +205,7 @@ export const projectCatalogActions = {
     this.projectsLoaded = true;
 
     markStartupPhase?.("projects-load-state-setup-start");
+    this.restoreRuntimeAutomationState();
     this.initializeProjectSessionState();
     markStartupPhase?.("projects-load-state-setup-complete");
 
@@ -176,6 +214,9 @@ export const projectCatalogActions = {
       : bridge.getProjectLaunchServiceStatus();
 
     await waitForInitialPaint();
+    const runtimeAutomationHistoryLoad = this.loadRuntimeAutomationHistory().catch((error) => {
+      this.localStateWriteError = error instanceof Error ? error.message : "自动任务执行历史读取失败。";
+    });
     this.projectLaunchServiceStatus = await projectLaunchServiceStatusLoad;
     this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
 
@@ -189,6 +230,7 @@ export const projectCatalogActions = {
     await this.reconcileRuntimeProcessState();
     markStartupPhase?.("projects-load-runtime-reconciliation-complete");
 
+    await runtimeAutomationHistoryLoad;
     markStartupPhase?.("projects-load-automation-plan-recomputation-start");
     this.recomputeAutomationPlans(undefined, false);
     markStartupPhase?.("projects-load-automation-plan-recomputation-complete");

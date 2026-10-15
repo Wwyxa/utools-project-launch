@@ -365,9 +365,7 @@ const sortedAutomationHistory = (history: ProjectAutomationHistoryEntry[]) =>
 const automationTasks = computed(() =>
   store.visibleProjects.flatMap((project) =>
     (project.automationTasks || []).map((task) => {
-      const latestHistory = store.projectLaunchServicePreferences.enabled
-        ? sortedAutomationHistory(task.history)[0]
-        : undefined;
+      const latestHistory = sortedAutomationHistory(task.history)[0];
       const entries =
         store.serviceAutomationTaskEntries(project.id, task.id) ?? task.dailyPlans.flatMap((plan) => plan.entries);
       const runningEntry = entries.find((entry) => entry.status === "running") || null;
@@ -949,7 +947,7 @@ const handleProjectDragEnd = () => {
                 </button>
               </div>
             </div>
-            <div class="themed-scrollbar min-h-0 overflow-auto p-3">
+            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-auto p-3">
               <div
                 v-if="todoProjectGroups.length === 0"
                 class="rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-sm text-on-surface-variant"
@@ -1045,7 +1043,7 @@ const handleProjectDragEnd = () => {
                 <X :size="16" />
               </button>
             </div>
-            <div class="themed-scrollbar min-h-0 overflow-auto px-4 pb-4">
+            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-auto px-4 pb-4">
               <p
                 v-if="automationOverviewFeedback"
                 class="border-b border-status-info/30 pb-2 pt-3 text-xs font-semibold text-status-info"

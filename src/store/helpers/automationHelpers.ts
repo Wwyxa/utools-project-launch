@@ -501,7 +501,7 @@ export function classifyProcessOutputLine(line: string, source: "stdout" | "stde
 }
 
 
-export function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog): LogEntry[] {
+export function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog & { events: (ProjectLaunchServiceRunLog["events"][number] & { level?: LogEntry["type"] })[] }): LogEntry[] {
   const entries: LogEntry[] = [];
   for (const event of runLog.events) {
     const createEntry = (message: string, type: LogEntry["type"]) => createLogEntry(message, type, event.timestamp);
@@ -519,7 +519,7 @@ export function retainedRunLogEntries(runLog: ProjectLaunchServiceRunLog): LogEn
     if (event.type === "stdout" || event.type === "stderr") {
       const outputSource = event.type;
       normalizeLogLines(event.message || "").forEach((line) => {
-        entries.push(createEntry(line, classifyProcessOutputLine(line, outputSource)));
+        entries.push(createEntry(line, event.level || classifyProcessOutputLine(line, outputSource)));
       });
       continue;
     }

@@ -299,6 +299,31 @@ export interface ProjectLaunchServiceLogClearScope {
   runId: string;
 }
 
+export type RuntimeRecordSource = "preload" | "service" | "operation" | "automation" | "diagnostic";
+
+export interface RuntimeRecord extends ProjectLaunchServiceLogDescriptor {
+  schemaVersion: 1;
+  source: RuntimeRecordSource;
+  command?: string;
+  durableWriteError?: string;
+  automationRunId?: string;
+  execution?: ProjectLaunchServiceAutomationExecution;
+}
+
+export interface RuntimeAutomationTaskState {
+  taskId: string;
+  dailyPlans: ProjectAutomationDailyPlan[];
+  history: ProjectAutomationHistoryEntry[];
+}
+
+export interface RuntimeRecordEvent extends ProjectLaunchServiceEvent {
+  level?: LogEntry["type"];
+}
+
+export interface RuntimeRecordLog extends ProjectLaunchServiceRunLog {
+  events: RuntimeRecordEvent[];
+}
+
 export interface ProjectLaunchServiceScriptConfig {
   id: string;
   name: string;
@@ -1500,6 +1525,11 @@ export interface ProjectBridgeServiceStateEvent {
   timestamp?: string;
 }
 
+export interface RuntimeRecordErrorEvent {
+  type: "runtime-record-error";
+  message: string;
+}
+
 export interface ProjectBridgeServiceDownloadProgressEvent {
   type: "service-download-progress";
   receivedBytes: number;
@@ -1524,6 +1554,7 @@ export interface ProjectBridgeProjectsChangedEvent {
 }
 
 export type ProjectBridgeEvent =
+  | RuntimeRecordErrorEvent
   | ProjectBridgeProcessEvent
   | ProjectBridgeServiceStateEvent
   | ProjectBridgeServiceDownloadProgressEvent
@@ -1689,6 +1720,7 @@ export interface StorageOverview {
   sizes: {
     localDataBytes: number;
     serviceBytes: number;
+    runtimeBytes?: number;
     iconPacksBytes: number;
     privateProjectsBytes: number;
     tempBytes: number;
@@ -1787,14 +1819,15 @@ export interface ProjectBridge {
   startProjectLaunchService(options?: { requireVerifiedInstall?: boolean }): Promise<ProjectLaunchServiceStatus>;
   stopProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
   reconcileProjectLaunchService(): Promise<ProjectLaunchServiceStatus>;
-  getProjectLaunchServiceRunLog(runId: string): Promise<ProjectLaunchServiceRunLog>;
-  getProjectLaunchServiceRunLogPage(runId: string, beforeOffset: number): Promise<ProjectLaunchServiceRunLog>;
-  getProjectLaunchServiceLogRetention(): Promise<ProjectLaunchServiceLogRetentionStatus>;
-  updateProjectLaunchServiceLogRetention(
-    policy: ProjectLaunchServiceLogRetentionPolicy,
-  ): Promise<ProjectLaunchServiceLogRetentionStatus>;
-  listProjectLaunchServiceLogs(projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]>;
-  clearProjectLaunchServiceLogs(scope?: ProjectLaunchServiceLogClearScope): Promise<ProjectLaunchServiceLogClearResult>;
+  listRuntimeRecords(projectId: string): Promise<RuntimeRecord[]>;
+  readRuntimeRecordLogPage(runId: string, beforeOffset: number): Promise<RuntimeRecordLog>;
+  getRuntimeRecordRetention(): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  updateRuntimeRecordRetention(policy: ProjectLaunchServiceLogRetentionPolicy): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  clearRuntimeRecords(scope?: ProjectLaunchServiceLogClearScope): Promise<ProjectLaunchServiceLogClearResult>;
+  appendRuntimeOperationLog(projectId: string, log: LogEntry, scriptId?: string): LocalStateWriteResult;
+  loadRuntimeAutomationState(projectId: string): RuntimeAutomationTaskState[];
+  saveRuntimeAutomationState(projectId: string, tasks: RuntimeAutomationTaskState[]): LocalStateWriteResult;
+  saveRuntimeAutomationExecution(execution: ProjectLaunchServiceAutomationExecution): LocalStateWriteResult;
   syncProjectLaunchServiceAutomation(
     config: ProjectLaunchServiceAutomationConfig,
   ): Promise<ProjectLaunchServiceAutomationSyncResult>;

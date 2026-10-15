@@ -1995,23 +1995,25 @@ watch(
                   v-if="isBranchMenuOpen"
                   ref="branchMenuRef"
                   data-git-top-menu
-                  class="themed-scrollbar fixed z-[80] max-h-64 w-max max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-2xl"
+                  class="fixed z-[80] flex max-h-64 w-max max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-2xl"
                   :style="floatingMenuStyle(branchMenuPosition, 'min(16rem, calc(100vh - 1rem))')"
                   role="menu"
                   @click.stop
                 >
-                  <button
-                    v-for="branch in branchOptions"
-                    :key="branch.name"
-                    type="button"
-                    role="menuitem"
-                    :class="cn('mode-menu-item', branch.current && 'bg-primary/10 text-primary')"
-                    :title="branch.name"
-                    @click="handleSwitchBranch(branch.name)"
-                  >
-                    <span class="min-w-0 truncate font-mono">{{ branch.name }}</span>
-                    <Check v-if="branch.current" :size="13" />
-                  </button>
+                  <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
+                    <button
+                      v-for="branch in branchOptions"
+                      :key="branch.name"
+                      type="button"
+                      role="menuitem"
+                      :class="cn('mode-menu-item', branch.current && 'bg-primary/10 text-primary')"
+                      :title="branch.name"
+                      @click="handleSwitchBranch(branch.name)"
+                    >
+                      <span class="min-w-0 truncate font-mono">{{ branch.name }}</span>
+                      <Check v-if="branch.current" :size="13" />
+                    </button>
+                  </div>
                 </div>
               </Transition>
             </Teleport>
@@ -2552,67 +2554,69 @@ watch(
         <div
           v-if="repositoryMenu"
           data-repository-menu
-          class="themed-scrollbar fixed z-[80] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border-subtle bg-surface p-1 text-xs shadow-2xl"
+          class="fixed z-[80] flex w-72 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface p-1 text-xs shadow-2xl"
           :style="repositoryMenuStyle"
           role="menu"
           @click.stop
         >
-          <div class="border-b border-border-subtle px-2 py-1.5">
-            <div class="truncate text-[11px] font-bold text-on-surface">{{ repositoryMenu.row.name }}</div>
-            <div
-              class="truncate font-mono text-[9px] text-on-surface-variant"
-              :title="repositoryMenu.row.repositoryPath"
-            >
-              {{ repositoryMenu.row.repositoryPath }}
-            </div>
-            <div class="mt-1 text-[9px] text-on-surface-variant">{{ repositoryMenu.row.statusText }}</div>
-            <div class="mt-1.5 space-y-1 border-t border-border-subtle pt-1.5">
+          <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
+            <div class="border-b border-border-subtle px-2 py-1.5">
+              <div class="truncate text-[11px] font-bold text-on-surface">{{ repositoryMenu.row.name }}</div>
               <div
-                v-for="detail in repositoryMenu.row.detailLines"
-                :key="detail"
-                class="break-all font-mono text-[9px] leading-3 text-on-surface-variant"
+                class="truncate font-mono text-[9px] text-on-surface-variant"
+                :title="repositoryMenu.row.repositoryPath"
               >
-                {{ detail }}
+                {{ repositoryMenu.row.repositoryPath }}
+              </div>
+              <div class="mt-1 text-[9px] text-on-surface-variant">{{ repositoryMenu.row.statusText }}</div>
+              <div class="mt-1.5 space-y-1 border-t border-border-subtle pt-1.5">
+                <div
+                  v-for="detail in repositoryMenu.row.detailLines"
+                  :key="detail"
+                  class="break-all font-mono text-[9px] leading-3 text-on-surface-variant"
+                >
+                  {{ detail }}
+                </div>
               </div>
             </div>
+            <button
+              v-for="application in repositoryMenu.row.selectable ? enabledExternalApplications : []"
+              :key="application.id"
+              type="button"
+              role="menuitem"
+              class="mode-menu-item"
+              @click="openRepositoryWithApplication(application.id)"
+            >
+              <span class="truncate">{{ application.name }}</span>
+              <Check
+                v-if="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                :size="13"
+                class="shrink-0 text-primary"
+              />
+              <ExternalLink v-else :size="13" class="shrink-0" />
+            </button>
+            <button
+              v-if="repositoryMenu.row.selectable"
+              type="button"
+              role="menuitem"
+              class="mode-menu-item"
+              @click="runRepositoryExternalAction('terminal')"
+            >
+              <span>在终端中打开</span><SquareTerminal :size="13" />
+            </button>
+            <button
+              v-if="repositoryMenu.row.selectable"
+              type="button"
+              role="menuitem"
+              class="mode-menu-item"
+              @click="runRepositoryExternalAction('folder')"
+            >
+              <span>在文件夹中显示</span><FolderOpen :size="13" />
+            </button>
+            <button type="button" role="menuitem" class="mode-menu-item" @click="copyRepositoryPath">
+              <span>复制路径</span><ClipboardCopy :size="13" />
+            </button>
           </div>
-          <button
-            v-for="application in repositoryMenu.row.selectable ? enabledExternalApplications : []"
-            :key="application.id"
-            type="button"
-            role="menuitem"
-            class="mode-menu-item"
-            @click="openRepositoryWithApplication(application.id)"
-          >
-            <span class="truncate">{{ application.name }}</span>
-            <Check
-              v-if="application.id === store.externalApplicationPreferences.defaultApplicationId"
-              :size="13"
-              class="shrink-0 text-primary"
-            />
-            <ExternalLink v-else :size="13" class="shrink-0" />
-          </button>
-          <button
-            v-if="repositoryMenu.row.selectable"
-            type="button"
-            role="menuitem"
-            class="mode-menu-item"
-            @click="runRepositoryExternalAction('terminal')"
-          >
-            <span>在终端中打开</span><SquareTerminal :size="13" />
-          </button>
-          <button
-            v-if="repositoryMenu.row.selectable"
-            type="button"
-            role="menuitem"
-            class="mode-menu-item"
-            @click="runRepositoryExternalAction('folder')"
-          >
-            <span>在文件夹中显示</span><FolderOpen :size="13" />
-          </button>
-          <button type="button" role="menuitem" class="mode-menu-item" @click="copyRepositoryPath">
-            <span>复制路径</span><ClipboardCopy :size="13" />
-          </button>
         </div>
       </Transition>
     </Teleport>

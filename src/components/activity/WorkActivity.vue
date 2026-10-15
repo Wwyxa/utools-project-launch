@@ -1265,112 +1265,114 @@ onBeforeUnmount(() => {
           <div
             v-if="customDatePickerKind"
             data-work-activity-date-picker
-            class="date-picker-popover themed-scrollbar max-h-[calc(100vh-1rem)] overflow-y-auto"
+            class="date-picker-popover flex max-h-[calc(100vh-1rem)] flex-col overflow-hidden"
             :style="{ right: `${customDatePickerPosition.right}px`, top: `${customDatePickerPosition.top}px` }"
           >
-            <div class="mb-2 grid grid-cols-2 rounded-md bg-surface-container-high p-0.5">
-              <button
-                v-for="kind in ['start', 'end'] as const"
-                :key="kind"
-                type="button"
-                :class="
-                  cn(
-                    'cursor-pointer flex min-w-0 flex-col items-center rounded px-1.5 py-1 text-[10px] leading-tight transition-colors',
-                    customDatePickerKind === kind
-                      ? 'bg-surface text-primary shadow-sm'
-                      : 'text-on-surface-variant hover:text-on-surface',
-                  )
-                "
-                @click="activateCustomDatePicker(kind)"
-              >
-                <span class="font-bold">{{ kind === "start" ? t.activity.startDate : t.activity.endDate }}</span>
-                <span class="mt-0.5 min-h-3 whitespace-nowrap font-normal tabular-nums text-on-surface-variant">
-                  {{
-                    (kind === "start" ? activityPreferences.customStartDate : activityPreferences.customEndDate) || "—"
-                  }}
-                </span>
-              </button>
-            </div>
-            <div class="mb-2 grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-1">
-              <button
-                type="button"
-                class="popover-icon-button"
-                :title="t.activity.previousYear"
-                @click="shiftCustomDatePickerYear(-1)"
-              >
-                <ChevronLeft :size="13" /><ChevronLeft :size="13" class="-ml-2" />
-              </button>
-              <button
-                type="button"
-                class="popover-icon-button"
-                :title="t.activity.previousMonth"
-                @click="shiftCustomDatePickerMonth(-1)"
-              >
-                <ChevronLeft :size="14" />
-              </button>
-              <div class="text-center text-xs font-bold text-on-surface">{{ customDatePickerTitle }}</div>
-              <button
-                type="button"
-                class="popover-icon-button"
-                :title="t.activity.nextMonth"
-                @click="shiftCustomDatePickerMonth(1)"
-              >
-                <ChevronRight :size="14" />
-              </button>
-              <button
-                type="button"
-                class="popover-icon-button"
-                :title="t.activity.nextYear"
-                @click="shiftCustomDatePickerYear(1)"
-              >
-                <ChevronRight :size="13" /><ChevronRight :size="13" class="-ml-2" />
-              </button>
-            </div>
-            <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-              <span v-for="label in weekdayLabels" :key="label">{{ label }}</span>
-            </div>
-            <div class="mt-1 grid grid-cols-7 gap-1">
-              <button
-                v-for="day in customDatePickerDays"
-                :key="day.value"
-                type="button"
-                :disabled="day.disabled"
-                :class="
-                  cn(
-                    'date-picker-day cursor-pointer disabled:cursor-not-allowed disabled:opacity-25',
-                    !day.isCurrentMonth && 'text-on-surface-variant/35',
-                    day.isInRange && !day.isSelected && 'bg-primary/10 text-primary',
-                    day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                    day.isSelected && 'border-primary bg-primary text-on-primary',
-                  )
-                "
-                @click="selectCustomDate(day.value)"
-              >
-                {{ day.label }}
-              </button>
-            </div>
-            <div class="mt-2 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                @click="selectCalendarYear(customDatePickerMonth.getFullYear())"
-              >
-                {{ t.activity.selectCalendarYear.replace("{year}", String(customDatePickerMonth.getFullYear())) }}
-              </button>
-              <button
-                type="button"
-                class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                @click="selectCustomDate(today)"
-              >
-                {{ t.activity.today }}
-              </button>
-              <button
-                type="button"
-                class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                @click="clearCustomDateRange"
-              >
-                {{ t.activity.clearSelection }}
-              </button>
+            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
+              <div class="mb-2 grid grid-cols-2 rounded-md bg-surface-container-high p-0.5">
+                <button
+                  v-for="kind in ['start', 'end'] as const"
+                  :key="kind"
+                  type="button"
+                  :class="
+                    cn(
+                      'cursor-pointer flex min-w-0 flex-col items-center rounded px-1.5 py-1 text-[10px] leading-tight transition-colors',
+                      customDatePickerKind === kind
+                        ? 'bg-surface text-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface',
+                    )
+                  "
+                  @click="activateCustomDatePicker(kind)"
+                >
+                  <span class="font-bold">{{ kind === "start" ? t.activity.startDate : t.activity.endDate }}</span>
+                  <span class="mt-0.5 min-h-3 whitespace-nowrap font-normal tabular-nums text-on-surface-variant">
+                    {{
+                      (kind === "start" ? activityPreferences.customStartDate : activityPreferences.customEndDate) || "—"
+                    }}
+                  </span>
+                </button>
+              </div>
+              <div class="mb-2 grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-1">
+                <button
+                  type="button"
+                  class="popover-icon-button"
+                  :title="t.activity.previousYear"
+                  @click="shiftCustomDatePickerYear(-1)"
+                >
+                  <ChevronLeft :size="13" /><ChevronLeft :size="13" class="-ml-2" />
+                </button>
+                <button
+                  type="button"
+                  class="popover-icon-button"
+                  :title="t.activity.previousMonth"
+                  @click="shiftCustomDatePickerMonth(-1)"
+                >
+                  <ChevronLeft :size="14" />
+                </button>
+                <div class="text-center text-xs font-bold text-on-surface">{{ customDatePickerTitle }}</div>
+                <button
+                  type="button"
+                  class="popover-icon-button"
+                  :title="t.activity.nextMonth"
+                  @click="shiftCustomDatePickerMonth(1)"
+                >
+                  <ChevronRight :size="14" />
+                </button>
+                <button
+                  type="button"
+                  class="popover-icon-button"
+                  :title="t.activity.nextYear"
+                  @click="shiftCustomDatePickerYear(1)"
+                >
+                  <ChevronRight :size="13" /><ChevronRight :size="13" class="-ml-2" />
+                </button>
+              </div>
+              <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
+                <span v-for="label in weekdayLabels" :key="label">{{ label }}</span>
+              </div>
+              <div class="mt-1 grid grid-cols-7 gap-1">
+                <button
+                  v-for="day in customDatePickerDays"
+                  :key="day.value"
+                  type="button"
+                  :disabled="day.disabled"
+                  :class="
+                    cn(
+                      'date-picker-day cursor-pointer disabled:cursor-not-allowed disabled:opacity-25',
+                      !day.isCurrentMonth && 'text-on-surface-variant/35',
+                      day.isInRange && !day.isSelected && 'bg-primary/10 text-primary',
+                      day.isToday && !day.isSelected && 'border-primary/35 text-primary',
+                      day.isSelected && 'border-primary bg-primary text-on-primary',
+                    )
+                  "
+                  @click="selectCustomDate(day.value)"
+                >
+                  {{ day.label }}
+                </button>
+              </div>
+              <div class="mt-2 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                  @click="selectCalendarYear(customDatePickerMonth.getFullYear())"
+                >
+                  {{ t.activity.selectCalendarYear.replace("{year}", String(customDatePickerMonth.getFullYear())) }}
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                  @click="selectCustomDate(today)"
+                >
+                  {{ t.activity.today }}
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer text-[10px] font-bold text-on-surface-variant hover:text-primary"
+                  @click="clearCustomDateRange"
+                >
+                  {{ t.activity.clearSelection }}
+                </button>
+              </div>
             </div>
           </div>
         </Transition>

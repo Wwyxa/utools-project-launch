@@ -431,7 +431,7 @@ async function guardProjectLaunchServiceForMigration(stopActiveRuns = false, onP
     reportProgress('checking-service');
     let discovery;
     try {
-      discovery = readProjectLaunchServiceDiscovery(directoryPath);
+      discovery = readProjectLaunchServiceDiscovery(directoryPath, true);
     } catch (error) {
       if (error?.code === 'ENOENT') {
         reportProgress('stopped');
@@ -649,7 +649,7 @@ function migratePublicProjectDocumentItem(item) {
   }
 }
 
-const migrationServiceCopyFileNames = ['token', 'state.json', 'install.json', 'service.log'];
+const migrationServiceCopyFileNames = ['token', 'state.json', 'install.json'];
 
 function migrationServiceExecutableFileName() {
   return `project-launch-service${process.platform === 'win32' ? '.exe' : ''}`;
@@ -667,7 +667,6 @@ function migrateServiceDirectoryItem(item) {
     ...migrationServiceCopyFileNames,
     migrationServiceExecutableFileName(),
     projectLaunchServiceTarget().assetName,
-    'logs',
   ].filter((entryName) => entryName && fs.existsSync(path.join(sourceDirectory, entryName)));
 
   if (entries.includes('state.json') && !entries.includes('token')) {
@@ -700,6 +699,108 @@ function migrateServiceDirectoryItem(item) {
       throw new Error(`服务文件 ${entryName} 复制校验失败。`);
     }
   });
+}
+
+async function writeMigratedRuntimeRecord(record, contents) {
+  validateRuntimeRecordMetadata(record, `${record.runId}.json`);
+  const metadataPath = runtimeRecordPath(record.runId, 'json');
+  const existing = await runtimeRecordReadJsonAsync(metadataPath);
+  if (existing) {
+    validateRuntimeRecordMetadata(existing, `${record.runId}.json`);
+    if (existing.cleared) return;
+  }
+  const outputPath = runtimeRecordPath(record.runId, 'log');
+  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+  let outputExists = false;
+  try {
+    const info = await fs.promises.lstat(outputPath);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error('迁移目标日志必须是普通文件。');
+    outputExists = true;
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (outputExists) {
+    if (!contents.equals(await fs.promises.readFile(outputPath))) throw new Error('迁移目标日志与源内容不一致，已保留源文件。');
+  } else {
+    const temporary = outputPath + `.migration-${crypto.randomBytes(8).toString('hex')}`;
+    try {
+      await fs.promises.writeFile(temporary, contents, { flag: 'wx', mode: 0o600 });
+      if (!contents.equals(await fs.promises.readFile(temporary))) throw new Error('迁移日志回读校验失败。');
+      await fs.promises.rename(temporary, outputPath);
+    } finally {
+      await fs.promises.rm(temporary, { force: true });
+    }
+  }
+  if (!existing) writeJsonFileAtomic(metadataPath, record);
+  const verified = await runtimeRecordReadJsonAsync(metadataPath);
+  if (!storedValueEquals(verified, existing || record)) throw new Error('迁移日志元数据回读校验失败。');
+}
+
+async function migrateServiceRuntimeRecords(sourceDirectory) {
+  return withRuntimeRecordMaintenance(async () => {
+    const state = await runtimeRecordReadJsonAsync(path.join(sourceDirectory, 'state.json'));
+    const sourceLogs = path.join(sourceDirectory, 'logs');
+    let names = [];
+    try {
+      const info = await fs.promises.lstat(sourceLogs);
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('旧日志目录类型无效。');
+      names = await fs.promises.readdir(sourceLogs);
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    for (const name of names.filter((name) => /^[0-9a-f]{32}\.log$/.test(name))) {
+      const runId = name.slice(0, -4);
+      const sourcePath = path.join(sourceLogs, name);
+      const info = await fs.promises.lstat(sourcePath);
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error('旧运行日志必须是普通文件。');
+      const contents = await fs.promises.readFile(sourcePath);
+      const lines = contents.toString('utf8').split('\n');
+      const incomplete = Boolean(lines.pop());
+      const events = lines.filter(Boolean).map((line) => {
+        const event = JSON.parse(line);
+        if (event.runId !== runId || !['started', 'stdout', 'stderr', 'stdin', 'exit', 'error'].includes(event.type) ||
+            !Number.isFinite(Date.parse(event.timestamp))) throw new Error(`旧运行日志事件无效：${name}`);
+        return event;
+      });
+      const run = (state?.runs || []).find((run) => run.id === runId);
+      const startedAt = run?.startedAt || events[0]?.timestamp || info.mtime.toISOString();
+      await writeMigratedRuntimeRecord({
+        schemaVersion: 1, source: 'service', runId,
+        projectId: run?.projectId || events[0]?.projectId || '__plugin__',
+        scriptId: run?.scriptId || events[0]?.scriptId || '',
+        ...(run?.label !== undefined ? { label: run.label } : {}),
+        ...(run?.command !== undefined ? { command: run.command } : {}),
+        status: !run || runtimeRecordIsActive(run) ? 'lost' : run.status,
+        startedAt, endedAt: run?.endedAt || info.mtime.toISOString(),
+        truncated: Boolean(run?.outputTruncated) || incomplete,
+        ...(run?.durableWriteError ? { durableWriteError: run.durableWriteError } : {}),
+      }, contents);
+      if (!contents.equals(await fs.promises.readFile(sourcePath))) throw new Error('迁移期间源日志发生变化，请停止旧服务后重试。');
+    }
+    const diagnosticPath = path.join(sourceDirectory, 'service.log');
+    let diagnosticInfo;
+    try { diagnosticInfo = await fs.promises.lstat(diagnosticPath); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (diagnosticInfo) {
+      if (!diagnosticInfo.isFile() || diagnosticInfo.isSymbolicLink()) throw new Error('旧诊断日志必须是普通文件。');
+      const original = await fs.promises.readFile(diagnosticPath);
+      const text = original.toString('utf8');
+      const runId = crypto.createHash('sha256').update(`migration:service.log:${path.resolve(sourceDirectory)}`).digest('hex').slice(0, 32);
+      const timestamp = diagnosticInfo.mtime.toISOString();
+      const events = [];
+      for (let offset = 0; offset < text.length;) {
+        let end = Math.min(text.length, offset + 4096);
+        if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+        events.push(JSON.stringify({ cursor: events.length + 1, runId, type: 'stdout', timestamp, message: text.slice(offset, end), level: 'INFO' }) + '\n');
+        offset = end;
+      }
+      await writeMigratedRuntimeRecord({ schemaVersion: 1, source: 'diagnostic', runId, projectId: '__plugin__', scriptId: '',
+        label: '服务诊断（迁移）', status: 'exited', startedAt: timestamp, endedAt: timestamp, truncated: false,
+      }, Buffer.from(events.join(''), 'utf8'));
+      if (!original.equals(await fs.promises.readFile(diagnosticPath))) throw new Error('迁移期间源诊断日志发生变化，请停止旧服务后重试。');
+    }
+    const policyPath = path.join(runtimeRecordsDirectory(), 'policy.v1.json');
+    if (state?.logRetention && !await runtimeRecordReadJsonAsync(policyPath)) {
+      const policy = { schemaVersion: 1, policy: validateRuntimeRecordPolicy(state.logRetention) };
+      writeJsonFileAtomic(policyPath, policy);
+      if (!storedValueEquals(await runtimeRecordReadJsonAsync(policyPath), policy)) throw new Error('迁移日志策略回读校验失败。');
+    }
+  }, true);
 }
 
 function migrateIconPackDirectoryItem(item) {
@@ -739,6 +840,7 @@ async function migrateLedgerItem(item, legacyDeviceId, ledger) {
   }
   if (item.kind === 'service-directory') {
     migrateServiceDirectoryItem(item);
+    await migrateServiceRuntimeRecords(item.source);
     item.status = 'verified';
     return;
   }

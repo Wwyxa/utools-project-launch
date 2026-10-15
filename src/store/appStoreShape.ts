@@ -79,10 +79,8 @@ import type {
   ProjectGitTagInfo,
   ProjectGitWorkspaceSnapshot,
   ProjectLaunchServiceAutomationSyncResult,
-  ProjectLaunchServiceEvent,
   ProjectLaunchServiceLogClearResult,
   ProjectLaunchServiceLogClearScope,
-  ProjectLaunchServiceLogDescriptor,
   ProjectLaunchServiceLogRetentionPolicy,
   ProjectLaunchServiceLogRetentionStatus,
   ProjectLaunchServicePreferences,
@@ -225,10 +223,7 @@ export interface AppGetters {
 
 export interface AppActions {
   initializeProjectSessionState(): void;
-  loadProjectLaunchServiceAutomationHistory(
-    projectId: string,
-    taskId: string,
-  ): Promise<ProjectAutomationHistoryEntry[]>;
+  loadRuntimeAutomationHistory(projectId?: string, taskId?: string): Promise<ProjectAutomationHistoryEntry[]>;
   reloadProjectsFromStorage(): Promise<void>;
   scheduleProjectCatalogReload(): Promise<void>;
   loadProjects(): Promise<void>;
@@ -261,33 +256,6 @@ export interface AppActions {
   removeIconPack(): Promise<IconPackRemoveResult>;
   refreshProjectLaunchServiceStatus(verifyManualInstall?: boolean): Promise<any>;
   checkProjectLaunchServiceUpdate(): Promise<any>;
-  loadProjectLaunchServiceRunLog(
-    runId: string,
-  ): Promise<{
-    logs: LogEntry[];
-    runId: string;
-    events: ProjectLaunchServiceEvent[];
-    truncated: boolean;
-    sizeBytes: number;
-    hasMore?: boolean;
-    nextOffset?: number;
-  }>;
-  loadProjectLaunchServiceRunLogPage(
-    runId: string,
-    beforeOffset: number,
-  ): Promise<{
-    logs: LogEntry[];
-    runId: string;
-    events: ProjectLaunchServiceEvent[];
-    truncated: boolean;
-    sizeBytes: number;
-    hasMore?: boolean;
-    nextOffset?: number;
-  }>;
-  refreshProjectLaunchServiceLogRetention(): Promise<any>;
-  updateProjectLaunchServiceLogRetention(policy: ProjectLaunchServiceLogRetentionPolicy): Promise<any>;
-  listProjectLaunchServiceLogs(projectId: string): Promise<ProjectLaunchServiceLogDescriptor[]>;
-  clearProjectLaunchServiceLogs(scope?: ProjectLaunchServiceLogClearScope): Promise<ProjectLaunchServiceLogClearResult>;
   downloadProjectLaunchService(): Promise<any>;
   openProjectLaunchServiceDirectory(): Promise<void>;
   openProjectLaunchServiceReleases(): Promise<void>;
@@ -722,7 +690,14 @@ export interface AppActions {
   openProjectInTerminal(projectId: string): Promise<void>;
   openProjectInEditor(projectId: string, applicationId?: string): Promise<void>;
   openProjectQuickLink(projectId: string): Promise<void>;
-  addLog(projectId: string, log: LogEntry, scriptId?: string): void;
+  persistRuntimeAutomationState(projectId: string): boolean;
+  loadRuntimeRecordLogPage(runId: string, beforeOffset: number): Promise<import("../types").RuntimeRecordLog & { logs: LogEntry[] }>;
+  listRuntimeRecords(projectId: string): Promise<import("../types").RuntimeRecord[]>;
+  refreshRuntimeRecordRetention(): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  updateRuntimeRecordRetention(policy: ProjectLaunchServiceLogRetentionPolicy): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  clearRuntimeRecords(scope?: ProjectLaunchServiceLogClearScope): Promise<ProjectLaunchServiceLogClearResult>;
+  restoreRuntimeAutomationState(): void;
+  addLog(projectId: string, log: LogEntry, scriptId?: string, persist?: boolean): void;
   clearLogs(projectId: string): void;
   clearScriptLogs(projectId: string, scriptId: string): void;
   addTodo(projectId: string, text: string): void;

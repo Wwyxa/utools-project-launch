@@ -4,6 +4,7 @@ const path = require("path");
 const preloadModuleFiles = [
   "foundation.js",
   "local-state.js",
+  "runtime-records.js",
   "icon-packs.js",
   "preferences.js",
   "project-launch-service.js",
