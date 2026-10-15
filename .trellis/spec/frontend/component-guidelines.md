@@ -46,8 +46,12 @@ axis variants), plus rendered Markdown code blocks and tables. It shares the
 as viewport/event target, and handles dynamic content and teardown. Existing
 instances use `autoHide: "move"`, `autoHideDelay: 400`, and
 `autoHideSuspend: false`: hide before the first scroll and after interaction stops.
-Both automatic initialization and explicit directives share these options. Existing
-explicit directives remain valid and are not initialized twice. Keep explicit
+Both automatic initialization and explicit directives share these options.
+Automatic observation filters class mutations to scroll-container and exclusion
+classes, including the Markdown ancestor class; animation and color class changes
+must not schedule scans. Preserve cleanup for removals without added nodes and
+reinitialization after content replacement or native-scrollbar opt-out changes.
+Existing explicit directives remain valid and are not initialized twice. Keep explicit
 directives where callers need the instance during mount; otherwise new ordinary
 scrollers need only the overflow class. Textareas, native form controls,
 `.scrollbar-hide`, and `[data-native-scrollbar]` retain native behavior; shared

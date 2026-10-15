@@ -29,6 +29,7 @@ afterEach(() => {
   stop?.();
   stop = undefined;
   document.body.replaceChildren();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -38,6 +39,63 @@ const settle = async () => {
 };
 
 describe("automatic overlay scrollbars", () => {
+  it("does not schedule scans for animation or visual class changes", async () => {
+    document.body.innerHTML = '<section><div class="overflow-y-auto"></div><button></button></section>';
+    stop = observeOverlayScrollbars();
+    await settle();
+    const scheduleFrame = vi.spyOn(window, "requestAnimationFrame");
+    const container = document.body.querySelector("div")!;
+    document.body.querySelector("section")!.classList.add("scale-enter-active");
+    document.body.querySelector("button")!.classList.add("text-primary");
+    container.classList.add("bg-surface");
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(scheduleFrame).not.toHaveBeenCalled();
+    expect(initialize).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps responding to scroll eligibility and native scrollbar changes", async () => {
+    document.body.innerHTML = '<div class="overflow-y-auto overflow-hidden"></div>';
+    const container = document.body.firstElementChild!;
+    stop = observeOverlayScrollbars();
+    expect(initialize).not.toHaveBeenCalled();
+    container.classList.remove("overflow-hidden");
+    await settle();
+    expect(initialize).toHaveBeenCalledTimes(1);
+    const instance = initialize.mock.results[0].value;
+    container.setAttribute("data-native-scrollbar", "");
+    await settle();
+    expect(instance.destroy).toHaveBeenCalledOnce();
+    expect(initialize).toHaveBeenCalledTimes(1);
+    container.removeAttribute("data-native-scrollbar");
+    await settle();
+    expect(initialize).toHaveBeenCalledTimes(2);
+    container.classList.add("scrollbar-hide");
+    await settle();
+    expect(initialize.mock.results[1].value.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("initializes Markdown scrollers when the ancestor becomes a rendered memo", async () => {
+    document.body.innerHTML = '<section><pre>code</pre><table></table></section>';
+    stop = observeOverlayScrollbars();
+    expect(initialize).not.toHaveBeenCalled();
+    document.body.firstElementChild!.classList.add("memo-rendered");
+    await settle();
+    expect(initialize).toHaveBeenCalledTimes(2);
+    document.body.firstElementChild!.classList.remove("memo-rendered");
+    await settle();
+    for (const result of initialize.mock.results) expect(result.value.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("destroys detached scrollers even when no elements are added", async () => {
+    document.body.innerHTML = '<div class="overflow-y-auto"></div>';
+    stop = observeOverlayScrollbars();
+    await settle();
+    const instance = initialize.mock.results[0].value;
+    document.body.firstElementChild!.remove();
+    await settle();
+    expect(instance.destroy).toHaveBeenCalledOnce();
+  });
+
   it("initializes new scrollers once without taking over explicit or native controls", async () => {
     document.body.innerHTML = `
       <div class="overflow-auto" data-overlayscrollbars-initialize></div>

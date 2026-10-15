@@ -820,7 +820,7 @@ const handleProjectDragEnd = () => {
       <Transition name="scale">
         <div
           v-if="todoOverviewOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           @click.self="todoOverviewOpen = false"
         >
           <section
@@ -1013,7 +1013,7 @@ const handleProjectDragEnd = () => {
       <Transition name="scale">
         <div
           v-if="automationOverviewOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           @click.self="automationOverviewOpen = false"
         >
           <section

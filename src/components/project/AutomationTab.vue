@@ -691,7 +691,7 @@ const taskSummaryText = computed(() =>
       <Transition name="scale">
         <div
           v-if="historyDialogTask"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
           @click.self="closeHistory"
         >
           <section
@@ -763,7 +763,7 @@ const taskSummaryText = computed(() =>
       <Transition name="scale">
         <div
           v-if="formDialogOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
         >
           <div
             class="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"

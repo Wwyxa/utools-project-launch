@@ -1754,24 +1754,44 @@
 }
 
 /* Vue transition: scale (modal / dialog entry) */
-.scale-enter-active,
-.scale-leave-active {
-  transition: background-color 0.16s ease;
+.scale-enter-active {
+  transition: opacity 0.22s ease-out;
 }
 
-.scale-enter-active > *,
+.scale-enter-active > * {
+  transition:
+    opacity 0.18s ease-out,
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scale-leave-active {
+  transition: opacity 0.14s ease-in;
+}
+
 .scale-leave-active > * {
-  transition: transform 0.16s ease;
+  transition:
+    opacity 0.14s ease-in,
+    transform 0.14s ease-in;
 }
 
 .scale-enter-from,
 .scale-leave-to {
-  background-color: transparent !important;
+  opacity: 0;
 }
 
 .scale-enter-from > *,
 .scale-leave-to > * {
-  transform: scale(0.96);
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scale-enter-active,
+  .scale-leave-active,
+  .scale-enter-active > *,
+  .scale-leave-active > * {
+    transition: none;
+  }
 }
 
 /* 弹出层入场：轻量缩放 + 淡入（右键菜单、下拉菜单、popover） */

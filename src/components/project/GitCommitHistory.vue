@@ -3248,7 +3248,7 @@ onBeforeUnmount(() => {
     ><Transition name="scale"
       ><div
         v-if="refDialog"
-        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5 backdrop-blur-sm"
+        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5"
         role="dialog"
         aria-modal="true"
         @click.self="closeRefDialog"
@@ -3345,7 +3345,7 @@ onBeforeUnmount(() => {
     <Transition name="scale">
       <div
         v-if="tagInfoDialog"
-        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5 backdrop-blur-sm"
+        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5"
         role="dialog"
         aria-modal="true"
         aria-labelledby="git-tag-info-title"

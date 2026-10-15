@@ -6,7 +6,12 @@ import {
 } from "overlayscrollbars";
 
 const instances = new WeakMap<HTMLElement, OverlayScrollbarsInstance>();
-const scrollContainerSelector = ".themed-scrollbar, .overflow-auto, .overflow-y-auto, .overflow-x-auto, .overflow-scroll, .overflow-y-scroll, .overflow-x-scroll, .memo-rendered pre, .memo-rendered table";
+const scrollContainerClasses = [
+  "themed-scrollbar", "overflow-auto", "overflow-y-auto", "overflow-x-auto",
+  "overflow-scroll", "overflow-y-scroll", "overflow-x-scroll",
+];
+const scrollContainerSelector = `${scrollContainerClasses.map((className) => `.${className}`).join(", ")}, .memo-rendered pre, .memo-rendered table`;
+const observedClasses = [...scrollContainerClasses, "memo-rendered", "overflow-hidden", "scrollbar-hide", "os-scrollbar"];
 const excludedSelector = "textarea, input, select, .scrollbar-hide, [data-native-scrollbar]";
 const scrollbarOptions = {
   scrollbars: {
@@ -95,18 +100,26 @@ export function observeOverlayScrollbars(root: HTMLElement = document.body) {
   };
 
   const observer = new MutationObserver((records) => {
+    let needsCleanup = false;
     for (const record of records) {
       if (record.type === "attributes") {
-        if (record.target instanceof HTMLElement) pending.add(record.target);
+        const element = record.target;
+        if (!(element instanceof HTMLElement)) continue;
+        if (record.attributeName === "class") {
+          const previousClasses = new Set((record.oldValue || "").split(/\s+/));
+          if (!observedClasses.some((className) => previousClasses.has(className) !== element.classList.contains(className))) continue;
+        }
+        pending.add(element);
       } else {
+        if (record.removedNodes.length > 0 && automaticInstances.size > 0) needsCleanup = true;
         record.addedNodes.forEach((node) => {
           if (node instanceof HTMLElement) pending.add(node);
         });
       }
     }
-    if (frame === undefined) frame = requestAnimationFrame(flush);
+    if (frame === undefined && (pending.size > 0 || needsCleanup)) frame = requestAnimationFrame(flush);
   });
-  observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-native-scrollbar"] });
+  observer.observe(root, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["class", "data-native-scrollbar"] });
   flush();
 
   return () => {
