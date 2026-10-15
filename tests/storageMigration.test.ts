@@ -13,9 +13,16 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppStore } from "../src/store/appStoreShape";
 import { overlayScrollbar } from "../src/lib/overlayScrollbar";
 import { OverlayScrollbars } from "overlayscrollbars";
-import type { CleanupPlan, CleanupPlanItem, MigrationRunResult, MigrationServiceStopProgress, MigrationSummary } from "../src/types";
+import type {
+  CleanupPlan,
+  CleanupPlanItem,
+  MigrationRunResult,
+  MigrationServiceStopProgress,
+  MigrationSummary,
+} from "../src/types";
 
-type MigrationStore = Pick<AppStore,
+type MigrationStore = Pick<
+  AppStore,
   "dataToolsBusy" | "cleanupMessage" | "migrationProgress" | "refreshStorageOverview" | "reloadProjectsFromStorage"
 >;
 type MigrationActions = {
@@ -49,12 +56,32 @@ describe("storage migration recovery", () => {
     let mount = () => {};
     let unmount = () => {};
     const stopEscape = vi.fn();
-    loadScript("src/components/layout/SettingsTab.vue", {
-      vue: { computed, ref, watch: vi.fn(), onMounted: (callback: () => void) => { mount = callback; }, onUnmounted: (callback: () => void) => { unmount = callback; } },
-      "../../store/useStore": { useStore: () => store },
-      "../../lib/i18n": { useI18n: () => ref({}) },
-      "../../lib/escape": { addAppEscapeRequestListener: () => stopEscape },
-    }, { window: { navigator: { platform: "Win32" }, requestAnimationFrame: (callback: FrameRequestCallback) => frames.push(callback), cancelAnimationFrame } });
+    loadScript(
+      "src/components/layout/SettingsTab.vue",
+      {
+        vue: {
+          computed,
+          ref,
+          watch: vi.fn(),
+          onMounted: (callback: () => void) => {
+            mount = callback;
+          },
+          onUnmounted: (callback: () => void) => {
+            unmount = callback;
+          },
+        },
+        "../../store/useStore": { useStore: () => store },
+        "../../lib/i18n": { useI18n: () => ref({}) },
+        "../../lib/escape": { addAppEscapeRequestListener: () => stopEscape },
+      },
+      {
+        window: {
+          navigator: { platform: "Win32" },
+          requestAnimationFrame: (callback: FrameRequestCallback) => frames.push(callback),
+          cancelAnimationFrame,
+        },
+      },
+    );
     mount();
     expect(store.refreshRuntimeRecordRetention).not.toHaveBeenCalled();
     expect(store.refreshStorageOverview).not.toHaveBeenCalled();
@@ -71,9 +98,12 @@ describe("storage migration recovery", () => {
 
   it("blocks migration while stopping the service and restores the entry after completion", async () => {
     let finishStop: (result: { ok: boolean; error?: string }) => void = () => {};
-    const stopMigrationService = vi.fn(() => new Promise<{ ok: boolean; error?: string }>((resolve) => {
-      finishStop = resolve;
-    }));
+    const stopMigrationService = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; error?: string }>((resolve) => {
+          finishStop = resolve;
+        }),
+    );
     const runMigration = vi.fn().mockResolvedValue({ ok: true, ledger: null });
     const emit = vi.fn();
     const { probe } = loadScript<{
@@ -85,11 +115,21 @@ describe("storage migration recovery", () => {
         startMigration(): Promise<void>;
         enterPlugin(): void;
       };
-    }>("src/components/common/StartupGate.vue", {
-      vue: { computed, ref, inject: () => ({ status: "migration-required" }) },
-      "../../lib/projectBridge": { getProjectBridge: () => ({ runMigration, stopMigrationService, preflightStartup: () => ({ status: "ready", migration: null }) }) },
-    }, { defineEmits: () => emit },
-    "export const probe = { canStartMigration, stopping, serviceStopMessage, stopService, startMigration, enterPlugin };");
+    }>(
+      "src/components/common/StartupGate.vue",
+      {
+        vue: { computed, ref, inject: () => ({ status: "migration-required" }) },
+        "../../lib/projectBridge": {
+          getProjectBridge: () => ({
+            runMigration,
+            stopMigrationService,
+            preflightStartup: () => ({ status: "ready", migration: null }),
+          }),
+        },
+      },
+      { defineEmits: () => emit },
+      "export const probe = { canStartMigration, stopping, serviceStopMessage, stopService, startMigration, enterPlugin };",
+    );
 
     const pending = probe.stopService();
     expect(probe.stopping.value).toBe(true);
@@ -109,15 +149,27 @@ describe("storage migration recovery", () => {
   });
 
   it("displays a service stop failure and allows stopping again", async () => {
-    const stopMigrationService = vi.fn()
+    const stopMigrationService = vi
+      .fn()
       .mockResolvedValueOnce({ ok: false, error: "Stopping scripts timed out" })
       .mockResolvedValueOnce({ ok: true });
     const { probe } = loadScript<{
-      probe: { stopService(): Promise<void>; errorMessage: Ref<string>; stopping: Ref<boolean>; headline: Ref<string>; stopFailed: Ref<boolean> };
-    }>("src/components/common/StartupGate.vue", {
-      vue: { computed, ref, inject: () => ({ status: "migration-required" }) },
-      "../../lib/projectBridge": { getProjectBridge: () => ({ stopMigrationService }) },
-    }, {}, "export const probe = { stopService, errorMessage, stopping, headline, stopFailed };");
+      probe: {
+        stopService(): Promise<void>;
+        errorMessage: Ref<string>;
+        stopping: Ref<boolean>;
+        headline: Ref<string>;
+        stopFailed: Ref<boolean>;
+      };
+    }>(
+      "src/components/common/StartupGate.vue",
+      {
+        vue: { computed, ref, inject: () => ({ status: "migration-required" }) },
+        "../../lib/projectBridge": { getProjectBridge: () => ({ stopMigrationService }) },
+      },
+      {},
+      "export const probe = { stopService, errorMessage, stopping, headline, stopFailed };",
+    );
 
     await probe.stopService();
     expect(probe.errorMessage.value).toBe("Stopping scripts timed out");
@@ -135,14 +187,21 @@ describe("storage migration recovery", () => {
     let finishStop: (result: { ok: boolean }) => void = () => {};
     const stopMigrationService = vi.fn((options: { onProgress: typeof updateProgress }) => {
       updateProgress = options.onProgress;
-      return new Promise<{ ok: boolean }>((resolve) => { finishStop = resolve; });
+      return new Promise<{ ok: boolean }>((resolve) => {
+        finishStop = resolve;
+      });
     });
     const { probe } = loadScript<{
       probe: { stopService(): Promise<void>; headline: Ref<string>; stopStatusText: Ref<string> };
-    }>("src/components/common/StartupGate.vue", {
-      vue: { computed, ref, inject: () => ({ status: "migration-required" }) },
-      "../../lib/projectBridge": { getProjectBridge: () => ({ stopMigrationService }) },
-    }, {}, "export const probe = { stopService, headline, stopStatusText };");
+    }>(
+      "src/components/common/StartupGate.vue",
+      {
+        vue: { computed, ref, inject: () => ({ status: "migration-required" }) },
+        "../../lib/projectBridge": { getProjectBridge: () => ({ stopMigrationService }) },
+      },
+      {},
+      "export const probe = { stopService, headline, stopStatusText };",
+    );
     const pending = probe.stopService();
     expect(probe.headline.value).toBe("正在检查服务");
     updateProgress({ stage: "stopping-scripts", activeRunCount: 3 });
@@ -161,17 +220,29 @@ describe("storage migration recovery", () => {
   });
 
   it("allows retrying after active service tasks finish", async () => {
-    const runMigration = vi.fn()
+    const runMigration = vi
+      .fn()
       .mockResolvedValueOnce({ ok: false, blocked: "active-runs", message: "Tasks still active", ledger: null })
       .mockResolvedValueOnce({ ok: true, ledger: null });
     const emit = vi.fn();
     const { probe } = loadScript<{
-      probe: { canStartMigration: Ref<boolean>; startMigration(): Promise<void>; enterPlugin(): void; errorMessage: Ref<string> };
-    }>("src/components/common/StartupGate.vue", {
-      vue: { computed, ref, inject: () => ({ status: "migration-required" }) },
-      "../../lib/projectBridge": { getProjectBridge: () => ({ runMigration, preflightStartup: () => ({ status: "ready", migration: null }) }) },
-    }, { defineEmits: () => emit },
-    "export const probe = { canStartMigration, startMigration, enterPlugin, errorMessage };");
+      probe: {
+        canStartMigration: Ref<boolean>;
+        startMigration(): Promise<void>;
+        enterPlugin(): void;
+        errorMessage: Ref<string>;
+      };
+    }>(
+      "src/components/common/StartupGate.vue",
+      {
+        vue: { computed, ref, inject: () => ({ status: "migration-required" }) },
+        "../../lib/projectBridge": {
+          getProjectBridge: () => ({ runMigration, preflightStartup: () => ({ status: "ready", migration: null }) }),
+        },
+      },
+      { defineEmits: () => emit },
+      "export const probe = { canStartMigration, startMigration, enterPlugin, errorMessage };",
+    );
 
     await probe.startMigration();
     expect(probe.errorMessage.value).toBe("Tasks still active");
@@ -183,7 +254,8 @@ describe("storage migration recovery", () => {
   });
 
   it("shows returned migration failures and reloads projects only after success", async () => {
-    const runMigration = vi.fn()
+    const runMigration = vi
+      .fn()
       .mockResolvedValueOnce({ ok: false, message: "Old service authentication failed", ledger: null })
       .mockResolvedValueOnce({ ok: true, ledger: null });
     const { projectCatalogActions } = loadScript<{
@@ -210,9 +282,13 @@ describe("storage migration recovery", () => {
   it("retains an exception message and unlocks settings for another attempt", async () => {
     const { projectCatalogActions } = loadScript<{
       projectCatalogActions: MigrationActions;
-    }>("src/store/actions/projectCatalog.ts", {
-      "../helpers/bridge": { bridge: { runMigration: vi.fn().mockRejectedValue(new Error("Write failed")) } },
-    }, { Error });
+    }>(
+      "src/store/actions/projectCatalog.ts",
+      {
+        "../helpers/bridge": { bridge: { runMigration: vi.fn().mockRejectedValue(new Error("Write failed")) } },
+      },
+      { Error },
+    );
     const state = {
       dataToolsBusy: false,
       cleanupMessage: "",
@@ -229,42 +305,98 @@ describe("storage migration recovery", () => {
 
 describe("settings data cleanup", () => {
   const personalItem: CleanupPlanItem = {
-    id: "sync-legacy-dbstorage", category: "sync", label: "遗留 dbStorage 配置", description: "旧配置",
-    recommendation: "review", safetyHint: "确认所有设备完成迁移后再清理。", keys: ["utools-project-launch.ai-settings.v1"],
-    kind: "dbstorage-keys", paths: [], disabledReason: "", selectedByDefault: false, estimatedBytes: 0, count: 1,
+    id: "sync-legacy-dbstorage",
+    category: "sync",
+    label: "遗留 dbStorage 配置",
+    description: "旧配置",
+    recommendation: "review",
+    safetyHint: "确认所有设备完成迁移后再清理。",
+    keys: ["utools-project-launch.ai-settings.v1"],
+    kind: "dbstorage-keys",
+    paths: [],
+    disabledReason: "",
+    selectedByDefault: false,
+    estimatedBytes: 0,
+    count: 1,
   };
   const plan: CleanupPlan = {
     items: [
       personalItem,
-      { ...personalItem, id: "local-private-projects", category: "local", label: "私有项目", recommendation: "keep", safetyHint: "仅有本机副本，建议保留。", keys: [], paths: ["C:/test/projects"] },
-      { ...personalItem, id: "cache-temp-directory", category: "cache", label: "临时目录", recommendation: "recommended", keys: [], selectedByDefault: true },
-      { ...personalItem, id: "cache-git-activity", category: "cache", label: "Git 活动缓存", recommendation: "keep", keys: [], selectedByDefault: false },
-      { ...personalItem, id: "cache-service-downloads", category: "cache", label: "服务下载残留", keys: [], selectedByDefault: true, disabledReason: "服务正在运行" },
+      {
+        ...personalItem,
+        id: "local-private-projects",
+        category: "local",
+        label: "私有项目",
+        recommendation: "keep",
+        safetyHint: "仅有本机副本，建议保留。",
+        keys: [],
+        paths: ["C:/test/projects"],
+      },
+      {
+        ...personalItem,
+        id: "cache-temp-directory",
+        category: "cache",
+        label: "临时目录",
+        recommendation: "recommended",
+        keys: [],
+        selectedByDefault: true,
+      },
+      {
+        ...personalItem,
+        id: "cache-git-activity",
+        category: "cache",
+        label: "Git 活动缓存",
+        recommendation: "keep",
+        keys: [],
+        selectedByDefault: false,
+      },
+      {
+        ...personalItem,
+        id: "cache-service-downloads",
+        category: "cache",
+        label: "服务下载残留",
+        keys: [],
+        selectedByDefault: true,
+        disabledReason: "服务正在运行",
+      },
     ],
-    serviceRunning: false, syncReplicating: false,
+    serviceRunning: false,
+    syncReplicating: false,
   };
 
   function createCleanupSettings() {
     let finishPaint: () => void = () => {};
-    const paint = new Promise<void>((resolve) => { finishPaint = resolve; });
+    const paint = new Promise<void>((resolve) => {
+      finishPaint = resolve;
+    });
     let finishScan: (result: CleanupPlan) => void = () => {};
     let failScan: (error: Error) => void = () => {};
-    const getCleanupPlan = vi.fn(() => new Promise<CleanupPlan>((resolve, reject) => {
-      finishScan = resolve;
-      failScan = reject;
-    }));
+    const getCleanupPlan = vi.fn(
+      () =>
+        new Promise<CleanupPlan>((resolve, reject) => {
+          finishScan = resolve;
+          failScan = reject;
+        }),
+    );
     const { projectCatalogActions } = loadScript<{
-      projectCatalogActions: { loadCleanupPlan(this: { cleanupPlan: CleanupPlan | null; cleanupMessage: string }): Promise<void> };
+      projectCatalogActions: {
+        loadCleanupPlan(this: { cleanupPlan: CleanupPlan | null; cleanupMessage: string }): Promise<void>;
+      };
     }>("src/store/actions/projectCatalog.ts", { "../helpers/bridge": { bridge: { getCleanupPlan } } }, { Error });
     const store = Vue.reactive({
       cleanupPlan: plan as CleanupPlan | null,
       cleanupSelectedIds: ["stale-selection"],
-      cleanupResults: [], cleanupMessage: "stale message", cleanupRunning: false,
+      cleanupResults: [],
+      cleanupMessage: "stale message",
+      cleanupRunning: false,
       loadCleanupPlan: () => projectCatalogActions.loadCleanupPlan.call(store),
       runCleanup: vi.fn(),
     });
     const { translations } = loadScript<{ translations: { "zh-CN": Record<string, unknown> } }>(
-      "src/lib/i18n.ts", {}, {}, "export const translations = messages;",
+      "src/lib/i18n.ts",
+      {},
+      {},
+      "export const translations = messages;",
     );
     const { probe } = loadScript<{
       probe: {
@@ -278,27 +410,41 @@ describe("settings data cleanup", () => {
         requestCleanupRun(): void;
         runSelectedCleanup(): void;
       } & Record<string, unknown>;
-    }>("src/components/layout/SettingsTab.vue", {
-      vue: { computed, ref, watch: vi.fn(), onMounted: vi.fn(), onUnmounted: vi.fn() },
-      "../../store/useStore": { useStore: () => store },
-      "../../lib/i18n": { useI18n: () => ref(translations["zh-CN"]) },
-      "../../store/helpers/automationHelpers": { waitForInitialPaint: () => paint },
-    }, { window: { navigator: { platform: "Win32" } } },
-    "export const probe = { store, t, cleanupDialogOpen, cleanupScanning, cleanupConfirmOpen, cleanupSelection, cleanupRunnable, cleanupItems, openCleanupDialog, requestCleanupRun, runSelectedCleanup, formatDataSize };");
+    }>(
+      "src/components/layout/SettingsTab.vue",
+      {
+        vue: { computed, ref, watch: vi.fn(), onMounted: vi.fn(), onUnmounted: vi.fn() },
+        "../../store/useStore": { useStore: () => store },
+        "../../lib/i18n": { useI18n: () => ref(translations["zh-CN"]) },
+        "../../store/helpers/automationHelpers": { waitForInitialPaint: () => paint },
+      },
+      { window: { navigator: { platform: "Win32" } } },
+      "export const probe = { store, t, cleanupDialogOpen, cleanupScanning, cleanupConfirmOpen, cleanupSelection, cleanupRunnable, cleanupItems, openCleanupDialog, requestCleanupRun, runSelectedCleanup, formatDataSize };",
+    );
 
     function cleanupRender() {
       const source = readFileSync(path.resolve("src/components/layout/SettingsTab.vue"), "utf8");
       const template = baseParse(parse(source).descriptor.template!.content);
       template.children = template.children.filter((node) => node.type === 1 && node.tag === "Teleport").slice(0, 1);
-      const compiled = compile(template, { mode: "function", prefixIdentifiers: true, expressionPlugins: ["typescript"] });
-      const renderCode = transpileModule(compiled.code, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText;
+      const compiled = compile(template, {
+        mode: "function",
+        prefixIdentifiers: true,
+        expressionPlugins: ["typescript"],
+      });
+      const renderCode = transpileModule(compiled.code, {
+        compilerOptions: { target: ScriptTarget.ES2022 },
+      }).outputText;
       return runInNewContext(`(function () { ${renderCode} })()`, { Vue });
     }
 
     async function renderCleanup() {
       const render = cleanupRender();
       const icon = { render: () => null };
-      const app = Vue.createSSRApp({ components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon }, setup: () => probe, render });
+      const app = Vue.createSSRApp({
+        components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon },
+        setup: () => probe,
+        render,
+      });
       app.directive("overlay-scrollbar", {});
       const context: { teleports?: Record<string, string> } = {};
       await renderToString(app, context);
@@ -307,14 +453,30 @@ describe("settings data cleanup", () => {
 
     function mountCleanup() {
       const icon = { render: () => null };
-      const app = Vue.createApp({ components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon }, setup: () => probe, render: cleanupRender() });
+      const app = Vue.createApp({
+        components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon },
+        setup: () => probe,
+        render: cleanupRender(),
+      });
       app.directive("overlay-scrollbar", overlayScrollbar);
       const root = document.createElement("div");
       document.body.append(root);
       app.mount(root);
-      return () => { app.unmount(); root.remove(); };
+      return () => {
+        app.unmount();
+        root.remove();
+      };
     }
-    return { store, probe, getCleanupPlan, finishPaint, finishScan: (result = plan) => finishScan(result), failScan: (error: Error) => failScan(error), renderCleanup, mountCleanup };
+    return {
+      store,
+      probe,
+      getCleanupPlan,
+      finishPaint,
+      finishScan: (result = plan) => finishScan(result),
+      failScan: (error: Error) => failScan(error),
+      renderCleanup,
+      mountCleanup,
+    };
   }
 
   it("paints scanning feedback before starting work and keeps cleanup disabled until the scan finishes", async () => {
@@ -335,31 +497,25 @@ describe("settings data cleanup", () => {
     await pending;
     expect(fixture.probe.cleanupScanning.value).toBe(false);
     expect(fixture.probe.cleanupSelection.value).toEqual({
-      "sync-legacy-dbstorage": false, "local-private-projects": false, "cache-temp-directory": true, "cache-git-activity": false, "cache-service-downloads": false,
+      "sync-legacy-dbstorage": false,
+      "local-private-projects": false,
+      "cache-temp-directory": true,
+      "cache-git-activity": false,
+      "cache-service-downloads": false,
     });
     const html = await fixture.renderCleanup();
     expect(html).not.toContain("正在扫描数据…");
-    for (const text of ["建议保留", "建议清理", "确认后清理", personalItem.keys[0], "C:/test/projects", personalItem.safetyHint]) {
+    for (const text of [
+      "建议保留",
+      "建议清理",
+      "确认后清理",
+      personalItem.keys[0],
+      "C:/test/projects",
+      personalItem.safetyHint,
+    ]) {
       expect(html).toContain(text);
     }
     expect(html).toMatch(/<\/label>\s*<details/);
-  });
-
-  it("shows measured zero counts without showing uncounted quantities", async () => {
-    const fixture = createCleanupSettings();
-    fixture.finishPaint();
-    fixture.getCleanupPlan.mockResolvedValue({
-      ...plan,
-      items: [
-        { ...personalItem, count: 0, keys: [] },
-        { ...personalItem, id: "local-device-preferences", category: "local", label: "设备配置", count: null, keys: [] },
-      ],
-    });
-    await fixture.probe.openCleanupDialog();
-    const html = await fixture.renderCleanup();
-    expect(html).toContain("数量: 0");
-    expect(html).not.toContain("无需清理");
-    expect(html).not.toContain("数量: null");
   });
 
   it("shows a scan failure and allows opening again to retry", async () => {
@@ -409,7 +565,7 @@ describe("settings data cleanup", () => {
       const scrollbar = OverlayScrollbars(scrollHost);
       expect(scrollbar).toBeDefined();
       expect(scrollbar!.elements().viewport.textContent).toContain("正在扫描数据…");
-      expect(dialog.querySelectorAll<HTMLButtonElement>('button').item(2).disabled).toBe(true);
+      expect(dialog.querySelectorAll<HTMLButtonElement>("button").item(2).disabled).toBe(true);
       fixture.finishPaint();
       await vi.waitFor(() => expect(fixture.getCleanupPlan).toHaveBeenCalledOnce());
       fixture.finishScan();
@@ -417,12 +573,12 @@ describe("settings data cleanup", () => {
       await Vue.nextTick();
       expect(scrollbar!.elements().viewport.textContent).not.toContain("正在扫描数据…");
       expect(scrollbar!.elements().viewport.textContent).toContain(personalItem.label);
-      expect(scrollbar!.elements().viewport.querySelectorAll('section')).toHaveLength(3);
-      const details = scrollbar!.elements().viewport.querySelector('details')!;
-      details.querySelector('summary')!.click();
+      expect(scrollbar!.elements().viewport.querySelectorAll("section")).toHaveLength(3);
+      const details = scrollbar!.elements().viewport.querySelector("details")!;
+      details.querySelector("summary")!.click();
       expect(details.open).toBe(true);
       expect(details.textContent).toContain(personalItem.keys[0]);
-      expect(dialog.querySelectorAll<HTMLButtonElement>('button').item(2).disabled).toBe(false);
+      expect(dialog.querySelectorAll<HTMLButtonElement>("button").item(2).disabled).toBe(false);
       dialog.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!.click();
       await Vue.nextTick();
       await vi.waitFor(() => expect(document.querySelector('[aria-labelledby="cleanup-dialog-title"]')).toBeNull());
@@ -450,7 +606,9 @@ describe("settings data cleanup", () => {
       fixture.finishScan();
       await pending;
       await Vue.nextTick();
-      expect(document.querySelector('[aria-labelledby="cleanup-dialog-title"]')?.textContent).toContain(personalItem.label);
+      expect(document.querySelector('[aria-labelledby="cleanup-dialog-title"]')?.textContent).toContain(
+        personalItem.label,
+      );
     } finally {
       unmount();
     }
@@ -461,18 +619,36 @@ describe("data cleanup directory scanning", () => {
   it("yields while reading files and measures nested files without following symbolic links", async () => {
     let finishRead: (stats: unknown) => void = () => {};
     const rootPath = path.resolve("scan-fixture");
-    const synchronousRead = vi.fn(() => { throw new Error("Synchronous filesystem reads block the dialog"); });
-    const lstat = vi.fn((targetPath: string) => targetPath === rootPath
-      ? new Promise((resolve) => { finishRead = resolve; })
-      : Promise.resolve({ isSymbolicLink: () => targetPath.endsWith("link"), isFile: () => true, size: 42 }));
+    const synchronousRead = vi.fn(() => {
+      throw new Error("Synchronous filesystem reads block the dialog");
+    });
+    const lstat = vi.fn((targetPath: string) =>
+      targetPath === rootPath
+        ? new Promise((resolve) => {
+            finishRead = resolve;
+          })
+        : Promise.resolve({ isSymbolicLink: () => targetPath.endsWith("link"), isFile: () => true, size: 42 }),
+    );
     const { probe } = loadScript<{ probe: { directoryEntrySizeBytes(targetPath: string): Promise<number> } }>(
-      "public/preload/data-tools.js", {}, {
-        fs: { promises: { lstat, readdir: vi.fn().mockResolvedValue(["file", "link"]) }, lstatSync: synchronousRead, readdirSync: synchronousRead },
-        path, migrationPreferenceKeys: [], storageKey: "legacy-projects",
-      }, "export const probe = { directoryEntrySizeBytes };");
+      "public/preload/data-tools.js",
+      {},
+      {
+        fs: {
+          promises: { lstat, readdir: vi.fn().mockResolvedValue(["file", "link"]) },
+          lstatSync: synchronousRead,
+          readdirSync: synchronousRead,
+        },
+        path,
+        migrationPreferenceKeys: [],
+        storageKey: "legacy-projects",
+      },
+      "export const probe = { directoryEntrySizeBytes };",
+    );
     let settled = false;
     const pending = probe.directoryEntrySizeBytes(rootPath);
-    void pending.then(() => { settled = true; });
+    void pending.then(() => {
+      settled = true;
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(settled).toBe(false);
     expect(synchronousRead).not.toHaveBeenCalled();
@@ -489,49 +665,90 @@ describe("migration service asynchronous identity", () => {
     const execFile = vi.fn((_command, _args, _options, callback: typeof finishQuery) => {
       finishQuery = callback;
     });
-    const spawnSync = vi.fn(() => { throw new Error("Synchronous queries must not be used"); });
+    const spawnSync = vi.fn(() => {
+      throw new Error("Synchronous queries must not be used");
+    });
     const { probe } = loadScript<{
-      probe: { projectLaunchServiceProcessMatchesAsync(discovery: { pid: number; processIdentity: string }): Promise<boolean | null> };
-    }>("public/preload/project-launch-service.js", {}, {
-      process: {
-        platform, env: {}, kill: () => {
-          if (!alive) throw Object.assign(new Error("Exited"), { code: "ESRCH" });
+      probe: {
+        projectLaunchServiceProcessMatchesAsync(discovery: {
+          pid: number;
+          processIdentity: string;
+        }): Promise<boolean | null>;
+      };
+    }>(
+      "public/preload/project-launch-service.js",
+      {},
+      {
+        process: {
+          platform,
+          env: {},
+          kill: () => {
+            if (!alive) throw Object.assign(new Error("Exited"), { code: "ESRCH" });
+          },
         },
+        execFile,
+        spawnSync,
+        projectLaunchServiceRequestTimeoutMs: 3000,
       },
+      "export const probe = { projectLaunchServiceProcessMatchesAsync };",
+    );
+    return {
+      probe,
       execFile,
       spawnSync,
-      projectLaunchServiceRequestTimeoutMs: 3000,
-    }, "export const probe = { projectLaunchServiceProcessMatchesAsync };");
-    return { probe, execFile, spawnSync, finish: (error: Error | null, output: string) => finishQuery(error, output), exit: () => { alive = false; } };
+      finish: (error: Error | null, output: string) => finishQuery(error, output),
+      exit: () => {
+        alive = false;
+      },
+    };
   }
 
   it.each([
     { platform: "win32", executable: "powershell.exe", output: "123456", identity: "windows:123456" },
-    { platform: "darwin", executable: "ps", output: "Wed Oct 14 14:00:00 2026", identity: "darwin:Wed Oct 14 14:00:00 2026" },
-  ])("keeps the event loop free during $platform process queries", async ({ platform, executable, output, identity }) => {
-    const { probe, execFile, spawnSync, finish } = createIdentityCheck(platform);
-    let settled = false;
-    const pending = probe.projectLaunchServiceProcessMatchesAsync({ pid: 123, processIdentity: identity });
-    void pending.then(() => { settled = true; });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    expect(execFile.mock.calls[0][0]).toBe(executable);
-    expect(spawnSync).not.toHaveBeenCalled();
-    finish(null, output);
-    expect(await pending).toBe(true);
-  });
+    {
+      platform: "darwin",
+      executable: "ps",
+      output: "Wed Oct 14 14:00:00 2026",
+      identity: "darwin:Wed Oct 14 14:00:00 2026",
+    },
+  ])(
+    "keeps the event loop free during $platform process queries",
+    async ({ platform, executable, output, identity }) => {
+      const { probe, execFile, spawnSync, finish } = createIdentityCheck(platform);
+      let settled = false;
+      const pending = probe.projectLaunchServiceProcessMatchesAsync({ pid: 123, processIdentity: identity });
+      void pending.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(execFile.mock.calls[0][0]).toBe(executable);
+      expect(spawnSync).not.toHaveBeenCalled();
+      finish(null, output);
+      expect(await pending).toBe(true);
+    },
+  );
 
   it("keeps unknown and mismatched identities distinct from exited processes", async () => {
     const unknown = createIdentityCheck("win32");
-    const pendingUnknown = unknown.probe.projectLaunchServiceProcessMatchesAsync({ pid: 123, processIdentity: "windows:123" });
+    const pendingUnknown = unknown.probe.projectLaunchServiceProcessMatchesAsync({
+      pid: 123,
+      processIdentity: "windows:123",
+    });
     unknown.finish(new Error("Denied"), "");
     expect(await pendingUnknown).toBeNull();
     const mismatch = createIdentityCheck("win32");
-    const pendingMismatch = mismatch.probe.projectLaunchServiceProcessMatchesAsync({ pid: 123, processIdentity: "windows:123" });
+    const pendingMismatch = mismatch.probe.projectLaunchServiceProcessMatchesAsync({
+      pid: 123,
+      processIdentity: "windows:123",
+    });
     mismatch.finish(null, "456");
     expect(await pendingMismatch).toBe(false);
     const exited = createIdentityCheck("win32");
-    const pendingExit = exited.probe.projectLaunchServiceProcessMatchesAsync({ pid: 123, processIdentity: "windows:123" });
+    const pendingExit = exited.probe.projectLaunchServiceProcessMatchesAsync({
+      pid: 123,
+      processIdentity: "windows:123",
+    });
     exited.exit();
     exited.finish(new Error("Exited"), "");
     expect(await pendingExit).toBe(false);
@@ -541,23 +758,56 @@ describe("migration service asynchronous identity", () => {
 describe("migration progress rendering", () => {
   it("renders consistent totals and all individual failure and skip reasons", async () => {
     const summary: MigrationSummary = {
-      status: "failed", startedAt: "", completedAt: "", totalCount: 27,
-      verifiedCount: 25, failedCount: 2, pendingCount: 0,
+      status: "failed",
+      startedAt: "",
+      completedAt: "",
+      totalCount: 27,
+      verifiedCount: 25,
+      failedCount: 2,
+      pendingCount: 0,
       failedItems: [],
       items: [
-        { id: "first", kind: "preferences", label: "First failure", status: "failed", error: "First reason with a long path" },
-        { id: "second", kind: "private-project", label: "Second failure", status: "failed", error: "Second reason\nwith another line" },
-        { id: "foreign", kind: "private-project", label: "Foreign project", status: "skipped", error: "Belongs to another device" },
+        {
+          id: "first",
+          kind: "preferences",
+          label: "First failure",
+          status: "failed",
+          error: "First reason with a long path",
+        },
+        {
+          id: "second",
+          kind: "private-project",
+          label: "Second failure",
+          status: "failed",
+          error: "Second reason\nwith another line",
+        },
+        {
+          id: "foreign",
+          kind: "private-project",
+          label: "Foreign project",
+          status: "skipped",
+          error: "Belongs to another device",
+        },
       ],
     };
     summary.failedItems = summary.items.filter((item) => item.status === "failed");
-    const { probe } = loadScript<{ probe: Record<string, unknown> }>("src/components/common/StartupGate.vue", {
-      vue: { computed, ref, inject: () => ({ status: "migration-incomplete", migration: summary }) },
-      "../../lib/projectBridge": { getProjectBridge: () => ({ stopMigrationService: async () => ({ ok: false, error: "Stop failed" }) }) },
-    }, {}, "export const probe = { currentPreflight, isUpgradeRequired, isMigrationBlocked, isReady, headline, description, progress, progressPercent, processedCount, successfulCount, skippedCount, stopping, running, itemsProcessed, errorMessage, canEnter, canStartMigration, startButtonLabel, stopFailed, serviceStopMessage, stopStatusText, enterPlugin, startMigration, stopService };");
+    const { probe } = loadScript<{ probe: Record<string, unknown> }>(
+      "src/components/common/StartupGate.vue",
+      {
+        vue: { computed, ref, inject: () => ({ status: "migration-incomplete", migration: summary }) },
+        "../../lib/projectBridge": {
+          getProjectBridge: () => ({ stopMigrationService: async () => ({ ok: false, error: "Stop failed" }) }),
+        },
+      },
+      {},
+      "export const probe = { currentPreflight, isUpgradeRequired, isMigrationBlocked, isReady, headline, description, progress, progressPercent, processedCount, successfulCount, skippedCount, stopping, running, itemsProcessed, errorMessage, canEnter, canStartMigration, startButtonLabel, stopFailed, serviceStopMessage, stopStatusText, enterPlugin, startMigration, stopService };",
+    );
     const source = readFileSync(path.resolve("src/components/common/StartupGate.vue"), "utf8");
     const template = parse(source).descriptor.template!.content;
-    const render = runInNewContext(`(function () { ${compile(template, { mode: "function", prefixIdentifiers: true }).code} })()`, { Vue });
+    const render = runInNewContext(
+      `(function () { ${compile(template, { mode: "function", prefixIdentifiers: true }).code} })()`,
+      { Vue },
+    );
     const icon = { render: () => null };
     const app = Vue.createSSRApp({
       components: { ArrowRight: icon, Check: icon, LoaderCircle: icon, RefreshCw: icon, Square: icon },
@@ -584,19 +834,30 @@ describe("migration progress rendering", () => {
 
 describe("startup migration completion", () => {
   const summary: MigrationSummary = {
-    status: "in-progress", startedAt: "", completedAt: "", totalCount: 27,
-    verifiedCount: 27, pendingCount: 0, failedCount: 0, failedItems: [], items: [],
+    status: "in-progress",
+    startedAt: "",
+    completedAt: "",
+    totalCount: 27,
+    verifiedCount: 27,
+    pendingCount: 0,
+    failedCount: 0,
+    failedItems: [],
+    items: [],
   };
 
   function createGate() {
     let finishMigration: (result: MigrationRunResult) => void = () => {};
     const emit = vi.fn();
     const preflightStartup = vi.fn(() => ({
-      status: "migration-incomplete", migration: summary, message: "The final result is not saved",
+      status: "migration-incomplete",
+      migration: summary,
+      message: "The final result is not saved",
     }));
     const runMigration = vi.fn((options: { onProgress: (progress: MigrationSummary) => void }) => {
       options.onProgress(summary);
-      return new Promise<MigrationRunResult>((resolve) => { finishMigration = resolve; });
+      return new Promise<MigrationRunResult>((resolve) => {
+        finishMigration = resolve;
+      });
     });
     const { probe } = loadScript<{
       probe: {
@@ -607,11 +868,15 @@ describe("startup migration completion", () => {
         startMigration(): Promise<void>;
         enterPlugin(): void;
       };
-    }>("src/components/common/StartupGate.vue", {
-      vue: { computed, ref, inject: () => ({ status: "migration-incomplete", migration: summary }) },
-      "../../lib/projectBridge": { getProjectBridge: () => ({ runMigration, preflightStartup }) },
-    }, { defineEmits: () => emit },
-    "export const probe = { headline, canEnter, canStartMigration, errorMessage, startMigration, enterPlugin };");
+    }>(
+      "src/components/common/StartupGate.vue",
+      {
+        vue: { computed, ref, inject: () => ({ status: "migration-incomplete", migration: summary }) },
+        "../../lib/projectBridge": { getProjectBridge: () => ({ runMigration, preflightStartup }) },
+      },
+      { defineEmits: () => emit },
+      "export const probe = { headline, canEnter, canStartMigration, errorMessage, startMigration, enterPlugin };",
+    );
     return { probe, emit, preflightStartup, finish: (result: MigrationRunResult) => finishMigration(result) };
   }
 
@@ -652,7 +917,11 @@ describe("startup migration completion", () => {
     const pending = probe.startMigration();
     finish({ ok: true, ledger: { ...summary, status: "completed" } });
     await pending;
-    preflightStartup.mockReturnValue({ status: "migration-required", migration: summary, message: "More data arrived" });
+    preflightStartup.mockReturnValue({
+      status: "migration-required",
+      migration: summary,
+      message: "More data arrived",
+    });
     probe.enterPlugin();
     expect(emit).not.toHaveBeenCalled();
     expect(probe.canEnter.value).toBe(false);
@@ -662,18 +931,27 @@ describe("startup migration completion", () => {
   it("switches the root from the migration gate to the app only after the ready event", () => {
     let rootSetup: () => () => { component: string; props?: { onReady(): void } } = () => () => ({ component: "" });
     const app = { provide: vi.fn(), use: vi.fn(), directive: vi.fn(), mount: vi.fn() };
-    loadScript("src/main.ts", {
-      vue: {
-        ref,
-        defineComponent: (definition: { setup: typeof rootSetup }) => definition,
-        h: (component: string, props?: { onReady(): void }) => ({ component, props }),
-        createApp: (definition: { setup: typeof rootSetup }) => { rootSetup = definition.setup; return app; },
+    loadScript(
+      "src/main.ts",
+      {
+        vue: {
+          ref,
+          defineComponent: (definition: { setup: typeof rootSetup }) => definition,
+          h: (component: string, props?: { onReady(): void }) => ({ component, props }),
+          createApp: (definition: { setup: typeof rootSetup }) => {
+            rootSetup = definition.setup;
+            return app;
+          },
+        },
+        pinia: { createPinia: vi.fn() },
+        "./App.vue": { default: "app" },
+        "./components/common/StartupGate.vue": { default: "gate" },
+        "./lib/projectBridge": {
+          getProjectBridge: () => ({ preflightStartup: () => ({ status: "migration-required" }) }),
+        },
       },
-      pinia: { createPinia: vi.fn() },
-      "./App.vue": { default: "app" },
-      "./components/common/StartupGate.vue": { default: "gate" },
-      "./lib/projectBridge": { getProjectBridge: () => ({ preflightStartup: () => ({ status: "migration-required" }) }) },
-    }, { window: {}, performance: { now: () => 0 } });
+      { window: {}, performance: { now: () => 0 } },
+    );
     const render = rootSetup();
     const initial = render();
     expect(initial.component).toBe("gate");
@@ -706,24 +984,35 @@ describe("late legacy data prompt", () => {
         migrationPromptOpen: Ref<boolean>;
         migrationPromptMessage: Ref<string>;
       };
-    }>("src/App.vue", {
-      vue: { computed, ref, watch: vi.fn(), onMounted: (callback: () => void) => mounted.push(callback), onUnmounted: vi.fn() },
-      "./store/useStore": { useStore: () => store },
-      "./lib/i18n": { useI18n: () => ref({ common: { search: "Search" } }) },
-      "./composables/useGlobalActionStatus": { useGlobalActionStatus: () => ({}) },
-      "./lib/projectBridge": { getProjectBridge: () => ({ preflightStartup }) },
-    }, {
-      console,
-      window: {
-        utools: { onDbPull },
-        addEventListener: vi.fn(),
-        matchMedia: () => ({ addEventListener: vi.fn() }),
+    }>(
+      "src/App.vue",
+      {
+        vue: {
+          computed,
+          ref,
+          watch: vi.fn(),
+          onMounted: (callback: () => void) => mounted.push(callback),
+          onUnmounted: vi.fn(),
+        },
+        "./store/useStore": { useStore: () => store },
+        "./lib/i18n": { useI18n: () => ref({ common: { search: "Search" } }) },
+        "./composables/useGlobalActionStatus": { useGlobalActionStatus: () => ({}) },
+        "./lib/projectBridge": { getProjectBridge: () => ({ preflightStartup }) },
       },
-      document: {
-        documentElement: { classList: { remove: vi.fn() } },
-        addEventListener: vi.fn(),
+      {
+        console,
+        window: {
+          utools: { onDbPull },
+          addEventListener: vi.fn(),
+          matchMedia: () => ({ addEventListener: vi.fn() }),
+        },
+        document: {
+          documentElement: { classList: { remove: vi.fn() } },
+          addEventListener: vi.fn(),
+        },
       },
-    }, "export const probe = { handleDatabasePull, resumeStorageMigration, migrationPromptOpen, migrationPromptMessage };");
+      "export const probe = { handleDatabasePull, resumeStorageMigration, migrationPromptOpen, migrationPromptMessage };",
+    );
     return { probe, store, preflightStartup, onDbPull, mounted };
   }
 

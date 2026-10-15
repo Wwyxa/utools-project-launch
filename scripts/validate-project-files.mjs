@@ -2,15 +2,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import vm from "node:vm";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { createPreloadSandbox } from "./helpers/preload-sandbox.mjs";
 
-const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pluginManifest = JSON.parse(fs.readFileSync(path.join(repoRoot, "public", "plugin.json"), "utf8"));
 const preloadPackageScope = JSON.parse(fs.readFileSync(path.join(repoRoot, "public", "package.json"), "utf8"));
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "project-files-"));
 const projectRoot = path.join(fixtureRoot, "project");
 const outsideRoot = path.join(fixtureRoot, "outside");
@@ -36,40 +33,17 @@ fs.writeFileSync(path.join(projectRoot, "node_modules", "hidden", "target-hidden
 fs.writeFileSync(path.join(projectRoot, "dist", "target-built.txt"), "built");
 fs.writeFileSync(path.join(outsideRoot, "outside.txt"), "outside");
 
-const sandbox = {
-  TextDecoder,
-  clearTimeout,
-  console: { warn() {}, error() {}, log() {} },
-  process: { env: { ...process.env }, platform: process.platform, once() {}, exit() {} },
-  require(moduleName) {
-    if (moduleName === "electron") {
-      return {
-        shell: {
-          openExternal: () => Promise.resolve(),
-          openPath: () => Promise.resolve(),
-          showItemInFolder(targetPath) {
-            revealedPaths.push(targetPath);
-          },
-        },
-      };
-    }
-    return require(moduleName);
-  },
-  setTimeout,
-  window: {
-    dispatchEvent() {},
-    localStorage: {
-      getItem() {
-        return null;
-      },
-      setItem() {},
+const {
+  window: { projectBridge: bridge },
+} = createPreloadSandbox({
+  electron: {
+    shell: {
+      openExternal: () => Promise.resolve(),
+      openPath: () => Promise.resolve(),
+      showItemInFolder: (targetPath) => revealedPaths.push(targetPath),
     },
-    utools: { onPluginOut() {} },
   },
-};
-sandbox.globalThis = sandbox;
-vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
-const bridge = sandbox.window.projectBridge;
+});
 
 try {
   assert.deepEqual(Array.from(bridge.listProjectSubdirectories(projectRoot)), [".", "src", "src/nested"]);

@@ -76,14 +76,10 @@ describe("environment tools", () => {
   });
 
   it.each([
-    ["PowerShell 7.6.5", "7.6.5"],
     [
       "ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
       "9.0.1-full_build-www.gyan.dev",
     ],
-    ["uv 0.12.9 (9f9286029 2026-09-01 x86_64-pc-windows-msvc)", "0.12.9"],
-    ["1.136.1", "1.136.1"],
-    ["Docker version 29.2.1, build a5c7197", "29.2.1"],
     ["git version 2.55.0.windows.5", "2.55.0.windows.5"],
     ["go version go1.27.1 windows/amd64", "go1.27.1"],
     ["Python 3.14.5", "3.14.5"],

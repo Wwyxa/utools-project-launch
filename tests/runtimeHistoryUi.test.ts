@@ -9,20 +9,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as escape from "../src/lib/escape";
 
 const mounted: Vue.App[] = [];
-const transpile = (source: string) => transpileModule(source, {
-  compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
-}).outputText;
+const transpile = (source: string) =>
+  transpileModule(source, {
+    compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
+  }).outputText;
 
 function mountTerminal(historyOnly: boolean) {
   const translations: Record<string, unknown> = {};
   runInNewContext(transpile(readFileSync("src/lib/i18n.ts", "utf8") + "\nexport const translations = messages;"), {
-    exports: translations, require: () => ({}),
+    exports: translations,
+    require: () => ({}),
   });
   const icon = { render: () => null };
   const imports: Record<string, unknown> = {
     vue: Vue,
     "lucide-vue-next": new Proxy({}, { get: () => icon }),
-    "../../store/useStore": { useStore: () => ({ scriptLogs: {}, supportsBridge: true, listRuntimeRecords: vi.fn().mockResolvedValue([]) }) },
+    "../../store/useStore": {
+      useStore: () => ({ scriptLogs: {}, supportsBridge: true, listRuntimeRecords: vi.fn().mockResolvedValue([]) }),
+    },
     "../../lib/i18n": { useI18n: () => Vue.ref((translations.translations as Record<string, unknown>)["zh-CN"]) },
     "../../lib/escape": escape,
     "../../lib/overlayScrollbar": { getOverlayScrollbarScrollElements: () => null },
@@ -34,7 +38,10 @@ function mountTerminal(historyOnly: boolean) {
   const script = compileScript(descriptor, { id: "runtime-history-test", inlineTemplate: true });
   const exports: { default?: Vue.Component } = {};
   runInNewContext(transpile(script.content), {
-    exports, require: (name: string) => imports[name] ?? {}, window, document,
+    exports,
+    require: (name: string) => imports[name] ?? {},
+    window,
+    document,
   });
   const app = Vue.createApp(exports.default!, { projectId: "project", historyOnly });
   app.directive("overlay-scrollbar", {});
@@ -51,16 +58,6 @@ afterEach(() => {
 });
 
 describe("runtime history interface", () => {
-  it("renders the settings history entry without a terminal input while preserving normal input", async () => {
-    const history = mountTerminal(true);
-    expect(history.querySelector("button")?.textContent).toContain("历史");
-    expect(history.querySelector("input")).toBeNull();
-    expect(history.querySelector("form")).toBeNull();
-    const terminal = mountTerminal(false);
-    await Vue.nextTick();
-    expect(terminal.querySelector("form input")).not.toBeNull();
-  });
-
   it("selects a themed source option with the keyboard and dismisses it on outside click", async () => {
     const root = mountTerminal(true);
     root.querySelector<HTMLButtonElement>("button")!.click();

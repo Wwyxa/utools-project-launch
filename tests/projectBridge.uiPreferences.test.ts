@@ -1,14 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createHash } from 'node:crypto';
-import { EventEmitter } from 'node:events';
-import { createPinia, setActivePinia } from 'pinia';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { createContext, runInContext } from 'node:vm';
-import { getProjectBridge } from '../src/lib/projectBridge';
-import { dateKey } from '../src/lib/automationScheduler';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { createPinia, setActivePinia } from "pinia";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { createContext, runInContext } from "node:vm";
+import { getProjectBridge } from "../src/lib/projectBridge";
+import { dateKey } from "../src/lib/automationScheduler";
 import {
   ProjectStatus,
   type Project,
@@ -17,13 +17,13 @@ import {
   type ProjectDetailsTabId,
   type ProjectLaunchServiceStatus,
   type UiPreferences,
-} from '../src/types';
+} from "../src/types";
 
-const uiPreferencesKey = 'utools-project-launch.ui-preferences.v1';
-const legacyTabOrderKey = 'utools-project-launch.project-details-tab-order.v1';
-const projectLaunchServicePreferencesKey = 'utools-project-launch.project-launch-service.v1';
-const defaultTabOrder: ProjectDetailsTabId[] = ['info', 'scripts', 'automation', 'files', 'git', 'memo'];
-const defaultOpenTab: ProjectDetailsTabId = 'scripts';
+const uiPreferencesKey = "utools-project-launch.ui-preferences.v1";
+const legacyTabOrderKey = "utools-project-launch.project-details-tab-order.v1";
+const projectLaunchServicePreferencesKey = "utools-project-launch.project-launch-service.v1";
+const defaultTabOrder: ProjectDetailsTabId[] = ["info", "scripts", "automation", "files", "git", "memo"];
+const defaultOpenTab: ProjectDetailsTabId = "scripts";
 const loadPreloadBridge = (
   storage: Map<string, unknown>,
   removeItem: (key: string) => void = (key) => {
@@ -56,14 +56,14 @@ const loadPreloadBridge = (
       },
     },
     dispatchEvent: (event) => {
-      if (event.type === 'project-bridge-event') {
+      if (event.type === "project-bridge-event") {
         onBridgeEvent(event.detail);
       }
       return true;
     },
   };
   const sandbox = {
-    require: (id: string) => moduleOverrides[id] ?? (id === 'electron' ? { shell: {} } : nodeRequire(id)),
+    require: (id: string) => moduleOverrides[id] ?? (id === "electron" ? { shell: {} } : nodeRequire(id)),
     process: {
       platform: process.platform,
       arch: process.arch,
@@ -71,7 +71,7 @@ const loadPreloadBridge = (
       env: {
         ...process.env,
         ...(environment.UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR
-          ? { UTOOLS_PROJECT_LAUNCH_LEGACY_DATA_DIR: join(environment.UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR, 'legacy') }
+          ? { UTOOLS_PROJECT_LAUNCH_LEGACY_DATA_DIR: join(environment.UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR, "legacy") }
           : {}),
         ...environment,
       },
@@ -88,25 +88,25 @@ const loadPreloadBridge = (
     window: sandboxWindow,
   };
   createContext(sandbox);
-  runInContext(readFileSync(resolve('public/preload.js'), 'utf8'), sandbox);
-  if (!sandboxWindow.projectBridge) throw new Error('The real preload did not register projectBridge.');
+  runInContext(readFileSync(resolve("public/preload.js"), "utf8"), sandbox);
+  if (!sandboxWindow.projectBridge) throw new Error("The real preload did not register projectBridge.");
   return sandboxWindow.projectBridge;
 };
 
 const projectLaunchServiceAssetName = () => {
-  const platform = process.platform === 'win32' ? 'windows' : process.platform;
-  const architecture = process.arch === 'x64' ? 'amd64' : process.arch;
-  return `project-launch-service-${platform}-${architecture}${platform === 'windows' ? '.exe' : ''}`;
+  const platform = process.platform === "win32" ? "windows" : process.platform;
+  const architecture = process.arch === "x64" ? "amd64" : process.arch;
+  return `project-launch-service-${platform}-${architecture}${platform === "windows" ? ".exe" : ""}`;
 };
 
-const projectLaunchServiceExecutableName = () => `project-launch-service${process.platform === 'win32' ? '.exe' : ''}`;
+const projectLaunchServiceExecutableName = () => `project-launch-service${process.platform === "win32" ? ".exe" : ""}`;
 
 const createProjectLaunchServiceDownloadHttps = (
   binaryContents: Buffer,
   { redirectToReleaseAssets = false, chunkSize = 0 }: { redirectToReleaseAssets?: boolean; chunkSize?: number } = {},
 ) => {
   const assetName = projectLaunchServiceAssetName();
-  const checksum = createHash('sha256').update(binaryContents).digest('hex');
+  const checksum = createHash("sha256").update(binaryContents).digest("hex");
   const checksumContents = Buffer.from(`${checksum}  ${assetName}\n`);
   const releaseContents = Buffer.from(
     JSON.stringify({
@@ -117,9 +117,9 @@ const createProjectLaunchServiceDownloadHttps = (
           browser_download_url: `https://github.com/Wwyxa/utools-project-launch/releases/download/v1/${assetName}`,
         },
         {
-          name: 'checksums.txt',
+          name: "checksums.txt",
           size: checksumContents.length,
-          browser_download_url: 'https://github.com/Wwyxa/utools-project-launch/releases/download/v1/checksums.txt',
+          browser_download_url: "https://github.com/Wwyxa/utools-project-launch/releases/download/v1/checksums.txt",
         },
       ],
     }),
@@ -127,7 +127,7 @@ const createProjectLaunchServiceDownloadHttps = (
   const responses = redirectToReleaseAssets
     ? [
         { contents: releaseContents },
-        { location: 'https://release-assets.githubusercontent.com/checksums.txt' },
+        { location: "https://release-assets.githubusercontent.com/checksums.txt" },
         { contents: checksumContents },
         { location: `https://release-assets.githubusercontent.com/${assetName}` },
         { contents: binaryContents },
@@ -137,10 +137,10 @@ const createProjectLaunchServiceDownloadHttps = (
   return {
     get: vi.fn((_options: unknown, callback: (response: EventEmitter) => void) => {
       const nextResponse = responses.shift();
-      if (!nextResponse) throw new Error('unexpected service download request');
+      if (!nextResponse) throw new Error("unexpected service download request");
       const request = new EventEmitter() as EventEmitter & { destroy: (error?: Error) => void };
       request.destroy = (error) => {
-        if (error) queueMicrotask(() => request.emit('error', error));
+        if (error) queueMicrotask(() => request.emit("error", error));
       };
       queueMicrotask(() => {
         const response = new EventEmitter() as EventEmitter & {
@@ -151,18 +151,18 @@ const createProjectLaunchServiceDownloadHttps = (
         response.statusCode = nextResponse.location ? 302 : 200;
         response.headers = nextResponse.location
           ? { location: nextResponse.location }
-          : { 'content-length': String(nextResponse.contents!.length) };
+          : { "content-length": String(nextResponse.contents!.length) };
         response.resume = () => undefined;
         callback(response);
         if (nextResponse.contents) {
           if (chunkSize > 0) {
             for (let offset = 0; offset < nextResponse.contents.length; offset += chunkSize) {
-              response.emit('data', nextResponse.contents.subarray(offset, offset + chunkSize));
+              response.emit("data", nextResponse.contents.subarray(offset, offset + chunkSize));
             }
           } else {
-            response.emit('data', nextResponse.contents);
+            response.emit("data", nextResponse.contents);
           }
-          response.emit('end');
+          response.emit("end");
         }
       });
       return request;
@@ -170,13 +170,13 @@ const createProjectLaunchServiceDownloadHttps = (
   };
 };
 
-describe('browser UI preferences fallback', () => {
+describe("browser UI preferences fallback", () => {
   let storage: Map<string, string>;
 
   beforeEach(() => {
     storage = new Map();
-    vi.stubGlobal('window', {
-      navigator: { platform: '', userAgent: 'vitest' },
+    vi.stubGlobal("window", {
+      navigator: { platform: "", userAgent: "vitest" },
       localStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: string) => storage.set(key, value),
@@ -193,132 +193,61 @@ describe('browser UI preferences fallback', () => {
     vi.resetModules();
   });
 
-  it('returns and persists complete defaults without stored preferences', () => {
-    expect(getProjectBridge().loadUiPreferences()).toEqual({
-      schemaVersion: 1,
-      iconPackId: 'builtin',
-      projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
-      dashboard: { tinyCardActionTrigger: 'hover' },
-      coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
-    });
-    expect(JSON.parse(storage.get(uiPreferencesKey)!)).toMatchObject({ schemaVersion: 1 });
-  });
-
-  it.each([
-    [defaultTabOrder, 0],
-    [['scripts', 'info', 'automation', 'files', 'git', 'memo'], 1],
-  ])('migrates legacy order %j with coach mark version %i', (legacyOrder, expectedVersion) => {
-    storage.set(legacyTabOrderKey, JSON.stringify(legacyOrder));
-
-    const preferences = getProjectBridge().loadUiPreferences();
-
-    expect(preferences.projectDetails.tabOrder).toEqual(legacyOrder);
-    expect(preferences.coachMarks.projectDetailsTabReorder).toBe(expectedVersion);
-    expect(JSON.parse(storage.get(uiPreferencesKey)!)).toEqual(preferences);
-    expect(storage.has(legacyTabOrderKey)).toBe(false);
-  });
-
-  it('normalizes duplicate and unknown tabs and an invalid coach mark version', () => {
+  it("normalizes duplicate and unknown tabs and an invalid coach mark version", () => {
     storage.set(
       uiPreferencesKey,
       JSON.stringify({
         schemaVersion: 1,
-        projectDetails: { tabOrder: ['memo', 'unknown', 'memo', 'info'], defaultTab: 'unknown' },
-        dashboard: { tinyCardActionTrigger: 'unsupported' },
+        projectDetails: { tabOrder: ["memo", "unknown", "memo", "info"], defaultTab: "unknown" },
+        dashboard: { tinyCardActionTrigger: "unsupported" },
         coachMarks: { projectDetailsTabReorder: 1.5, projectDetailsTabDefault: 1.5 },
       }),
     );
 
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
-      iconPackId: 'builtin',
+      iconPackId: "builtin",
       projectDetails: {
-        tabOrder: ['memo', 'info', 'scripts', 'automation', 'files', 'git'],
+        tabOrder: ["memo", "info", "scripts", "automation", "files", "git"],
         defaultTab: defaultOpenTab,
       },
-      dashboard: { tinyCardActionTrigger: 'hover' },
+      dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
     });
   });
 
-  it('falls back safely for damaged JSON', () => {
-    storage.set(uiPreferencesKey, '{');
-    storage.set(legacyTabOrderKey, JSON.stringify(['scripts', 'info']));
+  it("falls back safely for damaged JSON", () => {
+    storage.set(uiPreferencesKey, "{");
+    storage.set(legacyTabOrderKey, JSON.stringify(["scripts", "info"]));
 
     expect(getProjectBridge().loadUiPreferences()).toEqual({
       schemaVersion: 1,
-      iconPackId: 'builtin',
+      iconPackId: "builtin",
       projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
-      dashboard: { tinyCardActionTrigger: 'hover' },
+      dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
     });
   });
 
-  it('prefers an existing new configuration over the legacy order', () => {
-    storage.set(
-      uiPreferencesKey,
-      JSON.stringify({
-        schemaVersion: 1,
-        projectDetails: { tabOrder: ['memo', 'info'] },
-        coachMarks: { projectDetailsTabReorder: 1 },
-      }),
-    );
-    storage.set(legacyTabOrderKey, JSON.stringify(['scripts', 'info']));
-
-    expect(getProjectBridge().loadUiPreferences().projectDetails.tabOrder).toEqual([
-      'memo',
-      'info',
-      'scripts',
-      'automation',
-      'files',
-      'git',
-    ]);
-  });
-
-  it('keeps readable current preferences when legacy cleanup fails', () => {
-    storage.set(
-      uiPreferencesKey,
-      JSON.stringify({
-        schemaVersion: 1,
-        projectDetails: { tabOrder: ['memo', 'info'] },
-        coachMarks: { projectDetailsTabReorder: 1 },
-      }),
-    );
-    window.localStorage.removeItem = vi.fn(() => {
-      throw new Error('storage unavailable');
-    });
-
-    expect(getProjectBridge().loadUiPreferences()).toEqual({
-      schemaVersion: 1,
-      iconPackId: 'builtin',
-      projectDetails: {
-        tabOrder: ['memo', 'info', 'scripts', 'automation', 'files', 'git'],
-        defaultTab: defaultOpenTab,
-      },
-      dashboard: { tinyCardActionTrigger: 'hover' },
-      coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 0 },
-    });
-  });
-
-  it('round-trips normalized preferences and removes the legacy order', () => {
+  it("round-trips normalized preferences and removes the legacy order", () => {
     getProjectBridge().saveUiPreferences({
       schemaVersion: 1,
-      iconPackId: 'builtin',
-      projectDetails: { tabOrder: ['git', 'git', 'memo'], defaultTab: 'memo' },
-      dashboard: { tinyCardActionTrigger: 'contextmenu' },
+      iconPackId: "builtin",
+      projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
+      dashboard: { tinyCardActionTrigger: "contextmenu" },
       coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
     });
 
     const preferences = getProjectBridge().loadUiPreferences();
-    expect(preferences.projectDetails.tabOrder).toEqual(['git', 'memo', 'info', 'scripts', 'automation', 'files']);
-    expect(preferences.projectDetails.defaultTab).toBe('memo');
-    expect(preferences.dashboard.tinyCardActionTrigger).toBe('contextmenu');
+    expect(preferences.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
+    expect(preferences.projectDetails.defaultTab).toBe("memo");
+    expect(preferences.dashboard.tinyCardActionTrigger).toBe("contextmenu");
     expect(preferences.coachMarks.projectDetailsTabReorder).toBe(2);
     expect(preferences.coachMarks.projectDetailsTabDefault).toBe(3);
     expect(storage.has(legacyTabOrderKey)).toBe(false);
   });
 
-  it('keeps Project Launch Service disabled by default and normalizes stored preferences', () => {
+  it("keeps Project Launch Service disabled by default and normalizes stored preferences", () => {
     expect(getProjectBridge().loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
 
     storage.set(projectLaunchServicePreferencesKey, JSON.stringify({ schemaVersion: 1, enabled: true }));
@@ -328,34 +257,34 @@ describe('browser UI preferences fallback', () => {
     expect(getProjectBridge().loadProjectLaunchServicePreferences()).toEqual({ schemaVersion: 1, enabled: false });
   });
 
-  it('fails closed instead of simulating a preload launch when service mode is enabled', async () => {
+  it("fails closed instead of simulating a preload launch when service mode is enabled", async () => {
     getProjectBridge().saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
 
     await expect(
       getProjectBridge().runCommand({
-        projectId: 'project',
-        scriptId: 'script',
-        command: 'echo browser-preview',
-        cwd: '/workspace/project',
+        projectId: "project",
+        scriptId: "script",
+        command: "echo browser-preview",
+        cwd: "/workspace/project",
         env: {},
-        label: 'Project / Script',
+        label: "Project / Script",
       }),
-    ).rejects.toThrow('项目启动服务在浏览器预览中不可用');
+    ).rejects.toThrow("项目启动服务在浏览器预览中不可用");
   });
 
-  it('loads once and persists only effective store changes', async () => {
+  it("loads once and persists only effective store changes", async () => {
     const initialPreferences: UiPreferences = {
       schemaVersion: 1,
-      iconPackId: 'builtin',
+      iconPackId: "builtin",
       projectDetails: { tabOrder: [...defaultTabOrder], defaultTab: defaultOpenTab },
-      dashboard: { tinyCardActionTrigger: 'hover' },
+      dashboard: { tinyCardActionTrigger: "hover" },
       coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
     };
     const loadUiPreferences = vi.fn(() => initialPreferences);
-    const saveUiPreferences = vi.fn<ProjectBridge['saveUiPreferences']>();
+    const saveUiPreferences = vi.fn<ProjectBridge["saveUiPreferences"]>();
     window.projectBridge = { ...getProjectBridge(), loadUiPreferences, saveUiPreferences };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -366,13 +295,13 @@ describe('browser UI preferences fallback', () => {
     store.setProjectDetailsTabOrder([...initialPreferences.projectDetails.tabOrder]);
     expect(saveUiPreferences).not.toHaveBeenCalled();
 
-    store.setProjectDetailsDefaultTab('memo');
-    store.setProjectDetailsDefaultTab('memo');
-    expect(store.uiPreferences.projectDetails.defaultTab).toBe('memo');
+    store.setProjectDetailsDefaultTab("memo");
+    store.setProjectDetailsDefaultTab("memo");
+    expect(store.uiPreferences.projectDetails.defaultTab).toBe("memo");
     expect(saveUiPreferences).toHaveBeenCalledTimes(1);
 
-    store.setProjectDetailsTabOrder(['scripts', 'info', 'automation', 'files', 'git', 'memo']);
-    expect(store.uiPreferences.projectDetails.defaultTab).toBe('memo');
+    store.setProjectDetailsTabOrder(["scripts", "info", "automation", "files", "git", "memo"]);
+    expect(store.uiPreferences.projectDetails.defaultTab).toBe("memo");
     expect(saveUiPreferences).toHaveBeenCalledTimes(2);
 
     store.acknowledgeProjectDetailsTabReorderHint(1);
@@ -385,31 +314,31 @@ describe('browser UI preferences fallback', () => {
     expect(store.uiPreferences.coachMarks.projectDetailsTabDefault).toBe(1);
     expect(saveUiPreferences).toHaveBeenCalledTimes(4);
 
-    store.setTinyCardActionTrigger('hover');
+    store.setTinyCardActionTrigger("hover");
     expect(saveUiPreferences).toHaveBeenCalledTimes(4);
 
-    store.setTinyCardActionTrigger('contextmenu');
-    expect(store.uiPreferences.dashboard.tinyCardActionTrigger).toBe('contextmenu');
+    store.setTinyCardActionTrigger("contextmenu");
+    expect(store.uiPreferences.dashboard.tinyCardActionTrigger).toBe("contextmenu");
     expect(saveUiPreferences).toHaveBeenCalledTimes(5);
   });
 
-  it('verifies a manually placed Project Launch Service during an explicit recheck even when it is not yet detected', async () => {
+  it("verifies a manually placed Project Launch Service during an explicit recheck even when it is not yet detected", async () => {
     const missingStatus: ProjectLaunchServiceStatus = {
-      state: 'not-installed',
+      state: "not-installed",
       installed: false,
       running: false,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
     };
-    const installedStatus: ProjectLaunchServiceStatus = { ...missingStatus, state: 'installed', installed: true };
-    const getProjectLaunchServiceStatus = vi.fn<ProjectBridge['getProjectLaunchServiceStatus']>(
+    const installedStatus: ProjectLaunchServiceStatus = { ...missingStatus, state: "installed", installed: true };
+    const getProjectLaunchServiceStatus = vi.fn<ProjectBridge["getProjectLaunchServiceStatus"]>(
       async () => missingStatus,
     );
-    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge['verifyProjectLaunchServiceInstall']>(
+    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge["verifyProjectLaunchServiceInstall"]>(
       async () => installedStatus,
     );
     window.projectBridge = {
@@ -419,7 +348,7 @@ describe('browser UI preferences fallback', () => {
       verifyProjectLaunchServiceInstall,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -432,26 +361,26 @@ describe('browser UI preferences fallback', () => {
     expect(getProjectLaunchServiceStatus).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps renderer ownership when Project Launch Service rejects automation handoff', async () => {
-    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge['saveProjectLaunchServicePreferences']>();
-    const stopProjectLaunchService = vi.fn<ProjectBridge['stopProjectLaunchService']>();
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>(
+  it("keeps renderer ownership when Project Launch Service rejects automation handoff", async () => {
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const stopProjectLaunchService = vi.fn<ProjectBridge["stopProjectLaunchService"]>();
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       async (config) => ({
         accepted: false,
         revision: config.revision,
-        message: 'service rejected automation configuration',
+        message: "service rejected automation configuration",
       }),
     );
     const healthyStatus = {
-      state: 'healthy' as const,
+      state: "healthy" as const,
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 0,
     };
     window.projectBridge = {
@@ -465,7 +394,7 @@ describe('browser UI preferences fallback', () => {
       syncProjectLaunchServiceAutomation,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -478,74 +407,25 @@ describe('browser UI preferences fallback', () => {
     expect(saveProjectLaunchServicePreferences).not.toHaveBeenCalled();
     expect(stopProjectLaunchService).toHaveBeenCalledOnce();
     expect(store.projectLaunchServiceStatus).toMatchObject({
-      state: 'unavailable',
-      message: 'service rejected automation configuration',
+      state: "unavailable",
+      message: "service rejected automation configuration",
     });
   });
 
-  it('starts Project Launch Service before synchronizing the first enabled handoff', async () => {
-    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge['saveProjectLaunchServicePreferences']>();
-    const startProjectLaunchService = vi.fn<ProjectBridge['startProjectLaunchService']>();
-    const reconcileProjectLaunchService = vi.fn<ProjectBridge['reconcileProjectLaunchService']>();
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>();
-    const healthyStatus = {
-      state: 'healthy' as const,
-      installed: true,
-      running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
-      automationRevision: 0,
-    };
-    startProjectLaunchService.mockResolvedValue(healthyStatus);
-    reconcileProjectLaunchService.mockResolvedValue(healthyStatus);
-    syncProjectLaunchServiceAutomation.mockImplementation(async (config) => ({
-      accepted: true,
-      revision: config.revision,
-    }));
-    window.projectBridge = {
-      ...getProjectBridge(),
-      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
-      saveProjectLaunchServicePreferences,
-      startProjectLaunchService,
-      reconcileProjectLaunchService,
-      syncProjectLaunchServiceAutomation,
-    };
-
-    const { useStore } = await import('../src/store/useStore');
-    setActivePinia(createPinia());
-    const store = useStore();
-
-    await store.setProjectLaunchServiceEnabled(true);
-
-    expect(startProjectLaunchService).toHaveBeenCalledTimes(1);
-    expect(startProjectLaunchService.mock.invocationCallOrder[0]).toBeLessThan(
-      reconcileProjectLaunchService.mock.invocationCallOrder[0]!,
-    );
-    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
-      expect.objectContaining({ schemaVersion: 1, revision: 1 }),
-    );
-    expect(store.projectLaunchServicePreferences.enabled).toBe(true);
-    expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
-  });
-
-  it('sends a schedule-driven schema v1 automation configuration', async () => {
+  it("sends a schedule-driven schema v1 automation configuration", async () => {
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 0,
     };
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>(
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       async (config) => ({ accepted: true, revision: config.revision }),
     );
     window.projectBridge = {
@@ -554,26 +434,26 @@ describe('browser UI preferences fallback', () => {
       syncProjectLaunchServiceAutomation,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'legacy-schema-project',
-        name: 'Legacy schema project',
-        path: '/workspace/legacy-schema-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "legacy-schema-project",
+        name: "Legacy schema project",
+        path: "/workspace/legacy-schema-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'legacy-schema-script', name: 'dev', command: 'echo legacy', status: 'IDLE' }],
+        scripts: [{ id: "legacy-schema-script", name: "dev", command: "echo legacy", status: "IDLE" }],
         automationTasks: [
           {
-            id: 'legacy-schema-task',
-            name: 'Legacy schema task',
+            id: "legacy-schema-task",
+            name: "Legacy schema task",
             enabled: true,
-            scriptIds: ['legacy-schema-script'],
-            schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-            missedPolicy: 'grace-run',
+            scriptIds: ["legacy-schema-script"],
+            schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+            missedPolicy: "grace-run",
             missedGraceMinutes: 5,
             notifyEnabled: false,
             maxScriptRuntimeMinutes: 30,
@@ -582,12 +462,12 @@ describe('browser UI preferences fallback', () => {
             dailyPlans: [
               {
                 date: dateKey(),
-                entries: [{ id: 'legacy-schema-entry', plannedAt: new Date().toISOString(), status: 'pending' }],
+                entries: [{ id: "legacy-schema-entry", plannedAt: new Date().toISOString(), status: "pending" }],
               },
             ],
             history: [],
-            createdAt: '2026-08-13T00:00:00.000Z',
-            updatedAt: '2026-08-13T00:00:00.000Z',
+            createdAt: "2026-08-13T00:00:00.000Z",
+            updatedAt: "2026-08-13T00:00:00.000Z",
           },
         ],
         env: {},
@@ -601,26 +481,26 @@ describe('browser UI preferences fallback', () => {
     );
     const task = syncProjectLaunchServiceAutomation.mock.calls[0]?.[0]?.projects[0]?.automationTasks[0];
     expect(task).toMatchObject({
-      schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
+      schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
       scheduleAlgorithmVersion: 1,
     });
-    expect(task).not.toHaveProperty('dailyPlans');
+    expect(task).not.toHaveProperty("dailyPlans");
   });
 
-  it('includes a service manual run in the schema v1 payload', async () => {
+  it("includes a service manual run in the schema v1 payload", async () => {
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 0,
     };
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>(
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       async (config) => ({ accepted: true, revision: config.revision }),
     );
     window.projectBridge = {
@@ -629,25 +509,25 @@ describe('browser UI preferences fallback', () => {
       syncProjectLaunchServiceAutomation,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const project: Project = {
-      id: 'legacy-manual-project',
-      name: 'Legacy manual project',
-      path: '/workspace/legacy-manual-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "legacy-manual-project",
+      name: "Legacy manual project",
+      path: "/workspace/legacy-manual-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
-      scripts: [{ id: 'legacy-manual-script', name: 'dev', command: 'echo legacy', status: 'IDLE' }],
+      scripts: [{ id: "legacy-manual-script", name: "dev", command: "echo legacy", status: "IDLE" }],
       automationTasks: [
         {
-          id: 'legacy-manual-task',
-          name: 'Legacy manual task',
+          id: "legacy-manual-task",
+          name: "Legacy manual task",
           enabled: false,
-          scriptIds: ['legacy-manual-script'],
-          schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-          missedPolicy: 'grace-run',
+          scriptIds: ["legacy-manual-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
           missedGraceMinutes: 5,
           notifyEnabled: false,
           maxScriptRuntimeMinutes: 30,
@@ -655,8 +535,8 @@ describe('browser UI preferences fallback', () => {
           exitConfigs: [],
           dailyPlans: [],
           history: [],
-          createdAt: '2026-08-15T00:00:00.000Z',
-          updatedAt: '2026-08-15T00:00:00.000Z',
+          createdAt: "2026-08-15T00:00:00.000Z",
+          updatedAt: "2026-08-15T00:00:00.000Z",
         },
       ],
       env: {},
@@ -665,38 +545,38 @@ describe('browser UI preferences fallback', () => {
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [project];
 
-    await expect(store.runAutomationTaskNow(project.id, 'legacy-manual-task')).resolves.toBe(true);
+    await expect(store.runAutomationTaskNow(project.id, "legacy-manual-task")).resolves.toBe(true);
 
     const config = syncProjectLaunchServiceAutomation.mock.calls[0]?.[0];
     expect(config?.schemaVersion).toBe(1);
     if (!config || config.schemaVersion !== 1) {
-      throw new Error('expected a schema v1 automation configuration');
+      throw new Error("expected a schema v1 automation configuration");
     }
     const task = config.projects[0]?.automationTasks[0];
     expect(task?.manualRun).toMatchObject({ id: expect.any(String), plannedAt: expect.any(String) });
-    expect(task).not.toHaveProperty('dailyPlans');
+    expect(task).not.toHaveProperty("dailyPlans");
   });
 
-  it('verifies an installed executable before enabling service mode', async () => {
-    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge['saveProjectLaunchServicePreferences']>();
-    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge['verifyProjectLaunchServiceInstall']>();
-    const startProjectLaunchService = vi.fn<ProjectBridge['startProjectLaunchService']>();
-    const reconcileProjectLaunchService = vi.fn<ProjectBridge['reconcileProjectLaunchService']>();
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>();
+  it("verifies an installed executable before enabling service mode", async () => {
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge["verifyProjectLaunchServiceInstall"]>();
+    const startProjectLaunchService = vi.fn<ProjectBridge["startProjectLaunchService"]>();
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>();
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>();
     const installedStatus: ProjectLaunchServiceStatus = {
-      state: 'installed',
+      state: "installed",
       installed: true,
       running: false,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
     };
     const healthyStatus: ProjectLaunchServiceStatus = {
       ...installedStatus,
-      state: 'healthy',
+      state: "healthy",
       running: true,
       automationRevision: 0,
     };
@@ -718,7 +598,7 @@ describe('browser UI preferences fallback', () => {
       syncProjectLaunchServiceAutomation,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -733,25 +613,25 @@ describe('browser UI preferences fallback', () => {
     expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
   });
 
-  it('clears service mode when service startup fails', async () => {
-    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge['saveProjectLaunchServicePreferences']>();
-    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge['verifyProjectLaunchServiceInstall']>();
-    const startProjectLaunchService = vi.fn<ProjectBridge['startProjectLaunchService']>();
+  it("clears service mode when service startup fails", async () => {
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const verifyProjectLaunchServiceInstall = vi.fn<ProjectBridge["verifyProjectLaunchServiceInstall"]>();
+    const startProjectLaunchService = vi.fn<ProjectBridge["startProjectLaunchService"]>();
     const installedStatus: ProjectLaunchServiceStatus = {
-      state: 'installed',
+      state: "installed",
       installed: true,
       running: false,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
     };
     const unavailableStatus: ProjectLaunchServiceStatus = {
       ...installedStatus,
-      state: 'unavailable',
-      message: 'service failed to start',
+      state: "unavailable",
+      message: "service failed to start",
     };
     verifyProjectLaunchServiceInstall.mockResolvedValue(installedStatus);
     startProjectLaunchService.mockResolvedValue(unavailableStatus);
@@ -764,7 +644,7 @@ describe('browser UI preferences fallback', () => {
       startProjectLaunchService,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -775,23 +655,23 @@ describe('browser UI preferences fallback', () => {
     expect(store.projectLaunchServicePreferences.enabled).toBe(false);
     expect(saveProjectLaunchServicePreferences).not.toHaveBeenCalled();
     expect(store.projectLaunchServiceStatus).toMatchObject({
-      state: 'unavailable',
-      message: 'service failed to start',
+      state: "unavailable",
+      message: "service failed to start",
     });
   });
 
-  it('keeps service mode enabled while service-managed scripts are still active', async () => {
-    const stopProjectLaunchService = vi.fn<ProjectBridge['stopProjectLaunchService']>();
+  it("keeps service mode enabled while service-managed scripts are still active", async () => {
+    const stopProjectLaunchService = vi.fn<ProjectBridge["stopProjectLaunchService"]>();
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 4,
     };
     window.projectBridge = {
@@ -800,26 +680,26 @@ describe('browser UI preferences fallback', () => {
       stopProjectLaunchService,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServiceStatus = healthyStatus;
     store.projects = [
       {
-        id: 'active-service-project',
-        name: 'Active service project',
-        path: '/workspace/active-service-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "active-service-project",
+        name: "Active service project",
+        path: "/workspace/active-service-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'active-service-script',
-            name: 'dev',
-            command: 'npm run dev',
-            status: 'RUNNING',
-            runId: 'active-service-run',
-            runtimeOwner: 'service',
+            id: "active-service-script",
+            name: "dev",
+            command: "npm run dev",
+            status: "RUNNING",
+            runId: "active-service-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
@@ -834,71 +714,77 @@ describe('browser UI preferences fallback', () => {
     expect(store.projectLaunchServiceStatus).toEqual(healthyStatus);
   });
 
-  it('pauses renderer automation until Project Launch Service accepts the ownership handoff', async () => {
+  it("pauses renderer automation until Project Launch Service accepts the ownership handoff", async () => {
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 0,
     };
+    const saveProjectLaunchServicePreferences = vi.fn<ProjectBridge["saveProjectLaunchServicePreferences"]>();
+    const startProjectLaunchService = vi.fn<ProjectBridge["startProjectLaunchService"]>(async () => healthyStatus);
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>(
+      async () => healthyStatus,
+    );
     let acceptHandoff: (result: { accepted: boolean; revision: number }) => void = () => undefined;
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>(
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       () =>
         new Promise((resolve) => {
           acceptHandoff = resolve;
         }),
     );
-    const runCommand = vi.fn<ProjectBridge['runCommand']>(async () => ({
+    const runCommand = vi.fn<ProjectBridge["runCommand"]>(async () => ({
       pid: 99,
       startedAt: new Date().toISOString(),
-      command: 'echo renderer-run',
-      cwd: '/workspace/handoff-project',
+      command: "echo renderer-run",
+      cwd: "/workspace/handoff-project",
     }));
     const dueAt = new Date(Date.now() - 1_000).toISOString();
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: false }),
-      startProjectLaunchService: async () => healthyStatus,
-      reconcileProjectLaunchService: async () => healthyStatus,
+      saveProjectLaunchServicePreferences,
+      startProjectLaunchService,
+      reconcileProjectLaunchService,
       syncProjectLaunchServiceAutomation,
       runCommand,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'handoff-project',
-        name: 'Handoff project',
-        path: '/workspace/handoff-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "handoff-project",
+        name: "Handoff project",
+        path: "/workspace/handoff-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'handoff-script', name: 'dev', command: 'echo renderer-run', status: 'IDLE' }],
+        scripts: [{ id: "handoff-script", name: "dev", command: "echo renderer-run", status: "IDLE" }],
         automationTasks: [
           {
-            id: 'handoff-task',
-            name: 'Handoff task',
+            id: "handoff-task",
+            name: "Handoff task",
             enabled: true,
-            scriptIds: ['handoff-script'],
-            schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-            missedPolicy: 'grace-run',
+            scriptIds: ["handoff-script"],
+            schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+            missedPolicy: "grace-run",
             missedGraceMinutes: 5,
             notifyEnabled: false,
             maxScriptRuntimeMinutes: 30,
             inputConfigs: [],
             exitConfigs: [],
-            dailyPlans: [{ date: dateKey(), entries: [{ id: 'handoff-entry', plannedAt: dueAt, status: 'pending' }] }],
+            dailyPlans: [{ date: dateKey(), entries: [{ id: "handoff-entry", plannedAt: dueAt, status: "pending" }] }],
             history: [],
-            createdAt: '2026-08-13T00:00:00.000Z',
-            updatedAt: '2026-08-13T00:00:00.000Z',
+            createdAt: "2026-08-13T00:00:00.000Z",
+            updatedAt: "2026-08-13T00:00:00.000Z",
           },
         ],
         env: {},
@@ -908,30 +794,39 @@ describe('browser UI preferences fallback', () => {
     const enabling = store.setProjectLaunchServiceEnabled(true);
     await vi.waitFor(() => expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(1));
 
+    expect(startProjectLaunchService).toHaveBeenCalledOnce();
+    expect(startProjectLaunchService.mock.invocationCallOrder[0]).toBeLessThan(
+      reconcileProjectLaunchService.mock.invocationCallOrder[0]!,
+    );
+    expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledWith(
+      expect.objectContaining({ schemaVersion: 1, revision: 1 }),
+    );
+    expect(saveProjectLaunchServicePreferences).not.toHaveBeenCalled();
     await store.runDueAutomationPlans();
     expect(runCommand).not.toHaveBeenCalled();
-    await expect(store.launchScript('handoff-project', 'handoff-script')).resolves.toBeNull();
+    await expect(store.launchScript("handoff-project", "handoff-script")).resolves.toBeNull();
     expect(runCommand).not.toHaveBeenCalled();
 
     acceptHandoff({ accepted: true, revision: 1 });
     await enabling;
     expect(store.projectLaunchServicePreferences.enabled).toBe(true);
+    expect(saveProjectLaunchServicePreferences).toHaveBeenCalledWith({ schemaVersion: 1, enabled: true });
   });
 
-  it('synchronizes enabled automation changes with Project Launch Service', async () => {
+  it("synchronizes enabled automation changes with Project Launch Service", async () => {
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 0,
     };
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>(
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       async (config) => ({ accepted: true, revision: config.revision }),
     );
     window.projectBridge = {
@@ -942,27 +837,27 @@ describe('browser UI preferences fallback', () => {
       syncProjectLaunchServiceAutomation,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'service-project',
-        name: 'Service project',
-        path: '/workspace/service-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "service-project",
+        name: "Service project",
+        path: "/workspace/service-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'service-script', name: 'dev', command: 'npm run dev', status: 'IDLE' }],
+        scripts: [{ id: "service-script", name: "dev", command: "npm run dev", status: "IDLE" }],
         automationTasks: [],
         env: {},
       },
     ];
 
     expect(
-      store.createAutomationTask('service-project', {
-        name: 'Service task',
-        scriptIds: ['service-script'],
+      store.createAutomationTask("service-project", {
+        name: "Service task",
+        scriptIds: ["service-script"],
       }).ok,
     ).toBe(true);
 
@@ -971,56 +866,56 @@ describe('browser UI preferences fallback', () => {
     expect(taskConfig).toMatchObject({
       id: expect.any(String),
       scheduleAlgorithmVersion: 1,
-      schedule: expect.objectContaining({ type: 'fixed' }),
+      schedule: expect.objectContaining({ type: "fixed" }),
     });
-    expect(taskConfig).not.toHaveProperty('dailyPlans');
+    expect(taskConfig).not.toHaveProperty("dailyPlans");
     expect(store.projects[0]?.automationTasks?.[0]?.dailyPlans).toEqual([]);
   });
 
-  it('blocks manual automation while the enabled Project Launch Service is unavailable', async () => {
+  it("blocks manual automation while the enabled Project Launch Service is unavailable", async () => {
     const unavailableStatus: ProjectLaunchServiceStatus = {
-      state: 'unavailable',
+      state: "unavailable",
       installed: true,
       running: false,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
-      message: 'Project Launch Service is unavailable.',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      message: "Project Launch Service is unavailable.",
     };
-    const reconcileProjectLaunchService = vi.fn<ProjectBridge['reconcileProjectLaunchService']>(
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>(
       async () => unavailableStatus,
     );
     const futureAt = new Date(Date.now() + 60_000).toISOString();
     const project: Project = {
-      id: 'unavailable-service-project',
-      name: 'Unavailable service project',
-      path: '/workspace/unavailable-service-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "unavailable-service-project",
+      name: "Unavailable service project",
+      path: "/workspace/unavailable-service-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
-      scripts: [{ id: 'unavailable-service-script', name: 'dev', command: 'npm run dev', status: 'IDLE' }],
+      scripts: [{ id: "unavailable-service-script", name: "dev", command: "npm run dev", status: "IDLE" }],
       automationTasks: [
         {
-          id: 'unavailable-service-task',
-          name: 'Unavailable service task',
+          id: "unavailable-service-task",
+          name: "Unavailable service task",
           enabled: true,
-          scriptIds: ['unavailable-service-script'],
-          schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-          missedPolicy: 'grace-run',
+          scriptIds: ["unavailable-service-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
           missedGraceMinutes: 5,
           notifyEnabled: false,
           maxScriptRuntimeMinutes: 30,
           inputConfigs: [],
           exitConfigs: [],
           dailyPlans: [
-            { date: dateKey(), entries: [{ id: 'unavailable-service-entry', plannedAt: futureAt, status: 'pending' }] },
+            { date: dateKey(), entries: [{ id: "unavailable-service-entry", plannedAt: futureAt, status: "pending" }] },
           ],
           history: [],
-          createdAt: '2026-08-13T00:00:00.000Z',
-          updatedAt: '2026-08-13T00:00:00.000Z',
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
         },
       ],
       env: {},
@@ -1031,76 +926,76 @@ describe('browser UI preferences fallback', () => {
       reconcileProjectLaunchService,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [project];
 
-    await expect(store.runAutomationTaskNow(project.id, 'unavailable-service-task')).resolves.toBe(false);
+    await expect(store.runAutomationTaskNow(project.id, "unavailable-service-task")).resolves.toBe(false);
     await expect(
-      store.runAutomationPlanEntryEarly(project.id, 'unavailable-service-task', 'unavailable-service-entry'),
+      store.runAutomationPlanEntryEarly(project.id, "unavailable-service-task", "unavailable-service-entry"),
     ).resolves.toBe(false);
 
     const task = store.projects[0]?.automationTasks?.[0];
     expect(reconcileProjectLaunchService).toHaveBeenCalledOnce();
-    expect(store.serviceAutomationTaskEntries(project.id, 'unavailable-service-task')).toEqual([]);
+    expect(store.serviceAutomationTaskEntries(project.id, "unavailable-service-task")).toEqual([]);
     expect(task?.dailyPlans).toEqual([
       {
         date: dateKey(),
-        entries: [{ id: 'unavailable-service-entry', plannedAt: futureAt, status: 'pending' }],
+        entries: [{ id: "unavailable-service-entry", plannedAt: futureAt, status: "pending" }],
       },
     ]);
   });
 
-  it('waits for Project Launch Service automation acknowledgement before reporting a manual run', async () => {
+  it("waits for Project Launch Service automation acknowledgement before reporting a manual run", async () => {
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
     };
     const futureAt = new Date(Date.now() + 60_000).toISOString();
     const project: Project = {
-      id: 'rejected-service-project',
-      name: 'Rejected service project',
-      path: '/workspace/rejected-service-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "rejected-service-project",
+      name: "Rejected service project",
+      path: "/workspace/rejected-service-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
-      scripts: [{ id: 'rejected-service-script', name: 'dev', command: 'npm run dev', status: 'IDLE' }],
+      scripts: [{ id: "rejected-service-script", name: "dev", command: "npm run dev", status: "IDLE" }],
       automationTasks: [
         {
-          id: 'rejected-service-task',
-          name: 'Rejected service task',
+          id: "rejected-service-task",
+          name: "Rejected service task",
           enabled: true,
-          scriptIds: ['rejected-service-script'],
-          schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-          missedPolicy: 'grace-run',
+          scriptIds: ["rejected-service-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
           missedGraceMinutes: 5,
           notifyEnabled: false,
           maxScriptRuntimeMinutes: 30,
           inputConfigs: [],
           exitConfigs: [],
           dailyPlans: [
-            { date: dateKey(), entries: [{ id: 'rejected-service-entry', plannedAt: futureAt, status: 'pending' }] },
+            { date: dateKey(), entries: [{ id: "rejected-service-entry", plannedAt: futureAt, status: "pending" }] },
           ],
           history: [],
-          createdAt: '2026-08-13T00:00:00.000Z',
-          updatedAt: '2026-08-13T00:00:00.000Z',
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
         },
       ],
       env: {},
     };
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>(
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       async (config) => ({
         accepted: false,
         revision: config.revision,
-        message: 'service rejected manual automation',
+        message: "service rejected manual automation",
       }),
     );
     window.projectBridge = {
@@ -1110,57 +1005,57 @@ describe('browser UI preferences fallback', () => {
       syncProjectLaunchServiceAutomation,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [project];
 
-    await expect(store.runAutomationTaskNow(project.id, 'rejected-service-task')).resolves.toBe(false);
+    await expect(store.runAutomationTaskNow(project.id, "rejected-service-task")).resolves.toBe(false);
     await expect(
-      store.runAutomationPlanEntryEarly(project.id, 'rejected-service-task', 'rejected-service-entry'),
+      store.runAutomationPlanEntryEarly(project.id, "rejected-service-task", "rejected-service-entry"),
     ).resolves.toBe(false);
 
     const entry = store.projects[0]?.automationTasks?.[0]?.dailyPlans[0]?.entries[0];
-    expect(entry).toEqual({ id: 'rejected-service-entry', plannedAt: futureAt, status: 'pending' });
+    expect(entry).toEqual({ id: "rejected-service-entry", plannedAt: futureAt, status: "pending" });
     expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledOnce();
     expect(store.projectLaunchServiceStatus).toMatchObject({
-      state: 'unavailable',
-      message: 'service rejected manual automation',
+      state: "unavailable",
+      message: "service rejected manual automation",
     });
   });
 
-  it('rejects a duplicate service automation submission before the first snapshot', async () => {
+  it("rejects a duplicate service automation submission before the first snapshot", async () => {
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 0,
     };
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>(
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       async (config) => ({ accepted: true, revision: config.revision }),
     );
     const project: Project = {
-      id: 'pending-service-automation-project',
-      name: 'Pending service automation project',
-      path: '/workspace/pending-service-automation-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "pending-service-automation-project",
+      name: "Pending service automation project",
+      path: "/workspace/pending-service-automation-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
-      scripts: [{ id: 'pending-service-automation-script', name: 'dev', command: 'echo pending', status: 'IDLE' }],
+      scripts: [{ id: "pending-service-automation-script", name: "dev", command: "echo pending", status: "IDLE" }],
       automationTasks: [
         {
-          id: 'pending-service-automation-task',
-          name: 'Pending service automation task',
+          id: "pending-service-automation-task",
+          name: "Pending service automation task",
           enabled: true,
-          scriptIds: ['pending-service-automation-script'],
-          schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-          missedPolicy: 'grace-run',
+          scriptIds: ["pending-service-automation-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
           missedGraceMinutes: 5,
           notifyEnabled: false,
           maxScriptRuntimeMinutes: 30,
@@ -1168,8 +1063,8 @@ describe('browser UI preferences fallback', () => {
           exitConfigs: [],
           dailyPlans: [],
           history: [],
-          createdAt: '2026-08-15T00:00:00.000Z',
-          updatedAt: '2026-08-15T00:00:00.000Z',
+          createdAt: "2026-08-15T00:00:00.000Z",
+          updatedAt: "2026-08-15T00:00:00.000Z",
         },
       ],
       env: {},
@@ -1181,19 +1076,19 @@ describe('browser UI preferences fallback', () => {
       syncProjectLaunchServiceAutomation,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [project];
 
-    const firstSubmission = store.runAutomationTaskNow(project.id, 'pending-service-automation-task');
-    await expect(store.runAutomationTaskNow(project.id, 'pending-service-automation-task')).resolves.toBe(false);
+    const firstSubmission = store.runAutomationTaskNow(project.id, "pending-service-automation-task");
+    await expect(store.runAutomationTaskNow(project.id, "pending-service-automation-task")).resolves.toBe(false);
     await expect(firstSubmission).resolves.toBe(true);
     expect(syncProjectLaunchServiceAutomation).toHaveBeenCalledTimes(1);
     const config = syncProjectLaunchServiceAutomation.mock.calls[0]?.[0];
     if (!config || config.schemaVersion !== 1) {
-      throw new Error('expected a schema v1 automation configuration');
+      throw new Error("expected a schema v1 automation configuration");
     }
     expect(config.projects[0]?.automationTasks[0]?.manualRun).toMatchObject({
       id: expect.any(String),
@@ -1201,50 +1096,50 @@ describe('browser UI preferences fallback', () => {
     });
   });
 
-  it('keeps the original plan time when submitting a service automation entry early', async () => {
+  it("keeps the original plan time when submitting a service automation entry early", async () => {
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 0,
     };
     const futureAt = new Date(Date.now() + 60_000).toISOString();
-    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge['syncProjectLaunchServiceAutomation']>(
+    const syncProjectLaunchServiceAutomation = vi.fn<ProjectBridge["syncProjectLaunchServiceAutomation"]>(
       async (config) => ({ accepted: true, revision: config.revision }),
     );
     const project: Project = {
-      id: 'early-service-automation-project',
-      name: 'Early service automation project',
-      path: '/workspace/early-service-automation-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "early-service-automation-project",
+      name: "Early service automation project",
+      path: "/workspace/early-service-automation-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
-      scripts: [{ id: 'early-service-automation-script', name: 'dev', command: 'echo early', status: 'IDLE' }],
+      scripts: [{ id: "early-service-automation-script", name: "dev", command: "echo early", status: "IDLE" }],
       automationTasks: [
         {
-          id: 'early-service-automation-task',
-          name: 'Early service automation task',
+          id: "early-service-automation-task",
+          name: "Early service automation task",
           enabled: true,
-          scriptIds: ['early-service-automation-script'],
-          schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-          missedPolicy: 'grace-run',
+          scriptIds: ["early-service-automation-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
           missedGraceMinutes: 5,
           notifyEnabled: false,
           maxScriptRuntimeMinutes: 30,
           inputConfigs: [],
           exitConfigs: [],
           dailyPlans: [
-            { date: dateKey(), entries: [{ id: 'early-service-entry', plannedAt: futureAt, status: 'pending' }] },
+            { date: dateKey(), entries: [{ id: "early-service-entry", plannedAt: futureAt, status: "pending" }] },
           ],
           history: [],
-          createdAt: '2026-08-15T00:00:00.000Z',
-          updatedAt: '2026-08-15T00:00:00.000Z',
+          createdAt: "2026-08-15T00:00:00.000Z",
+          updatedAt: "2026-08-15T00:00:00.000Z",
         },
       ],
       env: {},
@@ -1256,7 +1151,7 @@ describe('browser UI preferences fallback', () => {
       syncProjectLaunchServiceAutomation,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
@@ -1268,8 +1163,8 @@ describe('browser UI preferences fallback', () => {
         upcoming: [
           {
             projectId: project.id,
-            taskId: 'early-service-automation-task',
-            planEntryId: 'early-service-entry',
+            taskId: "early-service-automation-task",
+            planEntryId: "early-service-entry",
             plannedAt: futureAt,
           },
         ],
@@ -1277,7 +1172,7 @@ describe('browser UI preferences fallback', () => {
     };
 
     await expect(
-      store.runAutomationPlanEntryEarly(project.id, 'early-service-automation-task', 'early-service-entry'),
+      store.runAutomationPlanEntryEarly(project.id, "early-service-automation-task", "early-service-entry"),
     ).resolves.toBe(true);
 
     const entry = store.projects[0]?.automationTasks?.[0]?.dailyPlans[0]?.entries[0];
@@ -1289,7 +1184,7 @@ describe('browser UI preferences fallback', () => {
           expect.objectContaining({
             automationTasks: [
               expect.objectContaining({
-                runEarlyEntryId: 'early-service-entry',
+                runEarlyEntryId: "early-service-entry",
               }),
             ],
           }),
@@ -1298,23 +1193,23 @@ describe('browser UI preferences fallback', () => {
     );
   });
 
-  it('restores service-owned script state and retained output after plugin reconnect', async () => {
+  it("restores service-owned script state and retained output after plugin reconnect", async () => {
     const project: Project = {
-      id: 'reconnected-project',
-      name: 'Reconnected project',
-      path: '/workspace/reconnected-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "reconnected-project",
+      name: "Reconnected project",
+      path: "/workspace/reconnected-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
-      scripts: [{ id: 'reconnected-script', name: 'dev', command: 'npm run dev', status: 'IDLE' }],
+      scripts: [{ id: "reconnected-script", name: "dev", command: "npm run dev", status: "IDLE" }],
       automationTasks: [
         {
-          id: 'reconnected-task',
-          name: 'Reconnected task',
+          id: "reconnected-task",
+          name: "Reconnected task",
           enabled: true,
-          scriptIds: ['reconnected-script'],
-          schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-          missedPolicy: 'grace-run',
+          scriptIds: ["reconnected-script"],
+          schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+          missedPolicy: "grace-run",
           missedGraceMinutes: 5,
           notifyEnabled: false,
           maxScriptRuntimeMinutes: 30,
@@ -1322,56 +1217,56 @@ describe('browser UI preferences fallback', () => {
           exitConfigs: [],
           dailyPlans: [
             {
-              date: '2026-08-14',
+              date: "2026-08-14",
               entries: [
                 {
-                  id: 'reconnected-entry',
-                  plannedAt: '2026-08-14T00:00:00.000Z',
-                  status: 'pending',
+                  id: "reconnected-entry",
+                  plannedAt: "2026-08-14T00:00:00.000Z",
+                  status: "pending",
                 },
               ],
             },
           ],
           history: [],
-          createdAt: '2026-08-13T00:00:00.000Z',
-          updatedAt: '2026-08-13T00:00:00.000Z',
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
         },
       ],
       env: {},
     };
     const status: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'linux',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-linux-amd64',
-      directoryPath: '/service',
-      executablePath: '/service/project-launch-service',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "linux",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-linux-amd64",
+      directoryPath: "/service",
+      executablePath: "/service/project-launch-service",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [
         {
-          id: '1234567890abcdef1234567890abcdef',
+          id: "1234567890abcdef1234567890abcdef",
           projectId: project.id,
-          scriptId: 'reconnected-script',
-          label: 'Reconnected project / dev',
-          command: 'npm run dev',
+          scriptId: "reconnected-script",
+          label: "Reconnected project / dev",
+          command: "npm run dev",
           cwd: project.path,
           pid: 4242,
-          status: 'running',
-          startedAt: '2026-08-14T00:00:00.000Z',
+          status: "running",
+          startedAt: "2026-08-14T00:00:00.000Z",
         },
       ],
       events: [
         {
           cursor: 3,
-          timestamp: '2026-08-14T00:00:01.000Z',
-          type: 'stdout',
-          runId: '1234567890abcdef1234567890abcdef',
+          timestamp: "2026-08-14T00:00:01.000Z",
+          type: "stdout",
+          runId: "1234567890abcdef1234567890abcdef",
           projectId: project.id,
-          scriptId: 'reconnected-script',
+          scriptId: "reconnected-script",
           pid: 4242,
-          message: 'service output survived reconnect',
+          message: "service output survived reconnect",
         },
       ],
       eventsTruncated: true,
@@ -1380,29 +1275,29 @@ describe('browser UI preferences fallback', () => {
         revision: 4,
         executions: [
           {
-            id: 'reconnected-automation-run',
+            id: "reconnected-automation-run",
             projectId: project.id,
-            taskId: 'reconnected-task',
-            planEntryId: 'reconnected-entry',
-            plannedAt: '2026-08-14T00:00:00.000Z',
-            status: 'completed',
+            taskId: "reconnected-task",
+            planEntryId: "reconnected-entry",
+            plannedAt: "2026-08-14T00:00:00.000Z",
+            status: "completed",
             currentScriptIndex: 1,
-            startedAt: '2026-08-14T00:00:00.000Z',
-            endedAt: '2026-08-14T00:00:02.000Z',
+            startedAt: "2026-08-14T00:00:00.000Z",
+            endedAt: "2026-08-14T00:00:02.000Z",
             scriptResults: [
               {
-                scriptId: 'reconnected-script',
-                status: 'completed',
-                startedAt: '2026-08-14T00:00:00.000Z',
-                endedAt: '2026-08-14T00:00:02.000Z',
+                scriptId: "reconnected-script",
+                status: "completed",
+                startedAt: "2026-08-14T00:00:00.000Z",
+                endedAt: "2026-08-14T00:00:02.000Z",
               },
             ],
           },
         ],
       },
     };
-    const reconcileProjectLaunchService = vi.fn<ProjectBridge['reconcileProjectLaunchService']>(async () => status);
-    const getProjectLaunchServiceStatus = vi.fn<ProjectBridge['getProjectLaunchServiceStatus']>(async () => ({
+    const reconcileProjectLaunchService = vi.fn<ProjectBridge["reconcileProjectLaunchService"]>(async () => status);
+    const getProjectLaunchServiceStatus = vi.fn<ProjectBridge["getProjectLaunchServiceStatus"]>(async () => ({
       ...status,
       runs: [],
       events: [],
@@ -1418,7 +1313,7 @@ describe('browser UI preferences fallback', () => {
       getProcessStatus: async () => ({ active: true }),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
@@ -1427,92 +1322,92 @@ describe('browser UI preferences fallback', () => {
 
     const script = store.projects[0]?.scripts[0];
     expect(script).toMatchObject({
-      status: 'RUNNING',
+      status: "RUNNING",
       pid: 4242,
-      runId: '1234567890abcdef1234567890abcdef',
-      runtimeOwner: 'service',
+      runId: "1234567890abcdef1234567890abcdef",
+      runtimeOwner: "service",
     });
     expect(store.projects[0]?.status).toBe(ProjectStatus.RUNNING);
     expect(reconcileProjectLaunchService).toHaveBeenCalled();
     expect(getProjectLaunchServiceStatus).not.toHaveBeenCalled();
     expect(store.projectLaunchServiceStatus?.eventsTruncated).toBe(true);
-    expect(store.scriptLogs[project.id]?.['reconnected-script']).toContainEqual(
+    expect(store.scriptLogs[project.id]?.["reconnected-script"]).toContainEqual(
       expect.objectContaining({
-        message: 'service output survived reconnect',
-        timestamp: new Date('2026-08-14T00:00:01.000Z').toLocaleTimeString(),
+        message: "service output survived reconnect",
+        timestamp: new Date("2026-08-14T00:00:01.000Z").toLocaleTimeString(),
       }),
     );
-    const task = store.projects[0]?.automationTasks?.find((item) => item.id === 'reconnected-task');
+    const task = store.projects[0]?.automationTasks?.find((item) => item.id === "reconnected-task");
     const entry = store
-      .serviceAutomationTaskEntries(project.id, 'reconnected-task')
-      ?.find((item) => item.id === 'reconnected-entry');
-    expect(entry).toMatchObject({ status: 'completed', runId: 'reconnected-automation-run' });
+      .serviceAutomationTaskEntries(project.id, "reconnected-task")
+      ?.find((item) => item.id === "reconnected-entry");
+    expect(entry).toMatchObject({ status: "completed", runId: "reconnected-automation-run" });
     expect(task?.history).toContainEqual(
       expect.objectContaining({
-        id: 'reconnected-automation-run',
-        status: 'completed',
-        plannedAt: '2026-08-14T00:00:00.000Z',
+        id: "reconnected-automation-run",
+        status: "completed",
+        plannedAt: "2026-08-14T00:00:00.000Z",
       }),
     );
   });
 
-  it('restores a service-lost script as stopped after service restart', async () => {
-    const runId = 'lost-service-run';
+  it("restores a service-lost script as stopped after service restart", async () => {
+    const runId = "lost-service-run";
     const project: Project = {
-      id: 'lost-service-project',
-      name: 'Lost service project',
-      path: '/workspace/lost-service-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "lost-service-project",
+      name: "Lost service project",
+      path: "/workspace/lost-service-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.RUNNING,
       scripts: [
         {
-          id: 'lost-service-script',
-          name: 'dev',
-          command: 'npm run dev',
-          status: 'RUNNING',
+          id: "lost-service-script",
+          name: "dev",
+          command: "npm run dev",
+          status: "RUNNING",
           pid: 4242,
           runId,
-          runtimeOwner: 'service',
+          runtimeOwner: "service",
         },
       ],
       env: {},
     };
     const status: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'linux',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-linux-amd64',
-      directoryPath: '/service',
-      executablePath: '/service/project-launch-service',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "linux",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-linux-amd64",
+      directoryPath: "/service",
+      executablePath: "/service/project-launch-service",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [
         {
           id: runId,
           projectId: project.id,
-          scriptId: 'lost-service-script',
-          label: 'Lost service project / dev',
-          command: 'npm run dev',
+          scriptId: "lost-service-script",
+          label: "Lost service project / dev",
+          command: "npm run dev",
           cwd: project.path,
           pid: 4242,
-          status: 'lost',
-          startedAt: '2026-08-16T00:00:00.000Z',
-          endedAt: '2026-08-16T00:00:01.000Z',
-          error: 'The persisted process identity could not be verified after service restart.',
+          status: "lost",
+          startedAt: "2026-08-16T00:00:00.000Z",
+          endedAt: "2026-08-16T00:00:01.000Z",
+          error: "The persisted process identity could not be verified after service restart.",
         },
       ],
       events: [
         {
           cursor: 7,
-          timestamp: '2026-08-16T00:00:01.000Z',
-          type: 'error',
+          timestamp: "2026-08-16T00:00:01.000Z",
+          type: "error",
           runId,
           projectId: project.id,
-          scriptId: 'lost-service-script',
+          scriptId: "lost-service-script",
           pid: 4242,
-          message: 'The persisted process identity could not be verified after service restart.',
+          message: "The persisted process identity could not be verified after service restart.",
         },
       ],
     };
@@ -1521,47 +1416,47 @@ describe('browser UI preferences fallback', () => {
       loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [project];
 
-    store.handleBridgeEvent({ type: 'service-state', status });
+    store.handleBridgeEvent({ type: "service-state", status });
 
     const script = store.projects[0]?.scripts[0];
-    expect(script).toMatchObject({ status: 'STOPPED' });
+    expect(script).toMatchObject({ status: "STOPPED" });
     expect(script?.pid).toBeUndefined();
     expect(script?.runId).toBeUndefined();
     expect(script?.runtimeOwner).toBeUndefined();
     expect(store.projects[0]?.status).toBe(ProjectStatus.STOPPED);
-    expect(store.scriptLogs[project.id]?.['lost-service-script'] || []).toEqual([]);
+    expect(store.scriptLogs[project.id]?.["lost-service-script"] || []).toEqual([]);
   });
 
-  it('clears all script runtime identity when a project path becomes unavailable', async () => {
+  it("clears all script runtime identity when a project path becomes unavailable", async () => {
     window.projectBridge = {
       ...getProjectBridge(),
       pathExists: async () => false,
     };
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'missing-project',
-        name: 'Missing project',
-        path: '/workspace/missing-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "missing-project",
+        name: "Missing project",
+        path: "/workspace/missing-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'missing-script',
-            name: 'dev',
-            command: 'npm run dev',
-            status: 'RUNNING',
+            id: "missing-script",
+            name: "dev",
+            command: "npm run dev",
+            status: "RUNNING",
             pid: 4242,
-            runId: '1234567890abcdef1234567890abcdef',
-            runtimeOwner: 'service',
+            runId: "1234567890abcdef1234567890abcdef",
+            runtimeOwner: "service",
           },
         ],
         env: {},
@@ -1573,80 +1468,24 @@ describe('browser UI preferences fallback', () => {
     const project = store.projects[0]!;
     const script = project.scripts[0]!;
     expect(project.status).toBe(ProjectStatus.WARNING);
-    expect(script.status).toBe('IDLE');
+    expect(script.status).toBe("IDLE");
     expect(script.pid).toBeUndefined();
     expect(script.runId).toBeUndefined();
     expect(script.runtimeOwner).toBeUndefined();
   });
 
-  it('retains service-owned script identity when the service is unavailable', async () => {
-    window.projectBridge = {
-      ...getProjectBridge(),
-      loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
-    };
-    const { useStore } = await import('../src/store/useStore');
-    setActivePinia(createPinia());
-    const store = useStore();
-    store.projects = [
-      {
-        id: 'restarted-service-project',
-        name: 'Restarted service project',
-        path: '/workspace/restarted-service-project',
-        type: 'Custom',
-        kind: 'custom',
-        status: ProjectStatus.RUNNING,
-        scripts: [
-          {
-            id: 'restarted-service-script',
-            name: 'dev',
-            command: 'npm run dev',
-            status: 'RUNNING',
-            pid: 4242,
-            runId: '1234567890abcdef1234567890abcdef',
-            runtimeOwner: 'service',
-          },
-        ],
-        env: {},
-      },
-    ];
+  it("keeps a service run identity when refresh cannot reach the service", async () => {
     const unavailableStatus: ProjectLaunchServiceStatus = {
-      state: 'unavailable',
+      state: "unavailable",
       installed: true,
       running: false,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
-      message: 'Project Launch Service is unavailable.',
-    };
-
-    store.reconcileProjectLaunchServiceRuntime(unavailableStatus);
-
-    const project = store.projects[0]!;
-    const script = project.scripts[0]!;
-    expect(project.status).toBe(ProjectStatus.RUNNING);
-    expect(script).toMatchObject({
-      status: 'RUNNING',
-      pid: 4242,
-      runId: '1234567890abcdef1234567890abcdef',
-      runtimeOwner: 'service',
-    });
-  });
-
-  it('keeps a service run identity when refresh cannot reach the service', async () => {
-    const unavailableStatus: ProjectLaunchServiceStatus = {
-      state: 'unavailable',
-      installed: true,
-      running: false,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
-      message: 'Project Launch Service is unavailable.',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
+      message: "Project Launch Service is unavailable.",
     };
     window.projectBridge = {
       ...getProjectBridge(),
@@ -1654,32 +1493,32 @@ describe('browser UI preferences fallback', () => {
       reconcileProjectLaunchService: async () => unavailableStatus,
       getProcessStatus: async () => ({
         active: false,
-        serviceState: 'unavailable',
-        error: 'Project Launch Service is unavailable.',
+        serviceState: "unavailable",
+        error: "Project Launch Service is unavailable.",
       }),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [
       {
-        id: 'unavailable-refresh-project',
-        name: 'Unavailable refresh project',
-        path: '/workspace/unavailable-refresh-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "unavailable-refresh-project",
+        name: "Unavailable refresh project",
+        path: "/workspace/unavailable-refresh-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'unavailable-refresh-script',
-            name: 'dev',
-            command: 'echo unavailable',
-            status: 'RUNNING',
+            id: "unavailable-refresh-script",
+            name: "dev",
+            command: "echo unavailable",
+            status: "RUNNING",
             pid: 8801,
-            runId: 'unavailable-refresh-run',
-            runtimeOwner: 'service',
+            runId: "unavailable-refresh-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
@@ -1688,46 +1527,28 @@ describe('browser UI preferences fallback', () => {
 
     await store.refreshProjectLaunchServiceStatus();
 
-    expect(store.projectLaunchServiceStatus).toMatchObject({ state: 'unavailable' });
+    expect(store.projectLaunchServiceStatus).toMatchObject({ state: "unavailable" });
+    expect(store.projects[0]?.status).toBe(ProjectStatus.RUNNING);
     expect(store.projects[0]?.scripts[0]).toMatchObject({
-      status: 'RUNNING',
+      status: "RUNNING",
       pid: 8801,
-      runId: 'unavailable-refresh-run',
-      runtimeOwner: 'service',
+      runId: "unavailable-refresh-run",
+      runtimeOwner: "service",
     });
   });
 });
 
-describe('Project Launch Service preload installation', () => {
-  const binaryContents = Buffer.from('verified-project-launch-service');
+describe("Project Launch Service preload installation", () => {
+  const binaryContents = Buffer.from("verified-project-launch-service");
 
   const createBridge = (serviceRoot: string, moduleOverrides: Record<string, unknown> = {}) =>
     loadPreloadBridge(new Map(), undefined, { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot }, moduleOverrides);
 
-  it('reports a manually placed executable as installed', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
-    try {
-      const bridge = createBridge(serviceRoot);
-      const beforeInstall = await bridge.getProjectLaunchServiceStatus();
-      mkdirSync(beforeInstall.directoryPath, { recursive: true });
-      writeFileSync(beforeInstall.executablePath, binaryContents);
-
-      await expect(bridge.getProjectLaunchServiceStatus()).resolves.toMatchObject({
-        state: 'installed',
-        installed: true,
-        running: false,
-        message: '项目启动服务已安装，尚未运行。',
-      });
-    } finally {
-      rmSync(serviceRoot, { recursive: true, force: true });
-    }
-  });
-
-  it('normalizes null automation results and keeps log queries independent of service HTTP', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+  it("normalizes null automation results and keeps log queries independent of service HTTP", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const requestedPaths: string[] = [];
     const requestedBodies: string[] = [];
-    const runID = '11111111111111111111111111111111';
+    const runID = "11111111111111111111111111111111";
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
         requestedPaths.push(options.path);
@@ -1740,18 +1561,18 @@ describe('Project Launch Service preload installation', () => {
           requestedBodies.push(chunk);
         };
         request.destroy = (error) => {
-          if (error) queueMicrotask(() => request.emit('error', error));
+          if (error) queueMicrotask(() => request.emit("error", error));
         };
         request.end = () => {
           const payload =
-            options.path === '/v1/sync?after=0'
+            options.path === "/v1/sync?after=0"
               ? {
                   health: {
                     protocolVersion: 3,
-                    serviceVersion: 'test',
-                    instanceId: 'existing-service',
+                    serviceVersion: "test",
+                    instanceId: "existing-service",
                     pid: process.pid,
-                    processIdentity: 'test-process',
+                    processIdentity: "test-process",
                   },
                   state: {
                     runs: [],
@@ -1761,11 +1582,11 @@ describe('Project Launch Service preload installation', () => {
                       revision: 7,
                       executions: [
                         {
-                          id: 'execution',
-                          projectId: 'project',
-                          taskId: 'task',
-                          planEntryId: 'entry',
-                          status: 'completed',
+                          id: "execution",
+                          projectId: "project",
+                          taskId: "task",
+                          planEntryId: "entry",
+                          status: "completed",
                           currentScriptIndex: 0,
                           scriptResults: null,
                         },
@@ -1790,15 +1611,15 @@ describe('Project Launch Service preload installation', () => {
                     hasMore: false,
                     nextOffset: 0,
                   }
-                : options.path === '/v1/logs/clear'
+                : options.path === "/v1/logs/clear"
                   ? { deletedCount: 1, releasedBytes: 128 }
                   : null;
           const response = new EventEmitter() as EventEmitter & { statusCode: number };
           response.statusCode = payload ? 200 : 404;
           queueMicrotask(() => {
             callback(response);
-            response.emit('data', Buffer.from(JSON.stringify(payload || {})));
-            response.emit('end');
+            response.emit("data", Buffer.from(JSON.stringify(payload || {})));
+            response.emit("end");
           });
         };
         return request;
@@ -1810,31 +1631,31 @@ describe('Project Launch Service preload installation', () => {
       const installed = await bridge.getProjectLaunchServiceStatus();
       mkdirSync(installed.directoryPath, { recursive: true });
       writeFileSync(installed.executablePath, binaryContents);
-      writeFileSync(join(installed.directoryPath, 'token'), `${'a'.repeat(64)}\n`);
+      writeFileSync(join(installed.directoryPath, "token"), `${"a".repeat(64)}\n`);
       writeFileSync(
-        join(installed.directoryPath, 'discovery.json'),
+        join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
           protocolVersion: 3,
-          serviceVersion: 'test',
-          instanceId: 'existing-service',
+          serviceVersion: "test",
+          instanceId: "existing-service",
           pid: process.pid,
-          processIdentity: 'test-process',
+          processIdentity: "test-process",
           startedAt: new Date().toISOString(),
-          host: '127.0.0.1',
+          host: "127.0.0.1",
           port: 3000,
-          tokenPath: join(installed.directoryPath, 'token'),
+          tokenPath: join(installed.directoryPath, "token"),
         }),
       );
 
       const reconciled = await bridge.reconcileProjectLaunchService();
       expect(reconciled).toMatchObject({
-        state: 'healthy',
+        state: "healthy",
         running: true,
         automationRevision: 7,
         automation: { revision: 7 },
       });
       expect(reconciled.automation?.executions?.[0]?.scriptResults).toEqual([]);
-      await expect(bridge.readRuntimeRecordLogPage(runID, 0)).rejects.toThrow('运行记录不可用');
+      await expect(bridge.readRuntimeRecordLogPage(runID, 0)).rejects.toThrow("运行记录不可用");
       await expect(bridge.clearRuntimeRecords({ runId: runID })).resolves.toMatchObject({
         deletedCount: 0,
         releasedBytes: 0,
@@ -1843,21 +1664,21 @@ describe('Project Launch Service preload installation', () => {
         deletedCount: 0,
         releasedBytes: 0,
       });
-      expect(requestedPaths).toEqual(['/v1/sync?after=0']);
+      expect(requestedPaths).toEqual(["/v1/sync?after=0"]);
       expect(requestedBodies).toEqual([]);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
   });
 
-  it('uses one combined synchronization request when the service supports it', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+  it("uses one combined synchronization request when the service supports it", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const requestedPaths: string[] = [];
-    const https = createProjectLaunchServiceDownloadHttps(Buffer.from('updated-project-launch-service'));
+    const https = createProjectLaunchServiceDownloadHttps(Buffer.from("updated-project-launch-service"));
     writeFileSync(
-      join(serviceRoot, 'local-state.v1.json'),
+      join(serviceRoot, "local-state.v1.json"),
       JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
-      'utf8',
+      "utf8",
     );
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
@@ -1867,35 +1688,35 @@ describe('Project Launch Service preload installation', () => {
           end: () => void;
         };
         request.destroy = (error) => {
-          if (error) queueMicrotask(() => request.emit('error', error));
+          if (error) queueMicrotask(() => request.emit("error", error));
         };
         request.end = () => {
-          const payload = options.path.startsWith('/v1/sync?after=')
+          const payload = options.path.startsWith("/v1/sync?after=")
             ? {
                 health: {
                   protocolVersion: 3,
-                  serviceVersion: 'test',
-                  instanceId: 'sync-service',
+                  serviceVersion: "test",
+                  instanceId: "sync-service",
                   pid: process.pid,
-                  processIdentity: 'sync-process',
+                  processIdentity: "sync-process",
                 },
                 state: {
                   runs: [],
                   latestCursor: 1,
                   earliestCursor: 1,
                   automation: { revision: 3, executions: [] },
-                  scheduler: { state: 'running' },
+                  scheduler: { state: "running" },
                 },
                 events: {
                   events: [
                     {
                       cursor: 1,
-                      timestamp: '2026-08-17T00:00:00.000Z',
-                      type: 'stdout',
-                      runId: '11111111111111111111111111111111',
-                      projectId: 'sync-project',
-                      scriptId: 'sync-script',
-                      message: 'sync output',
+                      timestamp: "2026-08-17T00:00:00.000Z",
+                      type: "stdout",
+                      runId: "11111111111111111111111111111111",
+                      projectId: "sync-project",
+                      scriptId: "sync-script",
+                      message: "sync output",
                     },
                   ],
                   latestCursor: 1,
@@ -1905,13 +1726,13 @@ describe('Project Launch Service preload installation', () => {
                   hasMore: false,
                 },
               }
-            : { code: 'not_found' };
+            : { code: "not_found" };
           const response = new EventEmitter() as EventEmitter & { statusCode: number };
-          response.statusCode = options.path.startsWith('/v1/sync?after=') ? 200 : 404;
+          response.statusCode = options.path.startsWith("/v1/sync?after=") ? 200 : 404;
           queueMicrotask(() => {
             callback(response);
-            response.emit('data', Buffer.from(JSON.stringify(payload)));
-            response.emit('end');
+            response.emit("data", Buffer.from(JSON.stringify(payload)));
+            response.emit("end");
           });
         };
         return request;
@@ -1928,40 +1749,40 @@ describe('Project Launch Service preload installation', () => {
       const installed = await bridge.getProjectLaunchServiceStatus();
       mkdirSync(installed.directoryPath, { recursive: true });
       writeFileSync(installed.executablePath, binaryContents);
-      writeFileSync(join(installed.directoryPath, 'token'), `${'a'.repeat(64)}\n`);
+      writeFileSync(join(installed.directoryPath, "token"), `${"a".repeat(64)}\n`);
       writeFileSync(
-        join(installed.directoryPath, 'discovery.json'),
+        join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
           protocolVersion: 3,
-          serviceVersion: 'test',
-          instanceId: 'sync-service',
+          serviceVersion: "test",
+          instanceId: "sync-service",
           pid: process.pid,
-          processIdentity: 'sync-process',
+          processIdentity: "sync-process",
           startedAt: new Date().toISOString(),
-          host: '127.0.0.1',
+          host: "127.0.0.1",
           port: 3000,
-          tokenPath: join(installed.directoryPath, 'token'),
+          tokenPath: join(installed.directoryPath, "token"),
         }),
       );
 
       const reconciled = await bridge.reconcileProjectLaunchService();
 
       expect(reconciled).toMatchObject({
-        state: 'healthy',
+        state: "healthy",
         running: true,
         automationRevision: 3,
-        events: [expect.objectContaining({ message: 'sync output' })],
+        events: [expect.objectContaining({ message: "sync output" })],
       });
       const updateStatus = await bridge.checkProjectLaunchServiceUpdate();
 
       expect(updateStatus).toMatchObject({
-        state: 'healthy',
+        state: "healthy",
         running: true,
-        scheduler: { state: 'running' },
+        scheduler: { state: "running" },
         updateAvailable: true,
         updateCheckError: false,
       });
-      expect(requestedPaths).toEqual(['/v1/sync?after=0', '/v1/sync?after=1']);
+      expect(requestedPaths).toEqual(["/v1/sync?after=0", "/v1/sync?after=1"]);
       expect(https.get).toHaveBeenCalledTimes(2);
       bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
     } finally {
@@ -1969,43 +1790,43 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('defers a service-state broadcast until the final event page', async () => {
+  it("defers a service-state broadcast until the final event page", async () => {
     vi.useFakeTimers();
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus; message?: string }> = [];
     const requestedPaths: string[] = [];
     writeFileSync(
-      join(serviceRoot, 'local-state.v1.json'),
+      join(serviceRoot, "local-state.v1.json"),
       JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
-      'utf8',
+      "utf8",
     );
     const health = {
       protocolVersion: 3,
-      serviceVersion: 'test',
-      instanceId: 'paged-service',
+      serviceVersion: "test",
+      instanceId: "paged-service",
       pid: process.pid,
-      processIdentity: 'paged-process',
+      processIdentity: "paged-process",
     };
     const state = {
       runs: [
         {
-          id: '11111111111111111111111111111111',
-          projectId: 'paged-project',
-          scriptId: 'one-shot-script',
-          label: 'Paged project / one shot',
-          command: 'echo paged',
-          cwd: 'C:\\workspace',
+          id: "11111111111111111111111111111111",
+          projectId: "paged-project",
+          scriptId: "one-shot-script",
+          label: "Paged project / one shot",
+          command: "echo paged",
+          cwd: "C:\\workspace",
           pid: 8107,
-          status: 'exited',
-          startedAt: '2026-08-25T09:00:00.000Z',
-          endedAt: '2026-08-25T09:00:01.000Z',
+          status: "exited",
+          startedAt: "2026-08-25T09:00:00.000Z",
+          endedAt: "2026-08-25T09:00:01.000Z",
           code: 0,
         },
       ],
       latestCursor: 3,
       earliestCursor: 1,
       automation: { revision: 0, executions: [] },
-      scheduler: { state: 'running' },
+      scheduler: { state: "running" },
     };
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
@@ -2015,11 +1836,11 @@ describe('Project Launch Service preload installation', () => {
           end: () => void;
         };
         request.destroy = (error) => {
-          if (error) queueMicrotask(() => request.emit('error', error));
+          if (error) queueMicrotask(() => request.emit("error", error));
         };
         request.end = () => {
           const payload =
-            options.path === '/v1/sync?after=0'
+            options.path === "/v1/sync?after=0"
               ? {
                   health,
                   state,
@@ -2027,11 +1848,11 @@ describe('Project Launch Service preload installation', () => {
                     events: [
                       {
                         cursor: 1,
-                        timestamp: '2026-08-25T09:00:00.000Z',
-                        type: 'started',
-                        runId: '11111111111111111111111111111111',
-                        projectId: 'paged-project',
-                        scriptId: 'one-shot-script',
+                        timestamp: "2026-08-25T09:00:00.000Z",
+                        type: "started",
+                        runId: "11111111111111111111111111111111",
+                        projectId: "paged-project",
+                        scriptId: "one-shot-script",
                         pid: 8107,
                       },
                     ],
@@ -2042,7 +1863,7 @@ describe('Project Launch Service preload installation', () => {
                     hasMore: true,
                   },
                 }
-              : options.path === '/v1/sync?after=1'
+              : options.path === "/v1/sync?after=1"
                 ? {
                     health,
                     state,
@@ -2050,21 +1871,21 @@ describe('Project Launch Service preload installation', () => {
                       events: [
                         {
                           cursor: 2,
-                          timestamp: '2026-08-25T09:00:00.500Z',
-                          type: 'stdout',
-                          runId: '11111111111111111111111111111111',
-                          projectId: 'paged-project',
-                          scriptId: 'one-shot-script',
+                          timestamp: "2026-08-25T09:00:00.500Z",
+                          type: "stdout",
+                          runId: "11111111111111111111111111111111",
+                          projectId: "paged-project",
+                          scriptId: "one-shot-script",
                           pid: 8107,
-                          message: 'paged output',
+                          message: "paged output",
                         },
                         {
                           cursor: 3,
-                          timestamp: '2026-08-25T09:00:01.000Z',
-                          type: 'exit',
-                          runId: '11111111111111111111111111111111',
-                          projectId: 'paged-project',
-                          scriptId: 'one-shot-script',
+                          timestamp: "2026-08-25T09:00:01.000Z",
+                          type: "exit",
+                          runId: "11111111111111111111111111111111",
+                          projectId: "paged-project",
+                          scriptId: "one-shot-script",
                           pid: 8107,
                           code: 0,
                         },
@@ -2081,8 +1902,8 @@ describe('Project Launch Service preload installation', () => {
           response.statusCode = payload ? 200 : 404;
           queueMicrotask(() => {
             callback(response);
-            response.emit('data', Buffer.from(JSON.stringify(payload || {})));
-            response.emit('end');
+            response.emit("data", Buffer.from(JSON.stringify(payload || {})));
+            response.emit("end");
           });
         };
         return request;
@@ -2096,7 +1917,7 @@ describe('Project Launch Service preload installation', () => {
         { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { http },
         (detail) => {
-          if (detail && typeof detail === 'object') {
+          if (detail && typeof detail === "object") {
             emittedEvents.push(detail as { type?: string; status?: ProjectLaunchServiceStatus; message?: string });
           }
         },
@@ -2104,19 +1925,19 @@ describe('Project Launch Service preload installation', () => {
       const installed = await bridge.getProjectLaunchServiceStatus();
       mkdirSync(installed.directoryPath, { recursive: true });
       writeFileSync(installed.executablePath, binaryContents);
-      writeFileSync(join(installed.directoryPath, 'token'), `${'a'.repeat(64)}\n`);
+      writeFileSync(join(installed.directoryPath, "token"), `${"a".repeat(64)}\n`);
       writeFileSync(
-        join(installed.directoryPath, 'discovery.json'),
+        join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
           protocolVersion: 3,
-          serviceVersion: 'test',
-          instanceId: 'paged-service',
+          serviceVersion: "test",
+          instanceId: "paged-service",
           pid: process.pid,
-          processIdentity: 'paged-process',
+          processIdentity: "paged-process",
           startedAt: new Date().toISOString(),
-          host: '127.0.0.1',
+          host: "127.0.0.1",
           port: 3000,
-          tokenPath: join(installed.directoryPath, 'token'),
+          tokenPath: join(installed.directoryPath, "token"),
         }),
       );
 
@@ -2126,8 +1947,8 @@ describe('Project Launch Service preload installation', () => {
 
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(requestedPaths).toEqual(['/v1/sync?after=0', '/v1/sync?after=1']);
-      expect(emittedEvents.map((event) => event.type)).toEqual(['stdout', 'exit', 'service-state']);
+      expect(requestedPaths).toEqual(["/v1/sync?after=0", "/v1/sync?after=1"]);
+      expect(emittedEvents.map((event) => event.type)).toEqual(["stdout", "exit", "service-state"]);
       expect(emittedEvents[2]?.status).toMatchObject({ eventsHasMore: false, events: [] });
       bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
     } finally {
@@ -2136,15 +1957,15 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('suppresses unchanged empty service-state broadcasts', async () => {
+  it("suppresses unchanged empty service-state broadcasts", async () => {
     vi.useFakeTimers();
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus }> = [];
     const requestedPaths: string[] = [];
     writeFileSync(
-      join(serviceRoot, 'local-state.v1.json'),
+      join(serviceRoot, "local-state.v1.json"),
       JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
-      'utf8',
+      "utf8",
     );
     const http = {
       request: vi.fn((options: { path: string }, callback: (response: EventEmitter) => void) => {
@@ -2159,22 +1980,22 @@ describe('Project Launch Service preload installation', () => {
           response.statusCode = 200;
           callback(response);
           response.emit(
-            'data',
+            "data",
             Buffer.from(
               JSON.stringify({
                 health: {
                   protocolVersion: 3,
-                  serviceVersion: 'test',
-                  instanceId: 'quiet-service',
+                  serviceVersion: "test",
+                  instanceId: "quiet-service",
                   pid: process.pid,
-                  processIdentity: 'quiet-process',
+                  processIdentity: "quiet-process",
                 },
                 state: {
                   runs: [],
                   latestCursor: 0,
                   earliestCursor: 0,
                   automation: { revision: 0, executions: [] },
-                  scheduler: { state: 'running' },
+                  scheduler: { state: "running" },
                 },
                 events: {
                   events: [],
@@ -2187,7 +2008,7 @@ describe('Project Launch Service preload installation', () => {
               }),
             ),
           );
-          response.emit('end');
+          response.emit("end");
         };
         return request;
       }),
@@ -2200,7 +2021,7 @@ describe('Project Launch Service preload installation', () => {
         { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { http },
         (detail) => {
-          if (detail && typeof detail === 'object') {
+          if (detail && typeof detail === "object") {
             emittedEvents.push(detail as { type?: string; status?: ProjectLaunchServiceStatus });
           }
         },
@@ -2208,19 +2029,19 @@ describe('Project Launch Service preload installation', () => {
       const installed = await bridge.getProjectLaunchServiceStatus();
       mkdirSync(installed.directoryPath, { recursive: true });
       writeFileSync(installed.executablePath, binaryContents);
-      writeFileSync(join(installed.directoryPath, 'token'), `${'a'.repeat(64)}\n`);
+      writeFileSync(join(installed.directoryPath, "token"), `${"a".repeat(64)}\n`);
       writeFileSync(
-        join(installed.directoryPath, 'discovery.json'),
+        join(installed.directoryPath, "discovery.json"),
         JSON.stringify({
           protocolVersion: 3,
-          serviceVersion: 'test',
-          instanceId: 'quiet-service',
+          serviceVersion: "test",
+          instanceId: "quiet-service",
           pid: process.pid,
-          processIdentity: 'quiet-process',
+          processIdentity: "quiet-process",
           startedAt: new Date().toISOString(),
-          host: '127.0.0.1',
+          host: "127.0.0.1",
           port: 3000,
-          tokenPath: join(installed.directoryPath, 'token'),
+          tokenPath: join(installed.directoryPath, "token"),
         }),
       );
 
@@ -2228,8 +2049,8 @@ describe('Project Launch Service preload installation', () => {
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(750);
 
-      expect(requestedPaths).toEqual(['/v1/sync?after=0', '/v1/sync?after=0']);
-      expect(emittedEvents.filter((event) => event.type === 'service-state')).toHaveLength(1);
+      expect(requestedPaths).toEqual(["/v1/sync?after=0", "/v1/sync?after=0"]);
+      expect(emittedEvents.filter((event) => event.type === "service-state")).toHaveLength(1);
       bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
     } finally {
       vi.useRealTimers();
@@ -2237,8 +2058,8 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('records a manually placed release asset after explicit verification', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+  it("records a manually placed release asset after explicit verification", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     try {
       const bridge = createBridge(serviceRoot);
       const installed = await bridge.getProjectLaunchServiceStatus();
@@ -2248,22 +2069,22 @@ describe('Project Launch Service preload installation', () => {
 
       const verified = await bridge.verifyProjectLaunchServiceInstall();
 
-      expect(verified).toMatchObject({ state: 'installed', installed: true, running: false });
+      expect(verified).toMatchObject({ state: "installed", installed: true, running: false });
       expect(readFileSync(installed.executablePath)).toEqual(binaryContents);
       expect(() => readFileSync(releaseAssetPath)).toThrow();
-      expect(JSON.parse(readFileSync(join(installed.directoryPath, 'install.json'), 'utf8'))).toEqual({
+      expect(JSON.parse(readFileSync(join(installed.directoryPath, "install.json"), "utf8"))).toEqual({
         schemaVersion: 1,
         assetName: installed.expectedAssetName,
-        sha256: createHash('sha256').update(binaryContents).digest('hex'),
+        sha256: createHash("sha256").update(binaryContents).digest("hex"),
       });
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
   });
 
-  it('reports an available service update without downloading it', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
-    const https = createProjectLaunchServiceDownloadHttps(Buffer.from('updated-project-launch-service'));
+  it("reports an available service update without downloading it", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const https = createProjectLaunchServiceDownloadHttps(Buffer.from("updated-project-launch-service"));
     try {
       const bridge = createBridge(serviceRoot, { https });
       const status = await bridge.getProjectLaunchServiceStatus();
@@ -2273,12 +2094,12 @@ describe('Project Launch Service preload installation', () => {
       const updateStatus = await bridge.checkProjectLaunchServiceUpdate();
 
       expect(updateStatus).toMatchObject({
-        state: 'installed',
+        state: "installed",
         installed: true,
         running: false,
         updateAvailable: true,
       });
-      expect(updateStatus.message).toContain('发现项目启动服务更新');
+      expect(updateStatus.message).toContain("发现项目启动服务更新");
       expect(readFileSync(status.executablePath)).toEqual(binaryContents);
       expect(https.get).toHaveBeenCalledTimes(2);
     } finally {
@@ -2286,10 +2107,10 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('emits percentage progress while downloading the service binary', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+  it("emits percentage progress while downloading the service binary", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const progressEvents: Array<{ type?: string; percent?: number; receivedBytes?: number; totalBytes?: number }> = [];
-    const binary = Buffer.from('12345678');
+    const binary = Buffer.from("12345678");
     const https = createProjectLaunchServiceDownloadHttps(binary, { chunkSize: 2 });
     try {
       const bridge = loadPreloadBridge(
@@ -2298,7 +2119,7 @@ describe('Project Launch Service preload installation', () => {
         { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
         { https },
         (detail) => {
-          if (detail && typeof detail === 'object') {
+          if (detail && typeof detail === "object") {
             progressEvents.push(
               detail as { type?: string; percent?: number; receivedBytes?: number; totalBytes?: number },
             );
@@ -2308,37 +2129,37 @@ describe('Project Launch Service preload installation', () => {
 
       await bridge.downloadProjectLaunchService();
 
-      expect(progressEvents.filter((event) => event.type === 'service-download-progress')).toEqual([
+      expect(progressEvents.filter((event) => event.type === "service-download-progress")).toEqual([
         {
-          type: 'service-download-progress',
+          type: "service-download-progress",
           receivedBytes: 0,
           totalBytes: 8,
           percent: 0,
           timestamp: expect.any(String),
         },
         {
-          type: 'service-download-progress',
+          type: "service-download-progress",
           receivedBytes: 2,
           totalBytes: 8,
           percent: 25,
           timestamp: expect.any(String),
         },
         {
-          type: 'service-download-progress',
+          type: "service-download-progress",
           receivedBytes: 4,
           totalBytes: 8,
           percent: 50,
           timestamp: expect.any(String),
         },
         {
-          type: 'service-download-progress',
+          type: "service-download-progress",
           receivedBytes: 6,
           totalBytes: 8,
           percent: 75,
           timestamp: expect.any(String),
         },
         {
-          type: 'service-download-progress',
+          type: "service-download-progress",
           receivedBytes: 8,
           totalBytes: 8,
           percent: 100,
@@ -2350,8 +2171,8 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('fails closed instead of starting an unverified executable during explicit enable', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+  it("fails closed instead of starting an unverified executable during explicit enable", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const spawn = vi.fn(() => Object.assign(new EventEmitter(), { unref: vi.fn() }));
     try {
       const bridge = createBridge(serviceRoot, { child_process: { spawn } });
@@ -2360,7 +2181,7 @@ describe('Project Launch Service preload installation', () => {
       writeFileSync(installed.executablePath, binaryContents);
 
       await expect(bridge.startProjectLaunchService()).resolves.toMatchObject({
-        state: 'unavailable',
+        state: "unavailable",
         installed: true,
         running: false,
       });
@@ -2370,8 +2191,8 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('records spawned service process exit and error details in common diagnostic records', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+  it("records spawned service process exit and error details in common diagnostic records", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const child = Object.assign(new EventEmitter(), { pid: 43210, unref: vi.fn() });
     const spawn = vi.fn(() => child);
     try {
@@ -2385,35 +2206,35 @@ describe('Project Launch Service preload installation', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(spawn).toHaveBeenCalledOnce();
 
-      child.emit('exit', 7, 'SIGTERM');
-      child.emit('error', Object.assign(new Error('service launch failed'), { code: 'EACCES' }));
+      child.emit("exit", 7, "SIGTERM");
+      child.emit("error", Object.assign(new Error("service launch failed"), { code: "EACCES" }));
 
-      const records = await bridge.listRuntimeRecords('__plugin__');
-      const diagnostic = records.find((record) => record.source === 'diagnostic');
+      const records = await bridge.listRuntimeRecords("__plugin__");
+      const diagnostic = records.find((record) => record.source === "diagnostic");
       expect(diagnostic).toBeDefined();
       const output = await bridge.readRuntimeRecordLogPage(diagnostic!.runId, 0);
-      const entries = output.events.map((event) => JSON.parse(event.message || '{}'));
+      const entries = output.events.map((event) => JSON.parse(event.message || "{}"));
       expect(entries).toEqual([
         expect.objectContaining({
-          event: 'process.spawned',
-          source: 'preload',
+          event: "process.spawned",
+          source: "preload",
           hostPid: process.pid,
           servicePid: 43210,
         }),
         expect.objectContaining({
-          event: 'process.exit',
-          source: 'preload',
+          event: "process.exit",
+          source: "preload",
           servicePid: 43210,
           code: 7,
-          signal: 'SIGTERM',
+          signal: "SIGTERM",
         }),
         expect.objectContaining({
-          event: 'process.error',
-          source: 'preload',
+          event: "process.error",
+          source: "preload",
           servicePid: 43210,
-          name: 'Error',
-          code: 'EACCES',
-          message: 'service launch failed',
+          name: "Error",
+          code: "EACCES",
+          message: "service launch failed",
         }),
       ]);
     } finally {
@@ -2422,9 +2243,9 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('creates the service directory before opening it', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
-    const openPath = vi.fn(() => '');
+  it("creates the service directory before opening it", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const openPath = vi.fn(() => "");
     try {
       const bridge = createBridge(serviceRoot, { electron: { shell: { openPath } } });
       const status = await bridge.getProjectLaunchServiceStatus();
@@ -2439,30 +2260,30 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('keeps automatic startup fail-closed after executable replacement', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+  it("keeps automatic startup fail-closed after executable replacement", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const https = createProjectLaunchServiceDownloadHttps(binaryContents);
     const spawn = vi.fn(() => Object.assign(new EventEmitter(), { unref: vi.fn() }));
     try {
       const bridge = createBridge(serviceRoot, { https, child_process: { spawn } });
 
       const installed = await bridge.downloadProjectLaunchService();
-      const metadataPath = join(installed.directoryPath, 'install.json');
-      expect(JSON.parse(readFileSync(metadataPath, 'utf8'))).toEqual({
+      const metadataPath = join(installed.directoryPath, "install.json");
+      expect(JSON.parse(readFileSync(metadataPath, "utf8"))).toEqual({
         schemaVersion: 1,
         assetName: installed.expectedAssetName,
-        sha256: createHash('sha256').update(binaryContents).digest('hex'),
+        sha256: createHash("sha256").update(binaryContents).digest("hex"),
       });
-      if (process.platform !== 'win32') {
+      if (process.platform !== "win32") {
         expect(statSync(metadataPath).mode & 0o077).toBe(0);
       }
 
-      writeFileSync(installed.executablePath, 'replaced executable');
+      writeFileSync(installed.executablePath, "replaced executable");
       bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: true });
       const reconciled = await bridge.reconcileProjectLaunchService();
 
-      expect(reconciled).toMatchObject({ state: 'unavailable', installed: true, running: false });
-      expect(reconciled.message).toContain('文件已变更');
+      expect(reconciled).toMatchObject({ state: "unavailable", installed: true, running: false });
+      expect(reconciled.message).toContain("文件已变更");
       expect(spawn).not.toHaveBeenCalled();
       expect(https.get).toHaveBeenCalledTimes(3);
     } finally {
@@ -2470,8 +2291,8 @@ describe('Project Launch Service preload installation', () => {
     }
   });
 
-  it('downloads release assets redirected through release-assets.githubusercontent.com', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
+  it("downloads release assets redirected through release-assets.githubusercontent.com", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const https = createProjectLaunchServiceDownloadHttps(binaryContents, { redirectToReleaseAssets: true });
     try {
       const bridge = createBridge(serviceRoot, { https });
@@ -2480,29 +2301,29 @@ describe('Project Launch Service preload installation', () => {
 
       expect(readFileSync(installed.executablePath)).toEqual(binaryContents);
       expect(https.get.mock.calls.map(([options]) => (options as { hostname: string }).hostname)).toEqual([
-        'api.github.com',
-        'github.com',
-        'release-assets.githubusercontent.com',
-        'github.com',
-        'release-assets.githubusercontent.com',
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
       ]);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
   });
 
-  it('cleans a partial file when service download directory creation fails', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
-    const downloadsPath = join(serviceRoot, 'service', 'downloads');
+  it("cleans a partial file when service download directory creation fails", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const downloadsPath = join(serviceRoot, "service", "downloads");
     const partialPath = join(downloadsPath, `${projectLaunchServiceExecutableName()}.partial`);
-    const nativeFs = createRequire(import.meta.url)('node:fs') as typeof import('node:fs');
+    const nativeFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
     const fs = {
       ...nativeFs,
       mkdirSync: (directoryPath: string, options?: Parameters<typeof mkdirSync>[1]) => {
         if (directoryPath === downloadsPath) {
           mkdirSync(directoryPath, { recursive: true });
-          writeFileSync(partialPath, 'stale partial');
-          throw new Error('download directory failure');
+          writeFileSync(partialPath, "stale partial");
+          throw new Error("download directory failure");
         }
         return mkdirSync(directoryPath, options);
       },
@@ -2510,17 +2331,17 @@ describe('Project Launch Service preload installation', () => {
     try {
       const bridge = createBridge(serviceRoot, { https: createProjectLaunchServiceDownloadHttps(binaryContents), fs });
 
-      await expect(bridge.downloadProjectLaunchService()).rejects.toThrow('download directory failure');
+      await expect(bridge.downloadProjectLaunchService()).rejects.toThrow("download directory failure");
       expect(existsSync(partialPath)).toBe(false);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
     }
   });
 
-  it('cleans a partial file when service executable writing fails', async () => {
-    const serviceRoot = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
-    const partialPath = join(serviceRoot, 'service', 'downloads', `${projectLaunchServiceExecutableName()}.partial`);
-    const nativeFs = createRequire(import.meta.url)('node:fs') as typeof import('node:fs');
+  it("cleans a partial file when service executable writing fails", async () => {
+    const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+    const partialPath = join(serviceRoot, "service", "downloads", `${projectLaunchServiceExecutableName()}.partial`);
+    const nativeFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
     const fs = {
       ...nativeFs,
       writeFileSync: (
@@ -2530,7 +2351,7 @@ describe('Project Launch Service preload installation', () => {
       ) => {
         if (filePath === partialPath) {
           writeFileSync(filePath, contents, options);
-          throw new Error('service executable write failure');
+          throw new Error("service executable write failure");
         }
         return writeFileSync(filePath, contents, options);
       },
@@ -2538,7 +2359,7 @@ describe('Project Launch Service preload installation', () => {
     try {
       const bridge = createBridge(serviceRoot, { https: createProjectLaunchServiceDownloadHttps(binaryContents), fs });
 
-      await expect(bridge.downloadProjectLaunchService()).rejects.toThrow('service executable write failure');
+      await expect(bridge.downloadProjectLaunchService()).rejects.toThrow("service executable write failure");
       expect(existsSync(partialPath)).toBe(false);
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
@@ -2546,12 +2367,12 @@ describe('Project Launch Service preload installation', () => {
   });
 });
 
-describe('store startup timing', () => {
+describe("store startup timing", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     const storage = new Map<string, string>();
-    vi.stubGlobal('window', {
-      navigator: { platform: '', userAgent: 'vitest' },
+    vi.stubGlobal("window", {
+      navigator: { platform: "", userAgent: "vitest" },
       localStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: string) => storage.set(key, value),
@@ -2570,46 +2391,13 @@ describe('store startup timing', () => {
     vi.resetModules();
   });
 
-  it('marks project loading subphases only when timing is enabled', async () => {
-    const mark = vi.fn<(phase: string) => void>();
-    window.__utoolsProjectLaunchStartupTiming = { preloadStartedAtEpochMs: 0, mark };
-    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
-
-    const { useStore } = await import('../src/store/useStore');
-    setActivePinia(createPinia());
-    const store = useStore();
-
-    await store.loadProjects();
-
-    expect(mark.mock.calls.map(([phase]) => phase)).toEqual([
-      'projects-load-preferences-start',
-      'projects-load-preferences-complete',
-      'projects-load-storage-hydration-start',
-      'projects-load-storage-hydration-complete',
-      'projects-load-state-setup-start',
-      'projects-load-state-setup-complete',
-      'projects-load-path-availability-start',
-      'projects-load-path-availability-complete',
-      'projects-load-runtime-reconciliation-start',
-      'projects-load-runtime-reconciliation-complete',
-      'projects-load-automation-plan-recomputation-start',
-      'projects-load-automation-plan-recomputation-complete',
-    ]);
-
-    mark.mockClear();
-    window.__utoolsProjectLaunchStartupTiming = undefined;
-    await store.loadProjects();
-
-    expect(mark).not.toHaveBeenCalled();
-  });
-
-  it('keeps caught storage errors and immediate completion without animation frames', async () => {
-    const loadProjects = vi.fn<ProjectBridge['loadProjects']>(async () => {
-      throw new Error('storage unavailable');
+  it("keeps caught storage errors and immediate completion without animation frames", async () => {
+    const loadProjects = vi.fn<ProjectBridge["loadProjects"]>(async () => {
+      throw new Error("storage unavailable");
     });
     window.projectBridge = { ...getProjectBridge(), loadProjects };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     const initialProjectIds = store.projects.map((project) => project.id);
@@ -2621,7 +2409,7 @@ describe('store startup timing', () => {
     expect(store.projects.map((project) => project.id)).toEqual(initialProjectIds);
   });
 
-  it('waits for two animation frames before deferred work and load completion', async () => {
+  it("waits for two animation frames before deferred work and load completion", async () => {
     let nextFrameCallbacks: FrameRequestCallback[] = [];
     let frameTimestamp = 0;
     let paintedFrameCount = 0;
@@ -2637,17 +2425,16 @@ describe('store startup timing', () => {
       await Promise.resolve();
       paintedFrameCount += 1;
     };
-    const mark = vi.fn<(phase: string) => void>();
     const project: Project = {
-      id: 'startup-project',
-      name: 'Startup project',
-      path: '/workspace/startup-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "startup-project",
+      name: "Startup project",
+      path: "/workspace/startup-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
       scripts: [],
       env: {},
-      memo: 'Hydrated memo',
+      memo: "Hydrated memo",
     };
     let resolvePathExists: (exists: boolean) => void = () => undefined;
     const pathExistsResult = new Promise<boolean>((resolve) => {
@@ -2659,7 +2446,6 @@ describe('store startup timing', () => {
       return pathExistsResult;
     });
     window.requestAnimationFrame = requestAnimationFrame;
-    window.__utoolsProjectLaunchStartupTiming = { preloadStartedAtEpochMs: 0, mark };
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects: vi.fn(async () => [project]),
@@ -2667,7 +2453,7 @@ describe('store startup timing', () => {
       saveProjects: vi.fn(async () => undefined),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     let loadCompleted = false;
@@ -2698,102 +2484,63 @@ describe('store startup timing', () => {
 
     expect(loadCompleted).toBe(true);
     expect(store.projects[0]?.pathExists).toBe(true);
-    expect(mark.mock.calls.map(([phase]) => phase)).toEqual([
-      'projects-load-preferences-start',
-      'projects-load-preferences-complete',
-      'projects-load-storage-hydration-start',
-      'projects-load-storage-hydration-complete',
-      'projects-load-state-setup-start',
-      'projects-load-state-setup-complete',
-      'projects-load-path-availability-start',
-      'projects-load-path-availability-complete',
-      'projects-load-runtime-reconciliation-start',
-      'projects-load-runtime-reconciliation-complete',
-      'projects-load-automation-plan-recomputation-start',
-      'projects-load-automation-plan-recomputation-complete',
-    ]);
   });
 
-  it('surfaces service download percentage progress through the global action status', async () => {
+  it.each([
+    ["service-download-progress", "正在下载并安装（42%）", "Downloading and installing (75%)"],
+    ["icon-pack-download-progress", "正在下载图标包（42%）", "Downloading icon pack (75%)"],
+  ] as const)("surfaces %s through the global action status", async (type, chinese, english) => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
-    const { activeActionStatus } = await import('../src/components/common/actionStatus');
+    const { useStore } = await import("../src/store/useStore");
+    const { activeActionStatus } = await import("../src/components/common/actionStatus");
     setActivePinia(createPinia());
     const store = useStore();
 
     store.handleBridgeEvent({
-      type: 'service-download-progress',
+      type,
       receivedBytes: 42,
       totalBytes: 100,
       percent: 42,
     });
 
-    expect(activeActionStatus.value).toMatchObject({ state: 'loading', message: '正在下载并安装（42%）' });
+    expect(activeActionStatus.value).toMatchObject({ state: "loading", message: chinese });
 
-    store.setLocale('en-US');
+    store.setLocale("en-US");
     store.handleBridgeEvent({
-      type: 'service-download-progress',
+      type,
       receivedBytes: 75,
       totalBytes: 100,
       percent: 75,
     });
 
-    expect(activeActionStatus.value?.message).toBe('Downloading and installing (75%)');
+    expect(activeActionStatus.value?.message).toBe(english);
   });
 
-  it('surfaces icon-pack download percentage progress through the global action status', async () => {
+  it("ignores terminal events from an older script run", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
-    const { activeActionStatus } = await import('../src/components/common/actionStatus');
-    setActivePinia(createPinia());
-    const store = useStore();
-
-    store.handleBridgeEvent({
-      type: 'icon-pack-download-progress',
-      receivedBytes: 42,
-      totalBytes: 100,
-      percent: 42,
-    });
-
-    expect(activeActionStatus.value).toMatchObject({ state: 'loading', message: '正在下载图标包（42%）' });
-
-    store.setLocale('en-US');
-    store.handleBridgeEvent({
-      type: 'icon-pack-download-progress',
-      receivedBytes: 75,
-      totalBytes: 100,
-      percent: 75,
-    });
-
-    expect(activeActionStatus.value?.message).toBe('Downloading icon pack (75%)');
-  });
-
-  it('ignores terminal events from an older script run', async () => {
-    window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
-
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'runtime-project',
-        name: 'Runtime project',
-        path: '/workspace/runtime-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "runtime-project",
+        name: "Runtime project",
+        path: "/workspace/runtime-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         pathExists: true,
         scripts: [
           {
-            id: 'runtime-script',
-            name: 'dev',
-            command: 'echo runtime',
-            status: 'RUNNING',
+            id: "runtime-script",
+            name: "dev",
+            command: "echo runtime",
+            status: "RUNNING",
             pid: 2202,
-            runId: 'new-run',
-            runtimeOwner: 'preload',
+            runId: "new-run",
+            runtimeOwner: "preload",
           },
         ],
         env: {},
@@ -2801,61 +2548,61 @@ describe('store startup timing', () => {
     ];
 
     store.handleBridgeEvent({
-      type: 'exit',
-      projectId: 'runtime-project',
-      scriptId: 'runtime-script',
+      type: "exit",
+      projectId: "runtime-project",
+      scriptId: "runtime-script",
       pid: 2201,
-      runId: 'old-run',
-      runtimeOwner: 'preload',
+      runId: "old-run",
+      runtimeOwner: "preload",
       code: 1,
     });
 
     expect(store.projects[0]?.scripts[0]).toMatchObject({
-      status: 'RUNNING',
+      status: "RUNNING",
       pid: 2202,
-      runId: 'new-run',
-      runtimeOwner: 'preload',
+      runId: "new-run",
+      runtimeOwner: "preload",
     });
-    expect(store.logs['runtime-project']).toBeUndefined();
+    expect(store.logs["runtime-project"]).toBeUndefined();
 
     store.handleBridgeEvent({
-      type: 'exit',
-      projectId: 'runtime-project',
-      scriptId: 'runtime-script',
+      type: "exit",
+      projectId: "runtime-project",
+      scriptId: "runtime-script",
       pid: 2202,
-      runId: 'new-run',
-      runtimeOwner: 'preload',
+      runId: "new-run",
+      runtimeOwner: "preload",
       code: 0,
     });
 
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
   });
 
-  it('applies service events after an older service snapshot', async () => {
+  it("applies service events after an older service snapshot", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [
       {
-        id: 'ordered-service-project',
-        name: 'Ordered service project',
-        path: '/workspace/ordered-service-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "ordered-service-project",
+        name: "Ordered service project",
+        path: "/workspace/ordered-service-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'ordered-service-script',
-            name: 'dev',
-            command: 'echo ordered',
-            status: 'RUNNING',
+            id: "ordered-service-script",
+            name: "dev",
+            command: "echo ordered",
+            status: "RUNNING",
             pid: 8101,
-            runId: 'ordered-old-run',
-            runtimeOwner: 'service',
+            runId: "ordered-old-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
@@ -2863,111 +2610,111 @@ describe('store startup timing', () => {
     ];
 
     store.reconcileProjectLaunchServiceRuntime({
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [
         {
-          id: 'ordered-old-run',
-          projectId: 'ordered-service-project',
-          scriptId: 'ordered-service-script',
-          label: 'Ordered service project / dev',
-          command: 'echo ordered',
-          cwd: 'C:\\workspace',
+          id: "ordered-old-run",
+          projectId: "ordered-service-project",
+          scriptId: "ordered-service-script",
+          label: "Ordered service project / dev",
+          command: "echo ordered",
+          cwd: "C:\\workspace",
           pid: 8101,
-          status: 'running',
-          startedAt: '2026-08-15T09:00:00.000Z',
+          status: "running",
+          startedAt: "2026-08-15T09:00:00.000Z",
         },
       ],
       events: [
         {
           cursor: 10,
-          timestamp: '2026-08-15T09:00:01.000Z',
-          type: 'exit',
-          runId: 'ordered-old-run',
-          projectId: 'ordered-service-project',
-          scriptId: 'ordered-service-script',
+          timestamp: "2026-08-15T09:00:01.000Z",
+          type: "exit",
+          runId: "ordered-old-run",
+          projectId: "ordered-service-project",
+          scriptId: "ordered-service-script",
           pid: 8101,
           code: 0,
         },
         {
           cursor: 11,
-          timestamp: '2026-08-15T09:00:02.000Z',
-          type: 'started',
-          runId: 'ordered-new-run',
-          projectId: 'ordered-service-project',
-          scriptId: 'ordered-service-script',
+          timestamp: "2026-08-15T09:00:02.000Z",
+          type: "started",
+          runId: "ordered-new-run",
+          projectId: "ordered-service-project",
+          scriptId: "ordered-service-script",
           pid: 8102,
-          message: 'echo ordered',
-          cwd: 'C:\\workspace',
+          message: "echo ordered",
+          cwd: "C:\\workspace",
         },
       ],
     });
 
     expect(store.projects[0]?.scripts[0]).toMatchObject({
-      status: 'RUNNING',
+      status: "RUNNING",
       pid: 8102,
-      runId: 'ordered-new-run',
-      runtimeOwner: 'service',
+      runId: "ordered-new-run",
+      runtimeOwner: "service",
     });
   });
 
-  it('does not replay completed service events into current terminal logs', async () => {
+  it("does not replay completed service events into current terminal logs", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [
       {
-        id: 'completed-service-project',
-        name: 'Completed service project',
-        path: 'C:\\workspace',
-        type: 'Custom',
-        kind: 'custom',
+        id: "completed-service-project",
+        name: "Completed service project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'completed-service-script', name: 'dev', command: 'echo completed', status: 'IDLE' }],
+        scripts: [{ id: "completed-service-script", name: "dev", command: "echo completed", status: "IDLE" }],
         env: {},
       },
     ];
 
     store.reconcileProjectLaunchServiceRuntime({
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [],
       events: [
         {
           cursor: 91,
-          timestamp: '2026-08-18T12:00:00.000Z',
-          type: 'started',
-          runId: 'completed-service-run',
-          projectId: 'completed-service-project',
-          scriptId: 'completed-service-script',
+          timestamp: "2026-08-18T12:00:00.000Z",
+          type: "started",
+          runId: "completed-service-run",
+          projectId: "completed-service-project",
+          scriptId: "completed-service-script",
           pid: 8103,
-          message: 'echo completed',
-          cwd: 'C:\\workspace',
+          message: "echo completed",
+          cwd: "C:\\workspace",
         },
         {
           cursor: 92,
-          timestamp: '2026-08-18T12:00:01.000Z',
-          type: 'exit',
-          runId: 'completed-service-run',
-          projectId: 'completed-service-project',
-          scriptId: 'completed-service-script',
+          timestamp: "2026-08-18T12:00:01.000Z",
+          type: "exit",
+          runId: "completed-service-run",
+          projectId: "completed-service-project",
+          scriptId: "completed-service-script",
           pid: 8103,
           stoppedByUser: true,
           code: 0,
@@ -2975,138 +2722,138 @@ describe('store startup timing', () => {
       ],
     });
 
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
-    expect(store.logs['completed-service-project']).toBeUndefined();
-    expect(store.scriptLogs['completed-service-project']).toBeUndefined();
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
+    expect(store.logs["completed-service-project"]).toBeUndefined();
+    expect(store.scriptLogs["completed-service-project"]).toBeUndefined();
   });
 
-  it('keeps current terminal logs scoped to active service runs', async () => {
+  it("keeps current terminal logs scoped to active service runs", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [
       {
-        id: 'active-service-project',
-        name: 'Active service project',
-        path: 'C:\\workspace',
-        type: 'Custom',
-        kind: 'custom',
+        id: "active-service-project",
+        name: "Active service project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
         scripts: [
-          { id: 'active-service-script', name: 'dev', command: 'echo active', status: 'IDLE' },
-          { id: 'completed-service-script', name: 'server', command: 'echo completed', status: 'IDLE' },
+          { id: "active-service-script", name: "dev", command: "echo active", status: "IDLE" },
+          { id: "completed-service-script", name: "server", command: "echo completed", status: "IDLE" },
         ],
         env: {},
       },
     ];
 
     store.reconcileProjectLaunchServiceRuntime({
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [
         {
-          id: 'active-service-run',
-          projectId: 'active-service-project',
-          scriptId: 'active-service-script',
-          label: 'Active service project / dev',
-          command: 'echo active',
-          cwd: 'C:\\workspace',
+          id: "active-service-run",
+          projectId: "active-service-project",
+          scriptId: "active-service-script",
+          label: "Active service project / dev",
+          command: "echo active",
+          cwd: "C:\\workspace",
           pid: 8104,
-          status: 'running',
-          startedAt: '2026-08-18T12:01:00.000Z',
+          status: "running",
+          startedAt: "2026-08-18T12:01:00.000Z",
         },
       ],
       events: [
         {
           cursor: 93,
-          timestamp: '2026-08-18T11:00:00.000Z',
-          type: 'started',
-          runId: 'completed-service-run',
-          projectId: 'active-service-project',
-          scriptId: 'completed-service-script',
+          timestamp: "2026-08-18T11:00:00.000Z",
+          type: "started",
+          runId: "completed-service-run",
+          projectId: "active-service-project",
+          scriptId: "completed-service-script",
           pid: 8103,
-          message: 'echo completed',
-          cwd: 'C:\\workspace',
+          message: "echo completed",
+          cwd: "C:\\workspace",
         },
         {
           cursor: 94,
-          timestamp: '2026-08-18T11:00:01.000Z',
-          type: 'exit',
-          runId: 'completed-service-run',
-          projectId: 'active-service-project',
-          scriptId: 'completed-service-script',
+          timestamp: "2026-08-18T11:00:01.000Z",
+          type: "exit",
+          runId: "completed-service-run",
+          projectId: "active-service-project",
+          scriptId: "completed-service-script",
           pid: 8103,
           stoppedByUser: true,
           code: 0,
         },
         {
           cursor: 95,
-          timestamp: '2026-08-18T12:01:01.000Z',
-          type: 'stdout',
-          runId: 'active-service-run',
-          projectId: 'active-service-project',
-          scriptId: 'active-service-script',
+          timestamp: "2026-08-18T12:01:01.000Z",
+          type: "stdout",
+          runId: "active-service-run",
+          projectId: "active-service-project",
+          scriptId: "active-service-script",
           pid: 8104,
-          message: 'current run output',
+          message: "current run output",
         },
       ],
     });
 
     expect(store.projects[0]?.scripts[0]).toMatchObject({
-      status: 'RUNNING',
+      status: "RUNNING",
       pid: 8104,
-      runId: 'active-service-run',
-      runtimeOwner: 'service',
+      runId: "active-service-run",
+      runtimeOwner: "service",
     });
-    expect(store.scriptLogs['active-service-project']?.['completed-service-script']).toBeUndefined();
-    expect(store.scriptLogs['active-service-project']?.['active-service-script']).toContainEqual(
-      expect.objectContaining({ message: 'current run output' }),
+    expect(store.scriptLogs["active-service-project"]?.["completed-service-script"]).toBeUndefined();
+    expect(store.scriptLogs["active-service-project"]?.["active-service-script"]).toContainEqual(
+      expect.objectContaining({ message: "current run output" }),
     );
   });
 
-  it('replays buffered output when a current service run is already terminal in the snapshot', async () => {
+  it("replays buffered output when a current service run is already terminal in the snapshot", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [
       {
-        id: 'buffered-service-project',
-        name: 'Buffered service project',
-        path: 'C:\\workspace',
-        type: 'Custom',
-        kind: 'custom',
+        id: "buffered-service-project",
+        name: "Buffered service project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'one-shot-script',
-            name: 'one shot',
-            command: 'echo buffered',
-            status: 'RUNNING',
+            id: "one-shot-script",
+            name: "one shot",
+            command: "echo buffered",
+            status: "RUNNING",
             pid: 8105,
-            runId: 'buffered-service-run',
-            runtimeOwner: 'service',
+            runId: "buffered-service-run",
+            runtimeOwner: "service",
           },
           {
-            id: 'long-running-script',
-            name: 'long running',
-            command: 'echo active',
-            status: 'RUNNING',
+            id: "long-running-script",
+            name: "long running",
+            command: "echo active",
+            status: "RUNNING",
             pid: 8106,
-            runId: 'active-service-run',
-            runtimeOwner: 'service',
+            runId: "active-service-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
@@ -3114,123 +2861,123 @@ describe('store startup timing', () => {
     ];
 
     store.reconcileProjectLaunchServiceRuntime({
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [
         {
-          id: 'buffered-service-run',
-          projectId: 'buffered-service-project',
-          scriptId: 'one-shot-script',
-          label: 'Buffered service project / one shot',
-          command: 'echo buffered',
-          cwd: 'C:\\workspace',
+          id: "buffered-service-run",
+          projectId: "buffered-service-project",
+          scriptId: "one-shot-script",
+          label: "Buffered service project / one shot",
+          command: "echo buffered",
+          cwd: "C:\\workspace",
           pid: 8105,
-          status: 'exited',
-          startedAt: '2026-08-25T09:00:00.000Z',
-          endedAt: '2026-08-25T09:00:01.000Z',
+          status: "exited",
+          startedAt: "2026-08-25T09:00:00.000Z",
+          endedAt: "2026-08-25T09:00:01.000Z",
           code: 0,
         },
         {
-          id: 'active-service-run',
-          projectId: 'buffered-service-project',
-          scriptId: 'long-running-script',
-          label: 'Buffered service project / long running',
-          command: 'echo active',
-          cwd: 'C:\\workspace',
+          id: "active-service-run",
+          projectId: "buffered-service-project",
+          scriptId: "long-running-script",
+          label: "Buffered service project / long running",
+          command: "echo active",
+          cwd: "C:\\workspace",
           pid: 8106,
-          status: 'running',
-          startedAt: '2026-08-25T09:00:00.000Z',
+          status: "running",
+          startedAt: "2026-08-25T09:00:00.000Z",
         },
       ],
       events: [
         {
           cursor: 96,
-          timestamp: '2026-08-25T09:00:00.500Z',
-          type: 'stdout',
-          runId: 'buffered-service-run',
-          projectId: 'buffered-service-project',
-          scriptId: 'one-shot-script',
+          timestamp: "2026-08-25T09:00:00.500Z",
+          type: "stdout",
+          runId: "buffered-service-run",
+          projectId: "buffered-service-project",
+          scriptId: "one-shot-script",
           pid: 8105,
-          message: 'buffered output',
+          message: "buffered output",
         },
         {
           cursor: 97,
-          timestamp: '2026-08-25T09:00:01.000Z',
-          type: 'exit',
-          runId: 'buffered-service-run',
-          projectId: 'buffered-service-project',
-          scriptId: 'one-shot-script',
+          timestamp: "2026-08-25T09:00:01.000Z",
+          type: "exit",
+          runId: "buffered-service-run",
+          projectId: "buffered-service-project",
+          scriptId: "one-shot-script",
           pid: 8105,
           code: 0,
         },
       ],
     });
 
-    expect(store.scriptLogs['buffered-service-project']?.['one-shot-script']).toEqual(
+    expect(store.scriptLogs["buffered-service-project"]?.["one-shot-script"]).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ message: 'buffered output' }),
-        expect.objectContaining({ message: 'exited with code 0' }),
+        expect.objectContaining({ message: "buffered output" }),
+        expect.objectContaining({ message: "exited with code 0" }),
       ]),
     );
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
     expect(store.projects[0]?.scripts[1]).toMatchObject({
-      status: 'RUNNING',
-      runId: 'active-service-run',
-      runtimeOwner: 'service',
+      status: "RUNNING",
+      runId: "active-service-run",
+      runtimeOwner: "service",
     });
   });
 
-  it('keeps a current service run until a later event page reaches its terminal event', async () => {
+  it("keeps a current service run until a later event page reaches its terminal event", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [
       {
-        id: 'paged-service-project',
-        name: 'Paged service project',
-        path: 'C:\\workspace',
-        type: 'Custom',
-        kind: 'custom',
+        id: "paged-service-project",
+        name: "Paged service project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'one-shot-script',
-            name: 'one shot',
-            command: 'echo paged',
-            status: 'RUNNING',
+            id: "one-shot-script",
+            name: "one shot",
+            command: "echo paged",
+            status: "RUNNING",
             pid: 8107,
-            runId: 'paged-service-run',
-            runtimeOwner: 'service',
+            runId: "paged-service-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
       },
       {
-        id: 'other-active-service-project',
-        name: 'Other active service project',
-        path: 'C:\\workspace-other',
-        type: 'Custom',
-        kind: 'custom',
+        id: "other-active-service-project",
+        name: "Other active service project",
+        path: "C:\\workspace-other",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'long-running-script',
-            name: 'long running',
-            command: 'echo active',
-            status: 'RUNNING',
+            id: "long-running-script",
+            name: "long running",
+            command: "echo active",
+            status: "RUNNING",
             pid: 8108,
-            runId: 'active-paged-service-run',
-            runtimeOwner: 'service',
+            runId: "active-paged-service-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
@@ -3238,210 +2985,210 @@ describe('store startup timing', () => {
     ];
 
     store.reconcileProjectLaunchServiceRuntime({
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       eventsHasMore: true,
       runs: [
         {
-          id: 'paged-service-run',
-          projectId: 'paged-service-project',
-          scriptId: 'one-shot-script',
-          label: 'Paged service project / one shot',
-          command: 'echo paged',
-          cwd: 'C:\\workspace',
+          id: "paged-service-run",
+          projectId: "paged-service-project",
+          scriptId: "one-shot-script",
+          label: "Paged service project / one shot",
+          command: "echo paged",
+          cwd: "C:\\workspace",
           pid: 8107,
-          status: 'exited',
-          startedAt: '2026-08-25T09:00:00.000Z',
-          endedAt: '2026-08-25T09:00:01.000Z',
+          status: "exited",
+          startedAt: "2026-08-25T09:00:00.000Z",
+          endedAt: "2026-08-25T09:00:01.000Z",
           code: 0,
         },
         {
-          id: 'active-paged-service-run',
-          projectId: 'other-active-service-project',
-          scriptId: 'long-running-script',
-          label: 'Other active service project / long running',
-          command: 'echo active',
-          cwd: 'C:\\workspace-other',
+          id: "active-paged-service-run",
+          projectId: "other-active-service-project",
+          scriptId: "long-running-script",
+          label: "Other active service project / long running",
+          command: "echo active",
+          cwd: "C:\\workspace-other",
           pid: 8108,
-          status: 'running',
-          startedAt: '2026-08-25T09:00:00.000Z',
+          status: "running",
+          startedAt: "2026-08-25T09:00:00.000Z",
         },
       ],
       events: [
         {
           cursor: 98,
-          timestamp: '2026-08-25T09:00:00.000Z',
-          type: 'started',
-          runId: 'paged-service-run',
-          projectId: 'paged-service-project',
-          scriptId: 'one-shot-script',
+          timestamp: "2026-08-25T09:00:00.000Z",
+          type: "started",
+          runId: "paged-service-run",
+          projectId: "paged-service-project",
+          scriptId: "one-shot-script",
           pid: 8107,
         },
       ],
     });
 
     expect(store.projects[0]?.scripts[0]).toMatchObject({
-      status: 'RUNNING',
-      runId: 'paged-service-run',
-      runtimeOwner: 'service',
+      status: "RUNNING",
+      runId: "paged-service-run",
+      runtimeOwner: "service",
     });
 
     store.handleBridgeEvent({
-      type: 'stdout',
+      type: "stdout",
       cursor: 99,
-      timestamp: '2026-08-25T09:00:00.500Z',
-      runId: 'paged-service-run',
-      projectId: 'paged-service-project',
-      scriptId: 'one-shot-script',
+      timestamp: "2026-08-25T09:00:00.500Z",
+      runId: "paged-service-run",
+      projectId: "paged-service-project",
+      scriptId: "one-shot-script",
       pid: 8107,
-      runtimeOwner: 'service',
-      message: 'paged output',
+      runtimeOwner: "service",
+      message: "paged output",
     });
     store.handleBridgeEvent({
-      type: 'exit',
+      type: "exit",
       cursor: 100,
-      timestamp: '2026-08-25T09:00:01.000Z',
-      runId: 'paged-service-run',
-      projectId: 'paged-service-project',
-      scriptId: 'one-shot-script',
+      timestamp: "2026-08-25T09:00:01.000Z",
+      runId: "paged-service-run",
+      projectId: "paged-service-project",
+      scriptId: "one-shot-script",
       pid: 8107,
-      runtimeOwner: 'service',
+      runtimeOwner: "service",
       code: 0,
     });
 
-    expect(store.scriptLogs['paged-service-project']?.['one-shot-script']).toEqual(
+    expect(store.scriptLogs["paged-service-project"]?.["one-shot-script"]).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ message: 'paged output' }),
-        expect.objectContaining({ message: 'exited with code 0' }),
+        expect.objectContaining({ message: "paged output" }),
+        expect.objectContaining({ message: "exited with code 0" }),
       ]),
     );
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
     expect(store.projects[1]?.scripts[0]).toMatchObject({
-      status: 'RUNNING',
-      runId: 'active-paged-service-run',
-      runtimeOwner: 'service',
+      status: "RUNNING",
+      runId: "active-paged-service-run",
+      runtimeOwner: "service",
     });
   });
 
-  it('does not append duplicate service output for the same event cursor', async () => {
+  it("does not append duplicate service output for the same event cursor", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'deduplicated-service-project',
-        name: 'Deduplicated service project',
-        path: '/workspace/deduplicated-service-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "deduplicated-service-project",
+        name: "Deduplicated service project",
+        path: "/workspace/deduplicated-service-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'deduplicated-service-script',
-            name: 'dev',
-            command: 'echo output',
-            status: 'RUNNING',
+            id: "deduplicated-service-script",
+            name: "dev",
+            command: "echo output",
+            status: "RUNNING",
             pid: 3301,
-            runId: 'deduplicated-service-run',
-            runtimeOwner: 'service',
+            runId: "deduplicated-service-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
       },
     ];
     const event = {
-      type: 'stdout' as const,
-      projectId: 'deduplicated-service-project',
-      scriptId: 'deduplicated-service-script',
+      type: "stdout" as const,
+      projectId: "deduplicated-service-project",
+      scriptId: "deduplicated-service-script",
       pid: 3301,
       cursor: 42,
-      runId: 'deduplicated-service-run',
-      runtimeOwner: 'service' as const,
-      message: 'one line',
+      runId: "deduplicated-service-run",
+      runtimeOwner: "service" as const,
+      message: "one line",
     };
 
     store.handleBridgeEvent(event);
     store.handleBridgeEvent(event);
 
-    expect(store.scriptLogs['deduplicated-service-project']?.['deduplicated-service-script']).toHaveLength(1);
-    expect(store.logs['deduplicated-service-project']).toHaveLength(1);
+    expect(store.scriptLogs["deduplicated-service-project"]?.["deduplicated-service-script"]).toHaveLength(1);
+    expect(store.logs["deduplicated-service-project"]).toHaveLength(1);
   });
 
-  it('bounds live project and script logs together', async () => {
+  it("bounds live project and script logs together", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
 
     for (let index = 0; index < 2_000; index += 1) {
       store.addLog(
-        'bounded-log-project',
-        { timestamp: '10:00:00', message: `first ${index}`, type: 'INFO' },
-        'first-script',
+        "bounded-log-project",
+        { timestamp: "10:00:00", message: `first ${index}`, type: "INFO" },
+        "first-script",
       );
     }
-    store.addLog('bounded-log-project', { timestamp: '10:00:01', message: 'second 0', type: 'INFO' }, 'second-script');
+    store.addLog("bounded-log-project", { timestamp: "10:00:01", message: "second 0", type: "INFO" }, "second-script");
 
-    expect(store.logs['bounded-log-project']).toHaveLength(2_000);
-    expect(store.scriptLogs['bounded-log-project']?.['first-script']).toHaveLength(1_999);
-    expect(store.scriptLogs['bounded-log-project']?.['first-script']?.[0]?.message).toBe('first 1');
-    expect(store.scriptLogs['bounded-log-project']?.['second-script']).toEqual([
-      { timestamp: '10:00:01', message: 'second 0', type: 'INFO' },
+    expect(store.logs["bounded-log-project"]).toHaveLength(2_000);
+    expect(store.scriptLogs["bounded-log-project"]?.["first-script"]).toHaveLength(1_999);
+    expect(store.scriptLogs["bounded-log-project"]?.["first-script"]?.[0]?.message).toBe("first 1");
+    expect(store.scriptLogs["bounded-log-project"]?.["second-script"]).toEqual([
+      { timestamp: "10:00:01", message: "second 0", type: "INFO" },
     ]);
-    expect(store.logs['bounded-log-project']?.some((entry) => entry.message === 'first 0')).toBe(false);
+    expect(store.logs["bounded-log-project"]?.some((entry) => entry.message === "first 0")).toBe(false);
   });
 
-  it('keeps reused log inputs aligned while trimming', async () => {
+  it("keeps reused log inputs aligned while trimming", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
-    const reusedLog = { timestamp: '10:00:00', message: 'reused', type: 'INFO' as const };
+    const reusedLog = { timestamp: "10:00:00", message: "reused", type: "INFO" as const };
 
     for (let index = 0; index < 2_000; index += 1) {
-      store.addLog('reused-log-project', reusedLog, 'first-script');
+      store.addLog("reused-log-project", reusedLog, "first-script");
     }
-    store.addLog('reused-log-project', reusedLog, 'second-script');
+    store.addLog("reused-log-project", reusedLog, "second-script");
 
-    expect(store.logs['reused-log-project']).toHaveLength(2_000);
-    expect(store.scriptLogs['reused-log-project']?.['first-script']).toHaveLength(1_999);
-    expect(store.scriptLogs['reused-log-project']?.['second-script']).toHaveLength(1);
+    expect(store.logs["reused-log-project"]).toHaveLength(2_000);
+    expect(store.scriptLogs["reused-log-project"]?.["first-script"]).toHaveLength(1_999);
+    expect(store.scriptLogs["reused-log-project"]?.["second-script"]).toHaveLength(1);
   });
 
-  it('accepts a legacy terminal event only when its pid matches the current run', async () => {
+  it("accepts a legacy terminal event only when its pid matches the current run", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'legacy-event-project',
-        name: 'Legacy event project',
-        path: '/workspace/legacy-event-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "legacy-event-project",
+        name: "Legacy event project",
+        path: "/workspace/legacy-event-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'legacy-event-script',
-            name: 'dev',
-            command: 'echo legacy',
-            status: 'RUNNING',
+            id: "legacy-event-script",
+            name: "dev",
+            command: "echo legacy",
+            status: "RUNNING",
             pid: 5502,
-            runId: 'current-run',
-            runtimeOwner: 'preload',
+            runId: "current-run",
+            runtimeOwner: "preload",
           },
         ],
         env: {},
@@ -3449,48 +3196,48 @@ describe('store startup timing', () => {
     ];
 
     store.handleBridgeEvent({
-      type: 'exit',
-      projectId: 'legacy-event-project',
-      scriptId: 'legacy-event-script',
+      type: "exit",
+      projectId: "legacy-event-project",
+      scriptId: "legacy-event-script",
       pid: 5501,
       code: 1,
     });
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'RUNNING', runId: 'current-run' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "RUNNING", runId: "current-run" });
 
     store.handleBridgeEvent({
-      type: 'exit',
-      projectId: 'legacy-event-project',
-      scriptId: 'legacy-event-script',
+      type: "exit",
+      projectId: "legacy-event-project",
+      scriptId: "legacy-event-script",
       pid: 5502,
       code: 0,
     });
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
   });
 
-  it('preserves the current identity when a matching legacy started event arrives', async () => {
+  it("preserves the current identity when a matching legacy started event arrives", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'legacy-started-project',
-        name: 'Legacy started project',
-        path: '/workspace/legacy-started-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "legacy-started-project",
+        name: "Legacy started project",
+        path: "/workspace/legacy-started-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'legacy-started-script',
-            name: 'dev',
-            command: 'echo legacy-started',
-            status: 'RUNNING',
+            id: "legacy-started-script",
+            name: "dev",
+            command: "echo legacy-started",
+            status: "RUNNING",
             pid: 6602,
-            runId: 'current-run',
-            runtimeOwner: 'service',
+            runId: "current-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
@@ -3498,105 +3245,105 @@ describe('store startup timing', () => {
     ];
 
     store.handleBridgeEvent({
-      type: 'started',
-      projectId: 'legacy-started-project',
-      scriptId: 'legacy-started-script',
+      type: "started",
+      projectId: "legacy-started-project",
+      scriptId: "legacy-started-script",
       pid: 6602,
-      message: 'legacy event',
+      message: "legacy event",
     });
 
     expect(store.projects[0]?.scripts[0]).toMatchObject({
-      status: 'RUNNING',
+      status: "RUNNING",
       pid: 6602,
-      runId: 'current-run',
-      runtimeOwner: 'service',
+      runId: "current-run",
+      runtimeOwner: "service",
     });
   });
 
-  it('rejects a delayed started event recorded as a terminal service run', async () => {
+  it("rejects a delayed started event recorded as a terminal service run", async () => {
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects: vi.fn(async () => []),
       loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'snapshot-terminal-project',
-        name: 'Snapshot terminal project',
-        path: '/workspace/snapshot-terminal-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "snapshot-terminal-project",
+        name: "Snapshot terminal project",
+        path: "/workspace/snapshot-terminal-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'snapshot-terminal-script', name: 'dev', command: 'echo terminal', status: 'IDLE' }],
+        scripts: [{ id: "snapshot-terminal-script", name: "dev", command: "echo terminal", status: "IDLE" }],
         env: {},
       },
     ];
 
     const status: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [
         {
-          id: 'snapshot-old-run',
-          projectId: 'snapshot-terminal-project',
-          scriptId: 'snapshot-terminal-script',
-          label: 'Snapshot terminal project / dev',
-          command: 'echo terminal',
-          cwd: 'C:\\workspace',
-          status: 'exited',
-          startedAt: '2026-08-15T09:00:00.000Z',
+          id: "snapshot-old-run",
+          projectId: "snapshot-terminal-project",
+          scriptId: "snapshot-terminal-script",
+          label: "Snapshot terminal project / dev",
+          command: "echo terminal",
+          cwd: "C:\\workspace",
+          status: "exited",
+          startedAt: "2026-08-15T09:00:00.000Z",
           pid: 7701,
-          endedAt: '2026-08-15T09:00:01.000Z',
+          endedAt: "2026-08-15T09:00:01.000Z",
           code: 0,
         },
       ],
     };
 
-    store.handleBridgeEvent({ type: 'service-state', status });
+    store.handleBridgeEvent({ type: "service-state", status });
     store.handleBridgeEvent({
-      type: 'started',
-      projectId: 'snapshot-terminal-project',
-      scriptId: 'snapshot-terminal-script',
+      type: "started",
+      projectId: "snapshot-terminal-project",
+      scriptId: "snapshot-terminal-script",
       pid: 7701,
-      runId: 'snapshot-old-run',
-      runtimeOwner: 'service',
+      runId: "snapshot-old-run",
+      runtimeOwner: "service",
     });
 
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
   });
 
-  it('waits for the matching run identity before applying a terminal event', async () => {
+  it("waits for the matching run identity before applying a terminal event", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'pending-project',
-        name: 'Pending project',
-        path: '/workspace/pending-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "pending-project",
+        name: "Pending project",
+        path: "/workspace/pending-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'pending-script',
-            name: 'dev',
-            command: 'echo pending',
-            status: 'RUNNING',
+            id: "pending-script",
+            name: "dev",
+            command: "echo pending",
+            status: "RUNNING",
             pid: undefined,
           },
         ],
@@ -3605,151 +3352,151 @@ describe('store startup timing', () => {
     ];
 
     store.handleBridgeEvent({
-      type: 'exit',
-      projectId: 'pending-project',
-      scriptId: 'pending-script',
+      type: "exit",
+      projectId: "pending-project",
+      scriptId: "pending-script",
       pid: 3301,
-      runId: 'pending-run',
-      runtimeOwner: 'preload',
+      runId: "pending-run",
+      runtimeOwner: "preload",
       code: 0,
     });
 
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'RUNNING' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "RUNNING" });
 
     store.handleBridgeEvent({
-      type: 'started',
-      projectId: 'pending-project',
-      scriptId: 'pending-script',
+      type: "started",
+      projectId: "pending-project",
+      scriptId: "pending-script",
       pid: 3301,
-      runId: 'pending-run',
-      runtimeOwner: 'preload',
-      message: 'echo pending',
+      runId: "pending-run",
+      runtimeOwner: "preload",
+      message: "echo pending",
     });
 
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
   });
 
-  it('ignores a delayed started event from a previously settled run', async () => {
+  it("ignores a delayed started event from a previously settled run", async () => {
     window.projectBridge = { ...getProjectBridge(), loadProjects: vi.fn(async () => []) };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'settled-project',
-        name: 'Settled project',
-        path: '/workspace/settled-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "settled-project",
+        name: "Settled project",
+        path: "/workspace/settled-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
         pathExists: true,
-        scripts: [{ id: 'settled-script', name: 'dev', command: 'echo settled', status: 'IDLE' }],
+        scripts: [{ id: "settled-script", name: "dev", command: "echo settled", status: "IDLE" }],
         env: {},
       },
     ];
 
     store.handleBridgeEvent({
-      type: 'started',
-      projectId: 'settled-project',
-      scriptId: 'settled-script',
+      type: "started",
+      projectId: "settled-project",
+      scriptId: "settled-script",
       pid: 4401,
-      runId: 'settled-old-run',
-      runtimeOwner: 'preload',
+      runId: "settled-old-run",
+      runtimeOwner: "preload",
     });
     store.handleBridgeEvent({
-      type: 'exit',
-      projectId: 'settled-project',
-      scriptId: 'settled-script',
+      type: "exit",
+      projectId: "settled-project",
+      scriptId: "settled-script",
       pid: 4401,
-      runId: 'settled-old-run',
-      runtimeOwner: 'preload',
+      runId: "settled-old-run",
+      runtimeOwner: "preload",
       code: 0,
     });
     store.handleBridgeEvent({
-      type: 'started',
-      projectId: 'settled-project',
-      scriptId: 'settled-script',
+      type: "started",
+      projectId: "settled-project",
+      scriptId: "settled-script",
       pid: 4402,
-      runId: 'settled-new-run',
-      runtimeOwner: 'preload',
+      runId: "settled-new-run",
+      runtimeOwner: "preload",
     });
     store.handleBridgeEvent({
-      type: 'exit',
-      projectId: 'settled-project',
-      scriptId: 'settled-script',
+      type: "exit",
+      projectId: "settled-project",
+      scriptId: "settled-script",
       pid: 4402,
-      runId: 'settled-new-run',
-      runtimeOwner: 'preload',
+      runId: "settled-new-run",
+      runtimeOwner: "preload",
       code: 0,
     });
 
     store.handleBridgeEvent({
-      type: 'started',
-      projectId: 'settled-project',
-      scriptId: 'settled-script',
+      type: "started",
+      projectId: "settled-project",
+      scriptId: "settled-script",
       pid: 4401,
-      runId: 'settled-old-run',
-      runtimeOwner: 'preload',
+      runId: "settled-old-run",
+      runtimeOwner: "preload",
     });
 
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
   });
 
-  it('stops a service run by runId while its process is still starting', async () => {
-    const stopProcess = vi.fn<ProjectBridge['stopProcess']>(async () => undefined);
+  it("stops a service run by runId while its process is still starting", async () => {
+    const stopProcess = vi.fn<ProjectBridge["stopProcess"]>(async () => undefined);
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects: vi.fn(async () => []),
       stopProcess,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'starting-service-project',
-        name: 'Starting service project',
-        path: '/workspace/starting-service-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "starting-service-project",
+        name: "Starting service project",
+        path: "/workspace/starting-service-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'starting-service-script',
-            name: 'dev',
-            command: 'echo starting',
-            status: 'RUNNING',
-            runId: 'starting-service-run',
-            runtimeOwner: 'service',
+            id: "starting-service-script",
+            name: "dev",
+            command: "echo starting",
+            status: "RUNNING",
+            runId: "starting-service-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
       },
     ];
 
-    await store.stopScript('starting-service-project', 'starting-service-script');
+    await store.stopScript("starting-service-project", "starting-service-script");
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(store.projects[0]?.scripts[0]?.status).toBe('STOPPING');
+    expect(store.projects[0]?.scripts[0]?.status).toBe("STOPPING");
     expect(stopProcess).toHaveBeenCalledWith(0, {
-      runId: 'starting-service-run',
-      runtimeOwner: 'service',
+      runId: "starting-service-run",
+      runtimeOwner: "service",
     });
   });
 
-  it('stops a service launch once its run identity arrives', async () => {
+  it("stops a service launch once its run identity arrives", async () => {
     let resolveRun: (result: ProjectBridgeRunResult) => void = () => undefined;
-    const runCommand = vi.fn<ProjectBridge['runCommand']>(
+    const runCommand = vi.fn<ProjectBridge["runCommand"]>(
       () =>
         new Promise<ProjectBridgeRunResult>((resolve) => {
           resolveRun = resolve;
         }),
     );
-    const stopProcess = vi.fn<ProjectBridge['stopProcess']>(async () => undefined);
+    const stopProcess = vi.fn<ProjectBridge["stopProcess"]>(async () => undefined);
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects: vi.fn(async () => []),
@@ -3757,95 +3504,95 @@ describe('store startup timing', () => {
       stopProcess,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projectLaunchServicePreferences = { schemaVersion: 1, enabled: true };
     store.projects = [
       {
-        id: 'pending-service-project',
-        name: 'Pending service project',
-        path: '/workspace/pending-service-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "pending-service-project",
+        name: "Pending service project",
+        path: "/workspace/pending-service-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'pending-service-script', name: 'dev', command: 'echo pending', status: 'IDLE' }],
+        scripts: [{ id: "pending-service-script", name: "dev", command: "echo pending", status: "IDLE" }],
         env: {},
       },
     ];
 
-    const launch = store.launchScript('pending-service-project', 'pending-service-script');
+    const launch = store.launchScript("pending-service-project", "pending-service-script");
     await Promise.resolve();
-    await store.stopScript('pending-service-project', 'pending-service-script');
+    await store.stopScript("pending-service-project", "pending-service-script");
 
-    expect(store.projects[0]?.scripts[0]?.status).toBe('STOPPING');
+    expect(store.projects[0]?.scripts[0]?.status).toBe("STOPPING");
     expect(stopProcess).not.toHaveBeenCalled();
 
     resolveRun({
       pid: 0,
-      startedAt: '2026-08-15T09:00:00.000Z',
-      command: 'echo pending',
-      cwd: '/workspace/pending-service-project',
-      runId: 'pending-service-run',
-      runtimeOwner: 'service',
+      startedAt: "2026-08-15T09:00:00.000Z",
+      command: "echo pending",
+      cwd: "/workspace/pending-service-project",
+      runId: "pending-service-run",
+      runtimeOwner: "service",
     });
     await launch;
     await vi.advanceTimersByTimeAsync(0);
 
     expect(stopProcess).toHaveBeenCalledWith(0, {
-      runId: 'pending-service-run',
-      runtimeOwner: 'service',
+      runId: "pending-service-run",
+      runtimeOwner: "service",
     });
   });
 
-  it('sends input to a service run by runId while its process is still starting', async () => {
-    const sendProcessInput = vi.fn<ProjectBridge['sendProcessInput']>(async () => ({ sent: true }));
+  it("sends input to a service run by runId while its process is still starting", async () => {
+    const sendProcessInput = vi.fn<ProjectBridge["sendProcessInput"]>(async () => ({ sent: true }));
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects: vi.fn(async () => []),
       sendProcessInput,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'input-service-project',
-        name: 'Input service project',
-        path: '/workspace/input-service-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "input-service-project",
+        name: "Input service project",
+        path: "/workspace/input-service-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'input-service-script',
-            name: 'dev',
-            command: 'echo input',
-            status: 'RUNNING',
-            runId: 'input-service-run',
-            runtimeOwner: 'service',
+            id: "input-service-script",
+            name: "dev",
+            command: "echo input",
+            status: "RUNNING",
+            runId: "input-service-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
       },
     ];
 
-    await expect(store.sendScriptInput('input-service-project', 'input-service-script', 'hello')).resolves.toEqual({
+    await expect(store.sendScriptInput("input-service-project", "input-service-script", "hello")).resolves.toEqual({
       sent: true,
     });
-    expect(sendProcessInput).toHaveBeenCalledWith(0, 'hello', {
-      runId: 'input-service-run',
-      runtimeOwner: 'service',
+    expect(sendProcessInput).toHaveBeenCalledWith(0, "hello", {
+      runId: "input-service-run",
+      runtimeOwner: "service",
     });
   });
 
-  it('reconciles a pid-less service run by runId', async () => {
-    const getProcessStatus = vi.fn<ProjectBridge['getProcessStatus']>(async () => ({
+  it("reconciles a pid-less service run by runId", async () => {
+    const getProcessStatus = vi.fn<ProjectBridge["getProcessStatus"]>(async () => ({
       active: false,
       code: 0,
-      runId: 'pid-less-service-run',
-      runtimeOwner: 'service',
+      runId: "pid-less-service-run",
+      runtimeOwner: "service",
     }));
     window.projectBridge = {
       ...getProjectBridge(),
@@ -3853,25 +3600,25 @@ describe('store startup timing', () => {
       getProcessStatus,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'pid-less-service-project',
-        name: 'PID-less service project',
-        path: '/workspace/pid-less-service-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "pid-less-service-project",
+        name: "PID-less service project",
+        path: "/workspace/pid-less-service-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.RUNNING,
         scripts: [
           {
-            id: 'pid-less-service-script',
-            name: 'dev',
-            command: 'echo pid-less',
-            status: 'RUNNING',
-            runId: 'pid-less-service-run',
-            runtimeOwner: 'service',
+            id: "pid-less-service-script",
+            name: "dev",
+            command: "echo pid-less",
+            status: "RUNNING",
+            runId: "pid-less-service-run",
+            runtimeOwner: "service",
           },
         ],
         env: {},
@@ -3881,16 +3628,16 @@ describe('store startup timing', () => {
     await store.reconcileRuntimeProcessState();
 
     expect(getProcessStatus).toHaveBeenCalledWith(0, {
-      runId: 'pid-less-service-run',
-      runtimeOwner: 'service',
+      runId: "pid-less-service-run",
+      runtimeOwner: "service",
     });
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'IDLE' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "IDLE" });
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
   });
 
-  it('applies live service automation snapshots, history, and one completion notification', async () => {
+  it("applies live service automation snapshots, history, and one completion notification", async () => {
     const showNotification = vi.fn();
-    const saveProjects = vi.fn<ProjectBridge['saveProjects']>(async () => undefined);
+    const saveProjects = vi.fn<ProjectBridge["saveProjects"]>(async () => undefined);
     window.utools = {
       isDarkColors: () => false,
       onPluginEnter: () => undefined,
@@ -3904,27 +3651,27 @@ describe('store startup timing', () => {
       loadProjectLaunchServicePreferences: () => ({ schemaVersion: 1, enabled: true }),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'automation-project',
-        name: 'Automation project',
-        path: '/workspace/automation-project',
-        type: 'Custom',
-        kind: 'custom',
+        id: "automation-project",
+        name: "Automation project",
+        path: "/workspace/automation-project",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'automation-script', name: 'dev', command: 'echo automation', status: 'IDLE' }],
+        scripts: [{ id: "automation-script", name: "dev", command: "echo automation", status: "IDLE" }],
         env: {},
         automationTasks: [
           {
-            id: 'automation-task',
-            name: 'Deploy task',
+            id: "automation-task",
+            name: "Deploy task",
             enabled: true,
-            scriptIds: ['automation-script'],
-            schedule: { type: 'fixed', startTime: '09:00', dailyCount: 1, intervalMinutes: 60 },
-            missedPolicy: 'grace-run',
+            scriptIds: ["automation-script"],
+            schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+            missedPolicy: "grace-run",
             missedGraceMinutes: 5,
             notifyEnabled: true,
             maxScriptRuntimeMinutes: 30,
@@ -3933,73 +3680,73 @@ describe('store startup timing', () => {
             dailyPlans: [
               {
                 date: dateKey(),
-                entries: [{ id: 'automation-entry', plannedAt: '2026-08-15T09:00:00.000Z', status: 'pending' }],
+                entries: [{ id: "automation-entry", plannedAt: "2026-08-15T09:00:00.000Z", status: "pending" }],
               },
             ],
             history: [],
-            createdAt: '2026-08-15T00:00:00.000Z',
-            updatedAt: '2026-08-15T00:00:00.000Z',
+            createdAt: "2026-08-15T00:00:00.000Z",
+            updatedAt: "2026-08-15T00:00:00.000Z",
           },
         ],
       },
     ];
 
     const baseStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 4,
     };
     const execution = {
-      id: 'automation-run',
-      projectId: 'automation-project',
-      taskId: 'automation-task',
-      planEntryId: 'automation-entry',
-      plannedAt: '2026-08-15T09:00:00.000Z',
+      id: "automation-run",
+      projectId: "automation-project",
+      taskId: "automation-task",
+      planEntryId: "automation-entry",
+      plannedAt: "2026-08-15T09:00:00.000Z",
       currentScriptIndex: 0,
-      startedAt: '2026-08-15T09:00:01.000Z',
+      startedAt: "2026-08-15T09:00:01.000Z",
       scriptResults: [],
     };
 
     store.handleBridgeEvent({
-      type: 'service-state',
+      type: "service-state",
       status: {
         ...baseStatus,
         automation: {
           revision: 4,
           upcoming: [
             {
-              projectId: 'automation-project',
-              taskId: 'automation-task',
-              planEntryId: 'service-upcoming-entry',
-              plannedAt: '2026-08-16T09:00:00.000Z',
+              projectId: "automation-project",
+              taskId: "automation-task",
+              planEntryId: "service-upcoming-entry",
+              plannedAt: "2026-08-16T09:00:00.000Z",
             },
           ],
-          executions: [{ ...execution, status: 'running' }],
+          executions: [{ ...execution, status: "running" }],
         },
       },
     });
 
     expect(store.projects[0]?.automationTasks?.[0]?.dailyPlans[0]?.entries[0]).toMatchObject({
-      status: 'running',
-      runId: 'automation-run',
+      status: "running",
+      runId: "automation-run",
     });
-    expect(store.automationActiveProjectRuns['automation-project']).toBe('automation-run');
-    expect(store.serviceAutomationTaskEntries('automation-project', 'automation-task')).toEqual(
+    expect(store.automationActiveProjectRuns["automation-project"]).toBe("automation-run");
+    expect(store.serviceAutomationTaskEntries("automation-project", "automation-task")).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'automation-entry', status: 'running' }),
-        expect.objectContaining({ id: 'service-upcoming-entry', status: 'pending' }),
+        expect.objectContaining({ id: "automation-entry", status: "running" }),
+        expect.objectContaining({ id: "service-upcoming-entry", status: "pending" }),
       ]),
     );
 
     store.handleBridgeEvent({
-      type: 'service-state',
+      type: "service-state",
       status: {
         ...baseStatus,
         automation: {
@@ -4007,15 +3754,15 @@ describe('store startup timing', () => {
           executions: [
             {
               ...execution,
-              status: 'completed',
+              status: "completed",
               currentScriptIndex: 1,
-              endedAt: '2026-08-15T09:01:00.000Z',
+              endedAt: "2026-08-15T09:01:00.000Z",
               scriptResults: [
                 {
-                  scriptId: 'automation-script',
-                  status: 'completed',
+                  scriptId: "automation-script",
+                  status: "completed",
                   startedAt: execution.startedAt,
-                  endedAt: '2026-08-15T09:01:00.000Z',
+                  endedAt: "2026-08-15T09:01:00.000Z",
                 },
               ],
             },
@@ -4025,15 +3772,15 @@ describe('store startup timing', () => {
     });
 
     const task = store.projects[0]?.automationTasks?.[0];
-    expect(task?.dailyPlans[0]?.entries[0]?.status).toBe('completed');
-    expect(store.automationActiveProjectRuns['automation-project']).toBeUndefined();
+    expect(task?.dailyPlans[0]?.entries[0]?.status).toBe("completed");
+    expect(store.automationActiveProjectRuns["automation-project"]).toBeUndefined();
     expect(task?.history).toHaveLength(1);
-    expect(task?.history[0]).toMatchObject({ id: 'automation-run', status: 'completed' });
-    expect(showNotification).toHaveBeenCalledWith('任务“Deploy task”已完成');
+    expect(task?.history[0]).toMatchObject({ id: "automation-run", status: "completed" });
+    expect(showNotification).toHaveBeenCalledWith("任务“Deploy task”已完成");
     expect(saveProjects).not.toHaveBeenCalled();
 
     store.handleBridgeEvent({
-      type: 'service-state',
+      type: "service-state",
       status: {
         ...baseStatus,
         automation: {
@@ -4041,15 +3788,15 @@ describe('store startup timing', () => {
           executions: [
             {
               ...execution,
-              status: 'completed',
+              status: "completed",
               currentScriptIndex: 1,
-              endedAt: '2026-08-15T09:01:00.000Z',
+              endedAt: "2026-08-15T09:01:00.000Z",
               scriptResults: [
                 {
-                  scriptId: 'automation-script',
-                  status: 'completed',
+                  scriptId: "automation-script",
+                  status: "completed",
                   startedAt: execution.startedAt,
-                  endedAt: '2026-08-15T09:01:00.000Z',
+                  endedAt: "2026-08-15T09:01:00.000Z",
                 },
               ],
             },
@@ -4062,18 +3809,18 @@ describe('store startup timing', () => {
 
     task!.history = Array.from({ length: 20 }, (_, index) => ({
       id: `local-history-${index}`,
-      taskId: 'automation-task',
-      taskName: 'Deploy task',
-      projectId: 'automation-project',
-      projectName: 'Automation project',
-      plannedAt: '2026-08-16T09:00:00.000Z',
-      endedAt: '2026-08-16T09:01:00.000Z',
-      status: 'completed' as const,
+      taskId: "automation-task",
+      taskName: "Deploy task",
+      projectId: "automation-project",
+      projectName: "Automation project",
+      plannedAt: "2026-08-16T09:00:00.000Z",
+      endedAt: "2026-08-16T09:01:00.000Z",
+      status: "completed" as const,
       scriptResults: [],
     }));
 
     store.handleBridgeEvent({
-      type: 'service-state',
+      type: "service-state",
       status: {
         ...baseStatus,
         automation: {
@@ -4081,9 +3828,9 @@ describe('store startup timing', () => {
           executions: [
             {
               ...execution,
-              status: 'completed',
+              status: "completed",
               currentScriptIndex: 1,
-              endedAt: '2026-08-15T09:01:00.000Z',
+              endedAt: "2026-08-15T09:01:00.000Z",
               scriptResults: [],
             },
           ],
@@ -4092,7 +3839,7 @@ describe('store startup timing', () => {
     });
 
     store.handleBridgeEvent({
-      type: 'service-state',
+      type: "service-state",
       status: {
         ...baseStatus,
         automation: {
@@ -4100,9 +3847,9 @@ describe('store startup timing', () => {
           executions: [
             {
               ...execution,
-              status: 'completed',
+              status: "completed",
               currentScriptIndex: 1,
-              endedAt: '2026-08-15T09:01:00.000Z',
+              endedAt: "2026-08-15T09:01:00.000Z",
               scriptResults: [],
             },
           ],
@@ -4113,42 +3860,42 @@ describe('store startup timing', () => {
     expect(showNotification).toHaveBeenCalledTimes(1);
 
     store.handleBridgeEvent({
-      type: 'service-state',
+      type: "service-state",
       status: {
         ...baseStatus,
         automation: { revision: 4, executions: [] },
       },
     });
 
-    expect(store.automationActiveProjectRuns['automation-project']).toBeUndefined();
+    expect(store.automationActiveProjectRuns["automation-project"]).toBeUndefined();
   });
 
-  it('reconciles the existing service run after an active-run conflict', async () => {
-    const conflict = Object.assign(new Error('An active run already exists.'), { code: 'active_run_conflict' });
+  it("reconciles the existing service run after an active-run conflict", async () => {
+    const conflict = Object.assign(new Error("An active run already exists."), { code: "active_run_conflict" });
     const runCommand = vi.fn(async () => {
       throw conflict;
     });
     const reconcileProjectLaunchService = vi.fn(async () => ({
-      state: 'healthy' as const,
+      state: "healthy" as const,
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [
         {
-          id: 'existing-service-run',
-          projectId: 'conflict-project',
-          scriptId: 'conflict-script',
-          label: 'Conflict project / script',
-          command: 'echo existing',
-          cwd: 'C:\\workspace',
+          id: "existing-service-run",
+          projectId: "conflict-project",
+          scriptId: "conflict-script",
+          label: "Conflict project / script",
+          command: "echo existing",
+          cwd: "C:\\workspace",
           pid: 4422,
-          status: 'running' as const,
-          startedAt: '2026-08-15T09:00:00.000Z',
+          status: "running" as const,
+          startedAt: "2026-08-15T09:00:00.000Z",
         },
       ],
     }));
@@ -4160,49 +3907,49 @@ describe('store startup timing', () => {
       reconcileProjectLaunchService,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'conflict-project',
-        name: 'Conflict project',
-        path: 'C:\\workspace',
-        type: 'Custom',
-        kind: 'custom',
+        id: "conflict-project",
+        name: "Conflict project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'conflict-script', name: 'dev', command: 'echo existing', status: 'IDLE' }],
+        scripts: [{ id: "conflict-script", name: "dev", command: "echo existing", status: "IDLE" }],
         env: {},
       },
     ];
 
-    await expect(store.launchScript('conflict-project', 'conflict-script')).resolves.toBeNull();
+    await expect(store.launchScript("conflict-project", "conflict-script")).resolves.toBeNull();
 
     expect(runCommand).toHaveBeenCalledOnce();
     expect(reconcileProjectLaunchService).toHaveBeenCalledOnce();
     expect(store.projects[0]?.scripts[0]).toMatchObject({
-      status: 'RUNNING',
+      status: "RUNNING",
       pid: 4422,
-      runId: 'existing-service-run',
-      runtimeOwner: 'service',
+      runId: "existing-service-run",
+      runtimeOwner: "service",
     });
   });
 
-  it('does not leave a pid-less running script when an active-run conflict cannot be reconciled', async () => {
-    const conflict = Object.assign(new Error('An active run already exists.'), { code: 'active_run_conflict' });
+  it("does not leave a pid-less running script when an active-run conflict cannot be reconciled", async () => {
+    const conflict = Object.assign(new Error("An active run already exists."), { code: "active_run_conflict" });
     const runCommand = vi.fn(async () => {
       throw conflict;
     });
     const healthyStatus: ProjectLaunchServiceStatus = {
-      state: 'healthy',
+      state: "healthy",
       installed: true,
       running: true,
-      platform: 'windows',
-      architecture: 'amd64',
-      expectedAssetName: 'project-launch-service-windows-amd64.exe',
-      directoryPath: 'C:\\service',
-      executablePath: 'C:\\service\\project-launch-service.exe',
-      releaseUrl: 'https://github.com/Wwyxa/utools-project-launch/releases',
+      platform: "windows",
+      architecture: "amd64",
+      expectedAssetName: "project-launch-service-windows-amd64.exe",
+      directoryPath: "C:\\service",
+      executablePath: "C:\\service\\project-launch-service.exe",
+      releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       runs: [],
     };
     const reconcileProjectLaunchService = vi.fn(async () => healthyStatus);
@@ -4214,42 +3961,42 @@ describe('store startup timing', () => {
       reconcileProjectLaunchService,
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [
       {
-        id: 'unreconciled-conflict-project',
-        name: 'Unreconciled conflict project',
-        path: 'C:\\workspace',
-        type: 'Custom',
-        kind: 'custom',
+        id: "unreconciled-conflict-project",
+        name: "Unreconciled conflict project",
+        path: "C:\\workspace",
+        type: "Custom",
+        kind: "custom",
         status: ProjectStatus.STOPPED,
-        scripts: [{ id: 'unreconciled-conflict-script', name: 'dev', command: 'echo conflict', status: 'IDLE' }],
+        scripts: [{ id: "unreconciled-conflict-script", name: "dev", command: "echo conflict", status: "IDLE" }],
         env: {},
       },
     ];
 
     await expect(
-      store.launchScript('unreconciled-conflict-project', 'unreconciled-conflict-script'),
+      store.launchScript("unreconciled-conflict-project", "unreconciled-conflict-script"),
     ).resolves.toBeNull();
 
-    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: 'ERROR' });
+    expect(store.projects[0]?.scripts[0]).toMatchObject({ status: "ERROR" });
     expect(store.projects[0]?.scripts[0]?.pid).toBeUndefined();
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
     expect(store.projects[0]?.scripts[0]?.runtimeOwner).toBeUndefined();
     expect(store.projectLaunchServiceStatus).toMatchObject({
-      state: 'unavailable',
-      message: '项目启动服务存在活动运行，但当前窗口未能恢复其身份。',
+      state: "unavailable",
+      message: "项目启动服务存在活动运行，但当前窗口未能恢复其身份。",
     });
   });
 });
 
-describe('store project catalog refresh', () => {
+describe("store project catalog refresh", () => {
   beforeEach(() => {
     const storage = new Map<string, string>();
-    vi.stubGlobal('window', {
-      navigator: { platform: '', userAgent: 'vitest' },
+    vi.stubGlobal("window", {
+      navigator: { platform: "", userAgent: "vitest" },
       localStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: string) => storage.set(key, value),
@@ -4266,24 +4013,24 @@ describe('store project catalog refresh', () => {
     vi.resetModules();
   });
 
-  it('reloads persisted projects during a manual refresh without resetting active scripts', async () => {
+  it("reloads persisted projects during a manual refresh without resetting active scripts", async () => {
     const activeProject: Project = {
-      id: 'existing-project',
-      name: 'Existing Project',
-      path: 'C:/workspace/existing-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "existing-project",
+      name: "Existing Project",
+      path: "C:/workspace/existing-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.RUNNING,
       pathExists: true,
       scripts: [
         {
-          id: 'existing-script',
-          name: 'dev',
-          command: 'npm run dev',
-          status: 'RUNNING',
+          id: "existing-script",
+          name: "dev",
+          command: "npm run dev",
+          status: "RUNNING",
           pid: 8080,
-          runId: 'preload-run',
-          runtimeOwner: 'preload',
+          runId: "preload-run",
+          runtimeOwner: "preload",
         },
       ],
       env: {},
@@ -4293,30 +4040,30 @@ describe('store project catalog refresh', () => {
         ...activeProject,
         status: ProjectStatus.STOPPED,
         scripts: [
-          { id: 'existing-script', name: 'dev', command: 'npm run dev -- --host', status: 'IDLE' },
-          { id: 'agent-script', name: 'test_tool', command: 'echo tool', status: 'IDLE' },
+          { id: "existing-script", name: "dev", command: "npm run dev -- --host", status: "IDLE" },
+          { id: "agent-script", name: "test_tool", command: "echo tool", status: "IDLE" },
         ],
       },
       {
-        id: 'agent-created-project',
-        name: 'Agent Created Project',
-        path: 'C:/workspace/agent-created-project',
-        type: 'Node.js',
-        kind: 'node',
+        id: "agent-created-project",
+        name: "Agent Created Project",
+        path: "C:/workspace/agent-created-project",
+        type: "Node.js",
+        kind: "node",
         status: ProjectStatus.STOPPED,
         scripts: [],
         env: {},
-        memo: 'Created by Agent',
+        memo: "Created by Agent",
       },
     ];
-    const loadProjects = vi.fn<ProjectBridge['loadProjects']>(async () => persistedProjects);
+    const loadProjects = vi.fn<ProjectBridge["loadProjects"]>(async () => persistedProjects);
     window.projectBridge = {
       ...getProjectBridge(),
       loadProjects,
       pathExists: vi.fn(async () => true),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [activeProject];
@@ -4324,27 +4071,27 @@ describe('store project catalog refresh', () => {
     store.selectedProjectId = activeProject.id;
 
     store.handleBridgeEvent({
-      type: 'projects-changed',
+      type: "projects-changed",
       projectId: activeProject.id,
-      source: 'agent',
+      source: "agent",
     });
 
     await vi.waitFor(() => expect(store.projects).toHaveLength(2));
 
-    expect(store.projects.map((project) => project.id)).toEqual(['existing-project', 'agent-created-project']);
-    expect(store.selectedProjectId).toBe('existing-project');
+    expect(store.projects.map((project) => project.id)).toEqual(["existing-project", "agent-created-project"]);
+    expect(store.selectedProjectId).toBe("existing-project");
     expect(store.projects[0]?.scripts[0]).toMatchObject({
-      command: 'npm run dev -- --host',
-      status: 'RUNNING',
+      command: "npm run dev -- --host",
+      status: "RUNNING",
       pid: 8080,
-      runId: 'preload-run',
-      runtimeOwner: 'preload',
+      runId: "preload-run",
+      runtimeOwner: "preload",
     });
-    expect(store.projects[0]?.scripts[1]).toMatchObject({ id: 'agent-script', name: 'test_tool' });
-    expect(store.memoContent['agent-created-project']).toBe('Created by Agent');
+    expect(store.projects[0]?.scripts[1]).toMatchObject({ id: "agent-script", name: "test_tool" });
+    expect(store.memoContent["agent-created-project"]).toBe("Created by Agent");
 
     const refreshDashboardGitChangeCounts = vi
-      .spyOn(store, 'refreshDashboardGitChangeCounts')
+      .spyOn(store, "refreshDashboardGitChangeCounts")
       .mockResolvedValue(undefined);
     await store.refreshProjects();
 
@@ -4352,19 +4099,19 @@ describe('store project catalog refresh', () => {
     expect(refreshDashboardGitChangeCounts).toHaveBeenCalledOnce();
   });
 
-  it('coalesces Agent catalog events and runs one trailing reload for mid-flight changes', async () => {
+  it("coalesces Agent catalog events and runs one trailing reload for mid-flight changes", async () => {
     const initialProject: Project = {
-      id: 'coalesced-project',
-      name: 'Initial Project',
-      path: 'C:/workspace/coalesced-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "coalesced-project",
+      name: "Initial Project",
+      path: "C:/workspace/coalesced-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
       scripts: [],
       env: {},
     };
-    const firstPersistedProjects: Project[] = [{ ...initialProject, name: 'First Agent Change' }];
-    const finalPersistedProjects: Project[] = [{ ...initialProject, name: 'Final Agent Change' }];
+    const firstPersistedProjects: Project[] = [{ ...initialProject, name: "First Agent Change" }];
+    const finalPersistedProjects: Project[] = [{ ...initialProject, name: "Final Agent Change" }];
     let resolveFirstReload: (projects: Project[]) => void = () => undefined;
     let resolveTrailingReload: (projects: Project[]) => void = () => undefined;
     const firstReload = new Promise<Project[]>((resolve) => {
@@ -4374,7 +4121,7 @@ describe('store project catalog refresh', () => {
       resolveTrailingReload = resolve;
     });
     const loadProjects = vi
-      .fn<ProjectBridge['loadProjects']>()
+      .fn<ProjectBridge["loadProjects"]>()
       .mockImplementationOnce(async () => firstReload)
       .mockImplementationOnce(async () => trailingReload);
     window.projectBridge = {
@@ -4383,16 +4130,16 @@ describe('store project catalog refresh', () => {
       pathExists: vi.fn(async () => true),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     store.projects = [initialProject];
     store.projectsLoaded = true;
-    const reconcileRuntimeProcessState = vi.spyOn(store, 'reconcileRuntimeProcessState').mockResolvedValue(undefined);
+    const reconcileRuntimeProcessState = vi.spyOn(store, "reconcileRuntimeProcessState").mockResolvedValue(undefined);
 
-    store.handleBridgeEvent({ type: 'projects-changed', projectId: initialProject.id, source: 'agent' });
-    store.handleBridgeEvent({ type: 'projects-changed', projectId: initialProject.id, source: 'agent' });
-    store.handleBridgeEvent({ type: 'projects-changed', projectId: initialProject.id, source: 'agent' });
+    store.handleBridgeEvent({ type: "projects-changed", projectId: initialProject.id, source: "agent" });
+    store.handleBridgeEvent({ type: "projects-changed", projectId: initialProject.id, source: "agent" });
+    store.handleBridgeEvent({ type: "projects-changed", projectId: initialProject.id, source: "agent" });
 
     expect(loadProjects).toHaveBeenCalledOnce();
 
@@ -4400,42 +4147,42 @@ describe('store project catalog refresh', () => {
     await vi.waitFor(() => expect(loadProjects).toHaveBeenCalledTimes(2));
 
     resolveTrailingReload(finalPersistedProjects);
-    await vi.waitFor(() => expect(store.projects[0]?.name).toBe('Final Agent Change'));
+    await vi.waitFor(() => expect(store.projects[0]?.name).toBe("Final Agent Change"));
     await vi.waitFor(() => expect(reconcileRuntimeProcessState).toHaveBeenCalledTimes(2));
 
     expect(loadProjects).toHaveBeenCalledTimes(2);
   });
 
-  it('passes a loaded catalog baseline and explicit project deletions to persistence', async () => {
+  it("passes a loaded catalog baseline and explicit project deletions to persistence", async () => {
     const persistedProject: Project = {
-      id: 'persisted-baseline-project',
-      name: 'Persisted Baseline Project',
-      path: 'C:/workspace/persisted-baseline-project',
-      type: 'Custom',
-      kind: 'custom',
+      id: "persisted-baseline-project",
+      name: "Persisted Baseline Project",
+      path: "C:/workspace/persisted-baseline-project",
+      type: "Custom",
+      kind: "custom",
       status: ProjectStatus.STOPPED,
       scripts: [],
       env: {},
-      memo: 'initial memo',
+      memo: "initial memo",
     };
-    const saveProjects = vi.fn<ProjectBridge['saveProjects']>(async () => undefined);
+    const saveProjects = vi.fn<ProjectBridge["saveProjects"]>(async () => undefined);
     window.projectBridge = {
       ...getProjectBridge(),
-      loadProjects: vi.fn<ProjectBridge['loadProjects']>(async () => [persistedProject]),
+      loadProjects: vi.fn<ProjectBridge["loadProjects"]>(async () => [persistedProject]),
       saveProjects,
       pathExists: vi.fn(async () => true),
     };
 
-    const { useStore } = await import('../src/store/useStore');
+    const { useStore } = await import("../src/store/useStore");
     setActivePinia(createPinia());
     const store = useStore();
     await store.reloadProjectsFromStorage();
 
-    store.projects[0]!.memo = 'locally updated memo';
+    store.projects[0]!.memo = "locally updated memo";
     await store.persistProjects();
 
     expect(saveProjects.mock.calls[0]?.[1]).toMatchObject({
-      baseProjects: [expect.objectContaining({ id: persistedProject.id, memo: 'initial memo' })],
+      baseProjects: [expect.objectContaining({ id: persistedProject.id, memo: "initial memo" })],
       removedProjectIds: [],
     });
 
@@ -4448,18 +4195,18 @@ describe('store project catalog refresh', () => {
   });
 });
 
-describe('uTools preload UI preferences', () => {
-  const localDataDirEnv = 'UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR';
-  const localStateFileName = 'local-state.v1.json';
+describe("uTools preload UI preferences", () => {
+  const localDataDirEnv = "UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR";
+  const localStateFileName = "local-state.v1.json";
 
   const readLocalStateFile = (directory: string) =>
-    JSON.parse(readFileSync(join(directory, localStateFileName), 'utf8'));
+    JSON.parse(readFileSync(join(directory, localStateFileName), "utf8"));
 
   it.each([
     [defaultTabOrder, 0],
-    [['scripts', 'info', 'automation', 'files', 'git', 'memo'], 1],
-  ])('migrates legacy order %j with coach mark version %i', async (legacyOrder, expectedVersion) => {
-    const localDataDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-localdata-'));
+    [["scripts", "info", "automation", "files", "git", "memo"], 1],
+  ])("migrates legacy order %j with coach mark version %i", async (legacyOrder, expectedVersion) => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
     try {
       const storage = new Map<string, unknown>([[legacyTabOrderKey, legacyOrder]]);
       const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
@@ -4478,43 +4225,43 @@ describe('uTools preload UI preferences', () => {
     }
   });
 
-  it('migrates the released configuration, normalizes it, and keeps the legacy key', async () => {
-    const localDataDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-localdata-'));
+  it("migrates the released configuration, normalizes it, and keeps the legacy key", async () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
     try {
       const storage = new Map<string, unknown>([
         [
           uiPreferencesKey,
           {
             schemaVersion: 1,
-            projectDetails: { tabOrder: ['memo', 'unknown', 'memo'], defaultTab: 'unknown' },
-            dashboard: { tinyCardActionTrigger: 'unsupported' },
+            projectDetails: { tabOrder: ["memo", "unknown", "memo"], defaultTab: "unknown" },
+            dashboard: { tinyCardActionTrigger: "unsupported" },
             coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1.5 },
           },
         ],
-        [legacyTabOrderKey, ['scripts', 'info']],
+        [legacyTabOrderKey, ["scripts", "info"]],
       ]);
       const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
       await bridge.runMigration();
 
       const preferences = bridge.loadUiPreferences();
-      expect(preferences.projectDetails.tabOrder).toEqual(['memo', 'info', 'scripts', 'automation', 'files', 'git']);
-      expect(preferences.dashboard.tinyCardActionTrigger).toBe('hover');
+      expect(preferences.projectDetails.tabOrder).toEqual(["memo", "info", "scripts", "automation", "files", "git"]);
+      expect(preferences.dashboard.tinyCardActionTrigger).toBe("hover");
       expect(preferences.projectDetails.defaultTab).toBe(defaultOpenTab);
       expect(preferences.coachMarks.projectDetailsTabDefault).toBe(0);
       expect(storage.has(legacyTabOrderKey)).toBe(true);
 
       bridge.saveUiPreferences({
         schemaVersion: 1,
-        iconPackId: 'builtin',
-        projectDetails: { tabOrder: ['git', 'git', 'memo'], defaultTab: 'memo' },
-        dashboard: { tinyCardActionTrigger: 'contextmenu' },
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: ["git", "git", "memo"], defaultTab: "memo" },
+        dashboard: { tinyCardActionTrigger: "contextmenu" },
         coachMarks: { projectDetailsTabReorder: 2, projectDetailsTabDefault: 3 },
       });
       const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
       const saved = restartedBridge.loadUiPreferences();
-      expect(saved.projectDetails.tabOrder).toEqual(['git', 'memo', 'info', 'scripts', 'automation', 'files']);
-      expect(saved.projectDetails.defaultTab).toBe('memo');
-      expect(saved.dashboard.tinyCardActionTrigger).toBe('contextmenu');
+      expect(saved.projectDetails.tabOrder).toEqual(["git", "memo", "info", "scripts", "automation", "files"]);
+      expect(saved.projectDetails.defaultTab).toBe("memo");
+      expect(saved.dashboard.tinyCardActionTrigger).toBe("contextmenu");
       expect(saved.coachMarks.projectDetailsTabDefault).toBe(3);
       const storedState = readLocalStateFile(localDataDirectory);
       expect(storedState.preferences.ui).toEqual(saved);
@@ -4523,21 +4270,21 @@ describe('uTools preload UI preferences', () => {
     }
   });
 
-  it('uses defaults instead of legacy data when the released configuration is invalid', async () => {
-    const localDataDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-localdata-'));
+  it("uses defaults instead of legacy data when the released configuration is invalid", async () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
     try {
       const storage = new Map<string, unknown>([
         [uiPreferencesKey, { schemaVersion: 2 }],
-        [legacyTabOrderKey, ['scripts', 'info', 'automation', 'files', 'git', 'memo']],
+        [legacyTabOrderKey, ["scripts", "info", "automation", "files", "git", "memo"]],
       ]);
       const bridge = loadPreloadBridge(storage, undefined, { [localDataDirEnv]: localDataDirectory });
       await bridge.runMigration();
 
       expect(bridge.loadUiPreferences()).toEqual({
         schemaVersion: 1,
-        iconPackId: 'builtin',
+        iconPackId: "builtin",
         projectDetails: { tabOrder: defaultTabOrder, defaultTab: defaultOpenTab },
-        dashboard: { tinyCardActionTrigger: 'hover' },
+        dashboard: { tinyCardActionTrigger: "hover" },
         coachMarks: { projectDetailsTabReorder: 0, projectDetailsTabDefault: 0 },
       });
     } finally {
@@ -4545,14 +4292,14 @@ describe('uTools preload UI preferences', () => {
     }
   });
 
-  it('round-trips current preferences through the local state file', () => {
-    const localDataDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-localdata-'));
+  it("round-trips current preferences through the local state file", () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
     try {
       const preferences: UiPreferences = {
         schemaVersion: 1,
-        iconPackId: 'builtin',
-        projectDetails: { tabOrder: ['memo', 'info', 'scripts', 'automation', 'files', 'git'], defaultTab: 'memo' },
-        dashboard: { tinyCardActionTrigger: 'hover' },
+        iconPackId: "builtin",
+        projectDetails: { tabOrder: ["memo", "info", "scripts", "automation", "files", "git"], defaultTab: "memo" },
+        dashboard: { tinyCardActionTrigger: "hover" },
         coachMarks: { projectDetailsTabReorder: 1, projectDetailsTabDefault: 1 },
       };
       const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
@@ -4567,8 +4314,8 @@ describe('uTools preload UI preferences', () => {
     }
   });
 
-  it('persists Project Launch Service preferences separately from project data', () => {
-    const localDataDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-localdata-'));
+  it("persists Project Launch Service preferences separately from project data", () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
     try {
       const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
 
@@ -4587,85 +4334,122 @@ describe('uTools preload UI preferences', () => {
     }
   });
 
-  it.each([2, 3])('removes stale protocol %s discovery when a live PID has a different process identity', async (protocolVersion) => {
-    const applicationDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-service-'));
-    const serviceDirectory = join(applicationDirectory, 'service');
-    const executableName = `project-launch-service${process.platform === 'win32' ? '.exe' : ''}`;
-    const discoveryPath = join(serviceDirectory, 'discovery.json');
+  it.each([2, 3])(
+    "removes stale protocol %s discovery when a live PID has a different process identity",
+    async (protocolVersion) => {
+      const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
+      const serviceDirectory = join(applicationDirectory, "service");
+      const executableName = `project-launch-service${process.platform === "win32" ? ".exe" : ""}`;
+      const discoveryPath = join(serviceDirectory, "discovery.json");
 
-    try {
-      mkdirSync(serviceDirectory, { recursive: true });
-      writeFileSync(join(serviceDirectory, executableName), '');
-      writeFileSync(join(serviceDirectory, 'token'), `${'a'.repeat(64)}\n`);
-      writeFileSync(join(serviceDirectory, 'state.json'), '{"retained":"execution state"}');
-      writeFileSync(join(serviceDirectory, 'install.json'), '{"retained":"installation trust"}');
-      writeFileSync(
-        discoveryPath,
-        JSON.stringify({
-          protocolVersion,
-          serviceVersion: 'test',
-          instanceId: 'stale-instance',
+      try {
+        mkdirSync(serviceDirectory, { recursive: true });
+        writeFileSync(join(serviceDirectory, executableName), "");
+        writeFileSync(join(serviceDirectory, "token"), `${"a".repeat(64)}\n`);
+        writeFileSync(join(serviceDirectory, "state.json"), '{"retained":"execution state"}');
+        writeFileSync(join(serviceDirectory, "install.json"), '{"retained":"installation trust"}');
+        writeFileSync(
+          discoveryPath,
+          JSON.stringify({
+            protocolVersion,
+            serviceVersion: "test",
+            instanceId: "stale-instance",
+            pid: process.pid,
+            processIdentity: "reused-pid-identity",
+            startedAt: new Date().toISOString(),
+            host: "127.0.0.1",
+            port: 1,
+            tokenPath: join(serviceDirectory, "token"),
+          }),
+        );
+
+        const status = await loadPreloadBridge(new Map(), undefined, {
+          [localDataDirEnv]: applicationDirectory,
+        }).getProjectLaunchServiceStatus();
+
+        expect(existsSync(discoveryPath)).toBe(false);
+        if (protocolVersion === 2) expect(status.state).toBe("installed");
+        expect(readFileSync(join(serviceDirectory, "token"), "utf8")).toBe(`${"a".repeat(64)}\n`);
+        expect(readFileSync(join(serviceDirectory, "state.json"), "utf8")).toBe('{"retained":"execution state"}');
+        expect(readFileSync(join(serviceDirectory, "install.json"), "utf8")).toBe('{"retained":"installation trust"}');
+      } finally {
+        rmSync(applicationDirectory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([true, false])(
+    "preserves old protocol discovery when process identity is matching or unknown (%s)",
+    async (matching) => {
+      const applicationDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-old-protocol-"));
+      const serviceDirectory = join(applicationDirectory, "service");
+      const discoveryPath = join(serviceDirectory, "discovery.json");
+      const nodeRequire = createRequire(import.meta.url);
+      const nativeFs = nodeRequire("fs");
+      const nativeChildProcess = nodeRequire("child_process");
+      const identity =
+        process.platform === "win32"
+          ? "windows:12345"
+          : process.platform === "darwin"
+            ? "darwin:test-start"
+            : "linux:test-boot:12345";
+      const readProc = async (target: string, ...args: unknown[]) => {
+        if (target === "/proc/sys/kernel/random/boot_id") return matching ? "test-boot" : "";
+        if (target === `/proc/${process.pid}/stat`) return `(test) ${Array(19).fill("0").join(" ")} 12345`;
+        return nativeFs.promises.readFile(target, ...args);
+      };
+      try {
+        mkdirSync(serviceDirectory, { recursive: true });
+        writeFileSync(join(serviceDirectory, projectLaunchServiceExecutableName()), "");
+        writeFileSync(join(serviceDirectory, "token"), `${"a".repeat(64)}\n`);
+        const contents = JSON.stringify({
+          protocolVersion: 2,
+          serviceVersion: "service-v1.0.0",
+          instanceId: "old-service",
           pid: process.pid,
-          processIdentity: 'reused-pid-identity',
+          processIdentity: identity,
           startedAt: new Date().toISOString(),
-          host: '127.0.0.1',
+          host: "127.0.0.1",
           port: 1,
-          tokenPath: join(serviceDirectory, 'token'),
-        }),
-      );
-
-      const status = await loadPreloadBridge(new Map(), undefined, {
-        [localDataDirEnv]: applicationDirectory,
-      }).getProjectLaunchServiceStatus();
-
-      expect(existsSync(discoveryPath)).toBe(false);
-      if (protocolVersion === 2) expect(status.state).toBe('installed');
-      expect(readFileSync(join(serviceDirectory, 'token'), 'utf8')).toBe(`${'a'.repeat(64)}\n`);
-      expect(readFileSync(join(serviceDirectory, 'state.json'), 'utf8')).toBe('{"retained":"execution state"}');
-      expect(readFileSync(join(serviceDirectory, 'install.json'), 'utf8')).toBe('{"retained":"installation trust"}');
-    } finally {
-      rmSync(applicationDirectory, { recursive: true, force: true });
-    }
-  });
-
-  it.each([true, false])('preserves old protocol discovery when process identity is matching or unknown (%s)', async (matching) => {
-    const applicationDirectory = mkdtempSync(join(tmpdir(), 'utools-project-launch-old-protocol-'));
-    const serviceDirectory = join(applicationDirectory, 'service');
-    const discoveryPath = join(serviceDirectory, 'discovery.json');
-    const nodeRequire = createRequire(import.meta.url);
-    const nativeFs = nodeRequire('fs');
-    const nativeChildProcess = nodeRequire('child_process');
-    const identity = process.platform === 'win32' ? 'windows:12345' : process.platform === 'darwin' ? 'darwin:test-start' : 'linux:test-boot:12345';
-    const readProc = async (target: string, ...args: unknown[]) => {
-      if (target === '/proc/sys/kernel/random/boot_id') return matching ? 'test-boot' : '';
-      if (target === `/proc/${process.pid}/stat`) return `(test) ${Array(19).fill('0').join(' ')} 12345`;
-      return nativeFs.promises.readFile(target, ...args);
-    };
-    try {
-      mkdirSync(serviceDirectory, { recursive: true });
-      writeFileSync(join(serviceDirectory, projectLaunchServiceExecutableName()), '');
-      writeFileSync(join(serviceDirectory, 'token'), `${'a'.repeat(64)}\n`);
-      const contents = JSON.stringify({
-        protocolVersion: 2, serviceVersion: 'service-v1.0.0', instanceId: 'old-service',
-        pid: process.pid, processIdentity: identity, startedAt: new Date().toISOString(),
-        host: '127.0.0.1', port: 1, tokenPath: join(serviceDirectory, 'token'),
-      });
-      writeFileSync(discoveryPath, contents);
-      const spawn = vi.fn();
-      const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: applicationDirectory }, {
-        fs: { ...nativeFs, promises: { ...nativeFs.promises, readFile: readProc } },
-        child_process: { ...nativeChildProcess, spawn,
-          execFile: (_command: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string) => void) => {
-            callback(matching ? null : new Error('identity unavailable'), process.platform === 'win32' ? '12345' : 'test-start');
+          tokenPath: join(serviceDirectory, "token"),
+        });
+        writeFileSync(discoveryPath, contents);
+        const spawn = vi.fn();
+        const bridge = loadPreloadBridge(
+          new Map(),
+          undefined,
+          { [localDataDirEnv]: applicationDirectory },
+          {
+            fs: { ...nativeFs, promises: { ...nativeFs.promises, readFile: readProc } },
+            child_process: {
+              ...nativeChildProcess,
+              spawn,
+              execFile: (
+                _command: string,
+                _args: string[],
+                _options: unknown,
+                callback: (error: Error | null, stdout: string) => void,
+              ) => {
+                callback(
+                  matching ? null : new Error("identity unavailable"),
+                  process.platform === "win32" ? "12345" : "test-start",
+                );
+              },
+            },
           },
-        },
-      });
-      await expect(bridge.getProjectLaunchServiceStatus()).resolves.toMatchObject({ state: 'incompatible', running: false });
-      await expect(bridge.startProjectLaunchService({ requireVerifiedInstall: false })).resolves.toMatchObject({ state: 'incompatible' });
-      expect(spawn).not.toHaveBeenCalled();
-      expect(readFileSync(discoveryPath, 'utf8')).toBe(contents);
-    } finally {
-      rmSync(applicationDirectory, { recursive: true, force: true });
-    }
-  });
+        );
+        await expect(bridge.getProjectLaunchServiceStatus()).resolves.toMatchObject({
+          state: "incompatible",
+          running: false,
+        });
+        await expect(bridge.startProjectLaunchService({ requireVerifiedInstall: false })).resolves.toMatchObject({
+          state: "incompatible",
+        });
+        expect(spawn).not.toHaveBeenCalled();
+        expect(readFileSync(discoveryPath, "utf8")).toBe(contents);
+      } finally {
+        rmSync(applicationDirectory, { recursive: true, force: true });
+      }
+    },
+  );
 });

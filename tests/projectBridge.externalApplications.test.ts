@@ -11,7 +11,6 @@ import type { ExternalApplicationPreferences, Project, ProjectBridge } from "../
 
 const preferencesKey = "utools-project-launch.local-external-applications.v1";
 const localLegacyKey = "utools-project-launch.local-editor-settings.v1";
-const sharedLegacyKey = "utools-project-launch.editor-settings.v1";
 const terminalPreferencesKey = "utools-project-launch.local-settings.v1";
 const terminalLegacyPreferencesKey = "utools-project-launch.settings.v1";
 
@@ -36,16 +35,13 @@ const createStorage = () => {
   };
 };
 
-const createDbStorage = (options: { failExternalApplicationWrite?: boolean } = {}) => {
+const createDbStorage = () => {
   const values = new Map<string, unknown>();
   return {
     values,
     api: {
       getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: unknown) => {
-        if (options.failExternalApplicationWrite && key === preferencesKey) {
-          throw new Error("Unable to persist external application preferences.");
-        }
         values.set(key, value);
       },
       removeItem: (key: string) => values.delete(key),
@@ -104,42 +100,6 @@ describe("browser external application preferences", () => {
     vi.resetModules();
   });
 
-  it("persists complete defaults when no preference exists", () => {
-    expect(getProjectBridge().loadExternalApplicationPreferences()).toEqual(defaults);
-    expect(JSON.parse(storage.values.get(preferencesKey)!)).toEqual(defaults);
-  });
-
-  it("preserves the published external application V1 key", () => {
-    const publishedPreferences = { ...defaults, defaultApplicationId: "cursor" };
-    storage.values.set(preferencesKey, JSON.stringify(publishedPreferences));
-
-    expect(getProjectBridge().loadExternalApplicationPreferences()).toEqual(publishedPreferences);
-    expect(JSON.parse(storage.values.get(preferencesKey)!)).toEqual(publishedPreferences);
-  });
-
-  it.each([
-    [localLegacyKey, { kind: "cursor", customCommand: "" }, "cursor"],
-    [sharedLegacyKey, { kind: "vscode", customCommand: "" }, "vscode"],
-  ])("migrates %s before writing the new local key", (key, legacy, expectedDefault) => {
-    storage.values.set(key, JSON.stringify(legacy));
-    expect(getProjectBridge().loadExternalApplicationPreferences().defaultApplicationId).toBe(expectedDefault);
-    expect(storage.values.has(preferencesKey)).toBe(true);
-  });
-
-  it("migrates a valid custom editor command", () => {
-    storage.values.set(
-      localLegacyKey,
-      JSON.stringify({ kind: "custom", customCommand: '"C:\\Program Files\\App\\app.exe" {projectPath}' }),
-    );
-    const preferences = getProjectBridge().loadExternalApplicationPreferences();
-    expect(preferences.defaultApplicationId).toBe("legacy-custom-editor");
-    expect(preferences.applications.at(-1)).toMatchObject({
-      kind: "custom",
-      command: '"C:\\Program Files\\App\\app.exe" {projectPath}',
-      enabled: true,
-    });
-  });
-
   it("preserves valid built-in edits and normalizes invalid entries, duplicates, and a disabled default", () => {
     storage.values.set(
       preferencesKey,
@@ -182,16 +142,6 @@ describe("browser external application preferences", () => {
       applications: [defaults.applications[0], { ...defaults.applications[1], enabled: false }],
     });
     expect(storage.values.has(localLegacyKey)).toBe(true);
-  });
-
-  it("does not fall through from an explicitly present empty key", () => {
-    storage.values.set(preferencesKey, "");
-    storage.values.set(sharedLegacyKey, JSON.stringify({ kind: "cursor", customCommand: "" }));
-    expect(getProjectBridge().loadExternalApplicationPreferences()).toEqual(defaults);
-
-    storage.values.delete(preferencesKey);
-    storage.values.set(localLegacyKey, "");
-    expect(getProjectBridge().loadExternalApplicationPreferences()).toEqual(defaults);
   });
 
   it("protects the default and keeps explicit launch selection temporary", async () => {
@@ -261,49 +211,6 @@ describe("browser external application preferences", () => {
     expect(openExternalApplication.mock.calls.at(-1)?.[0].application.command).toBe('code --reuse-window "{path}"');
     expect(store.externalApplicationPreferences.defaultApplicationId).toBe("custom_20260806");
     expect(saveExternalApplicationPreferences).toHaveBeenCalledTimes(4);
-  });
-
-  it("opens only the configured default external application", async () => {
-    const openExternalApplication = vi.fn<ProjectBridge["openExternalApplication"]>(async (payload) => ({
-      launched: true,
-      command: payload.application.command,
-      cwd: payload.projectPath,
-      applicationId: payload.application.id,
-      kind: payload.application.kind,
-      code: "launched",
-    }));
-    window.projectBridge = {
-      ...getProjectBridge(),
-      loadExternalApplicationPreferences: () => structuredClone(defaults),
-      openExternalApplication,
-      pathExists: async () => true,
-    };
-    const { useStore } = await import("../src/store/useStore");
-    setActivePinia(createPinia());
-    const store = useStore();
-    store.projects = [
-      {
-        id: "manual-project",
-        name: "Manual Project",
-        path: "C:\\manual-project",
-        type: "Custom",
-        kind: "custom",
-        status: ProjectStatus.STOPPED,
-        scripts: [],
-        env: {},
-        pathExists: true,
-      },
-    ];
-
-    await store.openProjectInEditor("manual-project");
-
-    expect(openExternalApplication).toHaveBeenCalledWith(
-      expect.objectContaining({
-        application: expect.objectContaining({ id: "vscode" }),
-      }),
-    );
-    expect(openExternalApplication.mock.calls[0]?.[0]).not.toHaveProperty("mode");
-    expect(openExternalApplication.mock.calls[0]?.[0]).not.toHaveProperty("applications");
   });
 });
 

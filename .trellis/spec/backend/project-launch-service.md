@@ -88,9 +88,9 @@ files are migration inputs, not the current service root.
 
 `go -C service test ./...` covers state, API, process, scheduler, and recovery.
 Bridge ownership/sync behavior is covered by
-`tests/projectBridge.launchers.test.ts`,
-`tests/projectBridge.uiPreferences.test.ts`, and
-`tests/projectRuntimeState.test.ts`. Use the existing release CI for target names,
+`tests/projectBridge.launchers.test.ts` and
+`tests/projectBridge.uiPreferences.test.ts`; the catalog refresh test verifies
+that reloaded scripts retain their active run identity. Use the existing release CI for target names,
 checksums, and binary limits. Real uTools lifecycle behavior requires host smoke;
 browser tests do not establish full host shutdown/reconnect behavior.
 Protocol changes require old-protocol discovery tests for stale/reused PIDs,

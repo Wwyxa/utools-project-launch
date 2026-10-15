@@ -2,14 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import vm from "node:vm";
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { createPreloadSandbox } from "./helpers/preload-sandbox.mjs";
 
-const require = createRequire(import.meta.url);
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "git-activity-"));
 const projectRoot = path.join(fixtureRoot, "project");
 const nestedProjectRoot = path.join(projectRoot, "nested");
@@ -42,39 +37,6 @@ const commitFile = ({ root = projectRoot, fileName, contents, message, name, ema
     GIT_COMMITTER_EMAIL: "git-activity-validation@example.invalid",
     GIT_COMMITTER_DATE: committerDate,
   });
-};
-
-const createPreloadBridge = () => {
-  const sandbox = {
-    Buffer,
-    CustomEvent: class {
-      constructor(type, options = {}) {
-        this.type = type;
-        this.detail = options.detail;
-      }
-    },
-    TextDecoder,
-    clearTimeout,
-    console: { warn() {}, error() {}, log() {} },
-    process: { env: { ...process.env }, platform: process.platform, once() {}, exit() {} },
-    require(moduleName) {
-      if (moduleName === "electron") {
-        return {
-          shell: { openExternal: () => Promise.resolve(), openPath: () => Promise.resolve(), showItemInFolder() {} },
-        };
-      }
-      return require(moduleName);
-    },
-    setTimeout,
-    window: {
-      dispatchEvent() {},
-      localStorage: { getItem: () => null, setItem() {} },
-      utools: { onPluginOut() {} },
-    },
-  };
-  sandbox.globalThis = sandbox;
-  vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
-  return sandbox.window.projectBridge;
 };
 
 try {
@@ -111,7 +73,7 @@ try {
   fs.writeFileSync(path.join(projectRoot, "stash.txt"), "stash\n");
   runGit(projectRoot, ["stash", "push", "--include-untracked", "-m", "activity stash"]);
 
-  const bridge = createPreloadBridge();
+  const bridge = createPreloadSandbox().window.projectBridge;
   const range = { startDate: "2026-01-01", endDate: "2026-12-31" };
   const firstReport = await bridge.readGitActivity([projectRoot, nestedProjectRoot, nonGitRoot], range);
   assert.equal(firstReport.repositories.length, 2);

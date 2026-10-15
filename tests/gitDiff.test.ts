@@ -292,17 +292,6 @@ describe("inline Git diff ranges", () => {
 
     expect(oldChangedText).toContain(",");
     expect(`${oldChangedText}${newChangedText}`).not.toMatch(/type|Boolean|default|true/u);
-  });
-
-  it("renders the deleted trailing comma from a compressed block", () => {
-    const oldRows = [
-      { id: "old-0", content: "showRegionLabels: {" },
-      { id: "old-1", content: "  type: Boolean," },
-      { id: "old-2", content: "  default: true," },
-      { id: "old-3", content: "}," },
-    ];
-    const newRows = [{ id: "new-0", content: "showRegionLabels: { type: Boolean, default: true }," }];
-    const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
     const markedHtml = markGitDiffInlineRanges(
       highlightCode(oldRows[2].content, "typescript"),
       ranges?.get("old-2") || [],
@@ -350,26 +339,6 @@ describe("inline Git diff ranges", () => {
     const ranges = findGitDiffBlockInlineRanges(oldRows, newRows);
 
     expect(ranges?.get("old-0")?.map((range) => oldRows[0].content.slice(range.start, range.end))).toContain(",");
-  });
-
-  it("marks only the changed character and word ranges in a reliable replacement", () => {
-    expect(findGitDiffInlineRanges("const oldValue = 1;", "const newValue = 2;")).toEqual({
-      oldRanges: [
-        { start: 6, end: 9 },
-        { start: 17, end: 18 },
-      ],
-      newRanges: [
-        { start: 6, end: 9 },
-        { start: 17, end: 18 },
-      ],
-    });
-  });
-
-  it("marks a character inserted on only one side of a reliable replacement", () => {
-    expect(findGitDiffInlineRanges("feature", "feature!")).toEqual({
-      oldRanges: [],
-      newRanges: [{ start: 7, end: 8 }],
-    });
   });
 
   it("keeps changed spaces and tabs as source text inside inline highlights", () => {

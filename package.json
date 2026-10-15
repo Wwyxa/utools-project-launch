@@ -16,7 +16,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "lint": "vue-tsc --noEmit",
     "type-check": "vue-tsc --noEmit",
-    "validate:ai-reasoning": "node scripts/validate-ai-reasoning.mjs",
+    "validate:ai-reasoning": "vitest run tests/aiReasoning.test.ts",
     "benchmark:git-interactions": "node scripts/benchmark-git-interactions.mjs",
     "benchmark:service-resources": "node scripts/benchmark-service-resources.mjs",
     "validate:git-commits": "node scripts/validate-git-commits.mjs",

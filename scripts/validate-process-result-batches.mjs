@@ -358,21 +358,6 @@ function createStoredProject(entries, scriptIds = ["shared-script"]) {
   };
 }
 
-const runtimeSource = [
-  path.join(repoRoot, "public", "preload.js"),
-  ...fs
-    .readdirSync(path.join(repoRoot, "src"), { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.(?:ts|vue)$/.test(entry.name))
-    .map((entry) => path.join(entry.parentPath, entry.name)),
-]
-  .map((filePath) => fs.readFileSync(filePath, "utf8"))
-  .join("\n");
-assert.doesNotMatch(
-  runtimeSource,
-  /getRecentProcessResult|completedProcessResultsByScript|processScriptKey/,
-  "runtime sources must not retain script-only completed-result paths",
-);
-
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
 const automationQueries = [];

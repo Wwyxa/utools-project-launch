@@ -2,14 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import vm from "node:vm";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { createPreloadSandbox } from "./helpers/preload-sandbox.mjs";
 
 const require = createRequire(import.meta.url);
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "public", "preload.js"), "utf8");
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "git-commits-"));
 const projectRoot = path.join(fixtureRoot, "project");
 const unbornRoot = path.join(fixtureRoot, "unborn");
@@ -58,38 +55,8 @@ fs.mkdirSync(unbornRoot, { recursive: true });
 execFileSync("git", ["-C", unbornRoot, "init"], { encoding: "utf8" });
 fs.writeFileSync(path.join(unbornRoot, "untracked.txt"), "untracked\n");
 
-const createPreloadBridge = (childProcess = require("child_process")) => {
-  const sandbox = {
-    CustomEvent: class {
-      constructor(type, options = {}) {
-        this.type = type;
-        this.detail = options.detail;
-      }
-    },
-    TextDecoder,
-    clearTimeout,
-    console: { warn() {}, error() {}, log() {} },
-    process: { env: { ...process.env }, platform: process.platform, once() {}, exit() {} },
-    require(moduleName) {
-      if (moduleName === "child_process") return childProcess;
-      if (moduleName === "electron") {
-        return {
-          shell: { openExternal: () => Promise.resolve(), openPath: () => Promise.resolve(), showItemInFolder() {} },
-        };
-      }
-      return require(moduleName);
-    },
-    setTimeout,
-    window: {
-      dispatchEvent() {},
-      localStorage: { getItem: () => null, setItem() {} },
-      utools: { onPluginOut() {} },
-    },
-  };
-  sandbox.globalThis = sandbox;
-  vm.runInNewContext(preloadSource, sandbox, { filename: "public/preload.js" });
-  return sandbox.window.projectBridge;
-};
+const createPreloadBridge = (childProcess = require("child_process")) =>
+  createPreloadSandbox({ child_process: childProcess }).window.projectBridge;
 const bridge = createPreloadBridge();
 
 try {
@@ -565,33 +532,63 @@ try {
   runGitAt(publishProjectRoot, "commit", "--amend", "-m", "rewritten release commit");
   const rewrittenHead = runGitAt(publishProjectRoot, "rev-parse", "HEAD").trim();
   const forceWithLease = {
-    remote: "mirror", branch: publishBranch, expectedHash: releaseCommit,
+    remote: "mirror",
+    branch: publishBranch,
+    expectedHash: releaseCommit,
     headHash: runGitAt(publishProjectRoot, "rev-parse", "--short", "HEAD").trim(),
   };
   const leasedSnapshot = await bridge.readGitStatusSnapshot(publishProjectRoot);
-  assert.equal(leasedSnapshot.remoteBranches.find((branch) => branch.ref === `mirror/${publishBranch}`).commitHash, releaseCommit);
+  assert.equal(
+    leasedSnapshot.remoteBranches.find((branch) => branch.ref === `mirror/${publishBranch}`).commitHash,
+    releaseCommit,
+  );
   assert.equal((await bridge.pushGitRemote(publishProjectRoot)).ok, false);
-  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
-    forceWithLease: { ...forceWithLease, branch: "different-target" },
-  })).ok, false);
-  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
-    forceWithLease: { ...forceWithLease, expectedHash: "invalid" },
-  })).ok, false);
+  assert.equal(
+    (
+      await bridge.pushGitRemote(publishProjectRoot, {
+        forceWithLease: { ...forceWithLease, branch: "different-target" },
+      })
+    ).ok,
+    false,
+  );
+  assert.equal(
+    (
+      await bridge.pushGitRemote(publishProjectRoot, {
+        forceWithLease: { ...forceWithLease, expectedHash: "invalid" },
+      })
+    ).ok,
+    false,
+  );
   assert.equal((await bridge.pushGitRemote(publishProjectRoot, { forceWithLease })).ok, true);
   assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `refs/heads/${publishBranch}`).trim(), rewrittenHead);
   assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `${releaseTagName}^{commit}`).trim(), releaseCommit);
   runGitAt(publishProjectRoot, "commit", "--amend", "-m", "second rewritten release commit");
   const secondHead = runGitAt(publishProjectRoot, "rev-parse", "HEAD").trim();
-  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
-    forceWithLease: { ...forceWithLease, headHash: secondHead },
-  })).ok, false);
-  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
-    forceWithLease: { ...forceWithLease, expectedHash: rewrittenHead },
-  })).ok, false);
-  assert.equal((await bridge.pushGitRemote(publishProjectRoot, {
-    forceWithLease: { ...forceWithLease, expectedHash: rewrittenHead, headHash: secondHead },
-    tagNames: [releaseTagName],
-  })).ok, false);
+  assert.equal(
+    (
+      await bridge.pushGitRemote(publishProjectRoot, {
+        forceWithLease: { ...forceWithLease, headHash: secondHead },
+      })
+    ).ok,
+    false,
+  );
+  assert.equal(
+    (
+      await bridge.pushGitRemote(publishProjectRoot, {
+        forceWithLease: { ...forceWithLease, expectedHash: rewrittenHead },
+      })
+    ).ok,
+    false,
+  );
+  assert.equal(
+    (
+      await bridge.pushGitRemote(publishProjectRoot, {
+        forceWithLease: { ...forceWithLease, expectedHash: rewrittenHead, headHash: secondHead },
+        tagNames: [releaseTagName],
+      })
+    ).ok,
+    false,
+  );
   assert.equal(runGitAt(publishMirrorRoot, "rev-parse", `refs/heads/${publishBranch}`).trim(), rewrittenHead);
 
   const remoteDeleteBranch = "feature/remote-delete";
