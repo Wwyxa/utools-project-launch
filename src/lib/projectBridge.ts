@@ -1563,7 +1563,9 @@ const fallbackBridge: ProjectBridge = {
 };
 
 export function getProjectBridge(): ProjectBridge {
-  return window.projectBridge ?? fallbackBridge;
+  if (window.projectBridge) return window.projectBridge;
+  if (import.meta.env.DEV) return fallbackBridge;
+  throw new Error("本地桥接加载失败，请重新打开插件；若仍然失败，请重新安装插件。");
 }
 
 export function supportsRealProjectBridge() {

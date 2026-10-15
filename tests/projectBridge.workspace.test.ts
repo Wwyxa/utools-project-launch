@@ -112,8 +112,16 @@ const workingTreeSnapshot = (
 
 describe("browser Git workspace fallback", () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.resetModules();
+  });
+
+  it("reports a missing real bridge in production instead of using browser preview", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubGlobal("window", { projectBridge: undefined });
+
+    expect(() => getProjectBridge()).toThrow("本地桥接加载失败");
   });
 
   it("reports both sections as unavailable without simulating a local repository", async () => {
