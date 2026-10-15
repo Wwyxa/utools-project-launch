@@ -695,12 +695,12 @@ const taskSummaryText = computed(() =>
           @click.self="closeHistory"
         >
           <section
-            class="flex max-h-[78vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
+            class="flex max-h-[78vh] min-w-0 w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="automation-history-title"
           >
-            <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+            <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
               <div class="min-w-0">
                 <h3 id="automation-history-title" class="text-sm font-bold text-on-surface">
                   {{ t.automation.history }}
@@ -717,7 +717,7 @@ const taskSummaryText = computed(() =>
                 <X :size="16" />
               </button>
             </div>
-            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-2">
+            <div class="themed-scrollbar min-h-0 min-w-0 flex-1 overflow-auto px-4 py-2">
               <div v-if="historyDialogLoading" class="py-6 text-xs text-on-surface-variant">
                 {{ t.common.loading }}
               </div>
