@@ -4341,6 +4341,14 @@ describe("uTools preload UI preferences", () => {
       const serviceDirectory = join(applicationDirectory, "service");
       const executableName = `project-launch-service${process.platform === "win32" ? ".exe" : ""}`;
       const discoveryPath = join(serviceDirectory, "discovery.json");
+      const nodeRequire = createRequire(import.meta.url);
+      const nativeFs = nodeRequire("fs");
+      const nativeChildProcess = nodeRequire("child_process");
+      const identityOutput = process.platform === "win32" ? "12345" : "test-start";
+      const processFiles = new Map([
+        ["/proc/sys/kernel/random/boot_id", "test-boot"],
+        [`/proc/${process.pid}/stat`, `(test) ${Array(19).fill("0").join(" ")} 12345`],
+      ]);
 
       try {
         mkdirSync(serviceDirectory, { recursive: true });
@@ -4363,9 +4371,35 @@ describe("uTools preload UI preferences", () => {
           }),
         );
 
-        const status = await loadPreloadBridge(new Map(), undefined, {
-          [localDataDirEnv]: applicationDirectory,
-        }).getProjectLaunchServiceStatus();
+        const status = await loadPreloadBridge(
+          new Map(),
+          undefined,
+          { [localDataDirEnv]: applicationDirectory },
+          {
+            fs: {
+              ...nativeFs,
+              readFileSync: (target: string, ...args: unknown[]) =>
+                processFiles.get(target) ?? nativeFs.readFileSync(target, ...args),
+              promises: {
+                ...nativeFs.promises,
+                readFile: async (target: string, ...args: unknown[]) =>
+                  processFiles.get(target) ?? nativeFs.promises.readFile(target, ...args),
+              },
+            },
+            child_process: {
+              ...nativeChildProcess,
+              spawnSync: () => ({ status: 0, stdout: identityOutput }),
+              execFile: (
+                _command: string,
+                _args: string[],
+                _options: unknown,
+                callback: (error: Error | null, stdout: string) => void,
+              ) => {
+                callback(null, identityOutput);
+              },
+            },
+          },
+        ).getProjectLaunchServiceStatus();
 
         expect(existsSync(discoveryPath)).toBe(false);
         if (protocolVersion === 2) expect(status.state).toBe("installed");
