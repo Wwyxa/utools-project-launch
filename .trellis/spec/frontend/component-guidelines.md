@@ -39,8 +39,21 @@ session memory, and cleanup. Preserve a constrained flex height chain and
 Keep scrollbars on the actual scrolling region. A fixed popup shell must keep
 its positioning; put overlay-scrollbar behavior on its inner scroller. Validate
 compact layouts with short/long content and loaded/empty/loading states.
-Scrollable dialog bodies and floating-menu content use `v-overlay-scrollbar`
-with the shared theme; `themed-scrollbar` alone does not initialize the component.
+`src/main.ts` starts `observeOverlayScrollbars` from `src/lib/overlayScrollbar.ts`
+for ordinary `.themed-scrollbar` and `overflow-{auto,scroll}` containers (including
+axis variants), plus rendered Markdown code blocks and tables. It shares the
+`os-theme-utools` theme with `v-overlay-scrollbar`, preserves the original element
+as viewport/event target, and handles dynamic content and teardown. Existing
+instances use `autoHide: "move"`, `autoHideDelay: 400`, and
+`autoHideSuspend: false`: hide before the first scroll and after interaction stops.
+Both automatic initialization and explicit directives share these options. Existing
+explicit directives remain valid and are not initialized twice. Keep explicit
+directives where callers need the instance during mount; otherwise new ordinary
+scrollers need only the overflow class. Textareas, native form controls,
+`.scrollbar-hide`, and `[data-native-scrollbar]` retain native behavior; shared
+native scrollbar styling lives in `src/index.css`. Preserve hidden axes and
+fixed/absolute/sticky positioning. Regression coverage is in
+`tests/overlayScrollbar.test.ts` and `tests/GitDiffViewer.test.ts`.
 For fixed menus and date pickers, keep positioning and measurement refs on the
 outer shell and constrain an inner scroller with `min-h-0` in a flex column.
 

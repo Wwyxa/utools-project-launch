@@ -931,7 +931,9 @@ describe("startup migration completion", () => {
 
   it("switches the root from the migration gate to the app only after the ready event", () => {
     let rootSetup: () => () => { component: string; props?: { onReady(): void } } = () => () => ({ component: "" });
-    const app = { provide: vi.fn(), use: vi.fn(), directive: vi.fn(), mount: vi.fn() };
+    const app = { provide: vi.fn(), use: vi.fn(), directive: vi.fn(), mount: vi.fn(), onUnmount: vi.fn() };
+    const stopScrollbars = vi.fn();
+    const observeOverlayScrollbars = vi.fn(() => stopScrollbars);
     loadScript(
       "src/main.ts",
       {
@@ -950,6 +952,7 @@ describe("startup migration completion", () => {
         "./lib/projectBridge": {
           getProjectBridge: () => ({ preflightStartup: () => ({ status: "migration-required" }) }),
         },
+        "./lib/overlayScrollbar": { overlayScrollbar, observeOverlayScrollbars },
       },
       { window: {}, performance: { now: () => 0 } },
     );
@@ -959,6 +962,8 @@ describe("startup migration completion", () => {
     initial.props?.onReady();
     expect(render().component).toBe("app");
     expect(app.mount).toHaveBeenCalledExactlyOnceWith("#root");
+    expect(observeOverlayScrollbars).toHaveBeenCalledOnce();
+    expect(app.onUnmount).toHaveBeenCalledExactlyOnceWith(stopScrollbars);
   });
 });
 

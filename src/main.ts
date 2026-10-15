@@ -4,7 +4,7 @@ import App from "./App.vue";
 import StartupGate from "./components/common/StartupGate.vue";
 import { STARTUP_PREFLIGHT_KEY } from "./lib/startupPreflight";
 import { getProjectBridge } from "./lib/projectBridge";
-import { overlayScrollbar } from "./lib/overlayScrollbar";
+import { observeOverlayScrollbars, overlayScrollbar } from "./lib/overlayScrollbar";
 import "overlayscrollbars/overlayscrollbars.css";
 import "./index.css";
 
@@ -51,6 +51,8 @@ app.provide(STARTUP_PREFLIGHT_KEY, preflightResult);
 app.use(createPinia());
 app.directive("overlay-scrollbar", overlayScrollbar);
 app.mount("#root");
+const stopOverlayScrollbars = observeOverlayScrollbars();
+app.onUnmount(stopOverlayScrollbars);
 startupTiming?.mark?.("vue-mount-end");
 if (startupTiming?.mark && typeof window.requestAnimationFrame === "function") {
   window.requestAnimationFrame(() => startupTiming.mark?.("renderer-first-frame"));

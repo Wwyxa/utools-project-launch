@@ -188,8 +188,8 @@
   }
 
   * {
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-    scrollbar-width: thin;
+    scrollbar-color: auto;
+    scrollbar-width: auto;
   }
 
   input,
@@ -243,67 +243,49 @@
   scrollbar-width: none;
 }
 
-.themed-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.git-commit-message-input::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 8px;
   height: 8px;
+  background: var(--scrollbar-track);
 }
 
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-.themed-scrollbar::-webkit-scrollbar-button,
 *::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
 }
 
-.themed-scrollbar::-webkit-scrollbar-track,
 *::-webkit-scrollbar-track {
   background: var(--scrollbar-track);
 }
 
-.themed-scrollbar::-webkit-scrollbar-track-piece,
 *::-webkit-scrollbar-track-piece,
-.themed-scrollbar::-webkit-scrollbar-corner,
 *::-webkit-scrollbar-corner {
   background: var(--scrollbar-track);
 }
 
-.dark .themed-scrollbar,
-.dark * {
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-}
-
-.dark .themed-scrollbar::-webkit-scrollbar,
-.dark *::-webkit-scrollbar,
-.dark .themed-scrollbar::-webkit-scrollbar-track,
-.dark *::-webkit-scrollbar-track,
-.dark .themed-scrollbar::-webkit-scrollbar-track-piece,
-.dark *::-webkit-scrollbar-track-piece,
-.dark .themed-scrollbar::-webkit-scrollbar-corner,
-.dark *::-webkit-scrollbar-corner {
-  background: var(--scrollbar-track);
-}
-
-.themed-scrollbar::-webkit-scrollbar-thumb,
 *::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border: 1px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
   background-clip: content-box;
 }
 
-.themed-scrollbar::-webkit-scrollbar-thumb:hover,
 *::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+
+[data-overlayscrollbars].fixed {
+  position: fixed;
+}
+
+[data-overlayscrollbars].absolute {
+  position: absolute;
+}
+
+[data-overlayscrollbars].sticky {
+  position: sticky;
 }
 
 .os-theme-utools {
@@ -320,26 +302,6 @@
 
 .dashboard-toolbar {
   background: var(--dashboard-toolbar-bg);
-}
-
-.dashboard-group-region {
-  scrollbar-color: auto;
-  scrollbar-width: auto;
-}
-
-.dashboard-group-region::-webkit-scrollbar {
-  height: 4px;
-}
-
-.dashboard-group-region::-webkit-scrollbar-track,
-.dashboard-group-region::-webkit-scrollbar-track-piece,
-.dashboard-group-region::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-.dashboard-group-region::-webkit-scrollbar-thumb {
-  border: 0;
-  background: color-mix(in srgb, var(--scrollbar-thumb) 68%, transparent);
 }
 
 .toolbar-icon-button {
@@ -995,33 +957,6 @@
   background: var(--color-surface-container);
 }
 
-.ai-result-panel {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--scrollbar-thumb) 52%, transparent) transparent;
-}
-
-.ai-result-panel::-webkit-scrollbar {
-  width: 8px;
-}
-
-.ai-result-panel::-webkit-scrollbar-track,
-.ai-result-panel::-webkit-scrollbar-track-piece,
-.ai-result-panel::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-.ai-result-panel::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--scrollbar-thumb) 58%, transparent);
-  background-clip: content-box;
-}
-
-.ai-result-panel::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--scrollbar-thumb-hover) 70%, transparent);
-  background-clip: content-box;
-}
-
 .memo-rendered {
   color: var(--color-on-surface);
   font-size: inherit;
@@ -1157,7 +1092,6 @@
   border-spacing: 0;
   border-radius: 6px;
   background: var(--color-surface-container-lowest);
-  scrollbar-color: color-mix(in srgb, var(--scrollbar-thumb) 62%, transparent) transparent;
 }
 
 .memo-rendered th,
@@ -1225,7 +1159,6 @@
   border-radius: 8px;
   background: var(--code-preview-bg) !important;
   padding: 0.65rem 0.75rem;
-  scrollbar-color: color-mix(in srgb, var(--scrollbar-thumb) 62%, transparent) var(--code-preview-bg);
 }
 
 .memo-rendered pre code {
@@ -1618,10 +1551,6 @@
   box-shadow:
     0 22px 52px rgba(0, 0, 0, 0.22),
     0 4px 14px rgba(0, 0, 0, 0.12);
-}
-
-.commit-tooltip-body {
-  scrollbar-color: var(--scrollbar-thumb) var(--color-surface-container-lowest);
 }
 
 .commit-tooltip-rendered > :first-child {

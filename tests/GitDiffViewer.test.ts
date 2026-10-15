@@ -3,6 +3,7 @@
 import { createApp, nextTick, reactive, type App } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import GitDiffViewer from "../src/components/project/GitDiffViewer.vue";
+import { observeOverlayScrollbars } from "../src/lib/overlayScrollbar";
 
 const apps: App[] = [];
 const frames = new Map<number, FrameRequestCallback>();
@@ -51,6 +52,7 @@ const mountDiff = (diff = "@@ -1,3 +1,3 @@\n-old first\n+new first\n context\n-o
   document.body.append(root);
   const app = createApp(GitDiffViewer, props);
   app.mount(root);
+  app.onUnmount(observeOverlayScrollbars(root));
   apps.push(app);
   return { root, props };
 };
