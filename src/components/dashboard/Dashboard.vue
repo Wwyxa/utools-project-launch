@@ -860,6 +860,18 @@ const handleProjectDragEnd = () => {
               <RefreshCw :size="18" />
             </button>
             <button
+              v-if="isSortingProjects"
+              type="button"
+              @click="toggleSortingProjects"
+              class="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90"
+              :title="t.dashboard.finishSorting"
+              :aria-label="t.dashboard.finishSorting"
+            >
+              <Check :size="16" />
+              <span>{{ t.dashboard.doneSorting }}</span>
+            </button>
+            <button
+              v-else
               ref="moreMenuTrigger"
               @click="toggleMoreMenu"
               @pointerenter="scheduleMoreMenuOpen"
@@ -867,7 +879,7 @@ const handleProjectDragEnd = () => {
               :class="
                 cn(
                   'toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors',
-                  (moreMenuOpen || isSortingProjects) &&
+                  moreMenuOpen &&
                     '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
                 )
               "
