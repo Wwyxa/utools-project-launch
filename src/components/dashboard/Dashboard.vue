@@ -341,6 +341,16 @@ const projectGroupFilters = computed<ProjectGroupFilter[]>(() => {
 });
 const tinyProjects = computed(() => projects.value.filter((p) => p.cardStyle === "tiny"));
 const regularProjects = computed(() => projects.value.filter((p) => p.cardStyle !== "tiny"));
+const duplicateProjectNames = computed(() => {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const project of [...store.availableProjects, ...store.unavailableProjects]) {
+    const name = project.name.trim().toLowerCase();
+    if (seen.has(name)) duplicates.add(name);
+    seen.add(name);
+  }
+  return duplicates;
+});
 const hasTinyProjects = computed(() => tinyProjects.value.length > 0);
 const hasRegularProjects = computed(() => regularProjects.value.length > 0);
 const visibleProjectIds = computed(() => projects.value.map((project) => project.id));
@@ -1507,6 +1517,7 @@ const handleProjectDragEnd = () => {
             v-for="project in regularProjects"
             :key="project.id"
             :project="project"
+            :show-path-hint="duplicateProjectNames.has(project.name.trim().toLowerCase())"
             :is-sorting="isSortingProjects"
             :is-dragging="draggingProjectId === project.id"
             :is-drag-over="dragOverProjectId === project.id"
@@ -1521,7 +1532,7 @@ const handleProjectDragEnd = () => {
             @select="store.setSelectedProject"
           />
         </template>
-        <div v-else v-for="project in regularProjects" :key="project.id" class="skeleton min-h-36 rounded-lg" />
+        <div v-else v-for="project in regularProjects" :key="project.id" class="skeleton min-h-28 rounded-lg" />
       </div>
     </div>
 
@@ -1563,12 +1574,13 @@ const handleProjectDragEnd = () => {
             v-for="project in unavailableProjects"
             :key="project.id"
             :project="project"
+            :show-path-hint="duplicateProjectNames.has(project.name.trim().toLowerCase())"
             :is-sorting="false"
             :draggable="false"
             @select="store.openEditProjectForm"
           />
         </template>
-        <div v-else v-for="project in unavailableProjects" :key="project.id" class="skeleton min-h-36 rounded-lg" />
+        <div v-else v-for="project in unavailableProjects" :key="project.id" class="skeleton min-h-28 rounded-lg" />
       </div>
     </details>
   </div>

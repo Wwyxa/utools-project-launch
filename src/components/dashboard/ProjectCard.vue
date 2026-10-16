@@ -15,6 +15,9 @@ import {
   Link2,
   FileDiff,
   CalendarDays,
+  Ellipsis,
+  GitCommitHorizontal,
+  Clock3,
 } from "lucide-vue-next";
 import {
   PROJECT_TINY_CARD_BUTTON_COUNT_DEFAULT,
@@ -89,6 +92,7 @@ const props = defineProps<{
   dragOverPosition?: "before" | "after";
   showGroupBadge?: boolean;
   groupLabel?: string;
+  showPathHint?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -100,6 +104,8 @@ const t = useI18n();
 const tinyToolbarAlignRight = ref(false);
 const tinyCardContextMenu = ref<{ x: number; y: number } | null>(null);
 const tinyCardContextMenuRef = ref<HTMLElement | null>(null);
+const actionMenuTriggerRef = ref<HTMLButtonElement | null>(null);
+let cardActionMenuCloseTimer: number | null = null;
 const tinyCardApplicationMenu = ref<{ x: number; y: number } | null>(null);
 const tinyCardApplicationMenuRef = ref<HTMLElement | null>(null);
 let tinyCardApplicationMenuCloseTimer: number | null = null;
@@ -316,30 +322,30 @@ const projectStack = computed<{ kind: ProjectIconKey; title: string; label: stri
   }
   return { kind: "custom", title: props.project.type || t.value.projectKinds.custom, label: "DEV" };
 });
-const displayPath = computed(() => {
-  const normalizedPath = props.project.path.replace(/\\/g, "/");
-  const segments = normalizedPath.split("/").filter(Boolean);
-  if (segments.length <= 2) {
-    return normalizedPath;
-  }
-  return `.../${segments.slice(-2).join("/")}`;
-});
-
 const latestGitCommitAt = computed(
   () => props.project.gitLatestCommitAt || props.project.git?.commits?.[0]?.date || "",
 );
+const parentDirectory = computed(() => {
+  const path = props.project.path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const separator = path.lastIndexOf("/");
+  return separator > 0 ? path.slice(0, separator) : path;
+});
 
 const cardTimeMeta = computed(() => {
   const sourceTime =
     latestGitCommitAt.value || props.project.updatedAt || props.project.createdAt || props.project.lastUpdated;
   if (sourceTime) {
+    const label = latestGitCommitAt.value
+      ? t.value.projectActions.committedAt
+      : props.project.updatedAt || !props.project.createdAt
+        ? t.value.projectActions.updatedAt
+        : t.value.projectActions.createdAt;
     return {
-      symbol: latestGitCommitAt.value ? "⌁" : "◔",
       title: formatAbsoluteTime(sourceTime),
-      value: formatRelativeTime(sourceTime),
+      value: label.replace("{time}", formatRelativeTime(sourceTime)),
     };
   }
-  return { symbol: "•", title: "", value: "--" };
+  return { title: "", value: "" };
 });
 const gitChangedFileCount = computed(
   () => props.project.git?.files.length ?? store.stagedFiles[props.project.id]?.length ?? 0,
@@ -397,9 +403,32 @@ const scheduleTinyCardApplicationMenuClose = () => {
   }, 120);
 };
 
+const clearCardActionMenuClose = () => {
+  if (cardActionMenuCloseTimer === null) return;
+  window.clearTimeout(cardActionMenuCloseTimer);
+  cardActionMenuCloseTimer = null;
+};
+
+const scheduleCardActionMenuClose = () => {
+  if (isTiny.value) return;
+  clearCardActionMenuClose();
+  cardActionMenuCloseTimer = window.setTimeout(closeTinyCardContextMenu, 120);
+};
+
+const handleCardActionMenuFocusOut = (event: FocusEvent) => {
+  if (isTiny.value) return;
+  if (event.relatedTarget instanceof Node &&
+    (actionMenuTriggerRef.value?.contains(event.relatedTarget) ||
+      tinyCardContextMenuRef.value?.contains(event.relatedTarget))) return;
+  closeTinyCardContextMenu();
+};
+
 function closeTinyCardContextMenu() {
+  clearCardActionMenuClose();
   tinyCardContextMenu.value = null;
   closeTinyCardApplicationMenu();
+  window.removeEventListener("resize", closeTinyCardContextMenu);
+  document.removeEventListener("scroll", handleCardActionMenuScroll, true);
   if (!moreScriptsOpen.value) {
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     document.removeEventListener("keydown", handleDocumentKeyDown);
@@ -478,13 +507,13 @@ const handleScriptToggle = async (event: MouseEvent, scriptId: string, status: s
 const handleDocumentPointerDown = (event: PointerEvent) => {
   const target = event.target as Node;
   const isWithinTinyCardMenu =
-    tinyCardContextMenuRef.value?.contains(target) || tinyCardApplicationMenuRef.value?.contains(target);
+    tinyCardContextMenuRef.value?.contains(target) || tinyCardApplicationMenuRef.value?.contains(target) ||
+    actionMenuTriggerRef.value?.contains(target);
   if (!moreScriptsRef.value?.contains(target) && !moreScriptsMenuRef.value?.contains(target)) {
     closeMoreScripts();
   }
   if (!isWithinTinyCardMenu) {
-    tinyCardContextMenu.value = null;
-    closeTinyCardApplicationMenu();
+    closeTinyCardContextMenu();
   }
   if (!moreScriptsOpen.value && !tinyCardContextMenu.value && !tinyCardApplicationMenu.value) {
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
@@ -494,9 +523,10 @@ const handleDocumentPointerDown = (event: PointerEvent) => {
 
 const handleDocumentKeyDown = (event: KeyboardEvent) => {
   if (event.key === "Escape") {
+    const restoreActionFocus = Boolean(tinyCardContextMenu.value && !isTiny.value);
     closeMoreScripts();
-    tinyCardContextMenu.value = null;
-    closeTinyCardApplicationMenu();
+    closeTinyCardContextMenu();
+    if (restoreActionFocus) actionMenuTriggerRef.value?.focus();
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     document.removeEventListener("keydown", handleDocumentKeyDown);
   }
@@ -522,6 +552,7 @@ const closeMoreScripts = () => {
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (tinyCardContextMenu.value || tinyCardApplicationMenu.value) {
     closeTinyCardContextMenu();
+    if (!isTiny.value) actionMenuTriggerRef.value?.focus();
     event.detail.handle();
     return;
   }
@@ -577,6 +608,7 @@ const handleMoreScriptsFocusOut = (event: FocusEvent) => {
 
 watch([hiddenScriptCount, isTiny, () => props.isSorting, () => props.project.id], () => {
   closeMoreScripts();
+  closeTinyCardContextMenu();
 });
 
 onMounted(() => {
@@ -606,9 +638,20 @@ const handleTinyCardContextMenu = async (event: MouseEvent) => {
   }
   event.preventDefault();
   event.stopPropagation();
+  await openCardActionMenu(event.clientX, event.clientY);
+};
+
+const handleCardActionMenuScroll = (event: Event) => {
+  if (event.target instanceof Node &&
+    (tinyCardContextMenuRef.value?.contains(event.target) || tinyCardApplicationMenuRef.value?.contains(event.target))) return;
+  closeTinyCardContextMenu();
+};
+
+const openCardActionMenu = async (x: number, y: number, openerTop?: number, focusMenu = false) => {
+  clearCardActionMenuClose();
   closeMoreScripts();
   closeTinyCardApplicationMenu();
-  tinyCardContextMenu.value = { x: event.clientX, y: event.clientY };
+  tinyCardContextMenu.value = { x, y };
   await nextTick();
 
   const menu = tinyCardContextMenuRef.value;
@@ -618,12 +661,48 @@ const handleTinyCardContextMenu = async (event: MouseEvent) => {
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
   const inset = 8;
+  const top = openerTop !== undefined && y + rect.height > viewportHeight - inset
+    ? openerTop - rect.height - 4
+    : y;
   tinyCardContextMenu.value = {
-    x: Math.max(inset, Math.min(position.x, viewportWidth - rect.width - inset)),
-    y: Math.max(inset, Math.min(position.y, viewportHeight - rect.height - inset)),
+    x: Math.max(inset, Math.min(openerTop === undefined ? position.x : x - rect.width, viewportWidth - rect.width - inset)),
+    y: Math.max(inset, Math.min(top, viewportHeight - rect.height - inset)),
   };
   document.addEventListener("pointerdown", handleDocumentPointerDown);
   document.addEventListener("keydown", handleDocumentKeyDown);
+  window.addEventListener("resize", closeTinyCardContextMenu);
+  document.addEventListener("scroll", handleCardActionMenuScroll, true);
+  if (focusMenu) menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+};
+
+const openRegularCardActionMenu = async (focusMenu = false) => {
+  if (props.isSorting) return;
+  clearCardActionMenuClose();
+  if (tinyCardContextMenu.value) {
+    if (focusMenu) tinyCardContextMenuRef.value?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    return;
+  }
+  const opener = actionMenuTriggerRef.value;
+  if (!opener) return;
+  const rect = opener.getBoundingClientRect();
+  await openCardActionMenu(rect.right, rect.bottom + 4, rect.top, focusMenu);
+};
+
+const handleActionMenuKeyDown = (event: KeyboardEvent) => {
+  if (event.key === "Tab") {
+    closeTinyCardContextMenu();
+    if (!isTiny.value) actionMenuTriggerRef.value?.focus();
+    return;
+  }
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const menu = event.currentTarget as HTMLElement;
+  const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)'));
+  if (items.length === 0) return;
+  event.preventDefault();
+  const index = items.indexOf(document.activeElement as HTMLButtonElement);
+  const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+    : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+  items[nextIndex]?.focus();
 };
 
 const openTinyCardApplicationMenu = async (event: MouseEvent | FocusEvent) => {
@@ -864,7 +943,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
       )
     "
   >
-    <div class="p-3 min-h-36 h-full flex flex-col">
+    <div class="p-3 min-h-28 h-full flex flex-col">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5 min-w-0">
@@ -875,11 +954,14 @@ const updateTinyToolbarAlignment = (event: Event) => {
             >
               <ProjectIcon :icon="projectStack.kind" size="sm" />
             </span>
-            <h3 class="min-w-0 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
+            <h3
+              class="min-w-0 truncate text-sm font-semibold text-on-surface group-hover:text-primary transition-colors"
+              :title="`${project.name}\n${project.path}`"
+            >
               {{ project.name }}
             </h3>
             <span
-              v-if="isRunning || isError || isWarning"
+              v-if="hasCardStatus"
               class="inline-flex shrink-0 items-center"
               role="status"
               :title="cardStatusLabel"
@@ -920,14 +1002,16 @@ const updateTinyToolbarAlignment = (event: Event) => {
       <p
         v-if="project.description"
         class="text-xs text-on-surface-variant/80 dark:text-on-surface-variant mt-1 line-clamp-1"
+        :title="project.description"
       >
         {{ project.description }}
       </p>
       <p
-        class="font-mono text-[11px] text-on-surface-variant/60 dark:text-on-surface-variant mt-0.5 max-w-full truncate"
+        v-if="showPathHint"
+        class="mt-1 truncate font-mono text-[11px] text-on-surface-variant/70"
         :title="project.path"
       >
-        {{ displayPath }}
+        {{ parentDirectory }}
       </p>
       <p v-if="isUnavailable" class="text-[11px] text-status-warning mt-1 line-clamp-1">
         {{ project.unavailableReason || "当前设备无法访问该路径" }}
@@ -936,17 +1020,18 @@ const updateTinyToolbarAlignment = (event: Event) => {
       <div
         v-if="prioritizedScripts.length > 0"
         ref="scriptRowRef"
-        class="flex min-w-0 items-center justify-start gap-1.5 mt-3 mb-2.5 flex-nowrap overflow-visible"
+        class="flex min-w-0 items-center justify-start gap-1.5 mt-2 mb-2 flex-nowrap overflow-visible"
       >
         <button
           v-for="script in visibleScripts"
           :key="script.id"
           :title="script.command"
+          :aria-label="`${script.status === 'RUNNING' ? t.scripts.stopScript : script.status === 'STOPPING' ? t.common.stopping : t.scripts.startScript}: ${script.name}`"
           @click="handleScriptToggle($event, script.id, script.status)"
           :disabled="isUnavailable || script.status === 'STOPPING'"
           :class="
             cn(
-              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border transition-colors',
+              'inline-flex h-6 flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[11px] font-medium px-2 rounded border transition-colors disabled:opacity-50',
               script.status === 'RUNNING'
                 ? 'text-status-running bg-status-running/10 border-status-running/30 hover:bg-status-running/15'
                 : script.status === 'STOPPING'
@@ -957,11 +1042,11 @@ const updateTinyToolbarAlignment = (event: Event) => {
         >
           <Square
             v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
-            :size="8"
+            :size="10"
             class="shrink-0"
             fill="currentColor"
           />
-          <Play v-else :size="9" class="shrink-0" fill="currentColor" />
+          <Play v-else :size="11" class="shrink-0" fill="currentColor" />
           <span>{{ script.name }}</span>
         </button>
         <div
@@ -987,11 +1072,11 @@ const updateTinyToolbarAlignment = (event: Event) => {
             )"
             aria-haspopup="menu"
             :aria-expanded="moreScriptsOpen"
-            :aria-label="`显示 ${hiddenScriptCount} 个隐藏脚本`"
+            :aria-label="t.projectActions.moreScripts.replace('{count}', String(hiddenScriptCount))"
             :title="
               hiddenRunningCount > 0
                 ? t.projectActions.moreRunning.replace('{count}', String(hiddenRunningCount))
-                : undefined
+                : t.projectActions.moreScripts.replace('{count}', String(hiddenScriptCount))
             "
           >
             <span>{{ hiddenScriptCount > 99 ? '99+' : hiddenScriptCount }}</span>
@@ -1024,7 +1109,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
                   :disabled="isUnavailable || script.status === 'STOPPING'"
                   :class="
                     cn(
-                      'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded border px-2 py-1 text-left text-[10px] font-bold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      'inline-flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded border px-2 text-left text-[11px] font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                       script.status === 'RUNNING'
                         ? 'border-status-running/30 bg-status-running/10 text-status-running hover:bg-status-running/15'
                         : script.status === 'STOPPING'
@@ -1044,11 +1129,11 @@ const updateTinyToolbarAlignment = (event: Event) => {
                 >
                   <Square
                     v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
-                    :size="9"
+                    :size="10"
                     :class="script.status === 'STOPPING' ? 'shrink-0 text-status-warning' : 'shrink-0 text-status-running'"
                     fill="currentColor"
                   />
-                  <Play v-else :size="10" class="shrink-0" fill="currentColor" />
+                  <Play v-else :size="11" class="shrink-0" fill="currentColor" />
                   <span class="truncate">{{ script.name }}</span>
                 </button>
               </div>
@@ -1069,7 +1154,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           data-script-measure-button
           :class="
             cn(
-              'inline-flex flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded border',
+              'inline-flex h-6 flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[11px] font-medium px-2 rounded border',
               script.status === 'RUNNING'
                 ? 'border-status-running/30'
                 : script.status === 'STOPPING'
@@ -1080,11 +1165,11 @@ const updateTinyToolbarAlignment = (event: Event) => {
         >
           <Square
             v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
-            :size="8"
+            :size="10"
             class="shrink-0"
             fill="currentColor"
           />
-          <Play v-else :size="9" class="shrink-0" fill="currentColor" />
+          <Play v-else :size="11" class="shrink-0" fill="currentColor" />
           <span>{{ script.name }}</span>
         </span>
         <span
@@ -1093,8 +1178,8 @@ const updateTinyToolbarAlignment = (event: Event) => {
         />
       </div>
 
-      <div class="mt-auto flex min-h-7 items-center border-t border-border-subtle pt-2">
-        <div class="flex min-w-0 items-center gap-2 text-[11px] text-on-surface-variant">
+      <div class="mt-auto flex min-h-6 items-center border-t border-border-subtle pt-1">
+        <div class="flex min-w-0 flex-1 items-center gap-2 text-[11px] text-on-surface-variant">
           <span
             v-if="isError"
             class="flex min-w-0 items-center gap-1 truncate text-status-error"
@@ -1104,11 +1189,12 @@ const updateTinyToolbarAlignment = (event: Event) => {
             <span class="truncate">{{ cardErrorMessage }}</span>
           </span>
           <span
-            v-else
-            class="flex min-w-0 max-w-28 items-center gap-1 truncate"
+            v-else-if="cardTimeMeta.value"
+            class="flex min-w-0 items-center gap-1 truncate"
             :title="cardTimeMeta.title || cardTimeMeta.value"
           >
-            <span class="shrink-0 text-[11px] text-on-surface-variant/85">{{ cardTimeMeta.symbol }}</span>
+            <GitCommitHorizontal v-if="latestGitCommitAt" :size="12" class="shrink-0" />
+            <Clock3 v-else :size="12" class="shrink-0" />
             <span class="truncate">{{ cardTimeMeta.value }}</span>
           </span>
           <span
@@ -1121,28 +1207,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
             <span>{{ gitChangedFileCount }}</span>
           </span>
         </div>
-        <div
-          :class="
-            cn(
-              'ml-auto flex w-[9.5rem] shrink-0 items-center justify-end gap-0.5 transition-all',
-              isSorting
-                ? 'opacity-100'
-                : 'pointer-events-none opacity-0 translate-y-1 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0',
-            )
-          "
-          @click.stop
-        >
-          <template v-if="isSorting" />
-          <template v-else>
-            <button
-              @click="handleOpenTerminal"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-status-running dark:text-on-surface-variant dark:hover:bg-surface-container-high"
-              :disabled="isUnavailable"
-              :title="t.projectActions.openInTerminal"
-              :aria-label="t.projectActions.openInTerminal"
-            >
-              <TerminalSquare :size="14" />
-            </button>
+        <div v-if="!isSorting" class="ml-2 flex shrink-0 items-center justify-end gap-0.5" @click.stop>
             <ExternalApplicationLaunchButton
               :applications="store.externalApplicationPreferences.applications"
               :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
@@ -1152,48 +1217,30 @@ const updateTinyToolbarAlignment = (event: Event) => {
               @launch="handleOpenEditor"
             />
             <button
-              @click="handleOpenFolder"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-on-surface dark:text-on-surface-variant dark:hover:bg-surface-container-high"
+              @click="handleOpenTerminal"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-status-running dark:text-on-surface-variant dark:hover:bg-surface-container-high disabled:opacity-50"
               :disabled="isUnavailable"
-              :title="t.common.openFolder"
-              :aria-label="t.common.openFolder"
+              :title="t.projectActions.openInTerminal"
+              :aria-label="t.projectActions.openInTerminal"
             >
-              <FolderOpen :size="14" />
+              <TerminalSquare :size="14" />
             </button>
             <button
-              @click="handleOpenWorkActivity"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary dark:text-on-surface-variant dark:hover:bg-surface-container-high"
-              :disabled="isUnavailable"
-              :title="t.activity.title"
-              :aria-label="t.activity.title"
+              ref="actionMenuTriggerRef"
+              type="button"
+              @click="openRegularCardActionMenu(true)"
+              @mouseenter="openRegularCardActionMenu()"
+              @mouseleave="scheduleCardActionMenuClose"
+              @keydown.down.prevent="openRegularCardActionMenu(true)"
+              @focusout="handleCardActionMenuFocusOut"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:text-on-surface-variant dark:hover:bg-surface-container-high"
+              aria-haspopup="menu"
+              :aria-expanded="Boolean(tinyCardContextMenu)"
+              :title="t.projectActions.moreActions"
+              :aria-label="t.projectActions.moreActions"
             >
-              <CalendarDays :size="14" />
+              <Ellipsis :size="15" />
             </button>
-            <button
-              @click="handleEdit"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary dark:text-on-surface-variant dark:hover:bg-surface-container-high"
-              :title="t.common.edit"
-              :aria-label="t.common.edit"
-            >
-              <Pencil :size="14" />
-            </button>
-            <button
-              @click="handleDuplicate"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary dark:text-on-surface-variant dark:hover:bg-surface-container-high"
-              :title="t.projectActions.duplicateProject"
-              :aria-label="t.projectActions.duplicateProject"
-            >
-              <Copy :size="14" />
-            </button>
-            <button
-              @click="handleDelete"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-status-error dark:text-on-surface-variant dark:hover:bg-surface-container-high"
-              :title="t.projectActions.deleteProject"
-              :aria-label="t.projectActions.deleteProject"
-            >
-              <Trash2 :size="14" />
-            </button>
-          </template>
         </div>
       </div>
     </div>
@@ -1218,14 +1265,19 @@ const updateTinyToolbarAlignment = (event: Event) => {
       ref="tinyCardContextMenuRef"
       class="tiny-card-context-menu menu-pop fixed z-[75] w-fit max-w-[min(13rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-px shadow-2xl"
       role="menu"
-      :aria-label="t.settings.tinyCardActionTrigger"
+      :aria-label="isTiny ? t.settings.tinyCardActionTrigger : t.projectActions.moreActions"
       :style="{ left: `${tinyCardContextMenu.x}px`, top: `${tinyCardContextMenu.y}px` }"
       @click.stop
       @contextmenu.prevent
+      @keydown="handleActionMenuKeyDown"
+      @mouseenter="clearCardActionMenuClose"
+      @mouseleave="scheduleCardActionMenuClose"
+      @focusin="clearCardActionMenuClose"
+      @focusout="handleCardActionMenuFocusOut"
     >
       <div v-overlay-scrollbar class="themed-scrollbar max-h-[calc(100vh-1.5rem)] overflow-y-auto">
         <button
-          v-if="quickLink"
+          v-if="isTiny && quickLink"
           type="button"
           role="menuitem"
           class="mode-menu-item mode-menu-item--leading"
@@ -1235,6 +1287,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <span class="min-w-0 truncate">{{ t.projectActions.menuOpenQuickLink }}</span>
         </button>
         <button
+          v-if="isTiny"
           type="button"
           role="menuitem"
           class="mode-menu-item mode-menu-item--leading"
@@ -1245,7 +1298,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <span class="min-w-0 truncate">{{ t.projectActions.menuOpenTerminal }}</span>
         </button>
         <button
-          v-if="defaultExternalApplication"
+          v-if="isTiny && defaultExternalApplication"
           type="button"
           role="menuitem"
           class="mode-menu-item mode-menu-item--leading"
@@ -1289,6 +1342,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <Copy :size="14" class="shrink-0" />
           <span class="min-w-0 truncate">{{ t.projectActions.menuDuplicateProject }}</span>
         </button>
+        <div class="mx-0.5 my-px border-t border-border-subtle" role="separator" />
         <button
           type="button"
           role="menuitem"

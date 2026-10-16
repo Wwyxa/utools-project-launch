@@ -215,6 +215,11 @@ const messages = {
       deleteProject: "删除项目",
       deleteConfirm: "确定删除项目“{name}”吗？\n这只会移除启动器中的项目配置，不会删除磁盘目录。",
       moreRunning: "另有 {count} 个命令运行中",
+      moreActions: "更多项目操作",
+      moreScripts: "另外 {count} 个脚本",
+      committedAt: "提交于 {time}",
+      updatedAt: "更新于 {time}",
+      createdAt: "创建于 {time}",
     },
     scripts: {
       cwd: "工作目录",
@@ -952,6 +957,11 @@ const messages = {
       deleteConfirm:
         'Delete "{name}" from the launcher? This only removes the project configuration and does not delete its folder.',
       moreRunning: "{count} more running",
+      moreActions: "More project actions",
+      moreScripts: "{count} more scripts",
+      committedAt: "Committed {time}",
+      updatedAt: "Updated {time}",
+      createdAt: "Created {time}",
     },
     scripts: {
       cwd: "Working Dir",

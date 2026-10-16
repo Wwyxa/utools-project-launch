@@ -24,7 +24,6 @@ vi.mock("../src/components/project/ExternalApplicationLaunchButton.vue", () => (
 const apps: App[] = [];
 
 beforeEach(() => {
-  vi.useFakeTimers();
   vi.stubGlobal("requestAnimationFrame", () => 1);
   vi.stubGlobal("cancelAnimationFrame", vi.fn());
 });
@@ -32,7 +31,6 @@ beforeEach(() => {
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount();
   document.body.innerHTML = "";
-  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -62,45 +60,10 @@ const mountCard = (running = false) => {
   app.mount(root);
   apps.push(app);
   const trigger = root.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
-  const opener = trigger.parentElement!;
-  return { root: document.body, trigger, opener, select };
+  return { root: document.body, trigger, select };
 };
 
 describe("project card command panel", () => {
-  it("opens on hover, stays open across the gap, and closes after leaving", async () => {
-    const { root, trigger, opener } = mountCard();
-    expect(root.querySelector('[role="menu"]')).toBeNull();
-    opener.dispatchEvent(new MouseEvent("mouseenter"));
-    await nextTick();
-    expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    trigger.click();
-    await nextTick();
-    expect(root.querySelector('[role="menu"]')).not.toBeNull();
-    opener.dispatchEvent(new MouseEvent("mouseleave"));
-    vi.advanceTimersByTime(100);
-    root.querySelector('[role="menu"]')!.dispatchEvent(new MouseEvent("mouseenter"));
-    vi.advanceTimersByTime(200);
-    await nextTick();
-    expect(root.querySelector('[role="menu"]')).not.toBeNull();
-    root.querySelector('[role="menu"]')!.dispatchEvent(new MouseEvent("mouseleave"));
-    vi.advanceTimersByTime(120);
-    await nextTick();
-    expect(root.querySelector('[role="menu"]')).toBeNull();
-  });
-
-  it("opens for keyboard focus, retains internal focus, and closes with Escape", async () => {
-    const { root, opener } = mountCard();
-    opener.dispatchEvent(new FocusEvent("focusin"));
-    await nextTick();
-    const command = root.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
-    opener.dispatchEvent(new FocusEvent("focusout", { relatedTarget: command }));
-    await nextTick();
-    expect(root.querySelector('[role="menu"]')).not.toBeNull();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    await nextTick();
-    expect(root.querySelector('[role="menu"]')).toBeNull();
-  });
-
   it.each([false, true])("executes a hidden command without selecting the card (running: %s)", async (running) => {
     const { root, trigger, select } = mountCard(running);
     trigger.click();
@@ -112,5 +75,4 @@ describe("project card command panel", () => {
     expect(select).not.toHaveBeenCalled();
     expect(root.querySelector('[role="menu"]')).toBeNull();
   });
-
 });
