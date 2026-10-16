@@ -23,6 +23,7 @@ import {
   Check,
   CheckSquare,
   GripVertical,
+  MoreHorizontal,
 } from "lucide-vue-next";
 import type { TodoItem } from "../../types";
 
@@ -37,6 +38,14 @@ let initialDashboardProjectCardsMounted = false;
 
 const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
+const moreMenuOpen = ref(false);
+const moreMenuTrigger = ref<HTMLElement | null>(null);
+const moreMenu = ref<HTMLElement | null>(null);
+const moreMenuStyle = ref<Record<string, string>>({});
+let moreMenuResizeObserver: ResizeObserver | null = null;
+let moreMenuOpenTimer: number | null = null;
+let moreMenuCloseTimer: number | null = null;
+let moreMenuOpenedByHover = false;
 const automationOverviewOpen = ref(false);
 const todoOverviewOpen = ref(false);
 const todoComposerOpen = ref(false);
@@ -112,6 +121,109 @@ const closeTodoProjectPicker = () => {
   window.removeEventListener("resize", positionTodoProjectMenu);
 };
 
+const positionMoreMenu = () => {
+  const trigger = moreMenuTrigger.value?.getBoundingClientRect();
+  if (!trigger) return;
+  const width = Math.min(132, window.innerWidth - 16);
+  const left = Math.min(Math.max(trigger.right - width, 8), window.innerWidth - width - 8);
+  const height = moreMenu.value?.offsetHeight || 0;
+  const top = Math.max(8, Math.min(trigger.bottom + 6, window.innerHeight - height - 8));
+  moreMenuStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
+    maxHeight: `${Math.max(0, window.innerHeight - top - 8)}px`,
+  };
+};
+
+const clearMoreMenuTimers = () => {
+  if (moreMenuOpenTimer !== null) window.clearTimeout(moreMenuOpenTimer);
+  if (moreMenuCloseTimer !== null) window.clearTimeout(moreMenuCloseTimer);
+  moreMenuOpenTimer = null;
+  moreMenuCloseTimer = null;
+};
+
+const closeMoreMenu = (restoreFocus = false) => {
+  clearMoreMenuTimers();
+  moreMenuOpen.value = false;
+  moreMenuOpenedByHover = false;
+  moreMenuResizeObserver?.disconnect();
+  moreMenuResizeObserver = null;
+  document.removeEventListener("pointerdown", handleMoreMenuPointerDown);
+  window.removeEventListener("resize", positionMoreMenu);
+  if (restoreFocus) moreMenuTrigger.value?.focus();
+};
+
+const handleMoreMenuPointerDown = (event: PointerEvent) => {
+  const target = event.target as Node;
+  if (!moreMenuTrigger.value?.contains(target) && !moreMenu.value?.contains(target)) {
+    closeMoreMenu();
+  }
+};
+
+const openMoreMenu = async (focusFirst = false) => {
+  clearMoreMenuTimers();
+  moreMenuOpenedByHover = !focusFirst;
+  if (!moreMenuOpen.value) {
+    moreMenuOpen.value = true;
+    positionMoreMenu();
+    document.addEventListener("pointerdown", handleMoreMenuPointerDown);
+    window.addEventListener("resize", positionMoreMenu);
+    await nextTick();
+    if (!moreMenuOpen.value || !moreMenu.value) return;
+    moreMenuResizeObserver = new ResizeObserver(positionMoreMenu);
+    moreMenuResizeObserver.observe(moreMenu.value);
+    positionMoreMenu();
+  }
+  if (focusFirst) moreMenu.value?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+};
+
+const toggleMoreMenu = () => {
+  if (moreMenuOpen.value && !moreMenuOpenedByHover) {
+    closeMoreMenu();
+  } else {
+    void openMoreMenu(true);
+  }
+};
+
+const scheduleMoreMenuOpen = (event: PointerEvent) => {
+  if (event.pointerType !== "mouse") return;
+  clearMoreMenuTimers();
+  if (moreMenuOpen.value) return;
+  moreMenuOpenTimer = window.setTimeout(() => {
+    moreMenuOpenTimer = null;
+    void openMoreMenu();
+  }, 150);
+};
+
+const scheduleMoreMenuClose = (event: PointerEvent) => {
+  if (event.pointerType !== "mouse") return;
+  clearMoreMenuTimers();
+  moreMenuCloseTimer = window.setTimeout(() => {
+    moreMenuCloseTimer = null;
+    if (!moreMenu.value?.contains(document.activeElement)) closeMoreMenu();
+  }, 200);
+};
+
+const handleMoreMenuKeydown = (event: KeyboardEvent) => {
+  if (event.key === "Tab") {
+    closeMoreMenu(true);
+    return;
+  }
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const items = Array.from(moreMenu.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') || []);
+  if (!items.length) return;
+  event.preventDefault();
+  const index = items.findIndex((item) => item === document.activeElement);
+  const nextIndex =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
+  items[nextIndex]?.focus();
+};
+
 const handleTodoProjectPickerPointerDown = (event: PointerEvent) => {
   const target = event.target as Node;
   if (!todoProjectPicker.value?.contains(target) && !todoProjectMenu.value?.contains(target)) {
@@ -138,6 +250,12 @@ const closeTodoComposer = () => {
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (moreMenuOpen.value) {
+    closeMoreMenu(true);
+    event.detail.handle();
+    return;
+  }
+
   if (todoProjectPickerOpen.value) {
     closeTodoProjectPicker();
     event.detail.handle();
@@ -164,6 +282,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   cancelProjectCardMount();
+  closeMoreMenu();
   document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
   window.removeEventListener("resize", positionTodoProjectMenu);
   stopAppEscapeListener();
@@ -722,75 +841,6 @@ const handleProjectDragEnd = () => {
         <div class="dashboard-action-region h-8 w-max shrink-0">
           <div class="dashboard-action-row flex h-8 w-max items-center justify-end gap-2">
             <button
-              @click="toggleTodoOverview"
-              :class="
-                cn(
-                  'toolbar-icon-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 transition-colors',
-                  todoOverviewOpen && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
-                )
-              "
-              :title="t.dashboard.todoOverview"
-              :aria-label="t.dashboard.todoOverview"
-              :aria-pressed="todoOverviewOpen"
-            >
-              <CheckSquare :size="16" />
-              <span class="text-xs font-semibold">{{ openTodoCount }}</span>
-            </button>
-            <button
-              @click="toggleAutomationOverview"
-              :class="
-                cn(
-                  'toolbar-icon-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 transition-colors',
-                  automationOverviewOpen && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
-                )
-              "
-              :title="t.automation.overview"
-              :aria-label="t.automation.overview"
-              :aria-pressed="automationOverviewOpen"
-            >
-              <CalendarClock :size="16" />
-              <span class="text-xs font-semibold">{{ automationSummary.enabled }}/{{ automationSummary.total }}</span>
-            </button>
-            <button
-              @click="store.setActiveTab('environment')"
-              class="toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors"
-              :title="t.environment.title"
-              :aria-label="t.environment.title"
-            >
-              <MonitorCog :size="18" />
-            </button>
-            <button
-              @click="store.openWorkActivity()"
-              class="toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors"
-              :title="t.activity.title"
-              :aria-label="t.activity.title"
-            >
-              <CalendarDays :size="18" />
-            </button>
-            <button
-              @click="store.setActiveTab('settings')"
-              class="toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors"
-              :title="t.sidebar.settings"
-              :aria-label="t.sidebar.settings"
-            >
-              <Settings :size="18" />
-            </button>
-            <button
-              v-if="hasSortableProjects"
-              @click="toggleSortingProjects"
-              :class="
-                cn(
-                  'toolbar-icon-button shrink-0 rounded-lg p-1.5 transition-colors',
-                  isSortingProjects && '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
-                )
-              "
-              :title="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
-              :aria-label="isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects"
-              :aria-pressed="isSortingProjects"
-            >
-              <ArrowUpDown :size="18" />
-            </button>
-            <button
               @click="handleRefreshAll"
               :disabled="isRefreshingProjects"
               class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-wait disabled:border-primary/35 disabled:bg-primary/10 disabled:text-primary disabled:opacity-90"
@@ -800,17 +850,144 @@ const handleProjectDragEnd = () => {
               <RefreshCw :size="18" />
             </button>
             <button
-              @click="store.openCreateProjectForm"
-              class="toolbar-primary-button flex shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors"
-              :title="t.dashboard.createHint"
-              :aria-label="t.dashboard.createHint"
+              ref="moreMenuTrigger"
+              @click="toggleMoreMenu"
+              @pointerenter="scheduleMoreMenuOpen"
+              @pointerleave="scheduleMoreMenuClose"
+              :class="
+                cn(
+                  'toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors',
+                  (moreMenuOpen || isSortingProjects) &&
+                    '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
+                )
+              "
+              :title="t.dashboard.moreActions"
+              :aria-label="t.dashboard.moreActions"
+              :aria-expanded="moreMenuOpen"
+              aria-haspopup="menu"
             >
-              <Plus :size="18" />
+              <MoreHorizontal :size="18" />
             </button>
           </div>
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <Transition name="scale">
+        <div
+          v-if="moreMenuOpen"
+          ref="moreMenu"
+          :style="moreMenuStyle"
+          class="menu-pop fixed z-50 flex flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
+          role="menu"
+          :aria-label="t.dashboard.moreActions"
+          @keydown="handleMoreMenuKeydown"
+          @pointerenter="clearMoreMenuTimers"
+          @pointerleave="scheduleMoreMenuClose"
+        >
+          <div class="min-h-0 overflow-y-auto p-1.5">
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
+              @click="
+                closeMoreMenu();
+                store.openCreateProjectForm();
+              "
+            >
+              <Plus :size="16" class="shrink-0 text-primary" />
+              <span class="min-w-0 flex-1 truncate">{{ t.dashboard.createHint }}</span>
+            </button>
+
+            <div class="my-1 border-t border-border-subtle" />
+
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
+              @click="
+                closeMoreMenu();
+                toggleTodoOverview();
+              "
+            >
+              <CheckSquare :size="16" class="shrink-0 text-on-surface-variant" />
+              <span class="min-w-0 flex-1 truncate">{{ t.dashboard.todoOverview }}</span>
+              <span class="min-w-4 shrink-0 text-right text-[11px] tabular-nums text-on-surface-variant">{{
+                openTodoCount
+              }}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
+              @click="
+                closeMoreMenu();
+                toggleAutomationOverview();
+              "
+            >
+              <CalendarClock :size="16" class="shrink-0 text-on-surface-variant" />
+              <span class="min-w-0 flex-1 truncate">{{ t.automation.overview }}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
+              @click="
+                closeMoreMenu();
+                store.setActiveTab('environment');
+              "
+            >
+              <MonitorCog :size="16" class="shrink-0 text-on-surface-variant" />
+              <span class="min-w-0 flex-1 truncate">{{ t.environment.title }}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
+              @click="
+                closeMoreMenu();
+                store.openWorkActivity();
+              "
+            >
+              <CalendarDays :size="16" class="shrink-0 text-on-surface-variant" />
+              <span class="min-w-0 flex-1 truncate">{{ t.activity.title }}</span>
+            </button>
+
+            <div class="my-1 border-t border-border-subtle" />
+
+            <button
+              v-if="hasSortableProjects"
+              type="button"
+              role="menuitem"
+              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
+              :aria-pressed="isSortingProjects"
+              @click="
+                closeMoreMenu();
+                toggleSortingProjects();
+              "
+            >
+              <ArrowUpDown :size="16" class="shrink-0 text-on-surface-variant" />
+              <span class="min-w-0 flex-1 truncate">{{
+                isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects
+              }}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
+              @click="
+                closeMoreMenu();
+                store.setActiveTab('settings');
+              "
+            >
+              <Settings :size="16" class="shrink-0 text-on-surface-variant" />
+              <span class="min-w-0 flex-1 truncate">{{ t.sidebar.settings }}</span>
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <p v-if="store.projectStorageMessage" class="px-6 pt-3 text-xs text-on-surface-variant">
       {{ store.projectStorageMessage }}

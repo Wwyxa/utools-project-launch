@@ -163,12 +163,13 @@ const messages = {
     },
     dashboard: {
       createHint: "创建项目",
+      moreActions: "首页菜单",
       unavailableProjects: "需要重新定位的项目",
       ungroupedProjects: "未分组",
       noProjectsInFilter: "当前筛选“{group}”下没有匹配的可用项目。",
       noProjectsFound: "没有匹配的项目。",
       doneSorting: "完成",
-      sortProjects: "调整项目顺序",
+      sortProjects: "调整顺序",
       finishSorting: "完成项目排序",
       dragProjectsHint: "拖动卡片排序",
       emptyTitle: "还没有项目",
@@ -898,6 +899,7 @@ const messages = {
     },
     dashboard: {
       createHint: "Create Project",
+      moreActions: "Home menu",
       unavailableProjects: "Projects needing relocation",
       ungroupedProjects: "Ungrouped",
       noProjectsInFilter: 'No matching available projects in "{group}".',
