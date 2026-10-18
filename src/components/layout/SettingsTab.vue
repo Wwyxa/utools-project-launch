@@ -2524,7 +2524,6 @@ watch(
                               <button
                                 type="button"
                                 class="group relative inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                                :title="item.safetyHint"
                                 :aria-label="`${item.label}：${item.safetyHint}`"
                                 @click.prevent.stop
                               >
