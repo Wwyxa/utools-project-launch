@@ -59,6 +59,7 @@ import type {
   ProjectGitReadResult,
   ProjectGitTagInfo,
   ProjectFileListResult,
+  ProjectFileApplication,
   ProjectFileMutationKind,
   ProjectFileMutationResult,
   ProjectFileReadResult,
@@ -1485,6 +1486,12 @@ const fallbackBridge: ProjectBridge = {
     };
   },
   async showProjectEntryInFolder(_projectPath: string, _relativePath: string): Promise<void> {},
+  async listProjectFileApplications(_projectPath: string, _relativePath: string): Promise<ProjectFileApplication[]> {
+    return [];
+  },
+  async openProjectFileWith(_projectPath: string, _relativePath: string, _applicationId?: string): Promise<void> {
+    throw new Error("浏览器预览无法选择本地文件的打开方式。");
+  },
   async readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult> {
     const name = relativePath.split(/[\\/]/).filter(Boolean).pop() || projectPath;
     return {

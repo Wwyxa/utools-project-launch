@@ -50,6 +50,7 @@ import type {
   ProjectBridgeStopProcessOptions,
   ProjectEnvironmentEntry,
   ProjectFileKind,
+  ProjectFileApplication,
   ProjectFileListResult,
   ProjectFileMutationResult,
   ProjectFileReadResult,
@@ -403,6 +404,8 @@ export interface AppActions {
   renameProjectEntry(projectId: string, relativePath: string, name: string): Promise<ProjectFileMutationResult | null>;
   deleteProjectEntry(projectId: string, relativePath: string): Promise<ProjectFileMutationResult | null>;
   showProjectEntryInFolder(projectId: string, relativePath: string): Promise<void>;
+  listProjectFileApplications(projectId: string, relativePath: string): Promise<ProjectFileApplication[]>;
+  openProjectFileWith(projectId: string, relativePath: string, applicationId?: string): Promise<void>;
   readProjectFile(projectId: string, relativePath: string): Promise<ProjectFileReadResult | null>;
   readGitFileDiff(
     projectId: string,
@@ -691,10 +694,15 @@ export interface AppActions {
   openProjectInEditor(projectId: string, applicationId?: string): Promise<void>;
   openProjectQuickLink(projectId: string): Promise<void>;
   persistRuntimeAutomationState(projectId: string): boolean;
-  loadRuntimeRecordLogPage(runId: string, beforeOffset: number): Promise<import("../types").RuntimeRecordLog & { logs: LogEntry[] }>;
+  loadRuntimeRecordLogPage(
+    runId: string,
+    beforeOffset: number,
+  ): Promise<import("../types").RuntimeRecordLog & { logs: LogEntry[] }>;
   listRuntimeRecords(projectId: string): Promise<import("../types").RuntimeRecord[]>;
   refreshRuntimeRecordRetention(): Promise<ProjectLaunchServiceLogRetentionStatus>;
-  updateRuntimeRecordRetention(policy: ProjectLaunchServiceLogRetentionPolicy): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  updateRuntimeRecordRetention(
+    policy: ProjectLaunchServiceLogRetentionPolicy,
+  ): Promise<ProjectLaunchServiceLogRetentionStatus>;
   clearRuntimeRecords(scope?: ProjectLaunchServiceLogClearScope): Promise<ProjectLaunchServiceLogClearResult>;
   restoreRuntimeAutomationState(): void;
   addLog(projectId: string, log: LogEntry, scriptId?: string, persist?: boolean): void;

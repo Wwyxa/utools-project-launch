@@ -4,6 +4,7 @@ import {
   Check,
   CircleHelp,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Edit3,
   FileImage,
@@ -14,6 +15,7 @@ import {
   FolderPlus,
   ListCollapse,
   LocateFixed,
+  ExternalLink,
   Pencil,
   Copy,
   RefreshCw,
@@ -24,7 +26,7 @@ import {
   Trash2,
   X,
 } from "lucide-vue-next";
-import type { Project, ProjectFileReadResult, ProjectFileTreeEntry } from "../../types";
+import type { Project, ProjectFileApplication, ProjectFileReadResult, ProjectFileTreeEntry } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
@@ -77,6 +79,16 @@ const treeRef = ref<HTMLElement | null>(null);
 const filterInputRef = ref<HTMLInputElement | null>(null);
 const rootInlineInputRef = ref<HTMLInputElement | null>(null);
 const contextMenuRef = ref<HTMLElement | null>(null);
+const openWithTriggerRef = ref<HTMLButtonElement | null>(null);
+const openWithMenuRef = ref<HTMLElement | null>(null);
+const isOpenWithMenuOpen = ref(false);
+const openWithApplications = ref<ProjectFileApplication[]>([]);
+const openWithLoading = ref(false);
+const openWithFailed = ref(false);
+const openWithError = ref("");
+const openWithPosition = ref({ x: 0, y: 0 });
+let openWithRequestId = 0;
+let openWithPrefetch: Promise<ProjectFileApplication[]> | null = null;
 const isFindOpen = ref(false);
 const isReplaceOpen = ref(false);
 const showLineNumbers = ref(false);
@@ -439,6 +451,74 @@ const pathIsSameOrChild = (relativePath: string, parentRelativePath: string) => 
   return pathValue === parentValue || pathValue.startsWith(`${parentValue}/`);
 };
 
+const closeOpenWithMenu = (restoreFocus = false) => {
+  isOpenWithMenuOpen.value = false;
+  openWithRequestId += 1;
+  if (restoreFocus) openWithTriggerRef.value?.focus();
+};
+
+const positionOpenWithMenu = () => {
+  const parent = contextMenuRef.value?.getBoundingClientRect();
+  const trigger = openWithTriggerRef.value?.getBoundingClientRect();
+  const menu = openWithMenuRef.value?.getBoundingClientRect();
+  if (!parent || !trigger || !menu) return;
+  const preferredX =
+    parent.right + menu.width <= window.innerWidth - 8 ? parent.right - 2 : parent.left - menu.width + 2;
+  openWithPosition.value = {
+    x: Math.max(8, Math.min(preferredX, window.innerWidth - menu.width - 8)),
+    y: Math.max(8, Math.min(trigger.top, window.innerHeight - menu.height - 8)),
+  };
+};
+
+const showOpenWithMenu = async (focusFirst = false) => {
+  const node = contextMenu.value?.node;
+  if (!node || node.kind !== "file") return;
+  if (isOpenWithMenuOpen.value) {
+    if (focusFirst) openWithMenuRef.value?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    return;
+  }
+  isOpenWithMenuOpen.value = true;
+  openWithLoading.value = true;
+  openWithFailed.value = false;
+  openWithError.value = "";
+  openWithApplications.value = [];
+  const requestId = ++openWithRequestId;
+  await nextTick();
+  positionOpenWithMenu();
+  if (focusFirst) openWithMenuRef.value?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  try {
+    const applications = await (openWithPrefetch ||
+      store.listProjectFileApplications(props.project.id, node.relativePath));
+    if (requestId !== openWithRequestId) return;
+    openWithApplications.value = applications;
+  } catch (error) {
+    if (requestId !== openWithRequestId) return;
+    openWithFailed.value = true;
+    openWithError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (requestId === openWithRequestId) {
+      openWithLoading.value = false;
+      await nextTick();
+      positionOpenWithMenu();
+      if (focusFirst) openWithMenuRef.value?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    }
+  }
+};
+
+const handleParentMenuNavigation = (event: Event) => {
+  const item = event.target instanceof Element ? event.target.closest('[role="menuitem"]') : null;
+  if (item && item !== openWithTriggerRef.value) closeOpenWithMenu();
+};
+
+watch(
+  contextMenu,
+  () => {
+    closeOpenWithMenu();
+    openWithPrefetch = null;
+  },
+  { flush: "sync" },
+);
+
 const closeContextMenu = (restoreFocus = false) => {
   const relativePath = contextMenu.value?.node?.relativePath || "";
   contextMenu.value = null;
@@ -478,6 +558,10 @@ const showNodeContextMenu = (
     previousSelectedPath,
     previousFocusedPath,
   };
+  if (node?.kind === "file") {
+    openWithPrefetch = store.listProjectFileApplications(props.project.id, node.relativePath);
+    void openWithPrefetch.catch(() => {});
+  }
   void nextTick(() => {
     const menu = contextMenuRef.value;
     const current = contextMenu.value;
@@ -528,8 +612,8 @@ const openBlankContextMenu = (event: MouseEvent) => {
   );
 };
 
-const handleContextMenuKeydown = (event: KeyboardEvent) => {
-  const items = Array.from(contextMenuRef.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') || []);
+const handleContextMenuKeydown = (event: KeyboardEvent, menu = contextMenuRef.value) => {
+  const items = Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') || []);
   if (items.length === 0) return;
   const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
   let nextIndex: number | undefined;
@@ -542,6 +626,16 @@ const handleContextMenuKeydown = (event: KeyboardEvent) => {
   items[nextIndex].focus();
 };
 
+const handleOpenWithKeydown = (event: KeyboardEvent) => {
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    closeOpenWithMenu(true);
+  } else {
+    handleContextMenuKeydown(event, openWithMenuRef.value);
+  }
+  if (event.key !== "Escape") event.stopPropagation();
+};
+
 // 内联编辑的取消入口：Escape、点击任意空白处（input blur）都会走到这里。
 // 确认弹窗打开时会夺走 input 焦点，此时不能视为取消。
 const cancelInlineEdit = () => {
@@ -552,6 +646,11 @@ const cancelInlineEdit = () => {
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (event.detail.handled) return;
   if (actionDialog.value) return;
+  if (isOpenWithMenuOpen.value) {
+    closeOpenWithMenu(true);
+    event.detail.handle();
+    return;
+  }
   if (contextMenu.value) {
     closeContextMenu(true);
     event.detail.handle();
@@ -983,6 +1082,17 @@ const revealNode = async (node: TreeNode) => {
   }
 };
 
+const openNodeWith = async (node: TreeNode, application?: ProjectFileApplication) => {
+  closeContextMenu(true);
+  statusMessage.value = "";
+  try {
+    await store.openProjectFileWith(props.project.id, node.relativePath, application?.id);
+  } catch (error) {
+    statusMessage.value = error instanceof Error ? error.message : t.value.files.operationFailed;
+    showActionStatus({ state: "error", message: statusMessage.value });
+  }
+};
+
 const editNode = (node: TreeNode) => {
   closeContextMenu();
   void openFile(node, true);
@@ -1391,6 +1501,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  closeOpenWithMenu();
   markdownAssetGeneration += 1;
   filterRequestId += 1;
   window.clearTimeout(filterTimer);
@@ -1934,6 +2045,8 @@ watch(filterQuery, (query) => {
       @click.stop
       @contextmenu.prevent
       @keydown="handleContextMenuKeydown"
+      @pointermove="handleParentMenuNavigation"
+      @focusin="handleParentMenuNavigation"
     >
       <template v-if="contextMenu.node">
         <button
@@ -1945,6 +2058,22 @@ watch(filterQuery, (query) => {
         >
           <FilePenLine :size="12" class="shrink-0" />
           <span class="min-w-0 truncate">{{ t.files.editFile }}</span>
+        </button>
+        <button
+          v-if="contextMenu.node.kind === 'file'"
+          ref="openWithTriggerRef"
+          type="button"
+          class="ui-menu-item"
+          role="menuitem"
+          aria-haspopup="menu"
+          :aria-expanded="isOpenWithMenuOpen"
+          @mouseenter="showOpenWithMenu()"
+          @click="showOpenWithMenu(true)"
+          @keydown.right.prevent.stop="showOpenWithMenu(true)"
+        >
+          <ExternalLink :size="12" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t.files.openWith }}</span>
+          <ChevronRight :size="12" class="ml-auto shrink-0" />
         </button>
         <button
           v-if="contextMenu.node.kind === 'directory'"
@@ -2013,6 +2142,52 @@ watch(filterQuery, (query) => {
           <span class="min-w-0 truncate">{{ t.files.collapseAll }}</span>
         </button>
       </template>
+    </div>
+    <div
+      v-if="contextMenu?.node && isOpenWithMenuOpen"
+      ref="openWithMenuRef"
+      class="menu-pop fixed z-[76] flex max-h-[calc(100vh-1rem)] w-max max-w-[min(12rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-md border border-outline-variant/70 bg-surface-container-lowest p-0.5 shadow-2xl"
+      :style="{ left: `${openWithPosition.x}px`, top: `${openWithPosition.y}px` }"
+      role="menu"
+      :aria-label="t.files.openWith"
+      @click.stop
+      @contextmenu.prevent
+      @keydown="handleOpenWithKeydown"
+    >
+      <div class="themed-scrollbar min-h-0 overflow-y-auto">
+        <div
+          v-if="openWithLoading || openWithFailed || !openWithApplications.length"
+          class="px-3 py-2 text-xs text-on-surface-variant"
+          role="status"
+          :title="openWithError"
+        >
+          {{
+            openWithLoading
+              ? t.common.loading
+              : openWithFailed
+                ? t.files.applicationListFailed
+                : t.files.noAssociatedApplications
+          }}
+        </div>
+        <button
+          v-for="application in openWithApplications"
+          :key="application.id"
+          type="button"
+          class="ui-menu-item"
+          role="menuitem"
+          :title="application.name"
+          @click="openNodeWith(contextMenu.node, application)"
+        >
+          <img v-if="application.icon" :src="application.icon" alt="" class="h-4 w-4 shrink-0 object-contain" />
+          <ExternalLink v-else :size="16" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ application.name }}</span>
+        </button>
+      </div>
+      <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
+      <button type="button" class="ui-menu-item shrink-0" role="menuitem" @click="openNodeWith(contextMenu.node)">
+        <ExternalLink :size="16" class="shrink-0" />
+        <span class="min-w-0 truncate">{{ t.files.chooseAnotherApplication }}</span>
+      </button>
     </div>
   </Teleport>
 

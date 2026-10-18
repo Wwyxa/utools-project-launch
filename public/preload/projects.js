@@ -1,31 +1,31 @@
 function readPackageScripts(projectPath) {
   const resolvedPath = expandPath(projectPath);
-  const packagePath = path.join(resolvedPath, 'package.json');
+  const packagePath = path.join(resolvedPath, "package.json");
 
   if (!fs.existsSync(packagePath)) {
     return { scripts: [], packagePath: null };
   }
 
   try {
-    const raw = fs.readFileSync(packagePath, 'utf8');
+    const raw = fs.readFileSync(packagePath, "utf8");
     const parsed = JSON.parse(raw);
     const scripts = Object.entries(parsed.scripts || {}).map(([name, command]) => ({
       name,
       command: `npm run ${name}`,
       note: String(command),
-      source: 'package-json',
+      source: "package-json",
     }));
 
-    return { scripts, packagePath, error: '' };
+    return { scripts, packagePath, error: "" };
   } catch (error) {
-    const reason = error instanceof Error && error.message ? error.message : '未知错误';
+    const reason = error instanceof Error && error.message ? error.message : "未知错误";
     return { scripts: [], packagePath, error: `无法解析 ${packagePath}：${reason}` };
   }
 }
 
 function readMakefileScripts(projectPath) {
   const resolvedPath = expandPath(projectPath);
-  const makefilePath = ['Makefile', 'makefile', 'GNUmakefile']
+  const makefilePath = ["Makefile", "makefile", "GNUmakefile"]
     .map((name) => path.join(resolvedPath, name))
     .find((candidate) => fs.existsSync(candidate));
 
@@ -35,7 +35,7 @@ function readMakefileScripts(projectPath) {
 
   try {
     const targets = new Set();
-    fs.readFileSync(makefilePath, 'utf8')
+    fs.readFileSync(makefilePath, "utf8")
       .split(/\r?\n/)
       .forEach((line) => {
         const phonyMatch = /^\s*\.PHONY\s*:\s*(.*)$/.exec(line);
@@ -52,8 +52,8 @@ function readMakefileScripts(projectPath) {
         ) {
           return;
         }
-        const separator = line.indexOf(':');
-        if (separator <= 0 || line[separator + 1] === '=') {
+        const separator = line.indexOf(":");
+        if (separator <= 0 || line[separator + 1] === "=") {
           return;
         }
         const targetList = line.slice(0, separator).trim();
@@ -61,7 +61,7 @@ function readMakefileScripts(projectPath) {
           return;
         }
         targetList.split(/\s+/).forEach((target) => {
-          if (!target || target.startsWith('.') || !makeTargetPattern.test(target)) {
+          if (!target || target.startsWith(".") || !makeTargetPattern.test(target)) {
             return;
           }
           targets.add(target);
@@ -72,22 +72,22 @@ function readMakefileScripts(projectPath) {
       scripts: [...targets].map((target) => ({
         name: target,
         command: `make ${target}`,
-        cwd: '.',
+        cwd: ".",
         note: `Makefile: ${path.basename(makefilePath)}`,
-        source: 'makefile',
+        source: "makefile",
       })),
       makefilePath,
-      error: '',
+      error: "",
     };
   } catch (error) {
-    const reason = error instanceof Error && error.message ? error.message : '未知错误';
+    const reason = error instanceof Error && error.message ? error.message : "未知错误";
     return { scripts: [], makefilePath, error: `无法读取 ${makefilePath}：${reason}` };
   }
 }
 
 function toRelativeCwd(rootPath, targetPath) {
   const relativePath = path.relative(expandPath(rootPath), expandPath(targetPath));
-  return relativePath ? relativePath.replace(/\\/g, '/') : '.';
+  return relativePath ? relativePath.replace(/\\/g, "/") : ".";
 }
 
 function resolveProjectSortOrder(project, fallbackIndex = 0) {
@@ -107,19 +107,19 @@ function sortProjectsByStoredOrder(projects) {
 }
 
 function normalizeQuickLink(value) {
-  return typeof value === 'string' ? value.trim() : '';
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function normalizeProjectGroup(value) {
-  return typeof value === 'string' ? value.trim() : '';
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function normalizeProjectRelations(value) {
   const relations = Array.isArray(value) ? value : [];
   const seenProjectIds = new Set();
   return relations.reduce((normalizedRelations, relation) => {
-    if (!relation || typeof relation !== 'object') return normalizedRelations;
-    const projectId = typeof relation.projectId === 'string' ? relation.projectId.trim() : '';
+    if (!relation || typeof relation !== "object") return normalizedRelations;
+    const projectId = typeof relation.projectId === "string" ? relation.projectId.trim() : "";
     if (!projectId || seenProjectIds.has(projectId) || normalizedRelations.length >= 5) {
       return normalizedRelations;
     }
@@ -134,53 +134,53 @@ function isExternalUrl(value) {
 }
 
 function openPath(targetPath) {
-  const normalizedPath = String(targetPath || '').trim();
+  const normalizedPath = String(targetPath || "").trim();
   if (!normalizedPath) {
     return Promise.resolve();
   }
 
   if (isExternalUrl(normalizedPath)) {
-    return shell.openExternal(normalizedPath.startsWith('//') ? `https:${normalizedPath}` : normalizedPath);
+    return shell.openExternal(normalizedPath.startsWith("//") ? `https:${normalizedPath}` : normalizedPath);
   }
 
   return shell.openPath(expandPath(normalizedPath));
 }
 
 function toStoredProject(project, index = 0) {
-  const visibility = project.visibility === 'private' ? 'private' : 'public';
+  const visibility = project.visibility === "private" ? "private" : "public";
   return {
     id: project.id,
     name: project.name,
     path: project.path,
     visibility,
-    type: project.type || 'Custom',
-    kind: project.kind || 'custom',
-    icon: project.icon || 'custom',
-    cardStyle: project.cardStyle || 'default',
+    type: project.type || "Custom",
+    kind: project.kind || "custom",
+    icon: project.icon || "custom",
+    cardStyle: project.cardStyle || "default",
     tinyCardButtonCount: Number.isFinite(project.tinyCardButtonCount)
       ? Math.min(3, Math.max(0, Math.floor(project.tinyCardButtonCount)))
       : 1,
     quickLink: normalizeQuickLink(project.quickLink),
     group: normalizeProjectGroup(project.group),
     relatedProjects: normalizeProjectRelations(project.relatedProjects),
-    status: 'STOPPED',
-    description: project.description || '',
-    lastUpdated: project.lastUpdated || '',
+    status: "STOPPED",
+    description: project.description || "",
+    lastUpdated: project.lastUpdated || "",
     scripts: Array.isArray(project.scripts)
       ? project.scripts.map((script) => ({
           id: script.id,
           name: script.name,
           command: script.command,
-          cwd: script.cwd || '.',
-          note: script.note || '',
-          source: script.source || 'manual',
-          status: 'IDLE',
+          cwd: script.cwd || ".",
+          note: script.note || "",
+          source: script.source || "manual",
+          status: "IDLE",
         }))
       : [],
     automationTasks: Array.isArray(project.automationTasks)
       ? project.automationTasks.map((task) => ({
           ...task,
-          missedPolicy: task.missedPolicy || 'grace-run',
+          missedPolicy: task.missedPolicy || "grace-run",
           missedGraceMinutes: Number.isFinite(task.missedGraceMinutes)
             ? Math.max(0, Math.floor(task.missedGraceMinutes))
             : 5,
@@ -188,7 +188,7 @@ function toStoredProject(project, index = 0) {
           ...(Array.isArray(task.observedServiceExecutionIds)
             ? {
                 observedServiceExecutionIds: Array.from(
-                  new Set(task.observedServiceExecutionIds.filter((id) => typeof id === 'string' && id.trim())),
+                  new Set(task.observedServiceExecutionIds.filter((id) => typeof id === "string" && id.trim())),
                 ).slice(-20),
               }
             : {}),
@@ -198,9 +198,9 @@ function toStoredProject(project, index = 0) {
         }))
       : [],
     env: project.env || {},
-    memo: project.memo || '',
+    memo: project.memo || "",
     todos: Array.isArray(project.todos) ? project.todos : [],
-    gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || '',
+    gitLatestCommitAt: project.gitLatestCommitAt || project.git?.commits?.[0]?.date || "",
     sortOrder: resolveProjectSortOrder(project, index),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
@@ -214,17 +214,17 @@ function toPlainJson(value) {
 function detectNodeUnit(rootPath, targetPath) {
   const packageResult = readPackageScripts(targetPath);
   if (!packageResult.packagePath) {
-    return { scripts: [], error: '' };
+    return { scripts: [], error: "" };
   }
 
   const cwd = toRelativeCwd(rootPath, targetPath);
   return {
     scripts: packageResult.scripts.map((script) => ({
-      name: cwd === '.' ? script.name : `${cwd}:${script.name}`,
+      name: cwd === "." ? script.name : `${cwd}:${script.name}`,
       command: script.command,
       cwd,
       note: `package.json: ${toRelativeCwd(rootPath, packageResult.packagePath)}`,
-      source: 'package-json',
+      source: "package-json",
     })),
     error: packageResult.error,
   };
@@ -233,28 +233,28 @@ function detectNodeUnit(rootPath, targetPath) {
 function discoverProjectScripts(projectPath, options = {}) {
   const resolvedPath = expandPath(projectPath);
   if (!pathExists(projectPath)) {
-    return { scripts: [], message: '路径不存在或当前设备无法访问。' };
+    return { scripts: [], message: "路径不存在或当前设备无法访问。" };
   }
 
-  const requestedSources = Array.isArray(options.sources) ? options.sources : ['package-json', 'makefile'];
-  const sources = new Set(requestedSources.filter((source) => source === 'package-json' || source === 'makefile'));
+  const requestedSources = Array.isArray(options.sources) ? options.sources : ["package-json", "makefile"];
+  const sources = new Set(requestedSources.filter((source) => source === "package-json" || source === "makefile"));
   if (sources.size === 0) {
-    return { scripts: [], message: '请至少选择一种识别来源。' };
+    return { scripts: [], message: "请至少选择一种识别来源。" };
   }
 
-  const packageResults = sources.has('package-json')
+  const packageResults = sources.has("package-json")
     ? commonProjectDirs.map((dirName) => {
-        const targetPath = dirName === '.' ? resolvedPath : path.join(resolvedPath, dirName);
+        const targetPath = dirName === "." ? resolvedPath : path.join(resolvedPath, dirName);
         return detectNodeUnit(resolvedPath, targetPath);
       })
     : [];
-  const makefileResult = sources.has('makefile')
+  const makefileResult = sources.has("makefile")
     ? readMakefileScripts(resolvedPath)
-    : { scripts: [], makefilePath: null, error: '' };
+    : { scripts: [], makefilePath: null, error: "" };
   const errors = [...packageResults.map((result) => result.error), makefileResult.error].filter(Boolean);
   return {
     scripts: [...packageResults.flatMap((result) => result.scripts), ...makefileResult.scripts],
-    ...(errors.length > 0 ? { message: errors.join('；') } : {}),
+    ...(errors.length > 0 ? { message: errors.join("；") } : {}),
   };
 }
 
@@ -265,7 +265,7 @@ function readProjectDocs() {
 
   const result = window.utools.db.allDocs(projectDocPrefix);
   if (result?.error) {
-    throw new Error(result.message || result.reason || '无法读取项目文档目录。');
+    throw new Error(result.message || result.reason || "无法读取项目文档目录。");
   }
   const rows = Array.isArray(result)
     ? result
@@ -273,7 +273,7 @@ function readProjectDocs() {
       ? result.rows
       : Array.isArray(result?.docs)
         ? result.docs
-        : result && typeof result === 'object'
+        : result && typeof result === "object"
           ? Object.values(result)
           : [];
   return rows
@@ -283,7 +283,7 @@ function readProjectDocs() {
       if (summary?.project) {
         return summary;
       }
-      if (typeof docId === 'string' && window.utools?.db?.get) {
+      if (typeof docId === "string" && window.utools?.db?.get) {
         const doc = window.utools.db.get(docId);
         if (doc?.error) {
           if (isMissingProjectDocument(doc)) {
@@ -295,13 +295,13 @@ function readProjectDocs() {
       }
       return summary;
     })
-    .filter((doc) => doc && typeof doc._id === 'string' && doc._id.startsWith(projectDocPrefix));
+    .filter((doc) => doc && typeof doc._id === "string" && doc._id.startsWith(projectDocPrefix));
 }
 
 const projectDocumentMutationMaxAttempts = 3;
 
 function normalizeProjectId(projectId) {
-  return typeof projectId === 'string' ? projectId.trim() : '';
+  return typeof projectId === "string" ? projectId.trim() : "";
 }
 
 function hasProjectDocumentCatalog() {
@@ -314,7 +314,7 @@ function supportsProjectDocumentWrites() {
 
 function hasStoredProjectSortOrder(project) {
   const value = project?.sortOrder;
-  return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value));
+  return value !== undefined && value !== null && value !== "" && Number.isFinite(Number(value));
 }
 
 function projectDocumentId(projectId) {
@@ -325,7 +325,7 @@ function isMissingProjectDocument(result) {
   if (!result?.error) {
     return false;
   }
-  const message = [result.message, result.reason].filter((value) => typeof value === 'string').join(' ');
+  const message = [result.message, result.reason].filter((value) => typeof value === "string").join(" ");
   return /(?:not[\s-]*found|missing)/i.test(message);
 }
 
@@ -342,7 +342,7 @@ function readCurrentProjectDocument(projectId) {
     }
     throw new Error(document.message || `无法读取项目 ${normalizedProjectId} 的当前版本。`);
   }
-  return document && typeof document === 'object' ? document : null;
+  return document && typeof document === "object" ? document : null;
 }
 
 function createStoredProjectDocument(project, index = 0, options = {}) {
@@ -359,9 +359,9 @@ function createStoredProjectDocument(project, index = 0, options = {}) {
 }
 
 function projectDocumentWriteError(projectId, result) {
-  const detail = result?.message || result?.reason || '未知错误';
+  const detail = result?.message || result?.reason || "未知错误";
   const error = new Error(`保存项目配置失败（${projectId}）：${detail}`);
-  error.isProjectDocumentWriteConflict = result?.error === 'conflict' || /conflict/i.test(detail);
+  error.isProjectDocumentWriteConflict = result?.error === "conflict" || /conflict/i.test(detail);
   return error;
 }
 
@@ -386,7 +386,7 @@ function normalizeStoredProjects(projects, fallbackIndexOffset = 0) {
 }
 
 function storedProjectVisibility(project) {
-  return project?.visibility === 'private' ? 'private' : 'public';
+  return project?.visibility === "private" ? "private" : "public";
 }
 
 // The catalog is public documents from the syncing database plus private
@@ -400,14 +400,14 @@ function readProjects() {
     const docs = hasProjectDocumentCatalog() ? readProjectDocs() : [];
     const publicDocProjects = docs
       .map((document) => document.project)
-      .filter((project) => project && storedProjectVisibility(project) !== 'private');
+      .filter((project) => project && storedProjectVisibility(project) !== "private");
     const localPrivateProjects = readLocalPrivateProjects();
     const projectsById = new Map(
       [...publicDocProjects, ...localPrivateProjects].map((project) => [project.id, project]),
     );
     return sortProjectsByStoredOrder(normalizeStoredProjects([...projectsById.values()]));
   } catch (error) {
-    logStorageError('read projects', error);
+    logStorageError("read projects", error);
     throw error;
   }
 }
@@ -419,7 +419,7 @@ function readCanonicalStoredProject(projectId) {
   }
 
   const document = readCurrentProjectDocument(normalizedProjectId);
-  if (document?.project && storedProjectVisibility(document.project) !== 'private') {
+  if (document?.project && storedProjectVisibility(document.project) !== "private") {
     const project = toStoredProject(document.project);
     return project.id === normalizedProjectId ? project : null;
   }
@@ -465,23 +465,23 @@ function writePublicProjectDocument(project, options = {}) {
 function writeStoredProject(project, options = {}) {
   const normalizedProject = toStoredProject(project, resolveProjectSortOrder(project));
   if (!normalizeProjectId(normalizedProject.id)) {
-    throw new Error('项目 ID 不能为空。');
+    throw new Error("项目 ID 不能为空。");
   }
 
-  if (normalizedProject.visibility === 'private') {
+  if (normalizedProject.visibility === "private") {
     // Public → private transition: the local file is written and verified
     // first; only then may the syncing document be removed.
     const writeResult = writeLocalPrivateProject(normalizedProject);
     if (!writeResult.ok) {
-      const error = new Error(writeResult.error || '私有项目写入本地数据目录失败。');
-      logStorageError('save private project to local data', error);
+      const error = new Error(writeResult.error || "私有项目写入本地数据目录失败。");
+      logStorageError("save private project to local data", error);
       throw error;
     }
     if (readCurrentProjectDocument(normalizedProject.id)) {
       try {
         removeStoredProjectDocument(normalizedProject.id);
       } catch (error) {
-        logStorageError('remove syncing document after privatizing project', error);
+        logStorageError("remove syncing document after privatizing project", error);
         throw error;
       }
     }
@@ -491,7 +491,7 @@ function writeStoredProject(project, options = {}) {
   try {
     writePublicProjectDocument(normalizedProject, options);
   } catch (error) {
-    logStorageError('save project to uTools db', error);
+    logStorageError("save project to uTools db", error);
     throw error;
   }
 
@@ -504,10 +504,10 @@ function writeStoredProject(project, options = {}) {
 function mutateStoredProject(projectId, mutateProject) {
   const normalizedProjectId = normalizeProjectId(projectId);
   if (!normalizedProjectId) {
-    throw new Error('项目 ID 不能为空。');
+    throw new Error("项目 ID 不能为空。");
   }
-  if (typeof mutateProject !== 'function') {
-    throw new Error('项目更新函数无效。');
+  if (typeof mutateProject !== "function") {
+    throw new Error("项目更新函数无效。");
   }
 
   try {
@@ -516,7 +516,7 @@ function mutateStoredProject(projectId, mutateProject) {
       const currentLocalProject = readLocalPrivateProject(normalizedProjectId);
       const currentProject = currentLocalProject
         ? toStoredProject(currentLocalProject)
-        : currentDocument?.project && storedProjectVisibility(currentDocument.project) !== 'private'
+        : currentDocument?.project && storedProjectVisibility(currentDocument.project) !== "private"
           ? toStoredProject(currentDocument.project)
           : null;
       if (!currentProject) {
@@ -526,16 +526,16 @@ function mutateStoredProject(projectId, mutateProject) {
       const nextProject = mutateProject(toPlainJson(currentProject));
       const normalizedProject = toStoredProject(nextProject, resolveProjectSortOrder(currentProject));
       if (normalizedProject.id !== normalizedProjectId) {
-        throw new Error('项目更新不能修改项目 ID。');
+        throw new Error("项目更新不能修改项目 ID。");
       }
 
       try {
-        if (normalizedProject.visibility === 'private') {
+        if (normalizedProject.visibility === "private") {
           // Private projects live in local files; the syncing document (when
           // one is still left over) is dropped after the local write verifies.
           const writeResult = writeLocalPrivateProject(normalizedProject);
           if (!writeResult.ok) {
-            throw new Error(writeResult.error || '私有项目写入本地数据目录失败。');
+            throw new Error(writeResult.error || "私有项目写入本地数据目录失败。");
           }
           if (readCurrentProjectDocument(normalizedProjectId)) {
             removeStoredProjectDocument(normalizedProjectId);
@@ -560,7 +560,7 @@ function mutateStoredProject(projectId, mutateProject) {
       }
     }
   } catch (error) {
-    logStorageError('mutate project', error);
+    logStorageError("mutate project", error);
     throw error;
   }
   return null;
@@ -570,7 +570,7 @@ function storedValueEquals(left, right) {
   if (left === right) {
     return true;
   }
-  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") {
     return false;
   }
   if (Array.isArray(left) || Array.isArray(right)) {
@@ -592,9 +592,9 @@ function storedValueEquals(left, right) {
 }
 
 function mergeStoredProjectEnvironment(baseEnvironment, nextEnvironment, currentEnvironment) {
-  const base = baseEnvironment && typeof baseEnvironment === 'object' ? baseEnvironment : {};
-  const next = nextEnvironment && typeof nextEnvironment === 'object' ? nextEnvironment : {};
-  const merged = { ...(currentEnvironment && typeof currentEnvironment === 'object' ? currentEnvironment : {}) };
+  const base = baseEnvironment && typeof baseEnvironment === "object" ? baseEnvironment : {};
+  const next = nextEnvironment && typeof nextEnvironment === "object" ? nextEnvironment : {};
+  const merged = { ...(currentEnvironment && typeof currentEnvironment === "object" ? currentEnvironment : {}) };
   const keys = new Set([...Object.keys(base), ...Object.keys(next)]);
 
   keys.forEach((key) => {
@@ -683,13 +683,13 @@ function automationTaskConfigurations(tasks) {
 function mergeStoredProjectCatalogChange(baseProject, nextProject, currentProject) {
   const mergedProject = { ...currentProject };
   let appliedLocalChange = false;
-  const ignoredFields = new Set(['id', 'createdAt', 'updatedAt', 'lastUpdated']);
+  const ignoredFields = new Set(["id", "createdAt", "updatedAt", "lastUpdated"]);
 
   Object.keys(nextProject).forEach((field) => {
     if (ignoredFields.has(field) || storedValueEquals(nextProject[field], baseProject[field])) {
       return;
     }
-    if (field === 'scripts') {
+    if (field === "scripts") {
       mergedProject.scripts = mergeStoredProjectScripts(
         baseProject.scripts,
         nextProject.scripts,
@@ -698,12 +698,12 @@ function mergeStoredProjectCatalogChange(baseProject, nextProject, currentProjec
       appliedLocalChange = true;
       return;
     }
-    if (field === 'env') {
+    if (field === "env") {
       mergedProject.env = mergeStoredProjectEnvironment(baseProject.env, nextProject.env, currentProject.env);
       appliedLocalChange = true;
       return;
     }
-    if (field === 'automationTasks') {
+    if (field === "automationTasks") {
       const baseConfiguration = automationTaskConfigurations(baseProject.automationTasks);
       const nextConfiguration = automationTaskConfigurations(nextProject.automationTasks);
       const currentConfiguration = automationTaskConfigurations(currentProject.automationTasks);
@@ -740,7 +740,7 @@ function writeStoredProjectCatalogEntry(project, baseProject, fallbackIndex) {
     const currentLocalProject = readLocalPrivateProject(project.id);
     const currentProject = currentLocalProject
       ? toStoredProject(currentLocalProject, fallbackIndex)
-      : currentDocument?.project && storedProjectVisibility(currentDocument.project) !== 'private'
+      : currentDocument?.project && storedProjectVisibility(currentDocument.project) !== "private"
         ? toStoredProject(currentDocument.project, fallbackIndex)
         : null;
     if (!currentProject && baseProject) {
@@ -753,12 +753,12 @@ function writeStoredProjectCatalogEntry(project, baseProject, fallbackIndex) {
       currentProject && baseProject ? mergeStoredProjectCatalogChange(baseProject, project, currentProject) : project;
 
     const needsVisibilityCleanup =
-      nextProject.visibility === 'private' ? Boolean(currentDocument) : Boolean(currentLocalProject);
+      nextProject.visibility === "private" ? Boolean(currentDocument) : Boolean(currentLocalProject);
     if (currentProject && storedValueEquals(currentProject, nextProject) && !needsVisibilityCleanup) {
       return currentProject;
     }
 
-    if (nextProject.visibility === 'private') return writeStoredProject(nextProject);
+    if (nextProject.visibility === "private") return writeStoredProject(nextProject);
     const document = createStoredProjectDocument(nextProject, fallbackIndex);
     if (currentDocument?._rev) {
       document._rev = currentDocument._rev;
@@ -789,8 +789,8 @@ function removeStoredProjectDocument(projectId) {
     if (result?.ok === true) {
       return true;
     }
-    const error = new Error(`删除项目配置失败（${projectId}）：${result?.message || '未知错误'}`);
-    error.isProjectDocumentWriteConflict = result?.error === 'conflict' || /conflict/i.test(result?.message || '');
+    const error = new Error(`删除项目配置失败（${projectId}）：${result?.message || "未知错误"}`);
+    error.isProjectDocumentWriteConflict = result?.error === "conflict" || /conflict/i.test(result?.message || "");
     if (!isProjectDocumentWriteConflictError(error) || attempt + 1 === projectDocumentMutationMaxAttempts) {
       throw error;
     }
@@ -818,7 +818,7 @@ function writeStoredProjects(projects, options = {}) {
     const existingDocuments = readProjectDocs();
     const existingProjectsById = new Map(
       existingDocuments
-        .filter((document) => document?.project?.id && storedProjectVisibility(document.project) !== 'private')
+        .filter((document) => document?.project?.id && storedProjectVisibility(document.project) !== "private")
         .map((document, index) => [document.project.id, toStoredProject(document.project, index)]),
     );
     readLocalPrivateProjects().forEach((project) => existingProjectsById.set(project.id, toStoredProject(project)));
@@ -846,7 +846,7 @@ function writeStoredProjects(projects, options = {}) {
     });
     return savedProjects;
   } catch (error) {
-    logStorageError('save projects', error);
+    logStorageError("save projects", error);
     throw error;
   }
 }
@@ -861,71 +861,71 @@ function pathExists(projectPath) {
 
 function resolveProjectChild(projectPath, relativePath) {
   const rootPath = expandPath(projectPath);
-  const normalizedRelativePath = typeof relativePath === 'string' ? relativePath : '';
-  const targetPath = path.resolve(rootPath, normalizedRelativePath || '.');
+  const normalizedRelativePath = typeof relativePath === "string" ? relativePath : "";
+  const targetPath = path.resolve(rootPath, normalizedRelativePath || ".");
   const relative = path.relative(rootPath, targetPath);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error('目标路径不在项目目录内。');
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("目标路径不在项目目录内。");
   }
-  return { rootPath, targetPath, relativePath: relative === '' ? '' : relative.replace(/\\/g, '/') };
+  return { rootPath, targetPath, relativePath: relative === "" ? "" : relative.replace(/\\/g, "/") };
 }
 
 function isPathWithinRoot(rootPath, targetPath) {
   const relative = path.relative(rootPath, targetPath);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function resolveCanonicalProjectRoot(projectPath) {
   const rootPath = fs.realpathSync(expandPath(projectPath));
   if (!fs.statSync(rootPath).isDirectory()) {
-    throw new Error('项目路径不是目录。');
+    throw new Error("项目路径不是目录。");
   }
   return rootPath;
 }
 
 function resolveCanonicalProjectEntry(projectPath, relativePath, allowRoot = false) {
   const rootPath = resolveCanonicalProjectRoot(projectPath);
-  const lexicalTarget = path.resolve(rootPath, typeof relativePath === 'string' ? relativePath : '');
+  const lexicalTarget = path.resolve(rootPath, typeof relativePath === "string" ? relativePath : "");
   if (!isPathWithinRoot(rootPath, lexicalTarget)) {
-    throw new Error('目标路径不在项目目录内。');
+    throw new Error("目标路径不在项目目录内。");
   }
   if (!allowRoot && lexicalTarget === rootPath) {
-    throw new Error('不能修改项目根目录。');
+    throw new Error("不能修改项目根目录。");
   }
   if (lexicalTarget !== rootPath && fs.lstatSync(lexicalTarget).isSymbolicLink()) {
-    throw new Error('不支持操作符号链接。');
+    throw new Error("不支持操作符号链接。");
   }
   const targetPath = fs.realpathSync(lexicalTarget);
   if (!isPathWithinRoot(rootPath, targetPath)) {
-    throw new Error('目标路径通过符号链接指向项目目录外。');
+    throw new Error("目标路径通过符号链接指向项目目录外。");
   }
-  return { rootPath, targetPath, relativePath: path.relative(rootPath, lexicalTarget).replace(/\\/g, '/') };
+  return { rootPath, targetPath, relativePath: path.relative(rootPath, lexicalTarget).replace(/\\/g, "/") };
 }
 
 function resolveCanonicalProjectParent(projectPath, parentRelativePath) {
   const rootPath = resolveCanonicalProjectRoot(projectPath);
-  const lexicalParent = path.resolve(rootPath, typeof parentRelativePath === 'string' ? parentRelativePath : '');
+  const lexicalParent = path.resolve(rootPath, typeof parentRelativePath === "string" ? parentRelativePath : "");
   if (!isPathWithinRoot(rootPath, lexicalParent)) {
-    throw new Error('目标路径不在项目目录内。');
+    throw new Error("目标路径不在项目目录内。");
   }
   const parentPath = fs.realpathSync(lexicalParent);
   if (!isPathWithinRoot(rootPath, parentPath) || !fs.statSync(parentPath).isDirectory()) {
-    throw new Error('目标目录无效或位于项目目录外。');
+    throw new Error("目标目录无效或位于项目目录外。");
   }
-  return { rootPath, parentPath, parentRelativePath: path.relative(rootPath, lexicalParent).replace(/\\/g, '/') };
+  return { rootPath, parentPath, parentRelativePath: path.relative(rootPath, lexicalParent).replace(/\\/g, "/") };
 }
 
 function validateProjectEntryName(name) {
-  const normalizedName = typeof name === 'string' ? name : '';
-  if (!normalizedName || normalizedName === '.' || normalizedName === '..') {
-    throw new Error('名称不能为空或使用保留目录名。');
+  const normalizedName = typeof name === "string" ? name : "";
+  if (!normalizedName || normalizedName === "." || normalizedName === "..") {
+    throw new Error("名称不能为空或使用保留目录名。");
   }
   if (/[<>:"/\\|?*\u0000-\u001f\u007f]/.test(normalizedName) || /[. ]$/.test(normalizedName)) {
-    throw new Error('名称包含无效字符或以点、空格结尾。');
+    throw new Error("名称包含无效字符或以点、空格结尾。");
   }
-  const basename = normalizedName.split('.')[0].toUpperCase();
+  const basename = normalizedName.split(".")[0].toUpperCase();
   if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(basename)) {
-    throw new Error('名称是系统保留名称。');
+    throw new Error("名称是系统保留名称。");
   }
   return normalizedName;
 }
@@ -935,19 +935,19 @@ function projectFileTreeEntry(rootPath, targetPath, stats) {
   return {
     name,
     path: targetPath,
-    relativePath: path.relative(rootPath, targetPath).replace(/\\/g, '/'),
-    kind: stats.isDirectory() ? 'directory' : 'file',
+    relativePath: path.relative(rootPath, targetPath).replace(/\\/g, "/"),
+    kind: stats.isDirectory() ? "directory" : "file",
     size: stats.size,
     extension: path.extname(name).toLowerCase(),
-    hidden: name.startsWith('.'),
+    hidden: name.startsWith("."),
   };
 }
 
-function listProjectFiles(projectPath, relativePath = '') {
+function listProjectFiles(projectPath, relativePath = "") {
   const resolved = resolveCanonicalProjectEntry(projectPath, relativePath, true);
   const stats = fs.statSync(resolved.targetPath);
   if (!stats.isDirectory()) {
-    throw new Error('目标路径不是目录。');
+    throw new Error("目标路径不是目录。");
   }
 
   const entries = fs
@@ -956,20 +956,20 @@ function listProjectFiles(projectPath, relativePath = '') {
     .map((entry) => {
       const childPath = path.join(resolved.targetPath, entry.name);
       const childStats = fs.statSync(childPath);
-      const childRelativePath = path.relative(resolved.rootPath, childPath).replace(/\\/g, '/');
+      const childRelativePath = path.relative(resolved.rootPath, childPath).replace(/\\/g, "/");
       return {
         name: entry.name,
         path: childPath,
         relativePath: childRelativePath,
-        kind: entry.isDirectory() ? 'directory' : 'file',
+        kind: entry.isDirectory() ? "directory" : "file",
         size: childStats.size,
         extension: path.extname(entry.name).toLowerCase(),
-        hidden: entry.name.startsWith('.'),
+        hidden: entry.name.startsWith("."),
       };
     })
     .sort((left, right) => {
       if (left.kind !== right.kind) {
-        return left.kind === 'directory' ? -1 : 1;
+        return left.kind === "directory" ? -1 : 1;
       }
       return left.name.localeCompare(right.name);
     });
@@ -979,7 +979,7 @@ function listProjectFiles(projectPath, relativePath = '') {
 
 async function searchProjectFiles(projectPath, query, options = {}) {
   const rootPath = resolveCanonicalProjectRoot(projectPath);
-  const normalizedQuery = typeof query === 'string' ? query.trim() : '';
+  const normalizedQuery = typeof query === "string" ? query.trim() : "";
   const limit = Math.max(1, Math.min(500, Number.isFinite(options.limit) ? Math.floor(options.limit) : 200));
   if (!normalizedQuery) return { rootPath, query: normalizedQuery, entries: [], truncated: false };
 
@@ -1016,49 +1016,49 @@ async function searchProjectFiles(projectPath, query, options = {}) {
 }
 
 function createProjectEntry(projectPath, parentRelativePath, name, kind) {
-  const normalizedKind = kind === 'directory' ? 'directory' : 'file';
+  const normalizedKind = kind === "directory" ? "directory" : "file";
   try {
     const parent = resolveCanonicalProjectParent(projectPath, parentRelativePath);
     const normalizedName = validateProjectEntryName(name);
     const targetPath = path.join(parent.parentPath, normalizedName);
-    if (normalizedKind === 'directory') {
+    if (normalizedKind === "directory") {
       fs.mkdirSync(targetPath, { recursive: false });
     } else {
-      fs.writeFileSync(targetPath, '', { flag: 'wx' });
+      fs.writeFileSync(targetPath, "", { flag: "wx" });
     }
     return {
       ok: true,
       kind: normalizedKind,
       path: targetPath,
-      relativePath: path.relative(parent.rootPath, targetPath).replace(/\\/g, '/'),
+      relativePath: path.relative(parent.rootPath, targetPath).replace(/\\/g, "/"),
     };
   } catch (error) {
-    return { ok: false, kind: normalizedKind, path: '', relativePath: '', message: error?.message || String(error) };
+    return { ok: false, kind: normalizedKind, path: "", relativePath: "", message: error?.message || String(error) };
   }
 }
 
 function renameProjectEntry(projectPath, relativePath, name) {
-  let kind = 'file';
+  let kind = "file";
   try {
     const source = resolveCanonicalProjectEntry(projectPath, relativePath);
     const sourceStats = fs.statSync(source.targetPath);
-    kind = sourceStats.isDirectory() ? 'directory' : 'file';
+    kind = sourceStats.isDirectory() ? "directory" : "file";
     const normalizedName = validateProjectEntryName(name);
     const targetPath = path.join(path.dirname(source.targetPath), normalizedName);
-    if (fs.existsSync(targetPath)) throw new Error('同名文件或目录已存在。');
+    if (fs.existsSync(targetPath)) throw new Error("同名文件或目录已存在。");
     fs.renameSync(source.targetPath, targetPath);
     return {
       ok: true,
       kind,
       path: targetPath,
-      relativePath: path.relative(source.rootPath, targetPath).replace(/\\/g, '/'),
+      relativePath: path.relative(source.rootPath, targetPath).replace(/\\/g, "/"),
       previousRelativePath: source.relativePath,
     };
   } catch (error) {
     return {
       ok: false,
       kind,
-      path: '',
+      path: "",
       relativePath,
       previousRelativePath: relativePath,
       message: error?.message || String(error),
@@ -1067,15 +1067,15 @@ function renameProjectEntry(projectPath, relativePath, name) {
 }
 
 function deleteProjectEntry(projectPath, relativePath) {
-  let kind = 'file';
+  let kind = "file";
   try {
     const resolved = resolveCanonicalProjectEntry(projectPath, relativePath);
     const stats = fs.statSync(resolved.targetPath);
-    kind = stats.isDirectory() ? 'directory' : 'file';
-    fs.rmSync(resolved.targetPath, { recursive: kind === 'directory', force: false });
+    kind = stats.isDirectory() ? "directory" : "file";
+    fs.rmSync(resolved.targetPath, { recursive: kind === "directory", force: false });
     return { ok: true, kind, path: resolved.targetPath, relativePath: resolved.relativePath };
   } catch (error) {
-    return { ok: false, kind, path: '', relativePath, message: error?.message || String(error) };
+    return { ok: false, kind, path: "", relativePath, message: error?.message || String(error) };
   }
 }
 
@@ -1084,14 +1084,201 @@ function showProjectEntryInFolder(projectPath, relativePath) {
   shell.showItemInFolder(resolved.targetPath);
 }
 
+function runFileApplicationCommand(executable, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(executable, args, { windowsHide: true, encoding: "utf8", ...options }, (error, stdout) => {
+      if (error) reject(new Error(`无法获取或打开关联应用：${error.message}`));
+      else resolve(stdout || "");
+    });
+  });
+}
+
+function windowsFileApplicationArgs(targetPath, applicationId) {
+  const source = fs.readFileSync(path.join(preloadModuleRoot, "open-with-windows.ps1"), "utf8");
+  const quoteArgument = (value) => `'${String(value).replace(/'/g, "''")}'`;
+  const command = `& {\n${source}\n} ${quoteArgument(targetPath)} ${quoteArgument(applicationId || "")}`;
+  return [
+    "-NoProfile",
+    "-NonInteractive",
+    "-STA",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-EncodedCommand",
+    Buffer.from(command, "utf16le").toString("base64"),
+  ];
+}
+
+async function listFileApplications(targetPath) {
+  if (process.platform === "win32") {
+    const output = await runFileApplicationCommand("powershell.exe", windowsFileApplicationArgs(targetPath), {
+      timeout: 15000,
+    });
+    return JSON.parse(output.trim() || "[]");
+  }
+  if (process.platform === "darwin") {
+    const script = `
+      ObjC.import('AppKit');
+      ObjC.import('CoreServices');
+      function run(argv) {
+        var urls = $.LSCopyApplicationURLsForURL($.NSURL.fileURLWithPath(argv[0]), 0xffffffff);
+        var applications = [];
+        if (!urls || urls.isNil()) return '[]';
+        for (var index = 0; index < urls.count; index++) {
+          var appPath = ObjC.unwrap(urls.objectAtIndex(index).path);
+          var name = ObjC.unwrap($.NSFileManager.defaultManager.displayNameAtPath(appPath));
+          applications.push({ id: appPath, name: name.replace(/\\.app$/, ''), iconPath: appPath });
+        }
+        return JSON.stringify(applications);
+      }`;
+    const output = await runFileApplicationCommand(
+      "/usr/bin/osascript",
+      ["-l", "JavaScript", "-e", script, targetPath],
+      { timeout: 15000 },
+    );
+    return JSON.parse(output.trim() || "[]");
+  }
+  if (process.platform === "linux") {
+    const options = { timeout: 10000, env: { ...process.env, LC_ALL: "C" } };
+    const info = await runFileApplicationCommand(
+      "gio",
+      ["info", "-a", "standard::content-type", "--", targetPath],
+      options,
+    );
+    const mime = /^\s*standard::content-type:\s*(\S+)/m.exec(info)?.[1];
+    if (!mime) throw new Error("无法识别文件类型。");
+    const output = await runFileApplicationCommand("gio", ["mime", mime], options);
+    const dataDirectories = [
+      process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"),
+      ...(process.env.XDG_DATA_DIRS || "/usr/local/share:/usr/share").split(":"),
+    ];
+    const applications = [];
+    for (const id of new Set([...output.matchAll(/^\s+([^\r\n]+\.desktop)\s*$/gm)].map((match) => match[1].trim()))) {
+      if (path.basename(id) !== id) continue;
+      const desktopPath = dataDirectories.map((directory) => path.join(directory, "applications", id)).find(fileExists);
+      if (!desktopPath) continue;
+      const section =
+        fs
+          .readFileSync(desktopPath, "utf8")
+          .split(/^\[/m)
+          .find((section) => section.startsWith("Desktop Entry]")) || "";
+      const entries = Object.fromEntries(
+        section.split(/\r?\n/).flatMap((line) => {
+          const match = /^([^#=]+)=(.*)$/.exec(line);
+          return match ? [[match[1], match[2]]] : [];
+        }),
+      );
+      if (entries.Hidden === "true" || entries.Type !== "Application" || !entries.Name) continue;
+      const locale = (process.env.LC_MESSAGES || process.env.LANG || "").split(".")[0];
+      applications.push({ id: desktopPath, name: entries[`Name[${locale}]`] || entries.Name, iconPath: desktopPath });
+    }
+    return applications;
+  }
+  return [];
+}
+
+const windowsFileApplicationCache = new Map();
+
+async function readFileApplicationsWithIcons(targetPath) {
+  const applications = await listFileApplications(targetPath);
+  const seen = new Set();
+  const uniqueApplications = [];
+  for (const application of applications) {
+    if (!application?.id || !application.name || seen.has(application.id)) continue;
+    seen.add(application.id);
+    uniqueApplications.push(application);
+  }
+  return Promise.all(
+    uniqueApplications.map(async (application) => {
+      let icon;
+      try {
+        icon = await window.utools?.getFileIconAsync?.(application.iconPath);
+      } catch {}
+      return { id: application.id, name: application.name, ...(icon ? { icon } : {}) };
+    }),
+  );
+}
+
+async function listProjectFileApplications(projectPath, relativePath) {
+  const { targetPath } = resolveCanonicalProjectEntry(projectPath, relativePath);
+  if (!fs.statSync(targetPath).isFile()) throw new Error("请选择文件。");
+  if (process.platform !== "win32") return readFileApplicationsWithIcons(targetPath);
+
+  const extension = path.extname(targetPath).toLowerCase();
+  const cached = windowsFileApplicationCache.get(extension);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+  const entry = { expiresAt: Date.now() + 60000, promise: readFileApplicationsWithIcons(targetPath) };
+  windowsFileApplicationCache.delete(extension);
+  if (windowsFileApplicationCache.size >= 32) {
+    windowsFileApplicationCache.delete(windowsFileApplicationCache.keys().next().value);
+  }
+  windowsFileApplicationCache.set(extension, entry);
+  try {
+    return await entry.promise;
+  } catch (error) {
+    if (windowsFileApplicationCache.get(extension) === entry) windowsFileApplicationCache.delete(extension);
+    throw error;
+  }
+}
+
+async function openProjectFileWith(projectPath, relativePath, applicationId) {
+  const { targetPath } = resolveCanonicalProjectEntry(projectPath, relativePath);
+  if (!fs.statSync(targetPath).isFile()) throw new Error("请选择文件。");
+
+  if (applicationId) {
+    if (process.platform === "win32") {
+      await runFileApplicationCommand("powershell.exe", windowsFileApplicationArgs(targetPath, applicationId));
+      return;
+    }
+    const applications = await listFileApplications(targetPath);
+    const application = applications.find((item) => item.id === applicationId);
+    if (!application) throw new Error("所选应用已不可用，请重新选择。");
+    await runFileApplicationCommand(
+      process.platform === "darwin" ? "/usr/bin/open" : "gio",
+      process.platform === "darwin" ? ["-a", application.id, targetPath] : ["launch", application.id, targetPath],
+    );
+    return;
+  }
+
+  let executable;
+  let args;
+  if (process.platform === "win32") {
+    executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "rundll32.exe");
+    args = ["shell32.dll,OpenAs_RunDLL", targetPath];
+  } else if (process.platform === "darwin" || process.platform === "linux") {
+    const isMac = process.platform === "darwin";
+    const application = window.utools.showOpenDialog({
+      title: isMac ? "选择用于打开文件的应用" : "选择应用启动器（.desktop）",
+      defaultPath: isMac ? "/Applications" : "/usr/share/applications",
+      filters: [{ name: "Applications", extensions: [isMac ? "app" : "desktop"] }],
+      properties: ["openFile"],
+    })?.[0];
+    if (!application) return;
+    const validApplication = isMac
+      ? directoryExists(application) && path.extname(application) === ".app"
+      : fileExists(application) && path.extname(application) === ".desktop";
+    if (!validApplication) throw new Error("请选择有效的应用。");
+    executable = isMac ? "/usr/bin/open" : "gio";
+    args = isMac ? ["-a", application, targetPath] : ["launch", application, targetPath];
+  } else {
+    throw new Error("当前系统不支持选择打开方式。");
+  }
+
+  await new Promise((resolve, reject) => {
+    execFile(executable, args, { windowsHide: true }, (error) => {
+      if (error) reject(new Error(`无法使用所选应用打开文件：${error.message}`));
+      else resolve();
+    });
+  });
+}
+
 function getMime(extension) {
-  if (extension === '.svg') return 'image/svg+xml';
-  if (extension === '.png') return 'image/png';
-  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
-  if (extension === '.gif') return 'image/gif';
-  if (extension === '.webp') return 'image/webp';
-  if (extension === '.bmp') return 'image/bmp';
-  return textFileExtensions.has(extension) ? 'text/plain' : 'application/octet-stream';
+  if (extension === ".svg") return "image/svg+xml";
+  if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".gif") return "image/gif";
+  if (extension === ".webp") return "image/webp";
+  if (extension === ".bmp") return "image/bmp";
+  return textFileExtensions.has(extension) ? "text/plain" : "application/octet-stream";
 }
 
 function isKnownTextFileName(fileName) {
@@ -1105,9 +1292,9 @@ function isLikelyTextBuffer(buffer) {
     if (buffer[index] === 0) return false;
   }
 
-  const decoded = buffer.toString('utf8');
+  const decoded = buffer.toString("utf8");
   for (const char of decoded) {
-    if (char === '\uFFFD') {
+    if (char === "\uFFFD") {
       replacementCount += 1;
     }
   }
@@ -1129,9 +1316,9 @@ function readProjectFile(projectPath, relativePath) {
       size: stats.size,
       extension,
       mime,
-      previewKind: 'none',
+      previewKind: "none",
       editable: false,
-      message: '请选择文件预览。',
+      message: "请选择文件预览。",
     };
   }
 
@@ -1143,9 +1330,9 @@ function readProjectFile(projectPath, relativePath) {
       size: stats.size,
       extension,
       mime,
-      previewKind: 'image',
+      previewKind: "image",
       editable: false,
-      dataUrl: `data:${mime};base64,${fs.readFileSync(resolved.targetPath).toString('base64')}`,
+      dataUrl: `data:${mime};base64,${fs.readFileSync(resolved.targetPath).toString("base64")}`,
     };
   }
 
@@ -1161,9 +1348,9 @@ function readProjectFile(projectPath, relativePath) {
         size: stats.size,
         extension,
         mime,
-        previewKind: 'none',
+        previewKind: "none",
         editable: false,
-        message: '文件过大，已跳过轻量预览。',
+        message: "文件过大，已跳过轻量预览。",
       };
     }
     return {
@@ -1173,9 +1360,9 @@ function readProjectFile(projectPath, relativePath) {
       size: stats.size,
       extension,
       mime,
-      previewKind: 'text',
+      previewKind: "text",
       editable: true,
-      content: fs.readFileSync(resolved.targetPath, 'utf8'),
+      content: fs.readFileSync(resolved.targetPath, "utf8"),
     };
   }
 
@@ -1186,9 +1373,9 @@ function readProjectFile(projectPath, relativePath) {
     size: stats.size,
     extension,
     mime,
-    previewKind: 'none',
+    previewKind: "none",
     editable: false,
-    message: '此文件类型暂不支持轻量预览。',
+    message: "此文件类型暂不支持轻量预览。",
   };
 }
 
@@ -1196,8 +1383,8 @@ function writeProjectFile(projectPath, relativePath, content) {
   const resolved = resolveCanonicalProjectEntry(projectPath, relativePath);
   const stats = fs.statSync(resolved.targetPath);
   if (!stats.isFile()) {
-    throw new Error('只能保存文件。');
+    throw new Error("只能保存文件。");
   }
-  fs.writeFileSync(resolved.targetPath, String(content), 'utf8');
+  fs.writeFileSync(resolved.targetPath, String(content), "utf8");
   return { path: resolved.targetPath, relativePath: resolved.relativePath, savedAt: new Date().toISOString() };
 }

@@ -1446,6 +1446,12 @@ export interface ProjectBridgeGitWorkspaceSnapshot extends ProjectGitWorkspaceSn
 
 export type ProjectFileKind = "file" | "directory";
 
+export interface ProjectFileApplication {
+  id: string;
+  name: string;
+  icon?: string;
+}
+
 export interface ProjectFileTreeEntry {
   name: string;
   path: string;
@@ -1822,7 +1828,9 @@ export interface ProjectBridge {
   listRuntimeRecords(projectId: string): Promise<RuntimeRecord[]>;
   readRuntimeRecordLogPage(runId: string, beforeOffset: number): Promise<RuntimeRecordLog>;
   getRuntimeRecordRetention(): Promise<ProjectLaunchServiceLogRetentionStatus>;
-  updateRuntimeRecordRetention(policy: ProjectLaunchServiceLogRetentionPolicy): Promise<ProjectLaunchServiceLogRetentionStatus>;
+  updateRuntimeRecordRetention(
+    policy: ProjectLaunchServiceLogRetentionPolicy,
+  ): Promise<ProjectLaunchServiceLogRetentionStatus>;
   clearRuntimeRecords(scope?: ProjectLaunchServiceLogClearScope): Promise<ProjectLaunchServiceLogClearResult>;
   appendRuntimeOperationLog(projectId: string, log: LogEntry, scriptId?: string): LocalStateWriteResult;
   loadRuntimeAutomationState(projectId: string): RuntimeAutomationTaskState[];
@@ -1995,6 +2003,8 @@ export interface ProjectBridge {
   renameProjectEntry(projectPath: string, relativePath: string, name: string): Promise<ProjectFileMutationResult>;
   deleteProjectEntry(projectPath: string, relativePath: string): Promise<ProjectFileMutationResult>;
   showProjectEntryInFolder(projectPath: string, relativePath: string): Promise<void>;
+  listProjectFileApplications(projectPath: string, relativePath: string): Promise<ProjectFileApplication[]>;
+  openProjectFileWith(projectPath: string, relativePath: string, applicationId?: string): Promise<void>;
   readProjectFile(projectPath: string, relativePath: string): Promise<ProjectFileReadResult>;
   writeProjectFile(projectPath: string, relativePath: string, content: string): Promise<ProjectFileWriteResult>;
   openTerminal(payload: ProjectBridgeTerminalLaunchPayload): Promise<ProjectBridgeTerminalLaunchResult>;
