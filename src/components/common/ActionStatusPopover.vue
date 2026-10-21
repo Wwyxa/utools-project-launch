@@ -225,7 +225,7 @@ watch(
 </script>
 
 <template>
-  <Transition name="fade" appear>
+  <Transition name="fade">
     <button
       ref="triggerRef"
       v-bind="$attrs"

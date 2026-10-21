@@ -1,6 +1,9 @@
 import { validateAutomationSchedule } from "../../lib/automationScheduler";
+import { scheduleAfterInitialPaint } from "../../lib/visualFeedback";
 import type { LogEntry, ProjectAutomationDailyPlan, ProjectAutomationExitConfig, ProjectAutomationHistoryEntry, ProjectAutomationInputStep, ProjectAutomationMissedPolicy, ProjectAutomationPlanEntry, ProjectAutomationSchedule, ProjectAutomationScriptInputConfig, ProjectAutomationScriptResult, ProjectAutomationTask, ProjectBridgeEvent, ProjectBridgeProcessEvent, ProjectBridgeProcessStatusResult, ProjectBridgeStopProcessOptions, ProjectLaunchServiceRunLog } from "../../types";
 import { bridge } from "./bridge";
+
+export { scheduleAfterInitialPaint, waitForInitialPaint } from "../../lib/visualFeedback";
 
 export const defaultAutomationSchedule = (): ProjectAutomationSchedule => ({
   type: "fixed",
@@ -258,17 +261,6 @@ export function normalizeAutomationTasks(projectId: string, value: unknown): Pro
 
 export const LIVE_PROJECT_LOG_ENTRY_LIMIT = 2_000;
 
-export const waitForInitialPaint = (): Promise<void> => {
-  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => {
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => resolve());
-    });
-  });
-};
-
 export const ansiControlPattern =
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
@@ -457,14 +449,16 @@ export function createLogEntry(message: string, type: LogEntry["type"], eventTim
 }
 
 
-export function scheduleProcessStop(pid: number, options?: ProjectBridgeStopProcessOptions) {
+export function scheduleProcessStop(pid: number, options?: ProjectBridgeStopProcessOptions, waitForPaint = true) {
   if (options?.automationExitMatched === true) {
     void bridge.stopProcess(pid, options).catch(() => undefined);
     return;
   }
-  window.setTimeout(() => {
+  const stop = () => {
     void bridge.stopProcess(pid, options).catch(() => undefined);
-  }, 0);
+  };
+  if (waitForPaint) scheduleAfterInitialPaint(stop);
+  else window.setTimeout(stop, 0);
 }
 
 

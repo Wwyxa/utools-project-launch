@@ -45,6 +45,7 @@ import FileTreeNode, { type InlineTreeEdit, type TreeNode } from "./FileTreeNode
 import FileIcon from "../common/FileIcon.vue";
 import ActionDialog from "../common/ActionDialog.vue";
 import { showActionStatus } from "../common/actionStatus";
+import { waitForVisualFeedback } from "../../lib/visualFeedback";
 
 type SearchMatch = { start: number; end: number };
 type MarkdownAssetState = { status: "loading" | "failed" | "ready"; dataUrl?: string };
@@ -1028,12 +1029,14 @@ const requestDelete = async (node: TreeNode) => {
 const confirmDelete = async () => {
   const target = deleteTarget.value;
   if (!target || isActionRunning.value) return;
+  const projectId = props.project.id;
   isActionRunning.value = true;
   actionDialog.value = null;
   deleteTarget.value = null;
   showActionStatus({ state: "loading", message: t.value.files.processing });
   try {
-    const result = await store.deleteProjectEntry(props.project.id, target.relativePath);
+    await waitForVisualFeedback();
+    const result = await store.deleteProjectEntry(projectId, target.relativePath);
     if (!result?.ok) {
       actionDialogError.value = result?.message || t.value.files.operationFailed;
       statusMessage.value = actionDialogError.value;
@@ -1268,6 +1271,7 @@ const saveAndContinue = async () => {
   if (isActionRunning.value) return;
   isActionRunning.value = true;
   try {
+    await waitForVisualFeedback();
     if (await saveFile()) await runContinuation();
     else actionDialogError.value = statusMessage.value || t.value.files.operationFailed;
   } finally {
@@ -1277,9 +1281,16 @@ const saveAndContinue = async () => {
 
 const discardAndContinue = async () => {
   if (isActionRunning.value) return;
-  draftContent.value = selectedFile.value?.content || "";
-  isEditing.value = false;
-  await runContinuation();
+  isActionRunning.value = true;
+  actionDialog.value = null;
+  try {
+    await waitForVisualFeedback();
+    draftContent.value = selectedFile.value?.content || "";
+    isEditing.value = false;
+    await runContinuation();
+  } finally {
+    isActionRunning.value = false;
+  }
 };
 
 const enterEdit = () => {

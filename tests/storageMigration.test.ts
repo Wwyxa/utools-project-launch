@@ -418,6 +418,8 @@ describe("settings data cleanup", () => {
         "../../store/useStore": { useStore: () => store },
         "../../lib/i18n": { useI18n: () => ref(translations["zh-CN"]) },
         "../../store/helpers/automationHelpers": { waitForInitialPaint: () => paint },
+        "../../lib/visualFeedback": { waitForVisualFeedback: () => Promise.resolve() },
+        "../common/actionStatus": { showActionStatus: vi.fn() },
       },
       { window: { navigator: { platform: "Win32" } } },
       "export const probe = { store, t, cleanupDialogOpen, cleanupScanning, cleanupConfirmOpen, cleanupSelection, cleanupRunnable, cleanupItems, openCleanupDialog, requestCleanupRun, runSelectedCleanup, formatDataSize };",
@@ -544,13 +546,15 @@ describe("settings data cleanup", () => {
     await fixture.probe.openCleanupDialog();
     fixture.probe.requestCleanupRun();
     expect(fixture.store.cleanupSelectedIds).toEqual(["cache-temp-directory"]);
-    expect(fixture.store.runCleanup).toHaveBeenCalledOnce();
+    expect(fixture.store.runCleanup).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(fixture.store.runCleanup).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(fixture.probe.cleanupRunnable.value).toBe(true));
     fixture.store.runCleanup.mockClear();
     fixture.probe.cleanupSelection.value["sync-legacy-dbstorage"] = true;
     fixture.probe.requestCleanupRun();
     expect(fixture.probe.cleanupConfirmOpen.value).toBe(true);
     expect(fixture.store.runCleanup).not.toHaveBeenCalled();
-    fixture.probe.runSelectedCleanup();
+    await fixture.probe.runSelectedCleanup();
     expect(fixture.store.cleanupSelectedIds).toEqual(["sync-legacy-dbstorage", "cache-temp-directory"]);
     expect(fixture.store.runCleanup).toHaveBeenCalledOnce();
   });
@@ -1004,6 +1008,7 @@ describe("late legacy data prompt", () => {
         "./lib/i18n": { useI18n: () => ref({ common: { search: "Search" } }) },
         "./composables/useGlobalActionStatus": { useGlobalActionStatus: () => ({}) },
         "./lib/projectBridge": { getProjectBridge: () => ({ preflightStartup }) },
+        "./lib/visualFeedback": { waitForVisualFeedback: () => Promise.resolve() },
       },
       {
         console,

@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import {
   Play,
   Square,
+  LoaderCircle,
   AlertTriangle,
   FolderOpen,
   Pencil,
@@ -802,6 +803,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
             type="button"
             @click.stop="handleScriptToggle($event, script.id, script.status)"
             :disabled="isUnavailable || script.status === 'STOPPING'"
+            :aria-busy="script.status === 'STOPPING'"
             :class="
               cn(
                 'inline-flex shrink-0 items-center justify-center h-6 w-6 rounded transition-colors',
@@ -812,10 +814,11 @@ const updateTinyToolbarAlignment = (event: Event) => {
                     : 'text-on-surface-variant/60 dark:text-on-surface-variant hover:text-status-running hover:bg-on-surface/5 dark:hover:bg-surface-container-high',
               )
             "
-            :title="`${script.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript}: ${script.name}`"
-            :aria-label="`${script.status === 'RUNNING' ? t.scripts.stopScript : t.scripts.startScript}: ${script.name}`"
+            :title="`${script.status === 'RUNNING' ? t.scripts.stopScript : script.status === 'STOPPING' ? t.common.stopping : t.scripts.startScript}: ${script.name}`"
+            :aria-label="`${script.status === 'RUNNING' ? t.scripts.stopScript : script.status === 'STOPPING' ? t.common.stopping : t.scripts.startScript}: ${script.name}`"
           >
-            <Square v-if="script.status === 'RUNNING' || script.status === 'STOPPING'" :size="13" fill="currentColor" />
+            <LoaderCircle v-if="script.status === 'STOPPING'" :size="13" class="animate-spin" />
+            <Square v-else-if="script.status === 'RUNNING'" :size="13" fill="currentColor" />
             <Play v-else :size="13" fill="currentColor" />
           </button>
         </template>
@@ -1029,6 +1032,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           :aria-label="`${script.status === 'RUNNING' ? t.scripts.stopScript : script.status === 'STOPPING' ? t.common.stopping : t.scripts.startScript}: ${script.name}`"
           @click="handleScriptToggle($event, script.id, script.status)"
           :disabled="isUnavailable || script.status === 'STOPPING'"
+          :aria-busy="script.status === 'STOPPING'"
           :class="
             cn(
               'inline-flex h-6 flex-none min-w-max items-center gap-1.5 whitespace-nowrap text-[11px] font-medium px-2 rounded border transition-colors disabled:opacity-50',
@@ -1040,8 +1044,9 @@ const updateTinyToolbarAlignment = (event: Event) => {
             )
           "
         >
+          <LoaderCircle v-if="script.status === 'STOPPING'" :size="10" class="shrink-0 animate-spin" />
           <Square
-            v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
+            v-else-if="script.status === 'RUNNING'"
             :size="10"
             class="shrink-0"
             fill="currentColor"
@@ -1107,6 +1112,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
                   type="button"
                   @click="handleScriptToggle($event, script.id, script.status)"
                   :disabled="isUnavailable || script.status === 'STOPPING'"
+                  :aria-busy="script.status === 'STOPPING'"
                   :class="
                     cn(
                       'inline-flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded border px-2 text-left text-[11px] font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
@@ -1127,10 +1133,11 @@ const updateTinyToolbarAlignment = (event: Event) => {
                   "
                   role="menuitem"
                 >
+                  <LoaderCircle v-if="script.status === 'STOPPING'" :size="10" class="shrink-0 animate-spin" />
                   <Square
-                    v-if="script.status === 'RUNNING' || script.status === 'STOPPING'"
+                    v-else-if="script.status === 'RUNNING'"
                     :size="10"
-                    :class="script.status === 'STOPPING' ? 'shrink-0 text-status-warning' : 'shrink-0 text-status-running'"
+                    class="shrink-0 text-status-running"
                     fill="currentColor"
                   />
                   <Play v-else :size="11" class="shrink-0" fill="currentColor" />

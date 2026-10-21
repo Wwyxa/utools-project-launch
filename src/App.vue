@@ -13,6 +13,8 @@ import WorkActivity from "./components/activity/WorkActivity.vue";
 import { useI18n } from "./lib/i18n";
 import { requestAppEscape } from "./lib/escape";
 import { getProjectBridge } from "./lib/projectBridge";
+import { waitForVisualFeedback } from "./lib/visualFeedback";
+import { showActionStatus } from "./components/common/actionStatus";
 import type { ProjectBridgeEvent } from "./types";
 
 const store = useStore();
@@ -24,6 +26,8 @@ const theme = computed(() => store.theme);
 const { globalActionStatus, isGlobalActionStatusExpanded } = useGlobalActionStatus(store);
 const pluginSearchQuery = ref("");
 const migrationPromptOpen = ref(false);
+const migrationResuming = ref(false);
+const projectDeleting = ref(false);
 const migrationPromptMessage = ref("");
 let migrationPromptShown = false;
 let pluginOutHookRegistered = false;
@@ -53,12 +57,36 @@ const handleDatabasePull = () => {
 };
 
 const resumeStorageMigration = async () => {
-  const result = await store.retryStorageMigration();
-  if (result?.ok) {
-    migrationPromptOpen.value = false;
-    migrationPromptShown = false;
-  } else if (store.cleanupMessage) {
-    migrationPromptMessage.value = store.cleanupMessage;
+  if (migrationResuming.value || store.dataToolsBusy) return;
+  migrationResuming.value = true;
+  try {
+    await waitForVisualFeedback();
+    const result = await store.retryStorageMigration();
+    if (result?.ok) {
+      migrationPromptOpen.value = false;
+      migrationPromptShown = false;
+    } else if (store.cleanupMessage) {
+      migrationPromptMessage.value = store.cleanupMessage;
+    }
+  } finally {
+    migrationResuming.value = false;
+  }
+};
+
+const confirmProjectDeletion = async () => {
+  if (projectDeleting.value || !store.pendingDeleteProjectId) return;
+  projectDeleting.value = true;
+  showActionStatus({ state: "loading", message: storeMessages.value.common.processing });
+  try {
+    const deleted = await store.confirmDeleteProject();
+    showActionStatus({
+      state: deleted && !store.projectStorageMessage ? "success" : "error",
+      message: store.projectStorageMessage || (deleted ? storeMessages.value.common.completed : storeMessages.value.common.error),
+    });
+  } catch (error) {
+    showActionStatus({ state: "error", message: error instanceof Error ? error.message : storeMessages.value.common.error });
+  } finally {
+    projectDeleting.value = false;
   }
 };
 
@@ -345,7 +373,7 @@ onUnmounted(() => {
       :message="migrationPromptMessage"
       :primary-label="storeMessages.settings.migrationRetry"
       :cancel-label="storeMessages.common.cancel"
-      :busy="store.dataToolsBusy"
+      :busy="store.dataToolsBusy || migrationResuming"
       :busy-label="storeMessages.settings.cleanupRunning"
       @cancel="migrationPromptOpen = false"
       @primary="resumeStorageMigration"
@@ -364,7 +392,8 @@ onUnmounted(() => {
       :primary-label="storeMessages.common.delete"
       :cancel-label="storeMessages.common.cancel"
       @cancel="store.cancelDeleteProject"
-      @primary="store.confirmDeleteProject"
+      :busy="projectDeleting"
+      @primary="confirmProjectDeletion"
     />
   </div>
 </template>

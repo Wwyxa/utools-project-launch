@@ -1,7 +1,7 @@
 import { deriveProjectStatus } from "../../lib/projectRuntimeState";
 import type { ProjectBridgeRunResult, ProjectBridgeStopProcessOptions } from "../../types";
 import type { AppStore } from "../appStoreShape";
-import { clearPendingRuntimeTerminalEvents, createLogEntry, pendingRuntimeTerminalEventKey, pendingRuntimeTerminalEvents, rememberRuntimeRun, scheduleProcessStop } from "../helpers/automationHelpers";
+import { clearPendingRuntimeTerminalEvents, createLogEntry, pendingRuntimeTerminalEventKey, pendingRuntimeTerminalEvents, rememberRuntimeRun, scheduleAfterInitialPaint, scheduleProcessStop } from "../helpers/automationHelpers";
 import { bridge } from "../helpers/bridge";
 import { resolveProjectEnvironment, resolveScriptCwd } from "../helpers/projectHelpers";
 import { serviceOwnershipState } from "../helpers/serviceAutomationState";
@@ -291,14 +291,19 @@ export const scriptRuntimeActions = {
       const hasServiceRunIdentity = script.runtimeOwner === "service" && Boolean(script.runId);
       const isServiceLaunchPending =
         this.projectLaunchServicePreferences.enabled && !script.runtimeOwner && !script.runId;
-      this.addLog(projectId, createLogEntry(`[${script.name}] stop requested`, "WARN"), scriptId);
+      const stopRequestedLog = createLogEntry(`[${script.name}] stop requested`, "WARN");
       script.status = pid || hasServiceRunIdentity || isServiceLaunchPending ? "STOPPING" : "STOPPED";
       project.status = deriveProjectStatus(project);
       project.lastUpdated = new Date().toLocaleString();
-      void this.persistProjects();
 
       const runId = stopOptions?.runId || script.runId;
       const runtimeOwner = stopOptions?.runtimeOwner || script.runtimeOwner;
+      scheduleAfterInitialPaint(() => {
+        this.addLog(projectId, stopRequestedLog, scriptId, false);
+        if (!pid && !(runtimeOwner === "service" && runId) && !isServiceLaunchPending) {
+          this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "SUCCESS"), scriptId, false);
+        }
+      });
       if (pid || (runtimeOwner === "service" && runId)) {
         if (stopOptions || runId !== undefined || runtimeOwner !== undefined) {
           scheduleProcessStop(pid || 0, {
@@ -309,8 +314,6 @@ export const scriptRuntimeActions = {
         } else {
           scheduleProcessStop(pid || 0);
         }
-      } else {
-        this.addLog(projectId, createLogEntry(`[${script.name}] stopped`, "SUCCESS"), scriptId);
       }
     },
 
@@ -327,7 +330,7 @@ export const scriptRuntimeActions = {
             scheduleProcessStop(pid || 0, {
               ...(script.runId === undefined ? {} : { runId: script.runId }),
               ...(script.runtimeOwner === undefined ? {} : { runtimeOwner: script.runtimeOwner }),
-            });
+            }, false);
             script.status = "STOPPING";
           } else {
             script.status = "STOPPED";

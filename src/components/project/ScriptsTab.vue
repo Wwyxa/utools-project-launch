@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Play, Square, TerminalSquare, GripVertical } from "lucide-vue-next";
+import { Play, Square, TerminalSquare, GripVertical, LoaderCircle } from "lucide-vue-next";
 import { Project } from "../../types";
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
@@ -184,9 +184,10 @@ const clearScriptDrag = () => {
                 v-else-if="script.status === 'STOPPING'"
                 type="button"
                 disabled
+                aria-busy="true"
                 class="border border-status-warning/30 bg-status-warning/10 text-status-warning text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 cursor-wait"
               >
-                <Square :size="12" fill="currentColor" /> {{ t.common.stopping }}
+                <LoaderCircle :size="12" class="animate-spin" /> {{ t.common.stopping }}
               </button>
               <button
                 v-else

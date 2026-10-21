@@ -5,6 +5,7 @@ import { useStore } from "../../store/useStore";
 import type { BackupEntry, BackupRestoreOptions, BackupSummary } from "../../types";
 import ActionDialog from "../common/ActionDialog.vue";
 import { showActionStatus } from "../common/actionStatus";
+import { waitForVisualFeedback } from "../../lib/visualFeedback";
 
 const store = useStore();
 const entries = ref<BackupEntry[]>([]);
@@ -91,8 +92,14 @@ async function prepare(entry?: BackupEntry) {
 }
 
 async function restore() {
+  if (busy.value) return;
+  const restoreOptions = { ...options.value };
+  restoreConfirm.value = false;
+  restoreDialogOpen.value = false;
   await run(async () => {
-    const result = await store.restoreBackup({ ...options.value });
+    showActionStatus({ state: "loading", message: "正在导入备份..." });
+    await waitForVisualFeedback();
+    const result = await store.restoreBackup(restoreOptions);
     preview.value = null;
     restoreConfirm.value = false;
     restoreDialogOpen.value = false;
@@ -104,8 +111,11 @@ async function restore() {
 
 async function remove() {
   const entry = pendingDelete.value;
-  if (!entry) return;
+  if (!entry || busy.value) return;
+  pendingDelete.value = null;
   await run(async () => {
+    showActionStatus({ state: "loading", message: "正在删除备份..." });
+    await waitForVisualFeedback();
     await store.deleteBackup(entry.id);
     pendingDelete.value = null;
     await refreshList();

@@ -38,7 +38,12 @@ Normalize values at the boundary and skip unchanged writes.
   Derive project status with `deriveProjectStatus`: active scripts outrank failed
   siblings. Missing paths clear invalid runtime state.
 - Show stop requests immediately while keeping final settlement tied to process
-  results. Service-owned runs can be controlled by identity before a PID exists.
+  results. Set `STOPPING` before logging; defer normal stop logging and host calls
+  with `scheduleAfterInitialPaint` without awaiting other scripts' stop requests.
+  Stop-request logs use `addLog(..., false)`; runtime changes must not persist the
+  catalog or resynchronize service configuration. Plugin-exit cleanup bypasses
+  paint waiting; output-matched automation stops immediately. Service-owned runs
+  can be controlled by identity before a PID exists.
   See [Error Handling](../backend/error-handling.md) for shutdown semantics.
 - Live project/script logs share the indexing and retention contract in
   [Logging Guidelines](../backend/logging-guidelines.md).

@@ -12,6 +12,7 @@ const commitDraftsByContext = new Map<string, string>();
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { waitForVisualFeedback } from "../../lib/visualFeedback";
 import {
   ArrowDown,
   ArrowUp,
@@ -1457,11 +1458,6 @@ const setGitActionResult = (
 
 const isDirtyGitWriteBlock = (result: ProjectGitActionResult, options: { force?: boolean }) =>
   !options.force && !result.ok && result.blockReason === "dirty-worktree";
-
-const waitForVisualFeedback = async () => {
-  await nextTick();
-  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-};
 
 const closeConfirmationDialog = () => {
   if (isConfirmationRunning.value) return;

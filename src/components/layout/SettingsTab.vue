@@ -33,6 +33,7 @@ import {
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { waitForInitialPaint } from "../../store/helpers/automationHelpers";
+import { waitForVisualFeedback } from "../../lib/visualFeedback";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
@@ -131,6 +132,7 @@ const projectLaunchServiceDisableWarningOpen = ref(false);
 const projectLaunchServiceUpdateChecking = ref(false);
 const projectLaunchServiceDownloading = ref(false);
 const projectLaunchServiceRechecking = ref(false);
+const projectLaunchServiceToggling = ref(false);
 const projectLaunchServiceUpdateDialogOpen = ref(false);
 const logRetentionDraft = ref<ProjectLaunchServiceLogRetentionPolicy | null>(null);
 const logRetentionSaving = ref(false);
@@ -143,6 +145,7 @@ const iconPackSelectingId = ref<IconPackId | null>(null);
 const aiProviderOptions: AiProviderKind[] = ["utools", "openai-compatible", "anthropic-compatible"];
 const cleanupDialogOpen = ref(false);
 const cleanupScanning = ref(false);
+const cleanupSubmitting = ref(false);
 const cleanupConfirmOpen = ref(false);
 const cleanupSelection = ref<Record<string, boolean>>({});
 let stopAppEscapeListener = () => {};
@@ -201,13 +204,26 @@ const cleanupHasSyncSelection = computed(() =>
   ),
 );
 const cleanupRunnable = computed(
-  () => cleanupSelectedIds.value.length > 0 && !cleanupScanning.value && !store.cleanupRunning,
+  () => cleanupSelectedIds.value.length > 0 && !cleanupScanning.value && !cleanupSubmitting.value && !store.cleanupRunning,
 );
 
-const runSelectedCleanup = () => {
+const runSelectedCleanup = async () => {
   if (!cleanupRunnable.value) return;
+  cleanupSubmitting.value = true;
   store.cleanupSelectedIds = cleanupSelectedIds.value;
-  void store.runCleanup();
+  showActionStatus({ state: "loading", message: t.value.common.processing });
+  try {
+    await waitForVisualFeedback();
+    const result = await store.runCleanup();
+    showActionStatus({
+      state: result?.ok ? "success" : result?.partial ? "warning" : "error",
+      message: store.cleanupMessage || (result?.ok ? t.value.common.completed : t.value.common.error),
+    });
+  } catch (error) {
+    showActionStatus({ state: "error", message: error instanceof Error ? error.message : t.value.common.error });
+  } finally {
+    cleanupSubmitting.value = false;
+  }
 };
 
 const requestCleanupRun = () => {
@@ -325,7 +341,8 @@ const projectLaunchServiceBusy = computed(
     projectLaunchServiceStatus.value?.state === "starting" ||
     projectLaunchServiceUpdateChecking.value ||
     projectLaunchServiceDownloading.value ||
-    projectLaunchServiceRechecking.value,
+    projectLaunchServiceRechecking.value ||
+    projectLaunchServiceToggling.value,
 );
 const projectLaunchServiceStatusLabel = computed(() => {
   const state = projectLaunchServiceStatus.value?.state;
@@ -579,9 +596,11 @@ const handleRemoveIconPack = async () => {
 };
 
 const handleDownloadProjectLaunchService = async () => {
+  if (projectLaunchServiceBusy.value) return;
   projectLaunchServiceDownloading.value = true;
   showActionStatus({ state: "loading", message: t.value.settings.projectLaunchServiceDownloading });
   try {
+    await waitForVisualFeedback();
     const status = await store.downloadProjectLaunchService();
     await refreshLogRetention();
     showActionStatus({
@@ -611,16 +630,30 @@ const confirmProjectLaunchServiceUpdate = async () => {
 };
 
 const handleRecheckProjectLaunchService = async () => {
+  if (projectLaunchServiceBusy.value) return;
   projectLaunchServiceRechecking.value = true;
+  showActionStatus({ state: "loading", message: t.value.settings.projectLaunchServiceRechecking });
   try {
-    await store.refreshProjectLaunchServiceStatus(true);
+    await waitForVisualFeedback();
+    const status = await store.refreshProjectLaunchServiceStatus(true);
     await refreshLogRetention();
+    const verified = status.installed && (status.state === "installed" || status.state === "healthy");
+    showActionStatus({
+      state: verified ? "success" : "error",
+      message: `${t.value.settings.projectLaunchServiceRecheck}: ${status.message || projectLaunchServiceStatusLabel.value}`,
+    });
+  } catch (error) {
+    showActionStatus({
+      state: "error",
+      message: error instanceof Error ? error.message : t.value.common.error,
+    });
   } finally {
     projectLaunchServiceRechecking.value = false;
   }
 };
 
 const handleCheckProjectLaunchServiceUpdate = async () => {
+  if (projectLaunchServiceBusy.value) return;
   projectLaunchServiceUpdateChecking.value = true;
   showActionStatus({ state: "loading", message: t.value.settings.projectLaunchServiceCheckingUpdate });
   try {
@@ -657,14 +690,41 @@ const handleCheckProjectLaunchServiceUpdate = async () => {
 
 const handleToggleProjectLaunchService = async (event: Event) => {
   const input = event.target as HTMLInputElement;
+  if (projectLaunchServiceBusy.value) {
+    input.checked = store.projectLaunchServicePreferences.enabled;
+    return;
+  }
   const enabled = input.checked;
   if (!enabled && store.hasActiveProjectLaunchServiceRuns) {
     input.checked = true;
     projectLaunchServiceDisableWarningOpen.value = true;
     return;
   }
-  await store.setProjectLaunchServiceEnabled(enabled);
-  await refreshLogRetention();
+  projectLaunchServiceToggling.value = true;
+  showActionStatus({
+    state: "loading",
+    message: `${t.value.settings.projectLaunchService}: ${enabled ? t.value.settings.projectLaunchServiceStarting : t.value.common.stopping}`,
+  });
+  try {
+    await waitForVisualFeedback();
+    const status = await store.setProjectLaunchServiceEnabled(enabled);
+    await refreshLogRetention();
+    const succeeded = store.projectLaunchServicePreferences.enabled === enabled;
+    showActionStatus({
+      state: succeeded ? "success" : "error",
+      message: succeeded
+        ? `${t.value.settings.projectLaunchService}: ${enabled ? t.value.settings.projectLaunchServiceModeOn : t.value.settings.projectLaunchServiceModeOff}`
+        : status?.message || t.value.common.error,
+    });
+  } catch (error) {
+    showActionStatus({
+      state: "error",
+      message: error instanceof Error ? error.message : t.value.common.error,
+    });
+  } finally {
+    input.checked = store.projectLaunchServicePreferences.enabled;
+    projectLaunchServiceToggling.value = false;
+  }
 };
 
 const refreshLogRetention = async () => {
@@ -745,6 +805,7 @@ const confirmClearLogRetention = async () => {
   logRetentionFeedback.value = "";
   showActionStatus({ state: "loading", message: t.value.settings.projectLaunchServiceLogClearBusy });
   try {
+    await waitForVisualFeedback();
     const result = await store.clearRuntimeRecords();
     try {
       await refreshLogRetention();
@@ -825,10 +886,21 @@ const requestDeleteCustomEnvironment = () => {
   environmentDialogOpen.value = false;
 };
 
-const confirmDeleteCustomEnvironment = () => {
-  if (!pendingDeleteCustomEnvironmentId.value) return;
-  store.deleteCustomEnvironmentTool(pendingDeleteCustomEnvironmentId.value);
+const confirmDeleteCustomEnvironment = async () => {
+  const id = pendingDeleteCustomEnvironmentId.value;
+  if (!id) return;
   pendingDeleteCustomEnvironmentId.value = null;
+  showActionStatus({ state: "loading", message: t.value.common.processing });
+  try {
+    await waitForVisualFeedback();
+    store.deleteCustomEnvironmentTool(id);
+    showActionStatus({
+      state: store.localStateWriteError ? "error" : "success",
+      message: store.localStateWriteError || t.value.common.completed,
+    });
+  } catch (error) {
+    showActionStatus({ state: "error", message: error instanceof Error ? error.message : t.value.common.error });
+  }
 };
 
 const setEnvironmentCardEnabled = (card: EnvironmentSettingsCard, enabled: boolean) => {
@@ -1720,19 +1792,24 @@ watch(
                         : t.settings.projectLaunchServiceModeOff
                     }}
                   </span>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    class="h-4 w-4 accent-primary"
-                    :checked="store.projectLaunchServicePreferences.enabled"
-                    :disabled="projectLaunchServiceBusy"
-                    :aria-label="
-                      store.projectLaunchServicePreferences.enabled
-                        ? t.settings.projectLaunchServiceDisable
-                        : t.settings.projectLaunchServiceEnable
-                    "
-                    @change="handleToggleProjectLaunchService"
-                  />
+                  <span class="relative inline-flex shrink-0">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      class="peer sr-only"
+                      :checked="store.projectLaunchServicePreferences.enabled"
+                      :disabled="projectLaunchServiceBusy"
+                      :aria-busy="projectLaunchServiceToggling"
+                      :aria-label="
+                        store.projectLaunchServicePreferences.enabled
+                          ? t.settings.projectLaunchServiceDisable
+                          : t.settings.projectLaunchServiceEnable
+                      "
+                      @change="handleToggleProjectLaunchService"
+                    />
+                    <span class="h-5 w-9 rounded-full bg-outline-variant transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/50 peer-disabled:cursor-wait peer-disabled:opacity-50" />
+                    <span class="pointer-events-none absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-surface-container-lowest shadow-sm transition-transform peer-checked:translate-x-4" />
+                  </span>
                 </label>
               </div>
             </div>

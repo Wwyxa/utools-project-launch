@@ -3575,13 +3575,64 @@ describe("store startup timing", () => {
     ];
 
     await store.stopScript("starting-service-project", "starting-service-script");
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(100);
 
     expect(store.projects[0]?.scripts[0]?.status).toBe("STOPPING");
     expect(stopProcess).toHaveBeenCalledWith(0, {
       runId: "starting-service-run",
       runtimeOwner: "service",
     });
+  });
+
+  it("stops another script without catalog writes while the first host request is pending", async () => {
+    let finishFirstStop!: () => void;
+    const stopProcess = vi.fn<ProjectBridge["stopProcess"]>()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirstStop = resolve; }))
+      .mockResolvedValue(undefined);
+    const appendRuntimeOperationLog = vi.fn(() => ({ ok: true as const }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      loadProjects: vi.fn(async () => []),
+      stopProcess,
+      appendRuntimeOperationLog,
+    };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.supportsBridge = true;
+    store.projects = [{
+      id: "concurrent-stops",
+      name: "Concurrent stops",
+      path: "/workspace/concurrent-stops",
+      type: "Custom",
+      kind: "custom",
+      status: ProjectStatus.RUNNING,
+      scripts: [0, 1].map((index) => ({
+        id: `script-${index}`,
+        name: `Script ${index}`,
+        command: "echo running",
+        status: "RUNNING",
+        pid: 5000 + index,
+        runId: `run-${index}`,
+        runtimeOwner: "service",
+      })),
+      env: {},
+    }];
+    const persist = vi.spyOn(store, "persistProjects").mockResolvedValue(undefined);
+    await store.stopScript("concurrent-stops", "script-0");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(stopProcess).toHaveBeenCalledTimes(1);
+    expect(store.projects[0].scripts[1].status).toBe("RUNNING");
+    await store.stopScript("concurrent-stops", "script-1");
+    await store.stopScript("concurrent-stops", "script-0");
+    expect(store.projects[0].scripts.map((script) => script.status)).toEqual(["STOPPING", "STOPPING"]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(stopProcess).toHaveBeenCalledTimes(2);
+    expect(stopProcess).toHaveBeenNthCalledWith(2, 5001, { runId: "run-1", runtimeOwner: "service" });
+    expect(persist).not.toHaveBeenCalled();
+    expect(appendRuntimeOperationLog).not.toHaveBeenCalled();
+    finishFirstStop();
+    await Promise.resolve();
   });
 
   it("stops a service launch once its run identity arrives", async () => {

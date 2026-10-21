@@ -22,6 +22,7 @@ import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/u
 import type { LogEntry, RuntimeRecord, ProjectScript } from "../../types";
 import ActionDialog from "../common/ActionDialog.vue";
 import { showActionStatus } from "../common/actionStatus";
+import { waitForVisualFeedback } from "../../lib/visualFeedback";
 
 const props = defineProps<{
   projectId: string;
@@ -353,6 +354,7 @@ const confirmClearHistory = async () => {
   historyError.value = "";
   showActionStatus({ state: "loading", message: t.value.terminal.historyClearBusy });
   try {
+    await waitForVisualFeedback();
     const result = await store.clearRuntimeRecords({
       runId: run.runId,
     });

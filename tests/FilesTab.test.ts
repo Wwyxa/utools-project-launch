@@ -63,6 +63,7 @@ const mountMenu = async () => {
   const root = document.createElement("div");
   document.body.append(root);
   const app = createApp(FilesTab, { project });
+  app.directive("overlay-scrollbar", {});
   app.mount(root);
   apps.push(app);
   await flush();

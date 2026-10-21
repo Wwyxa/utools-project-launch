@@ -1,4 +1,5 @@
 import { normalizeProjectRelations } from "../../lib/projectRelations";
+import { waitForVisualFeedback } from "../../lib/visualFeedback";
 import { deriveProjectStatus, mergeScriptRuntimeState } from "../../lib/projectRuntimeState";
 import { ProjectStatus } from "../../types";
 import type { Project, ProjectEnvironmentOverride, ProjectFormValue, ProjectScript } from "../../types";
@@ -200,6 +201,7 @@ export const projectCrudActions = {
       }
 
       this.pendingDeleteProjectId = null;
+      await waitForVisualFeedback();
       return this.deleteProject(projectId);
     },
 

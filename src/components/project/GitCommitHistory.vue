@@ -6,6 +6,7 @@ let rememberedCommitFileViewMode: RememberedCommitFileViewMode = 'list';
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue';
+import { waitForVisualFeedback } from '../../lib/visualFeedback';
 import {
   Archive,
   CalendarDays,
@@ -1395,8 +1396,12 @@ const report = (state: GitFeedbackState, message: string) => emit('feedback', st
 const runAction = async <T extends ProjectGitActionResult | null>(name: string, operation: () => Promise<T>) => {
   if (isInteractionDisabled.value) return null;
   activeAction.value = name;
+  report('loading', t.value.common.processing);
   try {
-    return await operation();
+    await waitForVisualFeedback();
+    const result = await operation();
+    report(result?.ok ? 'success' : 'error', result?.message || t.value.common.error);
+    return result;
   } catch (error) {
     report('error', error instanceof Error ? error.message : 'Git 操作失败。');
     return null;

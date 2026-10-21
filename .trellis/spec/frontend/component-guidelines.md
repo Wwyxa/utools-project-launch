@@ -19,8 +19,15 @@ each feature. The current file-icon implementation is `src/lib/fileIconTheme.ts`
 - Detail tabs retain roving focus and page-scoped keyboard navigation. Ignore
   editable targets, dialogs, modified events, and resizable separators; clean up
   listeners on unmount.
-- Use the shared `ActionDialog.vue` for simple confirmations. Keep creation/edit
-  forms in their feature. Stop nested action propagation on clickable cards.
+- Use the shared `ActionDialog.vue` for simple confirmations and small action
+  forms. Add fields through its default slot without nesting a form; keep draft
+  state and business operations in the feature. Larger creation/edit forms stay
+  in their feature. Stop nested action propagation on clickable cards.
+- Before blocking host work, capture inputs, guard duplicate submissions, close
+  the confirmation, publish loading, then await `waitForVisualFeedback` from
+  `src/lib/visualFeedback.ts`. Save/retry dialogs may remain open while busy.
+  Always settle loading with success or failure. The shared status overlay must
+  be visible immediately rather than waiting for an entry animation.
 - Teleport clipped overlays to `body`. Measure and clamp floating geometry after
   render and content changes; close it on context replacement, owner collapse,
   outside interaction, or unmount. Internal menu scrolling must not close the owner.

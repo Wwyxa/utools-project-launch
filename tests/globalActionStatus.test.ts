@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { effectScope, nextTick } from "vue";
+import { waitForVisualFeedback } from "../src/lib/visualFeedback";
 import {
   activeActionStatus,
   completeActionProgress,
@@ -32,6 +33,33 @@ describe("global action status", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it.each(["paint", "timeout"])("runs feedback work once when paint and timeout compete (%s)", async (mode) => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("document", { visibilityState: "visible" });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    const finished = vi.fn();
+    const pending = waitForVisualFeedback().then(finished);
+    expect(finished).not.toHaveBeenCalled();
+    if (mode === "paint") {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(finished).not.toHaveBeenCalled();
+      frames.splice(0).forEach((frame) => frame(0));
+      await Promise.resolve();
+      expect(finished).not.toHaveBeenCalled();
+      frames.splice(0).forEach((frame) => frame(16));
+    } else {
+      await vi.advanceTimersByTimeAsync(99);
+      expect(finished).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+    }
+    await pending;
+    frames.splice(0).forEach((frame) => frame(200));
+    frames.splice(0).forEach((frame) => frame(216));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(finished).toHaveBeenCalledOnce();
   });
 
   it("keeps loading visible and dismisses only the matching completed action", async () => {

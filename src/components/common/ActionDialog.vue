@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { CircleAlert, Trash2, Undo } from "lucide-vue-next";
+import { Archive, CircleAlert, LoaderCircle, Trash2, Undo } from "lucide-vue-next";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { cn } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
@@ -9,7 +9,7 @@ const props = withDefaults(
   defineProps<{
     open: boolean;
     tone?: "danger" | "warning";
-    icon?: "alert" | "trash" | "undo";
+    icon?: "alert" | "trash" | "undo" | "archive";
     title: string;
     message: string;
     detail?: string;
@@ -39,8 +39,19 @@ const emit = defineEmits<{
 const t = useI18n();
 const showCancel = computed(() => props.tone === "danger" || Boolean(props.cancelLabel));
 const primaryButtonRef = ref<HTMLButtonElement | null>(null);
-const dialogRef = ref<HTMLDivElement | null>(null);
+const dialogRef = ref<HTMLFormElement | null>(null);
+const skipLeaveTransition = ref(false);
+let submitting = false;
 let previousActiveElement: HTMLElement | null = null;
+
+const submit = (action: "primary" | "secondary") => {
+  if (props.busy || submitting) return;
+  submitting = true;
+  skipLeaveTransition.value = true;
+  if (action === "primary") emit("primary");
+  else emit("secondary");
+  void nextTick(() => { submitting = false; });
+};
 
 const cancel = () => {
   if (!props.busy) emit("cancel");
@@ -101,9 +112,13 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
+      skipLeaveTransition.value = false;
       previousActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       document.addEventListener("keydown", handleDialogTabKey, true);
-      void nextTick(() => primaryButtonRef.value?.focus());
+      void nextTick(() => {
+        const target = dialogRef.value?.querySelector<HTMLElement>("[autofocus]:not([disabled])");
+        (target || primaryButtonRef.value)?.focus();
+      });
       return;
     }
     document.removeEventListener("keydown", handleDialogTabKey, true);
@@ -115,18 +130,19 @@ watch(
 
 <template>
   <Teleport to="body">
-    <Transition name="scale">
+    <Transition name="scale" :css="!skipLeaveTransition">
       <div
         v-if="open"
         class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5"
         @click.self="cancel"
       >
-        <div
+        <form
           ref="dialogRef"
           class="flex max-h-[calc(100vh-2.5rem)] w-[min(24rem,92vw)] flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
           role="dialog"
           aria-modal="true"
           aria-labelledby="action-dialog-title"
+          @submit.prevent="submit('primary')"
           @click.stop
         >
           <div class="shrink-0 border-b border-border-subtle bg-surface-container-low px-4 py-3">
@@ -143,6 +159,7 @@ watch(
               >
                 <CircleAlert v-if="icon === 'alert'" :size="16" />
                 <Trash2 v-else-if="icon === 'trash'" :size="16" />
+                <Archive v-else-if="icon === 'archive'" :size="16" />
                 <Undo v-else :size="16" />
               </div>
               <h3 id="action-dialog-title" class="min-w-0 text-sm font-bold text-on-surface">{{ title }}</h3>
@@ -156,6 +173,9 @@ watch(
             >
               {{ detail }}
             </p>
+            <div v-if="$slots.default" class="mt-3 space-y-3">
+              <slot />
+            </div>
           </div>
           <div class="flex shrink-0 justify-end gap-2 border-t border-border-subtle px-4 py-3">
             <button
@@ -172,13 +192,13 @@ watch(
               type="button"
               class="inline-flex h-8 items-center rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface-variant ui-press hover:bg-surface-variant hover:text-on-surface disabled:cursor-wait disabled:opacity-60"
               :disabled="busy"
-              @click="emit('secondary')"
+              @click="submit('secondary')"
             >
               {{ secondaryLabel }}
             </button>
             <button
               ref="primaryButtonRef"
-              type="button"
+              type="submit"
               :class="
                 cn(
                   'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold ui-press disabled:cursor-wait disabled:opacity-70',
@@ -188,14 +208,16 @@ watch(
                 )
               "
               :disabled="busy"
-              @click="emit('primary')"
+              :aria-busy="busy"
             >
-              <Trash2 v-if="icon === 'trash'" :size="13" />
+              <LoaderCircle v-if="busy" :size="13" class="animate-spin" />
+              <Trash2 v-else-if="icon === 'trash'" :size="13" />
               <Undo v-else-if="icon === 'undo'" :size="13" />
+              <Archive v-else-if="icon === 'archive'" :size="13" />
               {{ busy ? busyLabel || primaryLabel : primaryLabel }}
             </button>
           </div>
-        </div>
+        </form>
       </div>
     </Transition>
   </Teleport>
