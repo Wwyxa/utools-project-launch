@@ -19,23 +19,41 @@ func newCommand(request StartRequest) (*exec.Cmd, io.WriteCloser, io.ReadCloser,
 	command.Env = mergedEnvironment(request.Env)
 	configureCommandProcess(command)
 
-	stdin, err := command.StdinPipe()
+	stdinReader, stdin, err := os.Pipe()
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	stdout, err := command.StdoutPipe()
+	command.Stdin = stdinReader
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
+		_ = stdinReader.Close()
 		_ = stdin.Close()
 		return nil, nil, nil, nil, err
 	}
-	stderr, err := command.StderrPipe()
+	command.Stdout = stdoutWriter
+	stderr, stderrWriter, err := os.Pipe()
 	if err != nil {
+		_ = stdinReader.Close()
 		_ = stdin.Close()
 		_ = stdout.Close()
+		_ = stdoutWriter.Close()
 		return nil, nil, nil, nil, err
 	}
+	command.Stderr = stderrWriter
 
 	return command, stdin, stdout, stderr, nil
+}
+
+func closeCommandOutputWriters(command *exec.Cmd) {
+	if closer, ok := command.Stdin.(io.Closer); ok {
+		_ = closer.Close()
+	}
+	if closer, ok := command.Stdout.(io.Closer); ok {
+		_ = closer.Close()
+	}
+	if closer, ok := command.Stderr.(io.Closer); ok {
+		_ = closer.Close()
+	}
 }
 
 func mergedEnvironment(overrides map[string]string) []string {

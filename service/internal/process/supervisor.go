@@ -1,7 +1,6 @@
 package process
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,9 +15,10 @@ import (
 )
 
 const (
-	outputScannerBufferBytes = state.MaxEventMessageBytes + 1
-	startedEventMessage      = "Process started."
-	stdinEventMessage        = "Input sent to process."
+	startedEventMessage = "Process started."
+	stdinEventMessage   = "Input sent to process."
+	outputDrainTimeout  = 250 * time.Millisecond
+	stdinWriteTimeout   = 250 * time.Millisecond
 )
 
 type StartRequest struct {
@@ -58,12 +58,21 @@ type managedProcess struct {
 	pid                   int
 	command               *exec.Cmd
 	stdin                 io.WriteCloser
+	stdout                io.ReadCloser
+	stderr                io.ReadCloser
+	group                 processGroup
 	recovered             bool
 	outputDone            sync.WaitGroup
 	inputMutex            sync.Mutex
 	stateMutex            sync.Mutex
 	stoppedByUser         bool
 	automationExitMatched bool
+}
+
+type processGroup interface {
+	wait() error
+	stop() error
+	close()
 }
 
 func NewSupervisor(store *state.Store) (*Supervisor, error) {
@@ -117,17 +126,26 @@ func (supervisor *Supervisor) Start(request StartRequest) (state.Run, bool, erro
 	if err != nil {
 		return supervisor.failStart(run, err)
 	}
-	if err := command.Start(); err != nil {
-		return supervisor.failStart(run, fmt.Errorf("start command: %w", err))
+	group, startErr := startProcessGroup(command)
+	closeCommandOutputWriters(command)
+	if startErr != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = stderr.Close()
+		return supervisor.failStart(run, fmt.Errorf("start command: %w", startErr))
 	}
 
 	pid := command.Process.Pid
 	identity, identityErr := processIdentityForProcess(command.Process)
 	if identityErr != nil {
+		_ = stdin.Close()
 		_ = stdout.Close()
 		_ = stderr.Close()
-		_ = supervisor.terminateTree(pid)
+		_ = supervisor.stopProcess(group, pid)
 		_ = command.Wait()
+		if group != nil {
+			group.close()
+		}
 		return supervisor.failStart(run, fmt.Errorf("read started process identity: %w", identityErr))
 	}
 	run, err = supervisor.store.UpdateRun(run.ID, func(current *state.Run) {
@@ -136,8 +154,14 @@ func (supervisor *Supervisor) Start(request StartRequest) (state.Run, bool, erro
 		current.ProcessIdentity = identity
 	})
 	if err != nil {
-		_ = supervisor.terminateTree(pid)
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = stderr.Close()
+		_ = supervisor.stopProcess(group, pid)
 		_ = command.Wait()
+		if group != nil {
+			group.close()
+		}
 		return state.Run{}, false, fmt.Errorf("persist started process: %w", err)
 	}
 
@@ -146,6 +170,9 @@ func (supervisor *Supervisor) Start(request StartRequest) (state.Run, bool, erro
 		pid:     pid,
 		command: command,
 		stdin:   stdin,
+		stdout:  stdout,
+		stderr:  stderr,
+		group:   group,
 	}
 	supervisor.mutex.Lock()
 	supervisor.processes[run.ID] = managed
@@ -180,15 +207,15 @@ func (supervisor *Supervisor) StopWithOptions(runID string, options StopOptions)
 	if !run.Status.IsActive() {
 		return run, nil
 	}
-	if run.PID <= 0 {
-		return supervisor.markLost(run, "The service cannot stop a run that never received a process identifier.")
-	}
 	supervisor.mutex.Lock()
 	managed := supervisor.processes[runID]
 	recovered := managed != nil && managed.recovered
 	supervisor.mutex.Unlock()
+	if run.PID <= 0 {
+		return supervisor.markLost(run, "The service cannot stop a run that never received a process identifier.")
+	}
 
-	matches, identityErr := supervisor.identityMatches(run.PID, run.ProcessIdentity)
+	matches, identityErr := supervisor.managedIdentityMatches(run, managed)
 	if identityErr != nil || !matches {
 		updated, err := supervisor.markLost(run, "The persisted process identity no longer matches a running process.")
 		if recovered && err == nil {
@@ -212,6 +239,9 @@ func (supervisor *Supervisor) StopWithOptions(runID string, options StopOptions)
 	managed.automationExitMatched = options.AutomationExitMatched
 	managed.stateMutex.Unlock()
 	run, err := supervisor.store.UpdateRun(runID, func(current *state.Run) {
+		if !current.Status.IsActive() {
+			return
+		}
 		current.Status = state.RunStatusStopping
 		current.StoppedByUser = options.StoppedByUser
 		current.AutomationExitMatched = options.AutomationExitMatched
@@ -219,7 +249,10 @@ func (supervisor *Supervisor) StopWithOptions(runID string, options StopOptions)
 	if err != nil {
 		return state.Run{}, err
 	}
-	if err := supervisor.terminateTree(run.PID); err != nil {
+	if !run.Status.IsActive() {
+		return run, nil
+	}
+	if err := supervisor.stopProcess(managed.group, run.PID); err != nil {
 		return run, fmt.Errorf("stop process tree: %w", err)
 	}
 
@@ -234,10 +267,29 @@ func (supervisor *Supervisor) SendInput(runID string, input string) (SendInputRe
 		return SendInputResult{Sent: false, Message: "The selected process cannot receive input."}, nil
 	}
 
-	managed.inputMutex.Lock()
-	defer managed.inputMutex.Unlock()
-	if _, err := io.WriteString(managed.stdin, input+"\n"); err != nil {
-		return SendInputResult{Sent: false, Message: "The selected process is no longer accepting input."}, nil
+	if !managed.inputMutex.TryLock() {
+		return SendInputResult{Sent: false, Message: "The selected process is already receiving input."}, nil
+	}
+	written := make(chan error, 1)
+	go func() {
+		message := input + "\n"
+		count, err := io.WriteString(managed.stdin, message)
+		if err == nil && count != len(message) {
+			err = io.ErrShortWrite
+		}
+		managed.inputMutex.Unlock()
+		written <- err
+	}()
+	timer := time.NewTimer(stdinWriteTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-written:
+		if err != nil {
+			return SendInputResult{Sent: false, Message: "The selected process is no longer accepting input."}, nil
+		}
+	case <-timer.C:
+		_ = managed.stdin.Close()
+		return SendInputResult{Sent: false, Message: "The selected process did not accept input in time; its input pipe was closed."}, nil
 	}
 
 	run, found := supervisor.store.Run(runID)
@@ -434,19 +486,47 @@ func (supervisor *Supervisor) failStart(run state.Run, startErr error) (state.Ru
 
 func (supervisor *Supervisor) streamOutput(run state.Run, managed *managedProcess, eventType string, reader io.Reader) {
 	defer managed.outputDone.Done()
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 4096), outputScannerBufferBytes)
-	for scanner.Scan() {
-		supervisor.appendEvent(run, eventType, state.Event{PID: managed.pid, Message: decodeProcessOutput(scanner.Bytes())})
-	}
-	if err := scanner.Err(); err != nil {
-		supervisor.appendEvent(run, "error", state.Event{PID: managed.pid, Message: fmt.Sprintf("read %s: %v", eventType, err)})
+	buffer := make([]byte, state.MaxEventMessageBytes/4)
+	decoder := processOutputDecoder{}
+	for {
+		count, err := reader.Read(buffer)
+		if message := decoder.decode(buffer[:count], err != nil); message != "" {
+			supervisor.appendEvent(run, eventType, state.Event{PID: managed.pid, Message: message})
+		}
+		if err != nil {
+			if !errors.Is(err, io.EOF) && !errors.Is(err, os.ErrClosed) {
+				supervisor.appendEvent(run, "error", state.Event{PID: managed.pid, Message: fmt.Sprintf("read %s: %v", eventType, err)})
+			}
+			return
+		}
 	}
 }
 
 func (supervisor *Supervisor) waitForExit(run state.Run, managed *managedProcess) {
-	managed.outputDone.Wait()
+	groupFinished := make(chan error, 1)
+	if managed.group != nil {
+		go func() { groupFinished <- managed.group.wait() }()
+		defer managed.group.close()
+	}
 	waitErr := managed.command.Wait()
+	if managed.group != nil {
+		waitErr = errors.Join(waitErr, <-groupFinished)
+	}
+	_ = managed.stdin.Close()
+	outputFinished := make(chan struct{})
+	go func() {
+		managed.outputDone.Wait()
+		close(outputFinished)
+	}()
+	timer := time.NewTimer(outputDrainTimeout)
+	defer timer.Stop()
+	select {
+	case <-outputFinished:
+	case <-timer.C:
+	}
+	_ = managed.stdout.Close()
+	_ = managed.stderr.Close()
+	<-outputFinished
 	managed.stateMutex.Lock()
 	stoppedByUser := managed.stoppedByUser
 	automationExitMatched := managed.automationExitMatched
@@ -510,9 +590,7 @@ func (supervisor *Supervisor) completeRecoveredStop(run state.Run, options StopO
 	if err != nil {
 		return state.Run{}, err
 	}
-	supervisor.mutex.Lock()
-	delete(supervisor.processes, run.ID)
-	supervisor.mutex.Unlock()
+	supervisor.removeManagedProcess(run.ID)
 	supervisor.recordRecoveredTerminalRun(updated)
 	return updated, nil
 }
@@ -529,6 +607,20 @@ func (supervisor *Supervisor) removeManagedProcess(runID string) {
 	supervisor.mutex.Unlock()
 }
 
+func (supervisor *Supervisor) managedIdentityMatches(run state.Run, managed *managedProcess) (bool, error) {
+	if managed != nil && managed.group != nil {
+		return true, nil
+	}
+	return supervisor.identityMatches(run.PID, run.ProcessIdentity)
+}
+
+func (supervisor *Supervisor) stopProcess(group processGroup, pid int) error {
+	if group != nil {
+		return group.stop()
+	}
+	return supervisor.terminateTree(pid)
+}
+
 func (supervisor *Supervisor) markLost(run state.Run, message string) (state.Run, error) {
 	endedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	updated, err := supervisor.store.UpdateRunAndAppendEvent(run.ID, func(current *state.Run) {
@@ -539,9 +631,7 @@ func (supervisor *Supervisor) markLost(run state.Run, message string) (state.Run
 	if err != nil {
 		return state.Run{}, err
 	}
-	supervisor.mutex.Lock()
-	delete(supervisor.processes, run.ID)
-	supervisor.mutex.Unlock()
+	supervisor.removeManagedProcess(run.ID)
 	return updated, nil
 }
 

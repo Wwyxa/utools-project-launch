@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -99,6 +100,7 @@ func TestSyncIncludesHealthStateAndEvents(t *testing.T) {
 		StartedAt:       time.Now().UTC(),
 		Supervisor:      supervisor,
 		Scheduler:       schedulerRuntime,
+		Changes:         store.Changes,
 	})
 	if err != nil {
 		t.Fatalf("create handler: %v", err)
@@ -129,6 +131,122 @@ func TestSyncIncludesHealthStateAndEvents(t *testing.T) {
 	}
 	if len(payload.Events.Events) != 1 || payload.Events.Events[0].Message != "sync output" {
 		t.Fatalf("sync events = %#v, want the retained event", payload.Events.Events)
+	}
+	var initial syncResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &initial); err != nil || initial.Revision == "" {
+		t.Fatalf("sync must include a change revision: %v", err)
+	}
+	syncRequest := func(ctx context.Context, path string) *http.Request {
+		request := httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx)
+		request.Header.Set(AuthorizationHeader, "Bearer test-token")
+		request.Header.Set(ProtocolHeader, fmt.Sprint(state.ProtocolVersion))
+		return request
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, syncRequest(context.Background(), "/v1/sync?after=1&since="+initial.Revision+"&waitMs=1"))
+	if response.Code != http.StatusNoContent || response.Body.Len() != 0 {
+		t.Fatalf("idle sync must return no snapshot: %d %s", response.Code, response.Body.String())
+	}
+	started := make(chan struct{}, 1)
+	handler.config.Changes = func() (uint64, <-chan struct{}) {
+		revision, changed := store.Changes()
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		return revision, changed
+	}
+	response = httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(response, syncRequest(context.Background(), "/v1/sync?after=1&since="+initial.Revision+"&waitMs=25000"))
+		close(done)
+	}()
+	<-started
+	if _, err := store.AppendEvent(state.Event{Type: "stdout", RunID: "11111111111111111111111111111111", Message: "wake"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("state change did not wake sync")
+	}
+	var updated syncResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &updated); err != nil || len(updated.Events.Events) != 1 || updated.Events.Events[0].Message != "wake" {
+		t.Fatalf("long poll did not deliver next event: %s, %v", response.Body.String(), err)
+	}
+	select {
+	case <-started:
+	default:
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done = make(chan struct{})
+	go func() {
+		handler.ServeHTTP(httptest.NewRecorder(), syncRequest(ctx, "/v1/sync?after=2&since="+updated.Revision+"&waitMs=25000"))
+		close(done)
+	}()
+	<-started
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled client retained its sync handler")
+	}
+	runID := "22222222222222222222222222222222"
+	if _, _, err := store.CreateRun(state.Run{
+		ID: runID, ProjectID: "sync-project", ScriptID: "sync-script", Status: state.RunStatusStarting,
+	}, "transition", "transition"); err != nil {
+		t.Fatal(err)
+	}
+	for _, terminal := range []bool{false, true} {
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, syncRequest(context.Background(), "/v1/sync?after=2"))
+		if err := json.Unmarshal(response.Body.Bytes(), &updated); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-started:
+		default:
+		}
+		response = httptest.NewRecorder()
+		done = make(chan struct{})
+		go func() {
+			handler.ServeHTTP(response, syncRequest(context.Background(), "/v1/sync?after=2&since="+updated.Revision+"&waitMs=25000"))
+			close(done)
+		}()
+		<-started
+		wantStatus := state.RunStatusRunning
+		if terminal {
+			wantStatus = state.RunStatusExited
+			_, err = store.UpdateRunAndAppendEvent(runID, func(run *state.Run) {
+				run.Status = wantStatus
+			}, "exit", state.Event{})
+		} else {
+			_, err = store.UpdateRun(runID, func(run *state.Run) { run.Status = wantStatus })
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("run state transition did not wake sync")
+		}
+		var transitioned syncResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &transitioned); err != nil {
+			t.Fatal(err)
+		}
+		if len(transitioned.State.Runs) != 1 || transitioned.State.Runs[0].Status != wantStatus {
+			t.Fatalf("woken snapshot = %#v, want status %s", transitioned.State.Runs, wantStatus)
+		}
+		if terminal {
+			if len(transitioned.Events.Events) != 1 || transitioned.Events.Events[0].Type != "exit" {
+				t.Fatalf("terminal transition events = %#v", transitioned.Events)
+			}
+		} else if len(transitioned.Events.Events) != 0 {
+			t.Fatalf("state-only transition changed events: %#v", transitioned.Events)
+		}
 	}
 }
 
@@ -178,7 +296,7 @@ func TestJSONMutationRejectsEmptyBody(t *testing.T) {
 	}
 }
 
-func TestSyncRejectsOversizedCompleteResponse(t *testing.T) {
+func TestSyncBoundsCompletedRunMetadata(t *testing.T) {
 	store, err := state.Open(t.TempDir())
 	if err != nil {
 		t.Fatalf("open state: %v", err)
@@ -217,21 +335,71 @@ func TestSyncRejectsOversizedCompleteResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create handler: %v", err)
 	}
+	if _, _, err := store.CreateRun(state.Run{
+		ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ProjectID: "active", ScriptID: "active",
+		Command: strings.Repeat("active", 1024), Cwd: "active-path", Status: state.RunStatusRunning,
+	}, "active-sync", "active-sync"); err != nil {
+		t.Fatal(err)
+	}
 	request := httptest.NewRequest(http.MethodGet, "/v1/sync?after=0", nil)
 	request.Header.Set(AuthorizationHeader, "Bearer test-token")
 	request.Header.Set(ProtocolHeader, fmt.Sprint(state.ProtocolVersion))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("oversized sync status = %d, want %d", response.Code, http.StatusRequestEntityTooLarge)
+	if response.Code != http.StatusOK || response.Body.Len() > maxSyncResponseBytes {
+		t.Fatalf("sync status = %d, bytes = %d", response.Code, response.Body.Len())
 	}
-	var payload errorResponse
+	var payload syncResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode oversized sync error: %v", err)
+		t.Fatalf("decode sync response: %v", err)
 	}
-	if payload.Code != "response_too_large" {
-		t.Fatalf("oversized sync error code = %q, want response_too_large", payload.Code)
+	if len(payload.State.Runs) != state.MaxRunHistory {
+		t.Fatalf("completed metadata was not compacted: %d runs", len(payload.State.Runs))
+	}
+	if store.Snapshot().Runs[0].Command == "" {
+		t.Fatal("sync mutated stored history")
+	}
+	foundActive := false
+	for _, run := range payload.State.Runs {
+		if run.ID == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+			foundActive = run.Status == state.RunStatusRunning && run.Command != "" && run.Cwd == "active-path"
+		} else if run.Command != "" {
+			t.Fatal("terminal command was not compacted")
+		}
+	}
+	if !foundActive {
+		t.Fatal("sync lost active run metadata")
+	}
+	updated := 0
+	for _, run := range payload.State.Runs {
+		if run.Status.IsActive() || updated >= 12 {
+			continue
+		}
+		if _, err := store.UpdateRun(run.ID, func(current *state.Run) {
+			current.Error = strings.Repeat("large-error", 2048)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		updated++
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Body.Len() > maxSyncResponseBytes {
+		t.Fatalf("large error history blocked sync: %d, %d bytes", response.Code, response.Body.Len())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.State.Runs) >= state.MaxRunHistory {
+		t.Fatal("terminal metadata budget did not bound large errors")
+	}
+	foundActive = false
+	for _, run := range payload.State.Runs {
+		foundActive = foundActive || run.ID == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	}
+	if !foundActive {
+		t.Fatal("terminal metadata budget removed an active run")
 	}
 }
 

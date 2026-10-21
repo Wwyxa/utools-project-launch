@@ -2,7 +2,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { parse } from "@vue/compiler-sfc";
-import { computed, type ComputedRef } from "vue";
+import { computed, ref, type ComputedRef } from "vue";
 import { createSourceFile, isIdentifier, isVariableStatement, ModuleKind, ScriptKind, ScriptTarget, transpileModule } from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getProjectBridge } from "../src/lib/projectBridge";
@@ -110,6 +110,96 @@ describe("automation task execution", () => {
     expect(retainedHistory).toHaveLength(32);
     expect(retainedHistory[0]?.endedAt).toBe(latestAt);
     expect(store.projects[0]!.automationTasks![0]!.history).toHaveLength(20);
+  });
+
+  it("ignores displayed missed history missing from the snapshot without overwriting newer state", async () => {
+    stubWindow();
+    const fallback = getProjectBridge();
+    const plannedAt = "2026-10-15T09:00:00Z";
+    const execution = {
+      id: "missed-run", projectId: "project", taskId: "task", planEntryId: "entry",
+      plannedAt, endedAt: plannedAt, status: "skipped" as const, currentScriptIndex: 0, scriptResults: [],
+    };
+    const response = deferred<typeof execution>();
+    const ignore = vi.fn().mockReturnValue(response.promise);
+    window.projectBridge = { ...fallback, ignoreMissedProjectLaunchServiceAutomationExecution: ignore };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projectLaunchServicePreferences.enabled = true;
+    store.projectLaunchServiceStatus = {
+      ...await fallback.getProjectLaunchServiceStatus(),
+      state: "healthy", running: true, automation: { revision: 1, executions: [] },
+    };
+    store.projects = [{
+      id: "project", name: "Project", path: "/workspace/project", type: "Custom", kind: "custom",
+      status: ProjectStatus.STOPPED, scripts: [], env: {},
+      automationTasks: [{
+        id: "task", name: "Task", enabled: false, scriptIds: [], continuousScriptIds: [],
+        schedule: { type: "fixed", startTime: "09:00", dailyCount: 1, intervalMinutes: 60 },
+        missedPolicy: "mark-missed", missedGraceMinutes: 5, notifyEnabled: false,
+        maxScriptRuntimeMinutes: 30, inputConfigs: [], exitConfigs: [], dailyPlans: [],
+        history: [
+          { ...execution, id: "older-missed", plannedAt: "2026-10-14T09:00:00Z", endedAt: "2026-10-14T09:00:00Z",
+            status: "missed", taskName: "Task", projectName: "Project" },
+          { ...execution, status: "missed", taskName: "Task", projectName: "Project" },
+        ],
+        createdAt: plannedAt, updatedAt: plannedAt,
+      }],
+    }];
+    const dashboard = loadSummaryDeclarations<{ missedAutomationTasks: ComputedRef<unknown[]> }>(
+      "src/components/dashboard/Dashboard.vue",
+      ["automationHistoryTime", "sortedAutomationHistory", "automationTasks", "missedAutomationTasks"], { store },
+    );
+    expect(dashboard.missedAutomationTasks.value).toHaveLength(1);
+    const pending = store.ignoreMissedAutomationTask("project", "task", execution.id);
+    const newerExecution = { ...execution, id: "newer-run", taskId: "other-task", status: "running" as const };
+    store.projectLaunchServiceStatus = {
+      ...store.projectLaunchServiceStatus!, message: "fresh snapshot",
+      automation: { revision: 2, executions: [newerExecution], upcoming: [] },
+    };
+    response.resolve(execution);
+    expect(await pending).toBe(true);
+    expect(ignore).toHaveBeenCalledExactlyOnceWith("missed-run");
+    expect(store.projects[0]!.automationTasks![0]!.history[0]?.status).toBe("skipped");
+    expect(dashboard.missedAutomationTasks.value).toHaveLength(0);
+    expect(store.projects[0]!.automationTasks![0]!.history.find((entry) => entry.id === "older-missed")?.status).toBe("missed");
+    expect(store.projectLaunchServiceStatus?.automation?.executions?.filter((entry) => entry.id === execution.id)).toEqual([execution]);
+    expect(store.projectLaunchServiceStatus).toMatchObject({
+      message: "fresh snapshot", automation: { revision: 2, executions: [newerExecution, execution], upcoming: [] },
+    });
+    expect(await store.ignoreMissedAutomationTask("project", "task")).toBe(false);
+    expect(ignore).toHaveBeenCalledTimes(1);
+    const currentTask = store.projects[0]!.automationTasks![0]!;
+    currentTask.history[0]!.status = "missed";
+    ignore.mockRejectedValueOnce(new Error("service unavailable"));
+    expect(await store.ignoreMissedAutomationTask("project", "task", execution.id)).toBe(false);
+    store.projectLaunchServicePreferences.enabled = false;
+    ignore.mockClear();
+    expect(await store.ignoreMissedAutomationTask("project", "task", execution.id)).toBe(false);
+    expect(ignore).not.toHaveBeenCalled();
+  });
+
+  it("shows ignore failure and prevents duplicate clicks", async () => {
+    const response = deferred<boolean | PromiseLike<boolean>>();
+    const ignore = vi.fn().mockReturnValue(response.promise);
+    const feedback = ref("old feedback");
+    const pendingKeys = ref(new Set<string>());
+    const dashboard = loadSummaryDeclarations<{ ignoreMissedAutomationTask(projectId: string, taskId: string, executionId: string): Promise<void> }>(
+      "src/components/dashboard/Dashboard.vue",
+      ["automationRunTaskKey", "isAutomationRunPending", "setAutomationRunPending", "ignoreMissedAutomationTask"],
+      { store: { ignoreMissedAutomationTask: ignore }, automationOverviewFeedback: feedback,
+        automationRunPendingTaskKeys: pendingKeys, t: ref({ automation: { ignoreFailed: "Ignore failed" } }) },
+    );
+    const pending = dashboard.ignoreMissedAutomationTask("project", "task", "displayed-run");
+    expect(feedback.value).toBe("");
+    expect(pendingKeys.value.has("project:task")).toBe(true);
+    await dashboard.ignoreMissedAutomationTask("project", "task", "displayed-run");
+    expect(ignore).toHaveBeenCalledExactlyOnceWith("project", "task", "displayed-run");
+    response.resolve(Promise.reject(new Error("service unavailable")));
+    await pending;
+    expect(feedback.value).toBe("Ignore failed");
+    expect(pendingKeys.value.size).toBe(0);
   });
 
   it("starts the next script before a continuous script exits and avoids relaunching it", async () => {

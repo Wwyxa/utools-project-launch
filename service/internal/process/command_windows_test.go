@@ -20,6 +20,7 @@ func TestNewCommandIsolatesWindowsConsole(t *testing.T) {
 	defer stdin.Close()
 	defer stdout.Close()
 	defer stderr.Close()
+	defer closeCommandOutputWriters(command)
 
 	if command.SysProcAttr == nil {
 		t.Fatal("Windows service command must configure process attributes")

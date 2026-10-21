@@ -16,6 +16,7 @@ func configureCommandProcess(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | createNoWindow,
 		HideWindow:    true,
+		CmdLine:       syscall.EscapeArg(command.Path) + ` /d /s /c "` + command.Args[len(command.Args)-1] + `"`,
 	}
 }
 

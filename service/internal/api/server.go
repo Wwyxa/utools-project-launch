@@ -41,6 +41,7 @@ type Config struct {
 	HasActiveRuns   func() bool
 	Supervisor      *serviceprocess.Supervisor
 	Scheduler       *scheduler.Runtime
+	Changes         func() (uint64, <-chan struct{})
 }
 
 type Handler struct {
@@ -49,18 +50,20 @@ type Handler struct {
 }
 
 type healthResponse struct {
-	ProtocolVersion int    `json:"protocolVersion"`
-	ServiceVersion  string `json:"serviceVersion"`
-	InstanceID      string `json:"instanceId"`
-	PID             int    `json:"pid"`
-	ProcessIdentity string `json:"processIdentity"`
-	StartedAt       string `json:"startedAt"`
+	NativeNotifications bool   `json:"nativeNotifications"`
+	ProtocolVersion     int    `json:"protocolVersion"`
+	ServiceVersion      string `json:"serviceVersion"`
+	InstanceID          string `json:"instanceId"`
+	PID                 int    `json:"pid"`
+	ProcessIdentity     string `json:"processIdentity"`
+	StartedAt           string `json:"startedAt"`
 }
 
 type syncResponse struct {
-	Health healthResponse   `json:"health"`
-	State  serviceSnapshot  `json:"state"`
-	Events state.EventBatch `json:"events"`
+	Revision string           `json:"revision"`
+	Health   healthResponse   `json:"health"`
+	State    serviceSnapshot  `json:"state"`
+	Events   state.EventBatch `json:"events"`
 }
 
 type errorResponse struct {
@@ -212,12 +215,13 @@ func (handler *Handler) SupervisorSnapshotAndEventsAfter(after uint64) (state.Sn
 
 func (handler *Handler) healthResponse() healthResponse {
 	return healthResponse{
-		ProtocolVersion: handler.config.ProtocolVersion,
-		ServiceVersion:  handler.config.ServiceVersion,
-		InstanceID:      handler.config.InstanceID,
-		PID:             handler.config.PID,
-		ProcessIdentity: handler.config.ProcessIdentity,
-		StartedAt:       handler.config.StartedAt.UTC().Format(time.RFC3339Nano),
+		NativeNotifications: true,
+		ProtocolVersion:     handler.config.ProtocolVersion,
+		ServiceVersion:      handler.config.ServiceVersion,
+		InstanceID:          handler.config.InstanceID,
+		PID:                 handler.config.PID,
+		ProcessIdentity:     handler.config.ProcessIdentity,
+		StartedAt:           handler.config.StartedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -226,6 +230,25 @@ func (handler *Handler) serviceSnapshot() serviceSnapshot {
 }
 
 func (handler *Handler) serviceSnapshotFrom(snapshot state.Snapshot) serviceSnapshot {
+	retained := make([]state.Run, 0, len(snapshot.Runs))
+	terminalBytes := 0
+	for index := len(snapshot.Runs) - 1; index >= 0; index-- {
+		run := snapshot.Runs[index]
+		if run.Status.IsCompleted() {
+			run.Command = ""
+			run.Cwd = ""
+			encoded, _ := json.Marshal(run)
+			if terminalBytes+len(encoded) > 128*1024 {
+				continue
+			}
+			terminalBytes += len(encoded)
+		}
+		retained = append(retained, run)
+	}
+	for left, right := 0, len(retained)-1; left < right; left, right = left+1, right-1 {
+		retained[left], retained[right] = retained[right], retained[left]
+	}
+	snapshot.Runs = retained
 	return serviceSnapshot{
 		Snapshot:   snapshot,
 		Automation: handler.config.Scheduler.AutomationSnapshot(),
@@ -239,12 +262,37 @@ func (handler *Handler) handleSync(responseWriter http.ResponseWriter, request *
 		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_cursor", "The event cursor must be a non-negative integer.")
 		return
 	}
+	waitMS, err := strconv.ParseUint(request.URL.Query().Get("waitMs"), 10, 32)
+	if request.URL.Query().Has("waitMs") && (err != nil || waitMS > 25000) {
+		handler.writeError(responseWriter, http.StatusBadRequest, "invalid_wait", "waitMs must be between 0 and 25000.")
+		return
+	}
+	revision := ""
+	if handler.config.Changes != nil {
+		current, changed := handler.config.Changes()
+		revision = fmt.Sprintf("%s:%d", handler.config.InstanceID, current)
+		if waitMS > 0 && request.URL.Query().Get("since") == revision && after == handler.SupervisorSnapshot().LatestCursor {
+			timer := time.NewTimer(time.Duration(waitMS) * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-changed:
+				current, _ = handler.config.Changes()
+				revision = fmt.Sprintf("%s:%d", handler.config.InstanceID, current)
+			case <-timer.C:
+				responseWriter.WriteHeader(http.StatusNoContent)
+				return
+			case <-request.Context().Done():
+				return
+			}
+		}
+	}
 	stateSnapshot, events := handler.SupervisorSnapshotAndEventsAfter(after)
 	snapshot := handler.serviceSnapshotFrom(stateSnapshot)
 	handler.writeBoundedJSON(responseWriter, http.StatusOK, syncResponse{
-		Health: handler.healthResponse(),
-		State:  snapshot,
-		Events: events,
+		Revision: revision,
+		Health:   handler.healthResponse(),
+		State:    snapshot,
+		Events:   events,
 	}, maxSyncResponseBytes)
 }
 

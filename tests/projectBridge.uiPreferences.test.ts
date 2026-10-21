@@ -1674,6 +1674,7 @@ describe("Project Launch Service preload installation", () => {
   it("uses one combined synchronization request when the service supports it", async () => {
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const requestedPaths: string[] = [];
+    let instanceId = "sync-service";
     const https = createProjectLaunchServiceDownloadHttps(Buffer.from("updated-project-launch-service"));
     writeFileSync(
       join(serviceRoot, "local-state.v1.json"),
@@ -1696,7 +1697,7 @@ describe("Project Launch Service preload installation", () => {
                 health: {
                   protocolVersion: 3,
                   serviceVersion: "test",
-                  instanceId: "sync-service",
+                  instanceId,
                   pid: process.pid,
                   processIdentity: "sync-process",
                 },
@@ -1784,6 +1785,15 @@ describe("Project Launch Service preload installation", () => {
       });
       expect(requestedPaths).toEqual(["/v1/sync?after=0", "/v1/sync?after=1"]);
       expect(https.get).toHaveBeenCalledTimes(2);
+      instanceId = "restarted-sync-service";
+      writeFileSync(join(installed.directoryPath, "discovery.json"), JSON.stringify({
+        protocolVersion: 3, serviceVersion: "test", instanceId, pid: process.pid,
+        processIdentity: "sync-process", startedAt: new Date().toISOString(),
+        host: "127.0.0.1", port: 3000, tokenPath: join(installed.directoryPath, "token"),
+      }));
+      const restarted = await bridge.reconcileProjectLaunchService();
+      expect(restarted.state).toBe("healthy");
+      expect(requestedPaths.at(-1)).toBe("/v1/sync?after=0");
       bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
     } finally {
       rmSync(serviceRoot, { recursive: true, force: true });
@@ -1957,11 +1967,17 @@ describe("Project Launch Service preload installation", () => {
     }
   });
 
-  it("suppresses unchanged empty service-state broadcasts", async () => {
+  it.each([false, true])("suppresses idle broadcasts and cancels disabled sync (long poll: %s)", async (longPoll) => {
     vi.useFakeTimers();
     const serviceRoot = mkdtempSync(join(tmpdir(), "utools-project-launch-service-"));
     const emittedEvents: Array<{ type?: string; status?: ProjectLaunchServiceStatus }> = [];
     const requestedPaths: string[] = [];
+    let waits = 0;
+    let cancellations = 0;
+    let pendingRequest: { destroy: (error?: Error) => void } | undefined;
+    let offline = false;
+    let onTokenRead: (() => void) | undefined;
+    const stat = vi.fn(statSync);
     writeFileSync(
       join(serviceRoot, "local-state.v1.json"),
       JSON.stringify({ schemaVersion: 1, preferences: { projectLaunchService: { schemaVersion: 1, enabled: true } } }),
@@ -1974,15 +1990,37 @@ describe("Project Launch Service preload installation", () => {
           destroy: (error?: Error) => void;
           end: () => void;
         };
-        request.destroy = () => undefined;
+        request.destroy = (error?: Error) => {
+          cancellations++;
+          if (error) request.emit("error", error);
+        };
         request.end = () => {
           const response = new EventEmitter() as EventEmitter & { statusCode: number };
+          if (offline) {
+            response.statusCode = 503;
+            callback(response);
+            response.emit("data", Buffer.from(JSON.stringify({ code: "unavailable" })));
+            response.emit("end");
+            return;
+          }
+          if (options.path.includes("waitMs=")) {
+            waits++;
+            if (waits > 1) {
+              pendingRequest = request;
+              return;
+            }
+            response.statusCode = 204;
+            callback(response);
+            response.emit("end");
+            return;
+          }
           response.statusCode = 200;
           callback(response);
           response.emit(
             "data",
             Buffer.from(
               JSON.stringify({
+                ...(longPoll ? { revision: "quiet-service:1" } : {}),
                 health: {
                   protocolVersion: 3,
                   serviceVersion: "test",
@@ -2019,7 +2057,21 @@ describe("Project Launch Service preload installation", () => {
         new Map(),
         undefined,
         { UTOOLS_PROJECT_LAUNCH_LOCAL_DATA_DIR: serviceRoot },
-        { http },
+        {
+          http,
+          fs: {
+            ...createRequire(import.meta.url)("node:fs"), statSync: stat,
+            readFileSync: (...args: Parameters<typeof readFileSync>) => {
+              if (String(args[0]).startsWith("/proc/")) throw new Error("identity unavailable");
+              if (String(args[0]).endsWith("token")) onTokenRead?.();
+              return readFileSync(...args);
+            },
+          },
+          child_process: {
+            ...createRequire(import.meta.url)("node:child_process"),
+            spawnSync: () => ({ status: 0, stdout: "", stderr: "" }),
+          },
+        },
         (detail) => {
           if (detail && typeof detail === "object") {
             emittedEvents.push(detail as { type?: string; status?: ProjectLaunchServiceStatus });
@@ -2049,9 +2101,53 @@ describe("Project Launch Service preload installation", () => {
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(750);
 
-      expect(requestedPaths).toEqual(["/v1/sync?after=0", "/v1/sync?after=0"]);
+      expect(requestedPaths).toEqual(longPoll ? [
+        "/v1/sync?after=0",
+        "/v1/sync?after=0&since=quiet-service%3A1&waitMs=25000",
+        "/v1/sync?after=0&since=quiet-service%3A1&waitMs=25000",
+      ] : ["/v1/sync?after=0", "/v1/sync?after=0"]);
       expect(emittedEvents.filter((event) => event.type === "service-state")).toHaveLength(1);
+      if (longPoll) {
+        const status = await bridge.reconcileProjectLaunchService();
+        expect(status.state).toBe("healthy");
+        expect(cancellations).toBe(1);
+        let foregroundRefresh: Promise<ProjectLaunchServiceStatus> | undefined;
+        onTokenRead = () => {
+          onTokenRead = undefined;
+          foregroundRefresh = bridge.reconcileProjectLaunchService();
+        };
+        await vi.advanceTimersByTimeAsync(1);
+        expect(foregroundRefresh).toBeDefined();
+        expect(requestedPaths.slice(-3)).toEqual([
+          "/v1/sync?after=0",
+          "/v1/sync?after=0",
+          "/v1/sync?after=0&since=quiet-service%3A1&waitMs=25000",
+        ]);
+        expect(await foregroundRefresh).toMatchObject({ state: "healthy" });
+        await vi.advanceTimersByTimeAsync(1);
+        offline = true;
+        pendingRequest!.destroy(new Error("service offline"));
+        await vi.advanceTimersByTimeAsync(0);
+        const statusReads = () => stat.mock.calls.filter(([path]) => path === installed.executablePath).length;
+        const readsAfterFailure = statusReads();
+        await vi.advanceTimersByTimeAsync(999);
+        expect(statusReads()).toBe(readsAfterFailure);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(statusReads()).toBe(readsAfterFailure + 1);
+        await vi.advanceTimersByTimeAsync(1999);
+        expect(statusReads()).toBe(readsAfterFailure + 1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(statusReads()).toBe(readsAfterFailure + 2);
+        await vi.advanceTimersByTimeAsync(3999);
+        expect(statusReads()).toBe(readsAfterFailure + 2);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(statusReads()).toBe(readsAfterFailure + 3);
+      }
       bridge.saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
+      const requestCount = requestedPaths.length;
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(requestedPaths).toHaveLength(requestCount);
+      if (longPoll) expect(cancellations).toBe(2);
     } finally {
       vi.useRealTimers();
       rmSync(serviceRoot, { recursive: true, force: true });
@@ -3635,7 +3731,7 @@ describe("store startup timing", () => {
     expect(store.projects[0]?.scripts[0]?.runId).toBeUndefined();
   });
 
-  it("applies live service automation snapshots, history, and one completion notification", async () => {
+  it.each([false, true])("applies automation history with notification ownership (native: %s)", async (nativeNotifications) => {
     const showNotification = vi.fn();
     const saveProjects = vi.fn<ProjectBridge["saveProjects"]>(async () => undefined);
     window.utools = {
@@ -3702,6 +3798,7 @@ describe("store startup timing", () => {
       executablePath: "C:\\service\\project-launch-service.exe",
       releaseUrl: "https://github.com/Wwyxa/utools-project-launch/releases",
       automationRevision: 4,
+      nativeNotifications,
     };
     const execution = {
       id: "automation-run",
@@ -3776,7 +3873,8 @@ describe("store startup timing", () => {
     expect(store.automationActiveProjectRuns["automation-project"]).toBeUndefined();
     expect(task?.history).toHaveLength(1);
     expect(task?.history[0]).toMatchObject({ id: "automation-run", status: "completed" });
-    expect(showNotification).toHaveBeenCalledWith("任务“Deploy task”已完成");
+    if (!nativeNotifications) expect(showNotification).toHaveBeenCalledWith("任务“Deploy task”已完成");
+    expect(showNotification).toHaveBeenCalledTimes(nativeNotifications ? 0 : 1);
     expect(saveProjects).not.toHaveBeenCalled();
 
     store.handleBridgeEvent({
@@ -3805,7 +3903,7 @@ describe("store startup timing", () => {
       },
     });
 
-    expect(showNotification).toHaveBeenCalledTimes(1);
+    expect(showNotification).toHaveBeenCalledTimes(nativeNotifications ? 0 : 1);
 
     task!.history = Array.from({ length: 20 }, (_, index) => ({
       id: `local-history-${index}`,
@@ -3857,7 +3955,7 @@ describe("store startup timing", () => {
       },
     });
 
-    expect(showNotification).toHaveBeenCalledTimes(1);
+    expect(showNotification).toHaveBeenCalledTimes(nativeNotifications ? 0 : 1);
 
     store.handleBridgeEvent({
       type: "service-state",

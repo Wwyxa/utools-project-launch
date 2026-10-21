@@ -20,11 +20,36 @@ func decodeProcessOutput(output []byte) string {
 	if utf8.Valid(output) {
 		return string(output)
 	}
+	return decodeLegacyProcessOutput(output)
+}
+
+func decodeLegacyProcessOutput(output []byte) string {
 	decoded, ok := decodeGB18030Output(output)
 	if ok {
 		return decoded
 	}
 	return string(output)
+}
+
+func completeLegacyOutputPrefix(output []byte) int {
+	for offset := 0; offset < len(output); {
+		if output[offset] < 0x81 || output[offset] > 0xfe {
+			offset++
+			continue
+		}
+		if offset+1 == len(output) {
+			return offset
+		}
+		size := 2
+		if output[offset+1] >= '0' && output[offset+1] <= '9' {
+			size = 4
+		}
+		if offset+size > len(output) {
+			return offset
+		}
+		offset += size
+	}
+	return len(output)
 }
 
 func decodeGB18030Output(output []byte) (string, bool) {

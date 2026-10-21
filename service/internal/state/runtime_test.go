@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -368,6 +369,126 @@ func TestIgnoreMissedAutomationExecutionPersistsSkippedStatus(t *testing.T) {
 	}
 }
 
+func newArchivedMissedAutomationExecution(t *testing.T) (*Store, AutomationExecution, string) {
+	t.Helper()
+	root := t.TempDir()
+	store, err := OpenWithRuntimeRecords(filepath.Join(root, "service"), filepath.Join(root, "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1}`)); err != nil {
+		t.Fatal(err)
+	}
+	execution := AutomationExecution{
+		ID: "archived-missed", ProjectID: "project", TaskID: "task", PlanEntryID: "archived-entry",
+		Status: AutomationExecutionMissed, PlannedAt: "2026-10-20T10:00:00Z", EndedAt: "2026-10-20T10:01:00Z",
+	}
+	if _, claimed, err := store.ClaimAutomationExecution(1, execution); err != nil || !claimed {
+		t.Fatalf("claim missed execution: claimed=%t err=%v", claimed, err)
+	}
+	for index := 0; index < MaxAutomationHistoryPerTask; index++ {
+		newer := cloneAutomationExecution(execution)
+		newer.ID = fmt.Sprintf("newer-%d", index)
+		newer.PlanEntryID = newer.ID
+		newer.Status = AutomationExecutionSkipped
+		store.data.Automation.Executions = append(store.data.Automation.Executions, newer)
+	}
+	store.trimAutomationExecutionsLocked()
+	if err := store.persistLocked(); err != nil {
+		t.Fatal(err)
+	}
+	for _, retained := range store.Automation().Executions {
+		if retained.ID == execution.ID {
+			t.Fatal("missed execution was not archived")
+		}
+	}
+	digest := sha256.Sum256([]byte("automation:" + execution.ID))
+	return store, execution, fmt.Sprintf("%x", digest[:16])
+}
+
+func TestIgnoreMissedAutomationExecutionPersistsArchivedSkippedStatus(t *testing.T) {
+	store, execution, runID := newArchivedMissedAutomationExecution(t)
+	revision, changed := store.Changes()
+	stateWrites := store.LogPersistenceDiagnostics().StateWrites
+	updated, err := store.IgnoreMissedAutomationExecution(execution.ID)
+	if err != nil {
+		t.Fatalf("ignore archived missed execution: %v", err)
+	}
+	if updated.ID != execution.ID || updated.ProjectID != execution.ProjectID ||
+		updated.Status != AutomationExecutionSkipped || updated.Reason != "The missed execution was ignored." ||
+		updated.EndedAt == "" || updated.EndedAt == execution.EndedAt {
+		t.Fatalf("ignored execution = %#v", updated)
+	}
+	select {
+	case <-changed:
+	default:
+		t.Fatal("archived ignore did not wake change waiters")
+	}
+	if current, _ := store.Changes(); current <= revision {
+		t.Fatal("archived ignore did not advance the change revision")
+	}
+	if store.LogPersistenceDiagnostics().StateWrites != stateWrites {
+		t.Fatal("archived ignore rewrote state without a matching plan")
+	}
+	if _, retained := store.recordSnapshots[runID]; retained {
+		t.Fatal("archived ignore retained an unbounded record snapshot")
+	}
+	contents, err := os.ReadFile(store.recordPath(runID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record RuntimeRecord
+	if err := json.Unmarshal(contents, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != RunStatusExited || record.Execution == nil ||
+		record.Execution.Status != AutomationExecutionSkipped || record.EndedAt != updated.EndedAt ||
+		record.Execution.Reason != updated.Reason {
+		t.Fatalf("archived record = %#v", record)
+	}
+	contents, err = os.ReadFile(filepath.Join(store.logDirectoryPath(), runID+".log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event Event
+	if err := json.Unmarshal(bytes.TrimSpace(contents), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.RunID != runID || event.Message != "skipped: "+updated.Reason || event.Timestamp != updated.EndedAt {
+		t.Fatalf("archived log event = %#v", event)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenWithRuntimeRecords(filepath.Dir(store.statePath()), store.runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := reopened.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, current := range []*Store{store, reopened} {
+		if len(current.Automation().Executions) != MaxAutomationHistoryPerTask {
+			t.Fatal("archived ignore changed the bounded execution history")
+		}
+		for _, retained := range current.Automation().Executions {
+			if retained.ID == execution.ID {
+				t.Fatal("archived ignore reintroduced the old execution into the snapshot")
+			}
+		}
+		if _, err := current.IgnoreMissedAutomationExecution(execution.ID); !errors.Is(err, ErrAutomationExecutionNotMissed) {
+			t.Fatalf("repeat archived ignore = %v, want not missed", err)
+		}
+	}
+}
+
 func TestAutomationHistoryIsGloballyBounded(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {
@@ -554,6 +675,213 @@ func TestReconcileAutomationPlansPersistsClaimedEntryStatusAcrossRestart(t *test
 	}
 	if status := persisted.Plans[0].Entries[0].Status; status != AutomationPlanEntryCompleted {
 		t.Fatalf("persisted plan status = %q, want %q", status, AutomationPlanEntryCompleted)
+	}
+}
+
+func TestReconcileAutomationPlansExpiresTerminalPlans(t *testing.T) {
+	stateDir := t.TempDir()
+	store, err := Open(stateDir)
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1}`)); err != nil {
+		t.Fatalf("write automation config: %v", err)
+	}
+	for _, status := range []AutomationPlanEntryStatus{
+		AutomationPlanEntryPending,
+		AutomationPlanEntryCompleted,
+		AutomationPlanEntryFailed,
+		AutomationPlanEntrySkipped,
+		AutomationPlanEntryMissed,
+	} {
+		for _, claimed := range []bool{false, true} {
+			taskID := fmt.Sprintf("%s-%t", status, claimed)
+			store.data.Automation.Plans = append(store.data.Automation.Plans, AutomationPlan{
+				ProjectID: "project",
+				TaskID:    taskID,
+				Date:      "2026-08-01",
+				Entries:   []AutomationPlanEntry{{ID: "entry", Status: status}},
+			})
+			if claimed {
+				store.data.Automation.Executions = append(store.data.Automation.Executions, AutomationExecution{
+					ID:          taskID,
+					ProjectID:   "project",
+					TaskID:      taskID,
+					PlanEntryID: "entry",
+					Status:      AutomationExecutionCompleted,
+				})
+			}
+		}
+	}
+	for _, taskID := range []string{"running", "running-pending", "boundary", "future"} {
+		date := "2026-08-01"
+		status := AutomationPlanEntryPending
+		switch taskID {
+		case "running":
+			status = AutomationPlanEntryRunning
+		case "boundary":
+			date = "2026-08-08"
+		case "future":
+			date = "2026-08-16"
+		}
+		store.data.Automation.Plans = append(store.data.Automation.Plans, AutomationPlan{
+			ProjectID: "project",
+			TaskID:    taskID,
+			Date:      date,
+			Entries:   []AutomationPlanEntry{{ID: "entry", Status: status}},
+		})
+		if strings.HasPrefix(taskID, "running") {
+			store.data.Automation.Executions = append(store.data.Automation.Executions, AutomationExecution{
+				ID:          taskID,
+				ProjectID:   "project",
+				TaskID:      taskID,
+				PlanEntryID: "entry",
+				Status:      AutomationExecutionRunning,
+			})
+		}
+	}
+	tasks := make([]AutomationPlanTask, 0, len(store.data.Automation.Plans))
+	for _, plan := range store.data.Automation.Plans {
+		tasks = append(tasks, AutomationPlanTask{ProjectID: plan.ProjectID, TaskID: plan.TaskID})
+	}
+	updated, err := store.ReconcileAutomationPlans(1, nil, tasks, "2026-08-08")
+	if err != nil {
+		t.Fatalf("reconcile expired plans: %v", err)
+	}
+	if len(updated.Plans) != 4 {
+		t.Fatalf("retained plans = %#v, want running, running-pending, boundary and future", updated.Plans)
+	}
+	for _, plan := range updated.Plans {
+		if plan.TaskID != "running" && plan.TaskID != "running-pending" && plan.TaskID != "boundary" && plan.TaskID != "future" {
+			t.Fatalf("unexpected retained plan: %#v", plan)
+		}
+	}
+	if len(updated.Executions) != 7 {
+		t.Fatalf("retained executions = %#v, want existing history and active executions", updated.Executions)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close state: %v", err)
+	}
+	reopened, err := Open(stateDir)
+	if err != nil {
+		t.Fatalf("reopen state: %v", err)
+	}
+	defer reopened.Close()
+	if !automationPlansEqual(updated.Plans, reopened.Automation().Plans) {
+		t.Fatalf("reopened plans = %#v, want %#v", reopened.Automation().Plans, updated.Plans)
+	}
+	if _, err := reopened.UpdateAutomationExecution("running", func(execution *AutomationExecution) {
+		execution.Status = AutomationExecutionCompleted
+	}); err != nil {
+		t.Fatalf("complete expired running execution: %v", err)
+	}
+	released, err := reopened.ReconcileAutomationPlans(1, nil, tasks, "2026-08-08")
+	if err != nil || len(released.Plans) != 3 {
+		t.Fatalf("release completed plan: plans=%#v err=%v", released.Plans, err)
+	}
+	for _, plan := range released.Plans {
+		if plan.TaskID == "running" {
+			t.Fatalf("completed expired plan remains retained: %#v", plan)
+		}
+	}
+}
+
+func TestReconcileAutomationPlansPreservesCurrentSubmissionAfterHistoryTrimAndRestart(t *testing.T) {
+	for _, kind := range []AutomationSubmissionKind{AutomationSubmissionManual, AutomationSubmissionEarly} {
+		t.Run(string(kind), func(t *testing.T) {
+			stateDir := t.TempDir()
+			store, err := Open(stateDir)
+			if err != nil {
+				t.Fatalf("open state: %v", err)
+			}
+			reference := `"manualRun":{"id":"entry","plannedAt":"2026-08-01T09:00:00Z"}`
+			if kind == AutomationSubmissionEarly {
+				reference = `"runEarlyEntryId":"entry"`
+			}
+			config := json.RawMessage(fmt.Sprintf(`{"schemaVersion":1,"revision":1,"projects":[{"id":"project","automationTasks":[{"id":"task",%s}]}]}`, reference))
+			if _, err := store.ReplaceAutomation(1, config); err != nil {
+				t.Fatalf("write automation config: %v", err)
+			}
+			store.data.Automation.Plans = []AutomationPlan{{
+				ProjectID: "project",
+				TaskID:    "task",
+				Date:      "2026-08-01",
+				Entries: []AutomationPlanEntry{{
+					ID:        "entry",
+					PlannedAt: "2026-08-01T09:00:00Z",
+					Status:    AutomationPlanEntryCompleted,
+					RunEarly:  true,
+				}},
+			}}
+			store.data.Automation.Executions = []AutomationExecution{{
+				ID: "execution", ProjectID: "project", TaskID: "task", PlanEntryID: "entry", Status: AutomationExecutionCompleted,
+			}}
+			for index := 0; index < MaxAutomationHistoryPerTask; index++ {
+				store.data.Automation.Executions = append(store.data.Automation.Executions, AutomationExecution{
+					ID:          fmt.Sprintf("newer-%d", index),
+					ProjectID:   "project",
+					TaskID:      "task",
+					PlanEntryID: fmt.Sprintf("newer-entry-%d", index),
+					Status:      AutomationExecutionCompleted,
+				})
+			}
+			store.trimAutomationExecutionsLocked()
+			for _, execution := range store.data.Automation.Executions {
+				if execution.PlanEntryID == "entry" {
+					t.Fatal("original execution must be trimmed before testing plan idempotency")
+				}
+			}
+			if err := store.persistLocked(); err != nil {
+				t.Fatalf("persist trimmed automation history: %v", err)
+			}
+			tasks := []AutomationPlanTask{{ProjectID: "project", TaskID: "task"}}
+			updated, err := store.ReconcileAutomationPlans(1, nil, tasks, "2026-08-08")
+			if err != nil || len(updated.Plans) != 1 {
+				t.Fatalf("reconcile current submission: plans=%#v err=%v", updated.Plans, err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatalf("close state: %v", err)
+			}
+			reopened, err := Open(stateDir)
+			if err != nil {
+				t.Fatalf("reopen state: %v", err)
+			}
+			defer reopened.Close()
+			desired := cloneAutomationPlans(updated.Plans)
+			desired[0].Entries[0].Status = AutomationPlanEntryPending
+			submission := AutomationSubmission{Kind: kind, ProjectID: "project", TaskID: "task", PlanEntryID: "entry"}
+			if kind == AutomationSubmissionManual {
+				submission.PlannedAt = desired[0].Entries[0].PlannedAt
+			}
+			if _, err := reopened.ReplaceAutomationWithSubmissions(1, config, []AutomationSubmission{submission}); err != nil {
+				t.Fatalf("resubmit current submission: %v", err)
+			}
+			reconciled, err := reopened.ReconcileAutomationPlans(1, desired, tasks, "2026-08-08")
+			if err != nil {
+				t.Fatalf("reconcile resubmitted entry: %v", err)
+			}
+			if !automationPlansEqual(updated.Plans, reconciled.Plans) {
+				t.Fatalf("resubmitted plans = %#v, want original completed entry", reconciled.Plans)
+			}
+			if _, err := reopened.ReplaceAutomation(2, json.RawMessage(`{"schemaVersion":1,"revision":2,"projects":[{"id":"project","automationTasks":[{"id":"task"}]}]}`)); err != nil {
+				t.Fatalf("remove current submission reference: %v", err)
+			}
+			released, err := reopened.ReconcileAutomationPlans(2, nil, tasks, "2026-08-08")
+			if err != nil || len(released.Plans) != 0 {
+				t.Fatalf("release expired submission plan: plans=%#v err=%v", released.Plans, err)
+			}
+			if err := reopened.Close(); err != nil {
+				t.Fatalf("close released state: %v", err)
+			}
+			restored, err := Open(stateDir)
+			if err != nil {
+				t.Fatalf("reopen released state: %v", err)
+			}
+			defer restored.Close()
+			if plans := restored.Automation().Plans; len(plans) != 0 {
+				t.Fatalf("reopened released plans = %#v, want none", plans)
+			}
+		})
 	}
 }
 

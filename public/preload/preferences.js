@@ -130,6 +130,9 @@ function saveProjectLaunchServicePreferences(preferences) {
   const result = saveNormalizedLocalPreference("projectLaunchService", normalized, normalizeProjectLaunchServicePreferences);
   if (!normalized.enabled) {
     projectLaunchServiceLastBroadcastSignature = "";
+    projectLaunchServiceCancelSync?.();
+    projectLaunchServiceSyncRevision = '';
+    projectLaunchServiceRetryDelayMs = 0;
   }
   if (normalized.enabled && pluginLocalDataDirectory() && fs.existsSync(projectLaunchServiceDiscoveryPath())) {
     scheduleProjectLaunchServiceEventPoll(0);

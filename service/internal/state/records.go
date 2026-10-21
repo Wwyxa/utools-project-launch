@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -374,73 +375,121 @@ func (store *Store) writeCommonPolicyLocked(policy LogRetentionPolicy) error {
 
 func (store *Store) persistAutomationRecordsLocked() error {
 	for _, execution := range store.data.Automation.Executions {
-		digest := sha256.Sum256([]byte("automation:" + execution.ID))
-		runID := hex.EncodeToString(digest[:16])
-		if !store.data.LogRetention.Persist {
-			if _, err := os.Stat(store.recordPath(runID)); errors.Is(err, os.ErrNotExist) {
-				continue
-			}
+		if err := store.persistAutomationRecordLocked(execution); err != nil {
+			return err
 		}
-		startedAt := execution.StartedAt
-		if startedAt == "" {
-			startedAt = execution.PlannedAt
+	}
+	return nil
+}
+
+func automationRecordRunID(executionID string) string {
+	digest := sha256.Sum256([]byte("automation:" + executionID))
+	return hex.EncodeToString(digest[:16])
+}
+
+func (store *Store) readArchivedAutomationExecutionLocked(executionID string) (AutomationExecution, error) {
+	notFound := fmt.Errorf("%w: %q", ErrAutomationExecutionNotFound, executionID)
+	if store.runtimeDir == "" {
+		return AutomationExecution{}, notFound
+	}
+	runID := automationRecordRunID(executionID)
+	path := store.recordPath(runID)
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return AutomationExecution{}, notFound
+	}
+	if err != nil {
+		return AutomationExecution{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return AutomationExecution{}, errors.New("archived automation record must be a regular file")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return AutomationExecution{}, err
+	}
+	var record RuntimeRecord
+	if err := json.Unmarshal(contents, &record); err != nil {
+		return AutomationExecution{}, err
+	}
+	if record.Cleared {
+		return AutomationExecution{}, notFound
+	}
+	if record.SchemaVersion != 1 || record.Source != "automation" || record.RunID != runID ||
+		!record.Status.IsCompleted() || record.Execution == nil || record.Execution.ID != executionID ||
+		strings.TrimSpace(record.ProjectID) == "" || record.Execution.ProjectID != record.ProjectID ||
+		strings.TrimSpace(record.Execution.TaskID) == "" || strings.TrimSpace(record.Execution.PlanEntryID) == "" {
+		return AutomationExecution{}, ErrAutomationExecutionInvalid
+	}
+	return cloneAutomationExecution(*record.Execution), nil
+}
+
+func (store *Store) persistAutomationRecordLocked(execution AutomationExecution) error {
+	runID := automationRecordRunID(execution.ID)
+	if !store.data.LogRetention.Persist {
+		if _, err := os.Stat(store.recordPath(runID)); errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
-		if startedAt == "" {
-			startedAt = execution.EndedAt
+	}
+	startedAt := execution.StartedAt
+	if startedAt == "" {
+		startedAt = execution.PlannedAt
+	}
+	if startedAt == "" {
+		startedAt = execution.EndedAt
+	}
+	status := RunStatusExited
+	if execution.Status == AutomationExecutionRunning {
+		status = RunStatusRunning
+	}
+	if execution.Status == AutomationExecutionFailed || execution.Status == AutomationExecutionMissed {
+		status = RunStatusFailed
+	}
+	currentExecution := execution
+	record := RuntimeRecord{SchemaVersion: 1, Source: "automation", RunID: runID,
+		ProjectID: execution.ProjectID, ScriptID: "", Label: execution.TaskID, Status: status,
+		StartedAt: startedAt, EndedAt: execution.EndedAt, WriterPID: os.Getpid(), Execution: &currentExecution}
+	contents, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	if store.recordSnapshots[runID] == string(contents) {
+		return nil
+	}
+	previous, err := os.ReadFile(store.recordPath(runID))
+	if err == nil {
+		var existing RuntimeRecord
+		if err := json.Unmarshal(previous, &existing); err != nil {
+			return err
 		}
-		status := RunStatusExited
-		if execution.Status == AutomationExecutionRunning {
-			status = RunStatusRunning
+		if existing.Cleared {
+			return nil
 		}
-		if execution.Status == AutomationExecutionFailed || execution.Status == AutomationExecutionMissed {
-			status = RunStatusFailed
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if execution.Status != AutomationExecutionRunning && store.data.LogRetention.Persist {
+		message := string(execution.Status)
+		if execution.Reason != "" {
+			message += ": " + execution.Reason
 		}
-		currentExecution := execution
-		record := RuntimeRecord{SchemaVersion: 1, Source: "automation", RunID: runID,
-			ProjectID: execution.ProjectID, ScriptID: "", Label: execution.TaskID, Status: status,
-			StartedAt: startedAt, EndedAt: execution.EndedAt, WriterPID: os.Getpid(), Execution: &currentExecution}
-		contents, err := json.Marshal(record)
+		event := Event{Cursor: 1, Timestamp: execution.EndedAt, Type: "stdout", RunID: runID,
+			ProjectID: execution.ProjectID, ScriptID: "", Message: message}
+		if event.Timestamp == "" {
+			event.Timestamp = startedAt
+		}
+		encoded, err := json.Marshal(event)
 		if err != nil {
 			return err
 		}
-		if store.recordSnapshots[runID] == string(contents) {
-			continue
-		}
-		previous, err := os.ReadFile(store.recordPath(runID))
-		if err == nil {
-			var existing RuntimeRecord
-			if err := json.Unmarshal(previous, &existing); err != nil {
-				return err
-			}
-			if existing.Cleared {
-				continue
-			}
-		} else if !errors.Is(err, os.ErrNotExist) {
+		if err := writeFileAtomic(filepath.Join(store.logDirectoryPath(), runID+".log"), append(encoded, '\n'), 0o600); err != nil {
 			return err
 		}
-		if execution.Status != AutomationExecutionRunning && store.data.LogRetention.Persist {
-			message := string(execution.Status)
-			if execution.Reason != "" {
-				message += ": " + execution.Reason
-			}
-			event := Event{Cursor: 1, Timestamp: execution.EndedAt, Type: "stdout", RunID: runID,
-				ProjectID: execution.ProjectID, ScriptID: "", Message: message}
-			if event.Timestamp == "" {
-				event.Timestamp = startedAt
-			}
-			encoded, err := json.Marshal(event)
-			if err != nil {
-				return err
-			}
-			if err := writeFileAtomic(filepath.Join(store.logDirectoryPath(), runID+".log"), append(encoded, '\n'), 0o600); err != nil {
-				return err
-			}
-		}
-		if err := writeFileAtomic(store.recordPath(runID), contents, 0o600); err != nil {
-			return err
-		}
-		store.recordSnapshots[runID] = string(contents)
 	}
+	if err := writeFileAtomic(store.recordPath(runID), contents, 0o600); err != nil {
+		return err
+	}
+	store.recordSnapshots[runID] = string(contents)
 	return nil
 }
 

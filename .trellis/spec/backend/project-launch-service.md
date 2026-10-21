@@ -84,6 +84,41 @@ files are migration inputs, not the current service root.
   capture updated results before trimming slices. Output retention and historical
   reads follow [Logging Guidelines](./logging-guidelines.md).
 
+## Scenario: Change-Driven Sync and Service Notifications
+
+`GET /v1/sync?after=<cursor>&since=<revision>&waitMs=<0..25000>` returns a bounded
+`{revision, health, state, events}` snapshot or an empty HTTP 204. Revisions are
+instance-scoped change tokens, separate from event cursors. Capture state and
+events atomically; wake waiters after committed state changes. Preload serializes
+sync, cancels stale waits on foreground reads or disable, drains event pages before
+waiting, and backs off failures to 30 seconds. Older services retain 750ms polling.
+
+Health `nativeNotifications` means the service owns notification delivery, not
+that the OS displayed it. The service queues at most 32 completion notices and
+sends serially with an 8-second wait. Underlying library calls cannot be cancelled;
+do not start overlapping calls when one exceeds its wait. No durable retry exists.
+Use `beeep` as the single cross-platform notification API and set its application
+name once. Set task text as data. Platform backend behavior and OS policy may
+suppress display or control notification history.
+
+Ignore-missed validates and updates either the bounded execution or its exact
+durable automation record; reject cleared/invalid records and do not emit another
+completion notice. Persist the skipped status so history reload does not revive it.
+
+On Windows, start the root suspended, assign it to an anonymous Job, then resume.
+The run remains active until all Job members exit; stop the Job even after the root
+exits. Use a completion port plus active-process queries. The service owns the Job
+and refuses shutdown with active runs (`409 active_runs`); do not add cross-restart
+Job recovery or helper processes. Exit status represents the root only. Keep
+stdout/stderr decoding stateful across chunks, drain output after the process group
+ends, and own stdin pipes until then. Preserve quotes in the raw `cmd /d /s /c`
+command line. Other platforms retain root-process lifecycle semantics.
+
+Regression coverage must include sync wake/cancellation and old-service fallback;
+notification serialization, timeout and queue bounds; ignored durable history;
+and Windows child lifetime, redirected output, stdin, group stop, and shutdown
+rejection. Real OS notification visibility requires host validation.
+
 ## Verification
 
 `go -C service test ./...` covers state, API, process, scheduler, and recovery.

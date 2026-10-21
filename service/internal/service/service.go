@@ -181,16 +181,24 @@ func (service *Service) Start() error {
 		HasActiveRuns: supervisor.HasActiveRuns,
 		Supervisor:    supervisor,
 		Scheduler:     schedulerRuntime,
+		Changes:       store.Changes,
 	})
 	if err != nil {
 		_ = listener.Close()
 		return err
 	}
 
+	schedulerContext, schedulerCancel := context.WithCancel(context.Background())
+	defer func() {
+		if !service.started {
+			schedulerCancel()
+		}
+	}()
 	httpServer := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       30 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return schedulerContext },
 	}
 	if err := state.WriteDiscovery(service.config.StateDir, discovery); err != nil {
 		_ = listener.Close()
@@ -208,9 +216,9 @@ func (service *Service) Start() error {
 	service.started = true
 	closeDirectoryLock = false
 
-	go service.serve()
-	schedulerContext, schedulerCancel := context.WithCancel(context.Background())
 	service.schedulerStop = schedulerCancel
+	service.startNotifications(schedulerContext, schedulerRuntime)
+	go service.serve()
 	go service.runScheduler(schedulerRuntime, schedulerContext)
 	service.log("start.ready", map[string]any{
 		"instanceId": discovery.InstanceID,

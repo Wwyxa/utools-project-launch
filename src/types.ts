@@ -337,6 +337,7 @@ export interface ProjectLaunchServiceAutomationManualRunConfig {
 }
 
 export interface ProjectLaunchServiceAutomationTaskConfig {
+  notifyEnabled?: boolean;
   id: string;
   name: string;
   enabled: boolean;
@@ -442,6 +443,7 @@ export interface ProjectLaunchServiceStatus {
   releaseUrl: string;
   protocolVersion?: number;
   serviceVersion?: string;
+  nativeNotifications?: boolean;
   activeRunCount?: number;
   runs?: ProjectLaunchServiceRun[];
   events?: ProjectLaunchServiceEvent[];

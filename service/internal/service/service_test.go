@@ -10,12 +10,83 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"project-launch-service/internal/api"
 	"project-launch-service/internal/state"
 )
+
+func TestNotificationQueueSerializesSimultaneousCompletions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	queue := make(chan taskNotification, 32)
+	queue <- taskNotification{Body: "first"}
+	queue <- taskNotification{Body: "second"}
+	close(queue)
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	sender := newNotificationSender(func(notification taskNotification) error {
+		started <- notification.Body
+		if notification.Body == "first" {
+			<-release
+		}
+		return nil
+	})
+	errorsSeen := make(chan error, 2)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		(&Service{}).runNotifications(ctx, queue, func(ctx context.Context, notification taskNotification) error {
+			err := sender.send(ctx, notification)
+			errorsSeen <- err
+			return err
+		})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		releaseOnce.Do(func() { close(release) })
+		select {
+		case <-done:
+			close(sender.jobs)
+		case <-time.After(time.Second):
+			t.Error("notification queue did not stop")
+		}
+	})
+	select {
+	case actual := <-started:
+		if actual != "first" {
+			t.Fatalf("first notification = %q", actual)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first notification did not start")
+	}
+	select {
+	case actual := <-started:
+		t.Fatalf("notification %q overlapped the first send", actual)
+	default:
+	}
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case actual := <-started:
+		if actual != "second" {
+			t.Fatalf("second notification = %q", actual)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second notification was lost")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("notification queue did not drain")
+	}
+	for range 2 {
+		if err := <-errorsSeen; err != nil {
+			t.Fatalf("queued notification failed: %v", err)
+		}
+	}
+}
 
 func TestServiceWritesAndRemovesDiscovery(t *testing.T) {
 	stateDir := filepath.Join(t.TempDir(), "service")
@@ -72,6 +143,51 @@ func TestServiceWritesAndRemovesDiscovery(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(stateDir, "logs")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("old run log path was used: %v", err)
+	}
+}
+
+func TestShutdownCancelsWaitingSync(t *testing.T) {
+	runtime, discovery, token := startService(t, filepath.Join(t.TempDir(), "service"))
+	revision, _ := runtime.store.Changes()
+	entered := make(chan struct{})
+	originalHandler := runtime.httpServer.Handler
+	runtime.httpServer.Handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		close(entered)
+		originalHandler.ServeHTTP(writer, request)
+	})
+	query := "/v1/sync?after=" + strconv.FormatUint(runtime.store.Snapshot().LatestCursor, 10) +
+		"&since=" + discovery.InstanceID + ":" + strconv.FormatUint(revision, 10) + "&waitMs=25000"
+	clientRequest, err := http.NewRequest(http.MethodGet, runtime.URL()+query, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientRequest.Header.Set(api.AuthorizationHeader, "Bearer "+token)
+	clientRequest.Header.Set(api.ProtocolHeader, strconv.Itoa(state.ProtocolVersion))
+	done := make(chan error, 1)
+	go func() {
+		response, err := http.DefaultClient.Do(clientRequest)
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		done <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sync did not enter HTTP handler")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := runtime.Shutdown(ctx); err != nil {
+		t.Fatalf("waiting sync blocked shutdown: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiting sync client did not finish")
 	}
 }
 

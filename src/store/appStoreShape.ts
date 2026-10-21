@@ -663,7 +663,7 @@ export interface AppActions {
   runAutomationTask(projectId: string, taskId: string, entryId: string): Promise<void>;
   runAutomationPlanEntryEarly(projectId: string, taskId: string, entryId: string): Promise<boolean>;
   runAutomationTaskNow(projectId: string, taskId: string): Promise<boolean>;
-  ignoreMissedAutomationTask(projectId: string, taskId: string): Promise<boolean>;
+  ignoreMissedAutomationTask(projectId: string, taskId: string, executionId?: string): Promise<boolean>;
   runAutomationScript(
     projectId: string,
     scriptId: string,

@@ -175,6 +175,7 @@ export const projectLaunchServiceActions = {
             : task.history.map((item, index) => (index === existingHistoryIndex ? historyEntry : item)),
         );
         if (
+          status.nativeNotifications !== true &&
           serviceAutomationExecutionStatuses &&
           existingHistoryIndex === -1 &&
           (previousExecutionStatus === undefined || previousExecutionStatus === "running")

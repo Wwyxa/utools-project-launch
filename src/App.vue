@@ -114,6 +114,9 @@ const syncPluginSearchInput = () => {
 };
 
 const handlePluginEnter = async (action?: unknown) => {
+  if (store.projectsLoaded && store.projectLaunchServicePreferences.enabled) {
+    void store.refreshProjectLaunchServiceStatus();
+  }
   const searchText = extractPluginSearchText(action);
   pluginSearchQuery.value = "";
   syncPluginSearchInput();
@@ -132,6 +135,9 @@ const handlePluginEnter = async (action?: unknown) => {
 const handleRuntimeResume = () => {
   if (runtimeResumePromise) {
     return;
+  }
+  if (store.projectLaunchServicePreferences.enabled) {
+    void store.refreshProjectLaunchServiceStatus();
   }
   runtimeResumePromise = store
     .reloadProjectsFromStorage()

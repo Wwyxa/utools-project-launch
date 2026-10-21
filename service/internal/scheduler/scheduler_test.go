@@ -28,6 +28,13 @@ func TestSchedulerExecutesDuePlanOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scheduler: %v", err)
 	}
+	notifications := make(chan state.AutomationExecution, 4)
+	runtime.NotifyCompletion = func(task TaskConfig, execution state.AutomationExecution) {
+		if !task.NotifyEnabled {
+			t.Error("notification was emitted for a disabled task")
+		}
+		notifications <- execution
+	}
 
 	config, err := json.Marshal(Config{
 		SchemaVersion: 1,
@@ -44,6 +51,7 @@ func TestSchedulerExecutesDuePlanOnce(t *testing.T) {
 				Cwd:     stateDir,
 			}},
 			AutomationTasks: []TaskConfig{{
+				NotifyEnabled:            true,
 				ID:                       "scheduled-task",
 				Name:                     "Scheduled task",
 				Enabled:                  true,
@@ -75,12 +83,39 @@ func TestSchedulerExecutesDuePlanOnce(t *testing.T) {
 		t.Fatalf("run scheduler: %v", err)
 	}
 	waitForExecution(t, store, "scheduled-project", "scheduled-task", "due-entry", state.AutomationExecutionCompleted)
+	select {
+	case execution := <-notifications:
+		if execution.Status != state.AutomationExecutionCompleted || execution.EndedAt == "" {
+			t.Fatalf("notification before durable completion: %#v", execution)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("completion did not notify without a renderer")
+	}
 
 	if err := runtime.RunOnce(context.Background()); err != nil {
 		t.Fatalf("run scheduler again: %v", err)
 	}
 	if runs := supervisor.StoreSnapshot().Runs; len(runs) != 1 {
 		t.Fatalf("run count = %d, want 1 after repeat scheduler pass", len(runs))
+	}
+	var updatedConfig Config
+	if err := json.Unmarshal(config, &updatedConfig); err != nil {
+		t.Fatal(err)
+	}
+	updatedConfig.Revision = 2
+	updatedConfig.Projects[0].AutomationTasks[0].NotifyEnabled = false
+	updatedPayload, err := json.Marshal(updatedConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ReplaceConfiguration(2, updatedPayload); err != nil {
+		t.Fatal(err)
+	}
+	runtime.notifyExecution(executionID("scheduled-project", "scheduled-task", "due-entry"))
+	select {
+	case execution := <-notifications:
+		t.Fatalf("duplicate notification: %#v", execution)
+	default:
 	}
 }
 
@@ -97,6 +132,9 @@ func TestSchedulerExecutesEarlyPlanWithOriginalPlannedTime(t *testing.T) {
 	runtime, err := New(store, supervisor)
 	if err != nil {
 		t.Fatalf("create scheduler: %v", err)
+	}
+	runtime.NotifyCompletion = func(TaskConfig, state.AutomationExecution) {
+		t.Error("task without notifyEnabled emitted a notification")
 	}
 
 	plannedAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
@@ -858,6 +896,10 @@ func TestSchedulerMarksExpiredGracePlanMissed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scheduler: %v", err)
 	}
+	var notifications []state.AutomationExecution
+	runtime.NotifyCompletion = func(_ TaskConfig, execution state.AutomationExecution) {
+		notifications = append(notifications, execution)
+	}
 	now := time.Now().In(time.Local)
 	scheduleTime := now.Add(-time.Minute)
 	if scheduleTime.Format("2006-01-02") != now.Format("2006-01-02") {
@@ -882,6 +924,7 @@ func TestSchedulerMarksExpiredGracePlanMissed(t *testing.T) {
 			AutomationTasks: []TaskConfig{{
 				ID:                       "missed-task",
 				Name:                     "Missed task",
+				NotifyEnabled:            true,
 				Enabled:                  true,
 				MissedPolicy:             "grace-run",
 				MissedGraceMinutes:       0,
@@ -910,6 +953,12 @@ func TestSchedulerMarksExpiredGracePlanMissed(t *testing.T) {
 	waitForExecution(t, store, "missed-project", "missed-task", expiredEntryID, state.AutomationExecutionMissed)
 	if runs := supervisor.StoreSnapshot().Runs; len(runs) != 0 {
 		t.Fatalf("run count = %d, want no command for an expired grace plan", len(runs))
+	}
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(notifications) != 1 || notifications[0].Status != state.AutomationExecutionMissed || notifications[0].EndedAt == "" {
+		t.Fatalf("missed notifications = %#v, want one persisted terminal execution", notifications)
 	}
 }
 
@@ -987,7 +1036,17 @@ func TestSchedulerFailsOrphanedRecoveredAutomationExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open state: %v", err)
 	}
-	if _, err := store.ReplaceAutomation(1, json.RawMessage(`{"schemaVersion":1,"revision":1,"projects":[]}`)); err != nil {
+	config, err := json.Marshal(Config{
+		SchemaVersion: 1, Revision: 1,
+		Projects: []ProjectConfig{{ID: "orphaned-project", AutomationTasks: []TaskConfig{{
+			ID: "orphaned-task", NotifyEnabled: true, ScheduleAlgorithmVersion: ScheduleAlgorithmVersion,
+			Schedule: &ScheduleConfig{Type: "fixed", StartTime: "00:00", DailyCount: 1, IntervalMinutes: 1},
+		}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReplaceAutomation(1, config); err != nil {
 		t.Fatalf("persist automation config: %v", err)
 	}
 	if _, claimed, err := store.ClaimAutomationExecution(1, state.AutomationExecution{
@@ -1008,6 +1067,10 @@ func TestSchedulerFailsOrphanedRecoveredAutomationExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scheduler: %v", err)
 	}
+	var notifications []state.AutomationExecution
+	runtime.NotifyCompletion = func(_ TaskConfig, execution state.AutomationExecution) {
+		notifications = append(notifications, execution)
+	}
 	if err := runtime.RunOnce(context.Background()); err != nil {
 		t.Fatalf("reconcile orphaned automation execution: %v", err)
 	}
@@ -1018,6 +1081,12 @@ func TestSchedulerFailsOrphanedRecoveredAutomationExecution(t *testing.T) {
 	}
 	if len(supervisor.StoreSnapshot().Runs) != 0 {
 		t.Fatalf("run count = %d, want no duplicate launch", len(supervisor.StoreSnapshot().Runs))
+	}
+	if err := runtime.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(notifications) != 1 || notifications[0].Status != state.AutomationExecutionFailed || notifications[0].EndedAt == "" {
+		t.Fatalf("recovery notifications = %#v, want one persisted failure", notifications)
 	}
 }
 
@@ -1063,6 +1132,21 @@ func TestSchedulerKeepsInFlightExecutionDuringSameProcessReconcile(t *testing.T)
 	executions := store.Automation().Executions
 	if len(executions) != 1 || executions[0].Status != state.AutomationExecutionRunning {
 		t.Fatalf("automation executions = %#v, want retained in-flight execution", executions)
+	}
+}
+
+func TestAutomationControllerPreservesOutputAcrossChunks(t *testing.T) {
+	controller := newAutomationController(nil, "chunked-run", automationRunControls{})
+	controller.observe([]state.Event{
+		{RunID: "chunked-run", Type: "stdout", Message: "SERVICE_"},
+		{RunID: "other-run", Type: "stdout", Message: "unrelated"},
+		{RunID: "chunked-run", Type: "stdin", Message: "redacted"},
+		{RunID: "chunked-run", Type: "stdout", Message: "READY\nPass"},
+		{RunID: "chunked-run", Type: "stdout", Message: "word: "},
+		{RunID: "chunked-run", Type: "stderr", Message: "warning\n"},
+	})
+	if want := "SERVICE_READY\nPassword: warning\n"; controller.output != want {
+		t.Fatalf("observed output = %q, want %q", controller.output, want)
 	}
 }
 

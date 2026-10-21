@@ -781,7 +781,7 @@ function requestProjectLaunchService(discovery, token, method, requestPath, body
         port: discovery.port,
         method,
         path: requestPath,
-        timeout: projectLaunchServiceRequestTimeoutMs,
+        timeout: options.timeoutMs || projectLaunchServiceRequestTimeoutMs,
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
@@ -798,6 +798,8 @@ function requestProjectLaunchService(discovery, token, method, requestPath, body
       (response) => {
         const chunks = [];
         let responseBytes = 0;
+        response.on('error', reject);
+        response.on('aborted', () => reject(new Error('服务响应中断。')));
         response.on('data', (chunk) => {
           responseBytes += Buffer.byteLength(chunk);
           if (responseBytes <= maxResponseBytes) {
@@ -827,6 +829,7 @@ function requestProjectLaunchService(discovery, token, method, requestPath, body
     );
     request.on('timeout', () => request.destroy(new Error('服务请求超时。')));
     request.on('error', (error) => reject(error));
+    options.onRequest?.(request);
     if (body !== undefined) {
       request.write(requestBody);
     }
@@ -925,15 +928,34 @@ async function requestProjectLaunchServiceEvents(connection, after) {
   return projectLaunchServiceEventBatch(response.payload, after);
 }
 
-async function requestProjectLaunchServiceSync(connection, after) {
+async function requestProjectLaunchServiceSync(connection, after, options = {}) {
+  const wait = options.waitForChanges === true && projectLaunchServiceSyncRevision;
+  const query = wait
+    ? `&since=${encodeURIComponent(projectLaunchServiceSyncRevision)}&waitMs=${projectLaunchServiceSyncWaitMs}`
+    : '';
+  let cancelSync;
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
     'GET',
-    `/v1/sync?after=${encodeURIComponent(String(after))}`,
+    `/v1/sync?after=${encodeURIComponent(String(after))}${query}`,
     undefined,
-    { maxResponseBytes: projectLaunchServiceSyncResponseLimitBytes },
-  );
+    {
+      maxResponseBytes: projectLaunchServiceSyncResponseLimitBytes,
+      timeoutMs: wait ? projectLaunchServiceSyncWaitMs + projectLaunchServiceRequestTimeoutMs : projectLaunchServiceRequestTimeoutMs,
+      onRequest: wait ? (request) => {
+        cancelSync = () => {
+          const error = new Error('Service synchronization cancelled.');
+          error.code = 'sync-cancelled';
+          request.destroy(error);
+        };
+        projectLaunchServiceCancelSync = cancelSync;
+      } : undefined,
+    },
+  ).finally(() => {
+    if (projectLaunchServiceCancelSync === cancelSync) projectLaunchServiceCancelSync = null;
+  });
+  if (response.statusCode === 204 && wait) return { unchanged: true };
   if (response.statusCode !== 200) {
     throw projectLaunchServiceResponseError(response, '项目启动服务同步失败。');
   }
@@ -954,6 +976,7 @@ async function requestProjectLaunchServiceSync(connection, after) {
     throw error;
   }
   return {
+    revision: typeof payload.revision === 'string' ? payload.revision : '',
     health: validateProjectLaunchServiceHealth(payload.health, connection),
     state: projectLaunchServiceStateSnapshot(payload.state),
     events: projectLaunchServiceEventBatch(payload.events, after),
@@ -984,12 +1007,19 @@ async function syncProjectLaunchServiceAutomation(config) {
   }
 
   const connection = await projectLaunchServiceConnection();
+  const serviceConfig = status.nativeNotifications === true ? config : {
+    ...config,
+    projects: config.projects.map((project) => ({
+      ...project,
+      automationTasks: project.automationTasks.map(({ notifyEnabled, ...task }) => task),
+    })),
+  };
   const response = await requestProjectLaunchService(
     connection.discovery,
     connection.token,
     'PUT',
     '/v1/automation/config',
-    { revision: config.revision, config },
+    { revision: config.revision, config: serviceConfig },
   );
   if (response.statusCode !== 200) {
     throw projectLaunchServiceResponseError(response, '项目启动服务拒绝了自动化配置。');
@@ -1158,8 +1188,26 @@ function rememberProjectLaunchServiceState(status) {
   projectLaunchServiceLastBroadcastSignature = projectLaunchServiceStateSignature(status);
 }
 
-async function readProjectLaunchServiceStatus(options = {}) {
+function readProjectLaunchServiceStatus(options = {}) {
+  if (options.waitForChanges !== true) {
+    projectLaunchServiceForegroundRevision++;
+    projectLaunchServiceCancelSync?.();
+  }
+  const foregroundRevision = projectLaunchServiceForegroundRevision;
+  const read = projectLaunchServiceStatusQueue.then(() => readProjectLaunchServiceStatusNow({
+    ...options,
+    foregroundRevision,
+    waitForChanges: options.waitForChanges === true && foregroundRevision === projectLaunchServiceForegroundRevision,
+  }));
+  projectLaunchServiceStatusQueue = read.catch(() => {});
+  return read;
+}
+
+async function readProjectLaunchServiceStatusNow(options = {}) {
   const status = projectLaunchServiceBaseStatus();
+  if (options.waitForChanges === true && !readProjectLaunchServicePreferences().enabled) {
+    return { status, batch: null, cancelled: true };
+  }
   if (!status.installed) {
     try {
       status.installed = fs.statSync(status.executablePath).isFile();
@@ -1184,10 +1232,23 @@ async function readProjectLaunchServiceStatus(options = {}) {
   }
 
   try {
+    if (options.waitForChanges === true) {
+      if (!readProjectLaunchServicePreferences().enabled) {
+        return { status, batch: null, cancelled: true };
+      }
+      options.waitForChanges = options.foregroundRevision === projectLaunchServiceForegroundRevision;
+    }
+    if (projectLaunchServiceSyncInstance !== connection.discovery.instanceId) {
+      projectLaunchServiceSyncInstance = connection.discovery.instanceId;
+      projectLaunchServiceEventCursor = 0;
+      projectLaunchServiceSyncRevision = '';
+      projectLaunchServiceLastBroadcastSignature = '';
+    }
     const sync =
       options.includeState === true
-        ? await requestProjectLaunchServiceSync(connection, projectLaunchServiceEventCursor)
+        ? await requestProjectLaunchServiceSync(connection, projectLaunchServiceEventCursor, options)
         : null;
+    if (sync?.unchanged) return { status, batch: null, unchanged: true };
     const health = sync ? sync.health : await requestProjectLaunchServiceHealth(connection);
     const batch =
       sync || options.includeEvents !== true
@@ -1199,6 +1260,7 @@ async function readProjectLaunchServiceStatus(options = {}) {
     status.message = '';
     status.protocolVersion = health.protocolVersion;
     status.serviceVersion = health.serviceVersion;
+    status.nativeNotifications = health.nativeNotifications === true;
     status.activeRunCount = serviceRunCount(state.runs);
     if (options.includeState === true) {
       const automation = projectLaunchServiceAutomationSnapshot(state.automation);
@@ -1211,15 +1273,21 @@ async function readProjectLaunchServiceStatus(options = {}) {
       if (scheduler) status.scheduler = scheduler;
     }
     if (options.includeEvents === true && batch) {
-      advanceProjectLaunchServiceEventCursor(batch);
       status.events = Array.isArray(batch.events) ? batch.events : [];
       status.eventsHasMore = batch.hasMore === true;
       status.eventsTruncated = batch.truncated === true;
       status.latestCursor = batch.latestCursor || state.latestCursor || status.latestCursor || 0;
       status.earliestCursor = batch.earliestCursor || state.earliestCursor || status.earliestCursor || 0;
+      if (options.returnEventBatch !== true) {
+        advanceProjectLaunchServiceEventCursor(batch);
+        projectLaunchServiceSyncRevision = batch.hasMore === true ? '' : sync?.revision || '';
+      }
     }
-    return projectLaunchServiceStatusResult(status, batch || null, options);
+    return options.returnEventBatch === true
+      ? { status, batch: batch || null, revision: sync?.revision || '' }
+      : status;
   } catch (error) {
+    if (error?.code === 'sync-cancelled') return { status, batch: null, cancelled: true };
     if (error?.code === 'protocol-mismatch') status.state = 'incompatible';
     else status.state = 'unavailable';
     status.message = error instanceof Error ? error.message : '项目启动服务不可用。';
@@ -1376,7 +1444,9 @@ async function reconcileProjectLaunchService() {
     batch = result.batch;
   }
   if (status.state !== 'healthy' || !status.running) return status;
-  scheduleProjectLaunchServiceEventPoll(batch?.hasMore === true ? 0 : projectLaunchServiceEventPollIntervalMs);
+  advanceProjectLaunchServiceEventCursor(batch);
+  projectLaunchServiceSyncRevision = batch?.hasMore === true ? '' : result.revision || '';
+  scheduleProjectLaunchServiceEventPoll(projectLaunchServiceSyncRevision || batch?.hasMore === true ? 0 : projectLaunchServiceEventPollIntervalMs);
   rememberProjectLaunchServiceState(status);
   return status;
 }
@@ -1387,25 +1457,41 @@ function openProjectLaunchServiceDirectory() {
   return shell.openPath(directoryPath);
 }
 
-async function pollProjectLaunchServiceEvents(emitEvents = true) {
-  if (projectLaunchServiceEventPollInFlight || !readProjectLaunchServicePreferences().enabled) return false;
-  projectLaunchServiceEventPollInFlight = true;
+function pollProjectLaunchServiceEvents(emitEvents = true, waitForChanges = false) {
+  if (projectLaunchServiceEventPollInFlight) {
+    if (!waitForChanges) projectLaunchServiceCancelSync?.();
+    return projectLaunchServiceEventPollInFlight;
+  }
+  if (!readProjectLaunchServicePreferences().enabled) return Promise.resolve(false);
+  projectLaunchServiceEventPollInFlight = pollProjectLaunchServiceEventsNow(emitEvents, waitForChanges);
+  return projectLaunchServiceEventPollInFlight;
+}
+
+async function pollProjectLaunchServiceEventsNow(emitEvents, waitForChanges) {
   let status = projectLaunchServiceBaseStatus();
   try {
     const result = await readProjectLaunchServiceStatus({
       includeState: true,
       includeEvents: true,
       returnEventBatch: true,
+      waitForChanges,
     });
+    if (result.cancelled || !readProjectLaunchServicePreferences().enabled) return false;
+    if (result.unchanged) {
+      projectLaunchServicePollUnavailable = false;
+      return false;
+    }
     status = result.status;
     const batch = result.batch;
     if (status.state !== 'healthy' || !status.running) {
+      projectLaunchServicePollUnavailable = true;
       if (emitEvents && shouldEmitProjectLaunchServiceState(status)) {
         emit({ type: 'service-state', status, timestamp: new Date().toISOString() });
       }
       return false;
     }
     const events = Array.isArray(status.events) ? status.events : [];
+    projectLaunchServicePollUnavailable = false;
     const snapshot = {
       ...status,
       events: emitEvents ? [] : events,
@@ -1416,8 +1502,11 @@ async function pollProjectLaunchServiceEvents(emitEvents = true) {
     if (emitEvents && batch?.hasMore !== true && shouldEmitProjectLaunchServiceState(snapshot, events.length)) {
       emit({ type: 'service-state', status: snapshot, timestamp: new Date().toISOString() });
     }
+    advanceProjectLaunchServiceEventCursor(batch);
+    projectLaunchServiceSyncRevision = batch?.hasMore === true ? '' : result.revision || '';
     return batch?.hasMore === true;
   } catch (error) {
+    projectLaunchServicePollUnavailable = true;
     const failedStatus = serviceStatusWithError(status, error);
     if (emitEvents && shouldEmitProjectLaunchServiceState(failedStatus)) {
       emit({
@@ -1437,8 +1526,11 @@ function scheduleProjectLaunchServiceEventPoll(delay = projectLaunchServiceEvent
   if (!readProjectLaunchServicePreferences().enabled) return;
   projectLaunchServiceEventPollTimer = setTimeout(async () => {
     projectLaunchServiceEventPollTimer = null;
-    const hasMore = await pollProjectLaunchServiceEvents(true);
-    scheduleProjectLaunchServiceEventPoll(hasMore ? 0 : projectLaunchServiceEventPollIntervalMs);
+    const hasMore = await pollProjectLaunchServiceEvents(true, true);
+    projectLaunchServiceRetryDelayMs = projectLaunchServicePollUnavailable
+      ? Math.min(30000, Math.max(1000, projectLaunchServiceRetryDelayMs * 2))
+      : 0;
+    scheduleProjectLaunchServiceEventPoll(projectLaunchServiceRetryDelayMs || (hasMore || projectLaunchServiceSyncRevision ? 0 : projectLaunchServiceEventPollIntervalMs));
   }, delay);
 }
 

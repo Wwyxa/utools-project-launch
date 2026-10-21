@@ -79,6 +79,7 @@ export function buildProjectLaunchServiceAutomationConfig(
           id: task.id,
           name: task.name,
           enabled: task.enabled,
+          notifyEnabled: task.notifyEnabled,
           scriptIds: [...task.scriptIds],
           continuousScriptIds: [...(task.continuousScriptIds || [])],
           schedule: { ...task.schedule },

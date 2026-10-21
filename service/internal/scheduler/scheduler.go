@@ -66,6 +66,7 @@ type ScriptConfig struct {
 }
 
 type TaskConfig struct {
+	NotifyEnabled            bool             `json:"notifyEnabled"`
 	ID                       string           `json:"id"`
 	Name                     string           `json:"name"`
 	Enabled                  bool             `json:"enabled"`
@@ -119,6 +120,7 @@ type ExitConfig struct {
 }
 
 type Runtime struct {
+	NotifyCompletion   func(TaskConfig, state.AutomationExecution)
 	store              *state.Store
 	supervisor         *serviceprocess.Supervisor
 	replaceMu          sync.Mutex
@@ -738,27 +740,40 @@ func (runtime *Runtime) markIterationStarted() {
 
 func (runtime *Runtime) markIterationSucceeded() {
 	runtime.healthMu.Lock()
-	defer runtime.healthMu.Unlock()
+	changed := runtime.health.State != SchedulerStateRunning || runtime.health.LastError != ""
 
 	runtime.health.State = SchedulerStateRunning
 	runtime.health.LastSuccessAt = runtime.health.LastRunAt
 	runtime.health.LastError = ""
+	runtime.healthMu.Unlock()
+	if changed {
+		runtime.store.NotifyChanged()
+	}
 }
 
 func (runtime *Runtime) markIterationFailed(err error) {
 	runtime.healthMu.Lock()
-	defer runtime.healthMu.Unlock()
+	message := boundedSchedulerError(err)
+	changed := runtime.health.State != SchedulerStateDegraded || runtime.health.LastError != message
 
 	runtime.health.State = SchedulerStateDegraded
-	runtime.health.LastError = boundedSchedulerError(err)
+	runtime.health.LastError = message
+	runtime.healthMu.Unlock()
+	if changed {
+		runtime.store.NotifyChanged()
+	}
 }
 
 func (runtime *Runtime) clearHealthError() {
 	runtime.healthMu.Lock()
-	defer runtime.healthMu.Unlock()
+	changed := runtime.health.State != SchedulerStateRunning || runtime.health.LastError != ""
 
 	runtime.health.State = SchedulerStateRunning
 	runtime.health.LastError = ""
+	runtime.healthMu.Unlock()
+	if changed {
+		runtime.store.NotifyChanged()
+	}
 }
 
 func boundedSchedulerError(err error) string {
@@ -831,6 +846,7 @@ func (runtime *Runtime) reconcileRecoveredAutomationExecutions(recoveredRuns []s
 		}); err != nil {
 			return fmt.Errorf("reconcile recovered automation execution %q: %w", execution.ID, err)
 		}
+		runtime.notifyExecution(execution.ID)
 	}
 
 	return nil
@@ -843,7 +859,7 @@ func (runtime *Runtime) recordMissedExecution(
 	entry state.AutomationPlanEntry,
 	now time.Time,
 ) error {
-	_, _, err := runtime.store.ClaimAutomationExecution(revision, state.AutomationExecution{
+	execution, created, err := runtime.store.ClaimAutomationExecution(revision, state.AutomationExecution{
 		ID:            executionID(project.ID, task.ID, entry.ID),
 		ProjectID:     project.ID,
 		TaskID:        task.ID,
@@ -857,6 +873,9 @@ func (runtime *Runtime) recordMissedExecution(
 	if err != nil {
 		return fmt.Errorf("record missed scheduled execution: %w", err)
 	}
+	if created {
+		runtime.notifyExecution(execution.ID)
+	}
 	return nil
 }
 
@@ -867,6 +886,7 @@ func (runtime *Runtime) execute(
 	scripts map[string]ScriptConfig,
 ) {
 	defer runtime.finishExecution(execution.ID)
+	defer runtime.notifyExecution(execution.ID)
 
 	for index, scriptID := range task.ScriptIDs {
 		script, found := scripts[scriptID]
@@ -954,6 +974,35 @@ func (runtime *Runtime) execute(
 	}
 
 	runtime.completeExecution(execution.ID, state.AutomationExecutionCompleted, "")
+}
+
+func (runtime *Runtime) notifyExecution(executionID string) {
+	if runtime.NotifyCompletion == nil {
+		return
+	}
+	automation := runtime.store.Automation()
+	for _, execution := range automation.Executions {
+		if execution.ID == executionID && execution.Status != state.AutomationExecutionRunning {
+			config, err := decodeConfig(automation.Config)
+			if err != nil {
+				return
+			}
+			for _, project := range config.Projects {
+				if project.ID != execution.ProjectID {
+					continue
+				}
+				for _, configuredTask := range project.AutomationTasks {
+					if configuredTask.ID == execution.TaskID {
+						if configuredTask.NotifyEnabled {
+							runtime.NotifyCompletion(configuredTask, execution)
+						}
+						return
+					}
+				}
+			}
+			return
+		}
+	}
 }
 
 func (runtime *Runtime) recordContinuousScriptStarted(
@@ -1098,7 +1147,7 @@ func (controller *automationController) observe(events []state.Event) {
 		if event.RunID != controller.runID || (event.Type != "stdout" && event.Type != "stderr") {
 			continue
 		}
-		controller.output += event.Message + "\n"
+		controller.output += event.Message
 		if len(controller.output) > maxAutomationOutputTailLen {
 			controller.output = controller.output[len(controller.output)-maxAutomationOutputTailLen:]
 		}

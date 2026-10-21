@@ -1,7 +1,7 @@
 import { dateKey, generateAutomationDailyPlan } from "../../lib/automationScheduler";
 import type { ProjectAutomationExitConfig, ProjectAutomationHistoryEntry, ProjectAutomationInputStep, ProjectAutomationPlanEntry, ProjectAutomationScriptResult, ProjectBridgeEvent } from "../../types";
 import type { AppStore } from "../appStoreShape";
-import { AUTOMATION_HISTORY_LIMIT, automationScriptContextKey, automationScriptContexts, clearAutomationStepTimers, isSuccessfulAutomationProcessResult, settleAutomationScriptContext, shouldAutomationExitOnOutput } from "../helpers/automationHelpers";
+import { AUTOMATION_HISTORY_LIMIT, automationScriptContextKey, automationScriptContexts, clearAutomationStepTimers, isSuccessfulAutomationProcessResult, normalizeAutomationHistory, settleAutomationScriptContext, shouldAutomationExitOnOutput } from "../helpers/automationHelpers";
 import type { AutomationScriptRuntimeContext } from "../helpers/automationHelpers";
 import { bridge } from "../helpers/bridge";
 import { createAutomationRunId } from "../helpers/projectHelpers";
@@ -260,26 +260,49 @@ export const automationRunActions = {
       }
     },
 
-    async ignoreMissedAutomationTask(this: AppStore, projectId: string, taskId: string) {
+    async ignoreMissedAutomationTask(this: AppStore, projectId: string, taskId: string, executionId?: string) {
       const project = this.projects.find((item) => item.id === projectId);
       const task = project?.automationTasks?.find((item) => item.id === taskId);
-      const missedEntry = task?.history.find((entry) => entry.status === "missed");
-      const serviceExecutions = this.projectLaunchServiceStatus?.automation?.executions;
-      if (!project || !task || !missedEntry || !Array.isArray(serviceExecutions)) {
+      const missedEntry = executionId
+        ? task?.history.find((entry) => entry.id === executionId)
+        : task?.history.reduce<ProjectAutomationHistoryEntry | undefined>((latest, entry) =>
+            !latest || new Date(entry.endedAt || entry.startedAt || entry.plannedAt).getTime() >
+              new Date(latest.endedAt || latest.startedAt || latest.plannedAt).getTime() ? entry : latest, undefined);
+      if (!this.projectLaunchServicePreferences.enabled || !project || !task || missedEntry?.status !== "missed" ||
+          missedEntry.projectId !== projectId || missedEntry.taskId !== taskId) {
         return false;
       }
 
       try {
         const updatedExecution = await bridge.ignoreMissedProjectLaunchServiceAutomationExecution(missedEntry.id);
-        this.projectLaunchServiceStatus = {
-          ...this.projectLaunchServiceStatus!,
-          automation: {
-            ...this.projectLaunchServiceStatus!.automation!,
-            executions: serviceExecutions.map((execution) =>
-              execution.id === updatedExecution.id ? updatedExecution : execution,
-            ),
-          },
-        };
+        if (updatedExecution.id !== missedEntry.id || updatedExecution.projectId !== projectId ||
+            updatedExecution.taskId !== taskId || updatedExecution.status !== "skipped") {
+          return false;
+        }
+        const currentStatus = this.projectLaunchServiceStatus;
+        if (currentStatus) {
+          const serviceExecutions = currentStatus.automation?.executions;
+          this.projectLaunchServiceStatus = {
+            ...currentStatus,
+            automation: {
+              ...currentStatus.automation,
+              revision: currentStatus.automation?.revision ?? 0,
+              executions: [
+                ...(Array.isArray(serviceExecutions) ? serviceExecutions : [])
+                  .filter((execution) => execution.id !== updatedExecution.id),
+                updatedExecution,
+              ],
+            },
+          };
+        }
+        const currentTask = this.projects.find((item) => item.id === projectId)?.automationTasks?.find((item) => item.id === taskId);
+        if (currentTask) {
+          currentTask.history = normalizeAutomationHistory(currentTask.history.map((entry) =>
+            entry.id === updatedExecution.id && entry.projectId === projectId && entry.taskId === taskId
+              ? { ...entry, status: updatedExecution.status, endedAt: updatedExecution.endedAt, reason: updatedExecution.reason }
+              : entry,
+          ));
+        }
         this.reconcileProjectLaunchServiceRuntime(this.projectLaunchServiceStatus);
         return true;
       } catch (error) {

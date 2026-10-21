@@ -734,8 +734,18 @@ const runAutomationPlanEntryEarly = async (projectId: string, taskId: string, en
   automationOverviewFeedback.value = started ? "" : automationRunFailureMessage();
 };
 
-const ignoreMissedAutomationTask = (projectId: string, taskId: string) => {
-  void store.ignoreMissedAutomationTask(projectId, taskId);
+const ignoreMissedAutomationTask = async (projectId: string, taskId: string, executionId: string) => {
+  if (isAutomationRunPending(projectId, taskId)) return;
+  automationOverviewFeedback.value = "";
+  setAutomationRunPending(projectId, taskId, true);
+  try {
+    const ignored = await store.ignoreMissedAutomationTask(projectId, taskId, executionId);
+    automationOverviewFeedback.value = ignored ? "" : t.value.automation.ignoreFailed;
+  } catch {
+    automationOverviewFeedback.value = t.value.automation.ignoreFailed;
+  } finally {
+    setAutomationRunPending(projectId, taskId, false);
+  }
 };
 
 const canRunAutomationTaskNow = (projectId: string, taskId: string) => {
@@ -1299,14 +1309,20 @@ const handleProjectDragEnd = () => {
                       <Play v-else :size="13" />
                     </button>
                     <button
+                      v-if="store.projectLaunchServicePreferences.enabled"
                       type="button"
-                      class="rounded-md p-1.5 text-on-surface-variant hover:bg-status-warning/10 hover:text-status-warning"
+                      class="rounded-md p-1.5 text-on-surface-variant hover:bg-status-warning/10 hover:text-status-warning disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="isAutomationRunPending(item.project.id, item.task.id)"
+                      :aria-busy="isAutomationRunPending(item.project.id, item.task.id)"
                       :title="t.automation.ignoreMissed"
                       :aria-label="t.automation.ignoreMissed"
-                      @click.stop="ignoreMissedAutomationTask(item.project.id, item.task.id)"
+                      @click.stop="ignoreMissedAutomationTask(item.project.id, item.task.id, item.latestHistory!.id)"
                     >
                       <X :size="13" />
                     </button>
+                    <span v-else class="max-w-40 text-xs text-on-surface-variant">
+                      {{ t.automation.ignoreUnavailable }}
+                    </span>
                   </div>
                 </div>
               </div>

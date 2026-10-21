@@ -67,6 +67,12 @@ Normalize values at the boundary and skip unchanged writes.
   complete snapshot establishes a notification baseline; later terminal changes
   notify once using session identity tracking, not a capped display-history list.
   Ignore-missed is a service transition, not a synthetic renderer history row.
+  Pass the execution ID actually displayed in the overview. A missed execution
+  may be present in durable history but absent from the bounded live snapshot:
+  validate the service response identity, upsert it into the current snapshot,
+  and update matching shared history. Never overwrite newer unrelated state
+  with a snapshot captured before the request. Pending and failed ignores must
+  be visible; do not silently discard false results or rejected requests.
 
 Service enable/disable barriers and failure ownership are specified once in
 [Project Launch Service](../backend/project-launch-service.md).

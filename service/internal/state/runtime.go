@@ -368,6 +368,8 @@ type Store struct {
 	stagedTerminalRunID   string
 	secretKey             [32]byte
 	mutex                 sync.RWMutex
+	changeRevision        uint64
+	changed               chan struct{}
 	data                  RuntimeState
 	liveEvents            []Event
 	logFiles              map[string]retainedLogFile
@@ -396,6 +398,7 @@ func openStore(stateDir, runtimeDir string) (*Store, error) {
 	}
 
 	store := &Store{
+		changed:          make(chan struct{}),
 		stateDir:         stateDir,
 		runtimeDir:       runtimeDir,
 		recordSnapshots:  map[string]string{},
@@ -918,6 +921,33 @@ func (store *Store) ReconcileAutomationPlans(
 		return AutomationState{}, ErrAutomationRevisionConflict
 	}
 
+	var config struct {
+		Projects []struct {
+			ID              string `json:"id"`
+			AutomationTasks []struct {
+				ID              string `json:"id"`
+				RunEarlyEntryID string `json:"runEarlyEntryId"`
+				ManualRun       *struct {
+					ID string `json:"id"`
+				} `json:"manualRun"`
+			} `json:"automationTasks"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal(store.data.Automation.Config, &config); err != nil {
+		return AutomationState{}, fmt.Errorf("read automation plan references: %w", err)
+	}
+	retainedEntries := make(map[string]struct{})
+	for _, project := range config.Projects {
+		for _, task := range project.AutomationTasks {
+			if task.ManualRun != nil {
+				retainedEntries[automationPlanEntryKey(project.ID, task.ID, task.ManualRun.ID)] = struct{}{}
+			}
+			if task.RunEarlyEntryID != "" {
+				retainedEntries[automationPlanEntryKey(project.ID, task.ID, task.RunEarlyEntryID)] = struct{}{}
+			}
+		}
+	}
+
 	activeTaskKeys := make(map[string]struct{}, len(activeTasks))
 	for _, task := range activeTasks {
 		activeTaskKeys[automationPlanTaskKey(task.ProjectID, task.TaskID)] = struct{}{}
@@ -925,7 +955,11 @@ func (store *Store) ReconcileAutomationPlans(
 	stateChanged := store.pruneAutomationStateLocked(activeTaskKeys)
 	claimedEntries := make(map[string]struct{}, len(store.data.Automation.Executions))
 	for _, execution := range store.data.Automation.Executions {
-		claimedEntries[automationPlanEntryKey(execution.ProjectID, execution.TaskID, execution.PlanEntryID)] = struct{}{}
+		key := automationPlanEntryKey(execution.ProjectID, execution.TaskID, execution.PlanEntryID)
+		claimedEntries[key] = struct{}{}
+		if execution.Status == AutomationExecutionRunning {
+			retainedEntries[key] = struct{}{}
+		}
 	}
 	existingPlans := make(map[string]AutomationPlan, len(store.data.Automation.Plans))
 	for _, plan := range store.data.Automation.Plans {
@@ -952,7 +986,7 @@ func (store *Store) ReconcileAutomationPlans(
 		if _, activeTask := activeTaskKeys[automationPlanTaskKey(existing.ProjectID, existing.TaskID)]; !activeTask {
 			continue
 		}
-		if existing.Date >= retainAfter || automationPlanHasClaimedEntry(existing, claimedEntries) {
+		if existing.Date >= retainAfter || automationPlanHasRetainedEntry(existing, retainedEntries) {
 			nextPlans = append(nextPlans, normalizedAutomationPlan(existing))
 		}
 	}
@@ -1108,7 +1142,48 @@ func (store *Store) IgnoreMissedAutomationExecution(executionID string) (Automat
 		return cloneAutomationExecution(*execution), nil
 	}
 
-	return AutomationExecution{}, fmt.Errorf("%w: %q", ErrAutomationExecutionNotFound, executionID)
+	execution, err := store.readArchivedAutomationExecutionLocked(executionID)
+	if err != nil {
+		return AutomationExecution{}, fmt.Errorf("ignore missed automation execution: %w", err)
+	}
+	if execution.Status != AutomationExecutionMissed {
+		return AutomationExecution{}, ErrAutomationExecutionNotMissed
+	}
+	release, acquired, err := store.acquireRecordMaintenanceLocked()
+	if err != nil {
+		return AutomationExecution{}, fmt.Errorf("ignore missed automation execution: %w", err)
+	}
+	if !acquired {
+		return AutomationExecution{}, errors.New("ignore missed automation execution: runtime record maintenance is busy")
+	}
+	defer release()
+	execution, err = store.readArchivedAutomationExecutionLocked(executionID)
+	if err != nil {
+		return AutomationExecution{}, fmt.Errorf("ignore missed automation execution: %w", err)
+	}
+	if execution.Status != AutomationExecutionMissed {
+		return AutomationExecution{}, ErrAutomationExecutionNotMissed
+	}
+	if err := store.refreshRuntimeRecordPolicyLocked(); err != nil {
+		return AutomationExecution{}, fmt.Errorf("ignore missed automation execution: %w", err)
+	}
+	execution.Status = AutomationExecutionSkipped
+	execution.Reason = "The missed execution was ignored."
+	execution.EndedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if err := store.persistAutomationRecordLocked(execution); err != nil {
+		return AutomationExecution{}, fmt.Errorf("ignore missed automation execution: %w", err)
+	}
+	delete(store.recordSnapshots, automationRecordRunID(executionID))
+	if store.updateAutomationPlanEntryStatusLocked(
+		execution.ProjectID, execution.TaskID, execution.PlanEntryID, AutomationPlanEntrySkipped,
+	) {
+		if err := store.persistLocked(); err != nil {
+			return AutomationExecution{}, fmt.Errorf("ignore missed automation execution: %w", err)
+		}
+	} else {
+		store.notifyChangedLocked()
+	}
+	return execution, nil
 }
 
 func (store *Store) UpdateRun(runID string, mutate func(*Run)) (Run, error) {
@@ -1246,6 +1321,7 @@ func (store *Store) prepareEventLocked(event Event) (Event, error) {
 	}
 
 	store.liveEvents = append(store.liveEvents, cloneEvent(event))
+	store.notifyChangedLocked()
 	if len(store.liveEvents) > MaxPersistedEvents {
 		store.liveEvents = append([]Event(nil), store.liveEvents[len(store.liveEvents)-MaxPersistedEvents:]...)
 	}
@@ -1287,6 +1363,24 @@ func (store *Store) Snapshot() Snapshot {
 	defer store.mutex.RUnlock()
 
 	return store.snapshotLocked()
+}
+
+func (store *Store) Changes() (uint64, <-chan struct{}) {
+	store.mutex.RLock()
+	defer store.mutex.RUnlock()
+	return store.changeRevision, store.changed
+}
+
+func (store *Store) NotifyChanged() {
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
+	store.notifyChangedLocked()
+}
+
+func (store *Store) notifyChangedLocked() {
+	store.changeRevision++
+	close(store.changed)
+	store.changed = make(chan struct{})
 }
 
 func (store *Store) SnapshotAndEventsAfter(after uint64, maxBytes int) (Snapshot, EventBatch) {
@@ -1556,6 +1650,7 @@ func (store *Store) normalizeLoadedState() error {
 }
 
 func (store *Store) persistLocked() error {
+	defer store.notifyChangedLocked()
 	contents, err := marshalPersistedRuntimeState(store.data, store.secretKey)
 	if err != nil {
 		return fmt.Errorf("encode runtime state: %w", err)
@@ -2481,9 +2576,9 @@ func normalizedAutomationPlanEntry(entry AutomationPlanEntry) AutomationPlanEntr
 	return entry
 }
 
-func automationPlanHasClaimedEntry(plan AutomationPlan, claimedEntries map[string]struct{}) bool {
+func automationPlanHasRetainedEntry(plan AutomationPlan, retainedEntries map[string]struct{}) bool {
 	for _, entry := range plan.Entries {
-		if entry.Status != AutomationPlanEntryPending || hasAutomationPlanEntryClaim(claimedEntries, plan, entry) {
+		if hasAutomationPlanEntryClaim(retainedEntries, plan, entry) {
 			return true
 		}
 	}
@@ -2524,7 +2619,7 @@ func (store *Store) updateAutomationPlanEntryStatusLocked(
 	taskID string,
 	planEntryID string,
 	status AutomationPlanEntryStatus,
-) {
+) bool {
 	for planIndex := range store.data.Automation.Plans {
 		plan := &store.data.Automation.Plans[planIndex]
 		if plan.ProjectID != projectID || plan.TaskID != taskID {
@@ -2532,11 +2627,15 @@ func (store *Store) updateAutomationPlanEntryStatusLocked(
 		}
 		for entryIndex := range plan.Entries {
 			if plan.Entries[entryIndex].ID == planEntryID {
+				if plan.Entries[entryIndex].Status == status {
+					return false
+				}
 				plan.Entries[entryIndex].Status = status
-				return
+				return true
 			}
 		}
 	}
+	return false
 }
 
 func automationPlanStatusForExecution(status AutomationExecutionStatus) AutomationPlanEntryStatus {
