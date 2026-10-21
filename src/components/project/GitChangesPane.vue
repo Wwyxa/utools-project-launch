@@ -231,7 +231,11 @@ const amendActionTitle = computed(() =>
 const undoLastCommitTitle = computed(() => headActionBlockedMessage.value || "撤销上次提交");
 const commitActionTitle = computed(() => {
   if (isCommitActionActive.value) {
-    return isAmendMode.value ? "正在修订上次提交" : props.mergeInProgress ? "正在完成合并提交..." : "正在提交 staged 变更";
+    return isAmendMode.value
+      ? "正在修订上次提交"
+      : props.mergeInProgress
+        ? "正在完成合并提交..."
+        : "正在提交 staged 变更";
   }
   if (!isAmendMode.value && props.mergeInProgress) {
     return hasStagedChanges.value ? "完成合并提交" : "完成合并提交（暂存区为空，将按当前暂存内容创建合并提交）";
@@ -462,16 +466,16 @@ const executeGitFileAction = async (
   }
 };
 
-const executeBulkGitFileAction = async (action: GitFileActionName) => {
+const executeBulkGitFileAction = async (action: GitFileActionName, requestedFiles?: ProjectGitFileChange[]) => {
   if (props.disabled || activeGitAction.value || activeGitFileActions.value.length > 0) return;
-  const targetFiles = bulkActionTargetFiles(action);
+  const targetFiles = requestedFiles ?? bulkActionTargetFiles(action);
   if (targetFiles.length === 0) {
     reportFeedback("warning", bulkActionTitle(action));
     return;
   }
 
   const sourceSelection = props.selection ? { ...props.selection } : null;
-  const selectedFile = sourceSelection ? files.value.find((file) => file.path === sourceSelection.path) || null : null;
+  const selectedFile = sourceSelection ? targetFiles.find((file) => file.path === sourceSelection.path) || null : null;
   const selectedIndex = sourceSelection
     ? visibleWorktreeItems.value.findIndex(
         (item) => item.file.path === sourceSelection.path && item.scope === sourceSelection.scope,
@@ -490,12 +494,13 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
   await waitForVisualFeedback();
   try {
     const paths = targetFiles.map((file) => file.path);
+    const options = { all: requestedFiles === undefined };
     const result =
       action === "stage"
-        ? await store.stageGitFiles(props.projectId, paths, { all: true }, props.repositoryTarget)
+        ? await store.stageGitFiles(props.projectId, paths, options, props.repositoryTarget)
         : action === "unstage"
-          ? await store.unstageGitFiles(props.projectId, paths, { all: true }, props.repositoryTarget)
-          : await store.discardGitFiles(props.projectId, paths, { all: true }, props.repositoryTarget);
+          ? await store.unstageGitFiles(props.projectId, paths, options, props.repositoryTarget)
+          : await store.discardGitFiles(props.projectId, paths, options, props.repositoryTarget);
     if (!result) {
       reportFeedback("warning", "当前项目不可用，无法执行 Git 操作。");
       return;
@@ -511,6 +516,7 @@ const executeBulkGitFileAction = async (action: GitFileActionName) => {
 };
 
 const fileLabel = (status: string) => {
+  if (status === "MIXED") return "包含多种更改";
   if (status === "ADDED") return t.value.git.added;
   if (status === "DELETED") return t.value.git.deleted;
   if (status === "RENAMED") return t.value.git.renamed;
@@ -525,6 +531,36 @@ const fileStatusCode = (status: string) => {
   if (status === "UNTRACKED") return "U";
   return "M";
 };
+
+const fileStatusClass = (status: string) =>
+  cn(
+    "w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4",
+    status === "ADDED" && "text-status-running",
+    status === "DELETED" && "text-status-error",
+    status === "RENAMED" && "text-secondary",
+    status === "UNTRACKED" && "text-primary",
+    (status === "MODIFIED" || status === "MIXED") && "text-on-surface-variant",
+  );
+
+const worktreeDirectoryStatuses = computed(() => {
+  const statuses: Record<WorktreeDiffScope, Map<string, string>> = { staged: new Map(), unstaged: new Map() };
+  for (const group of worktreeGroups.value) {
+    const groupStatuses = statuses[group.scope];
+    for (const file of group.files) {
+      const directories = normalizeCommitFilePath(file.path).split("/").slice(0, -1);
+      while (directories.length > 0) {
+        const path = directories.join("/");
+        const current = groupStatuses.get(path);
+        groupStatuses.set(path, current && current !== file.status ? "MIXED" : file.status);
+        directories.pop();
+      }
+    }
+  }
+  return statuses;
+});
+
+const directoryStatus = (group: WorktreeGroup, path: string) =>
+  worktreeDirectoryStatuses.value[group.scope].get(path) || "MODIFIED";
 
 const gitFileDisplayPath = (file: ProjectGitFileChange) =>
   file.originalPath && file.originalPath !== file.path ? `${file.originalPath} -> ${file.path}` : file.path;
@@ -556,8 +592,8 @@ const requestDiscardGitFile = (file: ProjectGitFileChange, scope: WorktreeDiffSc
 
 const discardAllDetailPreviewLimit = 50;
 
-const buildDiscardAllDetail = () => {
-  const displayPaths = discardableFiles.value.map(gitFileDisplayPath);
+const buildDiscardAllDetail = (targetFiles = discardableFiles.value) => {
+  const displayPaths = targetFiles.map(gitFileDisplayPath);
   if (displayPaths.length <= discardAllDetailPreviewLimit) {
     return displayPaths.join("\n");
   }
@@ -583,6 +619,30 @@ const requestDiscardAllGitFiles = () => {
     confirmLabel: "丢弃全部",
     cancelLabel: t.value.common.cancel,
     onConfirm: () => executeBulkGitFileAction("discard"),
+  };
+};
+
+const directoryActionTitle = (action: GitFileActionName, path: string) => {
+  if (action === "stage") return `暂存文件夹：${path}`;
+  if (action === "unstage") return `取消暂存文件夹：${path}`;
+  return `丢弃文件夹变更：${path}`;
+};
+
+const runDirectoryGitFileAction = (action: GitFileActionName, group: WorktreeGroup, path: string) => {
+  if (props.disabled || isChangesWriteBusy.value) return;
+  const prefix = `${normalizeCommitFilePath(path)}/`;
+  const targetFiles = group.files.filter((file) => normalizeCommitFilePath(file.path).startsWith(prefix));
+  if (targetFiles.length === 0) return;
+  if (action !== "discard") return executeBulkGitFileAction(action, targetFiles);
+
+  confirmationDialog.value = {
+    icon: "trash",
+    title: "丢弃文件夹变更",
+    message: `此操作会还原文件夹 ${path} 及其子目录中当前分组的 ${targetFiles.length} 个文件在工作区与暂存区中的本地变更。`,
+    detail: buildDiscardAllDetail(targetFiles),
+    confirmLabel: "丢弃变更",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: () => executeBulkGitFileAction("discard", targetFiles),
   };
 };
 
@@ -661,12 +721,7 @@ const handleCreateGitStash = async () => {
   reportFeedback("loading", t.value.git.stashSaving);
   await waitForVisualFeedback();
   try {
-    const result = await store.createGitStash(
-      projectId,
-      message,
-      options,
-      repositoryTarget,
-    );
+    const result = await store.createGitStash(projectId, message, options, repositoryTarget);
     if (!result) {
       reportFeedback("warning", "当前项目不可用，无法保存到 stash。");
       return;
@@ -1228,7 +1283,7 @@ onBeforeUnmount(() => {
         :key="group.scope"
         class="border-b border-border-subtle last:border-b-0"
       >
-        <div class="git-subsection-bar">
+        <div class="git-subsection-bar sticky top-0 z-10">
           <button
             type="button"
             class="flex min-w-0 flex-1 items-center gap-2 pl-1.5 text-left text-[11px] font-semibold transition-colors hover:text-on-surface"
@@ -1304,26 +1359,64 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="group.open">
           <template v-for="item in worktreeFileDisplayItems(group)" :key="`${group.scope}:${item.key}`">
-            <button
+            <div
               v-if="item.kind === 'directory'"
-              type="button"
-              class="flex min-h-[1.875rem] w-full items-center gap-1 border-t border-border-subtle px-2 py-0.5 text-left text-[10px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-low"
+              class="group relative flex min-h-[1.875rem] w-full items-center gap-1 border-t border-border-subtle px-2 py-0.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-low focus-within:bg-surface-container-low"
               :style="{ paddingLeft: `${8 + item.depth * 14}px` }"
-              :title="item.path"
-              :aria-expanded="item.isExpanded"
-              @click.stop="toggleWorktreeDirectory(group.scope, item.path)"
             >
-              <ChevronDown v-if="item.isExpanded" :size="13" /><ChevronRight v-else :size="13" />
-              <FileIcon
-                :name="item.name"
-                :path="item.path"
-                kind="directory"
-                :expanded="item.isExpanded"
-                fallback-policy="omit"
-                class="text-primary/75"
-              />
-              <span class="min-w-0 truncate font-mono">{{ item.name }}</span>
-            </button>
+              <button
+                type="button"
+                class="flex min-h-6 min-w-0 flex-1 items-center gap-1 text-left"
+                :title="item.path"
+                :aria-expanded="item.isExpanded"
+                @click.stop="toggleWorktreeDirectory(group.scope, item.path)"
+              >
+                <ChevronDown v-if="item.isExpanded" :size="13" /><ChevronRight v-else :size="13" />
+                <FileIcon
+                  :name="item.name"
+                  :path="item.path"
+                  kind="directory"
+                  :expanded="item.isExpanded"
+                  fallback-policy="omit"
+                  class="text-primary/75"
+                />
+                <span class="min-w-0 truncate font-mono">{{ item.name }}</span>
+              </button>
+              <span
+                :class="fileStatusClass(directoryStatus(group, item.path))"
+                :title="fileLabel(directoryStatus(group, item.path))"
+                :aria-label="fileLabel(directoryStatus(group, item.path))"
+              >
+                {{ fileStatusCode(directoryStatus(group, item.path)) }}
+              </span>
+              <div
+                class="absolute right-6 top-1/2 flex -translate-y-1/2 items-center gap-px rounded border border-border-subtle bg-surface-container-low px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+              >
+                <button
+                  type="button"
+                  class="git-row-action"
+                  :disabled="disabled || isChangesWriteBusy"
+                  :title="directoryActionTitle(group.scope === 'staged' ? 'unstage' : 'stage', item.path)"
+                  :aria-label="directoryActionTitle(group.scope === 'staged' ? 'unstage' : 'stage', item.path)"
+                  @click.stop="
+                    runDirectoryGitFileAction(group.scope === 'staged' ? 'unstage' : 'stage', group, item.path)
+                  "
+                >
+                  <Minus v-if="group.scope === 'staged'" :size="12" />
+                  <Plus v-else :size="12" />
+                </button>
+                <button
+                  type="button"
+                  class="git-row-action git-action-danger"
+                  :disabled="disabled || isChangesWriteBusy"
+                  :title="directoryActionTitle('discard', item.path)"
+                  :aria-label="directoryActionTitle('discard', item.path)"
+                  @click.stop="runDirectoryGitFileAction('discard', group, item.path)"
+                >
+                  <Undo :size="12" />
+                </button>
+              </div>
+            </div>
             <div
               v-else
               :class="
@@ -1363,16 +1456,7 @@ onBeforeUnmount(() => {
                 <span v-if="item.file.deletions > 0" class="text-status-error">-{{ item.file.deletions }}</span>
               </div>
               <span
-                :class="
-                  cn(
-                    'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
-                    item.file.status === 'ADDED' && 'text-status-running',
-                    item.file.status === 'DELETED' && 'text-status-error',
-                    item.file.status === 'RENAMED' && 'text-secondary',
-                    item.file.status === 'UNTRACKED' && 'text-primary',
-                    item.file.status === 'MODIFIED' && 'text-on-surface-variant',
-                  )
-                "
+                :class="fileStatusClass(item.file.status)"
                 :title="fileLabel(item.file.status)"
                 :aria-label="fileLabel(item.file.status)"
               >
@@ -1479,16 +1563,8 @@ onBeforeUnmount(() => {
           :placeholder="t.git.stashMessagePlaceholder"
         />
       </label>
-      <label
-        v-if="stashScope !== 'staged'"
-        class="flex items-center gap-2 text-xs font-medium text-on-surface"
-      >
-        <input
-          v-model="stashIncludeUntracked"
-          type="checkbox"
-          class="accent-primary"
-          :disabled="isStashDialogBusy"
-        />
+      <label v-if="stashScope !== 'staged'" class="flex items-center gap-2 text-xs font-medium text-on-surface">
+        <input v-model="stashIncludeUntracked" type="checkbox" class="accent-primary" :disabled="isStashDialogBusy" />
         <span class="min-w-0 leading-4">{{ t.git.stashIncludeUntracked }}</span>
       </label>
     </ActionDialog>
