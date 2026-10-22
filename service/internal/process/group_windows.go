@@ -20,7 +20,7 @@ var (
 	assignProcessToJob  = jobKernel32.NewProc("AssignProcessToJobObject")
 	queryJobInformation = jobKernel32.NewProc("QueryInformationJobObject")
 	setJobInformation   = jobKernel32.NewProc("SetInformationJobObject")
-	terminateJobObject  = jobKernel32.NewProc("TerminateJobObject")
+	isProcessInJob      = jobKernel32.NewProc("IsProcessInJob")
 	thread32First       = jobKernel32.NewProc("Thread32First")
 	thread32Next        = jobKernel32.NewProc("Thread32Next")
 	openThread          = jobKernel32.NewProc("OpenThread")
@@ -28,9 +28,11 @@ var (
 )
 
 type windowsProcessGroup struct {
-	mutex  sync.Mutex
-	handle syscall.Handle
-	port   syscall.Handle
+	mutex          sync.Mutex
+	handle         syscall.Handle
+	port           syscall.Handle
+	rootPID        int
+	guiExecutables map[string]bool
 }
 
 type jobCompletionPort struct {
@@ -38,17 +40,12 @@ type jobCompletionPort struct {
 	port syscall.Handle
 }
 
-type jobAccounting struct {
-	userTime, kernelTime, periodUserTime, periodKernelTime           int64
-	pageFaults, totalProcesses, activeProcesses, terminatedProcesses uint32
-}
-
 func newWindowsProcessGroup() (*windowsProcessGroup, error) {
 	handle, _, callErr := createJobObject.Call(0, 0)
 	if handle == 0 {
 		return nil, fmt.Errorf("create job: %w", callErr)
 	}
-	group := &windowsProcessGroup{handle: syscall.Handle(handle)}
+	group := &windowsProcessGroup{handle: syscall.Handle(handle), guiExecutables: make(map[string]bool)}
 	if err := group.attachCompletionPort(); err != nil {
 		group.close()
 		return nil, err
@@ -66,6 +63,7 @@ func startProcessGroup(command *exec.Cmd) (processGroup, error) {
 		group.close()
 		return nil, err
 	}
+	group.rootPID = command.Process.Pid
 	process, err := syscall.OpenProcess(0x0100|syscall.PROCESS_TERMINATE, false, uint32(command.Process.Pid))
 	if err == nil {
 		result, _, callErr := assignProcessToJob.Call(uintptr(group.handle), uintptr(process))
@@ -139,11 +137,29 @@ func (group *windowsProcessGroup) alive() (bool, error) {
 	if group.handle == 0 {
 		return false, errors.New("run job is closed")
 	}
-	accounting := jobAccounting{}
-	if result, _, callErr := queryJobInformation.Call(uintptr(group.handle), 1, uintptr(unsafe.Pointer(&accounting)), unsafe.Sizeof(accounting), 0); result == 0 {
-		return false, fmt.Errorf("query job processes: %w", callErr)
+	processIDs, err := group.scriptProcessPIDs()
+	return len(processIDs) != 0, err
+}
+
+func (group *windowsProcessGroup) scriptProcessPIDs() ([]int, error) {
+	for capacity := 32; ; capacity *= 2 {
+		buffer := make([]uintptr, capacity+2)
+		length := uintptr(8) + uintptr(capacity)*unsafe.Sizeof(uintptr(0))
+		result, _, callErr := queryJobInformation.Call(uintptr(group.handle), 3, uintptr(unsafe.Pointer(&buffer[0])), length, 0)
+		counts := (*[2]uint32)(unsafe.Pointer(&buffer[0]))
+		if (result == 0 && errors.Is(callErr, syscall.ERROR_MORE_DATA)) || counts[0] > uint32(capacity) {
+			continue
+		}
+		if result == 0 {
+			return nil, fmt.Errorf("query job process identifiers: %w", callErr)
+		}
+		identifiers := unsafe.Slice((*uintptr)(unsafe.Add(unsafe.Pointer(&buffer[0]), 8)), int(counts[1]))
+		processIDs := make([]int, 0, len(identifiers))
+		for _, pid := range identifiers {
+			processIDs = append(processIDs, int(pid))
+		}
+		return windowsScriptProcessPIDs(processIDs, group.rootPID, group.guiExecutables)
 	}
-	return accounting.activeProcesses != 0, nil
 }
 
 func (group *windowsProcessGroup) wait() error {
@@ -168,7 +184,7 @@ func (group *windowsProcessGroup) wait() error {
 			if err != nil && !errors.Is(err, syscall.Errno(258)) {
 				return fmt.Errorf("wait for job completion: %w", err)
 			}
-			if err != nil || message == 4 {
+			if err != nil || message == 4 || message == 7 || message == 8 {
 				break
 			}
 		}
@@ -181,10 +197,19 @@ func (group *windowsProcessGroup) stop() error {
 	if group.handle == 0 {
 		return errors.New("run job is closed")
 	}
-	if result, _, callErr := terminateJobObject.Call(uintptr(group.handle), 1); result == 0 {
-		return fmt.Errorf("terminate run job: %w", callErr)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		processIDs, err := group.scriptProcessPIDs()
+		if err != nil || len(processIDs) == 0 {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return errors.New("timed out stopping script job members")
+		}
+		if err := terminateWindowsProcessIDs(processIDs, group.handle); err != nil {
+			return err
+		}
 	}
-	return nil
 }
 
 func (group *windowsProcessGroup) close() {

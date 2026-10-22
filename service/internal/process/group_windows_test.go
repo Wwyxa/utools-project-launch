@@ -4,6 +4,7 @@ package process
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -12,6 +13,69 @@ import (
 
 	"project-launch-service/internal/state"
 )
+
+func TestSupervisorWindowsPreservesGUIChildren(t *testing.T) {
+	if os.Getenv("PROJECT_LAUNCH_GUI_LAUNCHER") == "1" {
+		child := exec.Command(os.Getenv("PROJECT_LAUNCH_GUI_EXECUTABLE"), "-test.run=^TestSupervisorLongRunningChildHelper$")
+		child.Env = append(os.Environ(), "PROJECT_LAUNCH_LONG_RUNNING_CHILD=1")
+		if err := child.Start(); err != nil {
+			os.Exit(2)
+		}
+		if os.Getenv("PROJECT_LAUNCH_GUI_HOLD_LAUNCHER") == "1" {
+			<-time.After(8 * time.Second)
+		}
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	guiExecutable := filepath.Join(t.TempDir(), "desktop-helper.exe")
+	build := exec.Command("go", "test", "-c", "-ldflags=-H=windowsgui", "-o", guiExecutable, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build GUI helper: %v\n%s", err, output)
+	}
+	for _, action := range []string{"stop", "exit", "recovered-stop"} {
+		t.Run(action, func(t *testing.T) {
+			store := openStore(t)
+			supervisor, err := NewSupervisor(store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := windowsChildRequest(t, t.TempDir(), true)
+			request.Command = `"` + executable + `" -test.run=^TestSupervisorWindowsPreservesGUIChildren$`
+			request.Env["PROJECT_LAUNCH_GUI_LAUNCHER"] = "1"
+			request.Env["PROJECT_LAUNCH_GUI_EXECUTABLE"] = guiExecutable
+			if action != "exit" {
+				request.Env["PROJECT_LAUNCH_GUI_HOLD_LAUNCHER"] = "1"
+			}
+			t.Cleanup(func() { releaseWindowsChild(t, request) })
+			run, _, err := supervisor.Start(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _, _ = supervisor.Stop(run.ID) })
+			pid := waitForWindowsChild(t, request)
+			want := state.RunStatusStopped
+			switch action {
+			case "exit":
+				want = state.RunStatusExited
+			case "recovered-stop":
+				err = terminateProcessTree(run.PID)
+				want = state.RunStatusFailed
+			default:
+				_, err = supervisor.Stop(run.ID)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitForRunStatus(t, store, run.ID, want)
+			if !processExists(pid) {
+				t.Fatal("script lifecycle terminated its GUI child")
+			}
+		})
+	}
+}
 
 func windowsChildRequest(t *testing.T, directory string, detached bool) StartRequest {
 	t.Helper()

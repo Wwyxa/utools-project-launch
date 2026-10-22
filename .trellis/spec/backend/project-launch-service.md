@@ -106,8 +106,12 @@ durable automation record; reject cleared/invalid records and do not emit anothe
 completion notice. Persist the skipped status so history reload does not revive it.
 
 On Windows, start the root suspended, assign it to an anonymous Job, then resume.
-The run remains active until all Job members exit; stop the Job even after the root
-exits. Use a completion port plus active-process queries. The service owns the Job
+The run remains active until its script Job members exit, even after the root
+exits. Exclude non-root PE GUI-subsystem processes and their currently identifiable
+subtrees from stopping and waiting, including recovered-tree stops. This protects
+desktop apps opened by scripts; GUI classification is a heuristic, not ownership.
+Stop selected members with handle-based Job membership checks, not the whole Job.
+Use a completion port plus member queries. The service owns the Job
 and refuses shutdown with active runs (`409 active_runs`); do not add cross-restart
 Job recovery or helper processes. Exit status represents the root only. Keep
 stdout/stderr decoding stateful across chunks, drain output after the process group
