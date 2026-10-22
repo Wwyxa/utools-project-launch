@@ -50,6 +50,9 @@ describe("global action status", () => {
       await Promise.resolve();
       expect(finished).not.toHaveBeenCalled();
       frames.splice(0).forEach((frame) => frame(16));
+      await Promise.resolve();
+      expect(finished).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(0);
     } else {
       await vi.advanceTimersByTimeAsync(99);
       expect(finished).not.toHaveBeenCalled();

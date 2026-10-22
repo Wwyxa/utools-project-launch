@@ -28,6 +28,9 @@ each feature. The current file-icon implementation is `src/lib/fileIconTheme.ts`
   `src/lib/visualFeedback.ts`. Save/retry dialogs may remain open while busy.
   Always settle loading with success or failure. The shared status overlay must
   be visible immediately rather than waiting for an entry animation.
+  Its paint path must yield to a timer task after frame callbacks rather than
+  continue host work in their Promise microtask; retain the timeout fallback.
+  This allows visual feedback but does not offload synchronous host work.
 - Teleport clipped overlays to `body`. Measure and clamp floating geometry after
   render and content changes; close it on context replacement, owner collapse,
   outside interaction, or unmount. Internal menu scrolling must not close the owner.

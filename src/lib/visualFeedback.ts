@@ -21,7 +21,7 @@ export const scheduleAfterInitialPaint = (callback: () => void) => {
     typeof window.requestAnimationFrame === "function" &&
     (typeof document === "undefined" || document.visibilityState !== "hidden");
   const timer = window.setTimeout(run, canPaint ? 100 : 0);
-  if (canPaint) void waitForInitialPaint().then(run);
+  if (canPaint) void waitForInitialPaint().then(() => window.setTimeout(run, 0));
 };
 
 export const waitForVisualFeedback = (): Promise<void> => new Promise(scheduleAfterInitialPaint);

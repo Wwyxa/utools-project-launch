@@ -248,7 +248,12 @@ watch(
       @pointerleave="handlePointerLeave"
       @click.stop="toggleExpanded"
     >
-      <RefreshCw v-if="state === 'loading'" :size="14" class="shrink-0 animate-spin" aria-hidden="true" />
+      <RefreshCw
+        v-if="state === 'loading'"
+        :size="14"
+        class="shrink-0 animate-spin will-change-transform"
+        aria-hidden="true"
+      />
       <component
         :is="stateIconComponent"
         v-else-if="stateIconComponent"

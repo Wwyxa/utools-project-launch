@@ -1706,6 +1706,8 @@
 }
 
 .action-status-indeterminate-bar {
+  display: block;
+  will-change: transform;
   animation: action-status-indeterminate 1.3s ease-in-out infinite;
 }
 
