@@ -137,15 +137,12 @@ function createFullScreenTransparentWindow() {
   const cursorPoint = utools.getCursorScreenPoint();
   const currentDisplay = utools.getDisplayNearestPoint(cursorPoint);
   const displayBounds = currentDisplay.bounds;
-  // Windows 下需要覆盖系统任务栏区域时开启全屏；普通屏幕特效无需开启，否则任务栏会被窗口覆盖
-  const isFullscreen = utools.isWindows();
-  const regionWindow = utools.createBrowserWindow("foo.html?params=xxx", {
-    show: true,
+  const fullWindow = utools.createBrowserWindow("foo.html?params=xxx", {
+    show: false,
     x: displayBounds.x,
     y: displayBounds.y,
     width: displayBounds.width,
     height: displayBounds.height,
-    // 如果需要接收鼠标事件，可设置为接近完全透明但实际具有背景的颜色
     backgroundColor: "#00000000",
     frame: false,
     transparent: true,
@@ -153,9 +150,9 @@ function createFullScreenTransparentWindow() {
     movable: false,
     minimizable: false,
     maximizable: false,
-    fullscreenable: isFullscreen,
-    fullscreen: isFullscreen,
+    fullscreenable: false,
     autoHideMenuBar: true,
+    // 隐藏任务栏图标；Windows 下调用 setFocusable(true) 可能导致任务栏图标重新出现
     skipTaskbar: true,
     enableLargerThanScreen: true,
     alwaysOnTop: true,
@@ -165,9 +162,13 @@ function createFullScreenTransparentWindow() {
       preload: "foo_preload.js"
     }
   });
-  // 设置窗口置顶层级
   try {
-    regionWindow.setAlwaysOnTop(true, "screen-saver");
+    // 再次设置窗口边界，避免部分 Windows 环境下窗口未完全覆盖屏幕
+    fullWindow.setBounds(displayBounds);
+    // 设置窗口置顶层级
+    fullWindow.setAlwaysOnTop(true, "screen-saver");
+    // 显示窗口
+    fullWindow.show();
   } catch {}
 }
 ```
