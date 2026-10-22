@@ -33,7 +33,8 @@ or history reads. `public/preload/runtime-records.js` and
 - `listRuntimeRecords(projectId)`; an empty project id selects global history.
 - `readRuntimeRecordLogPage(runId, beforeOffset)` returns the newest page for zero.
 - `getRuntimeRecordRetention()`, `updateRuntimeRecordRetention(policy)`.
-- `clearRuntimeRecords({runId}?)` clears completed records only.
+- `clearRuntimeRecords(scope?: { runId: string } | { projectId: string })`
+  returns `{ deletedCount, releasedBytes }` for completed records only.
 - `saveRuntimeAutomationState(projectId, tasks)`, `loadRuntimeAutomationState(projectId)`.
 - Go starts with `--state-dir <local>/service --runtime-dir <local>/runtime`.
   When `--runtime-dir` is omitted, it defaults to `runtime` beside the state
@@ -74,6 +75,11 @@ or history reads. `public/preload/runtime-records.js` and
   policy. No developer-only legacy-log cleanup option is exposed.
 - Referenced deletion markers prevent the current service state writer from
   republishing cleared records; unreferenced markers are removed.
+- Cleanup scopes are exclusive: `{ runId }` selects one run, `{ projectId }`
+  selects one project's records, and omitted scope selects all projects.
+  `Terminal.vue` shares project/settings confirmation and feedback; source
+  filters never narrow cleanup. Active writers, live logs and processes remain
+  untouched. Never use omitted scope for project-local cleanup.
 - Initial service-directory migration reads old `service/logs` directly into
   `runtime/logs`, preserving JSONL bytes and verifying metadata and output before
   completion. Logs missing a state entry are recovered from their events. Old
@@ -109,6 +115,7 @@ or history reads. `public/preload/runtime-records.js` and
 | --- | --- |
 | Missing host local directory | Writes fail visibly; no cwd or legacy fallback |
 | Invalid id, offset, schema, policy, symlink | Reject the operation |
+| Empty/whitespace project id, missing or mixed cleanup scope keys | Reject cleanup; never widen to all projects |
 | Incomplete final JSONL record | Skip it and report truncation |
 | Malformed interior record | Fail the historical read |
 | Log write failure | Report `runtime-record-error`/durable-write error; keep live logs separate and attempt terminal metadata update |
@@ -125,7 +132,8 @@ claims and repeats an already-started task.
 ### 6. Tests Required
 
 `tests/runtimeRecords.test.ts` covers fresh preload reads, UTF-8 pagination,
-mid-run policy changes, terminal state after output write failure, automation
+mid-run policy changes, project-scoped cleanup isolation and active-writer protection,
+terminal state after output write failure, automation
 completion after persistence is disabled, argument omission, claims, asynchronous
 query I/O and ignoring developer log remnants and service-state policy.
 `validate:project-storage` covers initial migration of running output, orphan logs,

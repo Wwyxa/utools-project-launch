@@ -443,7 +443,10 @@ async function updateRuntimeRecordRetention(policy) {
 }
 
 async function clearRuntimeRecords(scope) {
-  if (scope !== undefined && !runtimeRecordIdPattern.test(scope?.runId || "")) throw new Error("运行记录清理范围无效。");
+  if (scope !== undefined && !(
+    (scope?.projectId === undefined && typeof scope?.runId === "string" && runtimeRecordIdPattern.test(scope.runId)) ||
+    (scope?.runId === undefined && typeof scope?.projectId === "string" && scope.projectId.trim().length > 0)
+  )) throw new Error("运行记录清理范围无效。");
   flushRuntimeRecords();
   return withRuntimeRecordMaintenance(() => clearRuntimeRecordsUnlocked(scope), true);
 }
@@ -452,7 +455,8 @@ function clearRuntimeRecordsUnlocked(scope) {
   let deletedCount = 0;
   let releasedBytes = 0;
   for (const record of readRuntimeRecords()) {
-    if (scope && scope.runId !== record.runId) continue;
+    if (scope?.runId !== undefined && scope.runId !== record.runId) continue;
+    if (scope?.projectId !== undefined && scope.projectId !== record.projectId) continue;
     if (runtimeRecordIsActive(record)) continue;
     const tombstone = runtimeRecordTombstone(record);
     writeJsonFileAtomic(runtimeRecordPath(record.runId, "json"), tombstone);

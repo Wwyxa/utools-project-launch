@@ -295,9 +295,9 @@ export interface ProjectLaunchServiceLogClearResult {
   releasedBytes: number;
 }
 
-export interface ProjectLaunchServiceLogClearScope {
-  runId: string;
-}
+export type ProjectLaunchServiceLogClearScope =
+  | { runId: string; projectId?: never }
+  | { projectId: string; runId?: never };
 
 export type RuntimeRecordSource = "preload" | "service" | "operation" | "automation" | "diagnostic";
 

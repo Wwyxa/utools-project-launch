@@ -60,6 +60,7 @@ const historyHasMore = ref(false);
 const historyNextOffset = ref(0);
 const copiedHistory = ref(false);
 const historyClearOpen = ref(false);
+const historyClearAll = ref(false);
 const historyClearBusy = ref(false);
 let logScrollEventElement: HTMLElement | Document | null = null;
 let stopAppEscapeListener = () => {};
@@ -343,7 +344,9 @@ const openHistoryDialog = async () => {
 
 const confirmClearHistory = async () => {
   const run = selectedHistoryRun.value;
-  if (!run || historyClearBusy.value) return;
+  const clearAll = historyClearAll.value;
+  if ((!clearAll && !run) || historyClearBusy.value) return;
+  const scope = clearAll ? (props.projectId ? { projectId: props.projectId } : undefined) : { runId: run!.runId };
   historyLoadGeneration += 1;
   historyLoading.value = false;
   historyLoadingOlder.value = false;
@@ -355,9 +358,7 @@ const confirmClearHistory = async () => {
   showActionStatus({ state: "loading", message: t.value.terminal.historyClearBusy });
   try {
     await waitForVisualFeedback();
-    const result = await store.clearRuntimeRecords({
-      runId: run.runId,
-    });
+    const result = await store.clearRuntimeRecords(scope);
     historyRuns.value = await store.listRuntimeRecords(props.projectId);
     selectedHistoryRunId.value = "";
     historyLogs.value = [];
@@ -370,14 +371,15 @@ const confirmClearHistory = async () => {
       // The clear result remains authoritative even if the follow-up usage read fails.
     }
     historyFeedbackTone.value = "success";
-    historyFeedback.value = t.value.terminal.historyClearResult.replace(
+    historyFeedback.value = (clearAll ? t.value.terminal.historyClearAllResult : t.value.terminal.historyClearResult).replace(
       "{size}",
       formatHistoryBytes(result.releasedBytes),
     );
     showActionStatus({ state: "success", message: historyFeedback.value });
   } catch (error) {
     historyFeedbackTone.value = "error";
-    historyFeedback.value = error instanceof Error ? error.message : t.value.terminal.historyClearError;
+    historyFeedback.value = error instanceof Error ? error.message :
+      (clearAll ? t.value.terminal.historyClearAllError : t.value.terminal.historyClearError);
     showActionStatus({ state: "error", message: historyFeedback.value });
   } finally {
     historyClearBusy.value = false;
@@ -751,15 +753,27 @@ onBeforeUnmount(() => {
                   {{ t.terminal.historyRetention }}
                 </p>
               </div>
-              <button
-                type="button"
-                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                :title="t.common.close"
-                :aria-label="t.common.close"
-                @click="closeHistoryDialog"
-              >
-                <X :size="16" />
-              </button>
+              <div class="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-status-error transition-colors hover:bg-status-error/10 disabled:cursor-not-allowed disabled:opacity-45"
+                  :disabled="historyRuns.length === 0 || historyLoading || historyClearBusy"
+                  :title="t.terminal.historyClearAll"
+                  :aria-label="t.terminal.historyClearAll"
+                  @click="historyClearAll = true; historyClearOpen = true"
+                >
+                  <Eraser :size="16" />
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                  :title="t.common.close"
+                  :aria-label="t.common.close"
+                  @click="closeHistoryDialog"
+                >
+                  <X :size="16" />
+                </button>
+              </div>
             </header>
 
             <div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[15rem_minmax(0,1fr)]">
@@ -892,7 +906,7 @@ onBeforeUnmount(() => {
                       :disabled="!selectedHistoryRun || historyClearBusy || ['starting', 'running', 'stopping'].includes(selectedHistoryRun.status)"
                       :title="t.terminal.historyClear"
                       :aria-label="t.terminal.historyClear"
-                      @click="historyClearOpen = true"
+                      @click="historyClearAll = false; historyClearOpen = true"
                     >
                       <Trash2 :size="13" />
                     </button>
@@ -996,9 +1010,9 @@ onBeforeUnmount(() => {
       :open="historyClearOpen"
       tone="danger"
       icon="trash"
-      :title="t.terminal.historyClearTitle"
-      :message="t.terminal.historyClearMessage"
-      :primary-label="t.terminal.historyClear"
+      :title="historyClearAll ? t.terminal.historyClearAll : t.terminal.historyClearTitle"
+      :message="historyClearAll ? (projectId ? t.terminal.historyClearProjectMessage : t.terminal.historyClearAllMessage) : t.terminal.historyClearMessage"
+      :primary-label="historyClearAll ? t.terminal.historyClearAll : t.terminal.historyClear"
       :busy="historyClearBusy"
       :busy-label="t.terminal.historyClearBusy"
       :cancel-label="t.common.cancel"

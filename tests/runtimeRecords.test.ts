@@ -26,7 +26,7 @@ function openRecords(directory = fs.mkdtempSync(path.join(os.tmpdir(), "runtime-
     appendRuntimeRecordEvent(event: { runId: string; type: string; message?: string; code?: number }): void;
     listRuntimeRecords(projectId: string): Promise<RuntimeRecord[]>;
     readRuntimeRecordLogPage(runId: string, offset?: number): Promise<RuntimeRecordLog>;
-    clearRuntimeRecords(scope?: { runId: string }): Promise<unknown>;
+    clearRuntimeRecords(scope?: { runId: string } | { projectId: string }): Promise<unknown>;
     updateRuntimeRecordRetention(policy: ProjectLaunchServiceLogRetentionPolicy): Promise<unknown>;
     getRuntimeRecordRetention(): Promise<{ policy: ProjectLaunchServiceLogRetentionPolicy; usage: { totalBytes: number } }>;
     wrapRuntimeOperation(label: string, operation: (payload: unknown) => unknown): (payload: unknown) => unknown;
@@ -39,6 +39,25 @@ function openRecords(directory = fs.mkdtempSync(path.join(os.tmpdir(), "runtime-
 afterEach(() => { for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true }); });
 
 describe("common runtime records", () => {
+  it("clears all completed project logs without affecting other projects or active runs", async () => {
+    const { api } = openRecords();
+    const completed = ["project", "project", "other"].map((projectId) => {
+      const runId = api.beginRuntimeRecord({ projectId, scriptId: "script" });
+      api.appendRuntimeRecordEvent({ runId, type: "stdout", message: projectId });
+      api.appendRuntimeRecordEvent({ runId, type: "exit", code: 0 });
+      return runId;
+    });
+    const active = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
+    api.appendRuntimeRecordEvent({ runId: active, type: "stdout", message: "active" });
+
+    await expect(api.clearRuntimeRecords({ projectId: "" })).rejects.toThrow();
+    await expect(api.clearRuntimeRecords({ projectId: "project" })).resolves.toMatchObject({ deletedCount: 2 });
+    expect(await api.listRuntimeRecords("project")).toEqual([]);
+    expect((await api.listRuntimeRecords("other")).map((record) => record.runId)).toEqual([completed[2]]);
+    expect((await api.readRuntimeRecordLogPage(active)).events[0]?.message).toBe("active");
+    api.appendRuntimeRecordEvent({ runId: active, type: "exit", code: 0 });
+  });
+
   it("retains direct output across a fresh preload and clears only the requested completed run", async () => {
     const { api, directory } = openRecords();
     const first = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
