@@ -17,6 +17,11 @@ Normalize values at the boundary and skip unchanged writes.
 
 - Persist project, script, and todo ordering through Store actions. Filtered
   dashboard moves preserve hidden items' relative order and section boundaries.
+- Dashboard hiding uses device-local `workspace.hiddenProjectIds` through
+  `setProjectHidden(projectId, hidden)`. Missing ids default to an empty list;
+  failed writes leave visibility unchanged. Filter dashboard cards and counts,
+  while the full catalog, quick-open, running scripts, and automation keep all
+  projects. Restore the hidden ids with the other workspace state after backups.
 - On `projects-changed`, plugin entry/resume, or manual refresh, reload persisted
   metadata without writing it back. Preserve matching active script identity and
   valid Git state when the project id/path is unchanged; retain the current

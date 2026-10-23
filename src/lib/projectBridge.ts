@@ -772,6 +772,7 @@ const browserPreviewError = (action: string): Error => new Error(`浏览器预�
 
 const fallbackWorkspaceState = (): WorkspaceState => ({
   dashboardProjectGroup: "all",
+  hiddenProjectIds: [],
   workActivity: {
     selectionInitialized: false,
     preferences: null,
@@ -790,6 +791,9 @@ const readFallbackWorkspaceState = (): WorkspaceState => {
         typeof parsed.dashboardProjectGroup === "string" && parsed.dashboardProjectGroup
           ? parsed.dashboardProjectGroup
           : "all",
+      hiddenProjectIds: Array.isArray(parsed.hiddenProjectIds)
+        ? [...new Set(parsed.hiddenProjectIds.filter((projectId) => typeof projectId === "string" && projectId))]
+        : [],
       workActivity: {
         selectionInitialized: workActivity.selectionInitialized === true,
         preferences:
@@ -812,6 +816,7 @@ const writeFallbackWorkspaceState = (patch: WorkspaceStatePatch): LocalStateWrit
         typeof patch.dashboardProjectGroup === "string" && patch.dashboardProjectGroup
           ? patch.dashboardProjectGroup
           : current.dashboardProjectGroup,
+          hiddenProjectIds: patch.hiddenProjectIds ?? current.hiddenProjectIds ?? [],
       workActivity: {
         selectionInitialized: patch.workActivity?.selectionInitialized ?? current.workActivity.selectionInitialized,
         preferences:
@@ -823,7 +828,7 @@ const writeFallbackWorkspaceState = (patch: WorkspaceStatePatch): LocalStateWrit
     };
     window.localStorage?.setItem(fallbackWorkspaceStorageKey, JSON.stringify(next));
   } catch (error) {
-    // Browser preview keeps working with in-memory state when storage fails.
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   return { ok: true };
 };

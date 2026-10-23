@@ -246,6 +246,7 @@ describe("project backups through the real preload", () => {
       preferences: {},
       workspace: {
         dashboardProjectGroup: "all",
+        hiddenProjectIds: [],
         workActivity: { selectionInitialized: false, preferences: null, selectedProjectIds: [] },
       },
       publicProjectOverrides: {},

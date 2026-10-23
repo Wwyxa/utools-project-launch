@@ -38,6 +38,7 @@ function defaultLocalState() {
     preferences: {},
     workspace: {
       dashboardProjectGroup: "all",
+      hiddenProjectIds: [],
       workActivity: {
         selectionInitialized: false,
         preferences: null,
@@ -76,6 +77,9 @@ function normalizeLocalState(value) {
         typeof workspace.dashboardProjectGroup === "string" && workspace.dashboardProjectGroup
           ? workspace.dashboardProjectGroup
           : "all",
+      hiddenProjectIds: Array.isArray(workspace.hiddenProjectIds)
+        ? [...new Set(workspace.hiddenProjectIds.filter((projectId) => typeof projectId === "string" && projectId))]
+        : [],
       workActivity: {
         selectionInitialized: workActivity.selectionInitialized === true,
         preferences: workActivity.preferences && typeof workActivity.preferences === "object" ? workActivity.preferences : null,
@@ -164,6 +168,11 @@ function saveLocalWorkspaceState(patch) {
         typeof normalizedPatch.dashboardProjectGroup === "string" && normalizedPatch.dashboardProjectGroup
           ? normalizedPatch.dashboardProjectGroup
           : "all";
+    }
+    if ("hiddenProjectIds" in normalizedPatch) {
+      state.workspace.hiddenProjectIds = Array.isArray(normalizedPatch.hiddenProjectIds)
+        ? normalizedPatch.hiddenProjectIds
+        : [];
     }
     if (normalizedPatch.workActivity && typeof normalizedPatch.workActivity === "object") {
       const workActivity = normalizedPatch.workActivity;

@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useStore } from "../../store/useStore";
 import ProjectCard from "./ProjectCard.vue";
+import AllProjectsDialog from "./AllProjectsDialog.vue";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
@@ -24,6 +25,7 @@ import {
   CheckSquare,
   GripVertical,
   MoreHorizontal,
+  List,
 } from "lucide-vue-next";
 import type { TodoItem } from "../../types";
 
@@ -38,6 +40,7 @@ let initialDashboardProjectCardsMounted = false;
 
 const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
+const allProjectsOpen = ref(false);
 const moreMenuOpen = ref(false);
 const moreMenuTrigger = ref<HTMLElement | null>(null);
 const moreMenu = ref<HTMLElement | null>(null);
@@ -290,11 +293,19 @@ onUnmounted(() => {
 
 const projectGroupKey = (groupName: string) => (groupName ? `group:${groupName}` : "ungrouped");
 const projectGroupName = (project: Project) => project.group?.trim() || "";
+const openAllProjects = () => {
+  closeMoreMenu();
+  allProjectsOpen.value = true;
+};
+const hiddenProjectIds = computed(() => new Set(store.hiddenProjectIds));
+const dashboardAvailableProjects = computed(() =>
+  store.availableProjects.filter((project) => !hiddenProjectIds.value.has(project.id)),
+);
 
 const searchedAvailableProjects = computed(() => {
   const query = normalizedSearchQuery.value;
-  if (!query) return store.availableProjects;
-  return store.availableProjects.filter((project) => projectMatchesSearch(project, query));
+  if (!query) return dashboardAvailableProjects.value;
+  return dashboardAvailableProjects.value.filter((project) => projectMatchesSearch(project, query));
 });
 const projects = computed(() => {
   if (selectedProjectGroupKey.value === "all") {
@@ -306,7 +317,7 @@ const projects = computed(() => {
   );
 });
 const unavailableProjects = computed(() => {
-  const source = store.unavailableProjects;
+  const source = store.unavailableProjects.filter((project) => !hiddenProjectIds.value.has(project.id));
   const query = normalizedSearchQuery.value;
   if (!query) return source;
   return source.filter((project) => projectMatchesSearch(project, query));
@@ -319,7 +330,7 @@ const projectGroupFilters = computed<ProjectGroupFilter[]>(() => {
   });
 
   const filters = new Map<string, ProjectGroupFilter>();
-  store.availableProjects.forEach((project) => {
+  dashboardAvailableProjects.value.forEach((project) => {
     const groupName = projectGroupName(project);
     const key = projectGroupKey(groupName);
     const existingFilter = filters.get(key);
@@ -861,6 +872,17 @@ const handleProjectDragEnd = () => {
         <div class="dashboard-action-region h-8 w-max shrink-0">
           <div class="dashboard-action-row flex h-8 w-max items-center justify-end gap-2">
             <button
+              type="button"
+              @click="openAllProjects"
+              class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors"
+              :title="t.dashboard.allProjects"
+              :aria-label="t.dashboard.allProjects"
+              aria-haspopup="dialog"
+              :aria-expanded="allProjectsOpen"
+            >
+              <List :size="18" />
+            </button>
+            <button
               @click="handleRefreshAll"
               :disabled="isRefreshingProjects"
               class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-wait disabled:border-primary/35 disabled:bg-primary/10 disabled:text-primary disabled:opacity-90"
@@ -1020,6 +1042,8 @@ const handleProjectDragEnd = () => {
         </div>
       </Transition>
     </Teleport>
+
+    <AllProjectsDialog v-if="allProjectsOpen" :search-query="props.searchQuery" @close="allProjectsOpen = false" />
 
     <p v-if="store.projectStorageMessage" class="px-6 pt-3 text-xs text-on-surface-variant">
       {{ store.projectStorageMessage }}
@@ -1574,12 +1598,22 @@ const handleProjectDragEnd = () => {
     </div>
 
     <div
-      v-else-if="store.availableProjects.length > 0"
+      v-else-if="dashboardAvailableProjects.length > 0"
       class="m-6 border border-dashed border-border-subtle rounded-xl p-6 text-center"
     >
       <p class="text-sm text-on-surface-variant">
         {{ t.dashboard.noProjectsInFilter.replace("{group}", activeProjectGroupLabel) }}
       </p>
+    </div>
+
+    <div
+      v-else-if="store.projects.length > 0 && store.projects.every((project) => hiddenProjectIds.has(project.id))"
+      class="m-6 p-6 text-center text-sm text-on-surface-variant"
+    >
+      <p>{{ t.dashboard.allProjectsHidden }}</p>
+      <button type="button" class="mt-3 inline-flex items-center gap-1.5 text-primary hover:underline" @click="openAllProjects">
+        <List :size="16" />{{ t.dashboard.allProjects }}
+      </button>
     </div>
 
     <details

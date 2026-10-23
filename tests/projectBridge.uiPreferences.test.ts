@@ -4351,6 +4351,25 @@ describe("uTools preload UI preferences", () => {
   const readLocalStateFile = (directory: string) =>
     JSON.parse(readFileSync(join(directory, localStateFileName), "utf8"));
 
+  it("persists hidden projects locally across preload reloads and unrelated workspace writes", () => {
+    const localDataDirectory = mkdtempSync(join(tmpdir(), "utools-project-launch-localdata-"));
+    try {
+      const bridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      expect(bridge.loadWorkspaceState().hiddenProjectIds).toEqual([]);
+      expect(bridge.saveWorkspaceState({ hiddenProjectIds: ["alpha", "alpha", ""] })).toMatchObject({ ok: true });
+      expect(bridge.saveWorkspaceState({ dashboardProjectGroup: "group:frontend" })).toMatchObject({ ok: true });
+      const restartedBridge = loadPreloadBridge(new Map(), undefined, { [localDataDirEnv]: localDataDirectory });
+      expect(restartedBridge.loadWorkspaceState()).toMatchObject({
+        hiddenProjectIds: ["alpha"],
+        dashboardProjectGroup: "group:frontend",
+      });
+      expect(restartedBridge.saveWorkspaceState({ hiddenProjectIds: [] })).toMatchObject({ ok: true });
+      expect(bridge.loadWorkspaceState().hiddenProjectIds).toEqual([]);
+    } finally {
+      rmSync(localDataDirectory, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     [defaultTabOrder, 0],
     [["scripts", "info", "automation", "files", "git", "memo"], 1],

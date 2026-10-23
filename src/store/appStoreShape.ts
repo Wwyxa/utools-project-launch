@@ -153,6 +153,7 @@ export interface AppState {
   projects: Project[];
   selectedProjectId: string | null;
   dashboardProjectGroup: string;
+  hiddenProjectIds: string[];
   localStateWriteError: string;
   storageOverview: StorageOverview | null;
   cleanupPlan: CleanupPlan | null;
@@ -239,6 +240,7 @@ export interface AppActions {
   recordLocalStateWrite(result?: LocalStateWriteResult | null): LocalStateWriteResult | null | undefined;
   persistWorkspaceState(patch?: WorkspaceStatePatch): LocalStateWriteResult;
   setDashboardProjectGroup(groupKey: string): void;
+  setProjectHidden(projectId: string, hidden: boolean): boolean;
   refreshStorageOverview(): Promise<void>;
   loadCleanupPlan(): Promise<void>;
   runCleanup(): Promise<CleanupResult | null>;

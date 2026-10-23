@@ -57,6 +57,7 @@ export const projectCatalogActions = {
       this.uiPreferences = bridge.loadUiPreferences();
       const workspace = bridge.loadWorkspaceState();
       this.dashboardProjectGroup = workspace.dashboardProjectGroup;
+      this.hiddenProjectIds = workspace.hiddenProjectIds ?? [];
       this.workActivityPreferences = mergeWorkActivityPreferences(workspace.workActivity.preferences);
       this.workActivitySelectedProjectIds = workspace.workActivity.selectedProjectIds;
       this.workActivitySelectionInitialized = workspace.workActivity.selectionInitialized;
@@ -268,6 +269,7 @@ export const projectCatalogActions = {
   persistWorkspaceState(this: AppStore, patch: WorkspaceStatePatch = {}) {
     const result = bridge.saveWorkspaceState({
       dashboardProjectGroup: patch.dashboardProjectGroup ?? this.dashboardProjectGroup,
+      hiddenProjectIds: patch.hiddenProjectIds ?? this.hiddenProjectIds,
       workActivity: {
         selectionInitialized: patch.workActivity?.selectionInitialized ?? this.workActivitySelectionInitialized,
         preferences:
@@ -284,6 +286,23 @@ export const projectCatalogActions = {
     if (this.dashboardProjectGroup === nextGroup) return;
     this.dashboardProjectGroup = nextGroup;
     this.persistWorkspaceState();
+  },
+
+  setProjectHidden(this: AppStore, projectId: string, hidden: boolean) {
+    if (!this.projects.some((project) => project.id === projectId)) return false;
+    if (this.hiddenProjectIds.includes(projectId) === hidden) return true;
+    const hiddenProjectIds = hidden
+      ? [...this.hiddenProjectIds, projectId]
+      : this.hiddenProjectIds.filter((hiddenId) => hiddenId !== projectId);
+    try {
+      const result = this.persistWorkspaceState({ hiddenProjectIds });
+      if (result?.ok === false) return false;
+      this.hiddenProjectIds = hiddenProjectIds;
+      return true;
+    } catch (error) {
+      this.recordLocalStateWrite({ ok: false, error: error instanceof Error ? error.message : String(error) });
+      return false;
+    }
   },
 
   async refreshProjectAvailability(this: AppStore) {

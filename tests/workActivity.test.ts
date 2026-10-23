@@ -453,6 +453,23 @@ describe("work activity Store", () => {
     expect(store.workActivityReport.repositories[1]).toEqual(betaReport.repositories[0]);
   });
 
+  it("keeps project visibility unchanged when workspace persistence fails", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => { throw new Error("disk full"); } },
+      projectBridge: undefined,
+    });
+    window.projectBridge = { ...getProjectBridge() };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    store.projects = [createProject("alpha", "C:\\alpha")];
+    expect(store.setProjectHidden("alpha", true)).toBe(false);
+    expect(store.hiddenProjectIds).toEqual([]);
+    expect(store.localStateWriteError).toBe("disk full");
+    expect(store.setProjectHidden("missing", true)).toBe(false);
+  });
+
   it("persists work activity preferences, selections and the dashboard group across store recreation", async () => {
     const storage = new Map<string, string>();
     vi.stubGlobal("window", {
@@ -472,6 +489,7 @@ describe("work activity Store", () => {
     const beta = createProject("beta", "C:\\beta");
     store.projects = [alpha, beta];
 
+    expect(store.setProjectHidden("beta", true)).toBe(true);
     store.setDashboardProjectGroup("group:frontend");
     store.setWorkActivityProjectIds(["alpha"]);
     store.saveWorkActivityProjectGroup("Release work");
@@ -483,6 +501,11 @@ describe("work activity Store", () => {
     const restartedStore = useStore();
     restartedStore.projects = [alpha, beta];
     expect(restartedStore.dashboardProjectGroup).toBe("group:frontend");
+    expect(restartedStore.hiddenProjectIds).toEqual(["beta"]);
+    expect(restartedStore.projects.map((project) => project.id)).toEqual(["alpha", "beta"]);
+    expect(restartedStore.setProjectHidden("beta", false)).toBe(true);
+    setActivePinia(createPinia());
+    expect(useStore().hiddenProjectIds).toEqual([]);
     expect(restartedStore.workActivitySelectionInitialized).toBe(true);
     expect(restartedStore.workActivitySelectedProjectIds).toEqual(["alpha"]);
     expect(restartedStore.workActivityPreferences.rangeMode).toBe("days30");

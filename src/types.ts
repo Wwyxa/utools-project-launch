@@ -1666,6 +1666,7 @@ export interface ProjectEnvironmentOverride {
 
 export interface WorkspaceState {
   dashboardProjectGroup: string;
+  hiddenProjectIds?: string[];
   workActivity: {
     selectionInitialized: boolean;
     preferences: WorkActivityPreferences | null;
@@ -1675,6 +1676,7 @@ export interface WorkspaceState {
 
 export interface WorkspaceStatePatch {
   dashboardProjectGroup?: string;
+  hiddenProjectIds?: string[];
   workActivity?: Partial<
     Pick<WorkspaceState["workActivity"], "selectionInitialized" | "preferences" | "selectedProjectIds">
   >;

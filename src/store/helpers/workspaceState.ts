@@ -3,6 +3,7 @@ import { bridge } from "./bridge";
 
 export const defaultWorkspaceState = (): WorkspaceState => ({
   dashboardProjectGroup: "all",
+  hiddenProjectIds: [],
   workActivity: {
     selectionInitialized: false,
     preferences: null,
@@ -20,6 +21,9 @@ export function loadPersistedWorkspaceState(): WorkspaceState {
         typeof persisted?.dashboardProjectGroup === "string" && persisted.dashboardProjectGroup
           ? persisted.dashboardProjectGroup
           : "all",
+      hiddenProjectIds: Array.isArray(persisted?.hiddenProjectIds)
+        ? [...new Set(persisted.hiddenProjectIds.filter((projectId) => typeof projectId === "string" && projectId))]
+        : [],
       workActivity: {
         selectionInitialized: workActivity?.selectionInitialized === true,
         preferences:

@@ -100,6 +100,7 @@ export const useStore = defineStore("app", {
       projects: supportsRealProjectBridge() ? [] : demoProjects,
       selectedProjectId: null as string | null,
       dashboardProjectGroup: persistedWorkspace.dashboardProjectGroup,
+      hiddenProjectIds: persistedWorkspace.hiddenProjectIds ?? [],
       localStateWriteError: "",
       storageOverview: null as StorageOverview | null,
       cleanupPlan: null as CleanupPlan | null,
