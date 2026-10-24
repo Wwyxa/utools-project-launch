@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import {
   ArrowDown,
   ArrowUp,
   Bell,
   BellOff,
   CalendarClock,
-  Check,
-  ChevronDown,
   Clock,
   Copy,
   History,
@@ -15,7 +13,6 @@ import {
   Plus,
   Power,
   Trash2,
-  X,
 } from "lucide-vue-next";
 import type {
   Project,
@@ -31,7 +28,8 @@ import { dateKey, generateAutomationDailyPlan } from "../../lib/automationSchedu
 import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import BaseModal from "../common/BaseModal.vue";
+import UiSelect, { type UiSelectOption } from "../common/UiSelect.vue";
 
 const props = defineProps<{ project: Project }>();
 
@@ -44,8 +42,6 @@ const historyDialogEntries = ref<ProjectAutomationHistoryEntry[]>([]);
 const historyDialogLoading = ref(false);
 const feedback = ref("");
 const actionFeedback = ref<{ message: string; tone: "success" | "warning" } | null>(null);
-const isMissedPolicyMenuOpen = ref(false);
-let stopAppEscapeListener = () => {};
 
 interface AutomationFormState {
   name: string;
@@ -94,22 +90,19 @@ const tasks = computed(() => props.project.automationTasks || []);
 const historyDialogTask = computed(() => tasks.value.find((task) => task.id === historyDialogTaskId.value) || null);
 const activeProjectRunId = computed(() => store.automationActiveProjectRuns[props.project.id] || "");
 const today = computed(() => dateKey());
-const missedPolicyOptions = computed<{ id: ProjectAutomationMissedPolicy; label: string }[]>(() => [
-  { id: "grace-run", label: t.value.automation.missedPolicyGraceRun },
-  { id: "run-now", label: t.value.automation.missedPolicyRunNow },
-  { id: "mark-missed", label: t.value.automation.missedPolicyMarkMissed },
+const missedPolicyOptions = computed<UiSelectOption[]>(() => [
+  { value: "grace-run", label: t.value.automation.missedPolicyGraceRun },
+  { value: "run-now", label: t.value.automation.missedPolicyRunNow },
+  { value: "mark-missed", label: t.value.automation.missedPolicyMarkMissed },
 ]);
-const missedPolicyLabel = computed(
-  () =>
-    missedPolicyOptions.value.find((option) => option.id === form.missedPolicy)?.label ||
-    t.value.automation.missedPolicyGraceRun,
+const formDialogTitle = computed(() =>
+  editingTaskId.value ? t.value.automation.editTask : t.value.automation.createTask,
 );
 
 const resetForm = () => {
   Object.assign(form, createDefaultForm());
   editingTaskId.value = null;
   feedback.value = "";
-  isMissedPolicyMenuOpen.value = false;
 };
 
 const openCreateTask = () => {
@@ -149,33 +142,6 @@ const closeHistory = () => {
   historyDialogLoading.value = false;
 };
 
-const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (isMissedPolicyMenuOpen.value) {
-    isMissedPolicyMenuOpen.value = false;
-    event.detail.handle();
-    return;
-  }
-
-  if (historyDialogTaskId.value) {
-    closeHistory();
-    event.detail.handle();
-    return;
-  }
-
-  if (formDialogOpen.value) {
-    closeForm();
-    event.detail.handle();
-  }
-};
-
-onMounted(() => {
-  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
-});
-
-onUnmounted(() => {
-  stopAppEscapeListener();
-});
-
 const scheduleFromForm = (): ProjectAutomationSchedule =>
   form.scheduleType === "fixed"
     ? {
@@ -204,7 +170,6 @@ const exitConfigsFromForm = () =>
 const loadTask = (task: ProjectAutomationTask) => {
   editingTaskId.value = task.id;
   feedback.value = "";
-  isMissedPolicyMenuOpen.value = false;
   form.name = task.name;
   form.enabled = task.enabled;
   form.scriptIds = [...task.scriptIds];
@@ -275,9 +240,8 @@ const moveSelectedScript = (scriptId: string, direction: "up" | "down") => {
   form.scriptIds = nextScriptIds;
 };
 
-const selectMissedPolicy = (policy: ProjectAutomationMissedPolicy) => {
-  form.missedPolicy = policy;
-  isMissedPolicyMenuOpen.value = false;
+const handleMissedPolicyChange = (value: ProjectAutomationMissedPolicy | null) => {
+  if (value) form.missedPolicy = value;
 };
 
 const selectedScripts = computed(() =>
@@ -426,7 +390,7 @@ const statusClass = (status: string) =>
 
 const statusDotClass = (status: string) =>
   status === "running"
-    ? "bg-status-info"
+    ? "ui-status-dot--glow bg-status-info text-status-info"
     : status === "completed"
       ? "bg-status-running"
       : status === "failed"
@@ -436,10 +400,7 @@ const statusDotClass = (status: string) =>
           : "bg-outline-variant";
 
 const toggleButtonClass = (enabled: boolean) =>
-  cn(
-    "rounded-md p-1.5 transition-colors hover:bg-surface-variant",
-    enabled ? "bg-status-running/10 text-status-running" : "text-on-surface-variant",
-  );
+  cn("ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm", enabled && "bg-status-running/10 text-status-running");
 
 const taskSummary = computed(() => {
   const summary = { enabled: 0, running: 0, failed: 0, missed: 0 };
@@ -483,7 +444,7 @@ const taskSummaryText = computed(() =>
           <span class="ui-panel-meta">{{ tasks.length }}</span>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 py-1 text-xs font-semibold text-on-surface hover:bg-surface-variant"
+            class="ui-btn ui-btn--secondary ui-btn--sm"
             :title="t.automation.newTask"
             :aria-label="t.automation.newTask"
             @click="openCreateTask"
@@ -520,11 +481,7 @@ const taskSummaryText = computed(() =>
           </span>
           <span class="text-sm font-semibold text-on-surface">{{ t.automation.empty }}</span>
           <p class="mt-1 max-w-sm text-xs leading-5 text-on-surface-variant">{{ t.automation.formHint }}</p>
-          <button
-            type="button"
-            class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90"
-            @click="openCreateTask"
-          >
+          <button type="button" class="ui-btn ui-btn--primary mt-4" @click="openCreateTask">
             <Plus :size="13" />
             {{ t.automation.newTask }}
           </button>
@@ -537,7 +494,7 @@ const taskSummaryText = computed(() =>
           <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div class="flex min-w-0 flex-1 items-start gap-2">
               <span
-                :class="cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', statusDotClass(taskCurrentStatus(task)))"
+                :class="cn('ui-status-dot mt-1.5 shrink-0', statusDotClass(taskCurrentStatus(task)))"
                 aria-hidden="true"
               />
               <div class="min-w-0">
@@ -545,12 +502,9 @@ const taskSummaryText = computed(() =>
                   <h3 class="truncate text-sm font-bold text-on-surface">{{ task.name }}</h3>
                   <span
                     :class="
-                      cn(
-                        'rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                        task.enabled
-                          ? 'border-status-running/30 bg-status-running/10 text-status-running'
-                          : 'border-border-subtle bg-surface text-on-surface-variant',
-                      )
+                      task.enabled
+                        ? 'ui-status-pill border-status-running/30 bg-status-running/10 text-status-running'
+                        : 'ui-status-pill border-border-subtle bg-surface text-on-surface-variant'
                     "
                   >
                     {{ task.enabled ? t.automation.enabled : t.automation.disabled }}
@@ -562,11 +516,11 @@ const taskSummaryText = computed(() =>
               </div>
             </div>
             <div
-              class="flex flex-wrap items-center gap-0.5 border-t border-border-subtle pt-1.5 sm:shrink-0 sm:border-l sm:border-t-0 sm:pl-2 sm:pt-0"
+              class="flex flex-wrap items-center gap-1 border-t border-border-subtle pt-1.5 sm:shrink-0 sm:border-l sm:border-t-0 sm:pl-2 sm:pt-0"
             >
               <button
                 type="button"
-                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                class="ui-btn ui-btn--primary-ghost ui-btn--icon ui-btn--sm"
                 :disabled="!canRunTaskNow(task)"
                 :title="t.automation.runNow"
                 :aria-label="t.automation.runNow"
@@ -595,7 +549,7 @@ const taskSummaryText = computed(() =>
               </button>
               <button
                 type="button"
-                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant"
+                class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
                 :title="t.common.copy"
                 :aria-label="t.common.copy"
                 @click="duplicateTask(task)"
@@ -605,23 +559,19 @@ const taskSummaryText = computed(() =>
               <button
                 v-if="store.projectLaunchServicePreferences.enabled"
                 type="button"
-                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant"
+                class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
                 :title="t.automation.history"
                 :aria-label="t.automation.history"
                 @click="openHistory(task)"
               >
                 <History :size="14" />
               </button>
-              <button
-                type="button"
-                class="rounded-md px-2 py-1 text-xs font-semibold text-on-surface transition-colors hover:bg-surface-variant"
-                @click="openEditTask(task)"
-              >
+              <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" @click="openEditTask(task)">
                 {{ t.common.edit }}
               </button>
               <button
                 type="button"
-                class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-status-error/10 hover:text-status-error"
+                class="ui-btn ui-btn--danger-ghost ui-btn--icon ui-btn--sm"
                 :title="t.common.delete"
                 :aria-label="t.common.delete"
                 @click="store.deleteAutomationTask(project.id, task.id)"
@@ -646,14 +596,7 @@ const taskSummaryText = computed(() =>
               <span class="shrink-0 text-[10px] font-semibold text-on-surface-variant">{{
                 t.automation.latestResult
               }}</span>
-              <span
-                :class="
-                  cn(
-                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                    statusClass(latestResultStatus(task)),
-                  )
-                "
-              >
+              <span class="ui-status-pill" :class="statusClass(latestResultStatus(task))">
                 {{ statusLabel(latestResultStatus(task)) }}
               </span>
               <span class="whitespace-nowrap font-mono font-bold text-on-surface">{{
@@ -666,9 +609,9 @@ const taskSummaryText = computed(() =>
             <span
               v-for="entry in taskPlan(task).entries"
               :key="entry.id"
-              class="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface px-1.5 py-0.5 text-[9px] font-medium text-on-surface-variant"
+              class="ui-status-pill border-border-subtle bg-surface text-on-surface-variant"
             >
-              <span :class="cn('h-1.5 w-1.5 shrink-0 rounded-full', statusDotClass(entry.status))" aria-hidden="true" />
+              <span :class="cn('ui-status-dot shrink-0', statusDotClass(entry.status))" aria-hidden="true" />
               {{ formatTime(entry.plannedAt) }} · {{ statusLabel(entry.status) }}
               <button
                 v-if="isFuturePendingPlanEntry(entry)"
@@ -687,517 +630,392 @@ const taskSummaryText = computed(() =>
       </div>
     </section>
 
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="historyDialogTask"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          @click.self="closeHistory"
-        >
-          <section
-            class="flex max-h-[78vh] min-w-0 w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="automation-history-title"
-          >
-            <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-              <div class="min-w-0">
-                <h3 id="automation-history-title" class="text-sm font-bold text-on-surface">
-                  {{ t.automation.history }}
-                </h3>
-                <p class="mt-0.5 truncate text-xs text-on-surface-variant">{{ historyDialogTask.name }}</p>
-              </div>
-              <button
-                type="button"
-                class="rounded-md p-1.5 text-on-surface-variant hover:bg-surface-variant"
-                :title="t.common.close"
-                :aria-label="t.common.close"
-                @click="closeHistory"
-              >
-                <X :size="16" />
-              </button>
-            </div>
-            <div class="themed-scrollbar min-h-0 min-w-0 flex-1 overflow-auto px-4 py-2">
-              <div v-if="historyDialogLoading" class="py-6 text-xs text-on-surface-variant">
-                {{ t.common.loading }}
-              </div>
-              <div v-else-if="historyDialogEntries.length === 0" class="py-6 text-xs text-on-surface-variant">
-                {{ t.common.noData }}
-              </div>
-              <table v-else class="min-w-[32rem] w-full border-collapse text-xs">
-                <tbody>
-                  <tr
-                    v-for="entry in historyDialogEntries"
-                    :key="entry.id"
-                    class="border-b border-border-subtle last:border-b-0"
-                  >
-                    <td class="py-2 pr-3">
-                      <span
-                        :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', statusClass(entry.status))"
-                      >
-                        {{ statusLabel(entry.status) }}
-                      </span>
-                    </td>
-                    <td class="whitespace-nowrap py-2 pr-3 font-mono text-[10px] text-on-surface">
-                      <span class="mr-1 font-sans font-semibold text-on-surface-variant">{{
-                        t.automation.plannedAt
-                      }}</span>
-                      {{ formatDateTime(entry.plannedAt) }}
-                    </td>
-                    <td class="whitespace-nowrap py-2 font-mono text-[10px] text-on-surface">
-                      <span class="mr-1 font-sans font-semibold text-on-surface-variant">{{
-                        t.automation.finishedAt
-                      }}</span>
-                      {{ formatDateTime(entry.endedAt) }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
+    <BaseModal
+      :open="historyDialogTask !== null"
+      :aria-label="t.automation.history"
+      :width="672"
+      body-class="px-4 py-2"
+      @close="closeHistory"
+    >
+      <template #header>
+        <div class="min-w-0">
+          <h3 class="truncate text-sm font-bold text-on-surface">{{ t.automation.history }}</h3>
+          <p class="mt-0.5 truncate text-xs text-on-surface-variant">{{ historyDialogTask?.name }}</p>
         </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="formDialogOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-        >
-          <div
-            class="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
-            @click.stop="isMissedPolicyMenuOpen = false"
+      </template>
+      <div v-if="historyDialogLoading" class="py-6 text-xs text-on-surface-variant">
+        {{ t.common.loading }}
+      </div>
+      <div v-else-if="historyDialogEntries.length === 0" class="py-6 text-xs text-on-surface-variant">
+        {{ t.common.noData }}
+      </div>
+      <table v-else class="min-w-[32rem] w-full border-collapse text-xs">
+        <tbody>
+          <tr
+            v-for="entry in historyDialogEntries"
+            :key="entry.id"
+            class="border-b border-border-subtle last:border-b-0"
           >
-            <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-              <div class="min-w-0">
-                <h3 class="text-sm font-bold text-on-surface">
-                  {{ editingTaskId ? t.automation.editTask : t.automation.createTask }}
-                </h3>
-                <p class="mt-0.5 text-xs text-on-surface-variant">{{ t.automation.formHint }}</p>
-              </div>
-              <button
-                type="button"
-                class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant hover:bg-surface-variant"
-                :title="t.common.close"
-                :aria-label="t.common.close"
-                @click.stop="closeForm"
-              >
-                <X :size="16" />
-              </button>
+            <td class="py-2 pr-3">
+              <span class="ui-status-pill" :class="statusClass(entry.status)">
+                {{ statusLabel(entry.status) }}
+              </span>
+            </td>
+            <td class="whitespace-nowrap py-2 pr-3 font-mono text-[10px] text-on-surface">
+              <span class="mr-1 font-sans font-semibold text-on-surface-variant">{{
+                t.automation.plannedAt
+              }}</span>
+              {{ formatDateTime(entry.plannedAt) }}
+            </td>
+            <td class="whitespace-nowrap py-2 font-mono text-[10px] text-on-surface">
+              <span class="mr-1 font-sans font-semibold text-on-surface-variant">{{
+                t.automation.finishedAt
+              }}</span>
+              {{ formatDateTime(entry.endedAt) }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </BaseModal>
+
+    <BaseModal
+      :open="formDialogOpen"
+      :aria-label="formDialogTitle"
+      :width="896"
+      :close-on-scrim="false"
+      body-class="p-4"
+      @close="closeForm"
+    >
+      <template #header>
+        <div class="min-w-0">
+          <h3 class="truncate text-sm font-bold text-on-surface">{{ formDialogTitle }}</h3>
+          <p class="mt-0.5 truncate text-xs text-on-surface-variant">{{ t.automation.formHint }}</p>
+        </div>
+      </template>
+      <div class="space-y-4 text-xs">
+        <section class="border-b border-border-subtle pb-4">
+          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem]">
+            <label class="block">
+              <span class="mb-1 block font-semibold text-on-surface-variant">{{ t.automation.taskName }}</span>
+              <input v-model="form.name" type="text" class="ui-field w-full" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block font-semibold text-on-surface-variant">{{
+                t.automation.maxRuntime
+              }}</span>
+              <input v-model.number="form.maxScriptRuntimeMinutes" type="number" min="1" class="ui-field w-full" />
+            </label>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <label class="inline-flex items-center gap-2 rounded-md px-1.5 py-1 font-semibold text-on-surface">
+              <input v-model="form.enabled" type="checkbox" class="h-4 w-4 accent-primary" />
+              {{ t.automation.enabled }}
+            </label>
+            <label class="inline-flex items-center gap-2 rounded-md px-1.5 py-1 font-semibold text-on-surface">
+              <input v-model="form.notifyEnabled" type="checkbox" class="h-4 w-4 accent-primary" />
+              {{ t.automation.notifications }}
+            </label>
+          </div>
+        </section>
+        <section class="border-b border-border-subtle pb-4">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <div class="font-semibold text-on-surface">{{ t.automation.scripts }}</div>
+              <p class="mt-0.5 text-[11px] text-on-surface-variant">{{ t.automation.scriptOrderHint }}</p>
             </div>
-            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-auto p-4">
-              <div class="space-y-4 text-xs">
-                <section class="border-b border-border-subtle pb-4">
-                  <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem]">
-                    <label class="block">
-                      <span class="mb-1 block font-semibold text-on-surface-variant">{{ t.automation.taskName }}</span>
-                      <input
-                        v-model="form.name"
-                        type="text"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-on-surface outline-none focus:border-primary"
-                      />
-                    </label>
-                    <label class="block">
-                      <span class="mb-1 block font-semibold text-on-surface-variant">{{
-                        t.automation.maxRuntime
-                      }}</span>
-                      <input
-                        v-model.number="form.maxScriptRuntimeMinutes"
-                        type="number"
-                        min="1"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-on-surface"
-                      />
-                    </label>
-                  </div>
-                  <div class="mt-3 flex flex-wrap gap-2">
-                    <label class="inline-flex items-center gap-2 rounded-md px-1.5 py-1 font-semibold text-on-surface">
-                      <input v-model="form.enabled" type="checkbox" /> {{ t.automation.enabled }}
-                    </label>
-                    <label class="inline-flex items-center gap-2 rounded-md px-1.5 py-1 font-semibold text-on-surface">
-                      <input v-model="form.notifyEnabled" type="checkbox" /> {{ t.automation.notifications }}
-                    </label>
-                  </div>
-                </section>
-                <section class="border-b border-border-subtle pb-4">
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <div>
-                      <div class="font-semibold text-on-surface">{{ t.automation.scripts }}</div>
-                      <p class="mt-0.5 text-[11px] text-on-surface-variant">{{ t.automation.scriptOrderHint }}</p>
-                    </div>
-                    <span
-                      class="rounded-full border border-border-subtle bg-surface px-2 py-0.5 text-[10px] font-bold text-on-surface-variant"
-                    >
-                      {{ selectedScripts.length }}
-                    </span>
-                  </div>
-                  <div class="space-y-1">
-                    <div
-                      v-for="script in orderedScripts"
-                      :key="script.id"
-                      class="flex h-9 min-w-0 items-center gap-2 border-b border-border-subtle text-on-surface last:border-b-0"
-                    >
-                      <label class="flex min-w-0 flex-1 items-center gap-2">
-                        <input
-                          type="checkbox"
-                          :checked="form.scriptIds.includes(script.id)"
-                          @change="toggleScript(script.id)"
-                        />
-                        <span class="min-w-0 truncate font-mono">{{ script.name }}</span>
-                      </label>
-                      <span class="ml-auto flex h-6 shrink-0 items-center justify-end gap-1">
-                        <template v-if="form.scriptIds.includes(script.id)">
-                          <label
-                            class="flex items-center gap-1 text-[10px] font-semibold text-on-surface-variant"
-                            :title="t.automation.continuousRunHint"
-                          >
-                            <input
-                              type="checkbox"
-                              :checked="isContinuousScript(script.id)"
-                              @change="toggleContinuousScript(script.id)"
-                            />
-                            {{ t.automation.continuousRun }}
-                          </label>
-                          <button
-                            type="button"
-                            class="rounded border border-border-subtle bg-surface p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
-                            :disabled="form.scriptIds.indexOf(script.id) === 0"
-                            :title="t.automation.moveScriptUp"
-                            :aria-label="t.automation.moveScriptUp"
-                            @click.prevent="moveSelectedScript(script.id, 'up')"
-                          >
-                            <ArrowUp :size="12" />
-                          </button>
-                          <button
-                            type="button"
-                            class="rounded border border-border-subtle bg-surface p-1 text-on-surface-variant hover:bg-surface-variant disabled:opacity-40"
-                            :disabled="form.scriptIds.indexOf(script.id) === form.scriptIds.length - 1"
-                            :title="t.automation.moveScriptDown"
-                            :aria-label="t.automation.moveScriptDown"
-                            @click.prevent="moveSelectedScript(script.id, 'down')"
-                          >
-                            <ArrowDown :size="12" />
-                          </button>
-                        </template>
-                      </span>
-                    </div>
-                  </div>
-                </section>
-                <section class="border-b border-border-subtle pb-4">
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <div class="font-semibold text-on-surface">{{ t.automation.schedule }}</div>
-                    <div class="flex rounded-lg border border-border-subtle bg-surface p-1">
-                      <button
-                        type="button"
-                        :class="
-                          cn(
-                            'rounded-md border px-3 py-1.5 font-bold',
-                            form.scheduleType === 'fixed'
-                              ? 'border-border-subtle bg-surface-container-high text-on-surface'
-                              : 'border-transparent text-on-surface-variant hover:bg-surface-variant',
-                          )
-                        "
-                        @click="form.scheduleType = 'fixed'"
-                      >
-                        {{ t.automation.fixed }}
-                      </button>
-                      <button
-                        type="button"
-                        :class="
-                          cn(
-                            'rounded-md border px-3 py-1.5 font-bold',
-                            form.scheduleType === 'random'
-                              ? 'border-border-subtle bg-surface-container-high text-on-surface'
-                              : 'border-transparent text-on-surface-variant hover:bg-surface-variant',
-                          )
-                        "
-                        @click="form.scheduleType = 'random'"
-                      >
-                        {{ t.automation.random }}
-                      </button>
-                    </div>
-                  </div>
-                  <div v-if="form.scheduleType === 'fixed'" class="grid gap-2 sm:grid-cols-3">
-                    <label>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.startTime }}</span>
-                      <input
-                        v-model="form.startTime"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 font-mono"
-                      />
-                    </label>
-                    <label>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.dailyCount }}</span>
-                      <input
-                        v-model.number="form.dailyCount"
-                        type="number"
-                        min="1"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                      />
-                    </label>
-                    <label>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.interval }}</span>
-                      <input
-                        v-model.number="form.intervalMinutes"
-                        type="number"
-                        min="1"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                      />
-                    </label>
-                  </div>
-                  <div v-else class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    <label>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.windowStart }}</span>
-                      <input
-                        v-model="form.windowStart"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 font-mono"
-                      />
-                    </label>
-                    <label>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.windowEnd }}</span>
-                      <input
-                        v-model="form.windowEnd"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 font-mono"
-                      />
-                    </label>
-                    <label>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.dailyCount }}</span>
-                      <input
-                        v-model.number="form.dailyCount"
-                        type="number"
-                        min="1"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                      />
-                    </label>
-                    <label>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.minInterval }}</span>
-                      <input
-                        v-model.number="form.minIntervalMinutes"
-                        type="number"
-                        min="0"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                      />
-                    </label>
-                    <label>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.maxInterval }}</span>
-                      <input
-                        v-model.number="form.maxIntervalMinutes"
-                        type="number"
-                        min="1"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                      />
-                    </label>
-                  </div>
-                  <div class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
-                    <div>
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.missedPolicy }}</span>
-                      <div class="relative" @click.stop>
-                        <button
-                          type="button"
-                          class="ui-field flex w-full items-center justify-between gap-2 text-left font-normal"
-                          @click="isMissedPolicyMenuOpen = !isMissedPolicyMenuOpen"
-                        >
-                          <span>{{ missedPolicyLabel }}</span>
-                          <ChevronDown :size="14" class="text-on-surface-variant" />
-                        </button>
-                        <div v-if="isMissedPolicyMenuOpen" v-overlay-scrollbar class="mode-menu-popover" @click.stop>
-                          <button
-                            v-for="option in missedPolicyOptions"
-                            :key="option.id"
-                            type="button"
-                            :class="
-                              cn(
-                                'mode-menu-item text-xs font-normal',
-                                form.missedPolicy === option.id && 'bg-surface-variant text-on-surface',
-                              )
-                            "
-                            @click="selectMissedPolicy(option.id)"
-                          >
-                            <span>{{ option.label }}</span>
-                            <Check v-if="form.missedPolicy === option.id" :size="13" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <label v-if="form.missedPolicy === 'grace-run'">
-                      <span class="mb-1 block text-on-surface-variant">{{ t.automation.missedGrace }}</span>
-                      <input
-                        v-model.number="form.missedGraceMinutes"
-                        type="number"
-                        min="0"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                      />
-                    </label>
-                  </div>
-                </section>
-                <details class="border-b border-border-subtle pb-4">
-                  <summary
-                    class="cursor-pointer list-none font-bold text-on-surface [&::-webkit-details-marker]:hidden"
+            <span class="ui-status-pill border-border-subtle bg-surface text-on-surface-variant">
+              {{ selectedScripts.length }}
+            </span>
+          </div>
+          <div class="space-y-1">
+            <div
+              v-for="script in orderedScripts"
+              :key="script.id"
+              class="flex h-9 min-w-0 items-center gap-2 border-b border-border-subtle text-on-surface last:border-b-0"
+            >
+              <label class="flex min-w-0 flex-1 items-center gap-2">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-primary"
+                  :checked="form.scriptIds.includes(script.id)"
+                  @change="toggleScript(script.id)"
+                />
+                <span class="min-w-0 truncate font-mono">{{ script.name }}</span>
+              </label>
+              <span class="ml-auto flex h-7 shrink-0 items-center justify-end gap-1">
+                <template v-if="form.scriptIds.includes(script.id)">
+                  <label
+                    class="flex items-center gap-1 text-[10px] font-semibold text-on-surface-variant"
+                    :title="t.automation.continuousRunHint"
                   >
-                    {{ t.automation.inputSteps }}
-                  </summary>
-                  <p class="mt-1 text-[11px] leading-4 text-on-surface-variant">
-                    {{ t.automation.outputMatchScopeHint }}
-                  </p>
-                  <div
-                    v-for="scriptId in form.scriptIds"
-                    :key="scriptId"
-                    class="mt-3 border-l-2 border-border-subtle pl-3"
-                  >
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                      <span class="font-mono font-bold text-on-surface">{{ scriptName(scriptId) }}</span>
-                      <button
-                        type="button"
-                        class="rounded-md border border-border-subtle px-3 py-1.5 font-semibold text-primary hover:bg-surface-variant"
-                        @click="addInputStep(scriptId)"
-                      >
-                        {{ t.common.add }}
-                      </button>
-                    </div>
-                    <div
-                      v-for="step in form.inputConfigs[scriptId] || []"
-                      :key="step.id"
-                      class="mb-2 space-y-2 border-b border-border-subtle pb-2 last:mb-0"
-                    >
-                      <div class="flex flex-wrap items-center gap-1.5">
-                        <button
-                          type="button"
-                          :class="
-                            cn(
-                              'rounded-md px-3 py-1.5 font-bold',
-                              step.mode === 'output-match'
-                                ? 'border border-border-subtle bg-surface-container-high text-on-surface'
-                                : 'border border-transparent bg-transparent text-on-surface-variant hover:bg-surface-variant',
-                            )
-                          "
-                          @click="step.mode = 'output-match'"
-                        >
-                          {{ t.automation.outputMatch }}
-                        </button>
-                        <button
-                          type="button"
-                          :class="
-                            cn(
-                              'rounded-md px-3 py-1.5 font-bold',
-                              step.mode === 'delay'
-                                ? 'border border-border-subtle bg-surface-container-high text-on-surface'
-                                : 'border border-transparent bg-transparent text-on-surface-variant hover:bg-surface-variant',
-                            )
-                          "
-                          @click="step.mode = 'delay'"
-                        >
-                          {{ t.automation.delay }}
-                        </button>
-                        <button
-                          type="button"
-                          class="ml-auto rounded-md px-2 py-1.5 text-status-error hover:bg-status-error/10"
-                          @click="removeInputStep(scriptId, step.id)"
-                        >
-                          <Trash2 :size="13" />
-                        </button>
-                      </div>
-                      <input
-                        v-model="step.value"
-                        class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                        :placeholder="t.automation.inputValue"
-                      />
-                      <div class="grid gap-2 sm:grid-cols-2">
-                        <template v-if="step.mode === 'output-match'">
-                          <label class="block">
-                            <span class="mb-1 block text-[11px] font-semibold text-on-surface-variant">
-                              {{ t.automation.matchText }}
-                            </span>
-                            <input
-                              v-model="step.matchText"
-                              class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                            />
-                          </label>
-                          <label class="block">
-                            <span class="mb-1 block text-[11px] font-semibold text-on-surface-variant">
-                              {{ t.automation.timeoutMs }}
-                            </span>
-                            <input
-                              v-model.number="step.timeoutMs"
-                              type="number"
-                              min="1000"
-                              class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                            />
-                          </label>
-                          <p class="sm:col-span-2 text-[11px] leading-4 text-on-surface-variant">
-                            {{ t.automation.timeoutHint }}
-                          </p>
-                        </template>
-                        <template v-else>
-                          <label class="block">
-                            <span class="mb-1 block text-[11px] font-semibold text-on-surface-variant">
-                              {{ t.automation.delayMs }}
-                            </span>
-                            <input
-                              v-model.number="step.delayMs"
-                              type="number"
-                              min="0"
-                              class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2"
-                            />
-                          </label>
-                          <p class="sm:col-span-2 text-[11px] leading-4 text-on-surface-variant">
-                            {{ t.automation.delayHint }}
-                          </p>
-                        </template>
-                      </div>
-                    </div>
-                    <label class="mt-2 flex items-center gap-2 text-on-surface-variant">
-                      <input
-                        type="checkbox"
-                        :checked="form.exitConfigs[scriptId]?.enabled"
-                        :disabled="isContinuousScript(scriptId)"
-                        @change="toggleExitConfig(scriptId)"
-                      />
-                      {{ t.automation.keywordExit }}
-                    </label>
-                    <p v-if="isContinuousScript(scriptId)" class="mt-1 text-[11px] leading-4 text-on-surface-variant">
-                      {{ t.automation.continuousExitConflict }}
-                    </p>
                     <input
-                      v-if="form.exitConfigs[scriptId]?.enabled"
-                      v-model="form.exitConfigs[scriptId].matchText"
-                      class="mt-1 w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2"
-                      :placeholder="t.automation.exitKeyword"
+                      type="checkbox"
+                      class="h-4 w-4 accent-primary"
+                      :checked="isContinuousScript(script.id)"
+                      @change="toggleContinuousScript(script.id)"
                     />
-                    <p
-                      v-if="form.exitConfigs[scriptId]?.enabled"
-                      class="mt-1 text-[11px] leading-4 text-on-surface-variant"
-                    >
-                      {{ t.automation.keywordExitHint }}
-                    </p>
-                  </div>
-                </details>
-              </div>
+                    {{ t.automation.continuousRun }}
+                  </label>
+                  <button
+                    type="button"
+                    class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
+                    :disabled="form.scriptIds.indexOf(script.id) === 0"
+                    :title="t.automation.moveScriptUp"
+                    :aria-label="t.automation.moveScriptUp"
+                    @click.prevent="moveSelectedScript(script.id, 'up')"
+                  >
+                    <ArrowUp :size="12" />
+                  </button>
+                  <button
+                    type="button"
+                    class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
+                    :disabled="form.scriptIds.indexOf(script.id) === form.scriptIds.length - 1"
+                    :title="t.automation.moveScriptDown"
+                    :aria-label="t.automation.moveScriptDown"
+                    @click.prevent="moveSelectedScript(script.id, 'down')"
+                  >
+                    <ArrowDown :size="12" />
+                  </button>
+                </template>
+              </span>
             </div>
-            <div class="flex items-center justify-between gap-3 border-t border-border-subtle px-4 py-3">
-              <p
-                v-if="feedback"
-                class="min-w-0 flex-1 rounded-lg border border-status-error/20 bg-status-error/10 px-3 py-2 text-xs text-status-error"
-              >
-                {{ feedback }}
-              </p>
-              <span v-else class="min-w-0 flex-1" />
+          </div>
+        </section>
+        <section class="border-b border-border-subtle pb-4">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <div class="font-semibold text-on-surface">{{ t.automation.schedule }}</div>
+            <div class="flex rounded-lg border border-border-subtle bg-surface p-1">
               <button
                 type="button"
-                class="rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-variant"
-                @click.stop="closeForm"
+                :class="
+                  cn(
+                    'rounded-md border px-3 py-1.5 font-bold',
+                    form.scheduleType === 'fixed'
+                      ? 'border-border-subtle bg-surface-container-high text-on-surface'
+                      : 'border-transparent text-on-surface-variant hover:bg-surface-variant',
+                  )
+                "
+                @click="form.scheduleType = 'fixed'"
               >
-                {{ t.common.cancel }}
+                {{ t.automation.fixed }}
               </button>
               <button
                 type="button"
-                class="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-on-primary hover:bg-primary/90"
-                @click.stop="saveTask"
+                :class="
+                  cn(
+                    'rounded-md border px-3 py-1.5 font-bold',
+                    form.scheduleType === 'random'
+                      ? 'border-border-subtle bg-surface-container-high text-on-surface'
+                      : 'border-transparent text-on-surface-variant hover:bg-surface-variant',
+                  )
+                "
+                @click="form.scheduleType = 'random'"
               >
-                {{ t.common.save }}
+                {{ t.automation.random }}
               </button>
             </div>
           </div>
-        </div>
-      </Transition>
-    </Teleport>
+          <div v-if="form.scheduleType === 'fixed'" class="grid gap-2 sm:grid-cols-3">
+            <label>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.startTime }}</span>
+              <input v-model="form.startTime" class="ui-field w-full font-mono" />
+            </label>
+            <label>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.dailyCount }}</span>
+              <input v-model.number="form.dailyCount" type="number" min="1" class="ui-field w-full" />
+            </label>
+            <label>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.interval }}</span>
+              <input v-model.number="form.intervalMinutes" type="number" min="1" class="ui-field w-full" />
+            </label>
+          </div>
+          <div v-else class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <label>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.windowStart }}</span>
+              <input v-model="form.windowStart" class="ui-field w-full font-mono" />
+            </label>
+            <label>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.windowEnd }}</span>
+              <input v-model="form.windowEnd" class="ui-field w-full font-mono" />
+            </label>
+            <label>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.dailyCount }}</span>
+              <input v-model.number="form.dailyCount" type="number" min="1" class="ui-field w-full" />
+            </label>
+            <label>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.minInterval }}</span>
+              <input v-model.number="form.minIntervalMinutes" type="number" min="0" class="ui-field w-full" />
+            </label>
+            <label>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.maxInterval }}</span>
+              <input v-model.number="form.maxIntervalMinutes" type="number" min="1" class="ui-field w-full" />
+            </label>
+          </div>
+          <div class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
+            <div>
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.missedPolicy }}</span>
+              <UiSelect
+                :model-value="form.missedPolicy"
+                :options="missedPolicyOptions"
+                :aria-label="t.automation.missedPolicy"
+                @update:model-value="handleMissedPolicyChange"
+              />
+            </div>
+            <label v-if="form.missedPolicy === 'grace-run'">
+              <span class="mb-1 block text-on-surface-variant">{{ t.automation.missedGrace }}</span>
+              <input v-model.number="form.missedGraceMinutes" type="number" min="0" class="ui-field w-full" />
+            </label>
+          </div>
+        </section>
+        <details class="border-b border-border-subtle pb-4">
+          <summary
+            class="cursor-pointer list-none font-bold text-on-surface [&::-webkit-details-marker]:hidden"
+          >
+            {{ t.automation.inputSteps }}
+          </summary>
+          <p class="mt-1 text-[11px] leading-4 text-on-surface-variant">
+            {{ t.automation.outputMatchScopeHint }}
+          </p>
+          <div
+            v-for="scriptId in form.scriptIds"
+            :key="scriptId"
+            class="mt-3 border-l-2 border-border-subtle pl-3"
+          >
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <span class="font-mono font-bold text-on-surface">{{ scriptName(scriptId) }}</span>
+              <button
+                type="button"
+                class="ui-btn ui-btn--primary-ghost ui-btn--sm"
+                @click="addInputStep(scriptId)"
+              >
+                {{ t.common.add }}
+              </button>
+            </div>
+            <div
+              v-for="step in form.inputConfigs[scriptId] || []"
+              :key="step.id"
+              class="mb-2 space-y-2 border-b border-border-subtle pb-2 last:mb-0"
+            >
+              <div class="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  :class="
+                    cn(
+                      'rounded-md px-3 py-1.5 font-bold',
+                      step.mode === 'output-match'
+                        ? 'border border-border-subtle bg-surface-container-high text-on-surface'
+                        : 'border border-transparent bg-transparent text-on-surface-variant hover:bg-surface-variant',
+                    )
+                  "
+                  @click="step.mode = 'output-match'"
+                >
+                  {{ t.automation.outputMatch }}
+                </button>
+                <button
+                  type="button"
+                  :class="
+                    cn(
+                      'rounded-md px-3 py-1.5 font-bold',
+                      step.mode === 'delay'
+                        ? 'border border-border-subtle bg-surface-container-high text-on-surface'
+                        : 'border border-transparent bg-transparent text-on-surface-variant hover:bg-surface-variant',
+                    )
+                  "
+                  @click="step.mode = 'delay'"
+                >
+                  {{ t.automation.delay }}
+                </button>
+                <button
+                  type="button"
+                  class="ui-btn ui-btn--danger-ghost ui-btn--icon ui-btn--sm ml-auto"
+                  :title="t.common.delete"
+                  :aria-label="t.common.delete"
+                  @click="removeInputStep(scriptId, step.id)"
+                >
+                  <Trash2 :size="13" />
+                </button>
+              </div>
+              <input
+                v-model="step.value"
+                class="ui-field w-full"
+                :placeholder="t.automation.inputValue"
+              />
+              <div class="grid gap-2 sm:grid-cols-2">
+                <template v-if="step.mode === 'output-match'">
+                  <label class="block">
+                    <span class="mb-1 block text-[11px] font-semibold text-on-surface-variant">
+                      {{ t.automation.matchText }}
+                    </span>
+                    <input v-model="step.matchText" class="ui-field w-full" />
+                  </label>
+                  <label class="block">
+                    <span class="mb-1 block text-[11px] font-semibold text-on-surface-variant">
+                      {{ t.automation.timeoutMs }}
+                    </span>
+                    <input v-model.number="step.timeoutMs" type="number" min="1000" class="ui-field w-full" />
+                  </label>
+                  <p class="sm:col-span-2 text-[11px] leading-4 text-on-surface-variant">
+                    {{ t.automation.timeoutHint }}
+                  </p>
+                </template>
+                <template v-else>
+                  <label class="block">
+                    <span class="mb-1 block text-[11px] font-semibold text-on-surface-variant">
+                      {{ t.automation.delayMs }}
+                    </span>
+                    <input v-model.number="step.delayMs" type="number" min="0" class="ui-field w-full" />
+                  </label>
+                  <p class="sm:col-span-2 text-[11px] leading-4 text-on-surface-variant">
+                    {{ t.automation.delayHint }}
+                  </p>
+                </template>
+              </div>
+            </div>
+            <label class="mt-2 flex items-center gap-2 text-on-surface-variant">
+              <input
+                type="checkbox"
+                class="h-4 w-4 accent-primary"
+                :checked="form.exitConfigs[scriptId]?.enabled"
+                :disabled="isContinuousScript(scriptId)"
+                @change="toggleExitConfig(scriptId)"
+              />
+              {{ t.automation.keywordExit }}
+            </label>
+            <p v-if="isContinuousScript(scriptId)" class="mt-1 text-[11px] leading-4 text-on-surface-variant">
+              {{ t.automation.continuousExitConflict }}
+            </p>
+            <input
+              v-if="form.exitConfigs[scriptId]?.enabled"
+              v-model="form.exitConfigs[scriptId].matchText"
+              class="ui-field mt-1 w-full"
+              :placeholder="t.automation.exitKeyword"
+            />
+            <p
+              v-if="form.exitConfigs[scriptId]?.enabled"
+              class="mt-1 text-[11px] leading-4 text-on-surface-variant"
+            >
+              {{ t.automation.keywordExitHint }}
+            </p>
+          </div>
+        </details>
+      </div>
+      <template #footer-left>
+        <p
+          v-if="feedback"
+          class="min-w-0 flex-1 rounded-lg border border-status-error/20 bg-status-error/10 px-3 py-2 text-xs text-status-error"
+        >
+          {{ feedback }}
+        </p>
+        <span v-else class="min-w-0 flex-1" />
+      </template>
+      <template #footer>
+        <button type="button" class="ui-btn ui-btn--ghost" @click="closeForm">
+          {{ t.common.cancel }}
+        </button>
+        <button type="button" class="ui-btn ui-btn--primary" @click="saveTask">
+          {{ t.common.save }}
+        </button>
+      </template>
+    </BaseModal>
   </div>
 </template>

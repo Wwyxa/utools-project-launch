@@ -27,6 +27,7 @@ import {
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
+import UiSelect from "../common/UiSelect.vue";
 import {
   calendarYearGitActivityRange,
   currentYearGitActivityRange,
@@ -70,30 +71,18 @@ const selectedAuthorId = computed({
 const selectedDate = ref("");
 const focusedHeatmapDate = ref("");
 const projectScopeOpen = ref(false);
-const authorPickerOpen = ref(false);
-const refScopePickerOpen = ref(false);
-const timeZonePickerOpen = ref(false);
 const criteriaOpen = ref(false);
 const customDatePickerKind = ref<CustomDatePickerKind | null>(null);
 const customDatePickerMonth = ref(new Date());
 const analysisTab = ref<AnalysisTab>("patterns");
 const projectSort = ref<ProjectSort>("commits");
-const projectSortOpen = ref(false);
 const focusedRepositoryPath = ref("");
 const changesReport = ref<ProjectGitActivityChangesReport | null>(null);
 const changesLoading = ref(false);
 const changesMessage = ref("");
 const projectScopeTriggerRef = ref<HTMLElement | null>(null);
-const authorPickerTriggerRef = ref<HTMLElement | null>(null);
-const refScopePickerTriggerRef = ref<HTMLElement | null>(null);
-const timeZonePickerTriggerRef = ref<HTMLElement | null>(null);
-const projectSortTriggerRef = ref<HTMLElement | null>(null);
 const customDatePickerTriggerRef = ref<HTMLElement | null>(null);
 const projectScopeMenuPosition = ref({ right: 8, top: 8 });
-const authorPickerMenuPosition = ref({ right: 8, top: 8 });
-const refScopePickerMenuPosition = ref({ right: 8, top: 8 });
-const timeZonePickerMenuPosition = ref({ right: 8, top: 8 });
-const projectSortMenuPosition = ref({ right: 8, top: 8 });
 const customDatePickerPosition = ref({ right: 8, top: 8 });
 const dayDetails = ref<ProjectGitActivityDayReport | null>(null);
 const dayDetailsLoading = ref(false);
@@ -397,9 +386,6 @@ const projectSortOptions = computed(() => [
   { value: "recent" as const, label: t.value.activity.recentActivity },
   { value: "share" as const, label: t.value.activity.share },
 ]);
-const projectSortLabel = computed(
-  () => projectSortOptions.value.find((option) => option.value === projectSort.value)?.label || "",
-);
 const customDatePickerValue = computed(() =>
   customDatePickerKind.value === "start"
     ? activityPreferences.value.customStartDate
@@ -710,9 +696,10 @@ const selectCustomDate = (value: string) => {
   customDatePickerKind.value = null;
 };
 
-const selectAuthor = (authorId: string) => {
-  selectedAuthorId.value = authorId;
-  authorPickerOpen.value = false;
+const setAuthorModelValue = (value: string | null) => {
+  if (value === null) return;
+  const author = authors.value.find((candidate) => candidate.id === value);
+  selectedAuthorId.value = author && isCurrentAuthor(author.id) ? currentAuthorSelection : value;
   resetDayDetails();
   changesReport.value = null;
   changesRequestGeneration += 1;
@@ -764,9 +751,6 @@ const removeProjectGroup = (groupId: string) => {
 };
 
 const isCurrentAuthor = (authorId: string) => currentAuthorIds.value.has(authorId);
-const isAuthorSelected = (authorId: string) =>
-  selectedAuthorId.value === authorId ||
-  (selectedAuthorId.value === currentAuthorSelection && isCurrentAuthor(authorId));
 
 const positionDropdown = (trigger: HTMLElement, target: { value: { right: number; top: number } }) => {
   const rect = trigger.getBoundingClientRect();
@@ -778,78 +762,52 @@ const positionDropdown = (trigger: HTMLElement, target: { value: { right: number
 
 const toggleProjectScope = () => {
   customDatePickerKind.value = null;
-  projectSortOpen.value = false;
-  authorPickerOpen.value = false;
-  refScopePickerOpen.value = false;
-  timeZonePickerOpen.value = false;
   projectScopeOpen.value = !projectScopeOpen.value;
   if (projectScopeOpen.value && projectScopeTriggerRef.value) {
     positionDropdown(projectScopeTriggerRef.value, projectScopeMenuPosition);
   }
 };
 
-const toggleAuthorPicker = () => {
-  customDatePickerKind.value = null;
-  projectSortOpen.value = false;
-  projectScopeOpen.value = false;
-  refScopePickerOpen.value = false;
-  timeZonePickerOpen.value = false;
-  authorPickerOpen.value = !authorPickerOpen.value;
-  if (authorPickerOpen.value && authorPickerTriggerRef.value) {
-    positionDropdown(authorPickerTriggerRef.value, authorPickerMenuPosition);
-  }
-};
-
-const toggleRefScopePicker = () => {
-  customDatePickerKind.value = null;
-  projectSortOpen.value = false;
-  projectScopeOpen.value = false;
-  authorPickerOpen.value = false;
-  timeZonePickerOpen.value = false;
-  refScopePickerOpen.value = !refScopePickerOpen.value;
-  if (refScopePickerOpen.value && refScopePickerTriggerRef.value) {
-    positionDropdown(refScopePickerTriggerRef.value, refScopePickerMenuPosition);
-  }
-};
-
-const toggleTimeZonePicker = () => {
-  customDatePickerKind.value = null;
-  projectSortOpen.value = false;
-  projectScopeOpen.value = false;
-  authorPickerOpen.value = false;
-  refScopePickerOpen.value = false;
-  timeZonePickerOpen.value = !timeZonePickerOpen.value;
-  if (timeZonePickerOpen.value && timeZonePickerTriggerRef.value) {
-    positionDropdown(timeZonePickerTriggerRef.value, timeZonePickerMenuPosition);
-  }
-};
-
-const toggleProjectSort = () => {
-  customDatePickerKind.value = null;
-  projectScopeOpen.value = false;
-  authorPickerOpen.value = false;
-  refScopePickerOpen.value = false;
-  timeZonePickerOpen.value = false;
-  projectSortOpen.value = !projectSortOpen.value;
-  if (projectSortOpen.value && projectSortTriggerRef.value) {
-    positionDropdown(projectSortTriggerRef.value, projectSortMenuPosition);
-  }
-};
-
-const selectProjectSort = (sort: ProjectSort) => {
+const selectProjectSort = (sort: ProjectSort | null) => {
+  if (sort === null) return;
   projectSort.value = sort;
-  projectSortOpen.value = false;
 };
 
-const selectRefScope = (refScope: WorkActivityPreferences["refScope"]) => {
-  setActivityPreference("refScope", refScope);
-  refScopePickerOpen.value = false;
+const setRefScopeValue = (value: WorkActivityPreferences["refScope"] | null) => {
+  if (value === null) return;
+  setActivityPreference("refScope", value);
 };
-
-const selectTimeZone = (timeZone: string) => {
-  setActivityPreference("timeZone", timeZone);
-  timeZonePickerOpen.value = false;
+const setTimeZoneValue = (value: string | null) => {
+  if (value === null) return;
+  setActivityPreference("timeZone", value);
 };
+const refScopeSelectOptions = computed(() =>
+  refScopeOptions.value.map((refScope) => ({ value: refScope, label: t.value.activity[`${refScope}RefScope`] })),
+);
+const timeZoneSelectOptions = computed(() =>
+  timeZoneOptions.value.map((timeZone) => ({
+    value: timeZone,
+    label: timeZone === "local" ? t.value.activity.localTimeZone : timeZone,
+  })),
+);
+const authorSelectOptions = computed(() => [
+  {
+    value: "",
+    label: t.value.activity.allAuthors,
+    hint: String(readyRepositories.value.reduce((total, repository) => total + repository.totalCommits, 0)),
+  },
+  ...authors.value.map((author) => ({
+    value: author.id,
+    label: author.name,
+    hint: isCurrentAuthor(author.id) ? `${t.value.activity.currentUser} · ${author.commits}` : String(author.commits),
+  })),
+]);
+const authorModelValue = computed(() => {
+  if (selectedAuthorId.value === currentAuthorSelection) {
+    return currentAuthors.value.length === 1 ? currentAuthors.value[0].id : "";
+  }
+  return selectedAuthorId.value;
+});
 
 const setProjectSelected = (projectId: string, selected: boolean) => {
   const projectIds = new Set(store.workActivitySelectedProjectIds);
@@ -989,18 +947,6 @@ const handleWindowPointerDown = (event: PointerEvent) => {
   if (!projectScopeTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-project-menu]")) {
     projectScopeOpen.value = false;
   }
-  if (!authorPickerTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-author-menu]")) {
-    authorPickerOpen.value = false;
-  }
-  if (!refScopePickerTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-ref-scope-menu]")) {
-    refScopePickerOpen.value = false;
-  }
-  if (!timeZonePickerTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-time-zone-menu]")) {
-    timeZonePickerOpen.value = false;
-  }
-  if (!projectSortTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-sort-menu]")) {
-    projectSortOpen.value = false;
-  }
   if (!customDatePickerTriggerRef.value?.contains(target) && !target.closest("[data-work-activity-date-picker]")) {
     customDatePickerKind.value = null;
   }
@@ -1010,48 +956,14 @@ const handleViewportChange = () => {
   if (projectScopeOpen.value && projectScopeTriggerRef.value) {
     positionDropdown(projectScopeTriggerRef.value, projectScopeMenuPosition);
   }
-  if (authorPickerOpen.value && authorPickerTriggerRef.value) {
-    positionDropdown(authorPickerTriggerRef.value, authorPickerMenuPosition);
-  }
-  if (refScopePickerOpen.value && refScopePickerTriggerRef.value) {
-    positionDropdown(refScopePickerTriggerRef.value, refScopePickerMenuPosition);
-  }
-  if (timeZonePickerOpen.value && timeZonePickerTriggerRef.value) {
-    positionDropdown(timeZonePickerTriggerRef.value, timeZonePickerMenuPosition);
-  }
-  if (projectSortOpen.value && projectSortTriggerRef.value) {
-    positionDropdown(projectSortTriggerRef.value, projectSortMenuPosition);
-  }
-  if (customDatePickerKind.value) {
-    if (customDatePickerTriggerRef.value) {
-      positionDropdown(customDatePickerTriggerRef.value, customDatePickerPosition);
-    }
+  if (customDatePickerKind.value && customDatePickerTriggerRef.value) {
+    positionDropdown(customDatePickerTriggerRef.value, customDatePickerPosition);
   }
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (customDatePickerKind.value) {
     customDatePickerKind.value = null;
-    event.detail.handle();
-    return;
-  }
-  if (projectSortOpen.value) {
-    projectSortOpen.value = false;
-    event.detail.handle();
-    return;
-  }
-  if (timeZonePickerOpen.value) {
-    timeZonePickerOpen.value = false;
-    event.detail.handle();
-    return;
-  }
-  if (refScopePickerOpen.value) {
-    refScopePickerOpen.value = false;
-    event.detail.handle();
-    return;
-  }
-  if (authorPickerOpen.value) {
-    authorPickerOpen.value = false;
     event.detail.handle();
     return;
   }
@@ -1149,7 +1061,7 @@ onBeforeUnmount(() => {
       <div class="flex min-w-0 items-center gap-2">
         <button
           type="button"
-          class="cursor-pointer rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all hover:bg-surface-variant active:scale-90"
+          class="ui-btn ui-btn--secondary ui-btn--icon"
           :title="t.common.back"
           :aria-label="t.common.back"
           @click="store.returnFromWorkActivity()"
@@ -1196,7 +1108,7 @@ onBeforeUnmount(() => {
               cn(
                 'cursor-pointer inline-flex h-full shrink-0 items-center justify-center border-l border-border-subtle px-2 text-xs font-bold transition-colors first:border-l-0',
                 rangeMode === option.value
-                  ? 'bg-primary text-on-primary'
+                  ? 'bg-primary/10 text-primary'
                   : 'text-on-surface-variant hover:bg-surface-variant',
               )
             "
@@ -1208,7 +1120,7 @@ onBeforeUnmount(() => {
         </div>
         <button
           type="button"
-          class="cursor-pointer inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant disabled:cursor-wait disabled:opacity-60"
+          class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
           :disabled="store.workActivityLoading"
           :title="t.common.refresh"
           :aria-label="t.common.refresh"
@@ -1219,7 +1131,7 @@ onBeforeUnmount(() => {
         <button
           ref="projectScopeTriggerRef"
           type="button"
-          class="cursor-pointer inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          class="ui-btn ui-btn--secondary ui-btn--sm"
           :aria-expanded="projectScopeOpen"
           @click="toggleProjectScope"
         >
@@ -1382,88 +1294,18 @@ onBeforeUnmount(() => {
     <Teleport to="body">
       <Transition name="fade">
         <div
-          v-if="refScopePickerOpen"
-          data-work-activity-ref-scope-menu
-          class="fixed z-[80] w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
-          :style="{ right: `${refScopePickerMenuPosition.right}px`, top: `${refScopePickerMenuPosition.top}px` }"
-        >
-          <button
-            v-for="refScope in refScopeOptions"
-            :key="refScope"
-            type="button"
-            :class="
-              cn(
-                'cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                activityPreferences.refScope === refScope
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-on-surface-variant hover:bg-surface-variant',
-              )
-            "
-            @click="selectRefScope(refScope)"
-          >
-            <Check v-if="activityPreferences.refScope === refScope" :size="14" class="shrink-0" />
-            <span v-else class="w-3.5 shrink-0" />
-            <span class="font-semibold">{{ t.activity[`${refScope}RefScope`] }}</span>
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="fade">
-        <div
-          v-if="timeZonePickerOpen"
-          data-work-activity-time-zone-menu
-          class="fixed z-[80] w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
-          :style="{ right: `${timeZonePickerMenuPosition.right}px`, top: `${timeZonePickerMenuPosition.top}px` }"
-        >
-          <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto">
-            <button
-              v-for="timeZone in timeZoneOptions"
-              :key="timeZone"
-              type="button"
-              :class="
-                cn(
-                  'cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                  activityPreferences.timeZone === timeZone
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-on-surface-variant hover:bg-surface-variant',
-                )
-              "
-              @click="selectTimeZone(timeZone)"
-            >
-              <Check v-if="activityPreferences.timeZone === timeZone" :size="14" class="shrink-0" />
-              <span v-else class="w-3.5 shrink-0" />
-              <span class="font-semibold">{{ timeZone === "local" ? t.activity.localTimeZone : timeZone }}</span>
-            </button>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="fade">
-        <div
           v-if="projectScopeOpen"
           data-work-activity-project-menu
-          class="fixed z-[80] w-max min-w-64 max-w-[min(32rem,calc(100vw-1rem))] rounded-lg border border-border-subtle bg-surface-container-lowest p-1.5 shadow-popover"
+          class="menu-pop fixed z-[85] w-max min-w-64 max-w-[min(32rem,calc(100vw-1rem))] rounded-lg border border-border-subtle bg-surface-container-lowest p-1.5 shadow-popover"
           :style="{ right: `${projectScopeMenuPosition.right}px`, top: `${projectScopeMenuPosition.top}px` }"
         >
           <div class="mb-1 flex items-center justify-between gap-4 px-1">
             <span class="text-xs font-bold text-on-surface-variant">{{ t.activity.projectScope }}</span>
             <div class="flex items-center gap-1">
-              <button
-                type="button"
-                class="cursor-pointer rounded px-1.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/10"
-                @click="selectAllProjects"
-              >
+              <button type="button" class="ui-btn ui-btn--primary-ghost ui-btn--sm" @click="selectAllProjects">
                 {{ t.activity.selectAll }}
               </button>
-              <button
-                type="button"
-                class="cursor-pointer rounded px-1.5 py-1 text-[11px] font-bold text-on-surface-variant hover:bg-surface-variant"
-                @click="clearProjects"
-              >
+              <button type="button" class="ui-btn ui-btn--primary-ghost ui-btn--sm" @click="clearProjects">
                 {{ t.activity.clearSelection }}
               </button>
             </div>
@@ -1528,7 +1370,7 @@ onBeforeUnmount(() => {
             >
               <input
                 type="checkbox"
-                class="h-3.5 w-3.5 shrink-0 accent-[var(--color-primary)]"
+                class="h-4 w-4 shrink-0 accent-primary"
                 :checked="selectedProjectIds.has(project.id)"
                 @change="setProjectSelected(project.id, ($event.target as HTMLInputElement).checked)"
               />
@@ -1548,7 +1390,7 @@ onBeforeUnmount(() => {
             />
             <button
               type="button"
-              class="cursor-pointer inline-flex h-7 items-center gap-1 rounded px-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-40"
+              class="ui-btn ui-btn--primary-ghost ui-btn--sm"
               :disabled="!projectGroupName.trim() || store.workActivitySelectedProjectIds.length === 0"
               @click="saveProjectGroup"
             >
@@ -1566,11 +1408,7 @@ onBeforeUnmount(() => {
       <span class="min-w-0 truncate text-primary">
         {{ t.activity.temporaryFocus }}：{{ projectNamesForPaths(visibleRepositories[0]?.projectPaths || []) }}
       </span>
-      <button
-        type="button"
-        class="inline-flex h-6 items-center gap-1 px-1.5 font-bold text-primary hover:bg-primary/10"
-        @click="clearTemporaryFocus"
-      >
+      <button type="button" class="ui-btn ui-btn--primary-ghost ui-btn--sm" @click="clearTemporaryFocus">
         <X :size="13" /> {{ t.activity.clearFocus }}
       </button>
     </section>
@@ -1582,11 +1420,11 @@ onBeforeUnmount(() => {
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ totalCommits }}</div>
         </div>
         <div
-          class="mt-1 truncate text-[9px] tabular-nums"
+          class="ui-status-pill mt-1 max-w-full"
           :class="comparisonTone(totalCommits, previousCommits)"
           :title="comparisonTitle"
         >
-          {{ comparisonLabel(totalCommits, previousCommits) }}
+          <span class="min-w-0 truncate tabular-nums">{{ comparisonLabel(totalCommits, previousCommits) }}</span>
         </div>
       </div>
       <div class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
@@ -1595,11 +1433,11 @@ onBeforeUnmount(() => {
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ activeDays }}</div>
         </div>
         <div
-          class="mt-1 truncate text-[9px] tabular-nums"
+          class="ui-status-pill mt-1 max-w-full"
           :class="comparisonTone(activeDays, previousActiveDays)"
           :title="comparisonTitle"
         >
-          {{ comparisonLabel(activeDays, previousActiveDays) }}
+          <span class="min-w-0 truncate tabular-nums">{{ comparisonLabel(activeDays, previousActiveDays) }}</span>
         </div>
       </div>
       <div class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
@@ -1608,11 +1446,11 @@ onBeforeUnmount(() => {
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ activeProjects }}</div>
         </div>
         <div
-          class="mt-1 truncate text-[9px] tabular-nums"
+          class="ui-status-pill mt-1 max-w-full"
           :class="comparisonTone(activeProjects, previousActiveProjects)"
           :title="comparisonTitle"
         >
-          {{ comparisonLabel(activeProjects, previousActiveProjects) }}
+          <span class="min-w-0 truncate tabular-nums">{{ comparisonLabel(activeProjects, previousActiveProjects) }}</span>
         </div>
       </div>
       <div
@@ -1625,8 +1463,8 @@ onBeforeUnmount(() => {
             {{ busiestDay ? busiestDay[1] : "—" }}
           </div>
         </div>
-        <div class="mt-1 truncate text-[9px] text-on-surface-variant">
-          {{ busiestDay ? formatDate(busiestDay[0]) : "—" }}
+        <div class="ui-status-pill mt-1 max-w-full text-on-surface-variant">
+          <span class="min-w-0 truncate">{{ busiestDay ? formatDate(busiestDay[0]) : "—" }}</span>
         </div>
       </div>
     </section>
@@ -1651,17 +1489,18 @@ onBeforeUnmount(() => {
               · {{ t.activity.excludedCommits.replace("{count}", String(excludedCommits)) }}
             </span>
           </button>
-          <button
-            ref="authorPickerTriggerRef"
-            type="button"
-            class="cursor-pointer inline-flex h-7 max-w-[15rem] items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-            :aria-expanded="authorPickerOpen"
-            @click="toggleAuthorPicker"
+          <UiSelect
+            :model-value="authorModelValue"
+            :options="authorSelectOptions"
+            align="end"
+            trigger-class="ui-btn ui-btn--secondary ui-btn--sm max-w-60"
           >
-            <Users :size="14" class="shrink-0 text-on-surface-variant" />
-            <span class="truncate">{{ selectedAuthorLabel }}</span>
-            <ChevronDown :size="14" class="shrink-0" :class="authorPickerOpen && 'rotate-180'" />
-          </button>
+            <template #trigger>
+              <Users :size="14" class="shrink-0 text-on-surface-variant" />
+              <span class="min-w-0 truncate">{{ selectedAuthorLabel }}</span>
+              <ChevronDown :size="14" class="shrink-0" />
+            </template>
+          </UiSelect>
         </div>
       </div>
 
@@ -1684,34 +1523,25 @@ onBeforeUnmount(() => {
       >
         <div class="grid gap-2 sm:grid-cols-2">
           <div class="grid gap-1">
-            <span id="work-activity-ref-scope-label" class="font-bold text-on-surface">{{ t.activity.refScope }}</span>
-            <button
-              ref="refScopePickerTriggerRef"
-              type="button"
-              class="cursor-pointer flex h-8 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-variant"
-              aria-haspopup="menu"
-              aria-labelledby="work-activity-ref-scope-label"
-              :aria-expanded="refScopePickerOpen"
-              @click="toggleRefScopePicker"
-            >
-              <span class="truncate">{{ scopeLabel }}</span>
-              <ChevronDown :size="15" class="shrink-0" :class="refScopePickerOpen && 'rotate-180'" />
-            </button>
+            <span class="font-bold text-on-surface">{{ t.activity.refScope }}</span>
+            <UiSelect
+              :model-value="activityPreferences.refScope"
+              :options="refScopeSelectOptions"
+              compact
+              :aria-label="t.activity.refScope"
+              @update:model-value="setRefScopeValue"
+            />
           </div>
           <div class="grid gap-1">
-            <span id="work-activity-time-zone-label" class="font-bold text-on-surface">{{ t.activity.timeZone }}</span>
-            <button
-              ref="timeZonePickerTriggerRef"
-              type="button"
-              class="cursor-pointer flex h-8 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-left text-sm text-on-surface transition-colors hover:bg-surface-variant"
-              aria-haspopup="menu"
-              aria-labelledby="work-activity-time-zone-label"
-              :aria-expanded="timeZonePickerOpen"
-              @click="toggleTimeZonePicker"
-            >
-              <span class="truncate">{{ timeZoneLabel }}</span>
-              <ChevronDown :size="15" class="shrink-0" :class="timeZonePickerOpen && 'rotate-180'" />
-            </button>
+            <span class="font-bold text-on-surface">{{ t.activity.timeZone }}</span>
+            <UiSelect
+              :model-value="activityPreferences.timeZone"
+              :options="timeZoneSelectOptions"
+              compact
+              :panel-max-height="256"
+              :aria-label="t.activity.timeZone"
+              @update:model-value="setTimeZoneValue"
+            />
           </div>
           <p class="sm:col-span-2">{{ t.activity.timeBasisHint }}</p>
         </div>
@@ -1719,7 +1549,7 @@ onBeforeUnmount(() => {
           <label class="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
-              class="accent-[var(--color-primary)]"
+              class="h-4 w-4 accent-primary"
               :checked="activityPreferences.hideMerges"
               @change="setActivityPreference('hideMerges', ($event.target as HTMLInputElement).checked)"
             />
@@ -1728,7 +1558,7 @@ onBeforeUnmount(() => {
           <label class="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
-              class="accent-[var(--color-primary)]"
+              class="h-4 w-4 accent-primary"
               :checked="activityPreferences.excludeBots"
               @change="setActivityPreference('excludeBots', ($event.target as HTMLInputElement).checked)"
             />
@@ -1749,11 +1579,7 @@ onBeforeUnmount(() => {
               <div class="font-bold text-on-surface">{{ t.activity.identities }}</div>
               <div>{{ t.activity.identityHint }}</div>
             </div>
-            <button
-              type="button"
-              class="cursor-pointer inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant"
-              @click="addIdentity"
-            >
+            <button type="button" class="ui-btn ui-btn--secondary ui-btn--sm" @click="addIdentity">
               <Plus :size="13" /> {{ t.activity.addIdentity }}
             </button>
           </div>
@@ -1781,7 +1607,7 @@ onBeforeUnmount(() => {
             />
             <button
               type="button"
-              class="cursor-pointer flex h-8 w-8 items-center justify-center text-status-error hover:bg-status-error/10"
+              class="ui-btn ui-btn--danger-ghost ui-btn--icon"
               :aria-label="t.common.delete"
               @click="removeIdentity(index)"
             >
@@ -1796,63 +1622,6 @@ onBeforeUnmount(() => {
           {{ readyRepositories.find((repository) => repository.scopeMessage)?.scopeMessage }}
         </p>
       </div>
-
-      <Teleport to="body">
-        <Transition name="fade">
-          <div
-            v-if="authorPickerOpen"
-            data-work-activity-author-menu
-            class="fixed z-[80] w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
-            :style="{ right: `${authorPickerMenuPosition.right}px`, top: `${authorPickerMenuPosition.top}px` }"
-          >
-            <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto">
-              <button
-                type="button"
-                :class="
-                  cn(
-                    'cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                    !selectedAuthorId
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-on-surface-variant hover:bg-surface-variant',
-                  )
-                "
-                @click="selectAuthor('')"
-              >
-                <Check v-if="!selectedAuthorId" :size="14" class="shrink-0" />
-                <span v-else class="w-3.5 shrink-0" />
-                <span class="truncate font-semibold">{{ t.activity.allAuthors }}</span>
-                <span class="tabular-nums text-[10px]">{{
-                  readyRepositories.reduce((total, repository) => total + repository.totalCommits, 0)
-                }}</span>
-              </button>
-              <button
-                v-for="author in authors"
-                :key="author.id"
-                type="button"
-                :class="
-                  cn(
-                    'cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                    isAuthorSelected(author.id)
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-on-surface-variant hover:bg-surface-variant',
-                  )
-                "
-                @click="selectAuthor(isCurrentAuthor(author.id) ? currentAuthorSelection : author.id)"
-              >
-                <Check v-if="isAuthorSelected(author.id)" :size="14" class="shrink-0" />
-                <span v-else class="w-3.5 shrink-0" />
-                <span class="font-semibold">{{ author.name }}</span>
-                <span
-                  v-if="isCurrentAuthor(author.id)"
-                  class="rounded bg-primary/10 px-1 py-0.5 text-[9px] font-bold text-primary"
-                  >{{ t.activity.currentUser }}</span
-                >
-                <span class="tabular-nums text-[10px]">{{ author.commits }}</span>
-              </button>
-            </div>
-          </div>
-        </Transition>
-      </Teleport>
 
       <div
         v-if="store.workActivityLoading && !store.workActivityReport"
@@ -1969,49 +1738,16 @@ onBeforeUnmount(() => {
           <span>{{ t.activity.projectShareHint }}</span>
           <div class="flex items-center gap-1">
             <span>{{ t.activity.sortBy }}</span>
-            <button
-              ref="projectSortTriggerRef"
-              type="button"
-              class="cursor-pointer inline-flex h-7 min-w-28 items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
-              aria-haspopup="menu"
-              :aria-expanded="projectSortOpen"
-              @click="toggleProjectSort"
-            >
-              <span>{{ projectSortLabel }}</span>
-              <ChevronDown :size="14" :class="projectSortOpen && 'rotate-180'" />
-            </button>
+            <UiSelect
+              :model-value="projectSort"
+              :options="projectSortOptions"
+              align="end"
+              trigger-class="ui-btn ui-btn--secondary ui-btn--sm min-w-28"
+              :aria-label="t.activity.sortBy"
+              @update:model-value="selectProjectSort"
+            />
           </div>
         </div>
-        <Teleport to="body">
-          <Transition name="fade">
-            <div
-              v-if="projectSortOpen"
-              data-work-activity-sort-menu
-              role="menu"
-              class="fixed z-[80] min-w-36 rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
-              :style="{ right: `${projectSortMenuPosition.right}px`, top: `${projectSortMenuPosition.top}px` }"
-            >
-              <button
-                v-for="option in projectSortOptions"
-                :key="option.value"
-                type="button"
-                role="menuitemradio"
-                class="cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors"
-                :class="
-                  projectSort === option.value
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-on-surface-variant hover:bg-surface-variant'
-                "
-                :aria-checked="projectSort === option.value"
-                @click="selectProjectSort(option.value)"
-              >
-                <Check v-if="projectSort === option.value" :size="14" />
-                <span v-else class="w-3.5" />
-                <span class="font-semibold">{{ option.label }}</span>
-              </button>
-            </div>
-          </Transition>
-        </Teleport>
         <div class="overflow-x-auto border-y border-border-subtle">
           <table class="w-full min-w-[34rem] text-left text-xs">
             <thead class="text-[10px] text-on-surface-variant">
@@ -2181,7 +1917,7 @@ onBeforeUnmount(() => {
           <p v-if="changesMessage" class="text-xs text-status-warning">{{ changesMessage }}</p>
           <button
             type="button"
-            class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border-subtle px-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-wait disabled:opacity-60"
+            class="ui-btn ui-btn--secondary ui-btn--sm"
             :disabled="changesLoading"
             @click="loadChanges(true)"
           >
@@ -2222,11 +1958,11 @@ onBeforeUnmount(() => {
           <div class="flex min-w-0 flex-wrap items-center gap-1">
             <button
               type="button"
-              class="cursor-pointer h-7 shrink-0 rounded-md border border-border-subtle px-2 text-xs font-bold"
+              class="cursor-pointer h-7 shrink-0 rounded-md border px-2 text-xs font-bold"
               :class="
                 !dayProjectPaths.size
-                  ? 'bg-primary text-on-primary'
-                  : 'text-on-surface-variant hover:bg-surface-variant'
+                  ? 'border-primary/40 bg-primary/10 text-primary'
+                  : 'border-border-subtle text-on-surface-variant hover:bg-surface-variant'
               "
               :aria-pressed="!dayProjectPaths.size"
               @click="dayProjectPaths = new Set()"
@@ -2237,11 +1973,11 @@ onBeforeUnmount(() => {
               v-for="project in dayProjectOptions"
               :key="project.repositoryPath"
               type="button"
-              class="cursor-pointer h-7 max-w-48 shrink-0 truncate rounded-md border border-border-subtle px-2 text-xs font-bold"
+              class="cursor-pointer h-7 max-w-48 shrink-0 truncate rounded-md border px-2 text-xs font-bold"
               :class="
                 dayProjectPaths.has(project.repositoryPath)
-                  ? 'bg-primary text-on-primary'
-                  : 'text-on-surface-variant hover:bg-surface-variant'
+                  ? 'border-primary/40 bg-primary/10 text-primary'
+                  : 'border-border-subtle text-on-surface-variant hover:bg-surface-variant'
               "
               :title="project.label"
               :aria-pressed="dayProjectPaths.has(project.repositoryPath)"
@@ -2362,7 +2098,7 @@ onBeforeUnmount(() => {
         <button
           v-if="hasMoreDayCommits"
           type="button"
-          class="cursor-pointer mt-2 inline-flex h-7 items-center rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          class="ui-btn ui-btn--secondary ui-btn--sm mt-2"
           :disabled="dayDetailsLoading"
           @click="loadDayDetails(true)"
         >
@@ -2392,7 +2128,7 @@ onBeforeUnmount(() => {
           >
           <button
             type="button"
-            class="cursor-pointer inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant disabled:opacity-50"
+            class="ui-btn ui-btn--secondary ui-btn--sm"
             :disabled="
               !repositoryRetryKey(repository) ||
               store.workActivityRetryingRepositoryPaths.includes(repositoryRetryKey(repository))
@@ -2410,7 +2146,7 @@ onBeforeUnmount(() => {
           <button
             v-if="projectForPaths(repository.projectPaths)"
             type="button"
-            class="cursor-pointer inline-flex h-7 items-center gap-1 rounded border border-border-subtle px-2 font-bold text-on-surface hover:bg-surface-variant"
+            class="ui-btn ui-btn--secondary ui-btn--sm"
             @click="openProjectSettings(repository.projectPaths)"
           >
             <Settings2 :size="12" /> {{ t.activity.projectSettings }}

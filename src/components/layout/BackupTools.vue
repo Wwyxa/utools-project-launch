@@ -23,12 +23,8 @@ const options = ref<BackupRestoreOptions>({
   pathFrom: "",
   pathTo: "",
 });
-const buttonClass =
-  "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-subtle bg-surface px-3 py-1.5 text-xs font-medium leading-5 text-on-surface transition-colors hover:bg-surface-variant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-55";
-const iconButtonClass =
-  "inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-variant hover:text-on-surface disabled:opacity-50";
-const inputClass =
-  "min-w-0 rounded-lg border border-border-subtle bg-surface px-2.5 py-2 text-sm text-on-surface outline-none focus:border-primary";
+const buttonClass = "ui-btn ui-btn--secondary";
+const iconButtonClass = "ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm";
 
 function sizeLabel(bytes: number) {
   return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -107,6 +103,17 @@ async function restore() {
     await store.refreshStorageOverview();
   });
   restoreConfirm.value = false;
+}
+
+function requestRestore() {
+  if (busy.value) return;
+  if (
+    (!options.value.projects && !options.value.configuration) ||
+    Boolean(options.value.pathFrom) !== Boolean(options.value.pathTo)
+  ) {
+    return;
+  }
+  restoreConfirm.value = true;
 }
 
 async function remove() {
@@ -210,7 +217,7 @@ onMounted(() => {
             </button>
             <button
               type="button"
-              :class="buttonClass"
+              class="ui-btn ui-btn--danger-ghost ui-btn--icon"
               :disabled="busy || syncState === 1"
               title="删除备份"
               aria-label="删除备份"
@@ -224,98 +231,71 @@ onMounted(() => {
       <p v-else class="py-2 text-xs text-on-surface-variant">暂无 uTools 备份</p>
     </div>
   </div>
-  <Teleport to="body">
-    <Transition name="scale">
-      <div
-        v-if="restoreDialogOpen && preview"
-        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5"
-        @click.self="restoreDialogOpen = false"
+  <ActionDialog
+    :open="restoreDialogOpen && Boolean(preview)"
+    tone="warning"
+    icon="archive"
+    :width="512"
+    title="导入备份"
+    :message="preview ? `${sourceLabel(preview)} · ${dateLabel(preview.createdAt)} · ${preview.projectCount} 个项目` : ''"
+    primary-label="导入所选数据"
+    cancel-label="取消"
+    :busy="busy"
+    @primary="requestRestore"
+    @cancel="restoreDialogOpen = false"
+  >
+    <fieldset :disabled="busy" class="flex flex-wrap gap-5 text-sm text-on-surface">
+      <legend class="mb-2 text-xs font-semibold text-on-surface-variant">导入内容</legend>
+      <label class="inline-flex items-center gap-2"
+        ><input v-model="options.projects" type="checkbox" class="accent-primary" />所有项目</label
       >
-        <div
-          class="flex max-h-[calc(100vh-2.5rem)] w-[min(32rem,92vw)] flex-col overflow-hidden rounded-lg border border-outline-variant/70 bg-surface text-on-surface shadow-2xl"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="backup-restore-title"
-          @click.stop
+      <label class="inline-flex items-center gap-2"
+        ><input v-model="options.configuration" type="checkbox" class="accent-primary" />插件配置</label
+      >
+    </fieldset>
+    <template v-if="options.projects">
+      <fieldset :disabled="busy" class="flex flex-wrap gap-4 text-xs text-on-surface-variant">
+        <legend class="mb-2 font-semibold">项目恢复方式</legend>
+        <label class="inline-flex items-center gap-1.5"
+          ><input
+            v-model="options.projectMode"
+            type="radio"
+            value="merge"
+            name="backup-project-mode"
+            class="accent-primary"
+          />合并（同 ID 项目使用备份内容）</label
         >
-          <div class="shrink-0 border-b border-border-subtle bg-surface-container-low px-4 py-3">
-            <h3 id="backup-restore-title" class="text-sm font-bold">导入备份</h3>
-            <p class="mt-1 break-words text-xs text-on-surface-variant">
-              {{ sourceLabel(preview) }} · {{ dateLabel(preview.createdAt) }} · {{ preview.projectCount }} 个项目
-            </p>
-          </div>
-          <div v-overlay-scrollbar class="themed-scrollbar min-h-0 space-y-4 overflow-y-auto px-4 py-4">
-            <fieldset :disabled="busy" class="flex flex-wrap gap-5 text-sm text-on-surface">
-              <legend class="mb-2 text-xs font-semibold text-on-surface-variant">导入内容</legend>
-              <label class="inline-flex items-center gap-2"
-                ><input v-model="options.projects" type="checkbox" class="accent-primary" />所有项目</label
-              >
-              <label class="inline-flex items-center gap-2"
-                ><input v-model="options.configuration" type="checkbox" class="accent-primary" />插件配置</label
-              >
-            </fieldset>
-            <template v-if="options.projects">
-              <fieldset :disabled="busy" class="flex flex-wrap gap-4 text-xs text-on-surface-variant">
-                <legend class="mb-2 font-semibold">项目恢复方式</legend>
-                <label class="inline-flex items-center gap-1.5"
-                  ><input
-                    v-model="options.projectMode"
-                    type="radio"
-                    value="merge"
-                    name="backup-project-mode"
-                    class="accent-primary"
-                  />合并（同 ID 项目使用备份内容）</label
-                >
-                <label class="inline-flex items-center gap-1.5"
-                  ><input
-                    v-model="options.projectMode"
-                    type="radio"
-                    value="replace"
-                    name="backup-project-mode"
-                    class="accent-primary"
-                  />替换所有项目</label
-                >
-              </fieldset>
-              <div class="grid gap-2 sm:grid-cols-2">
-                <label class="grid min-w-0 gap-1 text-xs text-on-surface-variant"
-                  >原项目根目录（可选）<input
-                    v-model="options.pathFrom"
-                    :disabled="busy"
-                    :class="inputClass"
-                    placeholder="D:\develop"
-                /></label>
-                <label class="grid min-w-0 gap-1 text-xs text-on-surface-variant"
-                  >新项目根目录<input
-                    v-model="options.pathTo"
-                    :disabled="busy"
-                    :class="inputClass"
-                    placeholder="/Users/me/develop"
-                /></label>
-              </div>
-            </template>
-            <p class="text-xs text-on-surface-variant">
-              导入的自动任务保持暂停；恢复配置时项目启动服务保持关闭。导入前会在本机保存恢复前备份。
-            </p>
-          </div>
-          <div class="flex shrink-0 justify-end gap-2 border-t border-border-subtle px-4 py-3">
-            <button type="button" :class="buttonClass" :disabled="busy" @click="restoreDialogOpen = false">取消</button>
-            <button
-              type="button"
-              :class="buttonClass"
-              :disabled="
-                busy ||
-                (!options.projects && !options.configuration) ||
-                Boolean(options.pathFrom) !== Boolean(options.pathTo)
-              "
-              @click="restoreConfirm = true"
-            >
-              <RotateCcw :size="14" />导入所选数据
-            </button>
-          </div>
-        </div>
+        <label class="inline-flex items-center gap-1.5"
+          ><input
+            v-model="options.projectMode"
+            type="radio"
+            value="replace"
+            name="backup-project-mode"
+            class="accent-primary"
+          />替换所有项目</label
+        >
+      </fieldset>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <label class="grid min-w-0 gap-1 text-xs text-on-surface-variant"
+          >原项目根目录（可选）<input
+            v-model="options.pathFrom"
+            :disabled="busy"
+            class="ui-field"
+            placeholder="D:\develop"
+        /></label>
+        <label class="grid min-w-0 gap-1 text-xs text-on-surface-variant"
+          >新项目根目录<input
+            v-model="options.pathTo"
+            :disabled="busy"
+            class="ui-field"
+            placeholder="/Users/me/develop"
+        /></label>
       </div>
-    </Transition>
-  </Teleport>
+    </template>
+    <p class="text-xs text-on-surface-variant">
+      导入的自动任务保持暂停；恢复配置时项目启动服务保持关闭。导入前会在本机保存恢复前备份。
+    </p>
+  </ActionDialog>
   <ActionDialog
     :open="restoreConfirm"
     tone="warning"

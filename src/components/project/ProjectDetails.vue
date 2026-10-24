@@ -157,14 +157,6 @@ const refreshButtonLabel = computed(() => {
   }
   return t.value.common.refresh;
 });
-const refreshButtonClass = computed(() =>
-  cn(
-    "p-1.5 text-on-surface-variant hover:bg-surface-variant rounded-lg transition-colors shadow-sm bg-surface border border-border-subtle",
-    isRefreshingProject.value
-      ? "disabled:cursor-wait disabled:opacity-70"
-      : "disabled:cursor-not-allowed disabled:opacity-45",
-  ),
-);
 
 const handleOpenFolder = () => store.openProjectFolder(props.project.id);
 const handleOpenQuickLink = () => store.openProjectQuickLink(props.project.id);
@@ -563,7 +555,7 @@ watch(
         <button
           type="button"
           @click="handleBack"
-          class="p-1.5 hover:bg-surface-variant rounded-lg text-on-surface-variant transition-all active:scale-90 border border-border-subtle bg-surface shadow-sm"
+          class="ui-btn ui-btn--secondary ui-btn--icon"
           :title="t.common.back"
           :aria-label="t.common.back"
         >
@@ -595,7 +587,7 @@ watch(
             <Network :size="17" class="transition-colors" />
           </button>
           <div v-if="relatedProjectsOpen" class="absolute left-0 top-full z-40 w-72 pt-2">
-            <div class="overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl">
+            <div class="menu-pop overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest shadow-popover">
               <div
                 class="border-b border-border-subtle bg-surface-container-low px-3 py-2 text-xs font-semibold text-on-surface"
               >
@@ -606,7 +598,7 @@ watch(
                   v-for="relatedProject in relatedProjects"
                   :key="relatedProject.id"
                   type="button"
-                  class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface-container"
+                  class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface-variant"
                   :title="relatedProject.path"
                   @click="handleRelatedProjectSelect(relatedProject.id)"
                 >
@@ -627,7 +619,8 @@ watch(
           type="button"
           @click="handleRefresh"
           :disabled="isUnavailable || isRefreshingProject"
-          :class="refreshButtonClass"
+          :aria-busy="isRefreshingProject"
+          class="ui-btn ui-btn--secondary ui-btn--icon"
           :title="refreshButtonLabel"
           :aria-label="refreshButtonLabel"
         >
@@ -637,7 +630,7 @@ watch(
           v-if="quickLink"
           type="button"
           @click="handleOpenQuickLink"
-          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm"
+          class="ui-btn ui-btn--secondary ui-btn--icon group"
           :title="t.projectActions.openQuickLink"
           :aria-label="t.projectActions.openQuickLink"
         >
@@ -647,7 +640,7 @@ watch(
           type="button"
           @click="handleOpenTerminal"
           :disabled="isUnavailable"
-          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm"
+          class="ui-btn ui-btn--secondary ui-btn--icon group"
           :title="t.projectActions.openInTerminal"
           :aria-label="t.projectActions.openInTerminal"
         >
@@ -657,7 +650,7 @@ watch(
           :applications="store.externalApplicationPreferences.applications"
           :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
           :disabled="isUnavailable"
-          button-class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm disabled:opacity-50"
+          button-class="ui-btn ui-btn--secondary ui-btn--icon group"
           icon-class="group-hover:text-primary"
           :icon-size="16"
           @launch="handleOpenEditor"
@@ -666,7 +659,7 @@ watch(
           type="button"
           @click="handleOpenFolder"
           :disabled="isUnavailable"
-          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm"
+          class="ui-btn ui-btn--secondary ui-btn--icon group"
           :title="t.projectDetails.openProject"
           :aria-label="t.projectDetails.openProject"
         >
@@ -676,7 +669,7 @@ watch(
           type="button"
           @click="handleOpenWorkActivity"
           :disabled="isUnavailable"
-          class="bg-surface border border-border-subtle group text-on-surface hover:bg-surface-variant p-1.5 rounded-lg transition-all shadow-sm disabled:opacity-50"
+          class="ui-btn ui-btn--secondary ui-btn--icon group"
           :title="t.activity.title"
           :aria-label="t.activity.title"
         >
@@ -685,7 +678,7 @@ watch(
         <button
           type="button"
           @click="handleEdit"
-          class="bg-primary text-on-primary p-1.5 rounded-lg transition-all hover:bg-primary/90 active:scale-[0.95] shadow-sm"
+          class="ui-btn ui-btn--primary ui-btn--icon"
           :title="t.common.edit"
           :aria-label="t.common.edit"
         >
@@ -694,7 +687,7 @@ watch(
         <button
           type="button"
           @click="handleDuplicate"
-          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-primary hover:bg-primary/10 p-1.5 rounded-lg transition-all active:scale-[0.95] shadow-sm"
+          class="ui-btn ui-btn--ghost ui-btn--icon"
           :title="t.projectActions.duplicateProject"
           :aria-label="t.projectActions.duplicateProject"
         >
@@ -703,7 +696,7 @@ watch(
         <button
           type="button"
           @click="handleDelete"
-          class="bg-surface border border-border-subtle text-on-surface-variant hover:text-status-error hover:bg-status-error/10 p-1.5 rounded-lg transition-all active:scale-[0.95] shadow-sm"
+          class="ui-btn ui-btn--danger-ghost ui-btn--icon"
           :title="t.projectActions.deleteProject"
           :aria-label="t.projectActions.deleteProject"
         >

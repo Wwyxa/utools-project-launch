@@ -28,8 +28,6 @@ import {
   Trash2,
   WandSparkles,
   ChevronDown,
-  Check,
-  X,
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { waitForInitialPaint } from "../../store/helpers/automationHelpers";
@@ -37,8 +35,10 @@ import { waitForVisualFeedback } from "../../lib/visualFeedback";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
-import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import ActionDialog from "../common/ActionDialog.vue";
+import BaseModal from "../common/BaseModal.vue";
+import ToggleSwitch from "../common/ToggleSwitch.vue";
+import UiSelect from "../common/UiSelect.vue";
 import Terminal from "../terminal/Terminal.vue";
 import BackupTools from "./BackupTools.vue";
 import { showActionStatus } from "../common/actionStatus";
@@ -115,7 +115,6 @@ const fallbackTerminalOptions: SelectableTerminalKind[] = /win/i.test(hostPlatfo
   : /linux/i.test(hostPlatform)
     ? ["linux-terminal"]
     : ["terminal-app", "iterm2", "warp"];
-const isAiModelMenuOpen = ref(false);
 const selectedAiModeId = ref("");
 const environmentDialogOpen = ref(false);
 const editingBuiltinEnvironmentKey = ref<EnvironmentToolKey | null>(null);
@@ -134,6 +133,7 @@ const projectLaunchServiceDownloading = ref(false);
 const projectLaunchServiceRechecking = ref(false);
 const projectLaunchServiceToggling = ref(false);
 const projectLaunchServiceUpdateDialogOpen = ref(false);
+const projectLaunchServiceSwitchOn = ref(store.projectLaunchServicePreferences.enabled);
 const logRetentionDraft = ref<ProjectLaunchServiceLogRetentionPolicy | null>(null);
 const logRetentionSaving = ref(false);
 const logRetentionFeedback = ref("");
@@ -148,8 +148,6 @@ const cleanupScanning = ref(false);
 const cleanupSubmitting = ref(false);
 const cleanupConfirmOpen = ref(false);
 const cleanupSelection = ref<Record<string, boolean>>({});
-let stopAppEscapeListener = () => {};
-
 const formatDataSize = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
@@ -292,11 +290,13 @@ const aiModelOptions = computed(() => {
   }
   return Array.from(collected.entries()).map(([value, label]) => ({ value, label }));
 });
-const aiModelLabel = computed(
-  () =>
-    aiModelOptions.value.find((option) => option.value === store.aiPreferences.model)?.label ||
-    t.value.settings.aiModelPlaceholder,
-);
+const setAiModelValue = (model: string | null) => {
+  store.setAiPreferences({ model: model ?? "" });
+};
+const aiModelSelectOptions = computed(() => [
+  { value: "", label: t.value.settings.aiModelPlaceholder },
+  ...aiModelOptions.value,
+]);
 const selectedAiMode = computed(
   () =>
     store.aiPreferences.modes.find((mode) => mode.id === selectedAiModeId.value) ||
@@ -439,13 +439,12 @@ type ServiceActionTone = "primary" | "secondary" | "danger";
 type ServiceActionSize = "sm" | "md" | "field";
 const serviceActionButtonClass = (tone: ServiceActionTone = "secondary", size: ServiceActionSize = "md") =>
   cn(
-    "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border text-xs font-medium leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-55",
-    size === "sm" ? "min-h-8 px-2.5 py-1" : "min-h-9 px-3 py-1.5",
     tone === "primary"
-      ? "border-primary bg-primary text-on-primary hover:bg-primary/90"
+      ? "ui-btn ui-btn--primary"
       : tone === "danger"
-        ? "border-status-error/30 bg-surface text-status-error hover:bg-status-error/10"
-        : "border-border-subtle bg-surface text-on-surface hover:bg-surface-variant",
+        ? "ui-btn ui-btn--danger"
+        : "ui-btn ui-btn--secondary",
+    size === "sm" && "ui-btn--sm",
   );
 
 const loadAiModels = async () => {
@@ -453,27 +452,6 @@ const loadAiModels = async () => {
   if (store.aiPreferences.provider === "utools" && !store.aiPreferences.model && store.aiModels[0]) {
     store.setAiPreferences({ model: store.aiModels[0].id });
   }
-};
-
-const selectAiModel = (model: string) => {
-  store.setAiPreferences({ model });
-  isAiModelMenuOpen.value = false;
-};
-
-const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (externalApplicationDialogOpen.value) {
-    externalApplicationDialogOpen.value = false;
-    event.detail.handle();
-    return;
-  }
-  if (environmentDialogOpen.value) {
-    environmentDialogOpen.value = false;
-    event.detail.handle();
-    return;
-  }
-  if (!isAiModelMenuOpen.value) return;
-  isAiModelMenuOpen.value = false;
-  event.detail.handle();
 };
 
 const handleTestAi = async () => {
@@ -688,18 +666,20 @@ const handleCheckProjectLaunchServiceUpdate = async () => {
   }
 };
 
-const handleToggleProjectLaunchService = async (event: Event) => {
-  const input = event.target as HTMLInputElement;
+const handleToggleProjectLaunchService = (enabled: boolean) => {
   if (projectLaunchServiceBusy.value) {
-    input.checked = store.projectLaunchServicePreferences.enabled;
+    projectLaunchServiceSwitchOn.value = store.projectLaunchServicePreferences.enabled;
     return;
   }
-  const enabled = input.checked;
   if (!enabled && store.hasActiveProjectLaunchServiceRuns) {
-    input.checked = true;
+    projectLaunchServiceSwitchOn.value = true;
     projectLaunchServiceDisableWarningOpen.value = true;
     return;
   }
+  void toggleProjectLaunchService(enabled);
+};
+
+const toggleProjectLaunchService = async (enabled: boolean) => {
   projectLaunchServiceToggling.value = true;
   showActionStatus({
     state: "loading",
@@ -722,7 +702,7 @@ const handleToggleProjectLaunchService = async (event: Event) => {
       message: error instanceof Error ? error.message : t.value.common.error,
     });
   } finally {
-    input.checked = store.projectLaunchServicePreferences.enabled;
+    projectLaunchServiceSwitchOn.value = store.projectLaunchServicePreferences.enabled;
     projectLaunchServiceToggling.value = false;
   }
 };
@@ -760,11 +740,11 @@ const updateLogRetentionRuns = (event: Event) => {
   void persistLogRetention();
 };
 
-const updateLogRetentionPersistence = (event: Event) => {
+const updateLogRetentionPersistence = (persist: boolean) => {
   if (!logRetentionDraft.value) return;
   logRetentionDraft.value = {
     ...logRetentionDraft.value,
-    persist: (event.target as HTMLInputElement).checked,
+    persist,
   };
   void persistLogRetention();
 };
@@ -1002,20 +982,24 @@ onMounted(() => {
       void store.refreshStorageOverview();
     });
   });
-  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 
 onUnmounted(() => {
   window.cancelAnimationFrame(initializationFrame);
-  stopAppEscapeListener();
   stopSettingsScrollListener();
 });
 
 watch(
   () => store.aiPreferences.provider,
   () => {
-    isAiModelMenuOpen.value = false;
     void loadAiModels();
+  },
+);
+
+watch(
+  () => store.projectLaunchServicePreferences.enabled,
+  (enabled) => {
+    projectLaunchServiceSwitchOn.value = enabled;
   },
 );
 
@@ -1031,12 +1015,12 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 w-full flex-col bg-background" @click="isAiModelMenuOpen = false">
+  <div class="flex h-full min-h-0 w-full flex-col bg-background">
     <header class="flex shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-2">
       <button
         type="button"
         @click="store.setActiveTab('projects')"
-        class="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        class="ui-btn ui-btn--ghost ui-btn--icon"
         :title="t.common.back"
         :aria-label="t.common.back"
       >
@@ -1082,7 +1066,7 @@ watch(
           >
             <div class="mb-4 flex items-center gap-2">
               <Settings2 :size="15" class="shrink-0 text-primary" />
-              <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.general }}</h3>
+              <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.general }}</h3>
             </div>
             <div class="space-y-5">
               <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
@@ -1282,7 +1266,7 @@ watch(
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div class="flex items-center gap-2">
                 <MonitorCog :size="15" class="text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.environment }}</h3>
+                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.environment }}</h3>
               </div>
               <div class="flex shrink-0 items-center gap-1.5">
                 <button
@@ -1391,7 +1375,7 @@ watch(
                       @input="store.setAiPreferences({ baseUrl: ($event.target as HTMLInputElement).value })"
                       type="text"
                       placeholder="https://api.example.com/v1"
-                      class="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="ui-field mt-1 w-full normal-case"
                     />
                   </label>
                   <label v-if="aiUsesThirdParty" class="block text-xs font-semibold uppercase text-on-surface-variant">
@@ -1401,7 +1385,7 @@ watch(
                       @input="store.setAiPreferences({ apiKey: ($event.target as HTMLInputElement).value })"
                       type="password"
                       :placeholder="t.settings.aiApiKeyPlaceholder"
-                      class="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="ui-field mt-1 w-full normal-case"
                     />
                   </label>
                 </div>
@@ -1409,50 +1393,16 @@ watch(
                 <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                   <label class="block text-xs font-semibold uppercase text-on-surface-variant">
                     {{ t.settings.aiModel }}
-                    <div class="relative mt-1">
-                      <button
-                        type="button"
-                        class="ui-field flex w-full items-center justify-between gap-2 text-left normal-case"
-                        @click.stop="isAiModelMenuOpen = !isAiModelMenuOpen"
-                      >
-                        <span
-                          class="truncate"
-                          :class="store.aiPreferences.model ? 'text-on-surface' : 'text-on-surface-variant/70'"
-                        >
-                          {{ aiModelLabel }}
-                        </span>
-                        <ChevronDown :size="14" class="shrink-0 text-on-surface-variant" />
-                      </button>
-                      <div
-                        v-if="isAiModelMenuOpen"
-                        v-overlay-scrollbar
-                        class="mode-menu-popover popover-above max-h-56 overflow-auto"
-                        @click.stop
-                      >
-                        <button
-                          type="button"
-                          :class="cn('mode-menu-item', !store.aiPreferences.model && 'bg-primary/10 text-primary')"
-                          @click="selectAiModel('')"
-                        >
-                          <span class="truncate">{{ t.settings.aiModelPlaceholder }}</span>
-                          <Check v-if="!store.aiPreferences.model" :size="13" />
-                        </button>
-                        <button
-                          v-for="option in aiModelOptions"
-                          :key="option.value"
-                          type="button"
-                          :class="
-                            cn(
-                              'mode-menu-item',
-                              store.aiPreferences.model === option.value && 'bg-primary/10 text-primary',
-                            )
-                          "
-                          @click="selectAiModel(option.value)"
-                        >
-                          <span class="truncate">{{ option.label }}</span>
-                          <Check v-if="store.aiPreferences.model === option.value" :size="13" />
-                        </button>
-                      </div>
+                    <div class="mt-1">
+                      <UiSelect
+                        :model-value="store.aiPreferences.model"
+                        :options="aiModelSelectOptions"
+                        direction="auto"
+                        align="start"
+                        :panel-max-height="224"
+                        trigger-class="ui-field flex w-full cursor-pointer items-center justify-between gap-2 text-left normal-case"
+                        @update:model-value="setAiModelValue"
+                      />
                     </div>
                   </label>
                   <label class="block text-xs font-semibold uppercase text-on-surface-variant">
@@ -1462,14 +1412,14 @@ watch(
                       @input="store.setAiPreferences({ model: ($event.target as HTMLInputElement).value })"
                       type="text"
                       :placeholder="t.settings.aiModelPlaceholder"
-                      class="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="ui-field mt-1 w-full normal-case"
                     />
                   </label>
                   <div class="flex gap-1.5">
                     <button
                       type="button"
                       @click="loadAiModels"
-                      class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      class="ui-btn ui-btn--ghost ui-btn--icon"
                       :title="t.common.refresh"
                       :aria-label="t.common.refresh"
                     >
@@ -1514,7 +1464,7 @@ watch(
                     <div class="flex gap-1">
                       <button
                         type="button"
-                        class="flex h-7 w-7 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
                         title="新增模式"
                         aria-label="新增模式"
                         @click="handleAddAiMode"
@@ -1523,7 +1473,7 @@ watch(
                       </button>
                       <button
                         type="button"
-                        class="flex h-7 w-7 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
                         title="恢复默认模式"
                         aria-label="恢复默认模式"
                         @click="handleResetAiModes"
@@ -1570,7 +1520,7 @@ watch(
                           })
                         "
                         type="text"
-                        class="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        class="ui-field mt-1 w-full normal-case"
                       />
                     </label>
                     <button
@@ -1599,7 +1549,7 @@ watch(
                         })
                       "
                       rows="7"
-                      class="themed-scrollbar mt-1 w-full resize-none rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm normal-case leading-5 text-on-surface transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="ui-field themed-scrollbar mt-1 min-h-20 w-full resize-y normal-case"
                     />
                   </div>
                 </div>
@@ -1616,7 +1566,7 @@ watch(
             <div class="mb-4 flex flex-wrap items-center gap-3">
               <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                 <SquareTerminal :size="15" class="shrink-0 text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.defaultTerminal }}</h3>
+                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultTerminal }}</h3>
               </div>
             </div>
             <div class="grid min-w-0 gap-4">
@@ -1654,7 +1604,7 @@ watch(
                       @input="store.setDefaultTerminalCustomCommand(($event.target as HTMLInputElement).value)"
                       type="text"
                       :placeholder="t.settings.customCommandPlaceholder"
-                      class="w-full rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="ui-field w-full font-mono"
                     />
                     <p class="mt-2 text-xs leading-5 text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
                   </div>
@@ -1678,7 +1628,7 @@ watch(
             <div class="mb-4 flex flex-wrap items-start gap-3">
               <div class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
                 <Code2 :size="15" class="shrink-0 text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.externalApplications }}</h3>
+                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.externalApplications }}</h3>
                 <span class="col-span-2 text-xs leading-5 text-on-surface-variant">
                   {{ t.settings.externalApplicationsUsageHint }}
                 </span>
@@ -1748,7 +1698,7 @@ watch(
                     <label :title="t.settings.applicationEnabled" class="flex cursor-pointer items-center">
                       <input
                         type="checkbox"
-                        class="h-3.5 w-3.5 accent-primary"
+                        class="h-4 w-4 accent-primary"
                         :checked="application.enabled"
                         :disabled="application.id === store.externalApplicationPreferences.defaultApplicationId"
                         :aria-label="`${t.settings.applicationEnabled}: ${application.name}`"
@@ -1772,7 +1722,7 @@ watch(
             <div class="mb-4 flex flex-wrap items-start gap-3">
               <div class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
                 <ServerCog :size="15" class="shrink-0 text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectLaunchService }}</h3>
+                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.projectLaunchService }}</h3>
                 <span class="col-span-2 text-xs leading-5 text-on-surface-variant">{{
                   t.settings.projectLaunchServiceHint
                 }}</span>
@@ -1792,24 +1742,16 @@ watch(
                         : t.settings.projectLaunchServiceModeOff
                     }}
                   </span>
-                  <span class="relative inline-flex shrink-0">
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      class="peer sr-only"
-                      :checked="store.projectLaunchServicePreferences.enabled"
-                      :disabled="projectLaunchServiceBusy"
-                      :aria-busy="projectLaunchServiceToggling"
-                      :aria-label="
-                        store.projectLaunchServicePreferences.enabled
-                          ? t.settings.projectLaunchServiceDisable
-                          : t.settings.projectLaunchServiceEnable
-                      "
-                      @change="handleToggleProjectLaunchService"
-                    />
-                    <span class="h-5 w-9 rounded-full bg-outline-variant transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/50 peer-disabled:cursor-wait peer-disabled:opacity-50" />
-                    <span class="pointer-events-none absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-surface-container-lowest shadow-sm transition-transform peer-checked:translate-x-4" />
-                  </span>
+                  <ToggleSwitch
+                    v-model="projectLaunchServiceSwitchOn"
+                    :disabled="projectLaunchServiceBusy"
+                    :aria-label="
+                      store.projectLaunchServicePreferences.enabled
+                        ? t.settings.projectLaunchServiceDisable
+                        : t.settings.projectLaunchServiceEnable
+                    "
+                    @update:model-value="handleToggleProjectLaunchService"
+                  />
                 </label>
               </div>
             </div>
@@ -1960,7 +1902,7 @@ watch(
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
                     <FileText :size="15" class="shrink-0 text-primary" />
-                    <h3 class="text-sm font-semibold text-on-surface-variant">
+                    <h3 class="text-sm font-semibold text-on-surface">
                       {{ t.settings.projectLaunchServiceLogPersistence }}
                     </h3>
                   </div>
@@ -1973,13 +1915,11 @@ watch(
                     class="inline-flex min-h-9 items-center gap-2 rounded-md border border-border-subtle bg-surface px-3 py-1.5 text-xs font-medium text-on-surface"
                   >
                     <span class="min-w-0">{{ t.settings.projectLaunchServiceLogPersistLabel }}</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      class="h-4 w-4 shrink-0 accent-primary"
-                      :checked="logRetentionDraft?.persist"
+                    <ToggleSwitch
+                      :model-value="Boolean(logRetentionDraft?.persist)"
                       :disabled="!logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy"
-                      @change="updateLogRetentionPersistence"
+                      :aria-label="t.settings.projectLaunchServiceLogPersistLabel"
+                      @update:model-value="updateLogRetentionPersistence"
                     />
                   </label>
                   <button
@@ -2082,7 +2022,7 @@ watch(
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div class="flex shrink-0 items-center gap-2">
                 <Archive :size="15" class="shrink-0 text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.projectConfig }}</h3>
+                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.projectConfig }}</h3>
               </div>
               <p v-if="store.projectStorageMessage" class="break-words text-xs leading-5 text-on-surface-variant">
                 {{ store.projectStorageMessage }}
@@ -2095,7 +2035,7 @@ watch(
             <div class="mb-4 space-y-1">
               <div class="flex shrink-0 items-center gap-2">
                 <Database :size="15" class="shrink-0 text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.dataTools }}</h3>
+                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.dataTools }}</h3>
               </div>
               <p class="text-xs leading-5 text-on-surface-variant">{{ t.settings.dataToolsDescription }}</p>
             </div>
@@ -2210,7 +2150,7 @@ watch(
           <section id="settings-about" data-settings-section="about" tabindex="-1" class="min-w-0 py-6 outline-none">
             <div class="mb-4 flex items-center gap-2">
               <Info :size="15" class="shrink-0 text-primary" />
-              <h3 class="text-sm font-semibold text-on-surface-variant">{{ t.settings.about }}</h3>
+              <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.about }}</h3>
             </div>
             <div
               class="flex flex-wrap items-center justify-between gap-3 text-sm"
@@ -2237,220 +2177,187 @@ watch(
       </div>
     </div>
 
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="externalApplicationDialogOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-3"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="
-            editingExternalApplicationId ? t.settings.editExternalApplication : t.settings.addExternalApplication
-          "
-          @click.self="externalApplicationDialogOpen = false"
+    <BaseModal
+      :open="externalApplicationDialogOpen"
+      as="form"
+      :width="448"
+      :title="editingExternalApplicationId ? t.settings.editExternalApplication : t.settings.addExternalApplication"
+      body-class="p-3 space-y-3"
+      @submit="saveExternalApplication"
+      @close="externalApplicationDialogOpen = false"
+    >
+      <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+        {{ t.settings.externalApplicationName }}
+        <input
+          v-model="externalApplicationDraft.name"
+          autofocus
+          autocomplete="off"
+          class="ui-field mt-1 w-full text-sm font-normal text-on-surface"
+          :class="externalApplicationErrors.name && 'border-status-error'"
+        />
+        <span v-if="externalApplicationErrors.name" class="mt-0.5 block text-[10px] text-status-error">
+          {{ externalApplicationErrors.name }}
+        </span>
+      </label>
+      <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+        {{ t.settings.externalApplicationCommand }}
+        <textarea
+          v-model="externalApplicationDraft.command"
+          autocomplete="off"
+          rows="3"
+          class="ui-field themed-scrollbar mt-1 min-h-20 w-full resize-y font-mono text-sm font-normal leading-5 text-on-surface"
+          :class="externalApplicationErrors.command && 'border-status-error'"
+          :placeholder="t.settings.externalApplicationCommandPlaceholder"
+        />
+        <span v-if="externalApplicationErrors.command" class="mt-0.5 block text-[10px] text-status-error">
+          {{ externalApplicationErrors.command }}
+        </span>
+      </label>
+      <p class="text-[10px] leading-4 text-on-surface-variant">
+        {{ t.settings.externalApplicationCommandHint }}
+      </p>
+      <p v-if="externalApplicationFeedback" class="text-[10px] leading-4 text-status-warning">
+        {{ externalApplicationFeedback }}
+      </p>
+      <template #footer-left>
+        <button
+          v-if="editingExternalApplication?.kind === 'custom'"
+          type="button"
+          :class="serviceActionButtonClass('danger')"
+          @click="deleteExternalApplication"
         >
-          <form
-            class="w-full max-w-md rounded-lg border border-border-subtle bg-surface p-3 shadow-xl"
-            @submit.prevent="saveExternalApplication"
-          >
-            <h3 class="text-sm font-bold text-on-surface">
-              {{
-                editingExternalApplicationId ? t.settings.editExternalApplication : t.settings.addExternalApplication
-              }}
-            </h3>
-            <div class="mt-3 grid gap-3">
-              <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
-                {{ t.settings.externalApplicationName }}
-                <input
-                  v-model="externalApplicationDraft.name"
-                  autofocus
-                  autocomplete="off"
-                  class="ui-field mt-1 w-full text-sm font-normal text-on-surface"
-                  :class="externalApplicationErrors.name && 'border-status-error'"
-                />
-                <span v-if="externalApplicationErrors.name" class="mt-0.5 block text-[10px] text-status-error">
-                  {{ externalApplicationErrors.name }}
-                </span>
-              </label>
-              <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
-                {{ t.settings.externalApplicationCommand }}
-                <textarea
-                  v-model="externalApplicationDraft.command"
-                  autocomplete="off"
-                  rows="3"
-                  class="ui-field themed-scrollbar mt-1 min-h-20 w-full resize-y font-mono text-sm font-normal leading-5 text-on-surface"
-                  :class="externalApplicationErrors.command && 'border-status-error'"
-                  :placeholder="t.settings.externalApplicationCommandPlaceholder"
-                />
-                <span v-if="externalApplicationErrors.command" class="mt-0.5 block text-[10px] text-status-error">
-                  {{ externalApplicationErrors.command }}
-                </span>
-              </label>
-            </div>
-            <p class="mt-2 text-[10px] leading-4 text-on-surface-variant">
-              {{ t.settings.externalApplicationCommandHint }}
-            </p>
-            <p v-if="externalApplicationFeedback" class="mt-2 text-[10px] leading-4 text-status-warning">
-              {{ externalApplicationFeedback }}
-            </p>
-            <div class="mt-3 flex items-center justify-between gap-2">
-              <div>
-                <button
-                  v-if="editingExternalApplication?.kind === 'custom'"
-                  type="button"
-                  :class="serviceActionButtonClass('danger')"
-                  @click="deleteExternalApplication"
-                >
-                  <Trash2 :size="13" />
-                  {{ t.common.delete }}
-                </button>
-                <button
-                  v-else-if="
-                    editingExternalApplication &&
-                    editingExternalApplication.command !==
-                      (editingExternalApplication.kind === 'vscode' ? 'code {path}' : 'cursor {path}')
-                  "
-                  type="button"
-                  :class="serviceActionButtonClass()"
-                  @click="
-                    store.restoreExternalApplicationNativeLaunch(editingExternalApplication.id);
-                    externalApplicationDialogOpen = false;
-                  "
-                >
-                  {{ t.settings.restoreNativeLauncher }}
-                </button>
-              </div>
-              <div class="flex gap-2">
-                <button
-                  type="button"
-                  :class="serviceActionButtonClass()"
-                  @click="externalApplicationDialogOpen = false"
-                >
-                  {{ t.common.cancel }}
-                </button>
-                <button type="submit" :class="serviceActionButtonClass('primary')">
-                  {{ t.common.save }}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </Transition>
-    </Teleport>
+          <Trash2 :size="13" />
+          {{ t.common.delete }}
+        </button>
+        <button
+          v-else-if="
+            editingExternalApplication &&
+            editingExternalApplication.command !==
+              (editingExternalApplication.kind === 'vscode' ? 'code {path}' : 'cursor {path}')
+          "
+          type="button"
+          :class="serviceActionButtonClass()"
+          @click="
+            store.restoreExternalApplicationNativeLaunch(editingExternalApplication.id);
+            externalApplicationDialogOpen = false;
+          "
+        >
+          {{ t.settings.restoreNativeLauncher }}
+        </button>
+      </template>
+      <template #footer>
+        <button type="button" class="ui-btn ui-btn--ghost" @click="externalApplicationDialogOpen = false">
+          {{ t.common.cancel }}
+        </button>
+        <button type="submit" class="ui-btn ui-btn--primary">
+          {{ t.common.save }}
+        </button>
+      </template>
+    </BaseModal>
 
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="environmentDialogOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-3"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="
-            editingBuiltinEnvironmentKey || editingCustomEnvironmentId
-              ? t.settings.editEnvironment
-              : t.settings.addEnvironment
-          "
-          @click.self="environmentDialogOpen = false"
-        >
-          <form
-            class="w-full max-w-md rounded-lg border border-border-subtle bg-surface p-3 shadow-xl"
-            @submit.prevent="saveEnvironment"
-          >
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <h3 class="text-sm font-bold text-on-surface">
-                {{
-                  editingBuiltinEnvironmentKey || editingCustomEnvironmentId
-                    ? t.settings.editEnvironment
-                    : t.settings.addEnvironment
-                }}
-              </h3>
-              <span class="font-mono text-[10px] text-on-surface-variant">
-                {{ editingBuiltinEnvironmentKey || t.settings.environmentGlobalHint }}
-              </span>
-            </div>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
-                {{ t.settings.environmentName }}
-                <span
-                  v-if="editingBuiltinEnvironmentKey"
-                  class="mt-1 flex h-9 w-full items-center rounded border border-border-subtle bg-surface-container-low px-3 text-sm font-normal text-on-surface-variant"
-                >
-                  {{ customEnvironmentDraft.name }}
-                </span>
-                <input
-                  v-else
-                  v-model="customEnvironmentDraft.name"
-                  autofocus
-                  class="ui-field mt-1 w-full text-sm font-normal text-on-surface"
-                  :class="customEnvironmentErrors.name && 'border-status-error'"
-                  autocomplete="off"
-                />
-                <span v-if="customEnvironmentErrors.name" class="mt-0.5 block text-[10px] text-status-error">
-                  {{ customEnvironmentErrorText("name") }}
-                </span>
-              </label>
-              <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
-                {{ t.settings.environmentCommand }}
-                <input
-                  v-model="customEnvironmentDraft.command"
-                  :autofocus="Boolean(editingBuiltinEnvironmentKey)"
-                  class="ui-field mt-1 w-full font-mono text-sm font-normal text-on-surface"
-                  :class="customEnvironmentErrors.command && 'border-status-error'"
-                  autocomplete="off"
-                  :placeholder="t.settings.environmentCommandPlaceholder"
-                />
-                <span v-if="customEnvironmentErrors.command" class="mt-0.5 block text-[10px] text-status-error">
-                  {{ customEnvironmentErrorText("command") }}
-                </span>
-              </label>
-            </div>
-            <label class="mt-2 block text-xs font-semibold text-on-surface-variant">
-              {{ t.settings.environmentVersionArgs }}
-              <input
-                v-model="customEnvironmentDraft.versionArgs"
-                class="ui-field mt-1 w-full font-mono text-sm font-normal text-on-surface"
-                :class="customEnvironmentErrors.versionArgs && 'border-status-error'"
-                autocomplete="off"
-                :placeholder="t.settings.environmentVersionArgsPlaceholder"
-              />
-              <span v-if="customEnvironmentErrors.versionArgs" class="mt-0.5 block text-[10px] text-status-error">
-                {{ customEnvironmentErrorText("versionArgs") }}
-              </span>
-            </label>
-            <div class="mt-3 flex items-center justify-between gap-2">
-              <div>
-                <button
-                  v-if="editingBuiltinEnvironmentKey && editingBuiltinHasOverride"
-                  type="button"
-                  :class="serviceActionButtonClass()"
-                  @click="restoreBuiltinEnvironment"
-                >
-                  <RotateCcw :size="13" />
-                  {{ t.settings.restoreEnvironmentDefault }}
-                </button>
-                <button
-                  v-else-if="editingCustomEnvironmentId"
-                  type="button"
-                  :class="serviceActionButtonClass('danger')"
-                  @click="requestDeleteCustomEnvironment"
-                >
-                  <Trash2 :size="13" />
-                  {{ t.common.delete }}
-                </button>
-              </div>
-              <div class="flex gap-2">
-                <button type="button" :class="serviceActionButtonClass()" @click="environmentDialogOpen = false">
-                  {{ t.common.cancel }}
-                </button>
-                <button type="submit" :class="serviceActionButtonClass('primary')">
-                  {{ t.common.save }}
-                </button>
-              </div>
-            </div>
-          </form>
+    <BaseModal
+      :open="environmentDialogOpen"
+      as="form"
+      :width="448"
+      body-class="p-3 space-y-3"
+      :aria-label="
+        editingBuiltinEnvironmentKey || editingCustomEnvironmentId ? t.settings.editEnvironment : t.settings.addEnvironment
+      "
+      @submit="saveEnvironment"
+      @close="environmentDialogOpen = false"
+    >
+      <template #header>
+        <div class="flex min-w-0 items-center justify-between gap-2">
+          <h3 class="min-w-0 truncate text-sm font-bold text-on-surface">
+            {{
+              editingBuiltinEnvironmentKey || editingCustomEnvironmentId
+                ? t.settings.editEnvironment
+                : t.settings.addEnvironment
+            }}
+          </h3>
+          <span class="shrink-0 font-mono text-[10px] text-on-surface-variant">
+            {{ editingBuiltinEnvironmentKey || t.settings.environmentGlobalHint }}
+          </span>
         </div>
-      </Transition>
-    </Teleport>
+      </template>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+          {{ t.settings.environmentName }}
+          <span
+            v-if="editingBuiltinEnvironmentKey"
+            class="ui-field mt-1 flex w-full items-center text-on-surface-variant"
+          >
+            {{ customEnvironmentDraft.name }}
+          </span>
+          <input
+            v-else
+            v-model="customEnvironmentDraft.name"
+            autofocus
+            class="ui-field mt-1 w-full text-sm font-normal text-on-surface"
+            :class="customEnvironmentErrors.name && 'border-status-error'"
+            autocomplete="off"
+          />
+          <span v-if="customEnvironmentErrors.name" class="mt-0.5 block text-[10px] text-status-error">
+            {{ customEnvironmentErrorText("name") }}
+          </span>
+        </label>
+        <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+          {{ t.settings.environmentCommand }}
+          <input
+            v-model="customEnvironmentDraft.command"
+            :autofocus="Boolean(editingBuiltinEnvironmentKey)"
+            class="ui-field mt-1 w-full font-mono text-sm font-normal text-on-surface"
+            :class="customEnvironmentErrors.command && 'border-status-error'"
+            autocomplete="off"
+            :placeholder="t.settings.environmentCommandPlaceholder"
+          />
+          <span v-if="customEnvironmentErrors.command" class="mt-0.5 block text-[10px] text-status-error">
+            {{ customEnvironmentErrorText("command") }}
+          </span>
+        </label>
+      </div>
+      <label class="block text-xs font-semibold text-on-surface-variant">
+        {{ t.settings.environmentVersionArgs }}
+        <input
+          v-model="customEnvironmentDraft.versionArgs"
+          class="ui-field mt-1 w-full font-mono text-sm font-normal text-on-surface"
+          :class="customEnvironmentErrors.versionArgs && 'border-status-error'"
+          autocomplete="off"
+          :placeholder="t.settings.environmentVersionArgsPlaceholder"
+        />
+        <span v-if="customEnvironmentErrors.versionArgs" class="mt-0.5 block text-[10px] text-status-error">
+          {{ customEnvironmentErrorText("versionArgs") }}
+        </span>
+      </label>
+      <template #footer-left>
+        <button
+          v-if="editingBuiltinEnvironmentKey && editingBuiltinHasOverride"
+          type="button"
+          :class="serviceActionButtonClass()"
+          @click="restoreBuiltinEnvironment"
+        >
+          <RotateCcw :size="13" />
+          {{ t.settings.restoreEnvironmentDefault }}
+        </button>
+        <button
+          v-else-if="editingCustomEnvironmentId"
+          type="button"
+          :class="serviceActionButtonClass('danger')"
+          @click="requestDeleteCustomEnvironment"
+        >
+          <Trash2 :size="13" />
+          {{ t.common.delete }}
+        </button>
+      </template>
+      <template #footer>
+        <button type="button" class="ui-btn ui-btn--ghost" @click="environmentDialogOpen = false">
+          {{ t.common.cancel }}
+        </button>
+        <button type="submit" class="ui-btn ui-btn--primary">
+          {{ t.common.save }}
+        </button>
+      </template>
+    </BaseModal>
 
     <ActionDialog
       :open="logRetentionClearOpen"
@@ -2504,193 +2411,168 @@ watch(
       @primary="confirmDeleteCustomEnvironment"
     />
   </div>
-  <Teleport to="body">
-    <Transition name="scale">
+  <BaseModal
+    :open="cleanupDialogOpen"
+    :width="672"
+    labelledby="cleanup-dialog-title"
+    :body-aria-busy="cleanupScanning"
+    @close="cleanupDialogOpen = false"
+  >
+    <template #header>
+      <h3 id="cleanup-dialog-title" class="min-w-0 truncate text-sm font-bold text-on-surface">{{ t.settings.dataCleanup }}</h3>
+    </template>
+    <div class="space-y-4">
       <div
-        v-if="cleanupDialogOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        @click.self="cleanupDialogOpen = false"
+        v-if="cleanupScanning"
+        role="status"
+        aria-live="polite"
+        class="flex min-h-32 items-center justify-center gap-2 text-sm text-on-surface-variant"
       >
-        <div
-          class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-surface shadow-lg"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="cleanup-dialog-title"
+        <LoaderCircle :size="18" class="animate-spin" aria-hidden="true" />
+        <span>{{ t.settings.cleanupScanning }}</span>
+      </div>
+      <template v-else-if="store.cleanupPlan">
+        <p class="flex items-start gap-2 text-xs leading-5 text-on-surface-variant">
+          <Info :size="15" class="mt-0.5 shrink-0" aria-hidden="true" />
+          {{ t.settings.cleanupSafetyHint }}
+        </p>
+        <section
+          v-for="category in ['sync', 'local', 'cache'] as const"
+          :key="category"
+          :aria-labelledby="`cleanup-category-${category}`"
+          class="min-w-0 border-t border-border-subtle pt-5"
         >
-          <div class="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-            <h3 id="cleanup-dialog-title" class="text-sm font-semibold text-on-surface">
-              {{ t.settings.dataCleanup }}
-            </h3>
-            <button
-              type="button"
-              class="rounded-lg p-1 text-on-surface-variant hover:bg-surface-container"
-              :aria-label="t.common.close"
-              @click="cleanupDialogOpen = false"
+          <h4 :id="`cleanup-category-${category}`" class="mb-2.5 text-xs font-bold text-on-surface-variant">
+            {{
+              category === "sync"
+                ? t.settings.cleanupCategorySync
+                : category === "local"
+                  ? t.settings.cleanupCategoryLocal
+                  : t.settings.cleanupCategoryCache
+            }}
+          </h4>
+          <div class="space-y-2">
+            <div
+              v-for="item in cleanupItems.filter((candidate) => candidate.category === category)"
+              :key="item.id"
+              class="rounded-lg border border-border-subtle px-3 py-2.5"
             >
-              <X :size="16" />
-            </button>
-          </div>
-          <div class="themed-scrollbar min-h-0 flex-1 overflow-y-auto" :aria-busy="cleanupScanning" v-overlay-scrollbar>
-            <div class="space-y-4 px-4 py-4">
-              <div
-                v-if="cleanupScanning"
-                role="status"
-                aria-live="polite"
-                class="flex min-h-32 items-center justify-center gap-2 text-sm text-on-surface-variant"
-              >
-                <LoaderCircle :size="18" class="animate-spin" aria-hidden="true" />
-                <span>{{ t.settings.cleanupScanning }}</span>
-              </div>
-              <template v-else-if="store.cleanupPlan">
-                <p class="flex items-start gap-2 text-xs leading-5 text-on-surface-variant">
-                  <Info :size="15" class="mt-0.5 shrink-0" aria-hidden="true" />
-                  {{ t.settings.cleanupSafetyHint }}
-                </p>
-                <section
-                  v-for="category in ['sync', 'local', 'cache'] as const"
-                  :key="category"
-                  :aria-labelledby="`cleanup-category-${category}`"
-                  class="min-w-0 border-t border-border-subtle pt-5"
-                >
-                  <h4 :id="`cleanup-category-${category}`" class="mb-2.5 text-xs font-bold text-on-surface-variant">
-                    {{
-                      category === "sync"
-                        ? t.settings.cleanupCategorySync
-                        : category === "local"
-                          ? t.settings.cleanupCategoryLocal
-                          : t.settings.cleanupCategoryCache
-                    }}
-                  </h4>
-                  <div class="space-y-2">
-                    <div
-                      v-for="item in cleanupItems.filter((candidate) => candidate.category === category)"
-                      :key="item.id"
-                      class="rounded-lg border border-border-subtle px-3 py-2.5"
-                    >
-                      <label class="flex items-start gap-2.5" :class="{ 'opacity-50': item.disabledReason }">
-                        <input
-                          type="checkbox"
-                          class="mt-0.5"
-                          :aria-label="item.label"
-                          :checked="cleanupSelection[item.id]"
-                          :disabled="Boolean(item.disabledReason) || store.cleanupRunning || cleanupScanning"
-                          @change="cleanupSelection[item.id] = ($event.target as HTMLInputElement).checked"
-                        />
-                        <span class="min-w-0 flex-1">
-                          <span class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-                            <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                              <span class="text-sm font-medium text-on-surface">{{ item.label }}</span>
-                              <span
-                                class="text-[10px] font-medium"
-                                :class="
-                                  item.recommendation === 'recommended'
-                                    ? 'text-primary'
-                                    : item.recommendation === 'review'
-                                      ? 'text-status-warning'
-                                      : 'text-on-surface-variant'
-                                "
-                              >
-                                {{
-                                  item.recommendation === "recommended"
-                                    ? t.settings.cleanupRecommended
-                                    : item.recommendation === "review"
-                                      ? t.settings.cleanupReview
-                                      : t.settings.cleanupKeep
-                                }}
-                              </span>
-                              <button
-                                type="button"
-                                class="group relative inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                                :aria-label="`${item.label}：${item.safetyHint}`"
-                                @click.prevent.stop
-                              >
-                                <Info :size="13" aria-hidden="true" />
-                                <span
-                                  class="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 hidden w-64 -translate-x-1/2 rounded-md border border-border-subtle bg-surface-container-high px-2.5 py-2 text-left text-[11px] font-normal leading-4 text-on-surface shadow-lg group-hover:block group-focus-visible:block"
-                                >
-                                  {{ item.safetyHint }}
-                                </span>
-                              </button>
-                            </span>
-                            <span class="text-xs text-on-surface-variant">
-                              <template v-if="item.count !== null"
-                                >{{ t.settings.cleanupCount }}: {{ item.count }}</template
-                              >
-                              <template v-if="item.estimatedBytes > 0">
-                                {{ item.count !== null ? " · " : "" }}~{{ formatDataSize(item.estimatedBytes) }}
-                              </template>
-                            </span>
-                          </span>
-                          <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{
-                            item.description
-                          }}</span>
-                          <span v-if="item.disabledReason" class="mt-1 block text-xs text-status-error">
-                            {{ item.disabledReason }}
-                          </span>
-                        </span>
-                      </label>
-                      <details
-                        v-if="item.keys.length || item.paths.length"
-                        class="group ml-6 mt-2 border-t border-border-subtle pt-2 text-xs text-on-surface-variant"
+              <label class="flex items-start gap-2.5" :class="{ 'opacity-50': item.disabledReason }">
+                <input
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 accent-primary"
+                  :aria-label="item.label"
+                  :checked="cleanupSelection[item.id]"
+                  :disabled="Boolean(item.disabledReason) || store.cleanupRunning || cleanupScanning"
+                  @change="cleanupSelection[item.id] = ($event.target as HTMLInputElement).checked"
+                />
+                <span class="min-w-0 flex-1">
+                  <span class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+                    <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <span class="text-sm font-medium text-on-surface">{{ item.label }}</span>
+                      <span
+                        class="text-[10px] font-medium"
+                        :class="
+                          item.recommendation === 'recommended'
+                            ? 'text-primary'
+                            : item.recommendation === 'review'
+                              ? 'text-status-warning'
+                              : 'text-on-surface-variant'
+                        "
                       >
-                        <summary
-                          class="flex cursor-pointer list-none items-center gap-1 font-medium text-primary [&::-webkit-details-marker]:hidden"
+                        {{
+                          item.recommendation === "recommended"
+                            ? t.settings.cleanupRecommended
+                            : item.recommendation === "review"
+                              ? t.settings.cleanupReview
+                              : t.settings.cleanupKeep
+                        }}
+                      </span>
+                      <button
+                        type="button"
+                        class="group relative inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                        :aria-label="`${item.label}：${item.safetyHint}`"
+                        @click.prevent.stop
+                      >
+                        <Info :size="13" aria-hidden="true" />
+                        <span
+                          class="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 hidden w-64 -translate-x-1/2 rounded-md border border-border-subtle bg-surface-container-high px-2.5 py-2 text-left text-[11px] font-normal leading-4 text-on-surface shadow-popover group-hover:block group-focus-visible:block"
                         >
-                          <ChevronDown
-                            :size="13"
-                            class="shrink-0 transition-transform group-open:rotate-180"
-                            aria-hidden="true"
-                          />
-                          {{ item.keys.length ? t.settings.cleanupViewKeys : t.settings.cleanupViewPaths }}
-                        </summary>
-                        <p v-if="item.keys.length" class="mt-2">{{ t.settings.cleanupKeyNamesOnly }}</p>
-                        <ul class="mt-2 space-y-1 font-mono">
-                          <li v-for="entry in item.keys.length ? item.keys : item.paths" :key="entry" class="break-all">
-                            {{ entry }}
-                          </li>
-                        </ul>
-                      </details>
-                    </div>
-                  </div>
-                </section>
-              </template>
-              <p v-else role="alert" class="text-sm text-status-error">{{ t.settings.cleanupScanFailed }}</p>
-
-              <div v-if="store.cleanupResults.length" class="space-y-1 rounded-lg bg-surface-container-low px-3 py-2">
-                <div
-                  v-for="result in store.cleanupResults"
-                  :key="result.id"
-                  class="flex items-start justify-between gap-2 text-xs"
-                  :class="result.ok ? 'text-on-surface-variant' : 'text-status-error'"
+                          {{ item.safetyHint }}
+                        </span>
+                      </button>
+                    </span>
+                    <span class="text-xs text-on-surface-variant">
+                      <template v-if="item.count !== null"
+                        >{{ t.settings.cleanupCount }}: {{ item.count }}</template
+                      >
+                      <template v-if="item.estimatedBytes > 0">
+                        {{ item.count !== null ? " · " : "" }}~{{ formatDataSize(item.estimatedBytes) }}
+                      </template>
+                    </span>
+                  </span>
+                  <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{
+                    item.description
+                  }}</span>
+                  <span v-if="item.disabledReason" class="mt-1 block text-xs text-status-error">
+                    {{ item.disabledReason }}
+                  </span>
+                </span>
+              </label>
+              <details
+                v-if="item.keys.length || item.paths.length"
+                class="group ml-6 mt-2 border-t border-border-subtle pt-2 text-xs text-on-surface-variant"
+              >
+                <summary
+                  class="flex cursor-pointer list-none items-center gap-1 font-medium text-primary [&::-webkit-details-marker]:hidden"
                 >
-                  <span class="font-medium">{{ result.label }}</span>
-                  <span class="text-right">{{ result.ok ? "✓" : "✗" }} {{ result.message }}</span>
-                </div>
-              </div>
-              <p v-if="store.cleanupMessage" class="text-xs text-on-surface-variant">{{ store.cleanupMessage }}</p>
+                  <ChevronDown
+                    :size="13"
+                    class="shrink-0 transition-transform group-open:rotate-180"
+                    aria-hidden="true"
+                  />
+                  {{ item.keys.length ? t.settings.cleanupViewKeys : t.settings.cleanupViewPaths }}
+                </summary>
+                <p v-if="item.keys.length" class="mt-2">{{ t.settings.cleanupKeyNamesOnly }}</p>
+                <ul class="mt-2 space-y-1 font-mono">
+                  <li v-for="entry in item.keys.length ? item.keys : item.paths" :key="entry" class="break-all">
+                    {{ entry }}
+                  </li>
+                </ul>
+              </details>
             </div>
           </div>
-          <div class="flex items-center justify-end gap-2 border-t border-border-subtle px-4 py-3">
-            <button
-              type="button"
-              class="rounded-lg border border-border-subtle px-3 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container"
-              @click="cleanupDialogOpen = false"
-            >
-              {{ t.common.close }}
-            </button>
-            <button
-              type="button"
-              class="rounded-lg bg-status-error px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              :disabled="!cleanupRunnable"
-              @click="requestCleanupRun"
-            >
-              {{ store.cleanupRunning ? t.settings.cleanupRunning : t.settings.cleanupRun }}
-            </button>
-          </div>
+        </section>
+      </template>
+      <p v-else role="alert" class="text-sm text-status-error">{{ t.settings.cleanupScanFailed }}</p>
+
+      <div v-if="store.cleanupResults.length" class="space-y-1 rounded-lg bg-surface-container-low px-3 py-2">
+        <div
+          v-for="result in store.cleanupResults"
+          :key="result.id"
+          class="flex items-start justify-between gap-2 text-xs"
+          :class="result.ok ? 'text-on-surface-variant' : 'text-status-error'"
+        >
+          <span class="font-medium">{{ result.label }}</span>
+          <span class="text-right">{{ result.ok ? "✓" : "✗" }} {{ result.message }}</span>
         </div>
       </div>
-    </Transition>
-  </Teleport>
+      <p v-if="store.cleanupMessage" class="text-xs text-on-surface-variant">{{ store.cleanupMessage }}</p>
+    </div>
+    <template #footer>
+      <button type="button" class="ui-btn ui-btn--ghost" @click="cleanupDialogOpen = false">
+        {{ t.common.close }}
+      </button>
+      <button
+        type="button"
+        class="ui-btn ui-btn--danger"
+        :disabled="!cleanupRunnable"
+        @click="requestCleanupRun"
+      >
+        {{ store.cleanupRunning ? t.settings.cleanupRunning : t.settings.cleanupRun }}
+      </button>
+    </template>
+  </BaseModal>
 
   <Teleport to="body">
     <ActionDialog
@@ -2713,20 +2595,8 @@ watch(
 </template>
 
 <style scoped>
-.settings-sections h3 {
-  color: var(--color-on-surface);
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1.5rem;
-}
-
 .settings-sections :is(input[type="text"], input[type="password"], input[type="number"], textarea, .ui-field) {
   min-width: 0;
-  min-height: 2.25rem;
-  border-radius: 0.375rem;
-  background-color: var(--color-surface);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
 }
 
 .settings-sections button > svg {

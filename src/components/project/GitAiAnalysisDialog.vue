@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
-  Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardCopy,
@@ -20,6 +18,8 @@ import type {
   ProjectGitRepositoryTarget,
 } from "../../types";
 import AiReasoningResult from "./AiReasoningResult.vue";
+import BaseModal from "../common/BaseModal.vue";
+import UiSelect from "../common/UiSelect.vue";
 import {
   aiReasoningCopyText,
   aiReasoningStateFromResult,
@@ -40,9 +40,7 @@ import {
   type GitAiAnalysisSession,
   type GitAiAnalysisSessionInput,
 } from "../../lib/gitAiAnalysisSession";
-import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useI18n } from "../../lib/i18n";
-import { cn } from "../../lib/utils";
 import { useStore } from "../../store/useStore";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
@@ -64,7 +62,6 @@ const emit = defineEmits<{
 const store = useStore();
 const t = useI18n();
 const aiMode = ref("summary");
-const isAiModeMenuOpen = ref(false);
 const aiDialogIncludeDiffContext = ref(true);
 const aiDialogResult = ref(createAiReasoningStreamState());
 const aiDialogSession = ref<GitAiAnalysisSession | null>(null);
@@ -77,7 +74,6 @@ const aiDialogState = ref<AiState>("idle");
 const copiedText = ref("");
 const copiedTimer = ref<number | undefined>();
 let aiDialogRequestGeneration = 0;
-let stopAppEscapeListener = () => {};
 
 const activeRepositoryContext = computed(() =>
   store.resolveGitRepositoryContext(props.projectId, props.repositoryTarget),
@@ -93,6 +89,7 @@ const currentGitRefLabel = computed(() => {
   return snapshot.value?.branch || "main";
 });
 const aiModeOptions = computed(() => store.aiPreferences.modes.filter((mode) => mode.kind !== "commit-message"));
+const aiModeSelectOptions = computed(() => aiModeOptions.value.map((mode) => ({ value: mode.id, label: mode.name })));
 const resolveAiModeId = (modeId: string) =>
   aiModeOptions.value.some((option) => option.id === modeId) ? modeId : aiModeOptions.value[0]?.id || "summary";
 const selectedAiMode = computed(
@@ -215,12 +212,6 @@ const reportAiDialogFailure = (state: "warning" | "error", message: string) => {
   emit("feedback", state, message);
 };
 
-const selectAiMode = (modeId: string) => {
-  if (isAiDialogSetupLocked.value || isAiDialogGenerating.value) return;
-  aiMode.value = resolveAiModeId(modeId);
-  isAiModeMenuOpen.value = false;
-};
-
 const selectAiDialogVersion = (offset: -1 | 1) => {
   const session = aiDialogSession.value;
   const nextIndex = aiDialogActiveVersionIndex.value + offset;
@@ -245,7 +236,6 @@ const restoreAiDialogVersion = () => {
 
 const startNewAiAnalysis = () => {
   if (isAiDialogGenerating.value) return;
-  isAiModeMenuOpen.value = false;
   clearAiDialogSession();
 };
 
@@ -442,7 +432,6 @@ const generateAiAnalysis = async () => {
   const originContext = activeRepositoryContext.value;
   if (!originContext) return;
   const originAiDialogRequestGeneration = aiDialogRequestGeneration;
-  isAiModeMenuOpen.value = false;
   aiDialogResult.value = createAiReasoningStreamState();
   aiDialogMessage.value = "";
   aiDialogState.value = "loading";
@@ -562,25 +551,13 @@ const copyLabel = computed(
 );
 
 const requestClose = () => {
-  isAiModeMenuOpen.value = false;
   emit("close");
 };
-
-const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (!props.open || event.detail.handled) return;
-  requestClose();
-  event.detail.handle();
-};
-
-onMounted(() => {
-  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
-});
 
 onBeforeUnmount(() => {
   aiDialogRequestGeneration += 1;
   if (store.selectedProjectId !== props.projectId) clearGitAiAnalysisSessionsForProject(props.projectId);
   window.clearTimeout(copiedTimer.value);
-  stopAppEscapeListener();
 });
 
 watch(
@@ -594,11 +571,7 @@ watch(
 watch(
   () => props.open,
   (open) => {
-    if (open) {
-      if (!isAiDialogGenerating.value) loadAiDialogSession();
-      return;
-    }
-    isAiModeMenuOpen.value = false;
+    if (open && !isAiDialogGenerating.value) loadAiDialogSession();
   },
   { immediate: true },
 );
@@ -614,272 +587,230 @@ watch(
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="scale">
+  <BaseModal
+    :open="open"
+    :width="928"
+    height="min(46rem,90vh)"
+    title="AI 生成"
+    aria-label="AI 生成"
+    body-class="p-0"
+    @close="requestClose"
+  >
+    <template #header>
+      <div class="min-w-0">
+        <h3 class="text-sm font-bold text-on-surface">AI 生成</h3>
+        <p class="truncate text-[10px] font-medium text-on-surface-variant">{{ aiDialogScopeSummary }}</p>
+      </div>
+    </template>
+    <div class="flex h-full min-h-0 flex-col gap-3 p-3">
+      <div class="flex shrink-0 flex-wrap items-end gap-2">
+        <div class="w-48">
+          <UiSelect
+            v-model="aiMode"
+            :options="aiModeSelectOptions"
+            :disabled="isAiDialogSetupLocked || isAiDialogGenerating"
+            placeholder="总结"
+            aria-label="AI 分析模式"
+            direction="auto"
+          />
+        </div>
+        <label
+          class="mb-0.5 inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold normal-case text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+          title="包含代码 diff 上下文"
+        >
+          <input
+            v-model="aiDialogIncludeDiffContext"
+            type="checkbox"
+            class="h-4 w-4 accent-primary"
+            :disabled="isAiDialogGenerating || isAiDialogSetupLocked"
+          />
+          <span>Diff</span>
+        </label>
+        <button
+          v-if="!isAiDialogSetupLocked"
+          type="button"
+          class="ui-btn ui-btn--primary"
+          :disabled="isAiDialogGenerating"
+          @click="generateAiAnalysis"
+        >
+          <Sparkles :size="13" />
+          {{ isAiDialogGenerating ? "生成中" : "生成" }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="ui-btn ui-btn--secondary"
+          :disabled="isAiDialogGenerating"
+          @click="startNewAiAnalysis"
+        >
+          <Plus :size="13" />
+          新分析
+        </button>
+        <span
+          v-if="aiDialogNotice"
+          class="inline-flex h-9 max-w-full items-center truncate rounded-lg border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
+          :title="aiDialogNotice"
+        >
+          {{ aiDialogNotice }}
+        </span>
+      </div>
       <div
-        v-if="open"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-5"
-        @click.self="requestClose"
+        v-if="aiDialogMessage && aiDialogState !== 'success' && hasAiDialogDisplayResult"
+        :class="[
+          'flex shrink-0 items-center justify-between gap-2 rounded-lg border px-2 py-1 text-[10px] font-bold',
+          aiDialogState === 'error'
+            ? 'border-status-error/30 bg-status-error/10 text-status-error'
+            : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+        ]"
       >
+        <span class="min-w-0 break-words">{{ aiDialogMessage }}</span>
+        <button
+          v-if="aiDialogCanSubmitFollowUp"
+          type="button"
+          class="shrink-0 text-[10px] font-bold underline underline-offset-2"
+          @click="refineAiAnalysis"
+        >
+          重试
+        </button>
+      </div>
+      <div class="relative min-h-0 flex-1">
         <div
-          class="flex h-[min(46rem,90vh)] w-[min(58rem,94vw)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="git-ai-analysis-dialog-title"
-          @click.stop
+          v-if="aiDialogHasVersions"
+          class="absolute -top-8 right-2 z-20 flex h-6 items-center overflow-hidden rounded-md border border-border-subtle bg-surface shadow-sm"
+        >
+          <span
+            class="flex h-full items-center border-r border-border-subtle px-2 text-[10px] font-bold text-on-surface-variant"
+          >
+            版本 {{ aiDialogActiveVersionIndex + 1 }}/{{ aiDialogSession?.versions.length }}
+          </span>
+          <button
+            type="button"
+            class="git-section-action git-section-action--segment"
+            title="上一版"
+            aria-label="上一版"
+            :disabled="!aiDialogCanGoToPreviousVersion"
+            @click="selectAiDialogVersion(-1)"
+          >
+            <ChevronLeft :size="14" />
+          </button>
+          <button
+            type="button"
+            class="git-section-action git-section-action--segment"
+            title="下一版"
+            aria-label="下一版"
+            :disabled="!aiDialogCanGoToNextVersion"
+            @click="selectAiDialogVersion(1)"
+          >
+            <ChevronRight :size="14" />
+          </button>
+          <button
+            type="button"
+            class="git-section-action git-section-action--segment"
+            title="将此版本作为最新版本"
+            aria-label="将此版本作为最新版本"
+            :disabled="!aiDialogCanRestoreVersion"
+            @click="restoreAiDialogVersion"
+          >
+            <Undo :size="13" />
+          </button>
+          <button
+            v-if="aiDialogCopyContent"
+            type="button"
+            class="git-section-action"
+            :title="copyLabel(aiDialogCopyContent)"
+            :aria-label="copyLabel(aiDialogCopyContent)"
+            :disabled="isAiDialogGenerating"
+            :aria-busy="isAiDialogGenerating"
+            @click="copyText(aiDialogCopyContent)"
+          >
+            <ClipboardCopy :size="12" />
+          </button>
+        </div>
+        <div
+          class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
         >
           <div
-            class="flex items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-3"
+            v-overlay-scrollbar
+            :class="['ai-result-panel min-h-0 flex-1 overflow-auto p-3', aiDialogHasVersions && 'pb-16']"
+            :aria-busy="isAiDialogGenerating"
           >
-            <div class="min-w-0">
-              <h3 id="git-ai-analysis-dialog-title" class="text-sm font-bold text-on-surface">AI 生成</h3>
-              <p class="truncate text-[10px] font-medium text-on-surface-variant">{{ aiDialogScopeSummary }}</p>
-            </div>
-            <button
-              type="button"
-              class="git-top-action"
-              :title="t.common.close"
-              :aria-label="t.common.close"
-              @click="requestClose"
-            >
-              <X :size="14" />
-            </button>
-          </div>
-          <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
-            <div class="flex shrink-0 flex-wrap items-end gap-2">
-              <div class="relative w-48">
-                <button
-                  type="button"
-                  class="ui-field flex w-full items-center justify-between gap-2 text-left font-semibold normal-case disabled:cursor-not-allowed disabled:opacity-65"
-                  :disabled="isAiDialogSetupLocked || isAiDialogGenerating"
-                  aria-haspopup="menu"
-                  :aria-expanded="isAiModeMenuOpen"
-                  @click.stop="isAiModeMenuOpen = !isAiModeMenuOpen"
-                >
-                  <span>{{ selectedAiMode?.name || "总结" }}</span>
-                  <ChevronDown :size="14" class="text-on-surface-variant" />
-                </button>
-                <div
-                  v-if="isAiModeMenuOpen && !isAiDialogSetupLocked"
-                  v-overlay-scrollbar
-                  class="mode-menu-popover"
-                  role="menu"
-                  @click.stop
-                >
-                  <button
-                    v-for="option in aiModeOptions"
-                    :key="option.id"
-                    type="button"
-                    :class="cn('mode-menu-item', aiMode === option.id && 'bg-primary/10 text-primary')"
-                    role="menuitemradio"
-                    :aria-checked="aiMode === option.id"
-                    @click="selectAiMode(option.id)"
-                  >
-                    <span>{{ option.name }}</span>
-                    <Check v-if="aiMode === option.id" :size="13" />
-                  </button>
-                </div>
-              </div>
-              <label
-                class="mb-0.5 inline-flex h-8 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-[10px] font-bold normal-case text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                title="包含代码 diff 上下文"
-              >
-                <input
-                  v-model="aiDialogIncludeDiffContext"
-                  type="checkbox"
-                  class="h-3 w-3 accent-primary"
-                  :disabled="isAiDialogGenerating || isAiDialogSetupLocked"
-                />
-                <span>Diff</span>
-              </label>
-              <button
-                v-if="!isAiDialogSetupLocked"
-                type="button"
-                class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
-                :disabled="isAiDialogGenerating"
-                @click="generateAiAnalysis"
-              >
-                <Sparkles :size="13" />
-                {{ isAiDialogGenerating ? "生成中" : "生成" }}
-              </button>
-              <button
-                v-else
-                type="button"
-                class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:cursor-wait disabled:opacity-70"
-                :disabled="isAiDialogGenerating"
-                @click="startNewAiAnalysis"
-              >
-                <Plus :size="13" />
-                新分析
-              </button>
-              <span
-                v-if="aiDialogNotice"
-                class="inline-flex h-9 max-w-full items-center truncate rounded-lg border border-status-warning/30 bg-status-warning/10 px-2.5 text-[10px] font-bold text-status-warning"
-                :title="aiDialogNotice"
-              >
-                {{ aiDialogNotice }}
-              </span>
-            </div>
+            <AiReasoningResult v-if="hasAiDialogDisplayResult" :result="aiDialogDisplayResult" />
             <div
-              v-if="aiDialogMessage && aiDialogState !== 'success' && hasAiDialogDisplayResult"
-              :class="[
-                'flex shrink-0 items-center justify-between gap-2 rounded border px-2.5 py-1.5 text-[10px] font-bold',
-                aiDialogState === 'error'
-                  ? 'border-status-error/30 bg-status-error/10 text-status-error'
-                  : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
-              ]"
+              v-else-if="aiDialogPanelHint"
+              :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
             >
-              <span class="min-w-0 break-words">{{ aiDialogMessage }}</span>
-              <button
-                v-if="aiDialogCanSubmitFollowUp"
-                type="button"
-                class="shrink-0 text-[10px] font-bold underline underline-offset-2"
-                @click="refineAiAnalysis"
-              >
-                重试
-              </button>
-            </div>
-            <div class="relative min-h-0 flex-1">
-              <div
-                v-if="aiDialogHasVersions"
-                class="absolute -top-8 right-2 z-20 flex h-6 items-center overflow-hidden rounded-md border border-border-subtle bg-surface shadow-sm"
-              >
-                <span
-                  class="flex h-full items-center border-r border-border-subtle px-2 text-[10px] font-bold text-on-surface-variant"
-                >
-                  版本 {{ aiDialogActiveVersionIndex + 1 }}/{{ aiDialogSession?.versions.length }}
-                </span>
-                <button
-                  type="button"
-                  class="git-section-action git-section-action--segment"
-                  title="上一版"
-                  aria-label="上一版"
-                  :disabled="!aiDialogCanGoToPreviousVersion"
-                  @click="selectAiDialogVersion(-1)"
-                >
-                  <ChevronLeft :size="14" />
-                </button>
-                <button
-                  type="button"
-                  class="git-section-action git-section-action--segment"
-                  title="下一版"
-                  aria-label="下一版"
-                  :disabled="!aiDialogCanGoToNextVersion"
-                  @click="selectAiDialogVersion(1)"
-                >
-                  <ChevronRight :size="14" />
-                </button>
-                <button
-                  type="button"
-                  class="git-section-action git-section-action--segment"
-                  title="将此版本作为最新版本"
-                  aria-label="将此版本作为最新版本"
-                  :disabled="!aiDialogCanRestoreVersion"
-                  @click="restoreAiDialogVersion"
-                >
-                  <Undo :size="13" />
-                </button>
-                <button
-                  v-if="aiDialogCopyContent"
-                  type="button"
-                  class="git-section-action"
-                  :title="copyLabel(aiDialogCopyContent)"
-                  :aria-label="copyLabel(aiDialogCopyContent)"
-                  :disabled="isAiDialogGenerating"
-                  :aria-busy="isAiDialogGenerating"
-                  @click="copyText(aiDialogCopyContent)"
-                >
-                  <ClipboardCopy :size="12" />
-                </button>
-              </div>
-              <div
-                class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
-              >
-                <div
-                  v-overlay-scrollbar
-                  :class="['ai-result-panel min-h-0 flex-1 overflow-auto p-3', aiDialogHasVersions && 'pb-16']"
-                  :aria-busy="isAiDialogGenerating"
-                >
-                  <AiReasoningResult v-if="hasAiDialogDisplayResult" :result="aiDialogDisplayResult" />
-                  <div
-                    v-else-if="aiDialogPanelHint"
-                    :class="aiDialogState === 'error' ? 'text-status-error' : 'text-on-surface-variant'"
-                  >
-                    {{ aiDialogPanelHint }}
-                  </div>
-                </div>
-              </div>
-              <div
-                v-if="aiDialogHasVersions"
-                :class="[
-                  'absolute bottom-2 right-2 z-20 flex h-9 items-center justify-end transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-                  isAiDialogComposerExpanded ? 'w-[calc(100%-1rem)]' : 'w-9',
-                ]"
-              >
-                <div
-                  :class="[
-                    'flex min-w-0 items-center gap-1.5 overflow-hidden transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
-                    isAiDialogComposerExpanded
-                      ? 'mr-1.5 flex-1 translate-x-0 opacity-100 delay-75'
-                      : 'pointer-events-none w-0 translate-x-3 opacity-0',
-                  ]"
-                  :aria-hidden="!isAiDialogComposerExpanded"
-                  :inert="!isAiDialogComposerExpanded"
-                >
-                  <textarea
-                    id="git-ai-follow-up"
-                    v-model="aiDialogFollowUp"
-                    rows="1"
-                    class="ui-field h-9 min-h-9 min-w-0 flex-1 resize-none overflow-y-hidden border-outline-variant/80 bg-surface-container-lowest py-1 text-xs leading-5 shadow-md"
-                    placeholder="例如：只保留高风险问题，并补充测试建议"
-                    :disabled="isAiDialogGenerating"
-                    aria-label="输入修改要求或追问"
-                    @keydown.enter.exact.prevent="refineAiAnalysis"
-                  />
-                  <button
-                    type="button"
-                    class="git-ai-composer-action flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/70 bg-primary text-on-primary shadow-md transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-primary/90 hover:shadow-lg active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none"
-                    title="发送修改要求"
-                    aria-label="发送修改要求"
-                    :disabled="!aiDialogCanSubmitFollowUp"
-                    @click="refineAiAnalysis"
-                  >
-                    <Send :size="14" />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  class="git-ai-composer-action flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-surface-container-high text-on-surface-variant shadow-md transition-[background-color,color,box-shadow,transform] duration-200 hover:scale-105 hover:bg-surface-variant hover:text-on-surface hover:shadow-lg active:scale-95 motion-reduce:transform-none motion-reduce:transition-none"
-                  :title="isAiDialogComposerExpanded ? '收起修改输入框' : '向左展开修改输入框'"
-                  :aria-label="isAiDialogComposerExpanded ? '收起修改输入框' : '向左展开修改输入框'"
-                  @click="isAiDialogComposerExpanded = !isAiDialogComposerExpanded"
-                >
-                  <span class="relative h-4 w-4">
-                    <MessageSquareText
-                      :size="16"
-                      :class="[
-                        'absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
-                        isAiDialogComposerExpanded
-                          ? 'rotate-12 scale-75 opacity-0'
-                          : 'rotate-0 scale-100 opacity-100 delay-100',
-                      ]"
-                    />
-                    <X
-                      :size="16"
-                      :class="[
-                        'absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
-                        isAiDialogComposerExpanded
-                          ? 'rotate-0 scale-100 opacity-100 delay-100'
-                          : '-rotate-12 scale-75 opacity-0',
-                      ]"
-                    />
-                  </span>
-                </button>
-              </div>
+              {{ aiDialogPanelHint }}
             </div>
           </div>
         </div>
+        <div
+          v-if="aiDialogHasVersions"
+          :class="[
+            'absolute bottom-2 right-2 z-20 flex h-9 items-center justify-end transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+            isAiDialogComposerExpanded ? 'w-[calc(100%-1rem)]' : 'w-9',
+          ]"
+        >
+          <div
+            :class="[
+              'flex min-w-0 items-center gap-1.5 overflow-hidden transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
+              isAiDialogComposerExpanded
+                ? 'mr-1.5 flex-1 translate-x-0 opacity-100 delay-75'
+                : 'pointer-events-none w-0 translate-x-3 opacity-0',
+            ]"
+            :aria-hidden="!isAiDialogComposerExpanded"
+            :inert="!isAiDialogComposerExpanded"
+          >
+            <textarea
+              id="git-ai-follow-up"
+              v-model="aiDialogFollowUp"
+              rows="1"
+              class="ui-field h-9 min-h-9 min-w-0 flex-1 resize-none py-1 leading-5"
+              placeholder="例如：只保留高风险问题，并补充测试建议"
+              :disabled="isAiDialogGenerating"
+              aria-label="输入修改要求或追问"
+              @keydown.enter.exact.prevent="refineAiAnalysis"
+            />
+            <button
+              type="button"
+              class="ui-btn ui-btn--primary ui-btn--icon h-9 w-9"
+              title="发送修改要求"
+              aria-label="发送修改要求"
+              :disabled="!aiDialogCanSubmitFollowUp"
+              @click="refineAiAnalysis"
+            >
+              <Send :size="14" />
+            </button>
+          </div>
+          <button
+            type="button"
+            class="ui-btn ui-btn--ghost ui-btn--icon h-9 w-9"
+            :title="isAiDialogComposerExpanded ? '收起修改输入框' : '向左展开修改输入框'"
+            :aria-label="isAiDialogComposerExpanded ? '收起修改输入框' : '向左展开修改输入框'"
+            @click="isAiDialogComposerExpanded = !isAiDialogComposerExpanded"
+          >
+            <span class="relative h-4 w-4">
+              <MessageSquareText
+                :size="16"
+                :class="[
+                  'absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
+                  isAiDialogComposerExpanded
+                    ? 'rotate-12 scale-75 opacity-0'
+                    : 'rotate-0 scale-100 opacity-100 delay-100',
+                ]"
+              />
+              <X
+                :size="16"
+                :class="[
+                  'absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
+                  isAiDialogComposerExpanded
+                    ? 'rotate-0 scale-100 opacity-100 delay-100'
+                    : '-rotate-12 scale-75 opacity-0',
+                ]"
+              />
+            </span>
+          </button>
+        </div>
       </div>
-    </Transition>
-  </Teleport>
+    </div>
+  </BaseModal>
 </template>

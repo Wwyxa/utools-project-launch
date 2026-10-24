@@ -12,6 +12,7 @@ import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { extractEnvironmentVersion } from "../../lib/environmentTools";
 import { cn } from "../../lib/utils";
+import ToggleSwitch from "../common/ToggleSwitch.vue";
 import type { EnvironmentToolResult } from "../../types";
 
 const store = useStore();
@@ -155,9 +156,9 @@ const resultByKey = computed(() => new Map(store.environmentResults.map((result)
 const showVersionOnly = ref(rememberedShowVersionOnly);
 const isRefreshing = (key: string) => store.environmentRefreshingKeys[key] === true;
 
-const toggleVersionOnly = () => {
-  showVersionOnly.value = !showVersionOnly.value;
-  rememberedShowVersionOnly = showVersionOnly.value;
+const setVersionOnly = (value: boolean) => {
+  showVersionOnly.value = value;
+  rememberedShowVersionOnly = value;
 };
 
 const displayedVersion = (result?: EnvironmentToolResult) => {
@@ -168,7 +169,7 @@ const displayedVersion = (result?: EnvironmentToolResult) => {
 
 const statusClass = (key: string, result?: EnvironmentToolResult) =>
   cn(
-    "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-bold",
+    "ui-status-pill",
     !result && "border-border-subtle bg-surface-container-low text-on-surface-variant",
     isRefreshing(key) && "border-primary/30 bg-primary/10 text-primary",
     !isRefreshing(key) &&
@@ -219,7 +220,7 @@ onBeforeUnmount(() => stopColumnResize());
         <button
           type="button"
           @click="store.setActiveTab('projects')"
-          class="rounded-lg border border-border-subtle bg-surface p-1.5 text-on-surface-variant shadow-sm transition-all active:scale-90 hover:bg-surface-variant"
+          class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
           :title="t.common.back"
           :aria-label="t.common.back"
         >
@@ -231,40 +232,22 @@ onBeforeUnmount(() => stopColumnResize());
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="showVersionOnly"
-          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2.5 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+        <label
+          class="ui-btn ui-btn--secondary ui-btn--sm cursor-pointer"
           :title="t.environment.extractVersion"
-          :aria-label="t.environment.extractVersion"
-          @click="toggleVersionOnly"
         >
           <span class="hidden sm:inline">{{ t.environment.extractVersion }}</span>
-          <span
-            :class="
-              cn(
-                'flex h-3.5 w-6 items-center overflow-hidden rounded-full border px-0.5 transition-colors',
-                showVersionOnly
-                  ? 'justify-end border-primary bg-primary/20'
-                  : 'justify-start border-border-subtle bg-surface-container-high',
-              )
-            "
-          >
-            <span
-              :class="
-                cn(
-                  'h-2.5 w-2.5 shrink-0 rounded-full transition-colors',
-                  showVersionOnly ? 'bg-primary' : 'bg-on-surface-variant',
-                )
-              "
-            />
-          </span>
-        </button>
+          <ToggleSwitch
+            size="sm"
+            :model-value="showVersionOnly"
+            :aria-label="t.environment.extractVersion"
+            @update:model-value="setVersionOnly"
+          />
+        </label>
         <button
           type="button"
           @click="store.setActiveTab('settings')"
-          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-3 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant"
+          class="ui-btn ui-btn--secondary ui-btn--sm"
           :title="t.environment.configure"
           :aria-label="t.environment.configure"
         >
@@ -274,7 +257,7 @@ onBeforeUnmount(() => stopColumnResize());
         <button
           type="button"
           @click="store.refreshEnvironmentTools()"
-          class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border-subtle bg-primary px-3 text-xs font-bold text-on-primary shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+          class="ui-btn ui-btn--primary ui-btn--sm"
           :disabled="store.environmentRefreshing || enabledDefinitions.length === 0"
           :title="t.common.refresh"
           :aria-label="t.common.refresh"
@@ -288,7 +271,7 @@ onBeforeUnmount(() => stopColumnResize());
     <section class="themed-scrollbar min-h-0 flex-1 overflow-auto" :aria-busy="store.environmentRefreshing">
       <div
         v-if="enabledDefinitions.length === 0"
-        class="rounded border border-dashed border-border-subtle px-3 py-2 text-sm text-on-surface-variant"
+        class="ui-empty px-3 py-2 text-sm"
       >
         {{ t.environment.empty }}
       </div>
@@ -348,7 +331,7 @@ onBeforeUnmount(() => stopColumnResize());
           <span class="min-w-0">
             <span class="sr-only">{{ t.common.status }}</span>
             <span
-              class="invisible inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-bold"
+              class="ui-status-pill invisible"
               aria-hidden="true"
             >
               <span class="h-3 w-3 shrink-0" />

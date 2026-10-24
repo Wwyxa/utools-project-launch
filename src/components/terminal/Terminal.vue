@@ -21,6 +21,7 @@ import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import type { LogEntry, RuntimeRecord, ProjectScript } from "../../types";
 import ActionDialog from "../common/ActionDialog.vue";
+import BaseModal from "../common/BaseModal.vue";
 import UiContextMenu from "../common/UiContextMenu.vue";
 import type { UiContextMenuItem } from "../common/uiContextMenu";
 import { showActionStatus } from "../common/actionStatus";
@@ -414,13 +415,11 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (historySourceMenuOpen.value) {
     closeHistorySourceMenu(true);
     event.detail.handle();
-    return;
-  }
-  if (historyDialogOpen.value) {
-    closeHistoryDialog();
-    event.detail.handle();
   }
 };
+
+// 先于子组件（BaseModal/ActionDialog/UiContextMenu）注册，保证 Escape 优先关闭来源下拉
+stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 
 const closeTarget = (scriptId: string) => {
   closedAt.value = {
@@ -557,7 +556,6 @@ watch(
   { immediate: true },
 );
 onMounted(() => {
-  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
   window.addEventListener("click", closeContextMenu);
   logScrollEventElement = getOverlayScrollbarScrollElements(scrollRef.value)?.scrollEventElement ?? null;
   logScrollEventElement?.addEventListener("scroll", handleLogScroll);
@@ -581,7 +579,7 @@ onBeforeUnmount(() => {
   <div
     :class="historyOnly ? '' : 'h-full min-h-[12rem] border border-border-subtle rounded-lg overflow-hidden flex flex-col bg-surface-container-lowest shadow-sm'"
   >
-    <button v-if="historyOnly" type="button" class="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-semibold text-on-surface" @click="openHistoryDialog">
+    <button v-if="historyOnly" type="button" class="ui-btn ui-btn--ghost ui-btn--sm" @click="openHistoryDialog">
       <History :size="13" /> {{ t.terminal.history }}
     </button>
     <template v-else>
@@ -615,11 +613,11 @@ onBeforeUnmount(() => {
             >
               <span
                 :class="[
-                  'w-1.5 h-1.5 rounded-full shrink-0',
+                  'ui-status-dot shrink-0',
                   target.status === 'RUNNING'
-                    ? 'bg-status-running animate-pulse shadow-[0_0_8px_rgba(46,175,125,0.9)]'
+                    ? 'ui-status-dot--glow bg-status-running text-status-running animate-pulse'
                     : target.status === 'STOPPING'
-                      ? 'bg-status-warning animate-pulse'
+                      ? 'bg-status-warning text-status-warning animate-pulse'
                       : target.status === 'ERROR'
                         ? 'bg-status-error'
                         : 'bg-status-stopped',
@@ -643,7 +641,7 @@ onBeforeUnmount(() => {
       <div class="flex shrink-0 items-center gap-1.5">
         <button
           @click="scrollToTop"
-          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
           :disabled="filteredLogs.length === 0"
           :title="t.terminal.scrollToTop"
           :aria-label="t.terminal.scrollToTop"
@@ -652,7 +650,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           @click="scrollToBottom"
-          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
           :disabled="filteredLogs.length === 0"
           :title="t.terminal.scrollToBottom"
           :aria-label="t.terminal.scrollToBottom"
@@ -661,7 +659,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           @click="handleClear"
-          class="p-1 text-on-surface-variant hover:text-status-error rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          class="ui-btn ui-btn--danger-ghost ui-btn--icon ui-btn--sm"
           :disabled="!hasAnyLogs"
           :title="t.terminal.clearAll"
           :aria-label="t.terminal.clearAll"
@@ -671,7 +669,7 @@ onBeforeUnmount(() => {
         <button
           v-if="store.supportsBridge"
           type="button"
-          class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-variant transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+          class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
           :title="t.terminal.history"
           :aria-label="t.terminal.history"
           @click="openHistoryDialog"
@@ -727,52 +725,51 @@ onBeforeUnmount(() => {
       </div>
     </div>
     </template>
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="historyDialogOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          @click.self="closeHistoryDialog"
-        >
-          <section
-            class="flex h-[min(42rem,calc(100vh-2rem))] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="runtime-log-history-title"
+    <ActionDialog
+      :open="historyClearOpen"
+      tone="danger"
+      icon="trash"
+      :title="historyClearAll ? t.terminal.historyClearAll : t.terminal.historyClearTitle"
+      :message="historyClearAll ? (projectId ? t.terminal.historyClearProjectMessage : t.terminal.historyClearAllMessage) : t.terminal.historyClearMessage"
+      :primary-label="historyClearAll ? t.terminal.historyClearAll : t.terminal.historyClear"
+      :busy="historyClearBusy"
+      :busy-label="t.terminal.historyClearBusy"
+      :cancel-label="t.common.cancel"
+      @cancel="historyClearOpen = false"
+      @primary="confirmClearHistory"
+    />
+    <UiContextMenu
+      :anchor="contextMenuPosition"
+      :items="terminalContextMenuItems"
+      @close="contextMenuPosition = null"
+    />
+    <BaseModal
+      :open="historyDialogOpen"
+      :width="896"
+      height="min(42rem,calc(100vh-2rem))"
+      labelledby="runtime-log-history-title"
+      body-class="p-0"
+      @close="closeHistoryDialog"
+    >
+      <template #header>
+        <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h3 id="runtime-log-history-title" class="text-sm font-bold text-on-surface">{{ t.terminal.history }}</h3>
+            <p class="mt-0.5 truncate text-[10px] text-on-surface-variant">{{ t.terminal.historyRetention }}</p>
+          </div>
+          <button
+            type="button"
+            class="ui-btn ui-btn--danger-ghost ui-btn--icon ui-btn--sm"
+            :disabled="historyRuns.length === 0 || historyLoading || historyClearBusy"
+            :title="t.terminal.historyClearAll"
+            :aria-label="t.terminal.historyClearAll"
+            @click="historyClearAll = true; historyClearOpen = true"
           >
-            <header class="flex shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-              <div class="min-w-0">
-                <h3 id="runtime-log-history-title" class="text-sm font-bold text-on-surface">
-                  {{ t.terminal.history }}
-                </h3>
-                <p class="mt-0.5 truncate text-[10px] text-on-surface-variant">
-                  {{ t.terminal.historyRetention }}
-                </p>
-              </div>
-              <div class="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  class="rounded-md p-1.5 text-status-error transition-colors hover:bg-status-error/10 disabled:cursor-not-allowed disabled:opacity-45"
-                  :disabled="historyRuns.length === 0 || historyLoading || historyClearBusy"
-                  :title="t.terminal.historyClearAll"
-                  :aria-label="t.terminal.historyClearAll"
-                  @click="historyClearAll = true; historyClearOpen = true"
-                >
-                  <Eraser :size="16" />
-                </button>
-                <button
-                  type="button"
-                  class="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
-                  :title="t.common.close"
-                  :aria-label="t.common.close"
-                  @click="closeHistoryDialog"
-                >
-                  <X :size="16" />
-                </button>
-              </div>
-            </header>
-
-            <div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[15rem_minmax(0,1fr)]">
+            <Eraser :size="16" />
+          </button>
+        </div>
+      </template>
+      <div class="grid h-full min-h-0 grid-cols-1 md:grid-cols-[15rem_minmax(0,1fr)]">
               <aside
                 class="flex min-h-0 max-h-48 flex-col border-b border-border-subtle md:max-h-none md:border-b-0 md:border-r"
               >
@@ -782,7 +779,7 @@ onBeforeUnmount(() => {
                   <div ref="historySourceControl" class="relative w-36 max-w-full min-w-0" @click.stop @keydown="handleHistorySourceKeydown" @focusout="(event) => { if (!historySourceControl?.contains(event.relatedTarget as Node)) closeHistorySourceMenu(); }">
                     <button
                       type="button"
-                      class="flex h-7 w-full items-center gap-2 rounded border border-border-subtle bg-surface px-2 text-xs font-medium text-on-surface hover:bg-surface-container-low focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      class="ui-btn ui-btn--secondary ui-btn--sm w-full justify-between"
                       aria-haspopup="listbox"
                       :aria-expanded="historySourceMenuOpen"
                       :aria-label="t.terminal.history"
@@ -791,14 +788,14 @@ onBeforeUnmount(() => {
                       <span class="min-w-0 flex-1 truncate text-left">{{ t.terminal.historySources[historySource] }}</span>
                       <ChevronDown class="h-3.5 w-3.5 shrink-0" />
                     </button>
-                    <div v-if="historySourceMenuOpen" role="listbox" :aria-label="t.terminal.history" class="absolute left-0 right-0 top-full z-[80] mt-1 rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover">
+                    <div v-if="historySourceMenuOpen" role="listbox" :aria-label="t.terminal.history" class="absolute left-0 right-0 top-full z-[85] mt-1 menu-pop rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover">
                       <button
                         v-for="(label, source) in t.terminal.historySources"
                         :key="source"
                         type="button"
                         role="option"
                         :aria-selected="historySource === source"
-                        :class="cn('flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40', historySource === source ? 'bg-primary/10 text-primary' : 'text-on-surface hover:bg-surface-container-low')"
+                        :class="cn('mode-menu-item mode-menu-item--leading', historySource === source && 'bg-primary/10 text-primary')"
                         @click="selectHistorySource(source)"
                       >
                         <span class="flex-1">{{ label }}</span>
@@ -827,7 +824,7 @@ onBeforeUnmount(() => {
                         <span
                           :class="
                             cn(
-                              'h-1.5 w-1.5 shrink-0 rounded-full',
+                              'ui-status-dot shrink-0',
                               run.status === 'exited'
                                 ? 'bg-status-running'
                                 : run.status === 'stopped'
@@ -843,9 +840,7 @@ onBeforeUnmount(() => {
                       <span class="mt-1 flex items-center justify-between gap-2 text-[9px] text-on-surface-variant">
                         <span class="truncate font-mono">{{ formatHistoryDate(run.startedAt) }}</span>
                         <span
-                          :class="
-                            cn('shrink-0 rounded border px-1 py-0.5 font-semibold', historyStatusClass(run.status))
-                          "
+                          :class="cn('ui-status-pill shrink-0', historyStatusClass(run.status))"
                         >
                           {{ historyStatusLabel(run.status) }}
                         </span>
@@ -898,7 +893,7 @@ onBeforeUnmount(() => {
                   <div class="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
-                      class="inline-flex h-7 w-7 items-center justify-center rounded border border-status-error/30 bg-surface text-status-error transition-colors hover:bg-status-error/10 disabled:cursor-not-allowed disabled:opacity-45"
+                      class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm border-status-error/30 text-status-error hover:bg-status-error/10"
                       :disabled="!selectedHistoryRun || historyClearBusy || ['starting', 'running', 'stopping'].includes(selectedHistoryRun.status)"
                       :title="t.terminal.historyClear"
                       :aria-label="t.terminal.historyClear"
@@ -909,7 +904,7 @@ onBeforeUnmount(() => {
                     <template v-if="selectedHistoryRun">
                       <button
                         type="button"
-                        class="inline-flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                        class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
                         :disabled="historyLogs.length === 0"
                         :title="copiedHistory ? t.common.copied : t.terminal.historyCopy"
                         :aria-label="copiedHistory ? t.common.copied : t.terminal.historyCopy"
@@ -960,7 +955,7 @@ onBeforeUnmount(() => {
                       <div v-if="historyHasMore" class="px-4 pb-2">
                         <button
                           type="button"
-                          class="rounded border border-border-subtle bg-surface px-2 py-1 text-[10px] text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                          class="ui-btn ui-btn--secondary ui-btn--sm"
                           :disabled="historyLoadingOlder"
                           @click="loadOlderHistory"
                         >
@@ -998,30 +993,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-          </section>
-        </div>
-      </Transition>
-    </Teleport>
-    <ActionDialog
-      :open="historyClearOpen"
-      tone="danger"
-      icon="trash"
-      :title="historyClearAll ? t.terminal.historyClearAll : t.terminal.historyClearTitle"
-      :message="historyClearAll ? (projectId ? t.terminal.historyClearProjectMessage : t.terminal.historyClearAllMessage) : t.terminal.historyClearMessage"
-      :primary-label="historyClearAll ? t.terminal.historyClearAll : t.terminal.historyClear"
-      :busy="historyClearBusy"
-      :busy-label="t.terminal.historyClearBusy"
-      :cancel-label="t.common.cancel"
-      @cancel="historyClearOpen = false"
-      @primary="confirmClearHistory"
-    />
-    <Teleport to="body">
-      <UiContextMenu
-        :anchor="contextMenuPosition"
-        :items="terminalContextMenuItems"
-        @close="contextMenuPosition = null"
-      />
-    </Teleport>
+    </BaseModal>
     <form
       v-if="!historyOnly"
       class="flex shrink-0 items-center gap-1.5 border-t border-border-subtle bg-surface-container-low px-2 py-1"
@@ -1032,12 +1004,12 @@ onBeforeUnmount(() => {
         type="text"
         :disabled="!canSendInput"
         :placeholder="terminalInputPlaceholder"
-        class="min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 py-1 font-mono text-xs text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-55"
+        class="min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 py-1 font-mono text-xs text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
       />
       <button
         type="submit"
         :disabled="!canSendInput"
-        class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+        class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
         :title="t.terminal.sendInput"
         :aria-label="t.terminal.sendInput"
       >

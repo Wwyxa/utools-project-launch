@@ -726,7 +726,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <ProjectIcon :icon="projectStack.kind" size="sm" />
         </span>
         <h3
-          class="min-w-0 flex-1 truncate text-sm font-bold text-on-surface group-hover:text-primary transition-colors"
+          class="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface group-hover:text-primary transition-colors"
         >
           {{ project.name }}
         </h3>
@@ -740,8 +740,12 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <span
             :class="
               cn(
-                'h-2 w-2 rounded-full',
-                isRunning ? 'bg-status-running animate-pulse' : isError ? 'bg-status-error' : 'bg-status-warning',
+                'ui-status-dot h-2 w-2',
+                isRunning
+                  ? 'ui-status-dot--glow bg-status-running text-status-running'
+                  : isError
+                    ? 'bg-status-error text-status-error'
+                    : 'bg-status-warning text-status-warning',
               )
             "
           />
@@ -928,8 +932,12 @@ const updateTinyToolbarAlignment = (event: Event) => {
               <span
                 :class="
                   cn(
-                    'h-2 w-2 rounded-full',
-                    isRunning ? 'bg-status-running animate-pulse' : isError ? 'bg-status-error' : 'bg-status-warning',
+                    'ui-status-dot h-2 w-2',
+                    isRunning
+                      ? 'ui-status-dot--glow bg-status-running text-status-running'
+                      : isError
+                        ? 'bg-status-error text-status-error'
+                        : 'bg-status-warning text-status-warning',
                   )
                 "
               />
@@ -1045,7 +1053,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
             <div
               v-if="moreScriptsOpen"
               ref="moreScriptsMenuRef"
-              class="menu-pop fixed z-[80] w-max max-w-[min(20rem,calc(100vw-1rem))] rounded-lg border border-border-subtle bg-surface-container-lowest p-2 shadow-popover"
+              class="menu-pop fixed z-[85] w-max max-w-[min(20rem,calc(100vw-1rem))] rounded-lg border border-border-subtle bg-surface-container-lowest p-2 shadow-popover"
               :style="{ left: `${moreScriptsPosition.left}px`, top: `${moreScriptsPosition.top}px` }"
               @click.stop
               @mouseenter="clearMoreScriptsClose"

@@ -32,6 +32,10 @@ function mountTerminal(historyOnly: boolean) {
     "../../lib/overlayScrollbar": { getOverlayScrollbarScrollElements: () => null },
     "../../lib/utils": { cn: (...classes: string[]) => classes.filter(Boolean).join(" ") },
     "../common/ActionDialog.vue": { default: icon },
+    // BaseModal 桩：历史对话框（含来源下拉）在弹窗内，须渲染插槽供测试触达
+    "../common/BaseModal.vue": {
+      default: { template: '<div><slot name="header" /><slot /><slot name="footer" /><slot name="footerLeft" /></div>' },
+    },
     "../common/UiContextMenu.vue": { default: icon },
     "../common/uiContextMenu": {},
     "../common/actionStatus": { showActionStatus: vi.fn() },

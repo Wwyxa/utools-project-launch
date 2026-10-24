@@ -207,12 +207,12 @@ onBeforeUnmount(flushMemo);
       <form class="flex gap-1.5 border-b border-border-subtle px-2 py-2" @submit.prevent="addTodo">
         <input
           v-model="newTodoText"
-          class="min-w-0 flex-1 rounded border border-transparent bg-surface-container-lowest px-2 py-1.5 text-xs text-on-surface outline-none placeholder:text-on-surface-variant transition-colors hover:bg-surface-container-low focus:border-primary/70 focus:bg-surface-container-lowest dark:bg-surface-container-low dark:hover:bg-surface-container dark:focus:bg-surface-container-lowest"
+          class="ui-field ui-field-compact w-full"
           :placeholder="t.memo.addTask"
         />
         <button
           type="submit"
-          class="flex h-8 w-8 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+          class="ui-btn ui-btn--secondary ui-btn--icon"
           :disabled="!newTodoText.trim()"
           :aria-label="t.memo.addTask"
           :title="t.memo.addTask"
@@ -273,7 +273,7 @@ onBeforeUnmount(flushMemo);
               ref="editingTodoInputRef"
               v-model="editingTodoText"
               :aria-label="`${t.common.edit}: ${todo.text}`"
-              class="min-w-0 flex-1 rounded border border-primary/50 bg-surface-container-lowest px-2 py-1 text-xs font-medium leading-5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              class="ui-field ui-field-compact min-w-0 flex-1"
               @keydown.enter.prevent="commitTodoEdit"
               @keydown.esc.prevent="cancelTodoEdit"
               @blur="commitTodoEdit"
@@ -290,7 +290,7 @@ onBeforeUnmount(flushMemo);
           </div>
           <div
             v-if="projectTodos.length === 0"
-            class="rounded border border-dashed border-border-subtle px-2 py-2 text-xs text-on-surface-variant"
+            class="ui-empty px-2 py-2"
           >
             {{ t.memo.empty }}
           </div>
@@ -330,15 +330,15 @@ onBeforeUnmount(flushMemo);
             v-for="action in toolbarActions"
             :key="action.label"
             type="button"
-            class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+            class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
             :aria-label="action.label"
             :title="action.label"
             @click="action.run"
           >
-            <component :is="action.icon" :size="15" />
+            <component :is="action.icon" :size="14" />
           </button>
         </div>
-        <div v-else class="text-xs font-bold text-on-surface">{{ t.memo.title }}</div>
+        <div v-else class="ui-panel-title">{{ t.memo.title }}</div>
 
         <div class="flex items-center gap-2">
           <div class="flex items-center gap-1.5 text-[10px] font-bold text-on-surface-variant">
@@ -348,7 +348,7 @@ onBeforeUnmount(flushMemo);
           <button
             v-if="isEditing"
             type="button"
-            class="flex h-7 items-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface-variant hover:bg-surface-variant hover:text-primary"
+            class="ui-btn ui-btn--secondary ui-btn--sm"
             :aria-label="t.dashboard.doneSorting"
             :title="t.dashboard.doneSorting"
             @click="exitEdit"
@@ -359,7 +359,7 @@ onBeforeUnmount(flushMemo);
           <button
             v-else
             type="button"
-            class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-surface text-on-surface-variant hover:bg-surface-variant hover:text-primary"
+            class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
             :aria-label="t.common.edit"
             :title="t.common.edit"
             @click="enterEdit"
@@ -373,17 +373,17 @@ onBeforeUnmount(flushMemo);
         v-if="isEditing"
         ref="textareaRef"
         v-model="draftContent"
-        class="themed-scrollbar min-h-0 flex-1 resize-none bg-surface-container-lowest px-4 py-4 text-[12px] leading-6 text-on-surface outline-none"
+        class="themed-scrollbar min-h-0 flex-1 resize-none bg-surface-container-lowest px-4 py-4 text-xs leading-6 text-on-surface outline-none"
         :placeholder="t.memo.placeholder"
         @input="scheduleSave"
       />
       <div
         v-else
-        class="themed-scrollbar min-h-0 flex-1 overflow-y-auto bg-surface-container-lowest px-4 py-4 text-[12px] leading-6 text-on-surface"
+        class="themed-scrollbar min-h-0 flex-1 overflow-y-auto bg-surface-container-lowest px-4 py-4 text-xs leading-6 text-on-surface"
         @dblclick="enterEdit"
       >
         <div v-if="hasMemo" class="memo-rendered" v-html="renderedMemo" />
-        <div v-else class="flex h-full items-center justify-center text-[12px] leading-6 text-on-surface-variant">
+        <div v-else class="flex h-full items-center justify-center text-xs leading-6 text-on-surface-variant">
           {{ t.memo.placeholder }}
         </div>
       </div>

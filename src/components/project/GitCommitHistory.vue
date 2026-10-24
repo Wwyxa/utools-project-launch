@@ -9,10 +9,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Compon
 import { waitForVisualFeedback } from '../../lib/visualFeedback';
 import {
   Archive,
-  CalendarDays,
   Check,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Clock3,
   Cloud,
@@ -82,8 +80,10 @@ import { getProjectBridge } from '../../lib/projectBridge';
 import { cn, transferWheelAtScrollBoundary } from '../../lib/utils';
 import { useStore } from '../../store/useStore';
 import ActionDialog from '../common/ActionDialog.vue';
+import BaseModal from '../common/BaseModal.vue';
 import FileIcon from '../common/FileIcon.vue';
 import UiContextMenu from '../common/UiContextMenu.vue';
+import CommitHistoryDatePicker from './CommitHistoryDatePicker.vue';
 import type { UiContextMenuAnchor, UiContextMenuItem } from '../common/uiContextMenu';
 
 defineOptions({ inheritAttrs: false });
@@ -149,8 +149,6 @@ type AppActionDialog = {
   cancelLabel?: string;
   onConfirm: () => Promise<void> | void;
 };
-type FloatingMenuPosition = { left: number; top: number };
-type DatePickerKind = 'since' | 'until';
 
 const props = withDefaults(
   defineProps<{
@@ -185,18 +183,12 @@ const graphViewport = ref({ top: 0, height: 0 });
 const loadMoreSentinelRef = ref<HTMLElement | null>(null);
 const commitFilterTriggerRef = ref<HTMLElement | null>(null);
 const commitFiltersPopoverRef = ref<HTMLElement | null>(null);
-const commitSinceDatePickerTriggerRef = ref<HTMLElement | null>(null);
-const commitUntilDatePickerTriggerRef = ref<HTMLElement | null>(null);
-const commitDatePickerPopoverRef = ref<HTMLElement | null>(null);
-const commitDatePickerPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const showCommitFilters = ref(false);
 const commitKeyword = ref('');
 const commitAuthor = ref('');
 const commitHash = ref('');
 const commitSince = ref('');
 const commitUntil = ref('');
-const openDatePickerKind = ref<DatePickerKind | null>(null);
-const datePickerMonth = ref(new Date());
 const commitFileViewMode = ref<CommitFileViewMode>(rememberedCommitFileViewMode);
 const expandedCommitFiles = ref<Record<string, ExpandedCommitFilesState>>({});
 const expandedCommitDirectories = ref<Record<string, Record<string, boolean>>>({});
@@ -287,85 +279,6 @@ const commitSearchInput = computed({
     commitHash.value = hash.trim();
   },
 });
-const weekDayLabels = ['日', '一', '二', '三', '四', '五', '六'];
-const positionFloatingMenu = (trigger: HTMLElement, width: number, estimatedHeight: number): FloatingMenuPosition => {
-  const rect = trigger.getBoundingClientRect();
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-  const left = Math.max(8, Math.min(rect.left, viewportWidth - width - 8));
-  const belowTop = rect.bottom + 6;
-  const top = belowTop + estimatedHeight <= viewportHeight - 8 ? belowTop : Math.max(8, rect.top - estimatedHeight - 6);
-  return { left, top };
-};
-const floatingMenuStyle = (position: FloatingMenuPosition, maxHeight = 'calc(100vh - 1rem)') => ({
-  left: `${position.left}px`,
-  top: `${position.top}px`,
-  maxHeight,
-});
-const positionCommitDatePicker = (kind = openDatePickerKind.value) => {
-  if (!kind) return;
-  const trigger = kind === 'since' ? commitSinceDatePickerTriggerRef.value : commitUntilDatePickerTriggerRef.value;
-  if (!trigger) return;
-  commitDatePickerPosition.value = positionFloatingMenu(trigger, 216, 292);
-};
-const parseDateValue = (value: string) => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-const formatDateValue = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const datePickerValue = computed(() =>
-  openDatePickerKind.value === 'since'
-    ? commitSince.value
-    : openDatePickerKind.value === 'until'
-      ? commitUntil.value
-      : '',
-);
-const datePickerTitle = computed(() =>
-  new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long' }).format(datePickerMonth.value),
-);
-const datePickerDays = computed(() => {
-  const year = datePickerMonth.value.getFullYear();
-  const month = datePickerMonth.value.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const startDate = new Date(year, month, 1 - firstDay.getDay());
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(startDate);
-    date.setDate(startDate.getDate() + index);
-    const value = formatDateValue(date);
-    return {
-      value,
-      label: String(date.getDate()),
-      isCurrentMonth: date.getMonth() === month,
-      isToday: value === formatDateValue(new Date()),
-      isSelected: value === datePickerValue.value,
-    };
-  });
-});
-const openDatePicker = (kind: DatePickerKind) => {
-  const selectedDate = parseDateValue(kind === 'since' ? commitSince.value : commitUntil.value);
-  datePickerMonth.value = selectedDate || new Date();
-  if (openDatePickerKind.value === kind) {
-    openDatePickerKind.value = null;
-    return;
-  }
-  positionCommitDatePicker(kind);
-  openDatePickerKind.value = kind;
-};
-const shiftDatePickerMonth = (offset: number) => {
-  datePickerMonth.value = new Date(datePickerMonth.value.getFullYear(), datePickerMonth.value.getMonth() + offset, 1);
-};
-const selectDatePickerDay = (value: string) => {
-  if (openDatePickerKind.value === 'since') commitSince.value = value;
-  else if (openDatePickerKind.value === 'until') commitUntil.value = value;
-  openDatePickerKind.value = null;
-};
-const clearDatePickerValue = () => {
-  if (openDatePickerKind.value === 'since') commitSince.value = '';
-  else if (openDatePickerKind.value === 'until') commitUntil.value = '';
-};
 const commits = computed(() => {
   const keyword = commitKeyword.value.trim().toLocaleLowerCase();
   const author = commitAuthor.value.trim().toLocaleLowerCase();
@@ -398,11 +311,9 @@ const clearCommitFilters = () => {
   commitHash.value = '';
   commitSince.value = '';
   commitUntil.value = '';
-  openDatePickerKind.value = null;
 };
 const closeCommitFilters = () => {
   showCommitFilters.value = false;
-  openDatePickerKind.value = null;
 };
 const toggleCommitFilters = () => {
   if (!props.open) emit('update:open', true);
@@ -1717,6 +1628,12 @@ const requestDropStash = (commit: ProjectGitCommitSummary) => {
     },
   });
 };
+const refDialogTitle = computed(() => {
+  const mode = refDialog.value?.mode;
+  if (mode === 'create-tag') return '新建标签';
+  if (mode === 'rename-branch') return '重命名分支';
+  return '新建分支';
+});
 const openRefDialog = async (mode: RefDialogMode, commit: ProjectGitCommitSummary, sourceBranch?: string) => {
   refDialog.value = { mode, commit, sourceBranch };
   refDialogName.value = sourceBranch || '';
@@ -2139,12 +2056,6 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (commitTooltip.value || pendingCommitTooltip.value) {
     hideCommitTooltip();
     event.detail.handle();
-  } else if (refDialog.value) {
-    closeRefDialog();
-    event.detail.handle();
-  } else if (tagInfoDialog.value) {
-    closeTagInfoDialog();
-    event.detail.handle();
   } else if (showCommitFilters.value) {
     closeCommitFilters();
     event.detail.handle();
@@ -2153,10 +2064,11 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
 const handleWindowPointerDown = (event: PointerEvent) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
+  // 日期弹层已抽到 CommitHistoryDatePicker 并 Teleport 到 body，需按类名排除
   if (
     !commitFilterTriggerRef.value?.contains(target) &&
     !commitFiltersPopoverRef.value?.contains(target) &&
-    !commitDatePickerPopoverRef.value?.contains(target)
+    !target.closest('.date-picker-popover')
   ) {
     closeCommitFilters();
   }
@@ -2166,7 +2078,6 @@ const handleFloatingViewportChange = (event: Event) => {
     event.type === 'scroll' && event.target instanceof Node && commitTooltipRef.value?.contains(event.target);
   const isGraphScroll = event.type === 'scroll' && event.target === graphScrollRef.value;
   if (!isTooltipScroll && !isGraphScroll) hideCommitTooltip();
-  if (openDatePickerKind.value) positionCommitDatePicker();
 };
 
 watch(
@@ -2396,8 +2307,7 @@ onBeforeUnmount(() => {
         <div
           v-if="showCommitFilters"
           ref="commitFiltersPopoverRef"
-          class="absolute right-2 top-2 z-30 w-72 max-w-[calc(100%-1rem)] rounded-md border border-border-subtle bg-surface-container-lowest shadow-lg"
-          role="dialog"
+          class="menu-pop absolute right-2 top-2 z-30 w-72 max-w-[calc(100%-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest shadow-popover"
           aria-label="筛选提交"
           @click.stop
         >
@@ -2414,7 +2324,7 @@ onBeforeUnmount(() => {
               <button
                 v-if="hasCommitFilters"
                 type="button"
-                class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface"
+                class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
                 :title="t.git.clearFilters"
                 :aria-label="t.git.clearFilters"
                 @click="clearCommitFilters"
@@ -2423,172 +2333,22 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <div class="relative min-w-0">
-              <button
-                ref="commitSinceDatePickerTriggerRef"
-                type="button"
-                class="ui-field ui-field-compact flex min-w-0 w-full items-center justify-between gap-0.5 px-1.5 text-left"
-                @click.stop="openDatePicker('since')"
-              >
-                <span
-                  class="dark-readable-meta min-w-0 truncate whitespace-nowrap"
-                  :class="commitSince ? 'text-on-surface' : 'text-on-surface-variant/70'"
-                  >{{ commitSince || t.git.since }}</span
-                >
-                <CalendarDays :size="13" class="text-on-surface-variant" />
-              </button>
-              <Teleport to="body">
-                <div
-                  v-if="openDatePickerKind === 'since'"
-                  ref="commitDatePickerPopoverRef"
-                  class="date-picker-popover flex max-h-[calc(100vh-1rem)] flex-col overflow-hidden"
-                  :style="floatingMenuStyle(commitDatePickerPosition)"
-                  @click.stop
-                >
-                  <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        class="popover-icon-button"
-                        title="上个月"
-                        aria-label="上个月"
-                        @click="shiftDatePickerMonth(-1)"
-                      >
-                        <ChevronLeft :size="14" />
-                      </button>
-                      <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
-                      <button
-                        type="button"
-                        class="popover-icon-button"
-                        title="下个月"
-                        aria-label="下个月"
-                        @click="shiftDatePickerMonth(1)"
-                      >
-                        <ChevronRight :size="14" />
-                      </button>
-                    </div>
-                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-                      <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
-                    </div>
-                    <div class="mt-1 grid grid-cols-7 gap-1">
-                      <button
-                        v-for="day in datePickerDays"
-                        :key="`since-${day.value}`"
-                        type="button"
-                        :class="
-                          cn(
-                            'date-picker-day',
-                            !day.isCurrentMonth && 'text-on-surface-variant/35',
-                            day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                            day.isSelected && 'border-primary bg-primary text-on-primary',
-                          )
-                        "
-                        @click="selectDatePickerDay(day.value)"
-                      >
-                        {{ day.label }}
-                      </button>
-                    </div>
-                    <div class="mt-2 flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                        @click="selectDatePickerDay(formatDateValue(new Date()))"
-                      >
-                        今天</button
-                      ><button
-                        type="button"
-                        class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                        @click="clearDatePickerValue"
-                      >
-                        清除日期
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </Teleport>
+              <CommitHistoryDatePicker
+                v-model="commitSince"
+                :label="t.git.since"
+                :placeholder="t.git.since"
+                today-label="今天"
+                clear-label="清除日期"
+              />
             </div>
             <div class="relative min-w-0">
-              <button
-                ref="commitUntilDatePickerTriggerRef"
-                type="button"
-                class="ui-field ui-field-compact flex min-w-0 w-full items-center justify-between gap-0.5 px-1.5 text-left"
-                @click.stop="openDatePicker('until')"
-              >
-                <span
-                  class="dark-readable-meta min-w-0 truncate whitespace-nowrap"
-                  :class="commitUntil ? 'text-on-surface' : 'text-on-surface-variant/70'"
-                  >{{ commitUntil || t.git.until }}</span
-                >
-                <CalendarDays :size="13" class="text-on-surface-variant" />
-              </button>
-              <Teleport to="body">
-                <div
-                  v-if="openDatePickerKind === 'until'"
-                  ref="commitDatePickerPopoverRef"
-                  class="date-picker-popover flex max-h-[calc(100vh-1rem)] flex-col overflow-hidden"
-                  :style="floatingMenuStyle(commitDatePickerPosition)"
-                  @click.stop
-                >
-                  <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        class="popover-icon-button"
-                        title="上个月"
-                        aria-label="上个月"
-                        @click="shiftDatePickerMonth(-1)"
-                      >
-                        <ChevronLeft :size="14" />
-                      </button>
-                      <div class="text-xs font-bold text-on-surface">{{ datePickerTitle }}</div>
-                      <button
-                        type="button"
-                        class="popover-icon-button"
-                        title="下个月"
-                        aria-label="下个月"
-                        @click="shiftDatePickerMonth(1)"
-                      >
-                        <ChevronRight :size="14" />
-                      </button>
-                    </div>
-                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-on-surface-variant">
-                      <span v-for="label in weekDayLabels" :key="label">{{ label }}</span>
-                    </div>
-                    <div class="mt-1 grid grid-cols-7 gap-1">
-                      <button
-                        v-for="day in datePickerDays"
-                        :key="`until-${day.value}`"
-                        type="button"
-                        :class="
-                          cn(
-                            'date-picker-day',
-                            !day.isCurrentMonth && 'text-on-surface-variant/35',
-                            day.isToday && !day.isSelected && 'border-primary/35 text-primary',
-                            day.isSelected && 'border-primary bg-primary text-on-primary',
-                          )
-                        "
-                        @click="selectDatePickerDay(day.value)"
-                      >
-                        {{ day.label }}
-                      </button>
-                    </div>
-                    <div class="mt-2 flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                        @click="selectDatePickerDay(formatDateValue(new Date()))"
-                      >
-                        今天</button
-                      ><button
-                        type="button"
-                        class="text-[10px] font-bold text-on-surface-variant hover:text-primary"
-                        @click="clearDatePickerValue"
-                      >
-                        清除日期
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </Teleport>
+              <CommitHistoryDatePicker
+                v-model="commitUntil"
+                :label="t.git.until"
+                :placeholder="t.git.until"
+                today-label="今天"
+                clear-label="清除日期"
+              />
             </div>
           </div>
         </div>
@@ -2924,7 +2684,7 @@ onBeforeUnmount(() => {
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-3 py-2">
           <p
             v-if="commitTooltipContent.title"
-            class="shrink-0 break-words text-[12px] font-bold leading-5 text-on-surface"
+            class="shrink-0 break-words text-xs font-bold leading-5 text-on-surface"
           >
             {{ commitTooltipContent.title }}
           </p>
@@ -3018,192 +2778,131 @@ onBeforeUnmount(() => {
     :should-close-on-outside-pointer-down="isHistoryMoreMenuOutsidePointerDownAllowed"
     @close="handleHistoryMoreMenuClosed"
   />
-  <Teleport to="body"
-    ><Transition name="scale"
-      ><div
-        v-if="refDialog"
-        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5"
-        role="dialog"
-        aria-modal="true"
-        @click.self="closeRefDialog"
+  <BaseModal
+    as="form"
+    :open="Boolean(refDialog)"
+    :width="416"
+    :title="refDialogTitle"
+    :aria-label="refDialogTitle"
+    @submit="submitRefDialog"
+    @close="closeRefDialog"
+  >
+    <template #header>
+      <div class="min-w-0">
+        <h3 class="text-sm font-bold text-on-surface">{{ refDialogTitle }}</h3>
+        <p class="truncate font-mono text-[10px] text-on-surface-variant">
+          {{ refDialog ? `${shortCommitHash(refDialog.commit.hash)} · ${refDialog.commit.message}` : '' }}
+        </p>
+      </div>
+    </template>
+    <label class="block text-xs font-bold text-on-surface"
+      ><span>{{ refDialog?.mode === 'create-tag' ? '标签名称' : '分支名称' }}</span
+      ><input
+        ref="refDialogInputRef"
+        v-model="refDialogName"
+        class="ui-field mt-1 w-full font-mono"
+        type="text"
+        :disabled="isInteractionDisabled"
+        :aria-invalid="Boolean(refDialogError)"
+    /></label>
+    <label
+      v-if="refDialog?.mode === 'create-tag' && refDialogAnnotated"
+      class="mt-3 block text-xs font-bold text-on-surface"
+      ><span>标签说明</span
+      ><textarea v-model="refDialogMessage" class="ui-field mt-1 min-h-20 w-full resize-y" :disabled="isInteractionDisabled" />
+    </label>
+    <p v-if="refDialogError" class="mt-3 text-[11px] font-medium text-status-error">{{ refDialogError }}</p>
+    <template #footer-left>
+      <label v-if="refDialog?.mode === 'create-branch'" class="flex items-center gap-2 text-xs text-on-surface"
+        ><input
+          v-model="refDialogCheckout"
+          type="checkbox"
+          class="h-3 w-3 accent-primary"
+          :disabled="isInteractionDisabled"
+        />创建后切换</label
       >
-        <form
-          class="w-[min(26rem,94vw)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
-          @submit.prevent="submitRefDialog"
-          @click.stop
+      <label v-else-if="refDialog?.mode === 'create-tag'" class="flex items-center gap-2 text-xs text-on-surface"
+        ><input
+          v-model="refDialogAnnotated"
+          type="checkbox"
+          class="h-3 w-3 accent-primary"
+          :disabled="isInteractionDisabled"
+        />附注标签</label
+      >
+    </template>
+    <template #footer>
+      <button type="button" class="ui-btn ui-btn--ghost" :disabled="isInteractionDisabled" @click="closeRefDialog">
+        {{ t.common.cancel }}
+      </button>
+      <button type="submit" class="ui-btn ui-btn--primary" :disabled="isInteractionDisabled">
+        <Check :size="13" />{{ isInteractionDisabled ? '处理中' : '确认' }}
+      </button>
+    </template>
+  </BaseModal>
+  <BaseModal :open="Boolean(tagInfoDialog)" :width="480" title="查看标签" aria-label="查看标签" @close="closeTagInfoDialog">
+    <template #header>
+      <div class="flex min-w-0 items-center gap-3">
+        <div
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-tertiary/30 bg-tertiary/10 text-tertiary"
         >
-          <header
-            class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
-          >
-            <div class="min-w-0">
-              <h3 class="text-sm font-bold text-on-surface">
-                {{
-                  refDialog.mode === 'create-tag'
-                    ? '新建标签'
-                    : refDialog.mode === 'rename-branch'
-                      ? '重命名分支'
-                      : '新建分支'
-                }}
-              </h3>
-              <p class="truncate font-mono text-[10px] text-on-surface-variant">
-                {{ shortCommitHash(refDialog.commit.hash) }} · {{ refDialog.commit.message }}
-              </p>
-            </div>
+          <Tag :size="16" />
+        </div>
+        <div class="min-w-0">
+          <h3 class="text-sm font-bold text-on-surface">查看标签</h3>
+          <p class="truncate font-mono text-[11px] text-on-surface-variant">{{ tagInfoDialog?.tagName }}</p>
+        </div>
+      </div>
+    </template>
+    <div class="space-y-3">
+      <div v-if="tagInfoDialog?.isLoading" class="flex items-center gap-2 py-5 text-xs text-on-surface-variant">
+        <Clock3 :size="14" class="animate-spin" />正在读取标签信息...
+      </div>
+      <p
+        v-else-if="tagInfoDialog?.error"
+        class="rounded border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error"
+      >
+        {{ tagInfoDialog.error }}
+      </p>
+      <template v-else-if="tagInfoDialogInfo">
+        <dl class="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+          <dt class="text-on-surface-variant">类型</dt>
+          <dd class="font-medium text-on-surface">
+            {{ tagInfoDialogInfo.kind === 'annotated' ? '附注标签' : '轻量标签' }}
+          </dd>
+          <dt class="text-on-surface-variant">目标提交</dt>
+          <dd class="flex min-w-0 items-center gap-1">
             <button
               type="button"
-              class="git-top-action"
-              :disabled="isInteractionDisabled"
-              title="关闭"
-              aria-label="关闭"
-              @click="closeRefDialog"
+              class="min-w-0 truncate font-mono text-left text-primary hover:underline"
+              :title="copyLabel(tagInfoDialogInfo.targetHash) + '完整 commit hash'"
+              @click="copyText(tagInfoDialogInfo.targetHash)"
             >
-              <X :size="15" />
+              {{ tagInfoDialogInfo.targetHash }}
             </button>
-          </header>
-          <div class="space-y-3 p-4">
-            <label class="block text-xs font-bold text-on-surface"
-              ><span>{{ refDialog.mode === 'create-tag' ? '标签名称' : '分支名称' }}</span
-              ><input
-                ref="refDialogInputRef"
-                v-model="refDialogName"
-                class="ui-field mt-1 w-full font-mono"
-                type="text"
-                :disabled="isInteractionDisabled"
-                :aria-invalid="Boolean(refDialogError)" /></label
-            ><label
-              v-if="refDialog.mode === 'create-tag' && refDialogAnnotated"
-              class="block text-xs font-bold text-on-surface"
-              ><span>标签说明</span
-              ><textarea
-                v-model="refDialogMessage"
-                class="ui-field mt-1 min-h-20 w-full resize-y"
-                :disabled="isInteractionDisabled"
-              />
-            </label>
-            <p v-if="refDialogError" class="text-[11px] font-medium text-status-error">{{ refDialogError }}</p>
-          </div>
-          <div class="flex items-center gap-3 border-t border-border-subtle px-4 py-3">
-            <label v-if="refDialog.mode === 'create-branch'" class="flex items-center gap-2 text-xs text-on-surface"
-              ><input
-                v-model="refDialogCheckout"
-                type="checkbox"
-                class="h-3 w-3 accent-primary"
-                :disabled="isInteractionDisabled"
-              />创建后切换</label
-            ><label v-else-if="refDialog.mode === 'create-tag'" class="flex items-center gap-2 text-xs text-on-surface"
-              ><input
-                v-model="refDialogAnnotated"
-                type="checkbox"
-                class="h-3 w-3 accent-primary"
-                :disabled="isInteractionDisabled"
-              />附注标签</label
+            <Check v-if="copiedText === tagInfoDialogInfo.targetHash" :size="12" class="shrink-0 text-status-running" />
+          </dd>
+          <template v-if="tagInfoDialogInfo.tagger">
+            <dt class="text-on-surface-variant">创建者</dt>
+            <dd class="break-words text-on-surface">{{ tagInfoDialogInfo.tagger }}</dd>
+          </template>
+        </dl>
+        <div class="border-t border-border-subtle pt-3">
+          <div class="mb-2 flex items-center justify-between gap-3">
+            <h4 class="text-xs font-bold text-on-surface">附注说明</h4>
+            <span v-if="tagInfoDialogInfo.kind === 'lightweight'" class="text-[10px] text-on-surface-variant"
+              >轻量标签没有附注说明</span
             >
-            <div class="ml-auto flex gap-2">
-              <button
-                type="button"
-                class="git-dialog-secondary"
-                :disabled="isInteractionDisabled"
-                @click="closeRefDialog"
-              >
-                {{ t.common.cancel }}</button
-              ><button type="submit" class="git-dialog-primary" :disabled="isInteractionDisabled">
-                <Check :size="13" />{{ isInteractionDisabled ? '处理中' : '确认' }}
-              </button>
-            </div>
           </div>
-        </form>
-      </div></Transition
-    ></Teleport
-  >
-  <Teleport to="body">
-    <Transition name="scale">
-      <div
-        v-if="tagInfoDialog"
-        class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="git-tag-info-title"
-        @click.self="closeTagInfoDialog"
-      >
-        <section
-          class="w-[min(30rem,94vw)] overflow-hidden rounded-lg border border-border-subtle bg-surface text-on-surface shadow-2xl"
-          @click.stop
-        >
-          <header
-            class="flex items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4 py-3"
-          >
-            <div class="flex min-w-0 items-center gap-3">
-              <div
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-tertiary/30 bg-tertiary/10 text-tertiary"
-              >
-                <Tag :size="16" />
-              </div>
-              <div class="min-w-0">
-                <h3 id="git-tag-info-title" class="text-sm font-bold text-on-surface">查看标签</h3>
-                <p class="truncate font-mono text-[11px] text-on-surface-variant">{{ tagInfoDialog.tagName }}</p>
-              </div>
-            </div>
-            <button type="button" class="git-top-action" title="关闭" aria-label="关闭" @click="closeTagInfoDialog">
-              <X :size="14" />
-            </button>
-          </header>
-          <div class="space-y-3 px-4 py-4">
-            <div v-if="tagInfoDialog.isLoading" class="flex items-center gap-2 py-5 text-xs text-on-surface-variant">
-              <Clock3 :size="14" class="animate-spin" />正在读取标签信息...
-            </div>
-            <p
-              v-else-if="tagInfoDialog.error"
-              class="rounded border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error"
-            >
-              {{ tagInfoDialog.error }}
-            </p>
-            <template v-else-if="tagInfoDialogInfo">
-              <dl class="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-                <dt class="text-on-surface-variant">类型</dt>
-                <dd class="font-medium text-on-surface">
-                  {{ tagInfoDialogInfo.kind === 'annotated' ? '附注标签' : '轻量标签' }}
-                </dd>
-                <dt class="text-on-surface-variant">目标提交</dt>
-                <dd class="flex min-w-0 items-center gap-1">
-                  <button
-                    type="button"
-                    class="min-w-0 truncate font-mono text-left text-primary hover:underline"
-                    :title="copyLabel(tagInfoDialogInfo.targetHash) + '完整 commit hash'"
-                    @click="copyText(tagInfoDialogInfo.targetHash)"
-                  >
-                    {{ tagInfoDialogInfo.targetHash }}
-                  </button>
-                  <Check
-                    v-if="copiedText === tagInfoDialogInfo.targetHash"
-                    :size="12"
-                    class="shrink-0 text-status-running"
-                  />
-                </dd>
-                <template v-if="tagInfoDialogInfo.tagger">
-                  <dt class="text-on-surface-variant">创建者</dt>
-                  <dd class="break-words text-on-surface">{{ tagInfoDialogInfo.tagger }}</dd>
-                </template>
-              </dl>
-              <div class="border-t border-border-subtle pt-3">
-                <div class="mb-2 flex items-center justify-between gap-3">
-                  <h4 class="text-xs font-bold text-on-surface">附注说明</h4>
-                  <span v-if="tagInfoDialogInfo.kind === 'lightweight'" class="text-[10px] text-on-surface-variant"
-                    >轻量标签没有附注说明</span
-                  >
-                </div>
-                <div v-overlay-scrollbar class="themed-scrollbar max-h-56 overflow-y-auto rounded border border-border-subtle bg-surface-container-low px-3 py-3">
-                  <pre class="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-on-surface">{{ tagInfoDialogInfo.message || '此标签没有附注说明。' }}</pre>
-                </div>
-              </div>
-            </template>
+          <div v-overlay-scrollbar class="themed-scrollbar max-h-56 overflow-y-auto rounded border border-border-subtle bg-surface-container-low px-3 py-3">
+            <pre class="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-on-surface">{{ tagInfoDialogInfo.message || '此标签没有附注说明。' }}</pre>
           </div>
-          <footer class="flex justify-end border-t border-border-subtle px-4 py-3">
-            <button type="button" class="git-dialog-secondary" @click="closeTagInfoDialog">关闭</button>
-          </footer>
-        </section>
-      </div>
-    </Transition>
-  </Teleport>
+        </div>
+      </template>
+    </div>
+    <template #footer>
+      <button type="button" class="ui-btn ui-btn--secondary" @click="closeTagInfoDialog">关闭</button>
+    </template>
+  </BaseModal>
   <ActionDialog
     :open="Boolean(confirmationDialog)"
     :tone="confirmationDialog?.tone || 'danger'"

@@ -171,42 +171,42 @@ const stopService = async () => {
 
 <template>
   <div class="flex min-h-screen items-center justify-center bg-background p-6">
-    <div class="w-full max-w-xl rounded-xl border border-border bg-surface p-6 shadow-sm">
+    <div class="w-full max-w-xl rounded-lg border border-border-subtle bg-surface p-6 shadow-2xl">
       <div class="mb-4 flex items-center gap-3">
         <div
-          class="flex h-10 w-10 items-center justify-center rounded-full text-lg"
-          :class="isUpgradeRequired ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'"
+          class="flex h-10 w-10 items-center justify-center rounded-full border text-lg"
+          :class="isUpgradeRequired ? 'border-status-warning/30 bg-status-warning/10 text-status-warning' : 'border-secondary/30 bg-secondary/10 text-secondary'"
         >
           <Check v-if="isReady" :size="20" />
           <LoaderCircle v-else-if="running || stopping" :size="20" class="animate-spin" />
           <span v-else>{{ isUpgradeRequired ? "!" : "↑" }}</span>
         </div>
-        <h1 class="text-lg font-semibold text-foreground">{{ headline }}</h1>
+        <h1 class="text-lg font-bold text-on-surface">{{ headline }}</h1>
       </div>
 
-      <p class="mb-4 text-sm leading-6 text-muted-foreground">{{ description }}</p>
+      <p class="mb-4 text-xs leading-5 text-on-surface-variant">{{ description }}</p>
 
-      <div v-if="isUpgradeRequired" class="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
+      <div v-if="isUpgradeRequired" class="rounded-lg bg-surface-container-high/60 p-3 text-xs text-on-surface-variant">
         <div>当前检测到的 uTools 版本：{{ currentPreflight?.appVersion || "未知" }}</div>
         <div>最低要求：uTools v8（需要 getPluginLocalDataPath / getPluginTempPath 能力）</div>
       </div>
 
       <template v-if="isMigrationBlocked || isReady">
         <div v-if="progress" class="mb-4">
-          <div class="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+          <div class="mb-2 flex items-center justify-between text-xs text-on-surface-variant">
             <span>处理进度：{{ processedCount }}/{{ progress.totalCount }} 项</span>
             <span>{{ progressPercent }}%</span>
           </div>
-          <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div class="h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high">
             <div
-              class="h-full rounded-full bg-blue-600 transition-all"
+              class="h-full rounded-full bg-primary transition-all"
               :style="{ width: `${progressPercent}%` }"
             />
           </div>
-          <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground" role="status">
+          <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-on-surface-variant" role="status">
             <span>成功 {{ successfulCount }} 项</span>
             <span>跳过 {{ skippedCount }} 项</span>
-            <span :class="{ 'text-destructive': progress.failedCount > 0 }">失败 {{ progress.failedCount }} 项</span>
+            <span :class="{ 'text-status-error': progress.failedCount > 0 }">失败 {{ progress.failedCount }} 项</span>
           </div>
           <ul class="mt-3 max-h-48 space-y-1 overflow-y-auto text-xs" v-overlay-scrollbar>
             <li
@@ -214,9 +214,9 @@ const stopService = async () => {
               :key="item.id"
               class="rounded px-2 py-1"
               :class="{
-                'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300': item.status === 'verified',
-                'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300': item.status === 'failed',
-                'bg-muted text-muted-foreground': item.status === 'skipped',
+                'border border-status-positive/30 bg-status-positive/10 text-status-positive': item.status === 'verified',
+                'border border-status-error/30 bg-status-error/10 text-status-error': item.status === 'failed',
+                'bg-surface-container-high text-on-surface-variant': item.status === 'skipped',
               }"
             >
               <div class="flex items-center justify-between gap-2">
@@ -241,12 +241,12 @@ const stopService = async () => {
               </details>
             </li>
           </ul>
-          <p v-if="progress.failedItems.length" class="mt-2 text-xs text-red-600 dark:text-red-400">
+          <p v-if="progress.failedItems.length" class="mt-2 text-xs leading-5 text-status-error">
             {{ progress.failedCount }} 项失败，可展开对应项查看原因后重试。
           </p>
         </div>
 
-        <p v-if="errorMessage" class="mb-3 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-300">
+        <p v-if="errorMessage" class="mb-3 rounded-lg border border-status-error/30 bg-status-error/10 p-3 text-xs leading-5 text-status-error">
           {{ errorMessage }}
         </p>
 
@@ -254,7 +254,7 @@ const stopService = async () => {
           <button
             v-if="isReady"
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            class="ui-btn ui-btn--primary"
             :disabled="!canEnter"
             @click="enterPlugin"
           >
@@ -264,8 +264,7 @@ const stopService = async () => {
           <button
             v-else
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-60"
-            :class="stopFailed ? 'border border-border bg-transparent text-foreground' : 'bg-blue-600 text-white hover:bg-blue-700'"
+            class="ui-btn ui-btn--primary"
             :disabled="!canStartMigration"
             @click="startMigration"
           >
@@ -276,8 +275,7 @@ const stopService = async () => {
           <button
             v-if="!isReady"
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-60"
-            :class="stopFailed ? 'bg-blue-600 text-white hover:bg-blue-700' : 'border border-border bg-transparent text-foreground'"
+            class="ui-btn ui-btn--primary"
             :disabled="running || stopping"
             title="先停止运行中的脚本，再停止旧服务"
             @click="stopService"
@@ -289,18 +287,18 @@ const stopService = async () => {
           <button
             v-if="!isReady && itemsProcessed"
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground disabled:opacity-60"
+            class="ui-btn ui-btn--secondary"
             :disabled="running || stopping"
             @click="enterPlugin"
           >
             <RefreshCw :size="14" />
             重新检查结果
           </button>
-          <span v-if="serviceStopMessage" role="status" class="text-xs text-muted-foreground">
+          <span v-if="serviceStopMessage" role="status" class="text-xs text-on-surface-variant">
             {{ serviceStopMessage }}
           </span>
-          <span v-if="running" class="text-xs text-muted-foreground">正在迁移，请不要关闭 uTools…</span>
-          <span v-if="stopping" role="status" class="text-xs text-muted-foreground">
+          <span v-if="running" class="text-xs text-on-surface-variant">正在迁移，请不要关闭 uTools…</span>
+          <span v-if="stopping" role="status" class="text-xs text-on-surface-variant">
             {{ stopStatusText }}
           </span>
         </div>

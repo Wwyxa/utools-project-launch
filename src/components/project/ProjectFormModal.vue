@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import {
   Check,
   ChevronDown,
@@ -17,6 +17,7 @@ import {
 import { isSensitiveEnvironmentKey, useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
+import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import type {
   ProjectBridgeScriptCandidate,
   ProjectIconKey,
@@ -30,6 +31,8 @@ import {
   PROJECT_TINY_CARD_BUTTON_COUNT_MIN,
 } from "../../types";
 import ProjectIcon from "./ProjectIcon.vue";
+import BaseModal from "../common/BaseModal.vue";
+import UiSelect, { type UiSelectOption } from "../common/UiSelect.vue";
 
 const store = useStore();
 const t = useI18n();
@@ -68,27 +71,27 @@ const existingGroups = computed(() => [
 ]);
 const draggedScriptId = ref<string | null>(null);
 const groupMenuOpen = ref(false);
-const cwdMenuScriptId = ref<string | null>(null);
 const discoveryOpen = ref(false);
 const discoveryCandidates = ref<ProjectBridgeScriptCandidate[]>([]);
 const selectedDiscoveryKeys = ref<string[]>([]);
 const selectedDiscoverySources = ref<ProjectScriptDiscoverySource[]>(["package-json", "makefile"]);
 const discoveryScanned = ref(false);
-const relatedProjectMenuOpen = ref(false);
-const relatedProjectSearch = ref("");
 
-const relatedProjectOptions = computed(() => {
-  const query = relatedProjectSearch.value.trim().toLowerCase();
-  return store.visibleProjects.filter((project) => {
-    if (project.id === form.value.id) {
-      return false;
-    }
-    if (!query) {
-      return true;
-    }
-    return `${project.name} ${project.path}`.toLowerCase().includes(query);
-  });
-});
+const selectedRelatedProjectIds = computed(() =>
+  form.value.relatedProjects.map((relation) => relation.projectId),
+);
+
+const relatedProjectSelectOptions = computed<UiSelectOption[]>(() =>
+  store.visibleProjects
+    .filter((project) => project.id !== form.value.id)
+    .map((project) => ({
+      value: project.id,
+      label: project.name,
+      hint: project.path,
+      disabled:
+        !isRelatedProjectSelected(project.id) && form.value.relatedProjects.length >= PROJECT_MAX_RELATED_PROJECTS,
+    })),
+);
 const selectedRelatedProjects = computed<Project[]>(() => {
   const projectsById = new Map(store.projects.map((project) => [project.id, project]));
   return form.value.relatedProjects
@@ -114,9 +117,6 @@ const requiresExplicitImport = (candidate: ProjectBridgeScriptCandidate) =>
 
 const closeMenus = () => {
   groupMenuOpen.value = false;
-  cwdMenuScriptId.value = null;
-  relatedProjectMenuOpen.value = false;
-  relatedProjectSearch.value = "";
 };
 
 const openScriptDiscovery = () => {
@@ -146,30 +146,46 @@ const selectGroup = (group: string) => {
   groupMenuOpen.value = false;
 };
 
-const selectScriptCwd = (scriptId: string, cwd: string) => {
-  store.updateScriptEntry(scriptId, { cwd });
-  cwdMenuScriptId.value = null;
-};
-
 const toggleGroupMenu = () => {
-  cwdMenuScriptId.value = null;
-  relatedProjectMenuOpen.value = false;
   groupMenuOpen.value = !groupMenuOpen.value;
 };
 
-const toggleCwdMenu = (scriptId: string) => {
-  groupMenuOpen.value = false;
-  relatedProjectMenuOpen.value = false;
-  cwdMenuScriptId.value = cwdMenuScriptId.value === scriptId ? null : scriptId;
+const handleScriptCwdChange = (scriptId: string, value: string | string[] | null) => {
+  if (typeof value === "string") {
+    store.updateScriptEntry(scriptId, { cwd: value });
+  }
 };
 
-const toggleRelatedProjectMenu = () => {
-  groupMenuOpen.value = false;
-  cwdMenuScriptId.value = null;
-  relatedProjectMenuOpen.value = !relatedProjectMenuOpen.value;
-  if (!relatedProjectMenuOpen.value) {
-    relatedProjectSearch.value = "";
+const cwdOptionLabel = (suggestion: string) => {
+  const normalized = suggestion.replace(/\\/g, "/").replace(/\/+$/, "");
+  const separator = normalized.lastIndexOf("/");
+  const label = separator > 0 ? normalized.slice(separator + 1) : normalized;
+  return label || suggestion;
+};
+
+const cwdOptionsFor = (cwd: string): UiSelectOption[] => {
+  const options: UiSelectOption[] = store.projectFormCwdSuggestions.map((suggestion) => ({
+    value: suggestion,
+    label: cwdOptionLabel(suggestion),
+    hint: suggestion,
+  }));
+  // 手动输入过的自定义 cwd 也要出现在选项里，否则触发器无法回显当前值。
+  if (cwd && !options.some((option) => option.value === cwd)) {
+    options.unshift({ value: cwd, label: cwdOptionLabel(cwd), hint: cwd });
   }
+  return options;
+};
+
+const handleRelatedProjectsChange = (value: string | string[] | null) => {
+  if (!Array.isArray(value)) return;
+  const nextIds = value.filter((id): id is string => typeof id === "string");
+  const previous = form.value.relatedProjects;
+  const kept = previous.filter((relation) => nextIds.includes(relation.projectId));
+  const keptIds = new Set(kept.map((relation) => relation.projectId));
+  const added = nextIds
+    .filter((id) => !keptIds.has(id))
+    .map((projectId) => ({ projectId, bidirectional: form.value.relatedProjectsBidirectional }));
+  store.updateProjectForm({ relatedProjects: [...kept, ...added] });
 };
 
 const isRelatedProjectSelected = (projectId: string) =>
@@ -213,10 +229,23 @@ watch(
       selectedDiscoveryKeys.value = [];
       selectedDiscoverySources.value = ["package-json", "makefile"];
       discoveryScanned.value = false;
-      relatedProjectSearch.value = "";
     }
   },
 );
+
+// 分组下拉为 creatable 组合输入（保留手写面板），这里补齐与地基菜单一致的 Escape 语义。
+const handleAppEscape = (event: AppEscapeRequestEvent) => {
+  if (!groupMenuOpen.value || event.detail.handled) return;
+  groupMenuOpen.value = false;
+  event.detail.handle();
+};
+
+let stopAppEscapeListener = () => {};
+stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
+
+onUnmounted(() => {
+  stopAppEscapeListener();
+});
 
 const projectIcons: Array<{ key: ProjectIconKey; label: string; kind: ProjectKind; type: string }> = [
   { key: "node", label: "Node.js", kind: "node", type: "Node.js" },
@@ -306,32 +335,17 @@ const handleScriptDrop = (targetScriptId: string) => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="scale">
-      <div v-if="store.projectFormOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-6">
-        <div
-          class="w-full max-w-6xl max-h-[92vh] overflow-hidden rounded-xl bg-surface border border-border-subtle shadow-2xl flex flex-col"
-        >
-          <header
-            class="px-5 py-3 border-b border-border-subtle flex items-center justify-between bg-surface-container-low"
-          >
-            <h2 class="text-lg font-bold text-on-surface">{{ title }}</h2>
-            <button
-              type="button"
-              @click="store.closeProjectForm"
-              class="p-2 rounded-lg text-on-surface-variant hover:bg-surface-variant hover:text-on-surface"
-              :title="t.common.close"
-              :aria-label="t.common.close"
-            >
-              <X :size="18" />
-            </button>
-          </header>
-
-          <div
-            v-overlay-scrollbar
-            class="themed-scrollbar bg-surface p-5 overflow-y-auto space-y-6 [color-scheme:inherit]"
-            @click="closeMenus"
-          >
+  <BaseModal
+    as="form"
+    :open="store.projectFormOpen"
+    :width="1152"
+    :title="title"
+    :close-on-scrim="false"
+    body-class="p-5"
+    @submit="handleSubmit"
+    @close="store.closeProjectForm"
+  >
+    <div class="space-y-6 [color-scheme:inherit]" @click="closeMenus">
             <p
               v-if="store.projectFormMode === 'duplicate'"
               class="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-on-surface-variant"
@@ -344,7 +358,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                 <input
                   :value="form.name"
                   @input="(event) => store.updateProjectForm({ name: (event.target as HTMLInputElement).value })"
-                  class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                  class="ui-field w-full"
                 />
               </label>
               <label class="space-y-1.5 md:col-span-8">
@@ -354,12 +368,12 @@ const handleScriptDrop = (targetScriptId: string) => {
                     :value="form.path"
                     @input="(event) => store.updateProjectForm({ path: (event.target as HTMLInputElement).value })"
                     @blur="handlePathBlur"
-                    class="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                    class="ui-field min-w-0 flex-1"
                   />
                   <button
                     type="button"
                     @click="store.pickProjectPath"
-                    class="shrink-0 rounded-lg border border-border-subtle px-3 text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                    class="ui-btn ui-btn--secondary shrink-0"
                     title="选择项目目录"
                     aria-label="选择项目目录"
                   >
@@ -412,7 +426,6 @@ const handleScriptDrop = (targetScriptId: string) => {
                     :value="form.group"
                     type="text"
                     :placeholder="t.modal.groupPlaceholder"
-                    @focus="cwdMenuScriptId = null"
                     @input="(event) => store.updateProjectForm({ group: (event.target as HTMLInputElement).value })"
                     class="ui-field w-full pr-9"
                   />
@@ -449,12 +462,12 @@ const handleScriptDrop = (targetScriptId: string) => {
                     type="text"
                     :placeholder="t.modal.quickLinkPlaceholder"
                     @input="(event) => store.updateProjectForm({ quickLink: (event.target as HTMLInputElement).value })"
-                    class="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                    class="ui-field min-w-0 flex-1"
                   />
                   <button
                     type="button"
                     @click="store.pickQuickLinkPath"
-                    class="shrink-0 rounded-lg border border-border-subtle px-2.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                    class="ui-btn ui-btn--secondary shrink-0"
                     :title="t.modal.quickLinkPickPath"
                     :aria-label="t.modal.quickLinkPickPath"
                   >
@@ -476,7 +489,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                       <CircleHelp :size="13" :stroke-width="1.8" aria-hidden="true" />
                     </span>
                   </span>
-                  <div class="flex w-fit rounded-lg border border-border-subtle bg-surface-container-low p-1">
+                  <div class="flex w-fit max-w-full items-center rounded-lg border border-border-subtle bg-surface-container-low p-1">
                     <button
                       type="button"
                       @click="store.updateProjectForm({ visibility: 'private' })"
@@ -484,7 +497,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                         cn(
                           'rounded-md px-3 py-1 text-xs font-bold transition-colors',
                           form.visibility === 'private'
-                            ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                            ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20'
                             : 'text-on-surface-variant hover:bg-surface-container',
                         )
                       "
@@ -498,7 +511,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                         cn(
                           'rounded-md px-3 py-1 text-xs font-bold transition-colors',
                           form.visibility === 'public'
-                            ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                            ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20'
                             : 'text-on-surface-variant hover:bg-surface-container',
                         )
                       "
@@ -522,7 +535,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                   </span>
                   <div class="flex items-center gap-2">
                     <div
-                      class="flex h-[2.125rem] w-fit items-center rounded-lg border border-border-subtle bg-surface-container-low p-1"
+                      class="flex w-fit max-w-full items-center rounded-lg border border-border-subtle bg-surface-container-low p-1"
                     >
                       <button
                         type="button"
@@ -531,7 +544,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                           cn(
                             'rounded-md px-3 py-1 text-xs font-bold transition-colors',
                             form.cardStyle === 'default'
-                              ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                              ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20'
                               : 'text-on-surface-variant hover:bg-surface-container',
                           )
                         "
@@ -545,7 +558,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                           cn(
                             'rounded-md px-3 py-1 text-xs font-bold transition-colors',
                             form.cardStyle === 'tiny'
-                              ? 'bg-surface text-primary shadow-sm ring-1 ring-primary/20'
+                              ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20'
                               : 'text-on-surface-variant hover:bg-surface-container',
                           )
                         "
@@ -556,7 +569,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                     <div
                       :class="
                         cn(
-                          'flex h-[2.125rem] w-16 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low transition-colors hover:bg-surface-container focus-within:border-primary focus-within:ring-1 focus-within:ring-primary',
+                          'flex h-8.5 w-16 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low transition-colors hover:bg-surface-container focus-within:border-primary focus-within:ring-1 focus-within:ring-primary',
                           form.cardStyle !== 'tiny' && 'invisible pointer-events-none',
                         )
                       "
@@ -614,7 +627,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                     (event) => store.updateProjectForm({ description: (event.target as HTMLTextAreaElement).value })
                   "
                   rows="1"
-                  class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
+                  class="ui-field w-full resize-none"
                 />
               </label>
             </section>
@@ -629,71 +642,24 @@ const handleScriptDrop = (targetScriptId: string) => {
                   {{ form.relatedProjects.length }}/{{ PROJECT_MAX_RELATED_PROJECTS }}
                 </span>
               </div>
-              <div class="relative" @click.stop>
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-left text-sm text-on-surface transition-colors hover:border-primary/40 hover:bg-surface-container"
-                  :aria-expanded="relatedProjectMenuOpen"
-                  @click="toggleRelatedProjectMenu"
-                >
+              <UiSelect
+                :model-value="selectedRelatedProjectIds"
+                :options="relatedProjectSelectOptions"
+                :multiple="true"
+                :searchable="true"
+                :panel-max-width="448"
+                :aria-label="t.modal.relatedProjects"
+                :placeholder="t.modal.relatedProjectsPlaceholder"
+                @update:model-value="handleRelatedProjectsChange"
+              >
+                <template #trigger="{ selectedLabel }">
                   <Network :size="16" class="shrink-0 text-primary" />
-                  <span class="min-w-0 flex-1 truncate">
-                    {{
-                      selectedRelatedProjects.length
-                        ? selectedRelatedProjects.map((project) => project.name).join("、")
-                        : t.modal.relatedProjectsPlaceholder
-                    }}
+                  <span class="min-w-0 flex-1 truncate" :class="selectedLabel ? '' : 'text-on-surface-variant'">
+                    {{ selectedLabel || t.modal.relatedProjectsPlaceholder }}
                   </span>
-                  <ChevronDown
-                    :size="16"
-                    :class="
-                      cn(
-                        'shrink-0 text-on-surface-variant transition-transform',
-                        relatedProjectMenuOpen && 'rotate-180',
-                      )
-                    "
-                  />
-                </button>
-                <div
-                  v-if="relatedProjectMenuOpen"
-                  class="mode-menu-popover"
-                  style="min-width: 100%; max-width: min(28rem, calc(100vw - 3rem))"
-                >
-                  <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto p-1">
-                    <div class="sticky top-0 z-10 bg-surface-container-low p-1">
-                      <input
-                        v-model="relatedProjectSearch"
-                        type="search"
-                        :placeholder="t.modal.relatedProjectsSearchPlaceholder"
-                        class="w-full rounded-md border border-border-subtle bg-surface px-2.5 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none"
-                      />
-                    </div>
-                    <button
-                      v-for="project in relatedProjectOptions"
-                      :key="project.id"
-                      type="button"
-                      :disabled="
-                        !isRelatedProjectSelected(project.id) &&
-                        form.relatedProjects.length >= PROJECT_MAX_RELATED_PROJECTS
-                      "
-                      :class="
-                        cn(
-                          'grid min-h-10 w-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-xs text-on-surface transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45',
-                          isRelatedProjectSelected(project.id) && 'bg-primary/10 text-primary',
-                        )
-                      "
-                      @click="toggleRelatedProject(project.id)"
-                    >
-                      <span class="min-w-0 truncate font-semibold">{{ project.name }}</span>
-                      <span class="min-w-0 truncate text-[11px] text-on-surface-variant">{{ project.path }}</span>
-                      <Check v-if="isRelatedProjectSelected(project.id)" :size="14" class="shrink-0" />
-                    </button>
-                    <p v-if="relatedProjectOptions.length === 0" class="px-2 py-3 text-xs text-on-surface-variant">
-                      {{ t.modal.relatedProjectsNoResults }}
-                    </p>
-                  </div>
-                </div>
-              </div>
+                  <ChevronDown :size="16" class="shrink-0 text-on-surface-variant" />
+                </template>
+              </UiSelect>
               <div v-if="selectedRelatedProjects.length > 0" class="flex flex-wrap gap-1.5">
                 <span
                   v-for="project in selectedRelatedProjects"
@@ -716,7 +682,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                 <input
                   type="checkbox"
                   :checked="form.relatedProjectsBidirectional"
-                  class="accent-primary"
+                  class="h-4 w-4 accent-primary"
                   @change="setRelatedProjectsBidirectional(($event.target as HTMLInputElement).checked)"
                 />
                 <span>{{ t.modal.relatedProjectsBidirectional }}</span>
@@ -737,7 +703,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                 <button
                   type="button"
                   @click="store.addScriptEntry"
-                  class="text-primary text-xs font-bold flex items-center gap-1.5"
+                  class="ui-btn ui-btn--primary-ghost ui-btn--sm"
                 >
                   <Plus :size="14" /> {{ t.modal.addScript }}
                 </button>
@@ -750,7 +716,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                   <p class="text-xs font-semibold text-on-surface">{{ t.modal.selectDiscoverySources }}</p>
                   <button
                     type="button"
-                    class="text-xs font-semibold text-on-surface-variant hover:text-on-surface"
+                    class="ui-btn ui-btn--ghost ui-btn--sm"
                     @click="discoveryOpen = false"
                   >
                     {{ t.common.cancel }}
@@ -762,17 +728,17 @@ const handleScriptDrop = (targetScriptId: string) => {
                       v-model="selectedDiscoverySources"
                       type="checkbox"
                       value="package-json"
-                      class="accent-primary"
+                      class="h-4 w-4 accent-primary"
                     />
                     package.json
                   </label>
                   <label class="inline-flex cursor-pointer items-center gap-2">
-                    <input v-model="selectedDiscoverySources" type="checkbox" value="makefile" class="accent-primary" />
+                    <input v-model="selectedDiscoverySources" type="checkbox" value="makefile" class="h-4 w-4 accent-primary" />
                     Makefile
                   </label>
                   <button
                     type="button"
-                    class="rounded-md border border-primary/30 px-3 py-1 font-bold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    class="ui-btn ui-btn--primary-ghost"
                     :disabled="selectedDiscoverySources.length === 0 || store.projectFormInspecting"
                     @click="discoverScripts"
                   >
@@ -794,7 +760,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                     v-model="selectedDiscoveryKeys"
                     type="checkbox"
                     :value="discoveryKey(candidate)"
-                    class="accent-primary"
+                    class="h-4 w-4 accent-primary"
                   />
                   <span class="min-w-0 flex-1">
                     <span class="block truncate font-mono font-semibold text-on-surface">{{ candidate.command }}</span>
@@ -819,7 +785,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                   <button
                     type="button"
                     :disabled="selectedDiscoveryKeys.length === 0"
-                    class="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
+                    class="ui-btn ui-btn--primary"
                     @click="importDiscoveredScripts"
                   >
                     {{ t.modal.importSelectedScripts }}
@@ -857,7 +823,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                       (event) => store.updateScriptEntry(script.id, { name: (event.target as HTMLInputElement).value })
                     "
                     :placeholder="t.modal.scriptName"
-                    class="md:col-span-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                    class="ui-field ui-field-compact w-full md:col-span-2"
                   />
                   <input
                     :value="script.command"
@@ -866,56 +832,17 @@ const handleScriptDrop = (targetScriptId: string) => {
                         store.updateScriptEntry(script.id, { command: (event.target as HTMLInputElement).value })
                     "
                     :placeholder="t.modal.scriptCommand"
-                    class="md:col-span-4 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                    class="ui-field ui-field-compact w-full md:col-span-4"
                   />
-                  <div class="relative md:col-span-2" @click.stop>
-                    <input
-                      :value="script.cwd"
-                      @focus="groupMenuOpen = false"
-                      @input="
-                        (event) => store.updateScriptEntry(script.id, { cwd: (event.target as HTMLInputElement).value })
-                      "
+                  <div class="md:col-span-2">
+                    <UiSelect
+                      :model-value="script.cwd || null"
+                      :options="cwdOptionsFor(script.cwd)"
+                      :aria-label="t.modal.scriptCwd"
                       :placeholder="t.modal.scriptCwd"
-                      class="h-full w-full rounded-lg border border-border-subtle bg-surface py-1.5 pl-2.5 pr-8 text-sm focus:border-primary focus:outline-none"
+                      compact
+                      @update:model-value="(value) => handleScriptCwdChange(script.id, value)"
                     />
-                    <button
-                      type="button"
-                      class="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-on-surface-variant hover:text-on-surface"
-                      title="选择项目工作目录"
-                      aria-label="选择项目工作目录"
-                      :aria-expanded="cwdMenuScriptId === script.id"
-                      @click="toggleCwdMenu(script.id)"
-                    >
-                      <ChevronDown :size="14" />
-                    </button>
-                    <div
-                      v-if="cwdMenuScriptId === script.id"
-                      v-overlay-scrollbar
-                      class="mode-menu-popover max-h-48 overflow-auto"
-                      style="width: max-content; min-width: max(100%, 10rem); max-width: min(24rem, 70vw)"
-                    >
-                      <button
-                        v-for="suggestion in store.projectFormCwdSuggestions"
-                        :key="suggestion"
-                        type="button"
-                        :class="cn('mode-menu-item', script.cwd === suggestion && 'bg-primary/10 text-primary')"
-                        @click="selectScriptCwd(script.id, suggestion)"
-                      >
-                        <span
-                          :class="
-                            cn(
-                              'truncate font-mono',
-                              suggestion.includes('/') &&
-                                'ml-3 border-l border-border-subtle pl-3 text-on-surface-variant',
-                            )
-                          "
-                          :title="suggestion"
-                        >
-                          {{ suggestion }}
-                        </span>
-                        <Check v-if="script.cwd === suggestion" :size="13" class="shrink-0" />
-                      </button>
-                    </div>
                   </div>
                   <input
                     :value="script.note"
@@ -923,13 +850,13 @@ const handleScriptDrop = (targetScriptId: string) => {
                       (event) => store.updateScriptEntry(script.id, { note: (event.target as HTMLInputElement).value })
                     "
                     :placeholder="t.modal.scriptNote"
-                    class="md:col-span-3 rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                    class="ui-field ui-field-compact w-full md:col-span-3"
                   />
                   <div class="md:col-span-1 flex min-h-8 items-center justify-end gap-1">
                     <button
                       type="button"
                       @click="store.removeScriptEntry(script.id)"
-                      class="rounded-md border border-border-subtle bg-surface p-1.5 text-on-surface-variant opacity-80 transition-all hover:border-status-error/30 hover:bg-status-error/10 hover:text-status-error group-hover/script:opacity-100"
+                      class="ui-btn ui-btn--danger-ghost ui-btn--icon ui-btn--sm opacity-80 group-hover/script:opacity-100"
                       :title="t.modal.removeScript"
                       :aria-label="t.modal.removeScript"
                     >
@@ -946,7 +873,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                 <button
                   type="button"
                   @click="store.addEnvironmentEntry"
-                  class="text-primary text-xs font-bold flex items-center gap-1.5"
+                  class="ui-btn ui-btn--primary-ghost ui-btn--sm"
                 >
                   <Plus :size="14" /> {{ t.common.add }}
                 </button>
@@ -964,7 +891,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                         (event) =>
                           handleEnvKeyInput(entry.id, (event.target as HTMLInputElement).value)
                       "
-                      class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                      class="ui-field ui-field-compact w-full"
                     />
                     <input
                       :value="entry.value"
@@ -972,12 +899,12 @@ const handleScriptDrop = (targetScriptId: string) => {
                         (event) =>
                           store.updateEnvironmentEntry(entry.id, { value: (event.target as HTMLInputElement).value })
                       "
-                      class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                      class="ui-field ui-field-compact w-full"
                     />
                     <button
                       type="button"
                       @click="store.removeEnvironmentEntry(entry.id)"
-                      class="rounded-lg border border-border-subtle px-3 text-on-surface-variant hover:text-status-error hover:bg-surface-container"
+                      class="ui-btn ui-btn--danger-ghost ui-btn--sm"
                       :title="t.common.delete"
                       :aria-label="t.common.delete"
                     >
@@ -987,13 +914,13 @@ const handleScriptDrop = (targetScriptId: string) => {
                   <div v-if="isPublicFormProject" class="flex flex-wrap items-center justify-between gap-2 text-xs">
                     <span
                       v-if="entry.localOnly && entry.sharedValue !== null"
-                      class="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                      class="rounded border border-status-warning/30 bg-status-warning/10 px-1.5 py-0.5 font-medium text-status-warning"
                     >
                       {{ t.modal.envScopeOverrideBadge }}
                     </span>
                     <span
                       v-else-if="entry.localOnly"
-                      class="rounded bg-muted px-1.5 py-0.5 text-muted-foreground"
+                      class="rounded bg-surface-container-high px-1.5 py-0.5 text-on-surface-variant"
                     >
                       {{ t.modal.envScopeLocalBadge }}
                     </span>
@@ -1011,7 +938,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                         <button
                           type="button"
                           class="px-2 py-0.5"
-                          :class="!entry.localOnly ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-surface-container'"
+                          :class="!entry.localOnly ? 'bg-primary/10 font-medium text-primary' : 'text-on-surface-variant hover:bg-surface-container'"
                           @click="setEnvEntryLocalOnly(entry.id, false)"
                         >
                           {{ t.modal.envScopeSync }}
@@ -1019,7 +946,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                         <button
                           type="button"
                           class="px-2 py-0.5"
-                          :class="entry.localOnly ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-surface-container'"
+                          :class="entry.localOnly ? 'bg-primary/10 font-medium text-primary' : 'text-on-surface-variant hover:bg-surface-container'"
                           @click="setEnvEntryLocalOnly(entry.id, true)"
                         >
                           {{ t.modal.envScopeLocal }}
@@ -1037,29 +964,18 @@ const handleScriptDrop = (targetScriptId: string) => {
                 :value="form.memo"
                 @input="(event) => store.updateProjectForm({ memo: (event.target as HTMLTextAreaElement).value })"
                 rows="3"
-                class="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
+                class="ui-field w-full resize-none"
               />
             </section>
-          </div>
+    </div>
 
-          <footer class="px-5 py-3 border-t border-border-subtle bg-surface-container-low flex justify-end gap-3">
-            <button
-              type="button"
-              @click="store.closeProjectForm"
-              class="px-4 py-2 rounded-lg border border-border-subtle bg-surface text-sm font-semibold text-on-surface hover:bg-surface-variant"
-            >
-              {{ t.common.cancel }}
-            </button>
-            <button
-              type="button"
-              @click="handleSubmit"
-              class="px-4 py-2 rounded-lg bg-primary-container text-on-primary-container text-sm font-bold hover:bg-primary hover:text-on-primary flex items-center gap-2"
-            >
-              <Save :size="16" /> {{ t.modal.saveProject }}
-            </button>
-          </footer>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+    <template #footer>
+      <button type="button" class="ui-btn ui-btn--ghost" @click="store.closeProjectForm">
+        {{ t.common.cancel }}
+      </button>
+      <button type="submit" class="ui-btn ui-btn--primary">
+        <Save :size="16" /> {{ t.modal.saveProject }}
+      </button>
+    </template>
+  </BaseModal>
 </template>

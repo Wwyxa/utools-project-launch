@@ -147,20 +147,20 @@ const clearScriptDrag = () => {
             <div
               :class="
                 cn(
-                  'px-2 py-0.5 rounded-full text-[9px] font-bold border justify-self-start inline-flex items-center gap-1',
+                  'ui-status-pill justify-self-start',
                   script.status === 'RUNNING'
-                    ? 'bg-status-running/10 text-status-running border-status-running/20'
+                    ? 'border-status-running/30 bg-status-running/10 text-status-running'
                     : script.status === 'STOPPING'
-                      ? 'bg-status-warning/10 text-status-warning border-status-warning/20'
+                      ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
                       : script.status === 'ERROR'
-                        ? 'bg-status-error/10 text-status-error border-status-error/20'
-                        : 'bg-status-stopped/10 text-status-stopped border-status-stopped/20',
+                        ? 'border-status-error/30 bg-status-error/10 text-status-error'
+                        : 'border-status-stopped/30 bg-status-stopped/10 text-status-stopped',
                 )
               "
             >
               <span
                 v-if="script.status === 'RUNNING'"
-                class="h-1.5 w-1.5 rounded-full bg-status-running animate-pulse shadow-[0_0_8px_rgba(46,175,125,0.9)]"
+                class="ui-status-dot ui-status-dot--glow bg-status-running text-status-running animate-pulse"
               />
               {{ scriptStatusLabel(script.status) }}
             </div>
@@ -176,7 +176,7 @@ const clearScriptDrag = () => {
                 type="button"
                 @click="handleStop(script.id)"
                 :disabled="isUnavailable"
-                class="bg-error text-on-error text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90 disabled:opacity-50"
+                class="ui-btn ui-btn--danger"
               >
                 <Square :size="12" fill="currentColor" /> {{ t.scripts.stopScript }}
               </button>
@@ -185,7 +185,7 @@ const clearScriptDrag = () => {
                 type="button"
                 disabled
                 aria-busy="true"
-                class="border border-status-warning/30 bg-status-warning/10 text-status-warning text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 cursor-wait"
+                class="ui-btn ui-btn--warning-ghost"
               >
                 <LoaderCircle :size="12" class="animate-spin" /> {{ t.common.stopping }}
               </button>
@@ -194,7 +194,7 @@ const clearScriptDrag = () => {
                 type="button"
                 @click="handleStart(script.id)"
                 :disabled="isUnavailable || !script.command.trim()"
-                class="bg-primary text-on-primary text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1.5 hover:bg-opacity-90 disabled:opacity-50"
+                class="ui-btn ui-btn--primary"
               >
                 <Play :size="12" fill="currentColor" /> {{ t.scripts.startScript }}
               </button>

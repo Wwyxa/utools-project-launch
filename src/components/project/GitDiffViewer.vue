@@ -449,7 +449,7 @@ onBeforeUnmount(() => {
         </span>
         <button
           type="button"
-          class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface disabled:opacity-35"
+          class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
           title="上一个变更 (Shift+F7)"
           aria-label="上一个变更"
           :disabled="loading || !changeBlocks.length"
@@ -459,7 +459,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface disabled:opacity-35"
+          class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
           title="下一个变更 (F7)"
           aria-label="下一个变更"
           :disabled="loading || !changeBlocks.length"
@@ -470,14 +470,7 @@ onBeforeUnmount(() => {
         <span class="mx-1 h-4 w-px bg-border-subtle" aria-hidden="true" />
         <button
           type="button"
-          :class="
-            cn(
-              'flex h-7 w-7 items-center justify-center rounded transition-colors',
-              wrapsLongLines
-                ? 'bg-primary/10 text-primary'
-                : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
-            )
-          "
+          :class="cn('ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm', wrapsLongLines && 'bg-primary/10 text-primary')"
           :title="wrapsLongLines ? '关闭长行换行' : '开启长行换行'"
           :aria-label="wrapsLongLines ? '关闭长行换行' : '开启长行换行'"
           :aria-pressed="wrapsLongLines"
@@ -488,14 +481,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          :class="
-            cn(
-              'flex h-7 w-7 items-center justify-center rounded transition-colors disabled:opacity-35',
-              showsWhitespace
-                ? 'bg-primary/10 text-primary'
-                : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
-            )
-          "
+          :class="cn('ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm', showsWhitespace && 'bg-primary/10 text-primary')"
           :title="showsWhitespace ? '隐藏空白字符' : '显示空白字符'"
           :aria-label="showsWhitespace ? '隐藏空白字符' : '显示空白字符'"
           :aria-pressed="showsWhitespace"
@@ -507,14 +493,7 @@ onBeforeUnmount(() => {
         <span class="mx-1 h-4 w-px bg-border-subtle" aria-hidden="true" />
         <button
           type="button"
-          :class="
-            cn(
-              'flex h-7 w-7 items-center justify-center rounded transition-colors disabled:opacity-35',
-              fullFile
-                ? 'bg-primary/10 text-primary'
-                : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
-            )
-          "
+          :class="cn('ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm', fullFile && 'bg-primary/10 text-primary')"
           :title="fullFile ? '显示变更附近内容' : '显示完整文件'"
           :aria-label="fullFile ? '显示变更附近内容' : '显示完整文件'"
           :aria-pressed="fullFile"
@@ -525,14 +504,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          :class="
-            cn(
-              'flex h-7 w-7 items-center justify-center rounded transition-colors disabled:opacity-35',
-              ignoreWhitespace
-                ? 'bg-primary/10 text-primary'
-                : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
-            )
-          "
+          :class="cn('ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm', ignoreWhitespace && 'bg-primary/10 text-primary')"
           :title="ignoreWhitespace ? '显示空白量和空白行变更' : '忽略空白量和空白行变更'"
           :aria-label="ignoreWhitespace ? '显示空白量和空白行变更' : '忽略空白量和空白行变更'"
           :aria-pressed="ignoreWhitespace"
@@ -543,7 +515,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface disabled:opacity-35"
+          class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
           :title="diffViewMode === 'unified' ? '切换到双栏对比' : '切换到单栏对比'"
           :aria-label="diffViewMode === 'unified' ? '切换到双栏对比' : '切换到单栏对比'"
           :aria-pressed="diffViewMode === 'side-by-side'"
@@ -554,7 +526,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="flex h-7 w-7 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface"
+          class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
           :title="expanded ? '还原内嵌审阅' : '放大查看'"
           :aria-label="expanded ? '还原内嵌审阅' : '放大查看'"
           @click="emit('toggle-expanded')"

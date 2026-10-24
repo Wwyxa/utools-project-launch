@@ -71,6 +71,8 @@ import { useResizableSplit } from "../../composables/useResizableSplit";
 import { gitRepositoryTargetsEqual } from "../../lib/gitRepositoryTarget";
 import { presentGitCommitRefs } from "../../lib/gitCommitRefs";
 import ActionDialog from "../common/ActionDialog.vue";
+import BaseModal from "../common/BaseModal.vue";
+import UiSelect, { type UiSelectOption } from "../common/UiSelect.vue";
 import GitDiffViewer from "./GitDiffViewer.vue";
 import GitChangesPane from "./GitChangesPane.vue";
 import GitCommitHistory from "./GitCommitHistory.vue";
@@ -142,15 +144,12 @@ const gitHistoryTabRef = ref<HTMLButtonElement | null>(null);
 const changesToolbarRef = ref<HTMLElement | null>(null);
 const commitHistoryToolbarRef = ref<HTMLElement | null>(null);
 const isAiDialogOpen = ref(false);
-const isBranchMenuOpen = ref(false);
 const isRemoteMenuOpen = ref(false);
 const isPushMenuOpen = ref(false);
 const pushMenuRef = ref<HTMLElement | null>(null);
 const pushMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const pushRejectedNonFastForward = ref(false);
-const branchMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const remoteMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
-const branchMenuRef = ref<HTMLElement | null>(null);
 const remoteMenuRef = ref<HTMLElement | null>(null);
 const remoteBranchQuery = ref("");
 const isRemoteDialogOpen = ref(false);
@@ -238,6 +237,9 @@ const branchOptions = computed(() => {
   if (branches.length > 0) return branches;
   return [{ name: snapshot.value?.branch || "main", current: true }];
 });
+const gitBranchSelectOptions = computed<UiSelectOption[]>(() =>
+  branchOptions.value.map((branch) => ({ value: branch.name, label: branch.name })),
+);
 const currentGitRefLabel = computed(() => {
   if (snapshot.value?.isDetachedHead) {
     return snapshot.value.headHash ? `HEAD @ ${snapshot.value.headHash}` : "detached HEAD";
@@ -758,28 +760,15 @@ const closeAiDialog = () => {
 };
 
 const closeFloatingControls = () => {
-  isBranchMenuOpen.value = false;
   isRemoteMenuOpen.value = false;
   isPushMenuOpen.value = false;
   repositoryMenu.value = null;
 };
 
-const hasFloatingControlsOpen = () => isBranchMenuOpen.value || isRemoteMenuOpen.value || isPushMenuOpen.value || Boolean(repositoryMenu.value);
+const hasFloatingControlsOpen = () => isRemoteMenuOpen.value || isPushMenuOpen.value || Boolean(repositoryMenu.value);
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (event.detail.handled) return;
-  if (isDiffViewerExpanded.value) {
-    isDiffViewerExpanded.value = false;
-    event.detail.handle();
-    return;
-  }
-
-  if (isRemoteDialogOpen.value) {
-    closeRemoteDialog();
-    event.detail.handle();
-    return;
-  }
-
   if (hasFloatingControlsOpen()) {
     closeFloatingControls();
     event.detail.handle();
@@ -856,22 +845,6 @@ const openRepositoryMenu = (event: MouseEvent, row: GitRepositoryRow) => {
   event.stopPropagation();
   closeFloatingControls();
   repositoryMenu.value = { row, x: event.clientX, y: event.clientY };
-};
-
-const toggleBranchMenu = async (event: MouseEvent) => {
-  const shouldOpen = !isBranchMenuOpen.value;
-  closeFloatingControls();
-  if (!shouldOpen) return;
-  const trigger = event.currentTarget as HTMLElement;
-  branchMenuPosition.value = positionFloatingMenu(trigger, 176, 256);
-  isBranchMenuOpen.value = true;
-  await nextTick();
-  if (!branchMenuRef.value) return;
-  branchMenuPosition.value = positionFloatingMenu(
-    trigger,
-    branchMenuRef.value.offsetWidth,
-    branchMenuRef.value.offsetHeight,
-  );
 };
 
 const toggleRemoteMenu = async (event: MouseEvent) => {
@@ -1578,7 +1551,6 @@ const requestForceSwitchBranch = (branchName: string) => {
 };
 
 const handleSwitchBranch = async (branchName: string) => {
-  isBranchMenuOpen.value = false;
   if (!branchName || branchName === snapshot.value?.branch || isAnyGitWriteRunning.value) {
     return;
   }
@@ -1767,7 +1739,6 @@ const closeDiffViewerDialog = () => {
 const handleWindowPointerDown = (event: PointerEvent) => {
   const target = event.target;
   if (!(target instanceof Element && target.closest("[data-git-top-menu], [data-git-top-menu-trigger]"))) {
-    isBranchMenuOpen.value = false;
     isRemoteMenuOpen.value = false;
     isPushMenuOpen.value = false;
   }
@@ -1783,7 +1754,6 @@ const handleFloatingViewportChange = (event: Event) => {
   ) {
     return;
   }
-  isBranchMenuOpen.value = false;
   isRemoteMenuOpen.value = false;
   isPushMenuOpen.value = false;
   repositoryMenu.value = null;
@@ -1953,7 +1923,7 @@ watch(
           <button
             v-if="gitWorkspaceRelatedCount > 0"
             type="button"
-            class="flex h-7 min-w-0 max-w-56 shrink items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
+            class="ui-btn ui-btn--secondary ui-btn--sm min-w-0 max-w-56 shrink"
             :title="`${repositorySectionOpen ? '收起' : '展开'}关联仓库列表（${gitWorkspaceRelatedCount} 个）`"
             :aria-label="`${repositorySectionOpen ? '收起' : '展开'}关联仓库列表（${gitWorkspaceRelatedCount} 个）`"
             :aria-expanded="repositorySectionOpen"
@@ -1962,7 +1932,7 @@ watch(
             <ChevronDown v-if="repositorySectionOpen" :size="12" class="shrink-0" />
             <ChevronRight v-else :size="12" class="shrink-0" />
             <FolderOpen :size="13" class="shrink-0 text-on-surface-variant" />
-            <span class="min-w-0 flex-1 truncate text-[11px] font-bold" :title="selectedRepositoryRow?.repositoryPath">
+            <span class="min-w-0 flex-1 truncate" :title="selectedRepositoryRow?.repositoryPath">
               {{ selectedRepositoryRow?.name || project.name }}
             </span>
             <span
@@ -1972,52 +1942,28 @@ watch(
               {{ gitWorkspaceRelatedCount }}
             </span>
           </button>
-          <div class="min-w-0" data-git-refresh-exempt @click.stop>
-            <button
-              type="button"
-              data-git-top-menu-trigger
-              class="flex min-w-0 max-w-full items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 py-1 font-mono text-[11px] font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary"
-              :title="t.git.branch"
+          <div class="min-w-0 max-w-full" data-git-refresh-exempt @click.stop>
+            <UiSelect
+              :model-value="snapshot?.branch ?? null"
+              :options="gitBranchSelectOptions"
+              trigger-class="ui-btn ui-btn--secondary ui-btn--sm min-w-0 max-w-full font-mono"
+              :panel-max-height="256"
+              :panel-max-width="480"
+              align="start"
               :aria-label="t.git.branch"
-              @click="toggleBranchMenu"
+              @update:model-value="(branchName) => handleSwitchBranch(String(branchName))"
             >
-              <GitBranch :size="13" class="shrink-0 text-primary" />
-              <span class="min-w-0 truncate">{{ currentGitRefLabel }}</span>
-              <ChevronDown :size="12" class="shrink-0 text-on-surface-variant" />
-            </button>
-            <Teleport to="body">
-              <Transition name="fade">
-                <div
-                  v-if="isBranchMenuOpen"
-                  ref="branchMenuRef"
-                  data-git-top-menu
-                  class="fixed z-[80] flex max-h-64 w-max max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
-                  :style="floatingMenuStyle(branchMenuPosition, 'min(16rem, calc(100vh - 1rem))')"
-                  role="menu"
-                  @click.stop
-                >
-                  <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
-                    <button
-                      v-for="branch in branchOptions"
-                      :key="branch.name"
-                      type="button"
-                      role="menuitem"
-                      :class="cn('mode-menu-item', branch.current && 'bg-primary/10 text-primary')"
-                      :title="branch.name"
-                      @click="handleSwitchBranch(branch.name)"
-                    >
-                      <span class="min-w-0 truncate font-mono">{{ branch.name }}</span>
-                      <Check v-if="branch.current" :size="13" />
-                    </button>
-                  </div>
-                </div>
-              </Transition>
-            </Teleport>
+              <template #trigger>
+                <GitBranch :size="13" class="shrink-0 text-primary" />
+                <span class="min-w-0 flex-1 truncate" :title="currentGitRefLabel">{{ currentGitRefLabel }}</span>
+                <ChevronDown :size="12" class="shrink-0 text-on-surface-variant" />
+              </template>
+            </UiSelect>
           </div>
           <button
             v-if="canInitializeGitRepository"
             type="button"
-            class="flex h-7 shrink-0 items-center gap-1.5 rounded border border-border-subtle bg-surface-container-low px-2 text-[10px] font-bold text-on-surface transition-colors hover:bg-surface-variant hover:text-primary disabled:cursor-wait disabled:opacity-60"
+            class="ui-btn ui-btn--secondary ui-btn--sm"
             :disabled="isAnyGitWriteRunning"
             :aria-busy="activeGitAction === 'initialize'"
             title="初始化 Git 仓库"
@@ -2029,13 +1975,13 @@ watch(
           </button>
           <span
             v-if="snapshot?.isDetachedHead"
-            class="shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
+            class="shrink-0 rounded-lg border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
           >
             detached HEAD
           </span>
           <div
             v-if="hasUpstream"
-            class="flex shrink-0 items-center overflow-hidden rounded border border-border-subtle bg-surface-container-low text-[10px]"
+            class="flex shrink-0 items-center overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-[10px]"
             :title="repositoryUpstreamDetail(upstream)"
           >
             <span
@@ -2063,7 +2009,7 @@ watch(
           </div>
           <div
             v-if="baseBranch && (baseBranch.behind || 0) > 0"
-            class="flex shrink-0 items-center gap-1 rounded border border-status-warning/30 bg-status-warning/10 px-1.5 py-1 font-mono text-[10px] font-bold text-status-warning"
+            class="flex shrink-0 items-center gap-1 rounded-lg border border-status-warning/30 bg-status-warning/10 px-1.5 py-1 font-mono text-[10px] font-bold text-status-warning"
             :title="baseBranchChipTitle"
           >
             <GitMerge :size="11" aria-hidden="true" />
@@ -2075,7 +2021,7 @@ watch(
               data-git-top-menu-trigger
               :class="
                 cn(
-                  'flex max-w-56 items-center gap-1 rounded border border-border-subtle bg-surface-container-low px-2 py-1 text-[10px] font-semibold transition-colors hover:bg-surface-variant',
+                  'ui-btn ui-btn--secondary ui-btn--sm max-w-56',
                   upstream ? 'text-primary' : remotes.length > 0 ? 'text-status-warning' : 'text-on-surface-variant',
                 )
               "
@@ -2092,7 +2038,7 @@ watch(
                   v-if="isRemoteMenuOpen"
                   ref="remoteMenuRef"
                   data-git-top-menu
-                  class="fixed z-[80] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest text-xs shadow-popover"
+                  class="menu-pop fixed z-[85] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest text-xs shadow-popover"
                   :style="floatingMenuStyle(remoteMenuPosition)"
                   role="menu"
                   @click.stop
@@ -2316,7 +2262,7 @@ watch(
             {{ isGitSnapshotRefreshing ? "正在刷新" : "正在更新状态" }}
           </span>
         </div>
-        <div class="flex shrink-0 gap-1">
+        <div class="git-top-actions flex shrink-0 gap-1">
           <button
             type="button"
             class="git-top-action"
@@ -2350,7 +2296,7 @@ watch(
           >
             <GitMerge :size="14" :class="activeGitAction === 'remote:merge-base' ? 'animate-pulse' : ''" />
           </button>
-          <div class="inline-flex h-8 shrink-0 items-center rounded border border-border-subtle bg-surface">
+          <div class="inline-flex h-8 shrink-0 items-center overflow-hidden rounded-lg border border-border-subtle bg-surface">
           <button
             type="button"
             class="git-top-action !h-full !rounded-none !border-0"
@@ -2390,7 +2336,7 @@ watch(
                 v-if="isPushMenuOpen"
                 ref="pushMenuRef"
                 data-git-top-menu
-                class="fixed z-[80] w-36 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
+                class="menu-pop fixed z-[85] w-36 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
                 :style="floatingMenuStyle(pushMenuPosition)"
                 role="menu"
                 @click.stop
@@ -2410,7 +2356,7 @@ watch(
         data-git-refresh-exempt
       >
         <span class="min-w-0 flex-1">远端包含本地历史中不存在的提交。若刚完成变基，可使用带租约保护的强制推送。</span>
-        <button type="button" class="shrink-0 rounded border border-border-subtle px-2 py-1 font-semibold hover:bg-surface-variant" :disabled="!canRunRemoteOperation" @click="requestForceGitPush()">
+        <button type="button" class="ui-btn ui-btn--secondary ui-btn--sm" :disabled="!canRunRemoteOperation" @click="requestForceGitPush()">
           强制推送...
         </button>
         <button type="button" class="git-top-action" title="关闭提示" aria-label="关闭提示" @click="pushRejectedNonFastForward = false"><X :size="12" /></button>
@@ -2439,13 +2385,13 @@ watch(
             :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
             :disabled="isAnyGitWriteRunning"
             label="在编辑器中解决"
-            button-class="flex items-center gap-1 rounded border border-status-warning/30 bg-surface-container-lowest px-2 py-0.5 text-[10px] font-bold text-status-warning transition-colors hover:bg-surface-variant"
+            button-class="ui-btn ui-btn--warning-ghost ui-btn--sm"
             :icon-size="12"
             @launch="resolveMergeConflictInEditor"
           />
           <button
             type="button"
-            class="shrink-0 rounded border border-status-warning/30 bg-surface-container-lowest px-2 py-0.5 text-[10px] font-bold transition-colors hover:bg-surface-variant"
+            class="ui-btn ui-btn--warning-ghost ui-btn--sm"
             :disabled="isAnyGitWriteRunning"
             @click="executeAbortGitMerge"
           >
@@ -2550,7 +2496,7 @@ watch(
         <div
           v-if="repositoryMenu"
           data-repository-menu
-          class="fixed z-[80] flex w-72 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
+          class="menu-pop fixed z-[85] flex w-72 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
           :style="repositoryMenuStyle"
           role="menu"
           @click.stop
@@ -2793,130 +2739,111 @@ watch(
       <div
         class="@container flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
       >
-        <Teleport to="body" :disabled="!isDiffViewerExpanded">
-          <div
-            :class="
-              isDiffViewerExpanded
-                ? 'fixed inset-0 z-[90] flex items-center justify-center bg-scrim/40 p-4'
-                : 'flex min-h-0 flex-1 flex-col'
-            "
-            :role="isDiffViewerExpanded ? 'dialog' : undefined"
-            :aria-modal="isDiffViewerExpanded ? 'true' : undefined"
-            aria-label="放大 Git diff 审阅"
-            @click.self="closeDiffViewerDialog"
-          >
-            <div
-              :class="
-                isDiffViewerExpanded
-                  ? 'flex h-[min(92vh,72rem)] w-[min(96vw,96rem)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl'
-                  : 'flex min-h-0 flex-1 flex-col'
-              "
-            >
-              <GitDiffViewer
-                v-if="worktreeSelection || commitReviewSelection"
-                v-model:scroll-top="reviewScrollTop"
-                :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
-                :path="worktreeSelection?.path || commitReviewSelection?.path || ''"
-                :branch="currentGitRefLabel"
-                :subtitle="worktreeSelection ? worktreeSelection.scope : commitReviewSelection?.commitMessage || ''"
-                :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
-                :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
-                :full-file="diffReadOptions.fullFile"
-                :ignore-whitespace="diffReadOptions.ignoreWhitespace"
-                :expanded="isDiffViewerExpanded"
-                @update:full-file="(fullFile) => updateDiffReadOptions({ fullFile })"
-                @update:ignore-whitespace="(ignoreWhitespace) => updateDiffReadOptions({ ignoreWhitespace })"
-                @toggle-expanded="toggleDiffViewerDialog"
-              />
-              <div
-                v-else
-                class="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-on-surface-variant"
-              >
-                从左侧变更列表或提交树展开文件中选择文件。
-              </div>
-            </div>
-          </div>
-        </Teleport>
+        <GitDiffViewer
+          v-if="(worktreeSelection || commitReviewSelection) && !isDiffViewerExpanded"
+          v-model:scroll-top="reviewScrollTop"
+          :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
+          :path="worktreeSelection?.path || commitReviewSelection?.path || ''"
+          :branch="currentGitRefLabel"
+          :subtitle="worktreeSelection ? worktreeSelection.scope : commitReviewSelection?.commitMessage || ''"
+          :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
+          :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
+          :full-file="diffReadOptions.fullFile"
+          :ignore-whitespace="diffReadOptions.ignoreWhitespace"
+          :expanded="isDiffViewerExpanded"
+          @update:full-file="(fullFile) => updateDiffReadOptions({ fullFile })"
+          @update:ignore-whitespace="(ignoreWhitespace) => updateDiffReadOptions({ ignoreWhitespace })"
+          @toggle-expanded="toggleDiffViewerDialog"
+        />
+        <div
+          v-else-if="!worktreeSelection && !commitReviewSelection"
+          class="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-on-surface-variant"
+        >
+          从左侧变更列表或提交树展开文件中选择文件。
+        </div>
       </div>
     </div>
 
-    <Transition name="scale">
-      <div
-        v-if="isRemoteDialogOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-5"
-        @click.self="closeRemoteDialog"
-      >
-        <div
-          class="w-[min(28rem,94vw)] overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-2xl"
-          @click.stop
-        >
-          <div
-            class="flex h-11 items-center justify-between gap-3 border-b border-border-subtle bg-surface-container-low px-4"
-          >
-            <div class="min-w-0">
-              <h3 class="text-sm font-bold text-on-surface">
-                {{ remoteDialogMode === "add" ? "添加 Git remote" : "编辑 Git remote" }}
-              </h3>
-              <p class="truncate text-[10px] font-medium text-on-surface-variant">
-                {{ remoteDialogMode === "add" ? "配置远程仓库地址" : remoteFormName }}
-              </p>
-            </div>
-            <button
-              type="button"
-              class="git-top-action"
-              :disabled="isAnyGitWriteRunning"
-              :aria-busy="isAnyGitWriteRunning"
-              :title="t.common.close"
-              :aria-label="t.common.close"
-              @click="closeRemoteDialog"
-            >
-              <X :size="14" />
-            </button>
-          </div>
-          <div class="space-y-3 p-4">
-            <label class="block text-xs font-bold text-on-surface">
-              <span>Remote 名称</span>
-              <input
-                v-model="remoteFormName"
-                type="text"
-                class="ui-field mt-1 w-full font-mono"
-                :disabled="remoteDialogMode === 'edit' || isAnyGitWriteRunning"
-                placeholder="origin"
-              />
-            </label>
-            <label class="block text-xs font-bold text-on-surface">
-              <span>Remote URL</span>
-              <input
-                v-model="remoteFormUrl"
-                type="text"
-                class="ui-field mt-1 w-full font-mono"
-                :disabled="isAnyGitWriteRunning"
-                placeholder="git@github.com:owner/repo.git"
-              />
-            </label>
-            <div class="flex items-center justify-end gap-2 pt-1">
-              <button
-                type="button"
-                class="git-dialog-secondary"
-                :disabled="isAnyGitWriteRunning"
-                @click="closeRemoteDialog"
-              >
-                {{ t.common.cancel }}
-              </button>
-              <button
-                type="button"
-                class="git-dialog-primary"
-                :disabled="isAnyGitWriteRunning"
-                @click="submitRemoteDialog"
-              >
-                <Check :size="13" />
-                {{ remoteDialogMode === "add" ? "添加" : "保存" }}
-              </button>
-            </div>
-          </div>
+    <BaseModal
+      :open="isDiffViewerExpanded"
+      :width="1536"
+      :max-viewport="96"
+      height="min(92vh,72rem)"
+      body-class="p-0"
+      :show-close="false"
+      :close-on-scrim="false"
+      aria-label="放大 Git diff 审阅"
+      @close="closeDiffViewerDialog"
+    >
+      <GitDiffViewer
+        v-if="worktreeSelection || commitReviewSelection"
+        v-model:scroll-top="reviewScrollTop"
+        class="h-full"
+        :diff="worktreeSelection ? worktreeDiff?.diff : selectedDiff?.diff"
+        :path="worktreeSelection?.path || commitReviewSelection?.path || ''"
+        :branch="currentGitRefLabel"
+        :subtitle="worktreeSelection ? worktreeSelection.scope : commitReviewSelection?.commitMessage || ''"
+        :loading="worktreeSelection ? isLoadingWorktreeDiff : isLoadingDiff"
+        :message="(worktreeSelection ? worktreeDiff?.message : selectedDiff?.message) || t.git.diffEmpty"
+        :full-file="diffReadOptions.fullFile"
+        :ignore-whitespace="diffReadOptions.ignoreWhitespace"
+        :expanded="isDiffViewerExpanded"
+        @update:full-file="(fullFile) => updateDiffReadOptions({ fullFile })"
+        @update:ignore-whitespace="(ignoreWhitespace) => updateDiffReadOptions({ ignoreWhitespace })"
+        @toggle-expanded="toggleDiffViewerDialog"
+      />
+    </BaseModal>
+
+    <BaseModal
+      as="form"
+      :open="isRemoteDialogOpen"
+      :width="448"
+      :title="remoteDialogMode === 'add' ? '添加 Git remote' : '编辑 Git remote'"
+      :aria-label="remoteDialogMode === 'add' ? '添加 Git remote' : '编辑 Git remote'"
+      body-class="space-y-3 px-4 py-3"
+      @submit="submitRemoteDialog"
+      @close="closeRemoteDialog"
+    >
+      <template #header>
+        <div class="min-w-0">
+          <h3 class="text-sm font-bold text-on-surface">
+            {{ remoteDialogMode === "add" ? "添加 Git remote" : "编辑 Git remote" }}
+          </h3>
+          <p class="truncate text-[10px] font-medium text-on-surface-variant">
+            {{ remoteDialogMode === "add" ? "配置远程仓库地址" : remoteFormName }}
+          </p>
         </div>
-      </div>
-    </Transition>
+      </template>
+      <label class="block text-xs font-bold text-on-surface">
+        <span>Remote 名称</span>
+        <input
+          v-model="remoteFormName"
+          type="text"
+          class="ui-field mt-1 w-full font-mono"
+          :disabled="remoteDialogMode === 'edit' || isAnyGitWriteRunning"
+          placeholder="origin"
+        />
+      </label>
+      <label class="block text-xs font-bold text-on-surface">
+        <span>Remote URL</span>
+        <input
+          v-model="remoteFormUrl"
+          type="text"
+          class="ui-field mt-1 w-full font-mono"
+          :disabled="isAnyGitWriteRunning"
+          placeholder="git@github.com:owner/repo.git"
+        />
+      </label>
+      <template #footer>
+        <button type="button" class="ui-btn ui-btn--ghost" :disabled="isAnyGitWriteRunning" @click="closeRemoteDialog">
+          {{ t.common.cancel }}
+        </button>
+        <button type="submit" class="ui-btn ui-btn--primary" :disabled="isAnyGitWriteRunning">
+          <Check :size="13" />
+          {{ remoteDialogMode === "add" ? "添加" : "保存" }}
+        </button>
+      </template>
+    </BaseModal>
 
     <GitAiAnalysisDialog
       :open="isAiDialogOpen"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useStore } from "../../store/useStore";
 import ProjectCard from "./ProjectCard.vue";
 import AllProjectsDialog from "./AllProjectsDialog.vue";
@@ -8,10 +8,11 @@ import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { dismissActionStatus, showActionStatus } from "../common/actionStatus";
 import UiContextMenu from "../common/UiContextMenu.vue";
+import BaseModal from "../common/BaseModal.vue";
+import UiSelect from "../common/UiSelect.vue";
 import type { UiContextMenuAnchor, UiContextMenuItem } from "../common/uiContextMenu";
 import type { Project, ProjectAutomationHistoryEntry } from "../../types";
 import {
-  Search,
   RefreshCw,
   Plus,
   Settings,
@@ -54,13 +55,7 @@ const todoOverviewOpen = ref(false);
 const todoComposerOpen = ref(false);
 const newTodoText = ref("");
 const newTodoProjectId = ref("");
-const todoProjectPickerOpen = ref(false);
-const todoProjectQuery = ref("");
 const newTodoInput = ref<HTMLInputElement | null>(null);
-const todoProjectPicker = ref<HTMLElement | null>(null);
-const todoProjectMenu = ref<HTMLElement | null>(null);
-const todoProjectSearchInput = ref<HTMLInputElement | null>(null);
-const todoProjectMenuStyle = ref<Record<string, string>>({});
 const automationOverviewFeedback = ref("");
 const automationRunPendingTaskKeys = ref(new Set<string>());
 const draggingProjectId = ref<string | null>(null);
@@ -72,7 +67,6 @@ const selectedProjectGroupKey = computed({
   set: (groupKey: string) => store.setDashboardProjectGroup(groupKey),
 });
 const normalizedSearchQuery = computed(() => props.searchQuery.trim().toLowerCase());
-let stopAppEscapeListener = () => {};
 const projectCardsMounted = ref(false);
 const isReturningToMountedDashboard = initialDashboardProjectCardsMounted;
 let projectCardMountFrame: number | null = null;
@@ -116,13 +110,6 @@ const projectMatchesSearch = (project: Project, query: string) =>
   project.name.toLowerCase().includes(query) ||
   project.path.toLowerCase().includes(query) ||
   project.type.toLowerCase().includes(query);
-
-const closeTodoProjectPicker = () => {
-  todoProjectPickerOpen.value = false;
-  todoProjectQuery.value = "";
-  document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
-  window.removeEventListener("resize", positionTodoProjectMenu);
-};
 
 const clearMoreMenuTimers = () => {
   if (moreMenuOpenTimer !== null) window.clearTimeout(moreMenuOpenTimer);
@@ -257,62 +244,25 @@ const dashboardMoreMenuItems = computed<UiContextMenuItem[]>(() => {
   return items;
 });
 
-const handleTodoProjectPickerPointerDown = (event: PointerEvent) => {
-  const target = event.target as Node;
-  if (!todoProjectPicker.value?.contains(target) && !todoProjectMenu.value?.contains(target)) {
-    closeTodoProjectPicker();
-  }
-};
-
-const positionTodoProjectMenu = () => {
-  const trigger = todoProjectPicker.value?.getBoundingClientRect();
-  if (!trigger) return;
-  const width = Math.min(224, window.innerWidth - 16);
-  const left = Math.min(Math.max(trigger.left, 8), window.innerWidth - width - 8);
-  todoProjectMenuStyle.value = {
-    left: `${left}px`,
-    top: `${trigger.bottom + 4}px`,
-    width: `${width}px`,
-    maxHeight: `${Math.max(48, Math.min(288, window.innerHeight - trigger.bottom - 12))}px`,
-  };
-};
-
 const closeTodoComposer = () => {
   todoComposerOpen.value = false;
-  closeTodoProjectPicker();
 };
 
+// 在 setup 阶段注册（先于子组件 BaseModal），保证待办输入条先于弹窗响应 Escape。
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (event.detail.handled) return;
-  if (todoProjectPickerOpen.value) {
-    closeTodoProjectPicker();
-    event.detail.handle();
-    return;
-  }
-
   if (todoComposerOpen.value) {
     closeTodoComposer();
     event.detail.handle();
-    return;
-  }
-
-  if (automationOverviewOpen.value || todoOverviewOpen.value) {
-    automationOverviewOpen.value = false;
-    todoOverviewOpen.value = false;
-    event.detail.handle();
-    return;
   }
 };
 
-onMounted(() => {
-  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
-});
+let stopAppEscapeListener = () => {};
+stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 
 onUnmounted(() => {
   cancelProjectCardMount();
   closeMoreMenu();
-  document.removeEventListener("pointerdown", handleTodoProjectPickerPointerDown);
-  window.removeEventListener("resize", positionTodoProjectMenu);
   stopAppEscapeListener();
 });
 
@@ -591,15 +541,9 @@ const todoProjectGroups = computed<ProjectTodoGroup[]>(() =>
     .filter((group) => group.todos.length > 0),
 );
 const openTodoCount = computed(() => todoProjectGroups.value.reduce((total, group) => total + group.todos.length, 0));
-const selectedTodoProject = computed(() =>
-  store.visibleProjects.find((project) => project.id === newTodoProjectId.value),
+const todoProjectOptions = computed(() =>
+  store.visibleProjects.map((project) => ({ value: project.id, label: project.name })),
 );
-const filteredTodoProjects = computed(() => {
-  const query = todoProjectQuery.value.trim().toLowerCase();
-  return query
-    ? store.visibleProjects.filter((project) => projectMatchesSearch(project, query))
-    : store.visibleProjects;
-});
 
 watch(
   () => store.visibleProjects.map((project) => project.id),
@@ -613,8 +557,7 @@ watch(
 
 watch(todoOverviewOpen, (open) => {
   if (!open) {
-    todoComposerOpen.value = false;
-    closeTodoProjectPicker();
+    closeTodoComposer();
   }
 });
 
@@ -707,28 +650,16 @@ const toggleTodoComposer = async () => {
   }
 };
 
-const toggleTodoProjectPicker = async () => {
-  if (todoProjectPickerOpen.value) {
-    closeTodoProjectPicker();
-    return;
-  }
-  todoProjectPickerOpen.value = true;
-  positionTodoProjectMenu();
-  document.addEventListener("pointerdown", handleTodoProjectPickerPointerDown);
-  window.addEventListener("resize", positionTodoProjectMenu);
-  await nextTick();
-  todoProjectSearchInput.value?.focus();
-};
-
 const selectTodoProject = (projectId: string) => {
   newTodoProjectId.value = projectId;
-  closeTodoProjectPicker();
-  newTodoInput.value?.focus();
+  // UiSelect 关闭面板后会把焦点还给触发器，这里延后一拍把焦点交还给待办输入框。
+  window.setTimeout(() => newTodoInput.value?.focus(), 0);
 };
 
-const selectFirstFilteredTodoProject = () => {
-  const project = filteredTodoProjects.value[0];
-  if (project) selectTodoProject(project.id);
+const handleTodoProjectSelect = (value: string | string[] | null) => {
+  if (typeof value === "string" && value) {
+    selectTodoProject(value);
+  }
 };
 
 const addTodo = () => {
@@ -920,7 +851,7 @@ const handleProjectDragEnd = () => {
               v-if="isSortingProjects"
               type="button"
               @click="toggleSortingProjects"
-              class="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90"
+              class="ui-btn ui-btn--primary shrink-0"
               :title="t.dashboard.finishSorting"
               :aria-label="t.dashboard.finishSorting"
             >
@@ -968,145 +899,83 @@ const handleProjectDragEnd = () => {
       {{ store.projectStorageMessage }}
     </p>
 
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="todoOverviewOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          @click.self="todoOverviewOpen = false"
-        >
-          <section
-            class="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
+    <BaseModal
+      :open="todoOverviewOpen"
+      :width="672"
+      :aria-label="t.dashboard.todoOverview"
+      body-class="p-3"
+      :show-close="false"
+      @close="todoOverviewOpen = false"
+    >
+      <template #header>
+        <div v-if="!todoComposerOpen" class="min-w-0 flex-1">
+          <h2 class="text-sm font-bold text-on-surface">{{ t.dashboard.todoOverview }}</h2>
+          <p class="mt-0.5 text-xs text-on-surface-variant">
+            {{
+              t.dashboard.todoSummary
+                .replace("{count}", String(openTodoCount))
+                .replace("{projects}", String(todoProjectGroups.length))
+            }}
+          </p>
+        </div>
+        <form v-else id="dashboard-todo-form" class="flex min-w-0 flex-1 gap-2" @submit.prevent="addTodo">
+          <div class="w-36 shrink-0">
+            <UiSelect
+              :model-value="newTodoProjectId || null"
+              :options="todoProjectOptions"
+              :searchable="true"
+              :panel-max-height="288"
+              :disabled="store.visibleProjects.length === 0"
+              :placeholder="t.dashboard.emptyTitle"
+              @update:model-value="handleTodoProjectSelect"
+            />
+          </div>
+          <input
+            ref="newTodoInput"
+            v-model="newTodoText"
+            class="h-9 min-w-0 flex-1 rounded-md border border-transparent bg-surface-container-lowest px-3 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant hover:bg-surface-container-low focus:border-primary/70"
+            :placeholder="t.memo.inputPrompt"
+            :aria-label="t.memo.inputPrompt"
+          />
+        </form>
+        <div class="flex items-center gap-1.5">
+          <button
+            v-if="!todoComposerOpen"
+            type="button"
+            class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
+            :title="t.memo.addTask"
+            :aria-label="t.memo.addTask"
+            :aria-expanded="todoComposerOpen"
+            @click="toggleTodoComposer"
           >
-            <div class="flex h-[62px] shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4">
-              <div v-if="!todoComposerOpen" class="min-w-0">
-                <h2 class="text-sm font-bold text-on-surface">{{ t.dashboard.todoOverview }}</h2>
-                <p class="mt-0.5 text-xs text-on-surface-variant">
-                  {{
-                    t.dashboard.todoSummary
-                      .replace("{count}", String(openTodoCount))
-                      .replace("{projects}", String(todoProjectGroups.length))
-                  }}
-                </p>
-              </div>
-              <form v-else id="dashboard-todo-form" class="flex min-w-0 flex-1 gap-2" @submit.prevent="addTodo">
-                <div ref="todoProjectPicker" class="relative w-36 shrink-0">
-                  <button
-                    type="button"
-                    class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface-container-low px-2.5 text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-50"
-                    :disabled="store.visibleProjects.length === 0"
-                    :aria-expanded="todoProjectPickerOpen"
-                    :title="selectedTodoProject?.name"
-                    @click="toggleTodoProjectPicker"
-                  >
-                    <span class="truncate">{{ selectedTodoProject?.name || t.dashboard.emptyTitle }}</span>
-                    <ChevronDown :size="14" class="shrink-0" />
-                  </button>
-                  <Teleport to="body">
-                    <div
-                      v-if="todoProjectPickerOpen"
-                      ref="todoProjectMenu"
-                      :style="todoProjectMenuStyle"
-                      class="menu-pop fixed z-[80] flex flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest shadow-popover"
-                    >
-                      <div class="shrink-0 border-b border-border-subtle p-1">
-                        <div class="relative">
-                          <Search
-                            :size="13"
-                            class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant"
-                          />
-                          <input
-                            ref="todoProjectSearchInput"
-                            v-model="todoProjectQuery"
-                            type="search"
-                            autocomplete="off"
-                            class="h-7 w-full rounded border border-transparent bg-surface-container-lowest pl-7 pr-2 text-xs text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary/70"
-                            :placeholder="t.common.search"
-                            :aria-label="t.common.search"
-                            @keydown.enter.prevent="selectFirstFilteredTodoProject"
-                          />
-                        </div>
-                      </div>
-                      <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
-                        <div class="w-full">
-                          <button
-                            v-for="project in filteredTodoProjects"
-                            :key="project.id"
-                            type="button"
-                            :class="
-                              cn(
-                                'block w-full truncate rounded px-2.5 py-2 text-left text-xs transition-colors hover:bg-surface-variant',
-                                project.id === newTodoProjectId
-                                  ? 'bg-primary/10 font-bold text-primary'
-                                  : 'text-on-surface',
-                              )
-                            "
-                            :title="project.name"
-                            @click="selectTodoProject(project.id)"
-                          >
-                            {{ project.name }}
-                          </button>
-                          <p
-                            v-if="filteredTodoProjects.length === 0"
-                            class="w-full px-2.5 py-4 text-center text-xs text-on-surface-variant"
-                          >
-                            {{ t.dashboard.noProjectsFound }}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </Teleport>
-                </div>
-                <input
-                  ref="newTodoInput"
-                  v-model="newTodoText"
-                  class="h-9 min-w-0 flex-1 rounded-md border border-transparent bg-surface-container-lowest px-3 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant hover:bg-surface-container-low focus:border-primary/70"
-                  :placeholder="t.memo.inputPrompt"
-                  :aria-label="t.memo.inputPrompt"
-                />
-              </form>
-              <div class="flex items-center gap-1.5">
-                <button
-                  v-if="!todoComposerOpen"
-                  type="button"
-                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant ui-press hover:bg-surface-variant hover:text-primary"
-                  :title="t.memo.addTask"
-                  :aria-label="t.memo.addTask"
-                  :aria-expanded="todoComposerOpen"
-                  @click="toggleTodoComposer"
-                >
-                  <Plus :size="16" />
-                </button>
-                <button
-                  v-else
-                  type="submit"
-                  form="dashboard-todo-form"
-                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant ui-press hover:bg-surface-variant hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
-                  :disabled="!newTodoText.trim() || !newTodoProjectId"
-                  :title="t.memo.addTask"
-                  :aria-label="t.memo.addTask"
-                >
-                  <Check :size="16" />
-                </button>
-                <button
-                  type="button"
-                  class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant ui-press hover:bg-surface-variant"
-                  :title="todoComposerOpen ? t.common.cancel : t.common.close"
-                  :aria-label="todoComposerOpen ? t.common.cancel : t.common.close"
-                  @click="todoComposerOpen ? closeTodoComposer() : (todoOverviewOpen = false)"
-                >
-                  <X :size="16" />
-                </button>
-              </div>
-            </div>
-            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-auto p-3">
-              <div
-                v-if="todoProjectGroups.length === 0"
-                class="rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-sm text-on-surface-variant"
-              >
-                {{ t.dashboard.todoEmpty }}
-              </div>
-              <div v-else class="space-y-2">
+            <Plus :size="16" />
+          </button>
+          <button
+            v-else
+            type="submit"
+            form="dashboard-todo-form"
+            class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
+            :disabled="!newTodoText.trim() || !newTodoProjectId"
+            :title="t.memo.addTask"
+            :aria-label="t.memo.addTask"
+          >
+            <Check :size="16" />
+          </button>
+          <button
+            type="button"
+            class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
+            :title="todoComposerOpen ? t.common.cancel : t.common.close"
+            :aria-label="todoComposerOpen ? t.common.cancel : t.common.close"
+            @click="todoComposerOpen ? closeTodoComposer() : (todoOverviewOpen = false)"
+          >
+            <X :size="16" />
+          </button>
+        </div>
+      </template>
+      <div v-if="todoProjectGroups.length === 0" class="ui-empty">
+        {{ t.dashboard.todoEmpty }}
+      </div>
+      <div v-else class="space-y-2">
                 <div
                   v-for="group in todoProjectGroups"
                   :key="group.project.id"
@@ -1122,7 +991,7 @@ const handleProjectDragEnd = () => {
                       {{ group.project.name }}
                     </button>
                     <span
-                      class="shrink-0 rounded-full border border-border-subtle bg-surface px-2 py-0.5 text-[10px] font-bold text-on-surface-variant"
+                      class="ui-status-pill shrink-0 border-border-subtle bg-surface text-on-surface-variant"
                     >
                       {{ group.todos.length }}
                     </span>
@@ -1154,48 +1023,41 @@ const handleProjectDragEnd = () => {
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </Transition>
-    </Teleport>
+      </div>
+    </BaseModal>
 
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="automationOverviewOpen"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          @click.self="automationOverviewOpen = false"
+    <BaseModal
+      :open="automationOverviewOpen"
+      :width="768"
+      :aria-label="t.automation.overview"
+      body-class="px-4 pb-4"
+      :show-close="false"
+      @close="automationOverviewOpen = false"
+    >
+      <template #header>
+        <div class="min-w-0 flex-1">
+          <h2 class="text-sm font-bold text-on-surface">{{ t.automation.overview }}</h2>
+          <p class="mt-0.5 text-xs text-on-surface-variant">
+            {{
+              t.automation.summary
+                .replace("{enabled}", String(automationSummary.enabled))
+                .replace("{total}", String(automationSummary.total))
+                .replace("{running}", String(automationSummary.running))
+                .replace("{failed}", String(automationSummary.failed))
+                .replace("{missed}", String(automationSummary.missed))
+            }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
+          :title="t.common.close"
+          :aria-label="t.common.close"
+          @click="automationOverviewOpen = false"
         >
-          <section
-            class="flex min-h-[min(34rem,calc(100vh-2rem))] max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
-          >
-            <div class="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-              <div class="min-w-0">
-                <h2 class="text-sm font-bold text-on-surface">{{ t.automation.overview }}</h2>
-                <p class="mt-0.5 text-xs text-on-surface-variant">
-                  {{
-                    t.automation.summary
-                      .replace("{enabled}", String(automationSummary.enabled))
-                      .replace("{total}", String(automationSummary.total))
-                      .replace("{running}", String(automationSummary.running))
-                      .replace("{failed}", String(automationSummary.failed))
-                      .replace("{missed}", String(automationSummary.missed))
-                  }}
-                </p>
-              </div>
-              <button
-                type="button"
-                class="rounded-lg border border-border-subtle bg-surface-container-low p-1.5 text-on-surface-variant ui-press hover:bg-surface-variant"
-                :title="t.common.close"
-                :aria-label="t.common.close"
-                @click="automationOverviewOpen = false"
-              >
-                <X :size="16" />
-              </button>
-            </div>
-            <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-auto px-4 pb-4">
+          <X :size="16" />
+        </button>
+      </template>
               <p
                 v-if="automationOverviewFeedback"
                 class="border-b border-status-info/30 pb-2 pt-3 text-xs font-semibold text-status-info"
@@ -1208,7 +1070,7 @@ const handleProjectDragEnd = () => {
                 <div class="mb-1 flex items-center justify-between gap-2">
                   <div class="text-xs font-bold text-status-warning">{{ t.automation.missedTasks }}</div>
                   <span
-                    class="rounded-full border border-status-warning/30 bg-surface px-2 py-0.5 text-[10px] font-bold text-status-warning"
+                    class="ui-status-pill border-status-warning/30 bg-status-warning/10 text-status-warning"
                   >
                     {{ missedAutomationTasks.length }}
                   </span>
@@ -1232,7 +1094,7 @@ const handleProjectDragEnd = () => {
                   <div class="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
-                      class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
                       :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
                       :aria-busy="isAutomationRunPending(item.project.id, item.task.id)"
                       :title="
@@ -1254,7 +1116,7 @@ const handleProjectDragEnd = () => {
                     <button
                       v-if="store.projectLaunchServicePreferences.enabled"
                       type="button"
-                      class="rounded-md p-1.5 text-on-surface-variant hover:bg-status-warning/10 hover:text-status-warning disabled:cursor-not-allowed disabled:opacity-40"
+                      class="ui-btn ui-btn--warning-ghost ui-btn--icon ui-btn--sm"
                       :disabled="isAutomationRunPending(item.project.id, item.task.id)"
                       :aria-busy="isAutomationRunPending(item.project.id, item.task.id)"
                       :title="t.automation.ignoreMissed"
@@ -1315,21 +1177,18 @@ const handleProjectDragEnd = () => {
                           </span>
                           <span
                             :class="
-                              cn(
-                                'inline-flex min-w-14 items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
-                                automationStatusClass(item.currentStatus),
-                              )
+                              cn('ui-status-pill min-w-14 justify-center', automationStatusClass(item.currentStatus))
                             "
                           >
                             <span
                               v-if="item.currentStatus === 'running'"
-                              class="h-1.5 w-1.5 rounded-full bg-status-info animate-pulse"
+                              class="ui-status-dot ui-status-dot--glow bg-status-info text-status-info"
                             />
                             {{ automationStatusLabel(item.currentStatus) }}
                           </span>
                           <button
                             type="button"
-                            class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                            class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
                             :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
                             :aria-busy="isAutomationRunPending(item.project.id, item.task.id)"
                             :title="
@@ -1387,7 +1246,7 @@ const handleProjectDragEnd = () => {
                     <button
                       v-if="item.nextEntry"
                       type="button"
-                      class="rounded-md p-1.5 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
                       :disabled="!canRunAutomationTaskNow(item.project.id, item.task.id)"
                       :aria-busy="isAutomationRunPending(item.project.id, item.task.id)"
                       :title="
@@ -1411,24 +1270,17 @@ const handleProjectDragEnd = () => {
                   </span>
                 </div>
               </section>
-            </div>
-          </section>
-        </div>
-      </Transition>
-    </Teleport>
+    </BaseModal>
 
     <div
       v-if="store.visibleProjects.length === 0"
-      class="m-6 flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-subtle px-6 py-12 text-center"
+      class="ui-empty m-6 flex flex-col items-center justify-center gap-3 px-6 py-12"
     >
       <PackageOpen :size="40" class="text-primary/60" aria-hidden="true" />
       <h2 class="text-base font-bold text-on-surface">{{ t.dashboard.emptyTitle }}</h2>
       <p class="max-w-sm text-sm text-on-surface-variant">{{ t.dashboard.emptySubtitle }}</p>
       <div class="mt-1 flex flex-wrap items-center justify-center gap-2">
-        <button
-          @click="store.openCreateProjectForm"
-          class="toolbar-primary-button inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition-colors"
-        >
+        <button @click="store.openCreateProjectForm" class="ui-btn ui-btn--primary px-4">
           <Plus :size="16" aria-hidden="true" />
           {{ t.dashboard.createHint }}
         </button>
@@ -1509,7 +1361,7 @@ const handleProjectDragEnd = () => {
 
     <div
       v-else-if="hasFilteredOutProjects"
-      class="m-6 border border-dashed border-border-subtle rounded-xl p-6 text-center"
+      class="ui-empty m-6 p-6"
     >
       <p class="text-sm text-on-surface-variant">
         {{ t.dashboard.noProjectsFound }}
@@ -1518,7 +1370,7 @@ const handleProjectDragEnd = () => {
 
     <div
       v-else-if="dashboardAvailableProjects.length > 0"
-      class="m-6 border border-dashed border-border-subtle rounded-xl p-6 text-center"
+      class="ui-empty m-6 p-6"
     >
       <p class="text-sm text-on-surface-variant">
         {{ t.dashboard.noProjectsInFilter.replace("{group}", activeProjectGroupLabel) }}

@@ -467,7 +467,7 @@ const submenuStyle = computed(() => ({
     <div
       v-if="anchor"
       ref="mainRef"
-      class="menu-pop fixed z-[75] flex w-max flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
+      class="menu-pop fixed z-[85] flex w-max flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
       :style="mainStyle"
       role="menu"
       :aria-label="ariaLabel || undefined"
@@ -557,7 +557,7 @@ const submenuStyle = computed(() => ({
     <div
       v-if="submenuState"
       ref="submenuRef"
-      class="menu-pop fixed z-[76] flex w-max flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
+      class="menu-pop fixed z-[86] flex w-max flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
       :style="submenuStyle"
       role="menu"
       :aria-label="activeSubmenuSpec?.label || undefined"

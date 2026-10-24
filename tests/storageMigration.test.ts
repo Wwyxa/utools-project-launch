@@ -50,12 +50,12 @@ describe("storage migration recovery", () => {
     const store = {
       refreshAiModels: vi.fn().mockResolvedValue(undefined),
       aiPreferences: { provider: "custom" },
+      projectLaunchServicePreferences: { enabled: false },
       refreshRuntimeRecordRetention: vi.fn().mockResolvedValue({ policy: {} }),
       refreshStorageOverview: vi.fn().mockResolvedValue(undefined),
     };
     let mount = () => {};
     let unmount = () => {};
-    const stopEscape = vi.fn();
     loadScript(
       "src/components/layout/SettingsTab.vue",
       {
@@ -72,7 +72,6 @@ describe("storage migration recovery", () => {
         },
         "../../store/useStore": { useStore: () => store },
         "../../lib/i18n": { useI18n: () => ref({}) },
-        "../../lib/escape": { addAppEscapeRequestListener: () => stopEscape },
         "../../lib/overlayScrollbar": { getOverlayScrollbarScrollElements: () => null },
       },
       {
@@ -94,7 +93,6 @@ describe("storage migration recovery", () => {
     expect(store.refreshStorageOverview).toHaveBeenCalledOnce();
     unmount();
     expect(cancelAnimationFrame).toHaveBeenCalledWith(2);
-    expect(stopEscape).toHaveBeenCalledOnce();
   });
 
   it("blocks migration while stopping the service and restores the entry after completion", async () => {
@@ -390,6 +388,7 @@ describe("settings data cleanup", () => {
       cleanupResults: [],
       cleanupMessage: "stale message",
       cleanupRunning: false,
+      projectLaunchServicePreferences: { enabled: false },
       loadCleanupPlan: () => projectCatalogActions.loadCleanupPlan.call(store),
       runCleanup: vi.fn(),
     });
@@ -428,7 +427,8 @@ describe("settings data cleanup", () => {
     function cleanupRender() {
       const source = readFileSync(path.resolve("src/components/layout/SettingsTab.vue"), "utf8");
       const template = baseParse(parse(source).descriptor.template!.content);
-      template.children = template.children.filter((node) => node.type === 1 && node.tag === "Teleport").slice(0, 1);
+      // 清理弹窗现为 BaseModal 组件：抠出全部 BaseModal 实例（未 open 的不产出内容）
+      template.children = template.children.filter((node) => node.type === 1 && node.tag === "BaseModal");
       const compiled = compile(template, {
         mode: "function",
         prefixIdentifiers: true,
@@ -440,11 +440,23 @@ describe("settings data cleanup", () => {
       return runInNewContext(`(function () { ${renderCode} })()`, { Vue });
     }
 
+    // BaseModal 桩：还原真实组件的 role/aria-labelledby、滚动宿主（v-overlay-scrollbar + aria-busy）、
+    // 头部关闭按钮与四个插槽，open 驱动渲染
+    const baseModalStub = {
+      props: ["open", "width", "height", "bodyClass", "bodyAriaBusy", "title", "ariaLabel", "labelledby", "showClose", "canClose", "as"],
+      emits: ["close", "submit"],
+      template:
+        '<Teleport to="body"><div v-if="open" role="dialog" :aria-labelledby="labelledby || undefined">' +
+        '<div><slot name="header" /><button type="button" aria-label="关闭" @click="$emit(\'close\')">x</button></div>' +
+        '<div v-overlay-scrollbar :aria-busy="bodyAriaBusy || undefined"><slot /></div>' +
+        "<slot name=\"footer\" /><slot name=\"footerLeft\" /></div></Teleport>",
+    };
+
     async function renderCleanup() {
       const render = cleanupRender();
       const icon = { render: () => null };
       const app = Vue.createSSRApp({
-        components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon },
+        components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon, BaseModal: baseModalStub },
         setup: () => probe,
         render,
       });
@@ -457,7 +469,7 @@ describe("settings data cleanup", () => {
     function mountCleanup() {
       const icon = { render: () => null };
       const app = Vue.createApp({
-        components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon },
+        components: { X: icon, Info: icon, ChevronDown: icon, LoaderCircle: icon, BaseModal: baseModalStub },
         setup: () => probe,
         render: cleanupRender(),
       });

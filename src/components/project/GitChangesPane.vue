@@ -1127,7 +1127,7 @@ onBeforeUnmount(() => {
           </button>
           <button
             type="button"
-            :class="cn('git-section-action', canCommitStaged && 'toolbar-primary-button')"
+            :class="cn('git-section-action', canCommitStaged && 'git-commit-action-primary')"
             :disabled="!canCommitStaged"
             :aria-busy="isCommitActionActive"
             :title="commitActionTitle"
@@ -1171,7 +1171,7 @@ onBeforeUnmount(() => {
       <div class="shrink-0 border-b border-border-subtle bg-surface px-2 py-1.5">
         <div
           v-if="isAmendMode"
-          class="mb-1 flex h-6 items-center gap-1.5 rounded border border-status-warning/30 bg-status-warning/10 px-1.5 text-[10px] font-bold text-status-warning"
+          class="mb-1 flex items-center gap-1.5 rounded-lg border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
         >
           <Pencil :size="12" />
           <span class="min-w-0 flex-1 truncate">修订上次提交</span>
@@ -1204,7 +1204,7 @@ onBeforeUnmount(() => {
         <div class="git-subsection-bar sticky top-0 z-10">
           <button
             type="button"
-            class="flex min-w-0 flex-1 items-center gap-2 pl-1.5 text-left text-[11px] font-semibold transition-colors hover:text-on-surface"
+            class="flex min-w-0 flex-1 items-center gap-2 pl-1.5 text-left text-[11px] font-bold transition-colors hover:text-on-surface"
             :aria-expanded="group.open"
             @click="toggleGroup(group.scope)"
           >
@@ -1363,7 +1363,7 @@ onBeforeUnmount(() => {
                   </span>
                   <span
                     v-if="worktreeFileViewMode === 'list' && gitFileDirectory(item.file)"
-                    class="dark-readable-meta min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/65"
+                    class="dark-readable-meta min-w-0 flex-1 truncate text-[10px] font-medium leading-4 text-on-surface-variant/75"
                   >
                     {{ gitFileDirectory(item.file) }}
                   </span>
@@ -1488,3 +1488,20 @@ onBeforeUnmount(() => {
     </ActionDialog>
   </section>
 </template>
+
+<style scoped>
+/*
+ * 提交按钮激活态：git-* 基础规则位于未分层 CSS，优先级高于工具类，
+ * 因此激活态用独立规则呈现主色（替代原 toolbar-primary-button 双体系混搭）。
+ */
+.git-section-action.git-commit-action-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.git-section-action.git-commit-action-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 88%, var(--color-on-primary));
+  color: var(--color-on-primary);
+}
+</style>

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { CheckCircle2, ChevronDown, CircleAlert, CircleX, RefreshCw } from "lucide-vue-next";
 import { setActionStatusHovered } from "./actionStatus";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
+import { useI18n } from "../../lib/i18n";
 import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary } from "../../lib/utils";
 
@@ -30,6 +31,7 @@ const emit = defineEmits<{
   (event: "update:expanded", value: boolean): void;
 }>();
 
+const t = useI18n();
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const panelRef = ref<HTMLElement | null>(null);
 const entriesScrollRef = ref<HTMLElement | null>(null);
@@ -233,15 +235,15 @@ watch(
       aria-live="polite"
       :class="
         cn(
-          'inline-flex h-8 max-w-80 items-center gap-1.5 truncate rounded-md border px-2.5 text-xs font-semibold shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
+          'inline-flex h-8 max-w-80 items-center gap-1.5 truncate rounded-md border px-2.5 text-xs font-semibold shadow-popover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
           stateContainerClasses,
           stateClasses,
           hasDetails && 'cursor-pointer',
           !hasDetails && 'cursor-default',
         )
       "
-      :title="hasDetails ? '展开或收起操作进度' : message"
-      :aria-label="hasDetails ? '展开或收起操作进度' : message"
+      :title="hasDetails ? t.common.actionStatusToggle : message"
+      :aria-label="hasDetails ? t.common.actionStatusToggle : message"
       :aria-expanded="hasDetails ? expanded : undefined"
       :disabled="!hasDetails"
       @pointerenter="handlePointerEnter"
@@ -285,7 +287,7 @@ watch(
       <div
         v-if="expanded"
         ref="panelRef"
-        class="fixed z-[100] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border text-xs shadow-2xl"
+        class="fixed z-[100] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border text-xs shadow-popover"
         :class="statePanelClasses"
         :style="{
           left: `${panelPosition.left}px`,
@@ -293,7 +295,7 @@ watch(
           maxHeight: panelPosition.maxHeight,
         }"
         role="dialog"
-        aria-label="操作进度"
+        :aria-label="t.common.actionStatusProgress"
         @pointerenter="handlePointerEnter"
         @pointerleave="handlePointerLeave"
         @click.stop

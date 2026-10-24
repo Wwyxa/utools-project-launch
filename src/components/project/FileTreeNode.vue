@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { ChevronRight } from "lucide-vue-next";
 import { cn } from "../../lib/utils";
+import { useI18n } from "../../lib/i18n";
 import type { ProjectFileTreeEntry } from "../../types";
 import FileIcon from "../common/FileIcon.vue";
 
@@ -40,6 +41,7 @@ const emit = defineEmits<{
   (event: "inline-cancel"): void;
 }>();
 
+const t = useI18n();
 const inlineInputRef = ref<HTMLInputElement | null>(null);
 
 const normalizedRelativePath = (relativePath: string) => relativePath.replace(/\\/g, "/");
@@ -156,7 +158,7 @@ watch([isRenaming, isCreatingInside], ([renaming, creating]) => {
         ref="inlineInputRef"
         :value="inlineEdit?.value || ''"
         type="text"
-        class="h-7 w-full rounded border border-primary bg-surface-container-lowest px-2 text-xs text-on-surface outline-none"
+        class="h-7 w-full rounded border border-primary bg-surface-container-lowest px-2 text-xs text-on-surface outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
         :disabled="inlineEdit?.busy"
         :aria-label="node.name"
         @input="emit('inline-input', ($event.target as HTMLInputElement).value)"
@@ -172,7 +174,7 @@ watch([isRenaming, isCreatingInside], ([renaming, creating]) => {
           ref="inlineInputRef"
           :value="inlineEdit?.value || ''"
           type="text"
-          class="h-7 w-full rounded border border-primary bg-surface-container-lowest px-2 text-xs text-on-surface outline-none"
+          class="h-7 w-full rounded border border-primary bg-surface-container-lowest px-2 text-xs text-on-surface outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
           :disabled="inlineEdit?.busy"
           :aria-label="inlineEdit?.kind === 'directory' ? 'New directory' : 'New file'"
           @input="emit('inline-input', ($event.target as HTMLInputElement).value)"
@@ -201,7 +203,7 @@ watch([isRenaming, isCreatingInside], ([renaming, creating]) => {
         v-if="node.loaded && (node.children || []).length === 0"
         class="px-3 py-1 text-[11px] text-on-surface-variant"
       >
-        Empty
+        {{ t.common.noData }}
       </div>
     </div>
   </div>

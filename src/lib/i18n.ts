@@ -35,6 +35,10 @@ const messages = {
       clear: "清除",
       copy: "复制",
       copied: "已复制",
+      selectSearch: "搜索选项…",
+      selectNoResults: "无匹配",
+      actionStatusProgress: "操作进度",
+      actionStatusToggle: "展开或收起操作进度",
     },
     sidebar: {
       settings: "设置",
@@ -798,6 +802,10 @@ const messages = {
       clear: "Clear",
       copy: "Copy",
       copied: "Copied",
+      selectSearch: "Search options…",
+      selectNoResults: "No results",
+      actionStatusProgress: "Action progress",
+      actionStatusToggle: "Expand or collapse action progress",
     },
     sidebar: {
       settings: "Settings",

@@ -1711,7 +1711,7 @@ watch(filterQuery, (query) => {
               ref="rootInlineInputRef"
               :value="inlineEdit.value"
               type="text"
-              class="h-7 w-full rounded border border-primary bg-surface-container-lowest px-2 text-xs text-on-surface outline-none"
+              class="h-7 w-full rounded border border-border-subtle bg-surface-container-lowest px-2 text-xs text-on-surface outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
               :disabled="inlineEdit.busy"
               :aria-label="inlineEdit.kind === 'directory' ? t.files.newDirectory : t.files.newFile"
               @input="updateInlineValue(($event.target as HTMLInputElement).value)"
@@ -1788,7 +1788,7 @@ watch(filterQuery, (query) => {
             role="switch"
             :aria-checked="showLineNumbers"
             :disabled="!canToggleLineNumbers"
-            class="flex h-7 w-7 items-center justify-center rounded bg-transparent text-on-surface-variant transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
             :aria-label="lineNumberToggleLabel"
             :title="lineNumberToggleLabel"
             @click="toggleLineNumbers"
@@ -1817,7 +1817,7 @@ watch(filterQuery, (query) => {
             type="button"
             @click="openFind"
             :disabled="!canSearchCurrentFile"
-            class="flex h-7 w-7 items-center justify-center rounded border border-border-subtle bg-transparent text-on-surface-variant transition-colors hover:bg-surface hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--sm"
             :aria-label="t.files.findInFile"
             :title="t.files.findInFile"
           >
@@ -1828,12 +1828,7 @@ watch(filterQuery, (query) => {
             v-if="!isEditing"
             @click="enterEdit"
             :disabled="!canEdit"
-            :class="
-              cn(
-                'flex h-7 w-16 items-center justify-center rounded border border-border-subtle bg-transparent px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-                'gap-1.5 text-on-surface-variant hover:bg-surface hover:text-primary',
-              )
-            "
+            class="ui-btn ui-btn--secondary ui-btn--sm"
             :aria-label="t.files.editFile"
             :title="t.files.editFile"
           >
@@ -1845,14 +1840,7 @@ watch(filterQuery, (query) => {
             type="button"
             @click="saveFile"
             :disabled="!canSave"
-            :class="
-              cn(
-                'flex h-7 w-7 items-center justify-center rounded border border-border-subtle text-xs font-bold transition-colors disabled:cursor-not-allowed',
-                canSave
-                  ? 'bg-primary text-on-primary hover:bg-primary/90'
-                  : 'bg-surface-container-low text-on-surface-variant opacity-60',
-              )
-            "
+            :class="cn('ui-btn ui-btn--icon ui-btn--sm', canSave ? 'ui-btn--primary' : 'ui-btn--secondary')"
             :aria-label="t.files.saveFile"
             :title="t.files.saveFile"
           >
@@ -1862,7 +1850,7 @@ watch(filterQuery, (query) => {
             v-if="isEditing"
             type="button"
             @click="exitEdit"
-            class="flex h-7 w-16 items-center justify-center gap-1.5 rounded border border-border-subtle bg-surface px-2 text-xs font-bold text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-primary"
+            class="ui-btn ui-btn--secondary ui-btn--sm"
             :aria-label="t.files.doneEditing"
             :title="t.files.doneEditing"
           >
@@ -1944,7 +1932,7 @@ watch(filterQuery, (query) => {
               ref="replaceInputRef"
               v-model="replaceValue"
               type="text"
-              class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface-container-low px-2 text-xs text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary focus:bg-surface-container-lowest"
+              class="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface-container-low px-2 text-xs text-on-surface outline-none placeholder:text-on-surface-variant focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
               :placeholder="t.files.replacePlaceholder"
               :aria-label="t.files.replaceWith"
               @keydown="handleReplaceKeydown"
@@ -2016,7 +2004,7 @@ watch(filterQuery, (query) => {
             v-else-if="selectedFile.previewKind === 'text'"
             :class="
               cn(
-                'file-code-surface h-full overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs leading-5 [font-family:Consolas,\'JetBrains_Mono\',\'Fira_Code\',ui-monospace,SFMono-Regular,Menlo,Monaco,monospace]',
+                'file-code-surface h-full overflow-hidden bg-[var(--code-preview-bg)] font-mono text-xs leading-5',
               )
             "
           >
