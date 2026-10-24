@@ -5,7 +5,7 @@ let rememberedWorktreeFileViewMode: RememberedWorktreeFileViewMode = "list";
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
   Archive,
   Check,
@@ -45,12 +45,13 @@ import {
   type CommitFileViewMode,
 } from "../../lib/gitCommitFileTree";
 import { cn, transferWheelAtScrollBoundary } from "../../lib/utils";
-import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
 import { waitForVisualFeedback } from "../../lib/visualFeedback";
 import ActionDialog from "../common/ActionDialog.vue";
 import FileIcon from "../common/FileIcon.vue";
+import UiContextMenu from "../common/UiContextMenu.vue";
+import type { UiContextMenuAnchor, UiContextMenuItem } from "../common/uiContextMenu";
 
 type AiState = "idle" | "loading" | "success" | "warning" | "error";
 type GitFeedbackState = Exclude<AiState, "idle">;
@@ -125,9 +126,8 @@ const isAmendMode = ref(false);
 const preAmendDraft = ref<string | null>(null);
 const amendOriginalMessage = ref("");
 const amendCommitMessage = ref("");
-const moreMenuOpen = ref(false);
-const moreMenuPosition = ref({ left: 8, top: 8 });
-const moreMenuRef = ref<HTMLElement | null>(null);
+const gitMoreMenuAnchor = ref<UiContextMenuAnchor | null>(null);
+const moreMenuOpen = computed(() => gitMoreMenuAnchor.value !== null);
 const moreMenuOpener = ref<HTMLElement | null>(null);
 const stashDialogOpen = ref(false);
 const stashScope = ref<ProjectGitStashScope>("all");
@@ -274,41 +274,49 @@ const scheduleCommitMessageTextareaResize = () => {
 
 const reportFeedback = (state: GitFeedbackState, message: string) => emit("feedback", state, message);
 
-const moreMenuStyle = computed(() => ({
-  left: `${moreMenuPosition.value.left}px`,
-  top: `${moreMenuPosition.value.top}px`,
-}));
-
-const moreMenuItems = () =>
-  moreMenuRef.value
-    ? Array.from(moreMenuRef.value.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
-        (item) => !(item instanceof HTMLButtonElement && item.disabled),
-      )
-    : [];
+const gitMoreMenuItems = computed<UiContextMenuItem[]>(() => [
+  isAmendMode.value
+    ? {
+        type: "item",
+        key: "cancel-amend",
+        label: "取消修订模式",
+        icon: X,
+        title: "恢复进入修订模式前的提交草稿",
+        onSelect: () => cancelAmendMode(),
+      }
+    : {
+        type: "item",
+        key: "start-amend",
+        label: "修订上次提交",
+        icon: Pencil,
+        disabled: !canStartAmend.value,
+        title: amendActionTitle.value,
+        onSelect: () => startAmendMode(),
+      },
+  { type: "separator" },
+  {
+    type: "item",
+    key: "undo-last-commit",
+    label: "撤销上次提交",
+    icon: Undo,
+    danger: true,
+    disabled: !canUndoLastCommit.value,
+    title: undoLastCommitTitle.value,
+    onSelect: () => requestUndoLastCommit(),
+  },
+]);
 
 const closeMoreMenu = (restoreFocus = true) => {
   const opener = moreMenuOpener.value;
-  moreMenuOpen.value = false;
   moreMenuOpener.value = null;
+  gitMoreMenuAnchor.value = null;
   if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
 };
 
-const openMoreMenu = async (trigger: HTMLElement) => {
+const openGitMoreMenu = (trigger: HTMLElement) => {
   moreMenuOpener.value = trigger;
-  moreMenuOpen.value = true;
-  await nextTick();
-  const menu = moreMenuRef.value;
-  const triggerRect = trigger.getBoundingClientRect();
-  const menuRect = menu?.getBoundingClientRect();
-  const menuWidth = menuRect?.width || 112;
-  const menuHeight = menuRect?.height || 80;
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-  const left = Math.max(8, Math.min(triggerRect.right - menuWidth, viewportWidth - menuWidth - 8));
-  const belowTop = triggerRect.bottom + 6;
-  const top = belowTop + menuHeight <= viewportHeight - 8 ? belowTop : Math.max(8, triggerRect.top - menuHeight - 6);
-  moreMenuPosition.value = { left, top };
-  moreMenuItems()[0]?.focus();
+  const rect = trigger.getBoundingClientRect();
+  gitMoreMenuAnchor.value = { x: rect.right, y: rect.bottom + 6, aboveY: rect.top - 6, alignRight: true };
 };
 
 const toggleMoreMenu = (event: MouseEvent) => {
@@ -318,43 +326,20 @@ const toggleMoreMenu = (event: MouseEvent) => {
     closeMoreMenu();
     return;
   }
-  void openMoreMenu(trigger);
+  openGitMoreMenu(trigger);
 };
 
-const handleMoreMenuKeydown = (event: KeyboardEvent) => {
-  const current = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[role="menuitem"]') : null;
-  const items = moreMenuItems();
-  if (!current || items.length === 0) return;
+const isGitMoreMenuOutsidePointerDownAllowed = (target: EventTarget | null) =>
+  !(target instanceof Element && target.closest("[data-git-changes-more-menu-trigger]"));
 
-  if (event.key === "Escape") {
-    event.preventDefault();
+const handleGitMoreMenuClosed = ({ reason }: { reason: string }) => {
+  if (reason === "escape") {
     closeMoreMenu();
     return;
   }
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-    event.preventDefault();
-    const index = Math.max(0, items.indexOf(current));
-    items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
-    return;
-  }
-  if (event.key === "Home" || event.key === "End") {
-    event.preventDefault();
-    items[event.key === "Home" ? 0 : items.length - 1]?.focus();
-  }
+  moreMenuOpener.value = null;
+  gitMoreMenuAnchor.value = null;
 };
-
-const handleMoreMenuPointerDown = (event: PointerEvent) => {
-  const target = event.target;
-  if (
-    target instanceof Element &&
-    target.closest("[data-git-changes-more-menu], [data-git-changes-more-menu-trigger]")
-  ) {
-    return;
-  }
-  closeMoreMenu(false);
-};
-
-const handleMoreMenuViewportChange = () => closeMoreMenu(false);
 
 const gitFileActionLoadingMessage = (action: GitFileActionName) => {
   if (action === "stage") return "正在暂存文件...";
@@ -1039,23 +1024,6 @@ const requestOpenFile = (file: ProjectGitFileChange) => {
   if (file.status !== "DELETED") emit("open-file", file.path);
 };
 
-const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (event.detail.handled) return;
-  if (moreMenuOpen.value) {
-    closeMoreMenu();
-    event.detail.handle();
-    return;
-  }
-};
-
-let stopAppEscapeListener = () => {};
-onMounted(() => {
-  stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
-  window.addEventListener("pointerdown", handleMoreMenuPointerDown);
-  window.addEventListener("resize", handleMoreMenuViewportChange);
-  window.addEventListener("scroll", handleMoreMenuViewportChange, true);
-});
-
 watch(isChangesWriteBusy, (busy) => emit("busy-change", busy), { immediate: true });
 
 watch(isAmendMode, (value) => emit("amend-mode-change", value), { immediate: true });
@@ -1099,10 +1067,6 @@ watch([() => composerCommitMessage.value, () => props.open], scheduleCommitMessa
 onBeforeUnmount(() => {
   closeMoreMenu(false);
   leaveAmendMode(false);
-  stopAppEscapeListener();
-  window.removeEventListener("pointerdown", handleMoreMenuPointerDown);
-  window.removeEventListener("resize", handleMoreMenuViewportChange);
-  window.removeEventListener("scroll", handleMoreMenuViewportChange, true);
   repositoryContextGeneration.value += 1;
   emit("busy-change", false);
 });
@@ -1185,59 +1149,13 @@ onBeforeUnmount(() => {
         </div>
       </Teleport>
     </div>
-    <Teleport to="body">
-      <Transition name="fade">
-        <div
-          v-if="moreMenuOpen"
-          ref="moreMenuRef"
-          data-git-changes-more-menu
-          class="fixed z-[90] w-max max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-2xl"
-          :style="moreMenuStyle"
-          role="menu"
-          @click.stop
-          @keydown="handleMoreMenuKeydown"
-        >
-          <button
-            v-if="!isAmendMode"
-            type="button"
-            role="menuitem"
-            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
-            :disabled="!canStartAmend"
-            :title="amendActionTitle"
-            :aria-label="amendActionTitle"
-            @click="startAmendMode"
-          >
-            <Pencil :size="13" />
-            <span>修订上次提交</span>
-          </button>
-          <button
-            v-else
-            type="button"
-            role="menuitem"
-            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
-            title="恢复进入修订模式前的提交草稿"
-            aria-label="取消修订上次提交"
-            @click="cancelAmendMode"
-          >
-            <X :size="13" />
-            <span>取消修订模式</span>
-          </button>
-          <div class="my-1 border-t border-border-subtle" />
-          <button
-            type="button"
-            role="menuitem"
-            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact text-status-error hover:bg-status-error/10 hover:text-status-error"
-            :disabled="!canUndoLastCommit"
-            :title="undoLastCommitTitle"
-            :aria-label="undoLastCommitTitle"
-            @click="requestUndoLastCommit"
-          >
-            <Undo :size="13" />
-            <span>撤销上次提交</span>
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
+    <UiContextMenu
+      :anchor="gitMoreMenuAnchor"
+      :items="gitMoreMenuItems"
+      aria-label="更多 Git 操作"
+      :should-close-on-outside-pointer-down="isGitMoreMenuOutsidePointerDownAllowed"
+      @close="handleGitMoreMenuClosed"
+    />
     <div
       v-show="open"
       ref="filesScrollRef"

@@ -1991,7 +1991,7 @@ watch(
                   v-if="isBranchMenuOpen"
                   ref="branchMenuRef"
                   data-git-top-menu
-                  class="fixed z-[80] flex max-h-64 w-max max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-2xl"
+                  class="fixed z-[80] flex max-h-64 w-max max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
                   :style="floatingMenuStyle(branchMenuPosition, 'min(16rem, calc(100vh - 1rem))')"
                   role="menu"
                   @click.stop
@@ -2092,7 +2092,7 @@ watch(
                   v-if="isRemoteMenuOpen"
                   ref="remoteMenuRef"
                   data-git-top-menu
-                  class="fixed z-[80] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest text-xs shadow-2xl"
+                  class="fixed z-[80] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest text-xs shadow-popover"
                   :style="floatingMenuStyle(remoteMenuPosition)"
                   role="menu"
                   @click.stop
@@ -2390,12 +2390,12 @@ watch(
                 v-if="isPushMenuOpen"
                 ref="pushMenuRef"
                 data-git-top-menu
-                class="fixed z-[80] w-36 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest py-1 text-xs shadow-2xl"
+                class="fixed z-[80] w-36 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
                 :style="floatingMenuStyle(pushMenuPosition)"
                 role="menu"
                 @click.stop
               >
-                <button type="button" role="menuitem" class="mode-menu-item text-status-warning" title="使用租约保护改写远端分支历史；远端提交发生变化时会拒绝推送。" :disabled="!canRunRemoteOperation" @click="requestForceGitPush()">
+                <button type="button" role="menuitem" class="mode-menu-item text-status-error" title="使用租约保护改写远端分支历史；远端提交发生变化时会拒绝推送。" :disabled="!canRunRemoteOperation" @click="requestForceGitPush()">
                   <span>强制推送</span><CloudUpload :size="13" />
                 </button>
               </div>
@@ -2550,7 +2550,7 @@ watch(
         <div
           v-if="repositoryMenu"
           data-repository-menu
-          class="fixed z-[80] flex w-72 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface p-1 text-xs shadow-2xl"
+          class="fixed z-[80] flex w-72 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
           :style="repositoryMenuStyle"
           role="menu"
           @click.stop

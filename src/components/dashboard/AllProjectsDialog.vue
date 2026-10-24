@@ -262,7 +262,7 @@ onUnmounted(() => {
       :style="filterMenuStyle"
       role="listbox"
       :aria-label="currentFilter.label"
-      class="menu-pop fixed z-[70] flex flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface text-on-surface shadow-xl"
+      class="menu-pop fixed z-[80] flex flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest text-on-surface shadow-popover"
       @keydown="handleFilterKeydown"
     >
       <div class="min-h-0 overflow-y-auto">

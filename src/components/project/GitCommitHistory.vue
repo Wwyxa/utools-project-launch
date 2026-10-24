@@ -83,6 +83,8 @@ import { cn, transferWheelAtScrollBoundary } from '../../lib/utils';
 import { useStore } from '../../store/useStore';
 import ActionDialog from '../common/ActionDialog.vue';
 import FileIcon from '../common/FileIcon.vue';
+import UiContextMenu from '../common/UiContextMenu.vue';
+import type { UiContextMenuAnchor, UiContextMenuItem } from '../common/uiContextMenu';
 
 defineOptions({ inheritAttrs: false });
 
@@ -125,13 +127,9 @@ type CommitContextMenuState = {
   commit: ProjectGitCommitSummary;
   x: number;
   y: number;
-  opensUpward: boolean;
-  maxHeight: number;
 };
 type CommitBranchRef = { kind: 'local' | 'remote'; name: string; current: boolean };
 type CommitTagRef = { name: string };
-type CommitSubmenuContent = { kind: 'branch'; branch: CommitBranchRef } | { kind: 'tag'; tag: CommitTagRef };
-type CommitSubmenuState = CommitSubmenuContent & { left: number; top: number; parent: HTMLElement };
 type RefDialogMode = 'create-branch' | 'rename-branch' | 'create-tag';
 type RefDialogState = { mode: RefDialogMode; commit: ProjectGitCommitSummary; sourceBranch?: string };
 type TagInfoDialogState = {
@@ -209,9 +207,6 @@ const commitTooltipHeight = ref(0);
 const commitTooltipReady = ref(false);
 const commitTooltipDetails = ref<CommitTooltipDetailsState | null>(null);
 const commitContextMenu = ref<CommitContextMenuState | null>(null);
-const commitContextMenuRef = ref<HTMLElement | null>(null);
-const commitSubmenu = ref<CommitSubmenuState | null>(null);
-const commitSubmenuRef = ref<HTMLElement | null>(null);
 const commitMenuOpener = ref<HTMLElement | null>(null);
 const refDialog = ref<RefDialogState | null>(null);
 const refDialogName = ref('');
@@ -223,10 +218,14 @@ const refDialogInputRef = ref<HTMLInputElement | null>(null);
 const tagInfoDialog = ref<TagInfoDialogState | null>(null);
 const confirmationDialog = ref<AppActionDialog | null>(null);
 const confirmationBusy = ref(false);
-const moreMenuOpen = ref(false);
-const moreMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
-const moreMenuRef = ref<HTMLElement | null>(null);
+const historyMoreMenuAnchor = ref<UiContextMenuAnchor | null>(null);
+const moreMenuOpen = computed(() => historyMoreMenuAnchor.value !== null);
 const moreMenuOpener = ref<HTMLElement | null>(null);
+const moreMenuTriggerTitle = computed(() => {
+  if (headActionUnavailableReason.value) return `更多 Git 操作（${headActionUnavailableReason.value}）`;
+  if (isInteractionDisabled.value) return '更多 Git 操作（Git 写入进行中，请稍后再试）';
+  return '更多 Git 操作';
+});
 const activeAction = ref('');
 const copiedText = ref('');
 const copiedTimer = ref<number | undefined>();
@@ -547,9 +546,6 @@ const toggleCommitFileViewMode = () => {
 };
 
 const graphRowPaddingX = 4;
-const commitContextMenuViewportInset = 8;
-const commitContextMenuMaxWidth = 208;
-const commitContextMenuMaxHeight = 240;
 const graphWindowOverscan = 256;
 const { rowHeight, rowGap, strokeWidth } = GIT_COMMIT_GRAPH_GEOMETRY;
 const currentBranchGraphColorIndex = GIT_COMMIT_GRAPH_COLOR_INDEX.currentBranch;
@@ -915,28 +911,47 @@ const amendToolbarTitle = computed(() => headActionUnavailableReason.value || '�
 const undoToolbarTitle = computed(
   () => headActionUnavailableReason.value || '撤销上次提交（改动将回到更改视图的暂存区）',
 );
-const moreMenuStyle = computed(() => floatingMenuStyle(moreMenuPosition.value));
-const moreMenuItems = () =>
-  moreMenuRef.value
-    ? Array.from(moreMenuRef.value.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
-        (item) => !(item instanceof HTMLButtonElement && item.disabled),
-      )
-    : [];
+const historyMoreMenuItems = computed<UiContextMenuItem[]>(() => [
+  props.amendModeActive
+    ? {
+        type: 'item',
+        key: 'cancel-amend',
+        label: '取消修订模式',
+        icon: X,
+        title: '恢复进入修订模式前的提交草稿',
+        onSelect: () => requestCancelAmend(),
+      }
+    : {
+        type: 'item',
+        key: 'start-amend',
+        label: '修订上次提交',
+        icon: Pencil,
+        disabled: isInteractionDisabled.value || Boolean(headActionUnavailableReason.value),
+        title: amendToolbarTitle.value,
+        onSelect: () => requestStartAmend(),
+      },
+  { type: 'separator' },
+  {
+    type: 'item',
+    key: 'undo-last-commit',
+    label: '撤销上次提交',
+    icon: Undo,
+    danger: true,
+    disabled: isInteractionDisabled.value || Boolean(headActionUnavailableReason.value),
+    title: undoToolbarTitle.value,
+    onSelect: () => requestUndoLastCommit(),
+  },
+]);
 const closeMoreMenu = (restoreFocus = true) => {
   const opener = moreMenuOpener.value;
-  moreMenuOpen.value = false;
   moreMenuOpener.value = null;
+  historyMoreMenuAnchor.value = null;
   if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
 };
-const openMoreMenu = async (trigger: HTMLElement) => {
+const openHistoryMoreMenu = (trigger: HTMLElement) => {
   moreMenuOpener.value = trigger;
-  moreMenuOpen.value = true;
-  await nextTick();
-  const menu = moreMenuRef.value;
-  const menuWidth = menu?.getBoundingClientRect().width || 112;
-  const menuHeight = menu?.getBoundingClientRect().height || 80;
-  moreMenuPosition.value = positionFloatingMenu(trigger, menuWidth, menuHeight);
-  moreMenuItems()[0]?.focus();
+  const rect = trigger.getBoundingClientRect();
+  historyMoreMenuAnchor.value = { x: rect.right, y: rect.bottom + 6, aboveY: rect.top - 6, alignRight: true };
 };
 const toggleMoreMenu = (event: MouseEvent) => {
   const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
@@ -945,28 +960,17 @@ const toggleMoreMenu = (event: MouseEvent) => {
     closeMoreMenu();
     return;
   }
-  void openMoreMenu(trigger);
+  openHistoryMoreMenu(trigger);
 };
-const handleMoreMenuKeydown = (event: KeyboardEvent) => {
-  const current = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[role="menuitem"]') : null;
-  const items = moreMenuItems();
-  if (!current || items.length === 0) return;
-
-  if (event.key === 'Escape') {
-    event.preventDefault();
+const isHistoryMoreMenuOutsidePointerDownAllowed = (target: EventTarget | null) =>
+  !(target instanceof Element && target.closest('[data-history-more-menu-trigger]'));
+const handleHistoryMoreMenuClosed = ({ reason }: { reason: string }) => {
+  if (reason === 'escape') {
     closeMoreMenu();
     return;
   }
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    event.preventDefault();
-    const index = Math.max(0, items.indexOf(current));
-    items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
-    return;
-  }
-  if (event.key === 'Home' || event.key === 'End') {
-    event.preventDefault();
-    items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
-  }
+  moreMenuOpener.value = null;
+  historyMoreMenuAnchor.value = null;
 };
 const isRemoteRef = (name: string) =>
   snapshot.value?.remotes?.some((remote) => name.startsWith(`${remote.name}/`)) ||
@@ -1800,135 +1804,256 @@ const submitRefDialog = async () => {
   else refDialogError.value = result.message;
 };
 
-const clampMenu = (element: HTMLElement, left: number, top: number) => {
-  const rect = element.getBoundingClientRect();
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-  return {
-    left: Math.max(8, Math.min(left, viewportWidth - rect.width - 8)),
-    top: Math.max(8, Math.min(top, viewportHeight - rect.height - 8)),
-  };
+const commitContextMenuAnchor = computed(() =>
+  commitContextMenu.value ? { x: commitContextMenu.value.x, y: commitContextMenu.value.y } : null,
+);
+const commitContextMenuItems = computed<UiContextMenuItem[]>(() => {
+  const state = commitContextMenu.value;
+  if (!state) return [];
+  const commit = state.commit;
+  const items: UiContextMenuItem[] = [
+    {
+      type: 'item',
+      key: 'create-branch',
+      label: '新建分支',
+      icon: GitBranch,
+      disabled: isInteractionDisabled.value,
+      onSelect: () => openRefDialog('create-branch', commit),
+    },
+    {
+      type: 'item',
+      key: 'create-tag',
+      label: '新建标签',
+      icon: Tag,
+      disabled: isInteractionDisabled.value,
+      onSelect: () => openRefDialog('create-tag', commit),
+    },
+    { type: 'separator' },
+    {
+      type: 'item',
+      key: 'cherry-pick',
+      label: 'Cherry-pick',
+      icon: GitCommitHorizontal,
+      disabled: isInteractionDisabled.value || Boolean(gitHistoryActionUnavailableReason('cherry-pick', commit)),
+      title: gitHistoryActionUnavailableReason('cherry-pick', commit) || '将该提交应用到当前分支',
+      onSelect: () => requestGitHistoryAction('cherry-pick', commit),
+    },
+    {
+      type: 'item',
+      key: 'revert',
+      label: 'Revert',
+      icon: Undo,
+      disabled: isInteractionDisabled.value || Boolean(gitHistoryActionUnavailableReason('revert', commit)),
+      title: gitHistoryActionUnavailableReason('revert', commit) || '创建反向提交以回退该提交',
+      onSelect: () => requestGitHistoryAction('revert', commit),
+    },
+    {
+      type: 'item',
+      key: 'checkout-detached',
+      label: '切换（分离 HEAD）',
+      icon: GitCommitHorizontal,
+      disabled: isInteractionDisabled.value || !canCheckoutDetachedCommit(commit),
+      onSelect: () => checkoutCommit(commit),
+    },
+  ];
+  if (commitStashRef(commit)) {
+    items.push(
+      { type: 'separator' },
+      {
+        type: 'item',
+        key: 'stash-apply',
+        label: t.value.git.stashApply,
+        icon: Archive,
+        disabled: isInteractionDisabled.value,
+        onSelect: () => executeStashAction('apply', commit),
+      },
+      {
+        type: 'item',
+        key: 'stash-pop',
+        label: t.value.git.stashPop,
+        icon: Undo,
+        disabled: isInteractionDisabled.value,
+        onSelect: () => executeStashAction('pop', commit),
+      },
+      {
+        type: 'item',
+        key: 'stash-drop',
+        label: t.value.git.stashDrop,
+        icon: Trash2,
+        danger: true,
+        disabled: isInteractionDisabled.value,
+        onSelect: () => requestDropStash(commit),
+      },
+    );
+  }
+  const branches = commitBranchRefs(commit);
+  const tags = commitTagRefs(commit);
+  if (branches.length || tags.length) items.push({ type: 'separator' });
+  for (const branch of branches) {
+    items.push({
+      type: 'item',
+      key: `branch:${branch.kind}:${branch.name}`,
+      label: branch.name,
+      icon: branch.kind === 'remote' ? Cloud : GitBranch,
+      checked: branch.current,
+      meta: {
+        text: branch.name,
+        title: copyLabel(branch.name),
+        onActivate: () => void copyBranchRef(branch.name),
+      },
+      submenu: { label: `${branch.name} 操作`, items: branchSubmenuItems(branch) },
+    });
+  }
+  for (const tag of tags) {
+    items.push({
+      type: 'item',
+      key: `tag:${tag.name}`,
+      label: tag.name,
+      icon: Tag,
+      iconClass: 'text-tertiary',
+      meta: {
+        text: tag.name,
+        title: copyLabel(tag.name),
+        onActivate: () => void copyTagRef(tag.name),
+      },
+      submenu: { label: `${tag.name} 操作`, items: tagSubmenuItems(tag) },
+    });
+  }
+  return items;
+});
+
+const branchSubmenuItems = (branch: CommitBranchRef): UiContextMenuItem[] => {
+  const items: UiContextMenuItem[] = [
+    {
+      type: 'item',
+      key: 'checkout-branch',
+      label: branch.kind === 'local' ? '切换到分支' : '检出为 tracking 分支',
+      icon: branch.kind === 'local' ? GitBranch : CloudDownload,
+      disabled: isInteractionDisabled.value || branch.current,
+      onSelect: () => (branch.kind === 'local' ? checkoutLocalBranch(branch.name) : checkoutRemoteBranch(branch.name)),
+    },
+  ];
+  if (branch.kind === 'local') {
+    items.push(
+      { type: 'separator' },
+      {
+        type: 'item',
+        key: 'rename-branch',
+        label: '重命名分支',
+        icon: Pencil,
+        disabled: isInteractionDisabled.value,
+        onSelect: () => {
+          const commit = commitContextMenu.value?.commit;
+          if (commit) openRefDialog('rename-branch', commit, branch.name);
+        },
+      },
+      {
+        type: 'item',
+        key: 'delete-branch',
+        label: '删除分支',
+        icon: Trash2,
+        danger: true,
+        disabled: isInteractionDisabled.value || branch.current,
+        title: branch.current ? '不能删除当前检出的分支' : '先执行安全删除',
+        onSelect: () => requestDeleteBranch(branch),
+      },
+    );
+  }
+  return items;
 };
-const commitMenuItems = (element: HTMLElement | null) =>
-  element
-    ? Array.from(element.querySelectorAll<HTMLElement>('[role="menuitem"]')).filter(
-        (item) =>
-          item.getAttribute('aria-disabled') !== 'true' && !(item instanceof HTMLButtonElement && item.disabled),
-      )
-    : [];
-const focusCommitMenuItem = (element: HTMLElement | null, current: HTMLElement, offset: number) => {
-  const items = commitMenuItems(element);
-  const index = items.indexOf(current);
-  items[(Math.max(0, index) + offset + items.length) % items.length]?.focus();
+
+const tagSubmenuItems = (tag: CommitTagRef): UiContextMenuItem[] => {
+  const items: UiContextMenuItem[] = [
+    {
+      type: 'item',
+      key: 'view-tag',
+      label: '查看标签',
+      icon: List,
+      disabled: isInteractionDisabled.value,
+      onSelect: () => openTagInfo(tag.name),
+    },
+  ];
+  if (tagPushRemotes.value.length) {
+    for (const remote of tagPushRemotes.value) {
+      items.push({
+        type: 'item',
+        key: `push-tag:${remote.name}`,
+        label: tagPushRemotes.value.length === 1 ? '推送标签' : `推送到 ${remote.name}`,
+        icon: Cloud,
+        disabled: isInteractionDisabled.value,
+        title: `推送到 ${remote.name}`,
+        onSelect: () => requestPushTag(tag.name, remote.name),
+      });
+    }
+  } else {
+    items.push({
+      type: 'item',
+      key: 'push-tag',
+      label: '推送标签',
+      icon: Cloud,
+      disabled: true,
+      title: '当前没有可用的推送 remote',
+    });
+  }
+  items.push(
+    { type: 'separator' },
+    {
+      type: 'item',
+      key: 'copy-tag-name',
+      label: '复制标签名',
+      icon: Copy,
+      disabled: isInteractionDisabled.value,
+      onSelect: () => void copyTagRef(tag.name),
+    },
+    {
+      type: 'item',
+      key: 'delete-tag',
+      label: '删除标签',
+      icon: Trash2,
+      danger: true,
+      disabled: isInteractionDisabled.value,
+      onSelect: () => requestDeleteTag(tag.name),
+    },
+  );
+  return items;
 };
-const openCommitSubmenu = async (content: CommitSubmenuContent, parent: HTMLElement, focusFirst = false) => {
-  const parentRect = parent.getBoundingClientRect();
-  commitSubmenu.value = { ...content, left: parentRect.right + 4, top: parentRect.top, parent };
-  await nextTick();
-  const submenu = commitSubmenuRef.value;
-  if (!submenu || !commitSubmenu.value) return;
-  const rect = submenu.getBoundingClientRect();
-  const preferredLeft =
-    parentRect.right + 4 + rect.width <= window.innerWidth - 8
-      ? parentRect.right + 4
-      : parentRect.left - rect.width - 4;
-  commitSubmenu.value = { ...commitSubmenu.value, ...clampMenu(submenu, preferredLeft, parentRect.top) };
-  if (focusFirst) await nextTick(() => commitMenuItems(submenu)[0]?.focus());
-};
-const openCommitContextMenu = async (event: MouseEvent, commit: ProjectGitCommitSummary) => {
+
+const openCommitContextMenu = (event: MouseEvent, commit: ProjectGitCommitSummary) => {
   hideCommitTooltip();
-  closeCommitContextMenu(false);
   const row = event.currentTarget as HTMLElement;
-  const rect = row.getBoundingClientRect();
   const eventTarget = event.target instanceof Element ? event.target.closest<HTMLElement>('button, [tabindex]') : null;
   commitMenuOpener.value =
     document.activeElement instanceof HTMLElement && document.activeElement !== document.body
       ? document.activeElement
       : eventTarget || row;
-  const x = event.clientX || rect.left + graphRowPaddingX;
-  const y = event.clientY || rect.bottom;
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-  const opensUpward = y + commitContextMenuMaxHeight + commitContextMenuViewportInset > viewportHeight;
-  const maxHeight = Math.max(
-    0,
-    Math.min(commitContextMenuMaxHeight, (opensUpward ? y : viewportHeight - y) - commitContextMenuViewportInset - 2),
-  );
-  const positionMenu = () => {
-    const menu = commitContextMenuRef.value;
-    const current = commitContextMenu.value;
-    if (!menu || !current) return false;
-    const menuWidth = menu.getBoundingClientRect().width || commitContextMenuMaxWidth;
-    commitContextMenu.value = {
-      ...current,
-      x: Math.max(
-        commitContextMenuViewportInset,
-        Math.min(x, viewportWidth - menuWidth - commitContextMenuViewportInset),
-      ),
-    };
-    return true;
-  };
+  const rowRect = row.getBoundingClientRect();
   commitContextMenu.value = {
     commit,
-    x,
-    y,
-    opensUpward,
-    maxHeight,
+    x: event.clientX || rowRect.left + graphRowPaddingX,
+    y: event.clientY || rowRect.bottom,
   };
-  await nextTick();
-  if (!positionMenu()) return;
-  commitMenuItems(commitContextMenuRef.value)[0]?.focus();
-  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-  positionMenu();
 };
+
 const closeCommitContextMenu = (restoreFocus = true) => {
   const opener = commitMenuOpener.value;
   commitMenuOpener.value = null;
-  commitSubmenu.value = null;
   commitContextMenu.value = null;
   if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
 };
+
 const handleCommitRowClick = (event: MouseEvent, hash: string) => {
   if (event.ctrlKey || event.metaKey) toggleCommitSelection(hash);
   else void toggleCommitFiles(hash);
 };
-const handleCommitMenuKeydown = (event: KeyboardEvent, level: 'main' | 'submenu') => {
-  const current = event.currentTarget as HTMLElement;
-  const container = level === 'main' ? commitContextMenuRef.value : commitSubmenuRef.value;
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    if (level === 'submenu') {
-      const parent = commitSubmenu.value?.parent;
-      commitSubmenu.value = null;
-      void nextTick(() => parent?.focus());
-    } else {
-      closeCommitContextMenu();
-    }
-  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    event.preventDefault();
-    if (level === 'main') commitSubmenu.value = null;
-    focusCommitMenuItem(container, current, event.key === 'ArrowDown' ? 1 : -1);
-  } else if (event.key === 'Home' || event.key === 'End') {
-    event.preventDefault();
-    if (level === 'main') commitSubmenu.value = null;
-    const items = commitMenuItems(container);
-    items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
-  } else if (level === 'main' && event.key === 'ArrowRight') {
-    const commit = commitContextMenu.value?.commit;
-    const branchIndex = current.dataset.branchIndex;
-    const branch = commit && branchIndex !== undefined ? commitBranchRefs(commit)[Number(branchIndex)] : undefined;
-    const tagIndex = current.dataset.tagIndex;
-    const tag = commit && tagIndex !== undefined ? commitTagRefs(commit)[Number(tagIndex)] : undefined;
-    if (branch || tag) {
-      event.preventDefault();
-      void openCommitSubmenu(branch ? { kind: 'branch', branch } : { kind: 'tag', tag: tag! }, current, true);
-    }
-  } else if (level === 'submenu' && event.key === 'ArrowLeft') {
-    event.preventDefault();
-    const parent = commitSubmenu.value?.parent;
-    commitSubmenu.value = null;
-    void nextTick(() => parent?.focus());
+
+const handleCommitContextMenuClosed = ({ reason }: { reason: string }) => {
+  if (!commitContextMenu.value) return;
+  if (reason === 'escape') {
+    closeCommitContextMenu();
+    return;
   }
+  commitMenuOpener.value = null;
+  commitContextMenu.value = null;
 };
 const copyText = async (value: string) => {
   try {
@@ -2014,15 +2139,6 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (commitTooltip.value || pendingCommitTooltip.value) {
     hideCommitTooltip();
     event.detail.handle();
-  } else if (commitContextMenu.value) {
-    if (commitSubmenu.value) {
-      const parent = commitSubmenu.value.parent;
-      commitSubmenu.value = null;
-      void nextTick(() => parent.focus());
-    } else {
-      closeCommitContextMenu();
-    }
-    event.detail.handle();
   } else if (refDialog.value) {
     closeRefDialog();
     event.detail.handle();
@@ -2032,15 +2148,11 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   } else if (showCommitFilters.value) {
     closeCommitFilters();
     event.detail.handle();
-  } else if (moreMenuOpen.value) {
-    closeMoreMenu();
-    event.detail.handle();
   }
 };
 const handleWindowPointerDown = (event: PointerEvent) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
-  if (!target.closest('[data-commit-context-menu]')) closeCommitContextMenu(false);
   if (
     !commitFilterTriggerRef.value?.contains(target) &&
     !commitFiltersPopoverRef.value?.contains(target) &&
@@ -2048,7 +2160,6 @@ const handleWindowPointerDown = (event: PointerEvent) => {
   ) {
     closeCommitFilters();
   }
-  if (!target.closest('[data-history-more-menu], [data-history-more-menu-trigger]')) closeMoreMenu(false);
 };
 const handleFloatingViewportChange = (event: Event) => {
   const isTooltipScroll =
@@ -2056,16 +2167,6 @@ const handleFloatingViewportChange = (event: Event) => {
   const isGraphScroll = event.type === 'scroll' && event.target === graphScrollRef.value;
   if (!isTooltipScroll && !isGraphScroll) hideCommitTooltip();
   if (openDatePickerKind.value) positionCommitDatePicker();
-  if (
-    event.type === 'scroll' &&
-    event.target instanceof Element &&
-    event.target.closest('[data-commit-context-menu]')
-  ) {
-    commitSubmenu.value = null;
-    return;
-  }
-  closeCommitContextMenu(false);
-  closeMoreMenu(false);
 };
 
 watch(
@@ -2272,8 +2373,8 @@ onBeforeUnmount(() => {
           :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
           :aria-expanded="moreMenuOpen"
           aria-haspopup="menu"
-          title="更多 Git 操作"
-          aria-label="更多 Git 操作"
+          :title="moreMenuTriggerTitle"
+          :aria-label="moreMenuTriggerTitle"
           @click="toggleMoreMenu"
         >
           <MoreHorizontal :size="13" />
@@ -2289,59 +2390,6 @@ onBeforeUnmount(() => {
           <List v-if="commitFileViewMode === 'tree'" :size="13" /><ListTree v-else :size="13" />
         </button>
       </div>
-    </Teleport>
-    <Teleport to="body">
-      <Transition name="fade">
-        <div
-          v-if="moreMenuOpen"
-          ref="moreMenuRef"
-          data-history-more-menu
-          class="fixed z-[90] w-max max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-2xl"
-          :style="moreMenuStyle"
-          role="menu"
-          @click.stop
-          @keydown="handleMoreMenuKeydown"
-        >
-          <button
-            v-if="!amendModeActive"
-            type="button"
-            role="menuitem"
-            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
-            :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
-            :title="amendToolbarTitle"
-            :aria-label="amendToolbarTitle"
-            @click="requestStartAmend"
-          >
-            <Pencil :size="13" />
-            <span>修订上次提交</span>
-          </button>
-          <button
-            v-else
-            type="button"
-            role="menuitem"
-            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact"
-            title="恢复进入修订模式前的提交草稿"
-            aria-label="取消修订上次提交"
-            @click="requestCancelAmend"
-          >
-            <X :size="13" />
-            <span>取消修订模式</span>
-          </button>
-          <div class="my-1 border-t border-border-subtle" />
-          <button
-            type="button"
-            role="menuitem"
-            class="mode-menu-item mode-menu-item--leading mode-menu-item--compact text-status-error hover:bg-status-error/10 hover:text-status-error"
-            :disabled="isInteractionDisabled || Boolean(headActionUnavailableReason)"
-            :title="undoToolbarTitle"
-            :aria-label="undoToolbarTitle"
-            @click="requestUndoLastCommit"
-          >
-            <Undo :size="13" />
-            <span>撤销上次提交</span>
-          </button>
-        </div>
-      </Transition>
     </Teleport>
     <div v-show="open" class="relative flex min-h-0 flex-1 flex-col">
       <Transition name="fade">
@@ -2956,299 +3004,20 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </Teleport>
-  <Teleport to="body">
-    <div
-      v-if="commitContextMenu"
-      ref="commitContextMenuRef"
-      data-commit-context-menu
-      class="fixed z-[75] w-fit min-w-[7.85rem] max-w-[13rem] rounded-md border border-outline-variant/70 bg-surface-container-lowest shadow-2xl"
-      role="menu"
-      :style="{
-        left: `${commitContextMenu.x}px`,
-        top: `${commitContextMenu.y}px`,
-        transform: commitContextMenu.opensUpward ? 'translateY(-100%)' : undefined,
-      }"
-      @click.stop
-    >
-      <div
-        v-overlay-scrollbar
-        class="themed-scrollbar max-h-60 overflow-y-auto p-0.5"
-        :style="{ maxHeight: `${commitContextMenu.maxHeight}px` }"
-      >
-        <button
-          type="button"
-          role="menuitem"
-          class="ui-menu-item"
-          :disabled="isInteractionDisabled"
-          @click="openRefDialog('create-branch', commitContextMenu.commit)"
-          @keydown="handleCommitMenuKeydown($event, 'main')"
-        >
-          <GitBranch :size="12" />新建分支
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          class="ui-menu-item"
-          :disabled="isInteractionDisabled"
-          @click="openRefDialog('create-tag', commitContextMenu.commit)"
-          @keydown="handleCommitMenuKeydown($event, 'main')"
-        >
-          <Tag :size="12" />新建标签
-        </button>
-        <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
-        <button
-          type="button"
-          role="menuitem"
-          class="ui-menu-item"
-          :disabled="
-            isInteractionDisabled || Boolean(gitHistoryActionUnavailableReason('cherry-pick', commitContextMenu.commit))
-          "
-          :title="
-            gitHistoryActionUnavailableReason('cherry-pick', commitContextMenu.commit) || '将该提交应用到当前分支'
-          "
-          @click="requestGitHistoryAction('cherry-pick', commitContextMenu.commit)"
-          @keydown="handleCommitMenuKeydown($event, 'main')"
-        >
-          <GitCommitHorizontal :size="12" />Cherry-pick
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          class="ui-menu-item"
-          :disabled="
-            isInteractionDisabled || Boolean(gitHistoryActionUnavailableReason('revert', commitContextMenu.commit))
-          "
-          :title="gitHistoryActionUnavailableReason('revert', commitContextMenu.commit) || '创建反向提交以回退该提交'"
-          @click="requestGitHistoryAction('revert', commitContextMenu.commit)"
-          @keydown="handleCommitMenuKeydown($event, 'main')"
-        >
-          <Undo :size="12" />Revert
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          class="ui-menu-item"
-          :disabled="isInteractionDisabled || !canCheckoutDetachedCommit(commitContextMenu.commit)"
-          @click="checkoutCommit(commitContextMenu.commit)"
-          @keydown="handleCommitMenuKeydown($event, 'main')"
-        >
-          <GitCommitHorizontal :size="12" />切换（分离 HEAD）
-        </button>
-        <template v-if="commitStashRef(commitContextMenu.commit)">
-          <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
-          <button
-            type="button"
-            role="menuitem"
-            class="ui-menu-item"
-            :disabled="isInteractionDisabled"
-            @click="executeStashAction('apply', commitContextMenu.commit)"
-            @keydown="handleCommitMenuKeydown($event, 'main')"
-          >
-            <Archive :size="12" />{{ t.git.stashApply }}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="ui-menu-item"
-            :disabled="isInteractionDisabled"
-            @click="executeStashAction('pop', commitContextMenu.commit)"
-            @keydown="handleCommitMenuKeydown($event, 'main')"
-          >
-            <Undo :size="12" />{{ t.git.stashPop }}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="ui-menu-item text-status-error"
-            :disabled="isInteractionDisabled"
-            @click="requestDropStash(commitContextMenu.commit)"
-            @keydown="handleCommitMenuKeydown($event, 'main')"
-          >
-            <Trash2 :size="12" />{{ t.git.stashDrop }}
-          </button>
-        </template>
-        <div
-          v-if="commitBranchRefs(commitContextMenu.commit).length || commitTagRefs(commitContextMenu.commit).length"
-          class="mx-1 my-1 border-t border-border-subtle"
-          role="separator"
-        />
-        <template v-if="commitBranchRefs(commitContextMenu.commit).length">
-          <div
-            v-for="(branch, branchIndex) in commitBranchRefs(commitContextMenu.commit)"
-            :key="`${commitContextMenu.commit.hash}:${branch.kind}:${branch.name}`"
-            role="menuitem"
-            tabindex="0"
-            :data-branch-index="branchIndex"
-            aria-haspopup="menu"
-            :aria-expanded="
-              commitSubmenu?.kind === 'branch' &&
-              commitSubmenu.branch.kind === branch.kind &&
-              commitSubmenu.branch.name === branch.name
-            "
-            class="ui-menu-item cursor-default"
-            @click="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
-            @mouseenter="openCommitSubmenu({ kind: 'branch', branch }, $event.currentTarget as HTMLElement)"
-            @keydown="handleCommitMenuKeydown($event, 'main')"
-          >
-            <component :is="branch.kind === 'remote' ? Cloud : GitBranch" :size="12" class="shrink-0" />
-            <button
-              type="button"
-              tabindex="-1"
-              class="min-w-0 flex-1 truncate text-left font-mono"
-              :title="copyLabel(branch.name)"
-              @click.stop="copyBranchRef(branch.name)"
-            >
-              {{ branch.name }}
-            </button>
-            <Check v-if="branch.current" :size="11" class="shrink-0 text-primary" />
-            <ChevronRight v-else :size="11" class="shrink-0 text-on-surface-variant" />
-          </div>
-        </template>
-        <template v-if="commitTagRefs(commitContextMenu.commit).length">
-          <div
-            v-for="(tag, tagIndex) in commitTagRefs(commitContextMenu.commit)"
-            :key="`${commitContextMenu.commit.hash}:tag:${tag.name}`"
-            role="menuitem"
-            tabindex="0"
-            :data-tag-index="tagIndex"
-            aria-haspopup="menu"
-            :aria-expanded="commitSubmenu?.kind === 'tag' && commitSubmenu.tag.name === tag.name"
-            class="ui-menu-item cursor-default"
-            @click="openCommitSubmenu({ kind: 'tag', tag }, $event.currentTarget as HTMLElement)"
-            @mouseenter="openCommitSubmenu({ kind: 'tag', tag }, $event.currentTarget as HTMLElement)"
-            @keydown="handleCommitMenuKeydown($event, 'main')"
-          >
-            <Tag :size="12" class="shrink-0 text-tertiary" />
-            <button
-              type="button"
-              tabindex="-1"
-              class="min-w-0 flex-1 truncate text-left font-mono"
-              :title="copyLabel(tag.name)"
-              @click.stop="copyTagRef(tag.name)"
-            >
-              {{ tag.name }}
-            </button>
-            <ChevronRight :size="11" class="ml-auto shrink-0 text-on-surface-variant" />
-          </div>
-        </template>
-      </div>
-    </div>
-    <div
-      v-if="commitSubmenu && commitContextMenu"
-      ref="commitSubmenuRef"
-      data-commit-context-menu
-      class="fixed z-[76] w-fit min-w-[7.85rem] max-w-[13rem] rounded-md border border-outline-variant/70 bg-surface-container-lowest shadow-2xl"
-      role="menu"
-      :aria-label="
-        commitSubmenu.kind === 'branch' ? `${commitSubmenu.branch.name} 操作` : `${commitSubmenu.tag.name} 操作`
-      "
-      :style="{ left: `${commitSubmenu.left}px`, top: `${commitSubmenu.top}px` }"
-      @click.stop
-    >
-      <div v-overlay-scrollbar class="themed-scrollbar max-h-60 overflow-y-auto p-0.5">
-        <template v-if="commitSubmenu.kind === 'branch'">
-          <button
-            type="button"
-            role="menuitem"
-            class="ui-menu-item"
-            :disabled="isInteractionDisabled || commitSubmenu.branch.current"
-            @click="
-              commitSubmenu.branch.kind === 'local'
-                ? checkoutLocalBranch(commitSubmenu.branch.name)
-                : checkoutRemoteBranch(commitSubmenu.branch.name)
-            "
-            @keydown="handleCommitMenuKeydown($event, 'submenu')"
-          >
-            <component :is="commitSubmenu.branch.kind === 'local' ? GitBranch : CloudDownload" :size="12" />
-            {{ commitSubmenu.branch.kind === 'local' ? '切换到分支' : '检出为 tracking 分支' }}
-          </button>
-          <template v-if="commitSubmenu.branch.kind === 'local'">
-            <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
-            <button
-              type="button"
-              role="menuitem"
-              class="ui-menu-item"
-              :disabled="isInteractionDisabled"
-              @click="openRefDialog('rename-branch', commitContextMenu.commit, commitSubmenu.branch.name)"
-              @keydown="handleCommitMenuKeydown($event, 'submenu')"
-            >
-              <Pencil :size="12" />重命名分支
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="ui-menu-item text-status-error"
-              :disabled="isInteractionDisabled || commitSubmenu.branch.current"
-              :title="commitSubmenu.branch.current ? '不能删除当前检出的分支' : '先执行安全删除'"
-              @click="requestDeleteBranch(commitSubmenu.branch)"
-              @keydown="handleCommitMenuKeydown($event, 'submenu')"
-            >
-              <Trash2 :size="12" />删除分支
-            </button>
-          </template>
-        </template>
-        <template v-else>
-          <button
-            type="button"
-            role="menuitem"
-            class="ui-menu-item"
-            :disabled="isInteractionDisabled"
-            @click="openTagInfo(commitSubmenu.tag.name)"
-            @keydown="handleCommitMenuKeydown($event, 'submenu')"
-          >
-            <List :size="12" />查看标签
-          </button>
-          <template v-if="tagPushRemotes.length">
-            <button
-              v-for="remote in tagPushRemotes"
-              :key="`${commitSubmenu.tag.name}:${remote.name}`"
-              type="button"
-              role="menuitem"
-              class="ui-menu-item"
-              :disabled="isInteractionDisabled"
-              :title="`推送到 ${remote.name}`"
-              @click="requestPushTag(commitSubmenu.tag.name, remote.name)"
-              @keydown="handleCommitMenuKeydown($event, 'submenu')"
-            >
-              <Cloud :size="12" />{{ tagPushRemotes.length === 1 ? '推送标签' : `推送到 ${remote.name}` }}
-            </button>
-          </template>
-          <button
-            v-else
-            type="button"
-            role="menuitem"
-            class="ui-menu-item"
-            disabled
-            title="当前没有可用的推送 remote"
-            @keydown="handleCommitMenuKeydown($event, 'submenu')"
-          >
-            <Cloud :size="12" />推送标签
-          </button>
-          <div class="mx-1 my-1 border-t border-border-subtle" role="separator" />
-          <button
-            type="button"
-            role="menuitem"
-            class="ui-menu-item"
-            :disabled="isInteractionDisabled"
-            @click="copyTagRef(commitSubmenu.tag.name)"
-            @keydown="handleCommitMenuKeydown($event, 'submenu')"
-          >
-            <Copy :size="12" />复制标签名
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="ui-menu-item text-status-error"
-            :disabled="isInteractionDisabled"
-            @click="requestDeleteTag(commitSubmenu.tag.name)"
-            @keydown="handleCommitMenuKeydown($event, 'submenu')"
-          >
-            <Trash2 :size="12" />删除标签
-          </button>
-        </template>
-      </div>
-    </div>
-  </Teleport>
+  <UiContextMenu
+    :anchor="commitContextMenuAnchor"
+    :items="commitContextMenuItems"
+    aria-label="Git 操作"
+    :min-width="126"
+    @close="handleCommitContextMenuClosed"
+  />
+  <UiContextMenu
+    :anchor="historyMoreMenuAnchor"
+    :items="historyMoreMenuItems"
+    aria-label="更多 Git 操作"
+    :should-close-on-outside-pointer-down="isHistoryMoreMenuOutsidePointerDownAllowed"
+    @close="handleHistoryMoreMenuClosed"
+  />
   <Teleport to="body"
     ><Transition name="scale"
       ><div

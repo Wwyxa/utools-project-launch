@@ -32,6 +32,8 @@ function mountTerminal(historyOnly: boolean) {
     "../../lib/overlayScrollbar": { getOverlayScrollbarScrollElements: () => null },
     "../../lib/utils": { cn: (...classes: string[]) => classes.filter(Boolean).join(" ") },
     "../common/ActionDialog.vue": { default: icon },
+    "../common/UiContextMenu.vue": { default: icon },
+    "../common/uiContextMenu": {},
     "../common/actionStatus": { showActionStatus: vi.fn() },
   };
   const descriptor = parse(readFileSync("src/components/terminal/Terminal.vue", "utf8")).descriptor;
@@ -69,7 +71,7 @@ describe("runtime history interface", () => {
     await Vue.nextTick();
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(document.querySelector('[role="listbox"]')?.classList.contains("bg-surface")).toBe(true);
+    expect(document.querySelector('[role="listbox"]')?.classList.contains("bg-surface-container-lowest")).toBe(true);
     document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     expect(document.activeElement?.textContent).toContain("直接运行");
     expect(document.activeElement?.isConnected).toBe(true);

@@ -1384,7 +1384,7 @@ onBeforeUnmount(() => {
         <div
           v-if="refScopePickerOpen"
           data-work-activity-ref-scope-menu
-          class="fixed z-50 w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface p-1 shadow-xl"
+          class="fixed z-[80] w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
           :style="{ right: `${refScopePickerMenuPosition.right}px`, top: `${refScopePickerMenuPosition.top}px` }"
         >
           <button
@@ -1414,7 +1414,7 @@ onBeforeUnmount(() => {
         <div
           v-if="timeZonePickerOpen"
           data-work-activity-time-zone-menu
-          class="fixed z-50 w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface p-1 shadow-xl"
+          class="fixed z-[80] w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
           :style="{ right: `${timeZonePickerMenuPosition.right}px`, top: `${timeZonePickerMenuPosition.top}px` }"
         >
           <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto">
@@ -1446,7 +1446,7 @@ onBeforeUnmount(() => {
         <div
           v-if="projectScopeOpen"
           data-work-activity-project-menu
-          class="fixed z-50 w-max min-w-64 max-w-[min(32rem,calc(100vw-1rem))] rounded-lg border border-border-subtle bg-surface p-1.5 shadow-xl"
+          class="fixed z-[80] w-max min-w-64 max-w-[min(32rem,calc(100vw-1rem))] rounded-lg border border-border-subtle bg-surface-container-lowest p-1.5 shadow-popover"
           :style="{ right: `${projectScopeMenuPosition.right}px`, top: `${projectScopeMenuPosition.top}px` }"
         >
           <div class="mb-1 flex items-center justify-between gap-4 px-1">
@@ -1802,7 +1802,7 @@ onBeforeUnmount(() => {
           <div
             v-if="authorPickerOpen"
             data-work-activity-author-menu
-            class="fixed z-50 w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface p-1 shadow-xl"
+            class="fixed z-[80] w-max min-w-48 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
             :style="{ right: `${authorPickerMenuPosition.right}px`, top: `${authorPickerMenuPosition.top}px` }"
           >
             <div v-overlay-scrollbar class="themed-scrollbar max-h-64 overflow-y-auto">
@@ -1988,7 +1988,7 @@ onBeforeUnmount(() => {
               v-if="projectSortOpen"
               data-work-activity-sort-menu
               role="menu"
-              class="fixed z-50 min-w-36 rounded-lg border border-border-subtle bg-surface p-1 shadow-xl"
+              class="fixed z-[80] min-w-36 rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover"
               :style="{ right: `${projectSortMenuPosition.right}px`, top: `${projectSortMenuPosition.top}px` }"
             >
               <button

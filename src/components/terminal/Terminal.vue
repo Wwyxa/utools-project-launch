@@ -21,6 +21,8 @@ import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import type { LogEntry, RuntimeRecord, ProjectScript } from "../../types";
 import ActionDialog from "../common/ActionDialog.vue";
+import UiContextMenu from "../common/UiContextMenu.vue";
+import type { UiContextMenuItem } from "../common/uiContextMenu";
 import { showActionStatus } from "../common/actionStatus";
 import { waitForVisualFeedback } from "../../lib/visualFeedback";
 
@@ -68,8 +70,6 @@ let historyLoadGeneration = 0;
 let historyCopiedTimer: number | null = null;
 
 const logFollowThreshold = 32;
-const contextMenuWidth = 176;
-const contextMenuHeight = 72;
 const historyStatusKeys = ["starting", "running", "stopping", "stopped", "exited", "failed", "lost"] as const;
 
 const getLogScrollElement = () => getOverlayScrollbarScrollElements(scrollRef.value)?.scrollOffsetElement ?? null;
@@ -128,10 +128,24 @@ const filteredHistoryLogs = computed(() => {
   return historyLogs.value.filter((log) => log.message.toLowerCase().includes(normalized));
 });
 const historyLogText = computed(() => historyLogs.value.map((log) => `[${log.timestamp}] ${log.message}`).join("\n"));
-const contextMenuStyle = computed(() => ({
-  left: `${contextMenuPosition.value?.x || 0}px`,
-  top: `${contextMenuPosition.value?.y || 0}px`,
-}));
+const terminalContextMenuItems = computed<UiContextMenuItem[]>(() => [
+  {
+    type: "item",
+    key: "copy-current",
+    label: copyCurrentLabel.value,
+    icon: ClipboardCopy,
+    disabled: !hasCurrentLogs.value,
+    onSelect: () => void handleCopyCurrent(),
+  },
+  {
+    type: "item",
+    key: "clear-current",
+    label: t.value.terminal.clearCurrent,
+    icon: Eraser,
+    disabled: !selectedScriptId.value || projectLogs.value.length === 0,
+    onSelect: () => handleClearCurrent(),
+  },
+]);
 
 const resolveLogTone = (message: string, type: string) => {
   const normalized = message.toLowerCase();
@@ -393,18 +407,7 @@ const closeContextMenu = () => {
 
 const openContextMenu = (event: MouseEvent) => {
   event.preventDefault();
-  const maxX = Math.max(8, window.innerWidth - contextMenuWidth - 8);
-  const maxY = Math.max(8, window.innerHeight - contextMenuHeight - 8);
-  contextMenuPosition.value = {
-    x: Math.min(Math.max(8, event.clientX), maxX),
-    y: Math.min(Math.max(8, event.clientY), maxY),
-  };
-};
-
-const handleWindowKeydown = (event: KeyboardEvent) => {
-  if (event.key === "Escape") {
-    closeContextMenu();
-  }
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY };
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
@@ -415,11 +418,6 @@ const handleAppEscape = (event: AppEscapeRequestEvent) => {
   }
   if (historyDialogOpen.value) {
     closeHistoryDialog();
-    event.detail.handle();
-    return;
-  }
-  if (contextMenuPosition.value) {
-    closeContextMenu();
     event.detail.handle();
   }
 };
@@ -561,7 +559,6 @@ watch(
 onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
   window.addEventListener("click", closeContextMenu);
-  window.addEventListener("keydown", handleWindowKeydown);
   logScrollEventElement = getOverlayScrollbarScrollElements(scrollRef.value)?.scrollEventElement ?? null;
   logScrollEventElement?.addEventListener("scroll", handleLogScroll);
   void scrollToBottom();
@@ -569,7 +566,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopAppEscapeListener();
   window.removeEventListener("click", closeContextMenu);
-  window.removeEventListener("keydown", handleWindowKeydown);
   logScrollEventElement?.removeEventListener("scroll", handleLogScroll);
   logScrollEventElement = null;
   if (copiedTimer.value) {
@@ -795,7 +791,7 @@ onBeforeUnmount(() => {
                       <span class="min-w-0 flex-1 truncate text-left">{{ t.terminal.historySources[historySource] }}</span>
                       <ChevronDown class="h-3.5 w-3.5 shrink-0" />
                     </button>
-                    <div v-if="historySourceMenuOpen" role="listbox" :aria-label="t.terminal.history" class="absolute left-0 right-0 top-full z-20 mt-1 rounded-md border border-border-subtle bg-surface p-1 shadow-lg">
+                    <div v-if="historySourceMenuOpen" role="listbox" :aria-label="t.terminal.history" class="absolute left-0 right-0 top-full z-[80] mt-1 rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover">
                       <button
                         v-for="(label, source) in t.terminal.historySources"
                         :key="source"
@@ -1020,37 +1016,11 @@ onBeforeUnmount(() => {
       @primary="confirmClearHistory"
     />
     <Teleport to="body">
-      <Transition name="fade">
-        <div
-          v-if="contextMenuPosition"
-          class="fixed z-50 w-44 overflow-hidden rounded-lg border border-border-subtle bg-surface-container-high py-1 text-xs text-on-surface shadow-lg"
-          :style="contextMenuStyle"
-          role="menu"
-          @click.stop
-          @contextmenu.prevent
-        >
-          <button
-            type="button"
-            role="menuitem"
-            class="flex h-8 w-full items-center gap-2 px-2.5 text-left transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45"
-            :disabled="!hasCurrentLogs"
-            @click="handleCopyCurrent"
-          >
-            <ClipboardCopy :size="13" class="text-on-surface-variant" />
-            <span class="min-w-0 truncate">{{ copyCurrentLabel }}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="flex h-8 w-full items-center gap-2 px-2.5 text-left transition-colors hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45"
-            :disabled="!selectedScriptId || projectLogs.length === 0"
-            @click="handleClearCurrent"
-          >
-            <Eraser :size="13" class="text-on-surface-variant" />
-            <span class="min-w-0 truncate">{{ t.terminal.clearCurrent }}</span>
-          </button>
-        </div>
-      </Transition>
+      <UiContextMenu
+        :anchor="contextMenuPosition"
+        :items="terminalContextMenuItems"
+        @close="contextMenuPosition = null"
+      />
     </Teleport>
     <form
       v-if="!historyOnly"

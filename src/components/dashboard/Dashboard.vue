@@ -7,6 +7,8 @@ import { useI18n } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { dismissActionStatus, showActionStatus } from "../common/actionStatus";
+import UiContextMenu from "../common/UiContextMenu.vue";
+import type { UiContextMenuAnchor, UiContextMenuItem } from "../common/uiContextMenu";
 import type { Project, ProjectAutomationHistoryEntry } from "../../types";
 import {
   Search,
@@ -41,11 +43,9 @@ let initialDashboardProjectCardsMounted = false;
 const isRefreshingProjects = ref(false);
 const isSortingProjects = ref(false);
 const allProjectsOpen = ref(false);
-const moreMenuOpen = ref(false);
+const moreMenuAnchor = ref<UiContextMenuAnchor | null>(null);
+const moreMenuOpen = computed(() => moreMenuAnchor.value !== null);
 const moreMenuTrigger = ref<HTMLElement | null>(null);
-const moreMenu = ref<HTMLElement | null>(null);
-const moreMenuStyle = ref<Record<string, string>>({});
-let moreMenuResizeObserver: ResizeObserver | null = null;
 let moreMenuOpenTimer: number | null = null;
 let moreMenuCloseTimer: number | null = null;
 let moreMenuOpenedByHover = false;
@@ -124,21 +124,6 @@ const closeTodoProjectPicker = () => {
   window.removeEventListener("resize", positionTodoProjectMenu);
 };
 
-const positionMoreMenu = () => {
-  const trigger = moreMenuTrigger.value?.getBoundingClientRect();
-  if (!trigger) return;
-  const width = Math.min(132, window.innerWidth - 16);
-  const left = Math.min(Math.max(trigger.right - width, 8), window.innerWidth - width - 8);
-  const height = moreMenu.value?.offsetHeight || 0;
-  const top = Math.max(8, Math.min(trigger.bottom + 6, window.innerHeight - height - 8));
-  moreMenuStyle.value = {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${width}px`,
-    maxHeight: `${Math.max(0, window.innerHeight - top - 8)}px`,
-  };
-};
-
 const clearMoreMenuTimers = () => {
   if (moreMenuOpenTimer !== null) window.clearTimeout(moreMenuOpenTimer);
   if (moreMenuCloseTimer !== null) window.clearTimeout(moreMenuCloseTimer);
@@ -148,44 +133,28 @@ const clearMoreMenuTimers = () => {
 
 const closeMoreMenu = (restoreFocus = false) => {
   clearMoreMenuTimers();
-  moreMenuOpen.value = false;
+  moreMenuAnchor.value = null;
   moreMenuOpenedByHover = false;
-  moreMenuResizeObserver?.disconnect();
-  moreMenuResizeObserver = null;
-  document.removeEventListener("pointerdown", handleMoreMenuPointerDown);
-  window.removeEventListener("resize", positionMoreMenu);
   if (restoreFocus) moreMenuTrigger.value?.focus();
 };
 
-const handleMoreMenuPointerDown = (event: PointerEvent) => {
-  const target = event.target as Node;
-  if (!moreMenuTrigger.value?.contains(target) && !moreMenu.value?.contains(target)) {
-    closeMoreMenu();
-  }
-};
-
-const openMoreMenu = async (focusFirst = false) => {
+const openMoreMenu = (focusFirst = false) => {
   clearMoreMenuTimers();
   moreMenuOpenedByHover = !focusFirst;
-  if (!moreMenuOpen.value) {
-    moreMenuOpen.value = true;
-    positionMoreMenu();
-    document.addEventListener("pointerdown", handleMoreMenuPointerDown);
-    window.addEventListener("resize", positionMoreMenu);
-    await nextTick();
-    if (!moreMenuOpen.value || !moreMenu.value) return;
-    moreMenuResizeObserver = new ResizeObserver(positionMoreMenu);
-    moreMenuResizeObserver.observe(moreMenu.value);
-    positionMoreMenu();
+  if (moreMenuAnchor.value) {
+    if (focusFirst) moreMenuAnchor.value = { ...moreMenuAnchor.value, focus: true };
+    return;
   }
-  if (focusFirst) moreMenu.value?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  const trigger = moreMenuTrigger.value?.getBoundingClientRect();
+  if (!trigger) return;
+  moreMenuAnchor.value = { x: trigger.right, y: trigger.bottom + 6, aboveY: trigger.top - 6, alignRight: true, focus: focusFirst };
 };
 
 const toggleMoreMenu = () => {
   if (moreMenuOpen.value && !moreMenuOpenedByHover) {
     closeMoreMenu();
   } else {
-    void openMoreMenu(true);
+    openMoreMenu(true);
   }
 };
 
@@ -195,37 +164,98 @@ const scheduleMoreMenuOpen = (event: PointerEvent) => {
   if (moreMenuOpen.value) return;
   moreMenuOpenTimer = window.setTimeout(() => {
     moreMenuOpenTimer = null;
-    void openMoreMenu();
+    openMoreMenu();
   }, 150);
 };
 
-const scheduleMoreMenuClose = (event: PointerEvent) => {
-  if (event.pointerType !== "mouse") return;
+const scheduleMoreMenuClose = (event?: PointerEvent) => {
+  if (event && event.pointerType !== "mouse") return;
   clearMoreMenuTimers();
   moreMenuCloseTimer = window.setTimeout(() => {
     moreMenuCloseTimer = null;
-    if (!moreMenu.value?.contains(document.activeElement)) closeMoreMenu();
+    closeMoreMenu();
   }, 200);
 };
 
-const handleMoreMenuKeydown = (event: KeyboardEvent) => {
-  if (event.key === "Tab") {
+const isMoreMenuOutsidePointerDownAllowed = (target: EventTarget | null) =>
+  !(target instanceof Node && moreMenuTrigger.value?.contains(target));
+
+const handleMoreMenuClosed = ({ reason }: { reason: string }) => {
+  if (reason === "escape") {
     closeMoreMenu(true);
     return;
   }
-  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-  const items = Array.from(moreMenu.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') || []);
-  if (!items.length) return;
-  event.preventDefault();
-  const index = items.findIndex((item) => item === document.activeElement);
-  const nextIndex =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? items.length - 1
-        : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
-  items[nextIndex]?.focus();
+  moreMenuAnchor.value = null;
+  moreMenuOpenedByHover = false;
 };
+
+const dashboardMoreMenuItems = computed<UiContextMenuItem[]>(() => {
+  const items: UiContextMenuItem[] = [
+    {
+      type: "item",
+      key: "create-project",
+      label: t.value.dashboard.createHint,
+      icon: Plus,
+      iconClass: "text-primary",
+      onSelect: () => store.openCreateProjectForm(),
+    },
+    { type: "separator" },
+    {
+      type: "item",
+      key: "todo-overview",
+      label: t.value.dashboard.todoOverview,
+      icon: CheckSquare,
+      iconSize: 16,
+      trailing: { text: String(openTodoCount.value) },
+      onSelect: () => toggleTodoOverview(),
+    },
+    {
+      type: "item",
+      key: "automation-overview",
+      label: t.value.automation.overview,
+      icon: CalendarClock,
+      iconSize: 16,
+      onSelect: () => toggleAutomationOverview(),
+    },
+    {
+      type: "item",
+      key: "environment",
+      label: t.value.environment.title,
+      icon: MonitorCog,
+      iconSize: 16,
+      onSelect: () => store.setActiveTab("environment"),
+    },
+    {
+      type: "item",
+      key: "work-activity",
+      label: t.value.activity.title,
+      icon: CalendarDays,
+      iconSize: 16,
+      onSelect: () => store.openWorkActivity(),
+    },
+    { type: "separator" },
+  ];
+  if (hasSortableProjects.value) {
+    items.push({
+      type: "item",
+      key: "sort-projects",
+      label: isSortingProjects.value ? t.value.dashboard.finishSorting : t.value.dashboard.sortProjects,
+      icon: ArrowUpDown,
+      iconSize: 16,
+      checked: isSortingProjects.value,
+      onSelect: () => toggleSortingProjects(),
+    });
+  }
+  items.push({
+    type: "item",
+    key: "settings",
+    label: t.value.sidebar.settings,
+    icon: Settings,
+    iconSize: 16,
+    onSelect: () => store.setActiveTab("settings"),
+  });
+  return items;
+});
 
 const handleTodoProjectPickerPointerDown = (event: PointerEvent) => {
   const target = event.target as Node;
@@ -253,12 +283,7 @@ const closeTodoComposer = () => {
 };
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (moreMenuOpen.value) {
-    closeMoreMenu(true);
-    event.detail.handle();
-    return;
-  }
-
+  if (event.detail.handled) return;
   if (todoProjectPickerOpen.value) {
     closeTodoProjectPicker();
     event.detail.handle();
@@ -927,121 +952,15 @@ const handleProjectDragEnd = () => {
       </div>
     </div>
 
-    <Teleport to="body">
-      <Transition name="scale">
-        <div
-          v-if="moreMenuOpen"
-          ref="moreMenu"
-          :style="moreMenuStyle"
-          class="menu-pop fixed z-50 flex flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-xl"
-          role="menu"
-          :aria-label="t.dashboard.moreActions"
-          @keydown="handleMoreMenuKeydown"
-          @pointerenter="clearMoreMenuTimers"
-          @pointerleave="scheduleMoreMenuClose"
-        >
-          <div class="min-h-0 overflow-y-auto p-1.5">
-            <button
-              type="button"
-              role="menuitem"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
-              @click="
-                closeMoreMenu();
-                store.openCreateProjectForm();
-              "
-            >
-              <Plus :size="16" class="shrink-0 text-primary" />
-              <span class="min-w-0 flex-1 truncate">{{ t.dashboard.createHint }}</span>
-            </button>
-
-            <div class="my-1 border-t border-border-subtle" />
-
-            <button
-              type="button"
-              role="menuitem"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
-              @click="
-                closeMoreMenu();
-                toggleTodoOverview();
-              "
-            >
-              <CheckSquare :size="16" class="shrink-0 text-on-surface-variant" />
-              <span class="min-w-0 flex-1 truncate">{{ t.dashboard.todoOverview }}</span>
-              <span class="min-w-4 shrink-0 text-right text-[11px] tabular-nums text-on-surface-variant">{{
-                openTodoCount
-              }}</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
-              @click="
-                closeMoreMenu();
-                toggleAutomationOverview();
-              "
-            >
-              <CalendarClock :size="16" class="shrink-0 text-on-surface-variant" />
-              <span class="min-w-0 flex-1 truncate">{{ t.automation.overview }}</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
-              @click="
-                closeMoreMenu();
-                store.setActiveTab('environment');
-              "
-            >
-              <MonitorCog :size="16" class="shrink-0 text-on-surface-variant" />
-              <span class="min-w-0 flex-1 truncate">{{ t.environment.title }}</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
-              @click="
-                closeMoreMenu();
-                store.openWorkActivity();
-              "
-            >
-              <CalendarDays :size="16" class="shrink-0 text-on-surface-variant" />
-              <span class="min-w-0 flex-1 truncate">{{ t.activity.title }}</span>
-            </button>
-
-            <div class="my-1 border-t border-border-subtle" />
-
-            <button
-              v-if="hasSortableProjects"
-              type="button"
-              role="menuitem"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
-              :aria-pressed="isSortingProjects"
-              @click="
-                closeMoreMenu();
-                toggleSortingProjects();
-              "
-            >
-              <ArrowUpDown :size="16" class="shrink-0 text-on-surface-variant" />
-              <span class="min-w-0 flex-1 truncate">{{
-                isSortingProjects ? t.dashboard.finishSorting : t.dashboard.sortProjects
-              }}</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-on-surface ui-press hover:bg-surface-variant"
-              @click="
-                closeMoreMenu();
-                store.setActiveTab('settings');
-              "
-            >
-              <Settings :size="16" class="shrink-0 text-on-surface-variant" />
-              <span class="min-w-0 flex-1 truncate">{{ t.sidebar.settings }}</span>
-            </button>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <UiContextMenu
+      :anchor="moreMenuAnchor"
+      :items="dashboardMoreMenuItems"
+      :aria-label="t.dashboard.moreActions"
+      :should-close-on-outside-pointer-down="isMoreMenuOutsidePointerDownAllowed"
+      @close="handleMoreMenuClosed"
+      @panel-pointer-enter="clearMoreMenuTimers"
+      @panel-pointer-leave="scheduleMoreMenuClose"
+    />
 
     <AllProjectsDialog v-if="allProjectsOpen" :search-query="props.searchQuery" @close="allProjectsOpen = false" />
 
@@ -1088,7 +1007,7 @@ const handleProjectDragEnd = () => {
                       v-if="todoProjectPickerOpen"
                       ref="todoProjectMenu"
                       :style="todoProjectMenuStyle"
-                      class="menu-pop fixed z-[60] flex flex-col overflow-hidden rounded-md border border-border-subtle bg-surface shadow-xl"
+                      class="menu-pop fixed z-[80] flex flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest shadow-popover"
                     >
                       <div class="shrink-0 border-b border-border-subtle p-1">
                         <div class="relative">

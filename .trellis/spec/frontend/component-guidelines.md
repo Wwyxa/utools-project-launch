@@ -34,6 +34,16 @@ each feature. The current file-icon implementation is `src/lib/fileIconTheme.ts`
 - Teleport clipped overlays to `body`. Measure and clamp floating geometry after
   render and content changes; close it on context replacement, owner collapse,
   outside interaction, or unmount. Internal menu scrolling must not close the owner.
+- Item-list floating menus (context menus and plain dropdowns) use
+  `src/components/common/UiContextMenu.vue` with declarative items and an
+  anchor; do not hand-roll positioning, keyboard roving, or close listeners.
+  Panels share one token set: `shadow-popover`, `bg-surface-container-lowest`,
+  `border-border-subtle`, `rounded-lg`, `p-1`, and content-adaptive width
+  (`maxWidth`/`minWidth` caps only). Z-index scale: context menus 75/76,
+  click dropdowns 80, overlay pickers 90, action status 100. Danger entries are
+  `text-status-error` on `ui-menu-item`/`mode-menu-item` — hover styling lives
+  in `index.css`; do not re-add per-template hover overrides. Disabled triggers
+  surface the reason through their `title`/`aria-label`.
 - Custom pickers reuse existing trigger/menu styles when native controls cannot
   meet placement or styling needs. This is a UI choice, not a uTools API ban.
 - Components with a visible root plus Teleport siblings explicitly forward
