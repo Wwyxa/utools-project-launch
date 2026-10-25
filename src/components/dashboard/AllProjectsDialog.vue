@@ -23,22 +23,31 @@ const visible = ref(false);
 type FilterKey = "type" | "visibility";
 const hiddenIds = computed(() => new Set(store.hiddenProjectIds));
 const projectTypes = computed(() => [...new Set(store.projects.map((project) => project.type))].sort());
+const visibilityOptions = computed(() => [
+  { value: "all", label: t.value.common.all },
+  { value: "visible", label: t.value.dashboard.visibleProjects },
+  { value: "hidden", label: t.value.dashboard.hiddenProjects },
+]);
+// 未筛选时触发器只显示字段名（弱化色），筛选后显示具体值；避免"标签: 值"前缀把控件撑宽。
 const filters = computed(() => [
   {
     key: "type" as const,
     label: t.value.dashboard.projectType,
     value: projectType.value,
     options: [{ value: "", label: t.value.common.all }, ...projectTypes.value.map((type) => ({ value: type, label: type }))],
+    displayText: projectType.value || t.value.dashboard.projectType,
+    active: Boolean(projectType.value),
   },
   {
     key: "visibility" as const,
     label: t.value.dashboard.hiddenStatus,
     value: hiddenStatus.value,
-    options: [
-      { value: "all", label: t.value.common.all },
-      { value: "visible", label: t.value.dashboard.visibleProjects },
-      { value: "hidden", label: t.value.dashboard.hiddenProjects },
-    ],
+    options: visibilityOptions.value,
+    displayText:
+      hiddenStatus.value === "all"
+        ? t.value.dashboard.hiddenStatus
+        : (visibilityOptions.value.find((option) => option.value === hiddenStatus.value)?.label ?? t.value.dashboard.hiddenStatus),
+    active: hiddenStatus.value !== "all",
   },
 ]);
 const selectFilter = (key: FilterKey, value: string | string[] | null) => {
@@ -104,16 +113,19 @@ onUnmounted(() => {
           class="ui-field h-9 w-full min-w-0 pl-8 pr-2"
         />
       </label>
-      <div v-for="filter in filters" :key="filter.key" class="min-w-0 max-w-full shrink-0">
+      <div v-for="filter in filters" :key="filter.key" class="max-w-44 shrink-0">
         <UiSelect
           :model-value="filter.value"
           :options="filter.options"
           :aria-label="filter.label"
-          :panel-min-width="176"
           @update:model-value="(value) => selectFilter(filter.key, value)"
         >
-          <template #trigger="{ selectedLabel }">
-            <span class="min-w-0 flex-1 truncate text-left leading-normal">{{ filter.label }}: {{ selectedLabel }}</span>
+          <template #trigger>
+            <span
+              class="min-w-0 flex-1 truncate text-left leading-normal"
+              :class="filter.active ? '' : 'text-on-surface-variant'"
+              :title="filter.displayText"
+            >{{ filter.displayText }}</span>
             <ChevronDown :size="14" class="shrink-0 text-on-surface-variant" aria-hidden="true" />
           </template>
         </UiSelect>
