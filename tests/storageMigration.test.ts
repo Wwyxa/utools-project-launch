@@ -53,6 +53,7 @@ describe("storage migration recovery", () => {
       projectLaunchServicePreferences: { enabled: false },
       refreshRuntimeRecordRetention: vi.fn().mockResolvedValue({ policy: {} }),
       refreshStorageOverview: vi.fn().mockResolvedValue(undefined),
+      refreshGithubAuthStatus: vi.fn().mockResolvedValue(undefined),
     };
     let mount = () => {};
     let unmount = () => {};

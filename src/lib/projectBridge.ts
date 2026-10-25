@@ -21,6 +21,9 @@ import type {
   EnvironmentToolDefinition,
   EnvironmentToolRequest,
   EnvironmentToolKey,
+  GithubAuthPreferences,
+  GithubAuthStatus,
+  GithubAuthTokenVerification,
   LocalStateWriteResult,
   MigrationRunResult,
   MigrationSummary,
@@ -96,6 +99,7 @@ const editorPreferencesStorageKey = "utools-project-launch.editor-settings.v1";
 const externalApplicationPreferencesStorageKey = "utools-project-launch.local-external-applications.v1";
 const environmentPreferencesStorageKey = "utools-project-launch.environment-settings.v1";
 const aiPreferencesStorageKey = "utools-project-launch.ai-settings.v1";
+const githubAuthPreferencesStorageKey = "utools-project-launch.github-auth.v1";
 const uiPreferencesStorageKey = "utools-project-launch.ui-preferences.v1";
 const projectDetailsTabOrderStorageKey = "utools-project-launch.project-details-tab-order.v1";
 const projectLaunchServicePreferencesStorageKey = "utools-project-launch.project-launch-service.v1";
@@ -662,6 +666,55 @@ const writeStoredAiPreferences = (preferences: AiPreferences): LocalStateWriteRe
   return { ok: true };
 };
 
+const defaultGithubAuthPreferences = (): GithubAuthPreferences => ({
+  schemaVersion: 1,
+  personalAccessToken: "",
+});
+
+export const normalizeGithubAuthPreferences = (value: unknown): GithubAuthPreferences => {
+  if (!value || typeof value !== "object") {
+    return defaultGithubAuthPreferences();
+  }
+  const candidate = value as { schemaVersion?: unknown; personalAccessToken?: unknown };
+  if (candidate.schemaVersion !== 1) {
+    return defaultGithubAuthPreferences();
+  }
+  return {
+    schemaVersion: 1,
+    personalAccessToken:
+      typeof candidate.personalAccessToken === "string" ? candidate.personalAccessToken.trim() : "",
+  };
+};
+
+const readStoredGithubAuthPreferences = (): GithubAuthPreferences => {
+  try {
+    const raw = window.localStorage?.getItem(githubAuthPreferencesStorageKey);
+    return raw ? normalizeGithubAuthPreferences(JSON.parse(raw)) : defaultGithubAuthPreferences();
+  } catch (error) {
+    return defaultGithubAuthPreferences();
+  }
+};
+
+const writeStoredGithubAuthPreferences = (preferences: GithubAuthPreferences): LocalStateWriteResult => {
+  const normalized = normalizeGithubAuthPreferences(preferences);
+  try {
+    window.localStorage?.setItem(githubAuthPreferencesStorageKey, JSON.stringify(normalized));
+  } catch (error) {
+    // Keep settings updates non-blocking in browser preview and uTools fallback modes.
+  }
+  return { ok: true };
+};
+
+const unavailableGithubAuthStatus = (): GithubAuthStatus => ({
+  configured: false,
+  source: null,
+  verified: false,
+  login: null,
+  avatarUrl: null,
+  error: null,
+  gh: { installed: false, version: null, credentialFound: false },
+});
+
 const emptyGitSnapshot = (): ProjectBridgeGitSnapshot => ({
   branch: "main",
   headHash: "",
@@ -1097,6 +1150,18 @@ const fallbackBridge: ProjectBridge = {
   },
   saveAiPreferences(preferences) {
     return writeStoredAiPreferences(preferences);
+  },
+  loadGithubAuthPreferences() {
+    return readStoredGithubAuthPreferences();
+  },
+  saveGithubAuthPreferences(preferences) {
+    return writeStoredGithubAuthPreferences(preferences);
+  },
+  async readGithubAuthStatus(): Promise<GithubAuthStatus> {
+    return unavailableGithubAuthStatus();
+  },
+  async verifyGithubAuthToken(): Promise<GithubAuthTokenVerification> {
+    return { ok: false, login: null, avatarUrl: null, message: "浏览器预览无法验证 GitHub 凭证。" };
   },
   async listAiModels() {
     return [];

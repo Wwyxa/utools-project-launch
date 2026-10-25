@@ -68,6 +68,10 @@ window.projectBridge = {
   detectEnvironmentTool,
   loadAiPreferences: readAiPreferences,
   saveAiPreferences: saveAiPreferences,
+  loadGithubAuthPreferences: readGithubAuthPreferences,
+  saveGithubAuthPreferences,
+  readGithubAuthStatus,
+  verifyGithubAuthToken,
   loadProjectLaunchServicePreferences: readProjectLaunchServicePreferences,
   saveProjectLaunchServicePreferences,
   getProjectLaunchServiceStatus: readProjectLaunchServiceStatus,
@@ -230,6 +234,7 @@ const runtimeOperationLabels = {
   runMigration: "迁移存储",
   executeCleanup: "清理数据",
   testAiConnection: "测试 AI 连接",
+  verifyGithubAuthToken: "验证 GitHub 凭证",
   analyzeWithAi: "AI 分析",
   analyzeWithAiStream: "流式 AI 分析",
 };

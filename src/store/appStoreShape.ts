@@ -11,6 +11,9 @@ import type {
   AiModelInfo,
   AiModelTestResult,
   AiPreferences,
+  GithubAuthPreferences,
+  GithubAuthStatus,
+  GithubAuthTokenVerification,
   AiPromptMode,
   AiStreamChunkPayload,
   BuiltinEnvironmentToolOverride,
@@ -135,6 +138,9 @@ export interface AppState {
   aiAnalyzing: boolean;
   aiAnalysisResult: string;
   aiAnalysisMessage: string;
+  githubAuthPreferences: GithubAuthPreferences;
+  githubAuthStatus: GithubAuthStatus | null;
+  githubAuthStatusLoading: boolean;
   aiAnalysisState: AiAnalysisState;
   supportsBridge: boolean;
   projectsLoaded: boolean;
@@ -314,6 +320,9 @@ export interface AppActions {
   testAiConfiguration(): Promise<AiModelTestResult>;
   analyzeGitWithAiStream(projectId: string, prompt: string, handlers?: AiStreamHandlers): Promise<AiAnalyzeResult>;
   analyzeGitWithAi(projectId: string, prompt: string): Promise<void>;
+  setGithubAuthPreferences(patch: Partial<GithubAuthPreferences>): void;
+  refreshGithubAuthStatus(): Promise<void>;
+  verifyGithubAuthToken(token: string): Promise<GithubAuthTokenVerification>;
   setActiveTab(tab: "projects" | "settings" | "environment" | "activity"): void;
   openWorkActivity(projectId?: string): void;
   returnFromWorkActivity(): void;

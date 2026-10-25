@@ -7,6 +7,7 @@ import type {
   CleanupResult,
   EnvironmentToolDefinition,
   EnvironmentToolResult,
+  GithubAuthStatus,
   IconPackColorMode,
   IconPackManifest,
   IconPackStatus,
@@ -27,6 +28,7 @@ import type {
   TodoItem,
 } from "../types";
 import { aiActions } from "./actions/ai";
+import { githubAuthActions } from "./actions/githubAuth";
 import { automationRunActions } from "./actions/automationRun";
 import { automationScheduleActions } from "./actions/automationSchedule";
 import { bridgeEventsActions } from "./actions/bridgeEvents";
@@ -73,6 +75,9 @@ export const useStore = defineStore("app", {
       environmentRequestGenerations: {} as Record<string, number>,
       environmentActiveRefreshes: 0,
       aiPreferences: bridge.loadAiPreferences(),
+      githubAuthPreferences: bridge.loadGithubAuthPreferences(),
+      githubAuthStatus: null as GithubAuthStatus | null,
+      githubAuthStatusLoading: false,
       aiModels: [] as AiModelInfo[],
       aiModelRefreshing: false,
       aiModelRefreshMessage: "",
@@ -284,6 +289,7 @@ export const useStore = defineStore("app", {
     ...iconPackActions,
     ...projectLaunchServiceActions,
     ...aiActions,
+    ...githubAuthActions,
     ...settingsActions,
     ...workActivityActions,
     ...projectFormActions,

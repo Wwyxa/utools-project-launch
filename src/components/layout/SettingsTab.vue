@@ -28,6 +28,8 @@ import {
   Trash2,
   WandSparkles,
   ChevronDown,
+  CheckCircle2,
+  KeyRound,
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { waitForInitialPaint } from "../../store/helpers/automationHelpers";
@@ -69,6 +71,7 @@ const settingsSections = computed(() => [
   { id: "general", label: t.value.settings.general },
   { id: "environment", label: t.value.settings.environment },
   { id: "ai", label: t.value.settings.aiProvider },
+  { id: "github", label: t.value.settings.github },
   { id: "terminal", label: t.value.settings.defaultTerminal },
   { id: "applications", label: t.value.settings.externalApplications },
   { id: "service", label: t.value.settings.projectLaunchService },
@@ -963,6 +966,178 @@ const aiTestTitle = computed(() => {
   return store.aiModelTestMessage;
 });
 
+const githubTokenDraft = ref("");
+const githubAuthBusy = ref(false);
+const githubAuthFeedback = ref("");
+const githubAuthFeedbackTone = ref<"success" | "error">("success");
+
+const githubManualTokenConfigured = computed(() => Boolean(store.githubAuthPreferences.personalAccessToken));
+
+const githubStatusConnected = computed(
+  () => Boolean(store.githubAuthStatus?.configured && store.githubAuthStatus.verified),
+);
+
+const githubStatusChecking = computed(() => store.githubAuthStatusLoading && !store.githubAuthStatus);
+
+const githubOverallBadgeClass = computed(() => {
+  if (githubStatusChecking.value) return "border-border-subtle bg-surface-variant text-on-surface-variant";
+  if (githubStatusConnected.value) return "border-status-running/30 bg-status-running/10 text-status-running";
+  if (store.githubAuthStatus?.configured) return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+  return "border-border-subtle bg-surface-variant text-on-surface-variant";
+});
+
+const githubOverallBadgeLabel = computed(() => {
+  if (githubStatusChecking.value) return "检测中";
+  if (githubStatusConnected.value) return "已连接";
+  return store.githubAuthStatus?.configured ? "凭证异常" : "未配置";
+});
+
+// Two parallel credential methods, either one suffices. Each card derives its
+// own state from the shared status snapshot: gh = GitHub CLI auto-discovery,
+// pat = the manually pasted token. `source` names the active one.
+type GithubGhCardState = "active" | "standby" | "invalid" | "missing" | "not-installed";
+
+const githubGhCardState = computed<GithubGhCardState>(() => {
+  const status = store.githubAuthStatus;
+  const cli = status?.gh;
+  if (!cli?.installed) return "not-installed";
+  if (!cli.credentialFound) return "missing";
+  if (status?.source === "gh") return status.verified ? "active" : "invalid";
+  return "standby";
+});
+
+const githubGhBadgeLabel = computed(
+  () =>
+    ({
+      active: "已接入",
+      standby: "已接入",
+      invalid: "凭证异常",
+      missing: "待登录",
+      "not-installed": "未安装",
+    })[githubGhCardState.value],
+);
+
+const githubGhBadgeClass = computed(() => {
+  const state = githubGhCardState.value;
+  if (state === "active" || state === "standby") {
+    return "border-status-running/30 bg-status-running/10 text-status-running";
+  }
+  if (state === "invalid" || state === "missing") {
+    return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+  }
+  return "border-border-subtle bg-surface-variant text-on-surface-variant";
+});
+
+const githubGhHeading = computed(() => {
+  const status = store.githubAuthStatus;
+  const version = status?.gh.version ? `（v${status.gh.version}）` : "";
+  switch (githubGhCardState.value) {
+    case "active":
+      return `已通过 gh${version}登录：${status?.login ?? ""}`;
+    case "standby":
+      return "已检测到 gh 登录凭证";
+    case "invalid":
+      return "gh 凭证未通过验证";
+    case "missing":
+      return `已安装${version}，未检测到登录凭证`;
+    default:
+      return "未安装 GitHub CLI";
+  }
+});
+
+const githubGhDescription = computed(() => {
+  const status = store.githubAuthStatus;
+  switch (githubGhCardState.value) {
+    case "active":
+      return "";
+    case "standby":
+      return "当前优先使用手动令牌，清除手动令牌后自动切换为 gh 凭证。";
+    case "invalid":
+      return `${status?.error ?? "GitHub 拒绝了该凭证"}。重新执行以下命令登录后，点击右上角刷新：`;
+    case "missing":
+      return "在终端执行以下命令登录，完成后点击右上角刷新重新检测：";
+    default:
+      return "安装后执行以下命令登录即可自动接入；也可跳过安装，直接使用手动令牌：";
+  }
+});
+
+const githubGhShowLoginCommand = computed(() => githubGhCardState.value !== "active" && githubGhCardState.value !== "standby");
+
+type GithubPatCardState = "active" | "stale" | "empty";
+
+const githubPatCardState = computed<GithubPatCardState>(() => {
+  if (!githubManualTokenConfigured.value) return "empty";
+  if (store.githubAuthStatus?.source !== "manual") return "stale";
+  return store.githubAuthStatus.verified ? "active" : "stale";
+});
+
+const githubPatBadgeLabel = computed(
+  () => ({ active: "使用中", stale: "已失效", empty: "未配置" })[githubPatCardState.value],
+);
+
+const githubPatBadgeClass = computed(() => {
+  if (githubPatCardState.value === "active") {
+    return "border-status-running/30 bg-status-running/10 text-status-running";
+  }
+  if (githubPatCardState.value === "stale") {
+    return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+  }
+  return "border-border-subtle bg-surface-variant text-on-surface-variant";
+});
+
+const githubPatNotice = computed(() => {
+  if (githubPatCardState.value !== "stale") return "";
+  const status = store.githubAuthStatus;
+  if (status?.source === "gh") {
+    return "手动令牌格式无效或被 GitHub 拒绝，当前已自动改用 gh 凭证。可重新粘贴或清除。";
+  }
+  return `手动令牌未通过验证：${status?.error ?? "GitHub 拒绝了该令牌"}。可重新粘贴并保存。`;
+});
+
+const openGithubTokenCreation = () => {
+  void getProjectBridge().openPath(
+    "https://github.com/settings/tokens/new?scopes=repo&description=uTools%20Project%20Launch",
+  );
+};
+
+const saveGithubToken = async () => {
+  const token = githubTokenDraft.value.trim();
+  if (!token) {
+    githubAuthFeedback.value = "请先粘贴 GitHub 令牌。";
+    githubAuthFeedbackTone.value = "error";
+    return;
+  }
+  githubAuthBusy.value = true;
+  try {
+    const result = await store.verifyGithubAuthToken(token);
+    if (result.ok) {
+      store.setGithubAuthPreferences({ personalAccessToken: token });
+      githubTokenDraft.value = "";
+      githubAuthFeedback.value = result.message;
+      githubAuthFeedbackTone.value = "success";
+      await store.refreshGithubAuthStatus();
+    } else {
+      githubAuthFeedback.value = result.message;
+      githubAuthFeedbackTone.value = "error";
+    }
+  } finally {
+    githubAuthBusy.value = false;
+  }
+};
+
+const clearGithubToken = async () => {
+  store.setGithubAuthPreferences({ personalAccessToken: "" });
+  githubTokenDraft.value = "";
+  githubAuthFeedback.value = "已清除手动令牌。";
+  githubAuthFeedbackTone.value = "success";
+  githubAuthBusy.value = true;
+  try {
+    await store.refreshGithubAuthStatus();
+  } finally {
+    githubAuthBusy.value = false;
+  }
+};
+
 let initializationFrame = 0;
 onMounted(() => {
   const scrollElement = getOverlayScrollbarScrollElements(settingsContent.value)?.scrollEventElement;
@@ -973,6 +1148,7 @@ onMounted(() => {
       void loadAiModels();
       void refreshLogRetention();
       void store.refreshStorageOverview();
+      void store.refreshGithubAuthStatus();
     });
   });
 });
@@ -1546,6 +1722,150 @@ watch(
                 </div>
               </div>
             </div>
+          </section>
+
+          <section id="settings-github" data-settings-section="github" tabindex="-1" class="min-w-0 py-6 outline-none">
+            <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
+                <Github :size="15" class="shrink-0 text-primary" />
+                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.github }}</h3>
+                <span class="col-span-2 text-xs leading-5 text-on-surface-variant">
+                  用于获取提交历史作者头像（含私有仓库）并提升访问额度；两种方式任选其一，凭证仅保存在本机。
+                </span>
+              </div>
+              <div class="flex shrink-0 items-center gap-1.5">
+                <span :class="cn('ui-status-pill', githubOverallBadgeClass)">
+                  {{ githubOverallBadgeLabel }}
+                </span>
+                <button
+                  type="button"
+                  class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--sm"
+                  :title="t.common.refresh"
+                  :aria-label="t.common.refresh"
+                  :disabled="store.githubAuthStatusLoading"
+                  @click="store.refreshGithubAuthStatus()"
+                >
+                  <RefreshCw :size="13" :class="store.githubAuthStatusLoading ? 'animate-spin' : ''" />
+                </button>
+              </div>
+            </div>
+            <div class="grid min-w-0 gap-3 lg:grid-cols-2">
+              <div class="min-w-0 rounded-lg border border-border-subtle bg-surface px-3 py-2.5 text-xs leading-5">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex min-w-0 items-center gap-1.5 font-bold text-on-surface">
+                    <SquareTerminal :size="14" class="shrink-0 text-primary" />
+                    GitHub CLI
+                    <span class="font-normal text-on-surface-variant">免粘贴，推荐</span>
+                  </div>
+                  <span :class="cn('ui-status-pill shrink-0', githubGhBadgeClass)">
+                    {{ githubGhBadgeLabel }}
+                  </span>
+                </div>
+                <div class="mt-1.5 text-on-surface-variant">
+                  <div class="flex items-center gap-1.5 font-bold text-on-surface">
+                    <img
+                      v-if="githubGhCardState === 'active' && store.githubAuthStatus?.avatarUrl"
+                      :src="store.githubAuthStatus.avatarUrl"
+                      alt=""
+                      class="h-4 w-4 shrink-0 rounded-full"
+                    />
+                    <CheckCircle2 v-if="githubGhCardState === 'active'" :size="13" class="shrink-0 text-status-running" />
+                    <span class="truncate">{{ githubGhHeading }}</span>
+                  </div>
+                  <div v-if="githubGhDescription" class="mt-0.5 break-words">
+                    {{ githubGhDescription }}
+                    <code v-if="githubGhShowLoginCommand" class="rounded bg-surface-variant px-1 py-px text-[10px]"
+                      >gh auth login</code
+                    >
+                  </div>
+                </div>
+              </div>
+
+              <div class="min-w-0 rounded-lg border border-border-subtle bg-surface px-3 py-2.5 text-xs leading-5">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex min-w-0 items-center gap-1.5 font-bold text-on-surface">
+                    <KeyRound :size="14" class="shrink-0 text-primary" />
+                    手动令牌
+                    <span class="font-normal text-on-surface-variant">Personal Access Token</span>
+                  </div>
+                  <span :class="cn('ui-status-pill shrink-0', githubPatBadgeClass)">
+                    {{ githubPatBadgeLabel }}
+                  </span>
+                </div>
+                <div class="mt-1.5 text-on-surface-variant">
+                  <template v-if="githubPatCardState === 'active'">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex min-w-0 items-center gap-1.5 font-bold text-status-running">
+                        <img
+                          v-if="store.githubAuthStatus?.avatarUrl"
+                          :src="store.githubAuthStatus.avatarUrl"
+                          alt=""
+                          class="h-4 w-4 shrink-0 rounded-full"
+                        />
+                        <CheckCircle2 :size="13" class="shrink-0" />
+                        <span class="truncate">已验证：{{ store.githubAuthStatus?.login }}</span>
+                      </div>
+                      <button
+                        type="button"
+                        :class="serviceActionButtonClass('danger', 'field')"
+                        :disabled="githubAuthBusy"
+                        @click="clearGithubToken"
+                      >
+                        <Trash2 :size="13" />
+                        清除
+                      </button>
+                    </div>
+                    <div class="mt-0.5 break-words">令牌仅保存在本机；连接后 GitHub API 额度为 5000 次/小时。</div>
+                  </template>
+                  <template v-else>
+                    <div v-if="githubPatNotice" class="break-words text-status-warning">{{ githubPatNotice }}</div>
+                    <label class="mt-1 block font-semibold uppercase text-on-surface-variant">
+                      令牌（ghp_… / github_pat_…）
+                      <input
+                        v-model="githubTokenDraft"
+                        type="password"
+                        placeholder="粘贴 GitHub Personal Access Token"
+                        class="ui-field mt-1 w-full normal-case"
+                      />
+                    </label>
+                    <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        :class="serviceActionButtonClass('primary', 'field')"
+                        :disabled="githubAuthBusy || !githubTokenDraft.trim()"
+                        :aria-busy="githubAuthBusy"
+                        @click="saveGithubToken"
+                      >
+                        <ShieldCheck :size="13" />
+                        {{ githubAuthBusy ? "验证中" : "验证并保存" }}
+                      </button>
+                      <button
+                        v-if="githubManualTokenConfigured"
+                        type="button"
+                        :class="serviceActionButtonClass('danger', 'field')"
+                        :disabled="githubAuthBusy"
+                        @click="clearGithubToken"
+                      >
+                        <Trash2 :size="13" />
+                        清除
+                      </button>
+                    </div>
+                    <div v-if="githubAuthFeedback" class="mt-1.5 break-words" :class="githubAuthFeedbackTone === 'success' ? 'text-status-running' : 'text-status-error'" role="status">
+                      {{ githubAuthFeedback }}
+                    </div>
+                    <div class="mt-1.5 break-words">
+                      仅获取头像无需勾选任何权限；需要访问私有仓库时，请勾选 repo 权限。
+                      <button type="button" class="text-primary underline underline-offset-2" @click="openGithubTokenCreation">
+                        前往 GitHub 创建令牌
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+            <p class="mt-3 text-xs leading-5 text-on-surface-variant">
+              两种方式都未配置时将以匿名方式访问 GitHub（60 次/小时），头像功能仍可用但额度有限。
+            </p>
           </section>
 
           <section

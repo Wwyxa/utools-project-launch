@@ -16,6 +16,7 @@ const localStatePreferenceSections = new Set([
   "ai",
   "ui",
   "projectLaunchService",
+  "githubAuth",
 ]);
 
 function localStateFilePath() {

@@ -11,6 +11,7 @@ const preloadModuleFiles = [
   "environment-tools.js",
   "ai.js",
   "platform.js",
+  "github-auth.js",
   "git.js",
   "projects.js",
   "migration.js",

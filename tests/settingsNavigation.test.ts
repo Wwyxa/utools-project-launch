@@ -85,7 +85,7 @@ describe("settings sidebar navigation", () => {
     viewport.scrollTop = 2800;
     viewport.dispatchEvent(new Event("scroll"));
     await nextTick();
-    expect(root.querySelector('nav [aria-current="location"]')?.getAttribute("aria-controls")).toBe("settings-backup");
+    expect(root.querySelector('nav [aria-current="location"]')?.getAttribute("aria-controls")).toBe("settings-logs");
   });
 });
 

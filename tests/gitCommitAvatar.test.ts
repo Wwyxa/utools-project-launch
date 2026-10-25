@@ -6,16 +6,22 @@ const firstHash = 'a'.repeat(40);
 const secondHash = 'b'.repeat(40);
 const avatarUrl = 'https://avatars.githubusercontent.com/u/123?s=80';
 
+type AvatarFetchResponse = {
+  ok: boolean;
+  status?: number;
+  headers?: Headers;
+  json: () => Promise<{ author: { avatar_url: string } }>;
+};
+
 const loadAvatarReader = () => {
-  const fetchAvatar = vi.fn<() => Promise<{
-    ok: boolean;
-    status?: number;
-    headers?: Headers;
-    json: () => Promise<{ author: { avatar_url: string } }>;
-  }>>(async () => ({ ok: true, json: async () => ({ author: { avatar_url: avatarUrl } }) }));
+  const fetchAvatar = vi.fn<(url: string, init?: { headers: Record<string, string> }) => Promise<AvatarFetchResponse>>(
+    async () => ({ ok: true, json: async () => ({ author: { avatar_url: avatarUrl } }) }),
+  );
   let now = 1000000;
   const readEmail = vi.fn(async () => 'author@example.invalid\n');
   const readRemotes = vi.fn(async () => [{ name: 'origin', fetchUrl: 'https://github.com/owner/repo.git' }]);
+  const resolveToken = vi.fn<() => { token: string; source: 'manual' | 'gh' } | null>(() => null);
+  const markRejected = vi.fn();
   const results = new Map<string, Promise<string | null>>();
   const context = createContext({
     URL, AbortController, setTimeout, clearTimeout,
@@ -24,6 +30,8 @@ const loadAvatarReader = () => {
     gitCommitAvatarResults: results,
     gitCommitAvatarResultLimit: 160,
     gitCommitAvatarRequestTimeoutMs: 3500,
+    resolveGithubToken: resolveToken,
+    markGithubTokenRejected: markRejected,
   });
   runInContext(readFileSync('public/preload/git.js', 'utf8'), context);
   Object.assign(context, {
@@ -35,7 +43,11 @@ const loadAvatarReader = () => {
   const readAvatar = runInContext('readGitCommitAuthorAvatar', context) as (
     projectPath: string, hash: string,
   ) => Promise<string | null>;
-  return { readAvatar, fetchAvatar, readEmail, readRemotes, results, advanceTime: (milliseconds: number) => { now += milliseconds; } };
+  return {
+    readAvatar, fetchAvatar, readEmail, readRemotes, results,
+    resolveToken, markRejected,
+    advanceTime: (milliseconds: number) => { now += milliseconds; },
+  };
 };
 
 describe('Git commit author avatars', () => {
@@ -120,5 +132,33 @@ describe('Git commit author avatars', () => {
       expect(results.size).toBe(0);
     }
     await expect(readAvatar('/repo', firstHash)).resolves.toBe(avatarUrl);
+  });
+
+  it('attaches the resolved GitHub token to commit avatar requests', async () => {
+    const { readAvatar, fetchAvatar, resolveToken } = loadAvatarReader();
+    const token = `ghp_${'a'.repeat(36)}`;
+    resolveToken.mockReturnValue({ token, source: 'manual' });
+    await expect(readAvatar('/repo', firstHash)).resolves.toBe(avatarUrl);
+    expect(fetchAvatar).toHaveBeenCalledOnce();
+    const headers = fetchAvatar.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${token}`);
+  });
+
+  it('falls back to anonymous requests when the token is rejected with 401', async () => {
+    const { readAvatar, fetchAvatar, resolveToken, markRejected } = loadAvatarReader();
+    const token = `ghp_${'b'.repeat(36)}`;
+    resolveToken
+      .mockReturnValueOnce({ token, source: 'gh' })
+      .mockReturnValueOnce(null);
+    fetchAvatar
+      .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ author: { avatar_url: '' } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ author: { avatar_url: avatarUrl } }) });
+    await expect(readAvatar('/repo', firstHash)).resolves.toBe(avatarUrl);
+    expect(markRejected).toHaveBeenCalledExactlyOnceWith(token);
+    expect(fetchAvatar).toHaveBeenCalledTimes(2);
+    const rejectedHeaders = fetchAvatar.mock.calls[0][1]?.headers as Record<string, string>;
+    const fallbackHeaders = fetchAvatar.mock.calls[1][1]?.headers as Record<string, string>;
+    expect(rejectedHeaders.Authorization).toBe(`Bearer ${token}`);
+    expect(fallbackHeaders.Authorization).toBeUndefined();
   });
 });

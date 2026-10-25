@@ -2572,35 +2572,57 @@ function cacheGitCommitAvatar(cacheKey, loader) {
 
 let gitCommitAvatarRetryAt = 0;
 
-async function fetchGitHubCommitAvatar(owner, repository, commitHash) {
-  if (Date.now() < gitCommitAvatarRetryAt) return null;
+function fetchGitHubCommitAvatarRequest(owner, repository, commitHash, token) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), gitCommitAvatarRequestTimeoutMs);
+  return fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/commits/${encodeURIComponent(commitHash)}`,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: controller.signal,
+    },
+  ).finally(() => clearTimeout(timeout));
+}
+
+async function fetchGitHubCommitAvatar(owner, repository, commitHash) {
+  if (Date.now() < gitCommitAvatarRetryAt) return null;
+  const resolvedToken = await resolveGithubToken();
+  let response;
   try {
-    const response = await fetch(
-      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/commits/${encodeURIComponent(commitHash)}`,
-      { headers: { Accept: 'application/vnd.github+json' }, signal: controller.signal },
-    );
-    if (!response.ok) {
-      if (response.status === 429 ||
-          (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0')) {
-        const resetAt = Number(response.headers.get('x-ratelimit-reset')) * 1000;
-        const retryAfter = Number(response.headers.get('retry-after')) * 1000;
-        gitCommitAvatarRetryAt = Math.max(
-          Date.now() + (Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60000),
-          Number.isFinite(resetAt) ? resetAt : 0,
-        );
-      }
+    response = await fetchGitHubCommitAvatarRequest(owner, repository, commitHash, resolvedToken?.token);
+  } catch {
+    return null;
+  }
+  if (response.status === 401 && resolvedToken?.token) {
+    markGithubTokenRejected(resolvedToken.token);
+    try {
+      response = await fetchGitHubCommitAvatarRequest(owner, repository, commitHash, (await resolveGithubToken())?.token);
+    } catch {
       return null;
     }
+  }
+  if (!response.ok) {
+    if (response.status === 429 ||
+        (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0')) {
+      const resetAt = Number(response.headers.get('x-ratelimit-reset')) * 1000;
+      const retryAfter = Number(response.headers.get('retry-after')) * 1000;
+      gitCommitAvatarRetryAt = Math.max(
+        Date.now() + (Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60000),
+        Number.isFinite(resetAt) ? resetAt : 0,
+      );
+    }
+    return null;
+  }
 
+  try {
     const avatarUrl = (await response.json())?.author?.avatar_url;
     const parsedAvatarUrl = new URL(String(avatarUrl || ''));
     return parsedAvatarUrl.protocol === 'https:' ? parsedAvatarUrl.toString() : null;
   } catch {
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

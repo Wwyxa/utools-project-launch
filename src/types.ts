@@ -600,6 +600,36 @@ export interface AiModelTestResult {
   message: string;
 }
 
+export interface GithubAuthPreferences {
+  schemaVersion: 1;
+  personalAccessToken: string;
+}
+
+export type GithubAuthCredentialSource = "manual" | "gh";
+
+export interface GithubCliStatus {
+  installed: boolean;
+  version: string | null;
+  credentialFound: boolean;
+}
+
+export interface GithubAuthStatus {
+  configured: boolean;
+  source: GithubAuthCredentialSource | null;
+  verified: boolean;
+  login: string | null;
+  avatarUrl: string | null;
+  error: string | null;
+  gh: GithubCliStatus;
+}
+
+export interface GithubAuthTokenVerification {
+  ok: boolean;
+  login: string | null;
+  avatarUrl: string | null;
+  message: string;
+}
+
 export interface AiAnalysisFeedback {
   state: "idle" | "loading" | "success" | "warning" | "error";
   message: string;
@@ -1820,6 +1850,10 @@ export interface ProjectBridge {
   detectEnvironmentTool(request: EnvironmentToolRequest): Promise<EnvironmentToolResult>;
   loadAiPreferences(): AiPreferences;
   saveAiPreferences(preferences: AiPreferences): LocalStateWriteResult;
+  loadGithubAuthPreferences(): GithubAuthPreferences;
+  saveGithubAuthPreferences(preferences: GithubAuthPreferences): LocalStateWriteResult;
+  readGithubAuthStatus(): Promise<GithubAuthStatus>;
+  verifyGithubAuthToken(token: string): Promise<GithubAuthTokenVerification>;
   loadProjectLaunchServicePreferences(): ProjectLaunchServicePreferences;
   saveProjectLaunchServicePreferences(preferences: ProjectLaunchServicePreferences): LocalStateWriteResult;
   getProjectLaunchServiceStatus(): Promise<ProjectLaunchServiceStatus>;

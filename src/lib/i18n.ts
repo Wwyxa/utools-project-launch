@@ -701,6 +701,7 @@ const messages = {
         "openai-compatible": "OpenAI 兼容",
         "anthropic-compatible": "Anthropic 兼容",
       },
+      github: "GitHub 集成",
       terminals: {
         "terminal-app": "Terminal",
         iterm2: "iTerm2",
@@ -1490,6 +1491,7 @@ const messages = {
         "openai-compatible": "OpenAI Compatible",
         "anthropic-compatible": "Anthropic Compatible",
       },
+      github: "GitHub",
       terminals: {
         "terminal-app": "Terminal",
         iterm2: "iTerm2",
