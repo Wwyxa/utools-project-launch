@@ -17,7 +17,7 @@ const hasContent = computed(() => props.result.content.trim().length > 0);
   <div class="space-y-2 pr-7">
     <details
       v-if="hasReasoning"
-      class="group overflow-hidden rounded-lg border border-border-subtle bg-surface text-on-surface-variant shadow-sm"
+      class="ui-card group overflow-hidden text-on-surface-variant"
     >
       <summary
         class="flex cursor-pointer select-none items-center justify-between gap-3 bg-surface-container-low px-3 py-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"

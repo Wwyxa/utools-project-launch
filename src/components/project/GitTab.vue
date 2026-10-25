@@ -73,6 +73,8 @@ import { presentGitCommitRefs } from "../../lib/gitCommitRefs";
 import ActionDialog from "../common/ActionDialog.vue";
 import BaseModal from "../common/BaseModal.vue";
 import UiSelect, { type UiSelectOption } from "../common/UiSelect.vue";
+import UiContextMenu from "../common/UiContextMenu.vue";
+import type { UiContextMenuAnchor, UiContextMenuItem } from "../common/uiContextMenu";
 import GitDiffViewer from "./GitDiffViewer.vue";
 import GitChangesPane from "./GitChangesPane.vue";
 import GitCommitHistory from "./GitCommitHistory.vue";
@@ -145,9 +147,8 @@ const changesToolbarRef = ref<HTMLElement | null>(null);
 const commitHistoryToolbarRef = ref<HTMLElement | null>(null);
 const isAiDialogOpen = ref(false);
 const isRemoteMenuOpen = ref(false);
-const isPushMenuOpen = ref(false);
-const pushMenuRef = ref<HTMLElement | null>(null);
-const pushMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
+const pushMenuAnchor = ref<UiContextMenuAnchor | null>(null);
+const pushMenuOpener = ref<HTMLElement | null>(null);
 const pushRejectedNonFastForward = ref(false);
 const remoteMenuPosition = ref<FloatingMenuPosition>({ left: 8, top: 8 });
 const remoteMenuRef = ref<HTMLElement | null>(null);
@@ -761,11 +762,12 @@ const closeAiDialog = () => {
 
 const closeFloatingControls = () => {
   isRemoteMenuOpen.value = false;
-  isPushMenuOpen.value = false;
+  pushMenuOpener.value = null;
+  pushMenuAnchor.value = null;
   repositoryMenu.value = null;
 };
 
-const hasFloatingControlsOpen = () => isRemoteMenuOpen.value || isPushMenuOpen.value || Boolean(repositoryMenu.value);
+const hasFloatingControlsOpen = () => isRemoteMenuOpen.value || Boolean(pushMenuAnchor.value) || Boolean(repositoryMenu.value);
 
 const handleAppEscape = (event: AppEscapeRequestEvent) => {
   if (event.detail.handled) return;
@@ -841,10 +843,36 @@ const applyGitNavigationRequest = () => {
   store.projectDetailsTabRequest = null;
 };
 
+const repositoryMenuPanelRef = ref<HTMLElement | null>(null);
+
+const repositoryMenuFocusableItems = () =>
+  repositoryMenuPanelRef.value
+    ? Array.from(repositoryMenuPanelRef.value.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).filter(
+        (element) => !element.disabled,
+      )
+    : [];
+
+const handleRepositoryMenuKeydown = (event: KeyboardEvent) => {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Home" && event.key !== "End") return;
+  const items = repositoryMenuFocusableItems();
+  if (!items.length) return;
+  event.preventDefault();
+  const current = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('[role="menuitem"]') : null;
+  const index = current ? items.indexOf(current) : -1;
+  const nextIndex =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : (Math.max(0, index) + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+  items[nextIndex].focus();
+};
+
 const openRepositoryMenu = (event: MouseEvent, row: GitRepositoryRow) => {
   event.stopPropagation();
   closeFloatingControls();
   repositoryMenu.value = { row, x: event.clientX, y: event.clientY };
+  void nextTick(() => repositoryMenuFocusableItems()[0]?.focus());
 };
 
 const toggleRemoteMenu = async (event: MouseEvent) => {
@@ -1270,18 +1298,51 @@ const requestForceGitPush = () => {
   };
 };
 
-const togglePushMenu = async (event: MouseEvent) => {
-  const shouldOpen = !isPushMenuOpen.value;
+const togglePushMenu = (event: MouseEvent) => {
+  const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  if (!trigger) return;
+  if (pushMenuAnchor.value) {
+    closePushMenu();
+    return;
+  }
   closeFloatingControls();
-  if (!shouldOpen || !canRunRemoteOperation.value) return;
-  const trigger = event.currentTarget as HTMLElement;
-  pushMenuPosition.value = positionFloatingMenu(trigger, 144, 40);
-  isPushMenuOpen.value = true;
-  await nextTick();
-  if (!pushMenuRef.value) return;
-  pushMenuPosition.value = positionFloatingMenu(trigger, pushMenuRef.value.offsetWidth, pushMenuRef.value.offsetHeight);
-  pushMenuRef.value.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  if (!canRunRemoteOperation.value) return;
+  pushMenuOpener.value = trigger;
+  const rect = trigger.getBoundingClientRect();
+  pushMenuAnchor.value = { x: rect.right, y: rect.bottom + 6, aboveY: rect.top - 6, alignRight: true };
 };
+
+const closePushMenu = (restoreFocus = true) => {
+  const opener = pushMenuOpener.value;
+  pushMenuOpener.value = null;
+  pushMenuAnchor.value = null;
+  if (restoreFocus) void nextTick(() => opener?.isConnected && opener.focus());
+};
+
+const isPushMenuOutsidePointerDownAllowed = (target: EventTarget | null) =>
+  !(target instanceof Element && target.closest("[data-git-top-menu-trigger]"));
+
+const handlePushMenuClosed = ({ reason }: { reason: string }) => {
+  if (reason === "escape") {
+    closePushMenu();
+    return;
+  }
+  pushMenuOpener.value = null;
+  pushMenuAnchor.value = null;
+};
+
+const pushMenuItems = computed<UiContextMenuItem[]>(() => [
+  {
+    type: "item",
+    key: "force-push",
+    label: "强制推送",
+    icon: CloudUpload,
+    danger: true,
+    disabled: !canRunRemoteOperation.value,
+    title: "使用租约保护改写远端分支历史；远端提交发生变化时会拒绝推送。",
+    onSelect: () => requestForceGitPush(),
+  },
+]);
 
 const handlePushAction = (event: MouseEvent) => {
   if (hasUpstream.value) {
@@ -1738,9 +1799,8 @@ const closeDiffViewerDialog = () => {
 
 const handleWindowPointerDown = (event: PointerEvent) => {
   const target = event.target;
-  if (!(target instanceof Element && target.closest("[data-git-top-menu], [data-git-top-menu-trigger]"))) {
+  if (!(target instanceof Element && target.closest("[data-git-top-menu]"))) {
     isRemoteMenuOpen.value = false;
-    isPushMenuOpen.value = false;
   }
   if (target instanceof Element && target.closest("[data-repository-menu]")) return;
   repositoryMenu.value = null;
@@ -1755,7 +1815,6 @@ const handleFloatingViewportChange = (event: Event) => {
     return;
   }
   isRemoteMenuOpen.value = false;
-  isPushMenuOpen.value = false;
   repositoryMenu.value = null;
 };
 
@@ -1975,7 +2034,7 @@ watch(
           </button>
           <span
             v-if="snapshot?.isDetachedHead"
-            class="shrink-0 rounded-lg border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
+            class="ui-banner ui-banner--warning shrink-0 px-2 py-1 text-[10px] font-bold"
           >
             detached HEAD
           </span>
@@ -2009,7 +2068,7 @@ watch(
           </div>
           <div
             v-if="baseBranch && (baseBranch.behind || 0) > 0"
-            class="flex shrink-0 items-center gap-1 rounded-lg border border-status-warning/30 bg-status-warning/10 px-1.5 py-1 font-mono text-[10px] font-bold text-status-warning"
+            class="ui-banner ui-banner--warning flex shrink-0 items-center gap-1 px-1.5 py-1 font-mono text-[10px] font-bold"
             :title="baseBranchChipTitle"
           >
             <GitMerge :size="11" aria-hidden="true" />
@@ -2064,7 +2123,7 @@ watch(
                               }}</span>
                               <span
                                 v-if="upstream?.remote === remote.name"
-                                class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1.5 py-px text-[9px] font-bold text-primary"
+                                class="shrink-0 rounded-full border border-primary/30 bg-primary/10 px-1.5 py-px text-[9px] font-bold text-primary"
                               >
                                 upstream
                               </span>
@@ -2136,7 +2195,7 @@ watch(
                         <input
                           v-model="remoteBranchQuery"
                           type="search"
-                          class="h-7 w-full rounded border border-border-subtle bg-surface-container-low py-1 pl-7 pr-2 font-mono text-[10px] text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary"
+                          class="ui-field ui-field-compact w-full pl-7 pr-2 font-mono"
                           placeholder="筛选远端分支"
                           aria-label="筛选远端分支"
                         />
@@ -2187,7 +2246,7 @@ watch(
                                 >
                                 <span
                                   v-if="upstream?.ref === branch.ref"
-                                  class="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-1 py-px text-[8px] font-bold text-primary"
+                                  class="shrink-0 rounded-full border border-primary/30 bg-primary/10 px-1 py-px text-[8px] font-bold text-primary"
                                 >
                                   upstream
                                 </span>
@@ -2257,7 +2316,7 @@ watch(
           </span>
           <span
             v-if="isGitSnapshotRefreshing || isGitStatusRefreshing"
-            class="hidden shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary lg:inline"
+            class="hidden shrink-0 ui-status-pill border-primary/30 bg-primary/10 text-primary lg:inline"
           >
             {{ isGitSnapshotRefreshing ? "正在刷新" : "正在更新状态" }}
           </span>
@@ -2296,10 +2355,10 @@ watch(
           >
             <GitMerge :size="14" :class="activeGitAction === 'remote:merge-base' ? 'animate-pulse' : ''" />
           </button>
-          <div class="inline-flex h-8 shrink-0 items-center overflow-hidden rounded-lg border border-border-subtle bg-surface">
+          <div class="git-top-action-group">
           <button
             type="button"
-            class="git-top-action !h-full !rounded-none !border-0"
+            class="git-top-action"
             :disabled="!canRunRemoteOperation && !canPublishGitBranch"
             :aria-busy="activeGitAction === 'remote:push' || activeGitAction.startsWith('remote:publish:')"
             :title="publishGitBranchTitle()"
@@ -2319,40 +2378,30 @@ watch(
             v-if="hasUpstream"
             type="button"
             data-git-top-menu-trigger
-            class="git-top-action !h-full !w-5 !rounded-none !border-y-0 !border-r-0 border-l border-border-subtle"
+            class="git-top-action"
             :disabled="!canRunRemoteOperation"
             title="推送选项"
             aria-label="推送选项"
             aria-haspopup="menu"
-            :aria-expanded="isPushMenuOpen"
+            :aria-expanded="Boolean(pushMenuAnchor)"
             @click.stop="togglePushMenu"
           >
             <ChevronDown :size="12" />
           </button>
           </div>
-          <Teleport to="body">
-            <Transition name="fade">
-              <div
-                v-if="isPushMenuOpen"
-                ref="pushMenuRef"
-                data-git-top-menu
-                class="menu-pop fixed z-[85] w-36 max-w-[calc(100vw-1rem)] rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
-                :style="floatingMenuStyle(pushMenuPosition)"
-                role="menu"
-                @click.stop
-              >
-                <button type="button" role="menuitem" class="mode-menu-item text-status-error" title="使用租约保护改写远端分支历史；远端提交发生变化时会拒绝推送。" :disabled="!canRunRemoteOperation" @click="requestForceGitPush()">
-                  <span>强制推送</span><CloudUpload :size="13" />
-                </button>
-              </div>
-            </Transition>
-          </Teleport>
+          <UiContextMenu
+            :anchor="pushMenuAnchor"
+            :items="pushMenuItems"
+            aria-label="推送选项"
+            :should-close-on-outside-pointer-down="isPushMenuOutsidePointerDownAllowed"
+            @close="handlePushMenuClosed"
+          />
         </div>
       </div>
 
       <div
         v-if="pushRejectedNonFastForward"
-        class="flex flex-wrap items-center gap-2 border-t border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5 text-[11px] text-status-warning"
+        class="flex flex-wrap items-center gap-2 border-t border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5 text-[11px] font-semibold text-status-warning"
         data-git-refresh-exempt
       >
         <span class="min-w-0 flex-1">远端包含本地历史中不存在的提交。若刚完成变基，可使用带租约保护的强制推送。</span>
@@ -2495,11 +2544,13 @@ watch(
       <Transition name="fade">
         <div
           v-if="repositoryMenu"
+          ref="repositoryMenuPanelRef"
           data-repository-menu
           class="menu-pop fixed z-[85] flex w-72 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest p-1 text-xs shadow-popover"
           :style="repositoryMenuStyle"
           role="menu"
           @click.stop
+          @keydown="handleRepositoryMenuKeydown"
         >
           <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
             <div class="border-b border-border-subtle px-2 py-1.5">
@@ -2566,7 +2617,7 @@ watch(
     <div ref="splitContainerRef" class="relative grid min-h-0 flex-1 overflow-hidden" :style="gridTemplateStyle">
       <div
         ref="filesPaneRef"
-        class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
+        class="ui-card flex min-h-0 min-w-0 flex-col overflow-hidden"
       >
         <div
           class="flex h-8 shrink-0 min-w-0 items-center gap-1 overflow-x-clip border-b border-border-subtle bg-surface-container-low px-1.5"
@@ -2574,7 +2625,7 @@ watch(
           <div
             role="tablist"
             aria-label="Git 左侧内容"
-            class="flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-surface-container-high p-0.5"
+            class="ui-segment ui-segment--flat h-6 shrink-0 gap-0.5"
             @keydown="handleLeftContextKeydown"
           >
             <button
@@ -2589,8 +2640,8 @@ watch(
               :style="gitTabBadgeStyle(activeRepositoryChangeCount)"
               :class="
                 cn(
-                  'relative h-5 rounded px-1.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none',
-                  leftContext === 'changes' && 'bg-surface text-on-surface shadow-sm',
+                  'ui-segment-item ui-segment-item--sm relative',
+                  leftContext === 'changes' && 'is-active',
                 )
               "
               @click="setLeftContext('changes')"
@@ -2616,8 +2667,8 @@ watch(
               :style="gitTabBadgeStyle(activeRepositoryCommitCount)"
               :class="
                 cn(
-                  'relative h-5 rounded px-1.5 text-[10px] font-semibold text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none',
-                  leftContext === 'history' && 'bg-surface text-on-surface shadow-sm',
+                  'ui-segment-item ui-segment-item--sm relative',
+                  leftContext === 'history' && 'is-active',
                 )
               "
               @click="setLeftContext('history')"
@@ -2737,7 +2788,7 @@ watch(
       </div>
 
       <div
-        class="@container flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
+        class="@container ui-card flex min-h-0 min-w-0 flex-col overflow-hidden"
       >
         <GitDiffViewer
           v-if="(worktreeSelection || commitReviewSelection) && !isDiffViewerExpanded"

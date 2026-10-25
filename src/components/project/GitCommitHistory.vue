@@ -717,7 +717,7 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
       title: ref.title,
       icon: Archive as Component,
       isHead: false,
-      className: cn(refBadgeBaseClass, 'border-status-warning/35 bg-status-warning/10 text-status-warning'),
+      className: cn(refBadgeBaseClass, 'border-status-warning/30 bg-status-warning/10 text-status-warning'),
     };
   }
   if (ref.kind === 'remote') {
@@ -741,7 +741,7 @@ const refPresentation = (ref: GitCommitRefPresentationMember) => {
         refBadgeBaseClass,
         ref.isCurrentHead
           ? 'git-ref-badge--current border-primary/70 bg-primary/10 text-primary'
-          : 'border-status-warning/35 bg-status-warning/10 text-status-warning',
+          : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
       ),
     };
   }
@@ -2737,7 +2737,7 @@ onBeforeUnmount(() => {
               <span aria-hidden="true" class="h-3 w-px shrink-0 bg-border-subtle" />
               <button
                 type="button"
-                class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-on-surface focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+                class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs shrink-0"
                 title="在 GitHub 中打开此提交"
                 aria-label="在 GitHub 中打开此提交"
                 @click.stop="openCommitOnGitHub"
@@ -2817,7 +2817,7 @@ onBeforeUnmount(() => {
         ><input
           v-model="refDialogCheckout"
           type="checkbox"
-          class="h-3 w-3 accent-primary"
+          class="h-4 w-4 accent-primary"
           :disabled="isInteractionDisabled"
         />创建后切换</label
       >
@@ -2825,7 +2825,7 @@ onBeforeUnmount(() => {
         ><input
           v-model="refDialogAnnotated"
           type="checkbox"
-          class="h-3 w-3 accent-primary"
+          class="h-4 w-4 accent-primary"
           :disabled="isInteractionDisabled"
         />附注标签</label
       >
@@ -2859,7 +2859,7 @@ onBeforeUnmount(() => {
       </div>
       <p
         v-else-if="tagInfoDialog?.error"
-        class="rounded border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error"
+        class="ui-banner ui-banner--error px-3 py-2 text-xs leading-5"
       >
         {{ tagInfoDialog.error }}
       </p>

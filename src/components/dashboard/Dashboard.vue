@@ -830,7 +830,7 @@ const handleProjectDragEnd = () => {
             <button
               type="button"
               @click="openAllProjects"
-              class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors"
+              class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
               :title="t.dashboard.allProjects"
               :aria-label="t.dashboard.allProjects"
               aria-haspopup="dialog"
@@ -841,7 +841,7 @@ const handleProjectDragEnd = () => {
             <button
               @click="handleRefreshAll"
               :disabled="isRefreshingProjects"
-              class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-wait disabled:border-primary/35 disabled:bg-primary/10 disabled:text-primary disabled:opacity-90"
+              class="toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg disabled:cursor-wait disabled:border-primary/35 disabled:bg-primary/10 disabled:text-primary disabled:opacity-90"
               :title="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
               :aria-label="isRefreshingProjects ? t.common.refreshing : t.common.refresh"
             >
@@ -866,7 +866,7 @@ const handleProjectDragEnd = () => {
               @pointerleave="scheduleMoreMenuClose"
               :class="
                 cn(
-                  'toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors',
+                  'toolbar-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-lg p-1.5',
                   moreMenuOpen &&
                     '!bg-primary !text-on-primary !border-primary hover:!bg-primary/90',
                 )
@@ -1000,12 +1000,12 @@ const handleProjectDragEnd = () => {
                     <div
                       v-for="todo in group.todos"
                       :key="todo.id"
-                      class="flex items-start gap-2 rounded-md px-1.5 py-1.5 text-sm transition-colors hover:bg-[color:color-mix(in_srgb,var(--color-surface-container-high)_46%,transparent)]"
+                      class="flex items-start gap-2 rounded-md px-1.5 py-1.5 text-sm transition-colors hover:bg-surface-container-low"
                     >
                       <input
                         type="checkbox"
                         :checked="todo.completed"
-                        class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary"
+                        class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
                         :aria-label="t.dashboard.completeTodo.replace('{todo}', todo.text)"
                         :title="t.dashboard.completeTodo.replace('{todo}', todo.text)"
                         @change="completeTodo(group.project.id, todo.id)"
@@ -1379,7 +1379,7 @@ const handleProjectDragEnd = () => {
 
     <div
       v-else-if="store.projects.length > 0 && store.projects.every((project) => hiddenProjectIds.has(project.id))"
-      class="m-6 p-6 text-center text-sm text-on-surface-variant"
+      class="ui-empty m-6 p-6 text-sm"
     >
       <p>{{ t.dashboard.allProjectsHidden }}</p>
       <button type="button" class="mt-3 inline-flex items-center gap-1.5 text-primary hover:underline" @click="openAllProjects">

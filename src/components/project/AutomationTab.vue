@@ -427,7 +427,7 @@ const taskSummaryText = computed(() =>
 <template>
   <div class="h-full min-h-0 overflow-hidden">
     <section
-      class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
+        class="ui-card flex h-full min-h-0 flex-col overflow-hidden"
     >
       <div class="ui-panel-header">
         <div class="ui-panel-title min-w-0">
@@ -459,10 +459,8 @@ const taskSummaryText = computed(() =>
           v-if="actionFeedback"
           :class="
             cn(
-              'sticky top-0 z-10 mx-3 mt-3 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm',
-              actionFeedback.tone === 'success'
-                ? 'border-status-running/30 bg-status-running/10 text-status-running'
-                : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+              'ui-banner sticky top-0 z-10 mx-3 mt-3 px-3 py-2 text-xs font-semibold shadow-sm',
+              actionFeedback.tone === 'success' ? 'ui-banner--positive' : 'ui-banner--warning',
             )
           "
           role="status"
@@ -784,31 +782,17 @@ const taskSummaryText = computed(() =>
         <section class="border-b border-border-subtle pb-4">
           <div class="mb-2 flex items-center justify-between gap-2">
             <div class="font-semibold text-on-surface">{{ t.automation.schedule }}</div>
-            <div class="flex rounded-lg border border-border-subtle bg-surface p-1">
+            <div class="ui-segment">
               <button
                 type="button"
-                :class="
-                  cn(
-                    'rounded-md border px-3 py-1.5 font-bold',
-                    form.scheduleType === 'fixed'
-                      ? 'border-border-subtle bg-surface-container-high text-on-surface'
-                      : 'border-transparent text-on-surface-variant hover:bg-surface-variant',
-                  )
-                "
+                :class="cn('ui-segment-item', form.scheduleType === 'fixed' && 'is-active')"
                 @click="form.scheduleType = 'fixed'"
               >
                 {{ t.automation.fixed }}
               </button>
               <button
                 type="button"
-                :class="
-                  cn(
-                    'rounded-md border px-3 py-1.5 font-bold',
-                    form.scheduleType === 'random'
-                      ? 'border-border-subtle bg-surface-container-high text-on-surface'
-                      : 'border-transparent text-on-surface-variant hover:bg-surface-variant',
-                  )
-                "
+                :class="cn('ui-segment-item', form.scheduleType === 'random' && 'is-active')"
                 @click="form.scheduleType = 'random'"
               >
                 {{ t.automation.random }}
@@ -897,34 +881,22 @@ const taskSummaryText = computed(() =>
               class="mb-2 space-y-2 border-b border-border-subtle pb-2 last:mb-0"
             >
               <div class="flex flex-wrap items-center gap-1.5">
+              <div class="ui-segment">
                 <button
                   type="button"
-                  :class="
-                    cn(
-                      'rounded-md px-3 py-1.5 font-bold',
-                      step.mode === 'output-match'
-                        ? 'border border-border-subtle bg-surface-container-high text-on-surface'
-                        : 'border border-transparent bg-transparent text-on-surface-variant hover:bg-surface-variant',
-                    )
-                  "
+                  :class="cn('ui-segment-item', step.mode === 'output-match' && 'is-active')"
                   @click="step.mode = 'output-match'"
                 >
                   {{ t.automation.outputMatch }}
                 </button>
                 <button
                   type="button"
-                  :class="
-                    cn(
-                      'rounded-md px-3 py-1.5 font-bold',
-                      step.mode === 'delay'
-                        ? 'border border-border-subtle bg-surface-container-high text-on-surface'
-                        : 'border border-transparent bg-transparent text-on-surface-variant hover:bg-surface-variant',
-                    )
-                  "
+                  :class="cn('ui-segment-item', step.mode === 'delay' && 'is-active')"
                   @click="step.mode = 'delay'"
                 >
                   {{ t.automation.delay }}
                 </button>
+              </div>
                 <button
                   type="button"
                   class="ui-btn ui-btn--danger-ghost ui-btn--icon ui-btn--sm ml-auto"
@@ -1002,7 +974,7 @@ const taskSummaryText = computed(() =>
       <template #footer-left>
         <p
           v-if="feedback"
-          class="min-w-0 flex-1 rounded-lg border border-status-error/20 bg-status-error/10 px-3 py-2 text-xs text-status-error"
+          class="ui-banner ui-banner--error min-w-0 flex-1 px-3 py-2 text-xs"
         >
           {{ feedback }}
         </p>

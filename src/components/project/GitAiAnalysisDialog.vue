@@ -648,7 +648,7 @@ watch(
         </button>
         <span
           v-if="aiDialogNotice"
-          class="inline-flex h-9 max-w-full items-center truncate rounded-lg border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
+          class="ui-banner ui-banner--warning inline-flex h-9 max-w-full items-center truncate px-2 py-1 text-[10px] font-bold"
           :title="aiDialogNotice"
         >
           {{ aiDialogNotice }}
@@ -657,10 +657,8 @@ watch(
       <div
         v-if="aiDialogMessage && aiDialogState !== 'success' && hasAiDialogDisplayResult"
         :class="[
-          'flex shrink-0 items-center justify-between gap-2 rounded-lg border px-2 py-1 text-[10px] font-bold',
-          aiDialogState === 'error'
-            ? 'border-status-error/30 bg-status-error/10 text-status-error'
-            : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+          'ui-banner flex shrink-0 items-center justify-between gap-2 px-2 py-1 text-[10px] font-bold',
+          aiDialogState === 'error' ? 'ui-banner--error' : 'ui-banner--warning',
         ]"
       >
         <span class="min-w-0 break-words">{{ aiDialogMessage }}</span>

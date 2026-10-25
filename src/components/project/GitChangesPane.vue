@@ -1171,7 +1171,7 @@ onBeforeUnmount(() => {
       <div class="shrink-0 border-b border-border-subtle bg-surface px-2 py-1.5">
         <div
           v-if="isAmendMode"
-          class="mb-1 flex items-center gap-1.5 rounded-lg border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[10px] font-bold text-status-warning"
+          class="ui-banner ui-banner--warning mb-1 flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold"
         >
           <Pencil :size="12" />
           <span class="min-w-0 flex-1 truncate">修订上次提交</span>
@@ -1267,8 +1267,8 @@ onBeforeUnmount(() => {
               cn(
                 'mr-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md border px-1 font-mono text-[10px] font-semibold leading-none tabular-nums',
                 group.scope === 'staged'
-                  ? 'border-status-running/40 bg-status-running/10 text-status-running'
-                  : 'border-primary/40 bg-primary/10 text-primary',
+                  ? 'border-status-running/30 bg-status-running/10 text-status-running'
+                  : 'border-primary/30 bg-primary/10 text-primary',
               )
             "
           >
@@ -1482,7 +1482,7 @@ onBeforeUnmount(() => {
         />
       </label>
       <label v-if="stashScope !== 'staged'" class="flex items-center gap-2 text-xs font-medium text-on-surface">
-        <input v-model="stashIncludeUntracked" type="checkbox" class="accent-primary" :disabled="isStashDialogBusy" />
+        <input v-model="stashIncludeUntracked" type="checkbox" class="h-4 w-4 accent-primary" :disabled="isStashDialogBusy" />
         <span class="min-w-0 leading-4">{{ t.git.stashIncludeUntracked }}</span>
       </label>
     </ActionDialog>

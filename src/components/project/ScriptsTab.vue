@@ -97,13 +97,13 @@ const clearScriptDrag = () => {
     <div
       v-if="scripts.length === 0"
       ref="scriptsPaneRef"
-      class="rounded-lg border border-dashed border-border-subtle bg-surface p-6 text-sm text-on-surface-variant"
+      class="ui-empty bg-surface p-6 text-left text-sm"
     >
       {{ t.projectDetails.noScripts }}
     </div>
 
     <div v-else ref="scriptsPaneRef" class="min-h-0">
-      <div class="flex h-full flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm">
+      <div class="ui-card flex h-full flex-col overflow-hidden">
         <div class="ui-panel-header">
           <div class="ui-panel-title">
             <TerminalSquare :size="14" class="text-primary" />

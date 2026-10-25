@@ -185,7 +185,7 @@ onBeforeUnmount(flushMemo);
   <div ref="splitContainerRef" class="relative grid h-full min-h-0 overflow-hidden" :style="gridTemplateStyle">
     <section
       ref="tasksPanelRef"
-      class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
+      class="ui-card flex min-h-0 min-w-0 flex-col overflow-hidden"
     >
       <div class="ui-panel-header">
         <div class="ui-panel-title">
@@ -253,7 +253,7 @@ onBeforeUnmount(flushMemo);
               :checked="todo.completed"
               :aria-label="todo.text"
               @change="store.toggleTodo(project.id, todo.id)"
-              class="mt-0.5 h-3.5 w-3.5 rounded border-outline-variant text-primary focus:ring-primary"
+              class="mt-0.5 h-4 w-4 accent-primary"
             />
             <span
               v-if="editingTodoId !== todo.id"
@@ -321,7 +321,7 @@ onBeforeUnmount(flushMemo);
     </div>
 
     <section
-      class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface shadow-sm"
+      class="ui-card flex min-h-0 flex-1 flex-col overflow-hidden"
       @dblclick.self="enterEdit"
     >
       <div class="ui-panel-header">

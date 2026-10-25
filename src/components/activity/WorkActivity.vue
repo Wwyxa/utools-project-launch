@@ -1181,17 +1181,15 @@ onBeforeUnmount(() => {
             :style="{ right: `${customDatePickerPosition.right}px`, top: `${customDatePickerPosition.top}px` }"
           >
             <div v-overlay-scrollbar class="themed-scrollbar min-h-0 overflow-y-auto">
-              <div class="mb-2 grid grid-cols-2 rounded-md bg-surface-container-high p-0.5">
+              <div class="ui-segment ui-segment--flat mb-2 grid w-full grid-cols-2">
                 <button
                   v-for="kind in ['start', 'end'] as const"
                   :key="kind"
                   type="button"
                   :class="
                     cn(
-                      'cursor-pointer flex min-w-0 flex-col items-center rounded px-1.5 py-1 text-[10px] leading-tight transition-colors',
-                      customDatePickerKind === kind
-                        ? 'bg-surface text-primary shadow-sm'
-                        : 'text-on-surface-variant hover:text-on-surface',
+                      'min-w-0 flex-col px-1.5 py-1 text-[10px] leading-tight',
+                      customDatePickerKind === kind && 'is-active',
                     )
                   "
                   @click="activateCustomDatePicker(kind)"
@@ -1414,7 +1412,7 @@ onBeforeUnmount(() => {
     </section>
 
     <section class="mb-2 grid grid-cols-4 gap-1.5" :aria-busy="store.workActivityLoading">
-      <div class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+      <div class="ui-card px-2.5 py-1.5">
         <div class="flex items-center justify-between gap-2">
           <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.totalCommits }}</div>
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ totalCommits }}</div>
@@ -1427,7 +1425,7 @@ onBeforeUnmount(() => {
           <span class="min-w-0 truncate tabular-nums">{{ comparisonLabel(totalCommits, previousCommits) }}</span>
         </div>
       </div>
-      <div class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+      <div class="ui-card px-2.5 py-1.5">
         <div class="flex items-center justify-between gap-2">
           <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.activeDays }}</div>
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ activeDays }}</div>
@@ -1440,7 +1438,7 @@ onBeforeUnmount(() => {
           <span class="min-w-0 truncate tabular-nums">{{ comparisonLabel(activeDays, previousActiveDays) }}</span>
         </div>
       </div>
-      <div class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm">
+      <div class="ui-card px-2.5 py-1.5">
         <div class="flex items-center justify-between gap-2">
           <div class="truncate text-[10px] font-bold text-on-surface-variant">{{ t.activity.activeProjects }}</div>
           <div class="shrink-0 text-base font-bold leading-none tabular-nums text-on-surface">{{ activeProjects }}</div>
@@ -1454,7 +1452,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div
-        class="rounded-lg border border-border-subtle bg-surface px-2.5 py-1.5 shadow-sm"
+        class="ui-card px-2.5 py-1.5"
         :title="busiestDay ? cellLabel(busiestDay[0], busiestDay[1]) : undefined"
       >
         <div class="flex items-center justify-between gap-2">
@@ -1941,7 +1939,7 @@ onBeforeUnmount(() => {
               v-model="dayQuery"
               type="search"
               autocomplete="off"
-              class="h-7 w-full rounded-md border border-border-subtle bg-surface pl-7 pr-2 text-xs text-on-surface outline-none transition-colors focus:border-primary [&::-webkit-search-cancel-button]:hidden"
+              class="ui-field ui-field-compact w-full pl-7 pr-2 [&::-webkit-search-cancel-button]:hidden"
               :class="dayQuery && 'pr-7'"
               :placeholder="t.activity.searchCommits"
             />
@@ -1994,7 +1992,7 @@ onBeforeUnmount(() => {
         </div>
         <div
           v-if="!selectedDate"
-          class="border border-dashed border-border-subtle px-3 py-3 text-sm text-on-surface-variant"
+          class="ui-empty px-3 py-3 text-sm"
         >
           {{ t.activity.selectDay }}
         </div>
@@ -2016,7 +2014,7 @@ onBeforeUnmount(() => {
         </div>
         <div
           v-else-if="dayCommits.length === 0"
-          class="border border-dashed border-border-subtle px-3 py-3 text-sm text-on-surface-variant"
+          class="ui-empty px-3 py-3 text-sm"
         >
           {{ dayQuery || dayProjectPaths.size ? t.activity.filteredNoResults : t.activity.noActivity }}
         </div>

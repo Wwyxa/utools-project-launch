@@ -39,8 +39,9 @@ each feature. The current file-icon implementation is `src/lib/fileIconTheme.ts`
   anchor; do not hand-roll positioning, keyboard roving, or close listeners.
   Panels share one token set: `shadow-popover`, `bg-surface-container-lowest`,
   `border-border-subtle`, `rounded-lg`, `p-1`, and content-adaptive width
-  (`maxWidth`/`minWidth` caps only). Z-index scale: context menus 75/76,
-  click dropdowns 80, overlay pickers 90, action status 100. Danger entries are
+  (`maxWidth`/`minWidth` caps only). Follow the z-index scale documented in
+  `src/index.css` (page-level 10/20/30, tooltip 70, modal 80, menu panels
+  85/86, date picker 90, action status/toast 100). Danger entries are
   `text-status-error` on `ui-menu-item`/`mode-menu-item` — hover styling lives
   in `index.css`; do not re-add per-template hover overrides. Disabled triggers
   surface the reason through their `title`/`aria-label`.
@@ -48,6 +49,22 @@ each feature. The current file-icon implementation is `src/lib/fileIconTheme.ts`
   meet placement or styling needs. This is a UI choice, not a uTools API ban.
 - Components with a visible root plus Teleport siblings explicitly forward
   fallthrough attributes to the visible root when needed.
+
+## Shared Controls and Utility Classes
+
+Reuse the `.ui-*` family defined in the components layer of `src/index.css`
+instead of hand-rolling equivalents: `.ui-btn` (variants/sizes/`--icon`),
+`.ui-field(-compact)`, `.ui-segment` + `.ui-segment-item(.is-active)`,
+`.ui-banner` color variants, `.ui-status-pill`, `.ui-card`, `.ui-empty`, and
+`.git-top-action-group` for joined git icon pairs. Do not stack
+transition/active/disabled utilities on `.ui-btn`. Dropdown selection goes
+through `UiSelect.vue`; it renders a trigger plus a Teleported panel, so
+width/layout classes must go through `trigger-class` (fallthrough classes on
+the component are dropped). Status borders/badges standardize on a /30 border
+with /10 background; checkboxes stay native at 16px; focus rings default to
+the global `:focus-visible` outline, and opt-outs redraw
+`ring-2 ring-primary/40`. Shadows: teleported surfaces `shadow-popover`,
+rich tooltips `shadow-tooltip`, attached strips/chips `shadow-sm`.
 
 ## Resizable and Scrollable Panels
 

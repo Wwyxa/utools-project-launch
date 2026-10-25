@@ -171,7 +171,7 @@ const stopService = async () => {
 
 <template>
   <div class="flex min-h-screen items-center justify-center bg-background p-6">
-    <div class="w-full max-w-xl rounded-lg border border-border-subtle bg-surface p-6 shadow-2xl">
+    <div class="ui-card w-full max-w-xl border-outline-variant/70 p-6 shadow-2xl">
       <div class="mb-4 flex items-center gap-3">
         <div
           class="flex h-10 w-10 items-center justify-center rounded-full border text-lg"

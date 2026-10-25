@@ -786,7 +786,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
         v-if="!isSorting && store.uiPreferences.dashboard.tinyCardActionTrigger === 'hover'"
         :class="
           cn(
-            'absolute top-[calc(100%+0.25rem)] z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 dark:border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-md transition-all',
+            'absolute top-[calc(100%+0.25rem)] z-30 flex items-center gap-0.5 rounded-md border border-outline-variant/60 dark:border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-sm transition-all',
             tinyToolbarAlignRight ? 'right-0' : 'left-0',
             'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
           )
@@ -950,7 +950,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
             v-if="quickLink && !isSorting"
             type="button"
             @click="handleOpenQuickLink"
-            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-surface-container hover:text-primary"
+            class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--xs hover:border-primary/40 hover:text-primary"
             :title="t.projectActions.openQuickLink"
             :aria-label="t.projectActions.openQuickLink"
           >
@@ -1035,7 +1035,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
               moreScriptsOpen
                 ? 'border-primary/40 bg-primary/10 text-primary'
                 : hiddenRunningCount > 0
-                  ? 'border-status-running/40 text-status-running hover:bg-status-running/10'
+                  ? 'border-status-running/30 text-status-running hover:bg-status-running/10'
                   : 'border-outline-variant bg-surface-variant text-on-surface-variant hover:border-primary/40 hover:bg-primary/10 hover:text-primary',
             )"
             aria-haspopup="menu"
@@ -1182,13 +1182,13 @@ const updateTinyToolbarAlignment = (event: Event) => {
               :applications="store.externalApplicationPreferences.applications"
               :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
               :disabled="isUnavailable"
-              button-class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary dark:text-on-surface-variant dark:hover:bg-surface-container-high disabled:opacity-50"
+              button-class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-primary dark:text-on-surface-variant disabled:opacity-50"
               :icon-size="14"
               @launch="handleOpenEditor"
             />
             <button
               @click="handleOpenTerminal"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-status-running dark:text-on-surface-variant dark:hover:bg-surface-container-high disabled:opacity-50"
+              class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-status-running dark:text-on-surface-variant disabled:opacity-50"
               :disabled="isUnavailable"
               :title="t.projectActions.openInTerminal"
               :aria-label="t.projectActions.openInTerminal"
@@ -1202,7 +1202,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
               @mouseenter="openRegularCardActionMenu()"
               @mouseleave="scheduleCardActionMenuClose"
               @keydown.down.prevent="openRegularCardActionMenu(true)"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:text-on-surface-variant dark:hover:bg-surface-container-high"
+              class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/40 dark:text-on-surface-variant"
               aria-haspopup="menu"
               :aria-expanded="Boolean(cardMenuAnchor)"
               :title="t.projectActions.moreActions"

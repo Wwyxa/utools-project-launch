@@ -1711,7 +1711,7 @@ watch(filterQuery, (query) => {
               ref="rootInlineInputRef"
               :value="inlineEdit.value"
               type="text"
-              class="h-7 w-full rounded border border-border-subtle bg-surface-container-lowest px-2 text-xs text-on-surface outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+              class="ui-field ui-field-compact w-full px-2"
               :disabled="inlineEdit.busy"
               :aria-label="inlineEdit.kind === 'directory' ? t.files.newDirectory : t.files.newFile"
               @input="updateInlineValue(($event.target as HTMLInputElement).value)"

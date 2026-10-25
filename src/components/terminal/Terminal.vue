@@ -3,8 +3,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import {
   ArrowDownToLine,
   ArrowUpToLine,
-  Check,
-  ChevronDown,
   ClipboardCopy,
   Eraser,
   History,
@@ -16,13 +14,13 @@ import {
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../lib/escape";
 import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import type { LogEntry, RuntimeRecord, ProjectScript } from "../../types";
 import ActionDialog from "../common/ActionDialog.vue";
 import BaseModal from "../common/BaseModal.vue";
 import UiContextMenu from "../common/UiContextMenu.vue";
+import UiSelect, { type UiSelectOption } from "../common/UiSelect.vue";
 import type { UiContextMenuItem } from "../common/uiContextMenu";
 import { showActionStatus } from "../common/actionStatus";
 import { waitForVisualFeedback } from "../../lib/visualFeedback";
@@ -55,8 +53,9 @@ const historyQuery = ref("");
 const selectedHistoryRunId = ref("");
 const historyRuns = ref<RuntimeRecord[]>([]);
 const historySource = ref<RuntimeRecord["source"] | "all">("all");
-const historySourceMenuOpen = ref(false);
-const historySourceControl = ref<HTMLElement | null>(null);
+const historySourceOptions = computed<UiSelectOption[]>(() =>
+  Object.entries(t.value.terminal.historySources).map(([value, label]) => ({ value, label })),
+);
 const historyLogs = ref<LogEntry[]>([]);
 const historyTruncated = ref(false);
 const historyHasMore = ref(false);
@@ -66,7 +65,6 @@ const historyClearOpen = ref(false);
 const historyClearAll = ref(false);
 const historyClearBusy = ref(false);
 let logScrollEventElement: HTMLElement | Document | null = null;
-let stopAppEscapeListener = () => {};
 let historyLoadGeneration = 0;
 let historyCopiedTimer: number | null = null;
 
@@ -229,38 +227,7 @@ const historyStatusClass = (status: RuntimeRecord["status"]) => {
 const historyStatusLabel = (status: RuntimeRecord["status"]) =>
   historyStatusKeys.includes(status) ? t.value.terminal.historyStatus[status] : status;
 
-const closeHistorySourceMenu = (restoreFocus = false) => {
-  historySourceMenuOpen.value = false;
-  if (restoreFocus) historySourceControl.value?.querySelector<HTMLButtonElement>("button")?.focus();
-};
-
-const openHistorySourceMenu = async () => {
-  historySourceMenuOpen.value = true;
-  await nextTick();
-  historySourceControl.value?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]')?.focus();
-};
-
-const selectHistorySource = (source: typeof historySource.value) => {
-  historySource.value = source;
-  closeHistorySourceMenu(true);
-};
-
-const handleHistorySourceKeydown = (event: KeyboardEvent) => {
-  if (!["ArrowDown", "ArrowUp", "Home", "End", "Escape", "Tab"].includes(event.key)) return;
-  if (event.key === "Tab") { closeHistorySourceMenu(); return; }
-  event.preventDefault();
-  event.stopPropagation();
-  if (event.key === "Escape") { closeHistorySourceMenu(true); return; }
-  if (!historySourceMenuOpen.value) { void openHistorySourceMenu(); return; }
-  const options = Array.from(historySourceControl.value?.querySelectorAll<HTMLButtonElement>('[role="option"]') || []);
-  const current = options.indexOf(document.activeElement as HTMLButtonElement);
-  const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 :
-    (current + (event.key === "ArrowUp" ? -1 : 1) + options.length) % options.length;
-  options[next]?.focus();
-};
-
 const closeHistoryDialog = () => {
-  closeHistorySourceMenu();
   historyLoadGeneration += 1;
   historyDialogOpen.value = false;
   selectedHistoryRunId.value = "";
@@ -403,23 +370,12 @@ const confirmClearHistory = async () => {
 
 const closeContextMenu = () => {
   contextMenuPosition.value = null;
-  closeHistorySourceMenu();
 };
 
 const openContextMenu = (event: MouseEvent) => {
   event.preventDefault();
   contextMenuPosition.value = { x: event.clientX, y: event.clientY };
 };
-
-const handleAppEscape = (event: AppEscapeRequestEvent) => {
-  if (historySourceMenuOpen.value) {
-    closeHistorySourceMenu(true);
-    event.detail.handle();
-  }
-};
-
-// 先于子组件（BaseModal/ActionDialog/UiContextMenu）注册，保证 Escape 优先关闭来源下拉
-stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 
 const closeTarget = (scriptId: string) => {
   closedAt.value = {
@@ -562,7 +518,6 @@ onMounted(() => {
   void scrollToBottom();
 });
 onBeforeUnmount(() => {
-  stopAppEscapeListener();
   window.removeEventListener("click", closeContextMenu);
   logScrollEventElement?.removeEventListener("scroll", handleLogScroll);
   logScrollEventElement = null;
@@ -682,7 +637,7 @@ onBeforeUnmount(() => {
             v-model="query"
             type="text"
             :placeholder="t.terminal.filter"
-            class="bg-surface border border-border-subtle rounded px-7 py-1 text-[10px] text-on-surface placeholder:text-on-surface-variant w-32 focus:outline-none focus:border-primary"
+            class="ui-field ui-field-compact w-32 pl-7"
           />
         </div>
       </div>
@@ -776,33 +731,13 @@ onBeforeUnmount(() => {
                 <div
                   class="flex h-9 shrink-0 items-center justify-between border-b border-border-subtle px-3 text-[10px] font-semibold text-on-surface-variant"
                 >
-                  <div ref="historySourceControl" class="relative w-36 max-w-full min-w-0" @click.stop @keydown="handleHistorySourceKeydown" @focusout="(event) => { if (!historySourceControl?.contains(event.relatedTarget as Node)) closeHistorySourceMenu(); }">
-                    <button
-                      type="button"
-                      class="ui-btn ui-btn--secondary ui-btn--sm w-full justify-between"
-                      aria-haspopup="listbox"
-                      :aria-expanded="historySourceMenuOpen"
-                      :aria-label="t.terminal.history"
-                      @click="historySourceMenuOpen ? closeHistorySourceMenu() : openHistorySourceMenu()"
-                    >
-                      <span class="min-w-0 flex-1 truncate text-left">{{ t.terminal.historySources[historySource] }}</span>
-                      <ChevronDown class="h-3.5 w-3.5 shrink-0" />
-                    </button>
-                    <div v-if="historySourceMenuOpen" role="listbox" :aria-label="t.terminal.history" class="absolute left-0 right-0 top-full z-[85] mt-1 menu-pop rounded-lg border border-border-subtle bg-surface-container-lowest p-1 shadow-popover">
-                      <button
-                        v-for="(label, source) in t.terminal.historySources"
-                        :key="source"
-                        type="button"
-                        role="option"
-                        :aria-selected="historySource === source"
-                        :class="cn('mode-menu-item mode-menu-item--leading', historySource === source && 'bg-primary/10 text-primary')"
-                        @click="selectHistorySource(source)"
-                      >
-                        <span class="flex-1">{{ label }}</span>
-                        <Check v-if="historySource === source" class="h-3.5 w-3.5 shrink-0" />
-                      </button>
-                    </div>
-                  </div>
+                  <UiSelect
+                    :model-value="historySource"
+                    :options="historySourceOptions"
+                    :aria-label="t.terminal.history"
+                    trigger-class="ui-btn ui-btn--secondary ui-btn--sm w-36 max-w-full min-w-0 justify-between"
+                    @update:model-value="(source) => { if (source) historySource = source as RuntimeRecord['source'] | 'all'; }"
+                  />
                   <span>{{ serviceHistoryRuns.length }}</span>
                 </div>
                 <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-y-auto">
@@ -921,7 +856,7 @@ onBeforeUnmount(() => {
                           v-model="historyQuery"
                           type="text"
                           :placeholder="t.terminal.filter"
-                          class="h-7 w-full rounded border border-border-subtle bg-surface pl-7 pr-2 text-[10px] text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none"
+                          class="ui-field ui-field-compact w-full pl-7 pr-2"
                         />
                       </div>
                     </template>
@@ -1004,7 +939,7 @@ onBeforeUnmount(() => {
         type="text"
         :disabled="!canSendInput"
         :placeholder="terminalInputPlaceholder"
-        class="min-w-0 flex-1 rounded border border-border-subtle bg-surface px-2 py-1 font-mono text-xs text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        class="ui-field ui-field-compact min-w-0 flex-1 font-mono"
       />
       <button
         type="submit"

@@ -348,7 +348,7 @@ const handleScriptDrop = (targetScriptId: string) => {
     <div class="space-y-6 [color-scheme:inherit]" @click="closeMenus">
             <p
               v-if="store.projectFormMode === 'duplicate'"
-              class="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-on-surface-variant"
+              class="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-on-surface-variant"
             >
               {{ t.modal.duplicateScopeHint }}
             </p>
@@ -390,7 +390,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                 <button
                   type="button"
                   @click="openScriptDiscovery"
-                  class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 font-bold text-primary hover:bg-surface"
+                  class="ui-btn ui-btn--primary-ghost ui-btn--sm shrink-0"
                 >
                   <WandSparkles :size="14" />
                   {{ store.projectFormInspecting ? t.modal.discoveringScripts : t.modal.discoverScripts }}
@@ -489,16 +489,16 @@ const handleScriptDrop = (targetScriptId: string) => {
                       <CircleHelp :size="13" :stroke-width="1.8" aria-hidden="true" />
                     </span>
                   </span>
-                  <div class="flex w-fit max-w-full items-center rounded-lg border border-border-subtle bg-surface-container-low p-1">
+                  <div class="ui-segment w-fit">
                     <button
                       type="button"
                       @click="store.updateProjectForm({ visibility: 'private' })"
                       :class="
                         cn(
-                          'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                          'ui-segment-item',
                           form.visibility === 'private'
-                            ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20'
-                            : 'text-on-surface-variant hover:bg-surface-container',
+                            ? 'is-active'
+                            : '',
                         )
                       "
                     >
@@ -509,10 +509,10 @@ const handleScriptDrop = (targetScriptId: string) => {
                       @click="store.updateProjectForm({ visibility: 'public' })"
                       :class="
                         cn(
-                          'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                          'ui-segment-item',
                           form.visibility === 'public'
-                            ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20'
-                            : 'text-on-surface-variant hover:bg-surface-container',
+                            ? 'is-active'
+                            : '',
                         )
                       "
                     >
@@ -535,17 +535,17 @@ const handleScriptDrop = (targetScriptId: string) => {
                   </span>
                   <div class="flex items-center gap-2">
                     <div
-                      class="flex w-fit max-w-full items-center rounded-lg border border-border-subtle bg-surface-container-low p-1"
+                      class="ui-segment w-fit"
                     >
                       <button
                         type="button"
                         @click="store.updateProjectForm({ cardStyle: 'default' })"
                         :class="
                           cn(
-                            'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                            'ui-segment-item',
                             form.cardStyle === 'default'
-                              ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20'
-                              : 'text-on-surface-variant hover:bg-surface-container',
+                              ? 'is-active'
+                              : '',
                           )
                         "
                       >
@@ -556,10 +556,10 @@ const handleScriptDrop = (targetScriptId: string) => {
                         @click="store.updateProjectForm({ cardStyle: 'tiny' })"
                         :class="
                           cn(
-                            'rounded-md px-3 py-1 text-xs font-bold transition-colors',
+                            'ui-segment-item',
                             form.cardStyle === 'tiny'
-                              ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20'
-                              : 'text-on-surface-variant hover:bg-surface-container',
+                              ? 'is-active'
+                              : '',
                           )
                         "
                       >
@@ -669,7 +669,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                   <span class="truncate">{{ project.name }}</span>
                   <button
                     type="button"
-                    class="shrink-0 rounded-sm p-0.5 text-on-surface-variant hover:bg-surface hover:text-status-error"
+                    class="shrink-0 rounded-sm p-0.5 text-on-surface-variant hover:bg-status-error/10 hover:text-status-error"
                     :title="`${t.modal.removeRelatedProject}: ${project.name}`"
                     :aria-label="`${t.modal.removeRelatedProject}: ${project.name}`"
                     @click="toggleRelatedProject(project.id)"
@@ -773,7 +773,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                       cn(
                         'rounded border px-1.5 py-0.5 font-mono text-[10px]',
                         requiresExplicitImport(candidate)
-                          ? 'border-status-warning/40 bg-status-warning/10 text-status-warning'
+                          ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
                           : 'border-border-subtle text-on-surface-variant',
                       )
                     "
@@ -934,11 +934,11 @@ const handleScriptDrop = (targetScriptId: string) => {
                       >
                         {{ t.modal.envScopeRestoreShared }}
                       </button>
-                      <div class="flex overflow-hidden rounded-lg border border-border-subtle">
+                      <div class="ui-segment w-fit">
                         <button
                           type="button"
                           class="px-2 py-0.5"
-                          :class="!entry.localOnly ? 'bg-primary/10 font-medium text-primary' : 'text-on-surface-variant hover:bg-surface-container'"
+                          :class="!entry.localOnly ? 'is-active' : ''"
                           @click="setEnvEntryLocalOnly(entry.id, false)"
                         >
                           {{ t.modal.envScopeSync }}
@@ -946,7 +946,7 @@ const handleScriptDrop = (targetScriptId: string) => {
                         <button
                           type="button"
                           class="px-2 py-0.5"
-                          :class="entry.localOnly ? 'bg-primary/10 font-medium text-primary' : 'text-on-surface-variant hover:bg-surface-container'"
+                          :class="entry.localOnly ? 'is-active' : ''"
                           @click="setEnvEntryLocalOnly(entry.id, true)"
                         >
                           {{ t.modal.envScopeLocal }}

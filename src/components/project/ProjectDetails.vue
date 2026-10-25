@@ -586,7 +586,7 @@ watch(
           >
             <Network :size="17" class="transition-colors" />
           </button>
-          <div v-if="relatedProjectsOpen" class="absolute left-0 top-full z-40 w-72 pt-2">
+          <div v-if="relatedProjectsOpen" class="absolute left-0 top-full z-30 w-72 pt-2">
             <div class="menu-pop overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest shadow-popover">
               <div
                 class="border-b border-border-subtle bg-surface-container-low px-3 py-2 text-xs font-semibold text-on-surface"
@@ -724,7 +724,7 @@ watch(
             @contextmenu.prevent="handleTabContextMenu(tab.id)"
             :class="
               cn(
-                'relative touch-none select-none whitespace-nowrap pb-1.5 text-sm font-bold outline-none ring-0 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-0 cursor-default',
+                'relative touch-none select-none whitespace-nowrap pb-1.5 text-sm font-bold outline-none transition-all cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                 activeTab === tab.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface',
                 draggedTab === tab.id && 'z-10 scale-[1.03] text-primary opacity-70',
                 isDefaultTab(tab.id) && 'pr-2.5',
@@ -752,7 +752,7 @@ watch(
           type="button"
           :class="
             cn(
-              'absolute left-1/2 top-full z-20 flex h-4 w-9 -translate-x-1/2 -translate-y-px items-center justify-center rounded-b-lg border border-t-0 border-border-subtle bg-surface-container-lowest text-primary outline-none transition-all duration-300 ease-out hover:border-primary hover:bg-primary hover:text-on-primary hover:opacity-100 hover:blur-0 hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary',
+              'absolute left-1/2 top-full z-20 flex h-4 w-9 -translate-x-1/2 -translate-y-px items-center justify-center rounded-b-lg border border-t-0 border-border-subtle bg-surface-container-lowest text-primary outline-none transition-all duration-300 ease-out hover:border-primary hover:bg-primary hover:text-on-primary hover:opacity-100 hover:blur-0 hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary/40',
               isGitToggleIdle ? 'opacity-40 blur-[0.4px] shadow-none' : 'opacity-100 blur-0 shadow-md',
             )
           "
@@ -813,7 +813,7 @@ watch(
       "
     >
       <div v-if="activeTab === 'info'" class="min-h-full space-y-3">
-        <section class="rounded-lg border border-border-subtle bg-surface p-3 shadow-sm">
+        <section class="ui-card p-3">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -866,7 +866,7 @@ watch(
         <section class="grid grid-cols-1 gap-2 md:grid-cols-2">
           <div
             class="min-w-0 rounded-lg border border-border-subtle bg-surface-container-low p-3"
-            :class="hasGitSnapshot ? 'border-status-info/25' : ''"
+            :class="hasGitSnapshot ? 'border-status-info/30' : ''"
           >
             <div class="mb-2 flex items-center gap-2 text-xs font-semibold text-on-surface-variant">
               <GitCommitHorizontal :size="14" />
@@ -903,7 +903,7 @@ watch(
           </div>
         </section>
 
-        <section class="rounded-lg border border-border-subtle bg-surface p-3 shadow-sm">
+        <section class="ui-card p-3">
           <div class="mb-2 text-xs font-semibold text-on-surface-variant">{{ t.projectDetails.scripts }}</div>
           <div class="flex flex-wrap gap-1.5">
             <span
@@ -913,11 +913,11 @@ watch(
                 cn(
                   'rounded-full border px-2 py-1 text-[11px] font-semibold',
                   script.status === 'RUNNING'
-                    ? 'border-status-running/25 bg-status-running/10 text-status-running'
+                    ? 'border-status-running/30 bg-status-running/10 text-status-running'
                     : script.status === 'STOPPING'
-                      ? 'border-status-warning/25 bg-status-warning/10 text-status-warning'
+                      ? 'border-status-warning/30 bg-status-warning/10 text-status-warning'
                       : script.status === 'ERROR'
-                        ? 'border-status-error/25 bg-status-error/10 text-status-error'
+                        ? 'border-status-error/30 bg-status-error/10 text-status-error'
                         : 'border-border-subtle bg-surface-container-low text-on-surface-variant',
                 )
               "

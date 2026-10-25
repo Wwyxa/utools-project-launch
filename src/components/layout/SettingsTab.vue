@@ -406,14 +406,12 @@ const projectLaunchServiceHasNotice = computed(() => {
 const projectLaunchServiceNoticeClass = computed(() => {
   const status = projectLaunchServiceStatus.value;
   if (status?.scheduler?.lastError || status?.state === "incompatible" || status?.state === "unavailable") {
-    return "border-status-error/30 bg-status-error/10 text-status-error";
+    return "ui-banner--error";
   }
   if (status?.eventsTruncated || status?.state === "installed") {
-    return "border-status-warning/30 bg-status-warning/10 text-status-warning";
+    return "ui-banner--warning";
   }
-  return status?.state === "healthy"
-    ? "border-status-running/30 bg-status-running/10 text-status-running"
-    : "border-primary/30 bg-primary/10 text-primary";
+  return status?.state === "healthy" ? "ui-banner--positive" : "ui-banner--primary";
 });
 const projectLaunchServiceSchedulerLabel = computed(() => {
   const state = projectLaunchServiceStatus.value?.scheduler?.state;
@@ -428,12 +426,7 @@ const projectLaunchServiceSchedulerClass = computed(() => {
   return "text-on-surface-variant";
 });
 const segmentButtonClass = (active: boolean) =>
-  cn(
-    "flex min-h-8 flex-none items-center justify-center gap-1.5 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-55",
-    active
-      ? "bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
-      : "text-on-surface-variant hover:bg-surface-container",
-  );
+  cn("ui-segment-item flex-none gap-1.5 whitespace-nowrap", active && "is-active");
 
 type ServiceActionTone = "primary" | "secondary" | "danger";
 type ServiceActionSize = "sm" | "md" | "field";
@@ -1044,7 +1037,7 @@ watch(
             :aria-current="activeSection === section.id ? 'location' : undefined"
             :class="
               cn(
-                'block w-full rounded-md px-3 py-2 text-left text-sm leading-5 break-words transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                'block w-full rounded-md px-3 py-2 text-left text-sm leading-5 break-words transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                 activeSection === section.id
                   ? 'bg-surface-variant font-medium text-on-surface'
                   : 'text-on-surface-variant hover:bg-surface-variant/60 hover:text-on-surface',
@@ -1072,7 +1065,7 @@ watch(
               <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
                 <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.interfaceLanguage }}</div>
                 <div
-                  class="inline-flex w-fit max-w-full flex-wrap rounded-md border border-border-subtle bg-surface-container-low p-0.5"
+                  class="ui-segment w-fit"
                 >
                   <button
                     type="button"
@@ -1093,7 +1086,7 @@ watch(
               <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
                 <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.appearanceTheme }}</div>
                 <div
-                  class="inline-flex w-fit max-w-full flex-wrap rounded-md border border-border-subtle bg-surface-container-low p-0.5"
+                  class="ui-segment w-fit"
                 >
                   <button
                     type="button"
@@ -1124,7 +1117,7 @@ watch(
               <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
                 <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.tinyCardActionTrigger }}</div>
                 <div
-                  class="inline-flex w-fit max-w-full flex-wrap rounded-md border border-border-subtle bg-surface-container-low p-0.5"
+                  class="ui-segment w-fit"
                   role="group"
                   :aria-label="t.settings.tinyCardActionTrigger"
                 >
@@ -1150,7 +1143,7 @@ watch(
                 <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.iconPack }}</div>
                 <div class="min-w-0 space-y-2">
                   <div class="flex flex-wrap items-center gap-2">
-                    <span :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', iconPackStatusClass)">
+                    <span :class="cn('ui-status-pill', iconPackStatusClass)">
                       {{ iconPackStatusLabel }}
                     </span>
                     <span class="min-w-0 flex-1 text-[11px] leading-4 text-on-surface-variant">{{
@@ -1165,7 +1158,7 @@ watch(
                   </div>
                   <div class="flex min-w-0 flex-wrap items-start gap-2.5">
                     <div
-                      class="inline-flex h-fit w-fit max-w-full flex-wrap rounded-md border border-border-subtle bg-surface-container-low p-0.5"
+                      class="ui-segment h-fit w-fit"
                       role="group"
                       :aria-label="t.settings.iconPack"
                     >
@@ -1341,7 +1334,7 @@ watch(
               <span
                 :class="
                   cn(
-                    'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                    'ui-status-pill shrink-0',
                     aiConfigReady
                       ? 'border-status-running/30 bg-status-running/10 text-status-running'
                       : 'border-status-warning/30 bg-status-warning/10 text-status-warning',
@@ -1353,9 +1346,7 @@ watch(
             </div>
             <div class="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.95fr)]">
               <div class="min-w-0 space-y-4">
-                <div
-                  class="flex w-fit max-w-full flex-wrap gap-1 rounded-md border border-border-subtle bg-surface-container-low p-0.5"
-                >
+                <div class="ui-segment w-fit gap-1">
                   <button
                     v-for="option in aiProviderOptions"
                     :key="option"
@@ -1571,7 +1562,7 @@ watch(
             </div>
             <div class="grid min-w-0 gap-4">
               <div
-                class="inline-flex h-fit w-fit max-w-full flex-wrap rounded-md border border-border-subtle bg-surface-container-low p-0.5"
+                class="ui-segment h-fit w-fit"
               >
                 <button
                   v-for="option in terminalOptions"
@@ -1585,10 +1576,10 @@ watch(
               </div>
               <div class="space-y-1.5">
                 <Transition
-                  enter-active-class="transition-all duration-200 ease-out"
+                  enter-active-class="transition-[max-height,opacity,transform] duration-200 ease-out"
                   enter-from-class="max-h-0 opacity-0 -translate-y-1"
                   enter-to-class="max-h-28 opacity-100 translate-y-0"
-                  leave-active-class="transition-all duration-150 ease-in"
+                  leave-active-class="transition-[max-height,opacity,transform] duration-150 ease-in"
                   leave-from-class="max-h-28 opacity-100 translate-y-0"
                   leave-to-class="max-h-0 opacity-0 -translate-y-1"
                 >
@@ -1688,7 +1679,7 @@ watch(
                       <input
                         type="radio"
                         name="default-external-application"
-                        class="h-3.5 w-3.5 accent-primary"
+                        class="h-4 w-4 accent-primary"
                         :checked="application.id === store.externalApplicationPreferences.defaultApplicationId"
                         :disabled="!application.enabled"
                         :aria-label="`${t.settings.setDefaultApplication}: ${application.name}`"
@@ -1729,7 +1720,7 @@ watch(
               </div>
               <div class="ml-auto flex shrink-0 items-center gap-2">
                 <span
-                  :class="cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', projectLaunchServiceStatusClass)"
+                  :class="cn('ui-status-pill', projectLaunchServiceStatusClass)"
                 >
                   {{ projectLaunchServiceStatusLabel }}
                 </span>
@@ -1864,7 +1855,7 @@ watch(
 
             <div
               v-if="projectLaunchServiceHasNotice"
-              :class="cn('mt-3 rounded-md border px-3 py-2 text-xs leading-5', projectLaunchServiceNoticeClass)"
+              :class="cn('ui-banner mt-3 px-3 py-2 text-xs leading-5', projectLaunchServiceNoticeClass)"
               role="status"
               aria-live="polite"
             >
@@ -2041,13 +2032,13 @@ watch(
             </div>
             <p
               v-if="store.localStateWriteError"
-              class="mb-3 rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs leading-5 text-status-warning"
+              class="ui-banner ui-banner--warning mb-3 px-3 py-2 text-xs leading-5"
             >
               {{ store.localStateWriteError }}
             </p>
 
             <div class="space-y-3">
-              <div class="rounded-md border border-border-subtle bg-surface px-3 py-3">
+              <div class="ui-card px-3 py-3">
                 <div class="mb-1.5 text-xs font-semibold text-on-surface-variant">{{ t.settings.storageOverview }}</div>
                 <dl class="settings-storage-grid grid grid-cols-1 gap-x-6 gap-y-2 text-xs leading-5 text-on-surface-variant md:grid-cols-2 xl:grid-cols-3">
                   <div class="flex justify-between gap-2">
@@ -2455,7 +2446,7 @@ watch(
             <div
               v-for="item in cleanupItems.filter((candidate) => candidate.category === category)"
               :key="item.id"
-              class="rounded-lg border border-border-subtle px-3 py-2.5"
+              class="ui-card px-3 py-2.5"
             >
               <label class="flex items-start gap-2.5" :class="{ 'opacity-50': item.disabledReason }">
                 <input
@@ -2490,13 +2481,13 @@ watch(
                       </span>
                       <button
                         type="button"
-                        class="group relative inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                        class="group relative inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                         :aria-label="`${item.label}：${item.safetyHint}`"
                         @click.prevent.stop
                       >
                         <Info :size="13" aria-hidden="true" />
                         <span
-                          class="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 hidden w-64 -translate-x-1/2 rounded-md border border-border-subtle bg-surface-container-high px-2.5 py-2 text-left text-[11px] font-normal leading-4 text-on-surface shadow-popover group-hover:block group-focus-visible:block"
+                          class="pointer-events-none absolute left-1/2 top-full z-[70] mt-1.5 hidden w-64 -translate-x-1/2 rounded-md border border-border-subtle bg-surface-container-high px-2.5 py-2 text-left text-[11px] font-normal leading-4 text-on-surface shadow-popover group-hover:block group-focus-visible:block"
                         >
                           {{ item.safetyHint }}
                         </span>

@@ -329,9 +329,9 @@ onUnmounted(() => {
   <div class="flex min-h-screen bg-background">
     <div class="flex-1 flex flex-col h-screen overflow-hidden">
       <main class="flex-1 overflow-hidden">
-        <Transition name="fade" mode="out-in">
+        <Transition name="slide-fade" mode="out-in">
           <div v-if="activeTab === 'projects'" key="projects" class="h-full overflow-hidden">
-            <Transition name="fade" mode="out-in">
+            <Transition name="slide-fade" mode="out-in">
               <div
                 v-if="!store.selectedProjectId"
                 v-overlay-scrollbar
@@ -399,19 +399,20 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
+/* 命名为 slide-fade 避免遮蔽全局 fade 过渡（index.css）——此处带水平位移 */
+.slide-fade-enter-active,
+.slide-fade-leave-active {
   transition:
     opacity 0.2s ease,
     transform 0.2s ease;
 }
 
-.fade-enter-from {
+.slide-fade-enter-from {
   opacity: 0;
   transform: translateX(10px);
 }
 
-.fade-leave-to {
+.slide-fade-leave-to {
   opacity: 0;
   transform: translateX(-10px);
 }
