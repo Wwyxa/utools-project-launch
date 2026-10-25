@@ -889,8 +889,8 @@ const handleProjectDragEnd = () => {
       :aria-label="t.dashboard.moreActions"
       :should-close-on-outside-pointer-down="isMoreMenuOutsidePointerDownAllowed"
       @close="handleMoreMenuClosed"
-      @panel-pointer-enter="clearMoreMenuTimers"
-      @panel-pointer-leave="scheduleMoreMenuClose"
+      @panel-mouse-enter="clearMoreMenuTimers"
+      @panel-mouse-leave="scheduleMoreMenuClose"
     />
 
     <AllProjectsDialog v-if="allProjectsOpen" :search-query="props.searchQuery" @close="allProjectsOpen = false" />

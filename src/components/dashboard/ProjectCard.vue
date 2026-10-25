@@ -484,7 +484,8 @@ const clearCardActionMenuClose = () => {
 const scheduleCardActionMenuClose = () => {
   if (isTiny.value) return;
   clearCardActionMenuClose();
-  cardActionMenuCloseTimer = window.setTimeout(closeCardActionMenu, 120);
+  // 200ms 容忍鼠标从触发器斜向移入面板的途中时间，离开即关会让人移不进菜单
+  cardActionMenuCloseTimer = window.setTimeout(closeCardActionMenu, 200);
 };
 
 function closeCardActionMenu() {
@@ -671,10 +672,11 @@ const openRegularCardActionMenu = (focusMenu = false) => {
   if (!opener) return;
   closeMoreScripts();
   const rect = opener.getBoundingClientRect();
+  // 上翻时菜单底边与按钮底边对齐（覆盖按钮）：鼠标离开按钮向上移动可零空隙进入菜单
   cardMenuAnchor.value = {
     x: rect.right,
     y: rect.bottom + 4,
-    aboveY: rect.top,
+    aboveY: rect.bottom,
     alignRight: true,
     focus: focusMenu,
   };
@@ -1234,7 +1236,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
     :aria-label="isTiny ? t.settings.tinyCardActionTrigger : t.projectActions.moreActions"
     :should-close-on-outside-pointer-down="isCardMenuOutsidePointerDownAllowed"
     @close="handleCardMenuClosed"
-    @panel-pointer-enter="clearCardActionMenuClose"
-    @panel-pointer-leave="scheduleCardActionMenuClose"
+    @panel-mouse-enter="clearCardActionMenuClose"
+    @panel-mouse-leave="scheduleCardActionMenuClose"
   />
 </template>

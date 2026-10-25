@@ -21,6 +21,8 @@ const props = withDefaults(
     maxWidth?: number;
     /** 主菜单滚动区高度上限（px）。 */
     maxHeight?: number;
+    /** 下方剩余空间达到该值时优先向下展开（放不下就内部滚动），更小且上方放得下才上翻。 */
+    minDownwardSpace?: number;
     /** 打开后优先聚焦的条目 key（如默认应用），不存在则聚焦首个可用条目。 */
     initialFocusKey?: string;
     viewportInset?: number;
@@ -32,6 +34,7 @@ const props = withDefaults(
     minWidth: 0,
     maxWidth: 208,
     maxHeight: 240,
+    minDownwardSpace: 144,
     initialFocusKey: "",
     viewportInset: 8,
     shouldCloseOnOutsidePointerDown: undefined,
@@ -40,8 +43,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (event: "close", payload: UiContextMenuClosePayload): void;
-  (event: "panelPointerEnter"): void;
-  (event: "panelPointerLeave"): void;
+  (event: "panelMouseEnter"): void;
+  (event: "panelMouseLeave"): void;
 }>();
 
 const mainRef = ref<HTMLElement | null>(null);
@@ -115,25 +118,33 @@ const positionMain = () => {
   if (!anchor || !panel) return;
   const { width: viewportWidth, height: viewportHeight } = viewportSize();
   const inset = props.viewportInset;
-  const rect = panel.getBoundingClientRect();
-  const width = rect.width || props.maxWidth;
-  const height = rect.height;
+  // 用 offset 尺寸测量：menu-pop-in 缩放动画期间 getBoundingClientRect 会量出偏小的面板
+  const width = panel.offsetWidth || props.maxWidth;
+  const height = panel.offsetHeight;
   let left = anchor.alignRight ? anchor.x - width : anchor.x;
   if (left + width > viewportWidth - inset) left = anchor.x - width;
   left = Math.max(inset, Math.min(left, viewportWidth - width - inset));
   const flipY = anchor.aboveY ?? anchor.y;
-  const fitsBelow = anchor.y + height <= viewportHeight - inset;
+  const belowSpace = viewportHeight - anchor.y - inset;
+  const fitsBelow = belowSpace >= height;
   const fitsAbove = flipY - height >= inset;
-  const opensUpward = !fitsBelow && fitsAbove;
-  const top = opensUpward
-    ? flipY - height
-    : Math.max(inset, Math.min(anchor.y, Math.max(inset, viewportHeight - height - inset)));
-  const available = opensUpward ? top - inset : viewportHeight - top - inset;
+  // 下方塞得下整份菜单，或剩余空间还够展开数行时优先向下；只有下方过于局促且上方放得下才上翻
+  const opensUpward = !fitsBelow && fitsAbove && belowSpace < props.minDownwardSpace;
+  let top: number;
+  let maxHeight: number;
+  if (opensUpward) {
+    // 上方可用空间是 flipY - inset，不能重复扣除面板自身高度；top 按钳制后的实际高度回算，底边贴住锚点
+    maxHeight = Math.max(48, Math.min(props.maxHeight + 8, flipY - inset));
+    top = Math.max(inset, flipY - Math.min(height, maxHeight));
+  } else {
+    top = Math.max(inset, Math.min(anchor.y, Math.max(inset, viewportHeight - height - inset)));
+    maxHeight = Math.max(48, Math.min(props.maxHeight + 8, viewportHeight - top - inset));
+  }
   mainLayout.value = {
     left,
     top,
     transformOrigin: opensUpward ? "bottom left" : "top left",
-    maxHeight: Math.max(48, Math.min(props.maxHeight + 8, available)),
+    maxHeight,
   };
 };
 
@@ -144,11 +155,13 @@ const positionSubmenu = () => {
   const { width: viewportWidth, height: viewportHeight } = viewportSize();
   const inset = props.viewportInset;
   const parentRect = state.parentEl.getBoundingClientRect();
-  const rect = panel.getBoundingClientRect();
+  // 同 positionMain：offset 尺寸不受弹出缩放动画影响
+  const panelWidth = panel.offsetWidth;
+  const panelHeight = panel.offsetHeight;
   const preferredLeft =
-    parentRect.right + 4 + rect.width <= viewportWidth - inset ? parentRect.right + 4 : parentRect.left - rect.width - 4;
-  const left = Math.max(inset, Math.min(preferredLeft, viewportWidth - rect.width - inset));
-  const top = Math.max(inset, Math.min(parentRect.top, viewportHeight - rect.height - inset));
+    parentRect.right + 4 + panelWidth <= viewportWidth - inset ? parentRect.right + 4 : parentRect.left - panelWidth - 4;
+  const left = Math.max(inset, Math.min(preferredLeft, viewportWidth - panelWidth - inset));
+  const top = Math.max(inset, Math.min(parentRect.top, viewportHeight - panelHeight - inset));
   submenuLayout.value = { left, top, maxHeight: Math.max(48, viewportHeight - top - inset) };
 };
 
@@ -464,6 +477,8 @@ const submenuStyle = computed(() => ({
 
 <template>
   <Teleport to="body">
+    <!-- mouseenter/mouseleave 须与触发器（通常监听 mouseleave 排队关闭）保持同一事件流：
+         同一次跨界时 pointer 事件先于 mouse 事件派发，混用会导致"先清除后排队"，悬停在面板内菜单仍被关闭 -->
     <div
       v-if="anchor"
       ref="mainRef"
@@ -476,8 +491,8 @@ const submenuStyle = computed(() => ({
       @keydown="handleMainKeydown"
       @pointermove="handleMainPointerMove"
       @focusin="handleMainFocusIn"
-      @pointerenter="$emit('panelPointerEnter')"
-      @pointerleave="$emit('panelPointerLeave')"
+      @mouseenter="$emit('panelMouseEnter')"
+      @mouseleave="$emit('panelMouseLeave')"
     >
       <div v-overlay-scrollbar class="themed-scrollbar min-h-0 flex-1 overflow-y-auto">
         <template v-for="(item, index) in items" :key="item.type === 'item' ? item.key : `separator-${index}`">
@@ -509,7 +524,7 @@ const submenuStyle = computed(() => ({
             <span class="min-w-0 truncate">{{ item.label }}</span>
             <span
               v-if="item.trailing"
-              class="ml-auto shrink-0 text-[11px] font-semibold tabular-nums text-on-surface-variant"
+              class="ml-auto shrink-0 text-xs font-semibold tabular-nums text-on-surface-variant"
               :title="item.trailing.title || undefined"
             >
               {{ item.trailing.text }}
