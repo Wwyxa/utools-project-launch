@@ -218,7 +218,10 @@ function runGitResult(startPath, args) {
   };
 }
 
-function runGitRemoteCommandResult(startPath, args) {
+function runGitRemoteCommandResult(startPath, args, options = {}) {
+  // quiet: 后台准备性远程操作（如 PR 弹窗刷新基点分支）不发全局进度事件，
+  // 避免占用用户可见的远端操作浮层；显式按钮触发的操作保持进度可见。
+  const quiet = options.quiet === true;
   const resolvedPath = expandPath(startPath);
 
   return new Promise((resolve) => {
@@ -255,6 +258,7 @@ function runGitRemoteCommandResult(startPath, args) {
       return new Promise((resolveProgressDrain) => progressDrainResolvers.push(resolveProgressDrain));
     };
     const emitProgress = (message, phase = 'output') => {
+      if (quiet) return;
       const normalized = String(message || '')
         .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
         .trim();
@@ -302,12 +306,14 @@ function runGitRemoteCommandResult(startPath, args) {
       settled = true;
       clearTimeout(timeout);
       void waitForProgressDispatch().then(() => {
-        emitGitRemoteProgress({
-          type: 'git-remote-progress',
-          repositoryPath: resolvedPath,
-          message: '',
-          phase: 'complete',
-        });
+        if (!quiet) {
+          emitGitRemoteProgress({
+            type: 'git-remote-progress',
+            repositoryPath: resolvedPath,
+            message: '',
+            phase: 'complete',
+          });
+        }
         resolve(result);
       });
     };

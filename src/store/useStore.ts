@@ -29,6 +29,7 @@ import type {
 } from "../types";
 import { aiActions } from "./actions/ai";
 import { githubAuthActions } from "./actions/githubAuth";
+import { githubPrActions } from "./actions/githubPr";
 import { automationRunActions } from "./actions/automationRun";
 import { automationScheduleActions } from "./actions/automationSchedule";
 import { bridgeEventsActions } from "./actions/bridgeEvents";
@@ -290,6 +291,7 @@ export const useStore = defineStore("app", {
     ...projectLaunchServiceActions,
     ...aiActions,
     ...githubAuthActions,
+    ...githubPrActions,
     ...settingsActions,
     ...workActivityActions,
     ...projectFormActions,

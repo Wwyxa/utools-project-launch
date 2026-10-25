@@ -1,4 +1,4 @@
-import { AI_COMMIT_MESSAGE_MODE_ID, DEFAULT_AI_PROMPT_MODES, PROJECT_DETAILS_TAB_IDS } from "../types";
+import { AI_COMMIT_MESSAGE_MODE_ID, AI_PR_DESCRIPTION_MODE_ID, DEFAULT_AI_PROMPT_MODES, PROJECT_DETAILS_TAB_IDS } from "../types";
 import {
   BUILTIN_ENVIRONMENT_TOOLS,
   normalizeBuiltinEnvironmentToolOverride,
@@ -24,6 +24,10 @@ import type {
   GithubAuthPreferences,
   GithubAuthStatus,
   GithubAuthTokenVerification,
+  GithubApiResult,
+  GithubPrContext,
+  GithubPullRequestSummary,
+  GithubRepositoryMetadata,
   LocalStateWriteResult,
   MigrationRunResult,
   MigrationSummary,
@@ -137,7 +141,7 @@ const terminalKinds = new Set<DefaultTerminalKind>([
 type LegacyEditorPreferences = { kind: ExternalApplicationKind; customCommand: string };
 const editorKinds = new Set<ExternalApplicationKind>(["vscode", "cursor", "custom"]);
 const aiProviderKinds = new Set<AiProviderKind>(["utools", "openai-compatible", "anthropic-compatible"]);
-const aiPromptModeKinds = new Set<AiPromptModeKind>(["git-analysis", "commit-message"]);
+const aiPromptModeKinds = new Set<AiPromptModeKind>(["git-analysis", "commit-message", "pr-description"]);
 const environmentToolKeys = new Set<EnvironmentToolKey>([
   "node",
   "npm",
@@ -283,7 +287,13 @@ const normalizeAiModeKind = (id: string, kind: unknown): AiPromptModeKind => {
   if (id === AI_COMMIT_MESSAGE_MODE_ID) {
     return "commit-message";
   }
-  return typeof kind === "string" && aiPromptModeKinds.has(kind as AiPromptModeKind) && kind !== "commit-message"
+  if (id === AI_PR_DESCRIPTION_MODE_ID) {
+    return "pr-description";
+  }
+  return typeof kind === "string" &&
+    aiPromptModeKinds.has(kind as AiPromptModeKind) &&
+    kind !== "commit-message" &&
+    kind !== "pr-description"
     ? (kind as AiPromptModeKind)
     : "git-analysis";
 };
@@ -1162,6 +1172,45 @@ const fallbackBridge: ProjectBridge = {
   },
   async verifyGithubAuthToken(): Promise<GithubAuthTokenVerification> {
     return { ok: false, login: null, avatarUrl: null, message: "浏览器预览无法验证 GitHub 凭证。" };
+  },
+  async readGithubRepositoryMetadata(): Promise<GithubApiResult<GithubRepositoryMetadata>> {
+    return {
+      ok: false,
+      value: null,
+      failure: { code: "network-error", message: "浏览器预览无法读取 GitHub 仓库信息。" },
+    };
+  },
+  async readGithubPullRequestTemplates(): Promise<GithubApiResult<string[]>> {
+    return {
+      ok: false,
+      value: null,
+      failure: { code: "network-error", message: "浏览器预览无法读取 GitHub PR 模板。" },
+    };
+  },
+  async readGithubOpenPullRequest(): Promise<GithubApiResult<GithubPullRequestSummary | null>> {
+    return {
+      ok: false,
+      value: null,
+      failure: { code: "network-error", message: "浏览器预览无法查询 GitHub PR。" },
+    };
+  },
+  async createGithubPullRequest(): Promise<GithubApiResult<GithubPullRequestSummary>> {
+    return {
+      ok: false,
+      value: null,
+      failure: { code: "network-error", message: "浏览器预览无法创建 GitHub PR。" },
+    };
+  },
+  async readGithubPrContext(): Promise<ProjectGitReadResult<GithubPrContext>> {
+    return {
+      ok: false,
+      value: null,
+      failure: {
+        code: "git-unavailable",
+        operation: "history",
+        message: "浏览器预览无法读取 PR 提交上下文。",
+      },
+    };
   },
   async listAiModels() {
     return [];

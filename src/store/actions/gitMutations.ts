@@ -477,11 +477,15 @@ export const gitMutationsActions = {
       projectId: string,
       remoteName: string,
       target: ProjectGitRepositoryTarget = { kind: "main" },
+      options?: { quiet?: boolean },
     ): Promise<ProjectGitActionResult | null> {
       return this.runAuthorizedGitWrite(
         projectId,
         target,
-        (context) => bridge.fetchGitRemoteByName(context.repositoryPath, remoteName),
+        (context) =>
+          options
+            ? bridge.fetchGitRemoteByName(context.repositoryPath, remoteName, { quiet: options.quiet === true })
+            : bridge.fetchGitRemoteByName(context.repositoryPath, remoteName),
         { refresh: "full", refs: true, refreshOnFailure: true },
       );
     },

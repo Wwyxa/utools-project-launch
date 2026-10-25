@@ -27,6 +27,7 @@ import {
   Trash2,
   GitBranch,
   GitMerge,
+  GitPullRequest,
   GitPullRequestArrow,
   X,
   ChevronDown,
@@ -69,6 +70,7 @@ import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../l
 import { gitRemoteProgressOperationId } from "../../lib/gitRemoteProgress";
 import { useResizableSplit } from "../../composables/useResizableSplit";
 import { gitRepositoryTargetsEqual } from "../../lib/gitRepositoryTarget";
+import { orderGithubBaseRemotes } from "../../lib/githubRepository";
 import { presentGitCommitRefs } from "../../lib/gitCommitRefs";
 import ActionDialog from "../common/ActionDialog.vue";
 import BaseModal from "../common/BaseModal.vue";
@@ -79,6 +81,7 @@ import GitDiffViewer from "./GitDiffViewer.vue";
 import GitChangesPane from "./GitChangesPane.vue";
 import GitCommitHistory from "./GitCommitHistory.vue";
 import GitAiAnalysisDialog from "./GitAiAnalysisDialog.vue";
+import GithubPrDialog from "./GithubPrDialog.vue";
 import { clearGitAiAnalysisSessionsForProject } from "../../lib/gitAiAnalysisSession";
 import ExternalApplicationLaunchButton from "./ExternalApplicationLaunchButton.vue";
 
@@ -146,6 +149,7 @@ const gitHistoryTabRef = ref<HTMLButtonElement | null>(null);
 const changesToolbarRef = ref<HTMLElement | null>(null);
 const commitHistoryToolbarRef = ref<HTMLElement | null>(null);
 const isAiDialogOpen = ref(false);
+const isPrDialogOpen = ref(false);
 const isRemoteMenuOpen = ref(false);
 const pushMenuAnchor = ref<UiContextMenuAnchor | null>(null);
 const pushMenuOpener = ref<HTMLElement | null>(null);
@@ -286,6 +290,26 @@ const remoteStatusText = computed(() => {
   }
   return "未配置 remote";
 });
+const githubRemotesForPr = computed(() => orderGithubBaseRemotes(remotes.value));
+const canCreateGithubPullRequest = computed(
+  () =>
+    Boolean(snapshot.value?.repositoryPath) &&
+    !snapshot.value?.isDetachedHead &&
+    Boolean(currentLocalBranch.value) &&
+    githubRemotesForPr.value.length > 0 &&
+    !isAnyGitWriteRunning.value,
+);
+const githubPullRequestTitle = computed(() => {
+  if (!snapshot.value?.repositoryPath) return "未检测到 Git 仓库，无法创建 PR";
+  if (snapshot.value?.isDetachedHead) return "当前处于 detached HEAD，请先切回分支";
+  if (githubRemotesForPr.value.length === 0) return "未配置 GitHub 远端，无法创建 PR";
+  if (isAnyGitWriteRunning.value) return "Git 操作进行中，请稍后再试";
+  return `为 ${currentLocalBranch.value} 创建 GitHub PR`;
+});
+const openGithubPrDialog = () => {
+  if (!canCreateGithubPullRequest.value) return;
+  isPrDialogOpen.value = true;
+};
 const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWriteRunning.value);
 const baseBranch = computed(() => snapshot.value?.base || null);
 const canMergeBaseBranch = computed(
@@ -2396,6 +2420,16 @@ watch(
             :should-close-on-outside-pointer-down="isPushMenuOutsidePointerDownAllowed"
             @close="handlePushMenuClosed"
           />
+          <button
+            type="button"
+            class="git-top-action"
+            :disabled="!canCreateGithubPullRequest"
+            :title="githubPullRequestTitle"
+            :aria-label="githubPullRequestTitle"
+            @click="openGithubPrDialog"
+          >
+            <GitPullRequest :size="14" />
+          </button>
         </div>
       </div>
 
@@ -2903,6 +2937,14 @@ watch(
       :filter-commit="commitFilterRequest"
       :selected-commit-hashes="selectedCommitHashes"
       @close="closeAiDialog"
+      @feedback="setGitActionResult"
+    />
+
+    <GithubPrDialog
+      :open="isPrDialogOpen"
+      :project-id="props.project.id"
+      :repository-target="activeRepositoryTarget"
+      @close="isPrDialogOpen = false"
       @feedback="setGitActionResult"
     />
 

@@ -88,7 +88,9 @@ const currentGitRefLabel = computed(() => {
   }
   return snapshot.value?.branch || "main";
 });
-const aiModeOptions = computed(() => store.aiPreferences.modes.filter((mode) => mode.kind !== "commit-message"));
+const aiModeOptions = computed(() =>
+  store.aiPreferences.modes.filter((mode) => mode.kind !== "commit-message" && mode.kind !== "pr-description"),
+);
 const aiModeSelectOptions = computed(() => aiModeOptions.value.map((mode) => ({ value: mode.id, label: mode.name })));
 const resolveAiModeId = (modeId: string) =>
   aiModeOptions.value.some((option) => option.id === modeId) ? modeId : aiModeOptions.value[0]?.id || "summary";

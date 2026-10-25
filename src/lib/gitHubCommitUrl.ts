@@ -1,15 +1,5 @@
+import { parseGitHubRepository } from "./githubRepository";
 import type { ProjectGitRemoteSummary } from "../types";
-
-type GitHubRepository = { owner: string; repository: string };
-
-const parseGitHubRepository = (remoteUrl: string): GitHubRepository | undefined => {
-  const value = remoteUrl.trim();
-  const match =
-    /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(value) ??
-    /^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(value);
-
-  return match ? { owner: match[1], repository: match[2] } : undefined;
-};
 
 const orderedRemotes = (remotes: readonly ProjectGitRemoteSummary[]) => {
   const preferred = ["origin", "upstream"]

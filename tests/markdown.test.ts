@@ -29,4 +29,18 @@ describe("renderMarkdown", () => {
     expect(rendered).not.toContain("onclick");
     expect(rendered).not.toContain("javascript:");
   });
+
+  it("renders GitHub task checkboxes with source-order indexes, skipping fenced markers", () => {
+    const rendered = renderMarkdown(["- [ ] Bug fix", "- [x] Feature", "```md", "- [ ] fenced", "```"].join("\n"));
+    expect(rendered).toContain('data-task-index="0"');
+    expect(rendered).toContain('data-task-index="1" checked');
+    expect(rendered).toContain("disabled");
+    expect(rendered.match(/markdown-task-checkbox/g)?.length).toBe(2);
+  });
+
+  it("renders interactive checkboxes when interactiveTasks is enabled", () => {
+    const rendered = renderMarkdown("- [x] done", { interactiveTasks: true });
+    expect(rendered).toContain('data-task-index="0" checked');
+    expect(rendered).not.toContain("disabled");
+  });
 });

@@ -490,18 +490,17 @@ function fetchGitRemote(projectPath) {
   );
 }
 
-async function fetchGitRemoteByName(projectPath, remoteName) {
+async function fetchGitRemoteByName(projectPath, remoteName, options = {}) {
   const remoteContext = await resolveNamedGitRemoteOperation(projectPath, remoteName);
   if (!remoteContext.ok) {
     return { ok: false, remote: remoteContext.remote, message: remoteContext.message };
   }
 
-  const result = await runGitRemoteCommandResult(remoteContext.repositoryPath, [
-    "fetch",
-    "--progress",
-    "--prune",
-    remoteContext.remote,
-  ]);
+  const result = await runGitRemoteCommandResult(
+    remoteContext.repositoryPath,
+    ["fetch", "--progress", "--prune", remoteContext.remote],
+    { quiet: options.quiet === true },
+  );
   return result.status === 0
     ? { ok: true, remote: remoteContext.remote, message: `已从 ${remoteContext.remote} 获取远程更新。` }
     : {

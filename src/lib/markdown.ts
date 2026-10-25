@@ -77,6 +77,43 @@ markdown.renderer.rules.html_block = (tokens, index, _options, environment: Mark
 markdown.renderer.rules.html_inline = (tokens, index, _options, environment: MarkdownRenderEnvironment) =>
   sanitizeMarkdownHtml(tokens[index].content, environment);
 
+// GitHub 风格任务列表：将列表项首部的 `[ ]` / `[x]` 转成带序号的复选框
+// token（源码顺序编号，供点击委托回写源文本，见 lib/markdownTasks.ts）。
+const githubTaskMarkerPattern = /^\[([ xX])\](\s+|$)/;
+
+markdown.core.ruler.after("inline", "github_task_lists", (state) => {
+  const tokens = state.tokens;
+  let taskIndex = 0;
+  for (let i = 1; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (token.type !== "inline" || !token.children || token.children.length === 0) continue;
+    const previous = tokens[i - 1];
+    const owner = previous.type === "paragraph_open" ? tokens[i - 2] : previous;
+    if (!owner || owner.type !== "list_item_open") continue;
+    const firstChild = token.children[0];
+    if (firstChild.type !== "text") continue;
+    const match = githubTaskMarkerPattern.exec(firstChild.content);
+    if (!match) continue;
+
+    firstChild.content = firstChild.content.slice(match[0].length);
+    const checkbox = new state.Token("github_task", "", 0);
+    checkbox.attrSet("data-checked", match[1].toLowerCase() === "x" ? "true" : "false");
+    checkbox.attrSet("data-task-index", String(taskIndex));
+    taskIndex += 1;
+    token.children.unshift(checkbox);
+  }
+});
+
+markdown.renderer.rules.github_task = (tokens, index, _options, environment: MarkdownRenderEnvironment) => {
+  const token = tokens[index];
+  const checked = token.attrGet("data-checked") === "true";
+  const taskIndex = markdown.utils.escapeHtml(token.attrGet("data-task-index") || "");
+  const interactive = environment?.taskOptions?.interactive === true;
+  return `<input type="checkbox" class="markdown-task-checkbox" data-task-index="${taskIndex}"${
+    checked ? " checked" : ""
+  }${interactive ? "" : " disabled"}>`;
+};
+
 export type MarkdownImageResolution =
   | { status: "ready"; src: string }
   | { status: "loading" | "failed" | "blocked"; message?: string };
@@ -84,10 +121,13 @@ export type MarkdownImageResolution =
 export interface MarkdownRenderOptions {
   resolveImage?: (source: string) => MarkdownImageResolution | undefined;
   imageFallbackText?: string;
+  /** 任务复选框是否可交互（不加 disabled；点击处理由容器自行委托）。 */
+  interactiveTasks?: boolean;
 }
 
 interface MarkdownRenderEnvironment {
   imageOptions?: MarkdownRenderOptions;
+  taskOptions?: { interactive?: boolean };
 }
 
 interface MarkdownDocumentParts {
@@ -272,7 +312,9 @@ export const collectMarkdownImageSources = (content: string) => {
 
 export const renderMarkdown = (content: string, options?: MarkdownRenderOptions) => {
   const document = splitMarkdownDocument(content);
-  const environment = options ? ({ imageOptions: options } satisfies MarkdownRenderEnvironment) : {};
+  const environment: MarkdownRenderEnvironment = options
+    ? { imageOptions: options, taskOptions: { interactive: options.interactiveTasks === true } }
+    : {};
   const renderedBody = markdown.render(document.body, environment);
   if (document.frontMatter === undefined) return renderedBody;
 

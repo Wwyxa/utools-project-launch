@@ -13,6 +13,7 @@ const preloadModuleFiles = [
   "platform.js",
   "github-auth.js",
   "git.js",
+  "github-pr.js",
   "projects.js",
   "migration.js",
   "data-tools.js",

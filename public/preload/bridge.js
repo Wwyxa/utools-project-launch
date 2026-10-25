@@ -72,6 +72,12 @@ window.projectBridge = {
   saveGithubAuthPreferences,
   readGithubAuthStatus,
   verifyGithubAuthToken,
+  readGithubRepositoryMetadata: (owner, repository) => readGithubRepositoryMetadataResult(owner, repository),
+  readGithubPullRequestTemplates: (owner, repository) => readGithubPullRequestTemplatesResult(owner, repository),
+  readGithubOpenPullRequest: (owner, repository, headOwner, branch) =>
+    readGithubOpenPullRequestResult(owner, repository, headOwner, branch),
+  createGithubPullRequest: (input) => createGithubPullRequest(input),
+  readGithubPrContext: (projectPath, options) => readGithubPrContextResult(projectPath, options),
   loadProjectLaunchServicePreferences: readProjectLaunchServicePreferences,
   saveProjectLaunchServicePreferences,
   getProjectLaunchServiceStatus: readProjectLaunchServiceStatus,
@@ -235,6 +241,7 @@ const runtimeOperationLabels = {
   executeCleanup: "清理数据",
   testAiConnection: "测试 AI 连接",
   verifyGithubAuthToken: "验证 GitHub 凭证",
+  createGithubPullRequest: "创建 GitHub PR",
   analyzeWithAi: "AI 分析",
   analyzeWithAiStream: "流式 AI 分析",
 };

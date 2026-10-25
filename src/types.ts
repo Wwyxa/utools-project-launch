@@ -61,7 +61,7 @@ export type ProjectVisibility = "public" | "private";
 export type EnvironmentToolKey = "node" | "npm" | "pnpm" | "yarn" | "python" | "pip" | "go" | "git" | "docker";
 export type EnvironmentToolStatus = "available" | "missing" | "error";
 export type AiProviderKind = "utools" | "openai-compatible" | "anthropic-compatible";
-export type AiPromptModeKind = "git-analysis" | "commit-message";
+export type AiPromptModeKind = "git-analysis" | "commit-message" | "pr-description";
 export const PROJECT_DETAILS_TAB_IDS = ["info", "scripts", "automation", "files", "git", "memo"] as const;
 export const PROJECT_DETAILS_TAB_REORDER_COACH_MARK_VERSION = 1;
 export const PROJECT_DETAILS_TAB_DEFAULT_COACH_MARK_VERSION = 1;
@@ -550,6 +550,20 @@ export interface AiPromptMode {
 
 export const AI_COMMIT_MESSAGE_MODE_ID = "commit-message";
 
+export const AI_PR_DESCRIPTION_MODE_ID = "pr-description";
+
+export const DEFAULT_AI_PR_DESCRIPTION_PROMPT = `请根据下方 PR 上下文（源分支提交记录、变更文件与代码 diff、PR 模板）生成可直接使用的 PR 标题与描述。
+
+输出格式（必须严格遵守，不要添加任何其他前后缀）：
+TITLE: <PR 标题，conventional commit 风格，简洁明确，不超过 72 个字符>
+<空一行>
+DESCRIPTION:
+<PR 描述正文：先用 2-4 句概述本次变更，再用无序列表列出主要改动点>
+
+要求：
+- 若上下文提供了 PR 模板，正文按模板结构填充，未涉及的部分保留模板占位说明。
+- 不要编造未在上下文中出现的改动，不要输出推理过程，不要使用 Markdown 代码块围栏。`;
+
 export const DEFAULT_AI_COMMIT_MESSAGE_PROMPT = `请根据当前 Git diff 生成一个简洁、可直接使用的 Git commit message。
 
 要求：
@@ -586,6 +600,13 @@ export const DEFAULT_AI_PROMPT_MODES: AiPromptMode[] = [
     prompt: DEFAULT_AI_COMMIT_MESSAGE_PROMPT,
     builtIn: true,
     kind: "commit-message",
+  },
+  {
+    id: AI_PR_DESCRIPTION_MODE_ID,
+    name: "PR 描述",
+    prompt: DEFAULT_AI_PR_DESCRIPTION_PROMPT,
+    builtIn: true,
+    kind: "pr-description",
   },
 ];
 
@@ -628,6 +649,101 @@ export interface GithubAuthTokenVerification {
   login: string | null;
   avatarUrl: string | null;
   message: string;
+}
+
+export type GithubApiFailureCode =
+  | "invalid-repository"
+  | "invalid-input"
+  | "invalid-ref"
+  | "invalid-response"
+  | "invalid-output"
+  | "network-error"
+  | "unauthorized"
+  | "forbidden"
+  | "not-found"
+  | "rate-limited"
+  | "http-error"
+  | "graphql-error";
+
+export interface GithubApiFailure {
+  code: GithubApiFailureCode;
+  message: string;
+}
+
+export type GithubApiResult<T> = { ok: true; value: T } | { ok: false; value: null; failure: GithubApiFailure };
+
+export interface GithubRepositoryParentMetadata {
+  owner: string;
+  repository: string;
+  nodeId: string;
+  defaultBranch: string;
+}
+
+export interface GithubRepositoryMetadata {
+  owner: string;
+  repository: string;
+  nodeId: string;
+  defaultBranch: string;
+  isFork: boolean;
+  parent: GithubRepositoryParentMetadata | null;
+}
+
+export interface GithubPullRequestSummary {
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  state: "open" | "closed";
+  baseBranch: string;
+  headBranch: string;
+}
+
+export interface GithubPrCreateInput {
+  owner: string;
+  repository: string;
+  repositoryId: string;
+  base: string;
+  headOwner: string;
+  headRepository: string;
+  headBranch: string;
+  title: string;
+  body: string;
+  draft: boolean;
+}
+
+export interface GithubPrContextCommit {
+  hash: string;
+  parents: string[];
+  author: string;
+  date: string;
+  subject: string;
+  message: string;
+}
+
+export interface GithubPrContextFile {
+  path: string;
+  additions: number | null;
+  deletions: number | null;
+  binary: boolean;
+}
+
+export interface GithubPrContext {
+  baseRemote: string;
+  baseBranch: string;
+  headBranch: string;
+  mergeBase: string;
+  commits: GithubPrContextCommit[];
+  commitsTruncated: boolean;
+  totalCommits: number;
+  nonMergeCommitCount: number;
+  files: GithubPrContextFile[];
+  filesTruncated: boolean;
+  /** 变更中存在锁定文件/构建产物等噪音文件，其 diff 已在代码 diff 中省略。 */
+  noisyDiffExcluded: boolean;
+  diffStat: string;
+  diffStatTruncated: boolean;
+  diff: string;
+  diffTruncated: boolean;
 }
 
 export interface AiAnalysisFeedback {
@@ -1854,6 +1970,19 @@ export interface ProjectBridge {
   saveGithubAuthPreferences(preferences: GithubAuthPreferences): LocalStateWriteResult;
   readGithubAuthStatus(): Promise<GithubAuthStatus>;
   verifyGithubAuthToken(token: string): Promise<GithubAuthTokenVerification>;
+  readGithubRepositoryMetadata(owner: string, repository: string): Promise<GithubApiResult<GithubRepositoryMetadata>>;
+  readGithubPullRequestTemplates(owner: string, repository: string): Promise<GithubApiResult<string[]>>;
+  readGithubOpenPullRequest(
+    owner: string,
+    repository: string,
+    headOwner: string,
+    branch: string,
+  ): Promise<GithubApiResult<GithubPullRequestSummary | null>>;
+  createGithubPullRequest(input: GithubPrCreateInput): Promise<GithubApiResult<GithubPullRequestSummary>>;
+  readGithubPrContext(
+    projectPath: string,
+    options: { baseRemote: string; baseBranch: string; headBranch: string },
+  ): Promise<ProjectGitReadResult<GithubPrContext>>;
   loadProjectLaunchServicePreferences(): ProjectLaunchServicePreferences;
   saveProjectLaunchServicePreferences(preferences: ProjectLaunchServicePreferences): LocalStateWriteResult;
   getProjectLaunchServiceStatus(): Promise<ProjectLaunchServiceStatus>;
@@ -2015,7 +2144,11 @@ export interface ProjectBridge {
     options?: { force?: boolean },
   ): Promise<ProjectGitActionResult>;
   fetchGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
-  fetchGitRemoteByName(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
+  fetchGitRemoteByName(
+    projectPath: string,
+    remoteName: string,
+    options?: { quiet?: boolean },
+  ): Promise<ProjectGitActionResult>;
   pullGitRemote(projectPath: string): Promise<ProjectGitActionResult>;
   pushGitRemote(projectPath: string, options?: ProjectGitPushOptions): Promise<ProjectGitActionResult>;
   mergeGitBaseBranch(projectPath: string): Promise<ProjectGitMergeResult>;

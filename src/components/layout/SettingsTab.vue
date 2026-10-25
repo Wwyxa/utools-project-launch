@@ -205,7 +205,8 @@ const cleanupHasSyncSelection = computed(() =>
   ),
 );
 const cleanupRunnable = computed(
-  () => cleanupSelectedIds.value.length > 0 && !cleanupScanning.value && !cleanupSubmitting.value && !store.cleanupRunning,
+  () =>
+    cleanupSelectedIds.value.length > 0 && !cleanupScanning.value && !cleanupSubmitting.value && !store.cleanupRunning,
 );
 
 const runSelectedCleanup = async () => {
@@ -973,8 +974,8 @@ const githubAuthFeedbackTone = ref<"success" | "error">("success");
 
 const githubManualTokenConfigured = computed(() => Boolean(store.githubAuthPreferences.personalAccessToken));
 
-const githubStatusConnected = computed(
-  () => Boolean(store.githubAuthStatus?.configured && store.githubAuthStatus.verified),
+const githubStatusConnected = computed(() =>
+  Boolean(store.githubAuthStatus?.configured && store.githubAuthStatus.verified),
 );
 
 const githubStatusChecking = computed(() => store.githubAuthStatusLoading && !store.githubAuthStatus);
@@ -1061,7 +1062,9 @@ const githubGhDescription = computed(() => {
   }
 });
 
-const githubGhShowLoginCommand = computed(() => githubGhCardState.value !== "active" && githubGhCardState.value !== "standby");
+const githubGhShowLoginCommand = computed(
+  () => githubGhCardState.value !== "active" && githubGhCardState.value !== "standby",
+);
 
 type GithubPatCardState = "active" | "stale" | "empty";
 
@@ -1240,9 +1243,7 @@ watch(
             <div class="space-y-5">
               <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
                 <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.interfaceLanguage }}</div>
-                <div
-                  class="ui-segment w-fit"
-                >
+                <div class="ui-segment w-fit">
                   <button
                     type="button"
                     @click="store.setLocale('zh-CN')"
@@ -1261,9 +1262,7 @@ watch(
               </div>
               <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
                 <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.appearanceTheme }}</div>
-                <div
-                  class="ui-segment w-fit"
-                >
+                <div class="ui-segment w-fit">
                   <button
                     type="button"
                     @click="store.setTheme('light')"
@@ -1292,11 +1291,7 @@ watch(
               </div>
               <div class="grid items-center gap-3 md:grid-cols-[8rem_minmax(0,1fr)]">
                 <div class="min-w-0 text-sm font-medium text-on-surface">{{ t.settings.tinyCardActionTrigger }}</div>
-                <div
-                  class="ui-segment w-fit"
-                  role="group"
-                  :aria-label="t.settings.tinyCardActionTrigger"
-                >
+                <div class="ui-segment w-fit" role="group" :aria-label="t.settings.tinyCardActionTrigger">
                   <button
                     type="button"
                     @click="store.setTinyCardActionTrigger('hover')"
@@ -1333,11 +1328,7 @@ watch(
                     </span>
                   </div>
                   <div class="flex min-w-0 flex-wrap items-start gap-2.5">
-                    <div
-                      class="ui-segment h-fit w-fit"
-                      role="group"
-                      :aria-label="t.settings.iconPack"
-                    >
+                    <div class="ui-segment h-fit w-fit" role="group" :aria-label="t.settings.iconPack">
                       <button
                         type="button"
                         :class="segmentButtonClass(store.uiPreferences.iconPackId === 'builtin')"
@@ -1503,9 +1494,7 @@ watch(
               <div class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
                 <Brain :size="15" class="shrink-0 text-primary" />
                 <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.aiProvider }}</h3>
-                <span class="col-span-2 text-xs leading-5 text-on-surface-variant">{{
-                  aiProviderDescription
-                }}</span>
+                <span class="col-span-2 text-xs leading-5 text-on-surface-variant">{{ aiProviderDescription }}</span>
               </div>
               <span
                 :class="
@@ -1730,7 +1719,7 @@ watch(
                 <Github :size="15" class="shrink-0 text-primary" />
                 <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.github }}</h3>
                 <span class="col-span-2 text-xs leading-5 text-on-surface-variant">
-                  用于获取提交历史作者头像（含私有仓库）并提升访问额度；两种方式任选其一，凭证仅保存在本机。
+                  用于提交树作者头像获取与 PR 创建；两种方式任选其一，凭证仅保存在本机。
                 </span>
               </div>
               <div class="flex shrink-0 items-center gap-1.5">
@@ -1769,7 +1758,11 @@ watch(
                       alt=""
                       class="h-4 w-4 shrink-0 rounded-full"
                     />
-                    <CheckCircle2 v-if="githubGhCardState === 'active'" :size="13" class="shrink-0 text-status-running" />
+                    <CheckCircle2
+                      v-if="githubGhCardState === 'active'"
+                      :size="13"
+                      class="shrink-0 text-status-running"
+                    />
                     <span class="truncate">{{ githubGhHeading }}</span>
                   </div>
                   <div v-if="githubGhDescription" class="mt-0.5 break-words">
@@ -1850,12 +1843,21 @@ watch(
                         清除
                       </button>
                     </div>
-                    <div v-if="githubAuthFeedback" class="mt-1.5 break-words" :class="githubAuthFeedbackTone === 'success' ? 'text-status-running' : 'text-status-error'" role="status">
+                    <div
+                      v-if="githubAuthFeedback"
+                      class="mt-1.5 break-words"
+                      :class="githubAuthFeedbackTone === 'success' ? 'text-status-running' : 'text-status-error'"
+                      role="status"
+                    >
                       {{ githubAuthFeedback }}
                     </div>
                     <div class="mt-1.5 break-words">
-                      仅获取头像无需勾选任何权限；需要访问私有仓库时，请勾选 repo 权限。
-                      <button type="button" class="text-primary underline underline-offset-2" @click="openGithubTokenCreation">
+                      头像获取无需权限；创建 PR 请勾选 repo 权限。
+                      <button
+                        type="button"
+                        class="text-primary underline underline-offset-2"
+                        @click="openGithubTokenCreation"
+                      >
                         前往 GitHub 创建令牌
                       </button>
                     </div>
@@ -1864,7 +1866,7 @@ watch(
               </div>
             </div>
             <p class="mt-3 text-xs leading-5 text-on-surface-variant">
-              两种方式都未配置时将以匿名方式访问 GitHub（60 次/小时），头像功能仍可用但额度有限。
+              未配置时匿名访问（60 次/小时），仅获取头像可用；创建 PR 需先配置凭证。
             </p>
           </section>
 
@@ -1881,9 +1883,7 @@ watch(
               </div>
             </div>
             <div class="grid min-w-0 gap-4">
-              <div
-                class="ui-segment h-fit w-fit"
-              >
+              <div class="ui-segment h-fit w-fit">
                 <button
                   v-for="option in terminalOptions"
                   :key="option"
@@ -1903,10 +1903,7 @@ watch(
                   leave-from-class="max-h-28 opacity-100 translate-y-0"
                   leave-to-class="max-h-0 opacity-0 -translate-y-1"
                 >
-                  <div
-                    v-if="terminalUsesCustomCommand"
-                    class="min-w-0 overflow-hidden"
-                  >
+                  <div v-if="terminalUsesCustomCommand" class="min-w-0 overflow-hidden">
                     <label class="mb-2 block text-xs font-semibold uppercase text-on-surface-variant">
                       {{ t.settings.customCommand }}
                     </label>
@@ -1970,7 +1967,9 @@ watch(
                 <div class="flex min-w-0 items-start gap-2">
                   <div class="min-w-0 flex-1">
                     <div class="flex min-w-0 items-center gap-1">
-                      <span class="truncate text-xs font-semibold" :title="application.name">{{ application.name }}</span>
+                      <span class="truncate text-xs font-semibold" :title="application.name">{{
+                        application.name
+                      }}</span>
                       <span
                         class="shrink-0 rounded bg-surface-container px-1 py-0.5 text-[10px] font-medium leading-3 text-on-surface-variant"
                       >
@@ -2039,9 +2038,7 @@ watch(
                 }}</span>
               </div>
               <div class="ml-auto flex shrink-0 items-center gap-2">
-                <span
-                  :class="cn('ui-status-pill', projectLaunchServiceStatusClass)"
-                >
+                <span :class="cn('ui-status-pill', projectLaunchServiceStatusClass)">
                   {{ projectLaunchServiceStatusLabel }}
                 </span>
                 <label class="inline-flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
@@ -2228,7 +2225,9 @@ watch(
                     <span class="min-w-0">{{ t.settings.projectLaunchServiceLogPersistLabel }}</span>
                     <ToggleSwitch
                       :model-value="Boolean(logRetentionDraft?.persist)"
-                      :disabled="!logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy"
+                      :disabled="
+                        !logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy
+                      "
                       :aria-label="t.settings.projectLaunchServiceLogPersistLabel"
                       @update:model-value="updateLogRetentionPersistence"
                     />
@@ -2350,17 +2349,16 @@ watch(
               </div>
               <p class="text-xs leading-5 text-on-surface-variant">{{ t.settings.dataToolsDescription }}</p>
             </div>
-            <p
-              v-if="store.localStateWriteError"
-              class="ui-banner ui-banner--warning mb-3 px-3 py-2 text-xs leading-5"
-            >
+            <p v-if="store.localStateWriteError" class="ui-banner ui-banner--warning mb-3 px-3 py-2 text-xs leading-5">
               {{ store.localStateWriteError }}
             </p>
 
             <div class="space-y-3">
               <div class="ui-card px-3 py-3">
                 <div class="mb-1.5 text-xs font-semibold text-on-surface-variant">{{ t.settings.storageOverview }}</div>
-                <dl class="settings-storage-grid grid grid-cols-1 gap-x-6 gap-y-2 text-xs leading-5 text-on-surface-variant md:grid-cols-2 xl:grid-cols-3">
+                <dl
+                  class="settings-storage-grid grid grid-cols-1 gap-x-6 gap-y-2 text-xs leading-5 text-on-surface-variant md:grid-cols-2 xl:grid-cols-3"
+                >
                   <div class="flex justify-between gap-2">
                     <dt>{{ t.settings.storageHostVersion }}</dt>
                     <dd class="font-mono">{{ store.storageOverview?.hostVersion || "—" }}</dd>
@@ -2429,27 +2427,15 @@ watch(
               </div>
 
               <div class="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  @click="openCleanupDialog"
-                  :class="serviceActionButtonClass()"
-                >
+                <button type="button" @click="openCleanupDialog" :class="serviceActionButtonClass()">
                   <Trash2 :size="14" />
                   {{ t.settings.dataCleanup }}
                 </button>
-                <button
-                  type="button"
-                  @click="store.openLocalDataDirectory"
-                  :class="serviceActionButtonClass()"
-                >
+                <button type="button" @click="store.openLocalDataDirectory" :class="serviceActionButtonClass()">
                   <FolderOpen :size="14" />
                   {{ t.settings.openLocalDataDirectory }}
                 </button>
-                <button
-                  type="button"
-                  @click="store.openLegacyDataDirectory"
-                  :class="serviceActionButtonClass()"
-                >
+                <button type="button" @click="store.openLegacyDataDirectory" :class="serviceActionButtonClass()">
                   <FolderOpen :size="14" />
                   {{ t.settings.openLegacyDataDirectory }}
                 </button>
@@ -2463,9 +2449,7 @@ watch(
               <Info :size="15" class="shrink-0 text-primary" />
               <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.about }}</h3>
             </div>
-            <div
-              class="flex flex-wrap items-center justify-between gap-3 text-sm"
-            >
+            <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
               <div class="flex items-center gap-2 text-sm text-on-surface-variant">
                 <span class="font-medium">{{ t.settings.version }}</span>
                 <span class="rounded-full bg-surface-variant px-2 py-0.5 font-mono text-xs text-on-surface-variant"
@@ -2572,7 +2556,9 @@ watch(
       :width="448"
       body-class="p-3 space-y-3"
       :aria-label="
-        editingBuiltinEnvironmentKey || editingCustomEnvironmentId ? t.settings.editEnvironment : t.settings.addEnvironment
+        editingBuiltinEnvironmentKey || editingCustomEnvironmentId
+          ? t.settings.editEnvironment
+          : t.settings.addEnvironment
       "
       @submit="saveEnvironment"
       @close="environmentDialogOpen = false"
@@ -2730,7 +2716,9 @@ watch(
     @close="cleanupDialogOpen = false"
   >
     <template #header>
-      <h3 id="cleanup-dialog-title" class="min-w-0 truncate text-sm font-bold text-on-surface">{{ t.settings.dataCleanup }}</h3>
+      <h3 id="cleanup-dialog-title" class="min-w-0 truncate text-sm font-bold text-on-surface">
+        {{ t.settings.dataCleanup }}
+      </h3>
     </template>
     <div class="space-y-4">
       <div
@@ -2814,17 +2802,13 @@ watch(
                       </button>
                     </span>
                     <span class="text-xs text-on-surface-variant">
-                      <template v-if="item.count !== null"
-                        >{{ t.settings.cleanupCount }}: {{ item.count }}</template
-                      >
+                      <template v-if="item.count !== null">{{ t.settings.cleanupCount }}: {{ item.count }}</template>
                       <template v-if="item.estimatedBytes > 0">
                         {{ item.count !== null ? " · " : "" }}~{{ formatDataSize(item.estimatedBytes) }}
                       </template>
                     </span>
                   </span>
-                  <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{
-                    item.description
-                  }}</span>
+                  <span class="mt-0.5 block text-xs leading-5 text-on-surface-variant">{{ item.description }}</span>
                   <span v-if="item.disabledReason" class="mt-1 block text-xs text-status-error">
                     {{ item.disabledReason }}
                   </span>
@@ -2874,12 +2858,7 @@ watch(
       <button type="button" class="ui-btn ui-btn--ghost" @click="cleanupDialogOpen = false">
         {{ t.common.close }}
       </button>
-      <button
-        type="button"
-        class="ui-btn ui-btn--danger"
-        :disabled="!cleanupRunnable"
-        @click="requestCleanupRun"
-      >
+      <button type="button" class="ui-btn ui-btn--danger" :disabled="!cleanupRunnable" @click="requestCleanupRun">
         {{ store.cleanupRunning ? t.settings.cleanupRunning : t.settings.cleanupRun }}
       </button>
     </template>

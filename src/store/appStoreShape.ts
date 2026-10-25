@@ -323,6 +323,29 @@ export interface AppActions {
   setGithubAuthPreferences(patch: Partial<GithubAuthPreferences>): void;
   refreshGithubAuthStatus(): Promise<void>;
   verifyGithubAuthToken(token: string): Promise<GithubAuthTokenVerification>;
+  readGithubRepositoryMetadata(
+    owner: string,
+    repository: string,
+  ): Promise<import("../types").GithubApiResult<import("../types").GithubRepositoryMetadata>>;
+  readGithubPullRequestTemplates(
+    owner: string,
+    repository: string,
+  ): Promise<import("../types").GithubApiResult<string[]>>;
+  readGithubOpenPullRequest(
+    owner: string,
+    repository: string,
+    headOwner: string,
+    branch: string,
+  ): Promise<import("../types").GithubApiResult<import("../types").GithubPullRequestSummary | null>>;
+  createGithubPullRequest(
+    input: import("../types").GithubPrCreateInput,
+  ): Promise<import("../types").GithubApiResult<import("../types").GithubPullRequestSummary>>;
+  openExternalUrl(url: string): Promise<void>;
+  readGithubPrContext(
+    projectId: string,
+    target: ProjectGitRepositoryTarget,
+    options: { baseRemote: string; baseBranch: string; headBranch: string },
+  ): Promise<import("../types").ProjectGitReadResult<import("../types").GithubPrContext> | null>;
   setActiveTab(tab: "projects" | "settings" | "environment" | "activity"): void;
   openWorkActivity(projectId?: string): void;
   returnFromWorkActivity(): void;
@@ -598,6 +621,7 @@ export interface AppActions {
     projectId: string,
     remoteName: string,
     target?: ProjectGitRepositoryTarget,
+    options?: { quiet?: boolean },
   ): Promise<ProjectGitActionResult | null>;
   pullGitRemote(projectId: string, target?: ProjectGitRepositoryTarget): Promise<ProjectGitActionResult | null>;
   pushGitRemote(

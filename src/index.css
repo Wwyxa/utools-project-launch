@@ -963,6 +963,26 @@
   font-size: 1.05rem;
 }
 
+/* 紧凑变体：弹窗等小字号场景，标题随容器字号等比缩放。 */
+.memo-rendered--compact h1,
+.memo-rendered--compact h2,
+.memo-rendered--compact h3,
+.memo-rendered--compact h4 {
+  margin: 0.6rem 0 0.3rem;
+}
+
+.memo-rendered--compact h1 {
+  font-size: 1.3em;
+}
+
+.memo-rendered--compact h2 {
+  font-size: 1.2em;
+}
+
+.memo-rendered--compact h3 {
+  font-size: 1.1em;
+}
+
 .memo-rendered p {
   margin: 0.42rem 0;
 }
@@ -1042,6 +1062,23 @@
 .memo-rendered li {
   margin: 0.14rem 0;
   color: var(--color-on-surface-variant);
+}
+
+.memo-rendered ul:has(> li > .markdown-task-checkbox),
+.memo-rendered li:has(> .markdown-task-checkbox) {
+  list-style: none;
+}
+
+.memo-rendered .markdown-task-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0 0.4rem 0 -1.25rem;
+  vertical-align: -2px;
+  accent-color: var(--color-primary);
+}
+
+.memo-rendered .markdown-task-checkbox:not([disabled]) {
+  cursor: pointer;
 }
 
 .memo-rendered blockquote {
