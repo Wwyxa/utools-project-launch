@@ -2632,18 +2632,23 @@ async function fetchGitHubCommitAvatar(owner, repository, commitHash) {
   }
 }
 
-async function readGitCommitAuthorAvatar(projectPath, commitHash) {
+async function readGitCommitAuthorAvatar(projectPath, commitHash, context) {
   const hash = String(commitHash || '').trim();
   if (!/^[0-9a-f]{40,64}$/i.test(hash)) {
     return null;
   }
 
-  const repositoryPath = await findGitRootAsync(projectPath);
+  const hasContext = context && typeof context.authorEmail === 'string' &&
+    Array.isArray(context.remotes) && context.remotes.every((remote) => remote &&
+      typeof remote.name === 'string' &&
+      (remote.fetchUrl === undefined || typeof remote.fetchUrl === 'string') &&
+      (remote.pushUrl === undefined || typeof remote.pushUrl === 'string'));
+  const repositoryPath = hasContext ? projectPath : await findGitRootAsync(projectPath);
   if (!repositoryPath) {
     return null;
   }
 
-  const [remotes, upstream] = await Promise.all([
+  const [remotes, upstream] = hasContext ? [context.remotes, context.upstream] : await Promise.all([
     readGitRemotesAsync(repositoryPath),
     readGitUpstreamAsync(repositoryPath),
   ]);
@@ -2652,19 +2657,24 @@ async function readGitCommitAuthorAvatar(projectPath, commitHash) {
     return null;
   }
 
-  const authorEmail = (await runGitAsync(repositoryPath, ['show', '-s', '--format=%ae', hash])).trim();
+  const authorEmail = hasContext ? context.authorEmail.trim() :
+    (await runGitAsync(repositoryPath, ['show', '-s', '--format=%ae', hash])).trim();
+  const authorKey = authorEmail ? `email:${authorEmail}` : `commit:${hash.toLowerCase()}`;
+  const cacheKey = `${repository.owner.toLowerCase()}/${repository.repository.toLowerCase()}:${authorKey}`;
+  const identity = { repositoryPath, commitHash: hash };
   const userId = authorEmail.match(/^([0-9]+)\+[^@]+@users\.noreply\.github\.com$/i)?.[1];
   if (userId) {
-    return `https://avatars.githubusercontent.com/u/${userId}?s=80`;
+    return readCachedGitAvatar(cacheKey, () => `https://avatars.githubusercontent.com/u/${userId}?s=80`, identity);
   }
   const login = authorEmail.match(/^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)@users\.noreply\.github\.com$/i)?.[1];
   if (login) {
-    return `https://github.com/${encodeURIComponent(login)}.png?size=80`;
+    return readCachedGitAvatar(cacheKey, () => `https://github.com/${encodeURIComponent(login)}.png?size=80`, identity);
   }
 
-  const authorKey = authorEmail ? `email:${authorEmail}` : `commit:${hash.toLowerCase()}`;
-  const cacheKey = `${repository.owner.toLowerCase()}/${repository.repository.toLowerCase()}:${authorKey}`;
-  return cacheGitCommitAvatar(cacheKey, () => fetchGitHubCommitAvatar(repository.owner, repository.repository, hash));
+  return readCachedGitAvatar(cacheKey, () => {
+    gitCommitAvatarResults.delete(cacheKey);
+    return cacheGitCommitAvatar(cacheKey, () => fetchGitHubCommitAvatar(repository.owner, repository.repository, hash));
+  }, identity);
 }
 
 function normalizeGitRemoteName(remoteName) {

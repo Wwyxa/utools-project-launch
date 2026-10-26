@@ -12,6 +12,7 @@ const preloadModuleFiles = [
   "ai.js",
   "platform.js",
   "github-auth.js",
+  "git-avatar-cache.js",
   "git.js",
   "github-pr.js",
   "projects.js",

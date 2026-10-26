@@ -120,6 +120,7 @@ async function collectStorageOverview() {
       localDataBytes: localDataDirectory ? await directoryEntrySizeBytes(localDataDirectory) : 0,
       serviceBytes: localDataDirectory ? await directoryEntrySizeBytes(localServiceDirectoryPath()) : 0,
       runtimeBytes: localDataDirectory ? await directoryEntrySizeBytes(path.join(localDataDirectory, "runtime")) : 0,
+      gitAvatarsBytes: localDataDirectory ? await directoryEntrySizeBytes(gitAvatarCacheDirectory()) : 0,
       iconPacksBytes: localDataDirectory
         ? await directoryEntrySizeBytes(path.join(localDataDirectory, "icon-packs"))
         : 0,
@@ -317,7 +318,16 @@ async function buildCleanupPlan() {
       disabledReason: localDataDirectory ? "" : "本地数据目录不可用。",
       estimatedBytes: localDataDirectory ? await directoryEntrySizeBytes(path.join(localDataDirectory, "runtime", "logs")) : 0,
     }),
-    cleanupItem("cache-git-activity", "cache", "Git 活动缓存", "内存中的 Git 报告、明细和头像缓存。", {
+    cleanupItem("cache-git-avatars", "cache", "Git 作者头像缓存", "本机保存的作者头像图片，不参与云同步或备份。", {
+      kind: "git-avatar-cache",
+      selectedByDefault: false,
+      recommendation: "keep",
+      safetyHint: "清理后再次查看头像需要联网下载；不影响项目、设置和 Git 数据。",
+      disabledReason: localDataDirectory ? "" : "本地数据目录不可用。",
+      paths: localDataDirectory ? [gitAvatarCacheDirectory()] : [],
+      estimatedBytes: localDataDirectory ? await directoryEntrySizeBytes(gitAvatarCacheDirectory()) : 0,
+    }),
+    cleanupItem("cache-git-activity", "cache", "Git 活动缓存", "内存中的 Git 报告、明细和头像地址查询缓存。", {
       recommendation: "keep",
       selectedByDefault: false,
       safetyHint: "通常无需清理。清理后下次查看会重新计算，可能变慢；不影响 Git 数据。",
@@ -436,6 +446,11 @@ async function executeCleanupItem(item) {
   if (item.kind === "memory-caches") {
     clearGitActivityCaches();
     return { ok: true, message: "已清理内存中的 Git 活动缓存。" };
+  }
+
+  if (item.kind === "git-avatar-cache") {
+    clearGitAvatarCache();
+    return { ok: true, message: "已清理本机头像图片及内存缓存，下次查看时重新下载。" };
   }
 
   if (item.kind === "runtime-records") {

@@ -128,12 +128,16 @@ describe("project backups through the real preload", () => {
     source.bridge.saveUiPreferences({} as import("../src/types").UiPreferences);
     await source.bridge.createBackup({ destination: "local" });
     const target = fixture();
+    const avatarDirectory = join(target.directory, "cache", "git-avatars");
+    mkdirSync(avatarDirectory, { recursive: true });
+    writeFileSync(join(avatarDirectory, "existing.json"), "existing-avatar");
     target.files.path = source.files.path;
     const preview = await target.bridge.prepareBackup({ source: "local" });
     expect(preview.summary?.projectCount).toBe(2);
     expect(preview.summary?.source.hostname).toBeTruthy();
     const result = await target.bridge.restoreBackup(restoreOptions);
     expect(result.ok).toBe(true);
+    expect(readFileSync(join(avatarDirectory, "existing.json"), "utf8")).toBe("existing-avatar");
     expect(gunzipSync(readFileSync(result.recoveryPath)).toString("utf8")).toContain("project-launch-backup");
     expect((await target.bridge.loadProjects()).map((entry) => entry.path)).toEqual(["/work/public", "/work/private"]);
     expect(target.bridge.loadProjectEnvironmentOverrides("public").env.TOKEN).toBe("private-value");
@@ -225,9 +229,9 @@ describe("project backups through the real preload", () => {
     expect(preview.summary?.projectCount).toBe(1);
   });
 
-  it("excludes service and icon pack directories from backup content", async () => {
+  it("excludes rebuildable resources and avatar images from backup", async () => {
     const context = fixture();
-    for (const name of ["service", "icon-packs", "runtime"]) {
+    for (const name of ["service", "icon-packs", "runtime", "cache"]) {
       const directory = join(context.directory, name);
       mkdirSync(directory);
       writeFileSync(join(directory, "resource.bin"), randomBytes(6 * 1024 * 1024));

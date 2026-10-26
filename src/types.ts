@@ -1030,6 +1030,7 @@ export interface ProjectGitCommitSummary {
   message: string;
   body?: string;
   author: string;
+  authorEmail?: string;
   date: string;
   graph?: string;
   parents?: string[];
@@ -1183,6 +1184,12 @@ export interface ProjectGitActivityDayReport {
   commits: ProjectGitActivityCommit[];
   failedRepositories: ProjectGitActivityRepository[];
   lastRefreshedAt: string;
+}
+
+export interface ProjectGitAvatarContext {
+  authorEmail: string;
+  remotes: ProjectGitRemoteSummary[];
+  upstream?: ProjectGitUpstreamSummary | null;
 }
 
 export interface ProjectGitSnapshot {
@@ -1877,6 +1884,7 @@ export interface StorageOverview {
     localDataBytes: number;
     serviceBytes: number;
     runtimeBytes?: number;
+    gitAvatarsBytes?: number;
     iconPacksBytes: number;
     privateProjectsBytes: number;
     tempBytes: number;
@@ -2075,7 +2083,7 @@ export interface ProjectBridge {
   ): Promise<ProjectGitFileDiffResult>;
   readGitCommitFiles(projectPath: string, commitHash: string, stash?: ProjectGitStash): Promise<ProjectGitFileChange[]>;
   readGitTagInfo(projectPath: string, tagName: string): Promise<ProjectGitTagInfo | null>;
-  readGitCommitAuthorAvatar(projectPath: string, commitHash: string): Promise<string | null>;
+  readGitCommitAuthorAvatar(projectPath: string, commitHash: string, context?: ProjectGitAvatarContext): Promise<string | null>;
   readGitCommitMessageDiff(projectPath: string): Promise<ProjectGitCommitMessageDiffResult>;
   stageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;
   unstageGitFile(projectPath: string, relativePath: string): Promise<ProjectGitActionResult>;

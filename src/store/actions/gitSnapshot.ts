@@ -648,7 +648,12 @@ export const gitSnapshotActions = {
     ): Promise<string | null> {
       const context = this.resolveGitRepositoryContext(projectId, target);
       if (!context) return null;
-      const result = await bridge.readGitCommitAuthorAvatar(context.repositoryPath, commitHash);
+      const snapshot = this.gitSnapshotForRepository(projectId, target);
+      const commit = snapshot?.commits.find((item) => item.hash === commitHash);
+      const avatarContext = commit?.authorEmail !== undefined && snapshot?.remotes
+        ? { authorEmail: commit.authorEmail, remotes: snapshot.remotes, upstream: snapshot.upstream }
+        : undefined;
+      const result = await bridge.readGitCommitAuthorAvatar(snapshot?.repositoryPath || context.repositoryPath, commitHash, avatarContext);
       return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey
         ? result
         : null;

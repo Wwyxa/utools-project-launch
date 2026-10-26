@@ -1251,7 +1251,7 @@ async function readGitCommitsResult(projectPath, options = {}) {
       `--max-count=${limit + 1}`,
       `--skip=${skip}`,
       "--shortstat",
-      `--pretty=format:${gitCommitRecordSeparator}%H${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitShortStatSeparator}`,
+      `--pretty=format:${gitCommitRecordSeparator}%H${gitCommitFieldSeparator}%P${gitCommitFieldSeparator}%an${gitCommitFieldSeparator}%ae${gitCommitFieldSeparator}%ad${gitCommitFieldSeparator}%D${gitCommitFieldSeparator}%s${gitCommitFieldSeparator}%B${gitCommitShortStatSeparator}`,
       "--date=iso-strict",
       "--branches",
       "--tags",
@@ -1346,7 +1346,7 @@ async function readGitCommitsResult(projectPath, options = {}) {
       }
 
       const graph = commitRecord.slice(0, hashIndex).trimEnd();
-      const [hash, parentText, author, date, refs, message, ...bodyParts] = commitRecord
+      const [hash, parentText, author, authorEmail, date, refs, message, ...bodyParts] = commitRecord
         .slice(hashIndex)
         .split(gitCommitFieldSeparator);
       if (!hash) {
@@ -1372,6 +1372,7 @@ async function readGitCommitsResult(projectPath, options = {}) {
         graph: graph || "*",
         parents: parentText ? parentText.split(" ").filter(Boolean) : [],
         author,
+        authorEmail,
         date,
         refs,
         refNames: refsByCommit.get(hash) || [],

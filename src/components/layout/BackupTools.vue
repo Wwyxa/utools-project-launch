@@ -154,7 +154,7 @@ onMounted(() => {
       </button>
     </div>
     <p class="text-xs leading-5 text-on-surface-variant">
-      备份包含所有项目、插件配置及其中的环境变量和密钥；项目源文件不包含在内。
+      备份包含所有项目、插件配置及其中的环境变量和密钥；不包含项目源文件和头像缓存。恢复时保留本机已有的头像缓存。
     </p>
     <p v-if="!store.supportsBridge" class="text-xs text-on-surface-variant">请在 uTools 中管理备份。</p>
 

@@ -61,10 +61,11 @@ import {
 } from '../../lib/gitCommitFileTree';
 import {
   clearGitCommitTooltipSessionsForProject,
+  clearGitCommitTooltipAvatarSessions,
   hasUsableGitCommitShortStats,
   loadGitCommitTooltipSessionDetails,
   markGitCommitTooltipSessionAvatarUnavailable,
-  prefetchGitCommitTooltipAvatar,
+  updateGitCommitTooltipAvatars,
   pruneGitCommitTooltipSession,
 } from '../../lib/gitCommitTooltipSession';
 import {
@@ -1169,19 +1170,21 @@ const loadCommitTooltipDetails = (commit: ProjectGitCommitSummary) => {
     !repositoryContext ||
     (commitTooltipDetails.value?.hash === commit.hash &&
       commitTooltipDetails.value.contextKey === repositoryContext.contextKey &&
-      (commitTooltipDetails.value.isLoadingAvatar || commitTooltipDetails.value.avatarUrl))
+      commitTooltipDetails.value.isLoadingAvatar)
   )
     return;
   const requestGeneration = ++commitTooltipDetailsRequestGeneration;
   const contextGeneration = commitTooltipDetailsContextGeneration;
   const contextKey = repositoryContext.contextKey;
   const hasPreloadedStats = hasUsableGitCommitShortStats(commit.shortStats);
+  const previousAvatar = commitTooltipDetails.value?.hash === commit.hash &&
+    commitTooltipDetails.value.contextKey === contextKey ? commitTooltipDetails.value.avatarUrl : null;
   commitTooltipDetails.value = {
     hash: commit.hash,
     files: null,
     isLoadingFiles: !hasPreloadedStats,
     filesUnavailable: hasPreloadedStats,
-    avatarUrl: null,
+    avatarUrl: previousAvatar,
     isLoadingAvatar: true,
     requestGeneration,
     contextGeneration,
@@ -2116,50 +2119,25 @@ watch(
   { flush: 'post' },
 );
 watch(() => props.filterCommit?.requestId || 0, applyCommitFilterRequest, { immediate: true });
-let avatarPrefetchQueue: Array<() => Promise<void>> = [];
-let activeAvatarPrefetches = 0;
-const drainAvatarPrefetchQueue = () => {
-  while (activeAvatarPrefetches < 3 && avatarPrefetchQueue.length) {
-    const load = avatarPrefetchQueue.shift();
-    if (!load) break;
-    activeAvatarPrefetches += 1;
-    void load().catch(() => undefined).finally(() => {
-      activeAvatarPrefetches -= 1;
-      drainAvatarPrefetchQueue();
-    });
+const handleAvatarCacheEvent = (event: Event) => {
+  const repositoryContext = context.value;
+  const detail = (event as CustomEvent<{
+    type?: string; previousImage?: string; image?: string; repositoryPath?: string; commitHash?: string;
+  }>).detail;
+  if (detail?.type === 'git-avatar-cache-cleared') {
+    clearGitCommitTooltipAvatarSessions();
+    commitTooltipDetailsRequestGeneration += 1;
+    commitTooltipDetails.value = null;
+  } else if (detail?.type === 'git-avatar-updated' &&
+      typeof detail.previousImage === 'string' && typeof detail.image === 'string' &&
+      typeof detail.commitHash === 'string' && repositoryContext && repositoryContext.repositoryPath === detail.repositoryPath) {
+    updateGitCommitTooltipAvatars(repositoryContext.contextKey, detail.commitHash, detail.previousImage, detail.image);
+    const state = commitTooltipDetails.value;
+    if (state && state.hash === detail.commitHash && state.avatarUrl === detail.previousImage) {
+      commitTooltipDetails.value = { ...state, avatarUrl: detail.image };
+    }
   }
 };
-watch(
-  [graphWindow, () => props.open, () => context.value?.contextKey],
-  ([nextWindow, open, contextKey], _previous, onCleanup) => {
-    let cancelled = false;
-    onCleanup(() => {
-      cancelled = true;
-      avatarPrefetchQueue = [];
-    });
-    if (!open || !contextKey) return;
-    const projectId = props.projectId;
-    const repositoryTarget = props.repositoryTarget;
-    avatarPrefetchQueue = nextWindow.rows.map(({ commit }) => async () => {
-      if (cancelled) return;
-      await prefetchGitCommitTooltipAvatar(contextKey, commit.hash, async () => {
-        const avatarUrl = await store.readGitCommitAuthorAvatar(projectId, commit.hash, repositoryTarget);
-        if (avatarUrl) {
-          const image = new Image();
-          image.src = avatarUrl;
-          try {
-            await image.decode();
-          } catch {
-            return null;
-          }
-        }
-        return avatarUrl;
-      });
-    });
-    drainAvatarPrefetchQueue();
-  },
-  { immediate: true, flush: 'post' },
-);
 watch(
   graphWindow,
   (nextWindow) => {
@@ -2200,6 +2178,7 @@ watch(
   },
 );
 onMounted(() => {
+  window.addEventListener('project-bridge-event', handleAvatarCacheEvent);
   if (typeof ResizeObserver !== 'undefined')
     commitTooltipResizeObserver = new ResizeObserver(handleCommitTooltipResize);
   observeGraphViewport();
@@ -2209,6 +2188,7 @@ onMounted(() => {
   stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
 });
 onBeforeUnmount(() => {
+  window.removeEventListener('project-bridge-event', handleAvatarCacheEvent);
   clearHistoryState();
   if (store.selectedProjectId !== props.projectId) {
     clearGitCommitTooltipSessionsForProject(props.projectId);

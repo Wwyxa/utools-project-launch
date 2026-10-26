@@ -67,3 +67,30 @@ queries or cleanup. Shared records and policy survive service-directory deletion
   mutations, explicit deletion, read-back, and fresh-preload persistence.
 
 Platform reference: `.github/skills/utools-plugin-dev-skill/references/development/storage.md`.
+
+## Git Author Image Cache
+
+`readGitCommitAuthorAvatar(projectPath, commitHash, context?): Promise<string | null>`
+returns a data URI from `public/preload/git-avatar-cache.js`. Fetch only on tooltip
+demand. History includes `authorEmail` from the existing `git log`; Store passes
+`{ authorEmail, remotes, upstream }` so cache hits require no Git queries. Missing
+metadata uses the legacy lookup.
+
+- Files: `<plugin-local-data>/cache/git-avatars/<sha256-author-key>.json` with
+  `{ image, updatedAt }`, atomically replaced. Key by GitHub repository and author
+  email, falling back to full commit hash. Keep at most 160 entries, 1 MiB per download.
+- Fresh for 14 days across preload restarts. Expired images display immediately
+  while refreshing; bypass HTTP cache even for unchanged URLs. Share author/URL
+  requests. Failed refreshes retain old images and retry after five minutes.
+- Accept HTTPS GitHub/avatar hosts, validate redirects, raster MIME/signature,
+  streaming size and timeout. Missing/invalid files are cache misses. Failed disk
+  writes may use memory only; never write relative to the working directory.
+- `project-bridge-event` refresh payload: `{ type: 'git-avatar-updated',
+  repositoryPath, commitHash, previousImage, image }`. Apply only to that identity.
+  Cleanup emits `git-avatar-cache-cleared`; late downloads must not restore caches.
+- Data tools expose `sizes.gitAvatarsBytes` and opt-in `cache-git-avatars` cleanup.
+  Backups exclude images; restores preserve them.
+
+Retain regression coverage for restart persistence, unchanged-URL refresh, failure
+backoff, download validation, cleanup races, and the no-Git cache-hit path. Never
+cache successful tooltip images forever: recheck on hover so expiry can take effect.

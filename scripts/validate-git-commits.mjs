@@ -917,6 +917,10 @@ try {
   assert.equal(runGit("rev-parse", "HEAD").trim(), headBeforeNoOpAmend);
 
   const [latestCommit, rootCommit] = page.commits;
+  assert.equal(latestCommit.authorEmail, "git-commits@example.invalid");
+  assert.equal(rootCommit.authorEmail, "git-commits@example.invalid");
+  assert.equal(latestCommit.author, "Git Commits Validation");
+  assert.ok(Number.isFinite(Date.parse(latestCommit.date)));
   assert.match(latestCommit.hash, /^[0-9a-f]{40,64}$/);
   assert.match(rootCommit.hash, /^[0-9a-f]{40,64}$/);
   assert.deepEqual(Array.from(latestCommit.parents), [rootCommit.hash]);

@@ -2393,6 +2393,12 @@ watch(
                       </dd>
                     </div>
                     <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storageGitAvatarsSize }}</dt>
+                      <dd>
+                        {{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.gitAvatarsBytes || 0) : "—" }}
+                      </dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
                       <dt>{{ t.settings.storageLegacySize }}</dt>
                       <dd>
                         {{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.legacyBytes) : "—" }}

@@ -117,8 +117,11 @@ outer shell and constrain an inner scroller with `min-h-0` in a flex column.
   components do not reconstruct them from display strings.
 - Keep only the visible tooltip details reactive. Use bounded repository/hash
   caches, preloaded short stats, and optional avatars; failed avatar loading
-  falls back to initials. Prefetch must not trigger file-detail reads or expose
-  author email. Close floating state before virtual rows disappear.
+  falls back to initials. Load avatars only on tooltip demand; do not prefetch
+  visible rows. Recheck successful avatar sessions on a later hover so preload
+  can refresh expired local images. Apply `git-avatar-updated` only to its
+  repository/commit identity; clearing avatars must preserve file details.
+  Do not expose author email. Close floating state before virtual rows disappear.
 - Ordinary row clicks expand files; Ctrl/Cmd clicks select for analysis. Menus
   use structured ref capabilities, hierarchical keyboard handling, viewport
   clamping, and connected-opener focus restoration.

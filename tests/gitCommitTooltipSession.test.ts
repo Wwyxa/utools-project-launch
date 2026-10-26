@@ -5,8 +5,9 @@ import {
   GIT_COMMIT_TOOLTIP_SESSION_MAX_HASHES,
   loadGitCommitTooltipSessionDetails,
   markGitCommitTooltipSessionAvatarUnavailable,
-  prefetchGitCommitTooltipAvatar,
+  clearGitCommitTooltipAvatarSessions,
   pruneGitCommitTooltipSession,
+  updateGitCommitTooltipAvatars,
   type GitCommitTooltipSessionLoaders,
 } from '../src/lib/gitCommitTooltipSession';
 
@@ -23,51 +24,17 @@ afterEach(() => {
 });
 
 describe('Git commit tooltip renderer session', () => {
-  it('bounds prefetched hashes and prunes entries when rows disappear', async () => {
-    const context = contextKey('tooltip-capacity');
-    const loadAvatar = vi.fn(async () => 'https://avatars.example.invalid/cached.png');
-    for (let index = 0; index <= GIT_COMMIT_TOOLTIP_SESSION_MAX_HASHES; index += 1) {
-      await prefetchGitCommitTooltipAvatar(context, `hash-${index}`, loadAvatar);
-    }
-    await prefetchGitCommitTooltipAvatar(context, 'hash-0', loadAvatar);
-    expect(loadAvatar).toHaveBeenCalledTimes(GIT_COMMIT_TOOLTIP_SESSION_MAX_HASHES + 2);
-    pruneGitCommitTooltipSession(context, new Set(['hash-0']));
-    await prefetchGitCommitTooltipAvatar(context, 'hash-0', loadAvatar);
-    await prefetchGitCommitTooltipAvatar(context, 'hash-1', loadAvatar);
-    expect(loadAvatar).toHaveBeenCalledTimes(GIT_COMMIT_TOOLTIP_SESSION_MAX_HASHES + 3);
-  });
-
-  it('retries failed prefetches and does not resurrect cleared project caches', async () => {
-    const context = contextKey('tooltip-failure');
-    const hash = 'a'.repeat(40);
-    const loadAvatar = vi.fn<() => Promise<string | null>>()
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValue('https://avatars.example.invalid/recovered.png');
-    await expect(prefetchGitCommitTooltipAvatar(context, hash, loadAvatar)).resolves.toEqual({ avatarUrl: null });
-    await expect(prefetchGitCommitTooltipAvatar(context, hash, loadAvatar))
-      .resolves.toEqual({ avatarUrl: 'https://avatars.example.invalid/recovered.png' });
-    const pending = prefetchGitCommitTooltipAvatar(context, 'b'.repeat(40), loadAvatar);
-    clearGitCommitTooltipSessionsForProject('tooltip-failure');
-    await pending;
-    await prefetchGitCommitTooltipAvatar(context, 'b'.repeat(40), loadAvatar);
-    expect(loadAvatar).toHaveBeenCalledTimes(4);
-  });
-  it('reuses prefetched avatars without prefetching file details', async () => {
-    const context = contextKey('tooltip-preloaded');
-    const hash = 'a'.repeat(40);
-    const loadAvatar = vi.fn(async () => 'https://avatars.example.invalid/preloaded.png');
-    const pending = prefetchGitCommitTooltipAvatar(context, hash, loadAvatar);
-    expect(prefetchGitCommitTooltipAvatar(context, hash, loadAvatar)).toBe(pending);
-    await pending;
+  it('clears avatar sessions while preserving file details and permits another load', async () => {
+    const context = contextKey('tooltip-warm');
     const loadFiles = vi.fn(async () => files);
-    const details = loadGitCommitTooltipSessionDetails(context, hash, { loadAvatar, loadFiles });
-    expect(details.avatar).toBe(pending);
-    expect(loadAvatar).toHaveBeenCalledOnce();
-    await details.files;
+    const initial = loadGitCommitTooltipSessionDetails(context, 'clear', { loadFiles, loadAvatar: async () => 'old' });
+    await initial.avatar;
+    clearGitCommitTooltipAvatarSessions();
+    await expect(initial.avatar).resolves.toEqual({ avatarUrl: null });
+    const reloaded = loadGitCommitTooltipSessionDetails(context, 'clear', { loadFiles, loadAvatar: async () => 'new' });
+    await expect(reloaded.avatar).resolves.toEqual({ avatarUrl: 'new' });
+    expect(reloaded.files).toBe(initial.files);
     expect(loadFiles).toHaveBeenCalledOnce();
-    clearGitCommitTooltipSessionsForProject('tooltip-preloaded');
-    await prefetchGitCommitTooltipAvatar(context, hash, loadAvatar);
-    expect(loadAvatar).toHaveBeenCalledTimes(2);
   });
   it('uses valid preloaded short stats without a file-detail read', async () => {
     const loadFiles = vi.fn(async () => files);
@@ -136,7 +103,7 @@ describe('Git commit tooltip renderer session', () => {
     expect(retryAvatar).toHaveBeenCalledOnce();
   });
 
-  it('shares a pending avatar retry and retains the successful result', async () => {
+  it('shares a pending avatar retry and rechecks successful avatars on another hover', async () => {
     const context = contextKey('tooltip-failure');
     const hash = 'a'.repeat(40);
     await loadGitCommitTooltipSessionDetails(context, hash, { loadAvatar: async () => null }).avatar;
@@ -147,8 +114,21 @@ describe('Git commit tooltip renderer session', () => {
     expect(second).toBe(first);
     resolveAvatar('https://avatars.example.invalid/retry.png');
     await expect(first).resolves.toEqual({ avatarUrl: 'https://avatars.example.invalid/retry.png' });
-    expect(loadGitCommitTooltipSessionDetails(context, hash, { loadAvatar }).avatar).toBe(first);
-    expect(loadAvatar).toHaveBeenCalledOnce();
+    expect(loadGitCommitTooltipSessionDetails(context, hash, { loadAvatar }).avatar).not.toBe(first);
+    expect(loadAvatar).toHaveBeenCalledTimes(2);
+  });
+
+  it('updates retained tooltip images after a background avatar refresh', async () => {
+    const details = loadGitCommitTooltipSessionDetails(contextKey('tooltip-warm'), 'refresh', {
+      loadAvatar: async () => 'data:image/png;base64,b2xk',
+    });
+    const other = loadGitCommitTooltipSessionDetails(contextKey('tooltip-warm'), 'other-author', {
+      loadAvatar: async () => 'data:image/png;base64,b2xk',
+    });
+    await details.avatar;
+    updateGitCommitTooltipAvatars(contextKey('tooltip-warm'), 'refresh', 'data:image/png;base64,b2xk', 'data:image/png;base64,bmV3');
+    await expect(details.avatar).resolves.toEqual({ avatarUrl: 'data:image/png;base64,bmV3' });
+    await expect(other.avatar).resolves.toEqual({ avatarUrl: 'data:image/png;base64,b2xk' });
   });
 
   it('bounds and prunes retained hashes', () => {

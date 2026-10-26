@@ -1807,9 +1807,13 @@ const cleanupBridgeFixture = createBridge({
   legacyDbStorage: { [legacyTerminalPreferencesKey]: { kind: "cmd", customCommand: "" } },
 });
 fs.writeFileSync(path.join(cleanupBridgeFixture.tempDataDir, "leftover.tmp"), "temp");
+const avatarCacheDirectory = path.join(cleanupBridgeFixture.localDataDir, "cache", "git-avatars");
+fs.mkdirSync(avatarCacheDirectory, { recursive: true });
+fs.writeFileSync(path.join(avatarCacheDirectory, "cached.json"), "cached-avatar");
 
 const cleanupOverview = await cleanupBridgeFixture.bridge.getStorageOverview();
 assert.equal(cleanupOverview.projects.publicCount, 1, "storage overview must count public projects");
+assert.equal(cleanupOverview.sizes.gitAvatarsBytes, Buffer.byteLength("cached-avatar"));
 assert.equal(cleanupOverview.projects.legacyPrivateDocCount, 1, "storage overview must count legacy private documents");
 assert.ok(
   cleanupOverview.legacyDbStorageKeys.includes(legacyTerminalPreferencesKey),
@@ -1831,6 +1835,7 @@ for (const expectedItem of [
   "cache-temp-directory",
   "cache-service-downloads",
   "cache-git-activity",
+  "cache-git-avatars",
 ]) {
   assert.ok(planItemIds.has(expectedItem), `cleanup plan must offer ${expectedItem}`);
 }
@@ -1855,7 +1860,7 @@ for (const item of cleanupPlan.items) {
   assert.ok(item.safetyHint, `cleanup item ${item.id} must explain the consequences of deletion`);
   assert.equal(
     item.selectedByDefault,
-    item.category === "cache" && !["cache-git-activity", "cache-runtime-records"].includes(item.id),
+    item.category === "cache" && !["cache-git-activity", "cache-runtime-records", "cache-git-avatars"].includes(item.id),
     "personal data, runtime history and useful memory caches must not be selected by default",
   );
 }
@@ -1892,6 +1897,10 @@ assert.equal(
   false,
   "temp directory contents must be removed by cleanup",
 );
+const avatarCleanup = await cleanupBridgeFixture.bridge.executeCleanup(["cache-git-avatars"]);
+assert.equal(avatarCleanup.ok, true, "avatar cache cleanup must succeed");
+assert.equal(fs.existsSync(avatarCacheDirectory), false, "avatar cache files must be removed");
+assert.equal((await cleanupBridgeFixture.bridge.getStorageOverview()).sizes.gitAvatarsBytes, 0);
 cleanupBridge(cleanupBridgeFixture);
 
 {

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createContext, runInContext } from 'node:vm';
+import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 
 const firstHash = 'a'.repeat(40);
@@ -32,7 +33,11 @@ const loadAvatarReader = () => {
     gitCommitAvatarRequestTimeoutMs: 3500,
     resolveGithubToken: resolveToken,
     markGithubTokenRejected: markRejected,
+    require: createRequire(import.meta.url),
+    pluginLocalDataDirectory: () => '',
   });
+  runInContext(readFileSync('public/preload/git-avatar-cache.js', 'utf8'), context);
+  Object.assign(context, { downloadGitAvatarImage: async (url: string) => url });
   runInContext(readFileSync('public/preload/git.js', 'utf8'), context);
   Object.assign(context, {
     findGitRootAsync: async (projectPath: string) => projectPath,
@@ -41,7 +46,7 @@ const loadAvatarReader = () => {
     runGitAsync: readEmail,
   });
   const readAvatar = runInContext('readGitCommitAuthorAvatar', context) as (
-    projectPath: string, hash: string,
+    projectPath: string, hash: string, avatarContext?: import('../src/types').ProjectGitAvatarContext,
   ) => Promise<string | null>;
   return {
     readAvatar, fetchAvatar, readEmail, readRemotes, results,
@@ -51,6 +56,20 @@ const loadAvatarReader = () => {
 };
 
 describe('Git commit author avatars', () => {
+  it('uses loaded commit metadata without Git queries for warm avatars across commits', async () => {
+    const { readAvatar, readEmail, readRemotes, fetchAvatar } = loadAvatarReader();
+    const context = {
+      authorEmail: 'author@example.invalid',
+      remotes: [{ name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: '' }],
+    };
+    readEmail.mockImplementation(() => { throw new Error('unexpected Git email query'); });
+    readRemotes.mockImplementation(() => { throw new Error('unexpected remote query'); });
+    await expect(readAvatar('/repo', firstHash, context)).resolves.toBe(avatarUrl);
+    await expect(readAvatar('/repo', secondHash, context)).resolves.toBe(avatarUrl);
+    expect(readEmail).not.toHaveBeenCalled();
+    expect(readRemotes).not.toHaveBeenCalled();
+    expect(fetchAvatar).toHaveBeenCalledOnce();
+  });
   it('backs off on exhausted anonymous quota but keeps direct avatars available', async () => {
     const { readAvatar, fetchAvatar, readEmail, advanceTime } = loadAvatarReader();
     fetchAvatar.mockResolvedValueOnce({
