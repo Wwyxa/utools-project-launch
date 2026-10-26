@@ -34,11 +34,7 @@ import { addAppEscapeRequestListener, type AppEscapeRequestEvent } from "../../l
 import ProjectIcon from "../project/ProjectIcon.vue";
 import ExternalApplicationLaunchButton from "../project/ExternalApplicationLaunchButton.vue";
 import UiContextMenu from "../common/UiContextMenu.vue";
-import type {
-  UiContextMenuAnchor,
-  UiContextMenuItem,
-  UiContextMenuCloseReason,
-} from "../common/uiContextMenu";
+import type { UiContextMenuAnchor, UiContextMenuItem, UiContextMenuCloseReason } from "../common/uiContextMenu";
 
 const PROJECT_CARD_WIDTH_MEASUREMENT_SAMPLE_LIMIT = 64;
 let projectCardWidthMeasurementSampleCount = 0;
@@ -608,9 +604,10 @@ const openMoreScripts = async () => {
   const menuRect = menu.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-  const top = openerRect.bottom + 4 + menuRect.height <= viewportHeight - 8
-    ? openerRect.bottom + 4
-    : openerRect.top - menuRect.height - 4;
+  const top =
+    openerRect.bottom + 4 + menuRect.height <= viewportHeight - 8
+      ? openerRect.bottom + 4
+      : openerRect.top - menuRect.height - 4;
   moreScriptsPosition.value = {
     left: Math.max(8, Math.min(openerRect.right - menuRect.width, viewportWidth - menuRect.width - 8)),
     top: Math.max(8, Math.min(top, viewportHeight - menuRect.height - 8)),
@@ -626,7 +623,8 @@ const handleMoreScriptsFocusOut = (event: FocusEvent) => {
   if (
     event.relatedTarget instanceof Node &&
     (moreScriptsRef.value?.contains(event.relatedTarget) || moreScriptsMenuRef.value?.contains(event.relatedTarget))
-  ) return;
+  )
+    return;
   closeMoreScripts();
 };
 
@@ -951,7 +949,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <button
             v-if="quickLink && !isSorting"
             type="button"
-            @click="handleOpenQuickLink"
+            @click.stop="handleOpenQuickLink"
             class="ui-btn ui-btn--secondary ui-btn--icon ui-btn--xs hover:border-primary/40 hover:text-primary"
             :title="t.projectActions.openQuickLink"
             :aria-label="t.projectActions.openQuickLink"
@@ -1010,12 +1008,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
           "
         >
           <LoaderCircle v-if="script.status === 'STOPPING'" :size="10" class="shrink-0 animate-spin" />
-          <Square
-            v-else-if="script.status === 'RUNNING'"
-            :size="10"
-            class="shrink-0"
-            fill="currentColor"
-          />
+          <Square v-else-if="script.status === 'RUNNING'" :size="10" class="shrink-0" fill="currentColor" />
           <Play v-else :size="11" class="shrink-0" fill="currentColor" />
           <span>{{ script.name }}</span>
         </button>
@@ -1032,14 +1025,16 @@ const updateTinyToolbarAlignment = (event: Event) => {
           <button
             type="button"
             @click="openMoreScripts"
-            :class="cn(
-              'inline-flex h-[21px] w-5 flex-none items-center justify-center whitespace-nowrap rounded-full border border-dashed text-[10px] font-bold tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-              moreScriptsOpen
-                ? 'border-primary/40 bg-primary/10 text-primary'
-                : hiddenRunningCount > 0
-                  ? 'border-status-running/30 text-status-running hover:bg-status-running/10'
-                  : 'border-outline-variant bg-surface-variant text-on-surface-variant hover:border-primary/40 hover:bg-primary/10 hover:text-primary',
-            )"
+            :class="
+              cn(
+                'inline-flex h-[21px] w-5 flex-none items-center justify-center whitespace-nowrap rounded-full border border-dashed text-[10px] font-bold tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                moreScriptsOpen
+                  ? 'border-primary/40 bg-primary/10 text-primary'
+                  : hiddenRunningCount > 0
+                    ? 'border-status-running/30 text-status-running hover:bg-status-running/10'
+                    : 'border-outline-variant bg-surface-variant text-on-surface-variant hover:border-primary/40 hover:bg-primary/10 hover:text-primary',
+              )
+            "
             aria-haspopup="menu"
             :aria-expanded="moreScriptsOpen"
             :aria-label="t.projectActions.moreScripts.replace('{count}', String(hiddenScriptCount))"
@@ -1049,7 +1044,7 @@ const updateTinyToolbarAlignment = (event: Event) => {
                 : t.projectActions.moreScripts.replace('{count}', String(hiddenScriptCount))
             "
           >
-            <span>{{ hiddenScriptCount > 99 ? '99+' : hiddenScriptCount }}</span>
+            <span>{{ hiddenScriptCount > 99 ? "99+" : hiddenScriptCount }}</span>
           </button>
           <Teleport to="body">
             <div
@@ -1066,10 +1061,12 @@ const updateTinyToolbarAlignment = (event: Event) => {
               :aria-label="`其他命令 (${hiddenScriptCount})`"
             >
               <div
-                :class="cn(
-                  'grid max-h-[min(12rem,calc(100vh-2rem))] gap-1.5 overflow-y-auto',
-                  hiddenScripts.length === 1 ? 'grid-cols-1' : 'grid-cols-2',
-                )"
+                :class="
+                  cn(
+                    'grid max-h-[min(12rem,calc(100vh-2rem))] gap-1.5 overflow-y-auto',
+                    hiddenScripts.length === 1 ? 'grid-cols-1' : 'grid-cols-2',
+                  )
+                "
               >
                 <button
                   v-for="script in hiddenScripts"
@@ -1180,38 +1177,38 @@ const updateTinyToolbarAlignment = (event: Event) => {
           </span>
         </div>
         <div v-if="!isSorting" class="ml-2 flex shrink-0 items-center justify-end gap-0.5" @click.stop>
-            <ExternalApplicationLaunchButton
-              :applications="store.externalApplicationPreferences.applications"
-              :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
-              :disabled="isUnavailable"
-              button-class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-primary dark:text-on-surface-variant disabled:opacity-50"
-              :icon-size="14"
-              @launch="handleOpenEditor"
-            />
-            <button
-              @click="handleOpenTerminal"
-              class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-status-running dark:text-on-surface-variant disabled:opacity-50"
-              :disabled="isUnavailable"
-              :title="t.projectActions.openInTerminal"
-              :aria-label="t.projectActions.openInTerminal"
-            >
-              <TerminalSquare :size="14" />
-            </button>
-            <button
-              ref="actionMenuTriggerRef"
-              type="button"
-              @click="openRegularCardActionMenu(true)"
-              @mouseenter="openRegularCardActionMenu()"
-              @mouseleave="scheduleCardActionMenuClose"
-              @keydown.down.prevent="openRegularCardActionMenu(true)"
-              class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/40 dark:text-on-surface-variant"
-              aria-haspopup="menu"
-              :aria-expanded="Boolean(cardMenuAnchor)"
-              :title="t.projectActions.moreActions"
-              :aria-label="t.projectActions.moreActions"
-            >
-              <Ellipsis :size="15" />
-            </button>
+          <ExternalApplicationLaunchButton
+            :applications="store.externalApplicationPreferences.applications"
+            :default-application-id="store.externalApplicationPreferences.defaultApplicationId"
+            :disabled="isUnavailable"
+            button-class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-primary dark:text-on-surface-variant disabled:opacity-50"
+            :icon-size="14"
+            @launch="handleOpenEditor"
+          />
+          <button
+            @click="handleOpenTerminal"
+            class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-status-running dark:text-on-surface-variant disabled:opacity-50"
+            :disabled="isUnavailable"
+            :title="t.projectActions.openInTerminal"
+            :aria-label="t.projectActions.openInTerminal"
+          >
+            <TerminalSquare :size="14" />
+          </button>
+          <button
+            ref="actionMenuTriggerRef"
+            type="button"
+            @click="openRegularCardActionMenu(true)"
+            @mouseenter="openRegularCardActionMenu()"
+            @mouseleave="scheduleCardActionMenuClose"
+            @keydown.down.prevent="openRegularCardActionMenu(true)"
+            class="ui-btn ui-btn--ghost ui-btn--icon ui-btn--xs text-on-surface-variant/70 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/40 dark:text-on-surface-variant"
+            aria-haspopup="menu"
+            :aria-expanded="Boolean(cardMenuAnchor)"
+            :title="t.projectActions.moreActions"
+            :aria-label="t.projectActions.moreActions"
+          >
+            <Ellipsis :size="15" />
+          </button>
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@ const store = vi.hoisted(() => ({
   logs: {},
   launchScript: vi.fn().mockResolvedValue(undefined),
   stopScript: vi.fn().mockResolvedValue(undefined),
+  openProjectQuickLink: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../src/store/useStore", () => ({ useStore: () => store }));
@@ -36,7 +37,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const mountCard = (running = false) => {
+const mountCard = (running = false, overrides: Partial<Project> = {}) => {
   const project: Project = {
     id: "project-1",
     name: "Example",
@@ -51,6 +52,7 @@ const mountCard = (running = false) => {
       command: `npm run command-${index}`,
       status: running ? "RUNNING" : "IDLE",
     })),
+    ...overrides,
   };
   const select = vi.fn();
   const root = document.createElement("div");
@@ -64,6 +66,17 @@ const mountCard = (running = false) => {
 };
 
 describe("project card command panel", () => {
+  it("opens a quick link without selecting the standard card while keeping card navigation available", async () => {
+    const { root, select } = mountCard(false, { quickLink: "https://example.com" });
+    root.querySelector<HTMLButtonElement>('button[aria-label="打开快捷链接"]')!.click();
+    await nextTick();
+    expect(store.openProjectQuickLink).toHaveBeenCalledExactlyOnceWith("project-1");
+    expect(select).not.toHaveBeenCalled();
+
+    root.querySelector<HTMLElement>("h3")!.click();
+    expect(select).toHaveBeenCalledExactlyOnceWith("project-1");
+  });
+
   it.each([false, true])("executes a hidden command without selecting the card (running: %s)", async (running) => {
     const { root, trigger, select } = mountCard(running);
     trigger.click();

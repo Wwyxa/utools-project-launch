@@ -72,10 +72,8 @@ const settingsSections = computed(() => [
   { id: "environment", label: t.value.settings.environment },
   { id: "ai", label: t.value.settings.aiProvider },
   { id: "github", label: t.value.settings.github },
-  { id: "terminal", label: t.value.settings.defaultTerminal },
-  { id: "applications", label: t.value.settings.externalApplications },
-  { id: "service", label: t.value.settings.projectLaunchService },
-  { id: "logs", label: t.value.settings.projectLaunchServiceLogPersistence },
+  { id: "tools", label: t.value.settings.terminalAndApplications },
+  { id: "service", label: t.value.settings.serviceAndLogs },
   { id: "backup", label: t.value.settings.projectConfig },
   { id: "data", label: t.value.settings.dataTools },
   { id: "about", label: t.value.settings.about },
@@ -1870,156 +1868,148 @@ watch(
             </p>
           </section>
 
-          <section
-            id="settings-terminal"
-            data-settings-section="terminal"
-            tabindex="-1"
-            class="min-w-0 py-6 outline-none"
-          >
-            <div class="mb-4 flex flex-wrap items-center gap-3">
-              <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                <SquareTerminal :size="15" class="shrink-0 text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultTerminal }}</h3>
+          <section id="settings-tools" data-settings-section="tools" tabindex="-1" class="min-w-0 py-6 outline-none">
+            <div id="settings-terminal">
+              <div class="mb-4 flex flex-wrap items-center gap-3">
+                <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <SquareTerminal :size="15" class="shrink-0 text-primary" />
+                  <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.defaultTerminal }}</h3>
+                </div>
+              </div>
+              <div class="grid min-w-0 gap-4">
+                <div class="ui-segment h-fit w-fit">
+                  <button
+                    v-for="option in terminalOptions"
+                    :key="option"
+                    type="button"
+                    @click="store.setDefaultTerminal(option)"
+                    :class="segmentButtonClass(store.terminalPreferences.kind === option)"
+                  >
+                    {{ t.settings.terminals[option] }}
+                  </button>
+                </div>
+                <div class="space-y-1.5">
+                  <Transition
+                    enter-active-class="transition-[max-height,opacity,transform] duration-200 ease-out"
+                    enter-from-class="max-h-0 opacity-0 -translate-y-1"
+                    enter-to-class="max-h-28 opacity-100 translate-y-0"
+                    leave-active-class="transition-[max-height,opacity,transform] duration-150 ease-in"
+                    leave-from-class="max-h-28 opacity-100 translate-y-0"
+                    leave-to-class="max-h-0 opacity-0 -translate-y-1"
+                  >
+                    <div v-if="terminalUsesCustomCommand" class="min-w-0 overflow-hidden">
+                      <label class="mb-2 block text-xs font-semibold uppercase text-on-surface-variant">
+                        {{ t.settings.customCommand }}
+                      </label>
+                      <input
+                        :value="store.terminalPreferences.customCommand"
+                        @input="store.setDefaultTerminalCustomCommand(($event.target as HTMLInputElement).value)"
+                        type="text"
+                        :placeholder="t.settings.customCommandPlaceholder"
+                        class="ui-field w-full font-mono"
+                      />
+                      <p class="mt-2 text-xs leading-5 text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
+                    </div>
+                  </Transition>
+                  <p
+                    v-if="store.terminalPreferences.kind === 'builtin'"
+                    class="text-xs leading-5 text-on-surface-variant"
+                  >
+                    {{ t.settings.builtinTerminalHint }}
+                  </p>
+                </div>
               </div>
             </div>
-            <div class="grid min-w-0 gap-4">
-              <div class="ui-segment h-fit w-fit">
+
+            <div id="settings-applications" class="mt-6 border-t border-border-subtle pt-6">
+              <div class="mb-4 flex flex-wrap items-start gap-3">
+                <div class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
+                  <Code2 :size="15" class="shrink-0 text-primary" />
+                  <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.externalApplications }}</h3>
+                  <span class="col-span-2 text-xs leading-5 text-on-surface-variant">
+                    {{ t.settings.externalApplicationsUsageHint }}
+                  </span>
+                  <span v-if="externalApplicationFeedback" class="col-span-2 break-words text-xs text-status-warning">
+                    {{ externalApplicationFeedback }}
+                  </span>
+                </div>
                 <button
-                  v-for="option in terminalOptions"
-                  :key="option"
                   type="button"
-                  @click="store.setDefaultTerminal(option)"
-                  :class="segmentButtonClass(store.terminalPreferences.kind === option)"
+                  :class="cn('ml-auto shrink-0', serviceActionButtonClass('secondary', 'sm'))"
+                  @click="openExternalApplicationDialog()"
                 >
-                  {{ t.settings.terminals[option] }}
+                  <Plus :size="12" />
+                  {{ t.settings.addExternalApplication }}
                 </button>
               </div>
-              <div class="space-y-1.5">
-                <Transition
-                  enter-active-class="transition-[max-height,opacity,transform] duration-200 ease-out"
-                  enter-from-class="max-h-0 opacity-0 -translate-y-1"
-                  enter-to-class="max-h-28 opacity-100 translate-y-0"
-                  leave-active-class="transition-[max-height,opacity,transform] duration-150 ease-in"
-                  leave-from-class="max-h-28 opacity-100 translate-y-0"
-                  leave-to-class="max-h-0 opacity-0 -translate-y-1"
+              <div class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))] gap-2">
+                <article
+                  v-for="application in externalApplications"
+                  :key="application.id"
+                  role="button"
+                  tabindex="0"
+                  class="min-w-0 cursor-pointer rounded-md border border-border-subtle bg-surface px-3 py-2.5 transition-colors hover:bg-surface-variant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  @click="openExternalApplicationDialog(application)"
+                  @keydown.enter.self.prevent="openExternalApplicationDialog(application)"
+                  @keydown.space.self.prevent="openExternalApplicationDialog(application)"
                 >
-                  <div v-if="terminalUsesCustomCommand" class="min-w-0 overflow-hidden">
-                    <label class="mb-2 block text-xs font-semibold uppercase text-on-surface-variant">
-                      {{ t.settings.customCommand }}
-                    </label>
-                    <input
-                      :value="store.terminalPreferences.customCommand"
-                      @input="store.setDefaultTerminalCustomCommand(($event.target as HTMLInputElement).value)"
-                      type="text"
-                      :placeholder="t.settings.customCommandPlaceholder"
-                      class="ui-field w-full font-mono"
-                    />
-                    <p class="mt-2 text-xs leading-5 text-on-surface-variant">{{ t.settings.defaultTerminalHint }}</p>
-                  </div>
-                </Transition>
-                <p
-                  v-if="store.terminalPreferences.kind === 'builtin'"
-                  class="text-xs leading-5 text-on-surface-variant"
-                >
-                  {{ t.settings.builtinTerminalHint }}
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section
-            id="settings-applications"
-            data-settings-section="applications"
-            tabindex="-1"
-            class="min-w-0 py-6 outline-none"
-          >
-            <div class="mb-4 flex flex-wrap items-start gap-3">
-              <div class="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
-                <Code2 :size="15" class="shrink-0 text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.externalApplications }}</h3>
-                <span class="col-span-2 text-xs leading-5 text-on-surface-variant">
-                  {{ t.settings.externalApplicationsUsageHint }}
-                </span>
-                <span v-if="externalApplicationFeedback" class="col-span-2 break-words text-xs text-status-warning">
-                  {{ externalApplicationFeedback }}
-                </span>
-              </div>
-              <button
-                type="button"
-                :class="cn('ml-auto shrink-0', serviceActionButtonClass('secondary', 'sm'))"
-                @click="openExternalApplicationDialog()"
-              >
-                <Plus :size="12" />
-                {{ t.settings.addExternalApplication }}
-              </button>
-            </div>
-            <div class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))] gap-2">
-              <article
-                v-for="application in externalApplications"
-                :key="application.id"
-                role="button"
-                tabindex="0"
-                class="min-w-0 cursor-pointer rounded-md border border-border-subtle bg-surface px-3 py-2.5 transition-colors hover:bg-surface-variant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                @click="openExternalApplicationDialog(application)"
-                @keydown.enter.self.prevent="openExternalApplicationDialog(application)"
-                @keydown.space.self.prevent="openExternalApplicationDialog(application)"
-              >
-                <div class="flex min-w-0 items-start gap-2">
-                  <div class="min-w-0 flex-1">
-                    <div class="flex min-w-0 items-center gap-1">
-                      <span class="truncate text-xs font-semibold" :title="application.name">{{
-                        application.name
-                      }}</span>
-                      <span
-                        class="shrink-0 rounded bg-surface-container px-1 py-0.5 text-[10px] font-medium leading-3 text-on-surface-variant"
+                  <div class="flex min-w-0 items-start gap-2">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex min-w-0 items-center gap-1">
+                        <span class="truncate text-xs font-semibold" :title="application.name">{{
+                          application.name
+                        }}</span>
+                        <span
+                          class="shrink-0 rounded bg-surface-container px-1 py-0.5 text-[10px] font-medium leading-3 text-on-surface-variant"
+                        >
+                          {{
+                            application.kind === "custom"
+                              ? t.settings.customApplicationBadge
+                              : t.settings.presetApplicationBadge
+                          }}
+                        </span>
+                        <span
+                          v-if="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                          class="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] font-medium leading-3 text-primary"
+                        >
+                          {{ t.settings.defaultApplicationBadge }}
+                        </span>
+                      </div>
+                      <p
+                        class="mt-1 truncate font-mono text-[11px] leading-4 text-on-surface-variant"
+                        :title="application.command"
                       >
-                        {{
-                          application.kind === "custom"
-                            ? t.settings.customApplicationBadge
-                            : t.settings.presetApplicationBadge
-                        }}
-                      </span>
-                      <span
-                        v-if="application.id === store.externalApplicationPreferences.defaultApplicationId"
-                        class="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] font-medium leading-3 text-primary"
-                      >
-                        {{ t.settings.defaultApplicationBadge }}
-                      </span>
+                        {{ application.command }}
+                      </p>
                     </div>
-                    <p
-                      class="mt-1 truncate font-mono text-[11px] leading-4 text-on-surface-variant"
-                      :title="application.command"
-                    >
-                      {{ application.command }}
-                    </p>
+                    <div class="flex shrink-0 items-center gap-1.5" @click.stop>
+                      <label :title="t.settings.setDefaultApplication" class="flex cursor-pointer items-center">
+                        <input
+                          type="radio"
+                          name="default-external-application"
+                          class="h-4 w-4 accent-primary"
+                          :checked="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                          :disabled="!application.enabled"
+                          :aria-label="`${t.settings.setDefaultApplication}: ${application.name}`"
+                          @change="setDefaultExternalApplication(application)"
+                        />
+                      </label>
+                      <label :title="t.settings.applicationEnabled" class="flex cursor-pointer items-center">
+                        <input
+                          type="checkbox"
+                          class="h-4 w-4 accent-primary"
+                          :checked="application.enabled"
+                          :disabled="application.id === store.externalApplicationPreferences.defaultApplicationId"
+                          :aria-label="`${t.settings.applicationEnabled}: ${application.name}`"
+                          @change="
+                            setExternalApplicationEnabled(application, ($event.target as HTMLInputElement).checked)
+                          "
+                        />
+                      </label>
+                    </div>
                   </div>
-                  <div class="flex shrink-0 items-center gap-1.5" @click.stop>
-                    <label :title="t.settings.setDefaultApplication" class="flex cursor-pointer items-center">
-                      <input
-                        type="radio"
-                        name="default-external-application"
-                        class="h-4 w-4 accent-primary"
-                        :checked="application.id === store.externalApplicationPreferences.defaultApplicationId"
-                        :disabled="!application.enabled"
-                        :aria-label="`${t.settings.setDefaultApplication}: ${application.name}`"
-                        @change="setDefaultExternalApplication(application)"
-                      />
-                    </label>
-                    <label :title="t.settings.applicationEnabled" class="flex cursor-pointer items-center">
-                      <input
-                        type="checkbox"
-                        class="h-4 w-4 accent-primary"
-                        :checked="application.enabled"
-                        :disabled="application.id === store.externalApplicationPreferences.defaultApplicationId"
-                        :aria-label="`${t.settings.applicationEnabled}: ${application.name}`"
-                        @change="
-                          setExternalApplicationEnabled(application, ($event.target as HTMLInputElement).checked)
-                        "
-                      />
-                    </label>
-                  </div>
-                </div>
-              </article>
+                </article>
+              </div>
             </div>
           </section>
 
@@ -2202,129 +2192,128 @@ watch(
                 {{ t.settings.projectLaunchServiceManualHint }}
               </p>
             </details>
-          </section>
-
-          <section id="settings-logs" data-settings-section="logs" tabindex="-1" class="min-w-0 py-6 outline-none">
-            <div>
-              <div class="space-y-4">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <FileText :size="15" class="shrink-0 text-primary" />
-                    <h3 class="text-sm font-semibold text-on-surface">
-                      {{ t.settings.projectLaunchServiceLogPersistence }}
-                    </h3>
+            <div id="settings-logs" class="mt-6 border-t border-border-subtle pt-6">
+              <div>
+                <div class="space-y-4">
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <FileText :size="15" class="shrink-0 text-primary" />
+                      <h3 class="text-sm font-semibold text-on-surface">
+                        {{ t.settings.projectLaunchServiceLogPersistence }}
+                      </h3>
+                    </div>
+                    <p class="mt-1 text-xs leading-5 text-on-surface-variant">
+                      {{ t.settings.projectLaunchServiceLogPersistenceHint }}
+                    </p>
                   </div>
-                  <p class="mt-1 text-xs leading-5 text-on-surface-variant">
-                    {{ t.settings.projectLaunchServiceLogPersistenceHint }}
-                  </p>
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <label
+                      class="inline-flex min-h-9 items-center gap-2 rounded-md border border-border-subtle bg-surface px-3 py-1.5 text-xs font-medium text-on-surface"
+                    >
+                      <span class="min-w-0">{{ t.settings.projectLaunchServiceLogPersistLabel }}</span>
+                      <ToggleSwitch
+                        :model-value="Boolean(logRetentionDraft?.persist)"
+                        :disabled="
+                          !logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy
+                        "
+                        :aria-label="t.settings.projectLaunchServiceLogPersistLabel"
+                        @update:model-value="updateLogRetentionPersistence"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      :class="serviceActionButtonClass('danger')"
+                      :disabled="!logRetentionReady || logRetentionSaving || logRetentionClearBusy"
+                      :aria-busy="logRetentionClearBusy"
+                      @click="logRetentionClearOpen = true"
+                    >
+                      <Trash2 :size="13" />
+                      {{ t.settings.projectLaunchServiceLogClear }}
+                    </button>
+                    <Terminal v-if="store.supportsBridge" project-id="" history-only />
+                  </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <label
-                    class="inline-flex min-h-9 items-center gap-2 rounded-md border border-border-subtle bg-surface px-3 py-1.5 text-xs font-medium text-on-surface"
-                  >
-                    <span class="min-w-0">{{ t.settings.projectLaunchServiceLogPersistLabel }}</span>
-                    <ToggleSwitch
-                      :model-value="Boolean(logRetentionDraft?.persist)"
-                      :disabled="
-                        !logRetentionReady || !logRetentionDraft || logRetentionSaving || logRetentionClearBusy
-                      "
-                      :aria-label="t.settings.projectLaunchServiceLogPersistLabel"
-                      @update:model-value="updateLogRetentionPersistence"
+
+                <div
+                  v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
+                  class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3"
+                >
+                  <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+                    {{ t.settings.projectLaunchServiceLogCompletedRuns }}
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      :value="logRetentionDraft.maxCompletedRunsPerProject"
+                      :disabled="!logRetentionReady || logRetentionSaving || logRetentionClearBusy"
+                      class="ui-field mt-1 h-9 w-full text-sm font-normal text-on-surface"
+                      @change="updateLogRetentionRuns"
                     />
                   </label>
-                  <button
-                    type="button"
-                    :class="serviceActionButtonClass('danger')"
-                    :disabled="!logRetentionReady || logRetentionSaving || logRetentionClearBusy"
-                    :aria-busy="logRetentionClearBusy"
-                    @click="logRetentionClearOpen = true"
-                  >
-                    <Trash2 :size="13" />
-                    {{ t.settings.projectLaunchServiceLogClear }}
-                  </button>
-                  <Terminal v-if="store.supportsBridge" project-id="" history-only />
+                  <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+                    {{ t.settings.projectLaunchServiceLogPerRunSize }}
+                    <input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      :value="formatLogMiB(logRetentionDraft.maxBytesPerRun)"
+                      :disabled="!logRetentionReady || logRetentionSaving || logRetentionClearBusy"
+                      class="ui-field mt-1 h-9 w-full text-sm font-normal text-on-surface"
+                      @change="updateLogRetentionSize('maxBytesPerRun', $event)"
+                    />
+                  </label>
+                  <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
+                    {{ t.settings.projectLaunchServiceLogTotalSize }}
+                    <input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      :value="formatLogMiB(logRetentionDraft.maxBytesTotal)"
+                      :disabled="!logRetentionReady || logRetentionSaving || logRetentionClearBusy"
+                      class="ui-field mt-1 h-9 w-full text-sm font-normal text-on-surface"
+                      @change="updateLogRetentionSize('maxBytesTotal', $event)"
+                    />
+                  </label>
                 </div>
+                <div
+                  v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
+                  class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-on-surface-variant"
+                >
+                  <span>
+                    {{ t.settings.projectLaunchServiceLogUsage }}:
+                    <strong class="font-semibold text-on-surface">
+                      {{ formatLogBytes(projectLaunchServiceLogRetentionStatus.usage.totalBytes) }} /
+                      {{ formatLogBytes(projectLaunchServiceLogRetentionStatus.policy.maxBytesTotal) }}
+                    </strong>
+                  </span>
+                  <span>
+                    {{ projectLaunchServiceLogRetentionStatus.usage.fileCount }}
+                    {{ t.settings.projectLaunchServiceLogFiles }}
+                  </span>
+                </div>
+                <p v-else class="mt-2 text-[11px] leading-4 text-on-surface-variant">
+                  {{ t.settings.projectLaunchServiceLogUnavailable }}
+                </p>
+                <p
+                  v-if="logRetentionDraft && !logRetentionDraft.persist"
+                  class="mt-2 text-[11px] leading-4 text-status-warning"
+                >
+                  {{ t.settings.projectLaunchServiceLogPersistenceOff }}
+                </p>
+                <p
+                  v-if="logRetentionFeedback"
+                  :class="
+                    cn(
+                      'mt-2 text-[11px] leading-4',
+                      logRetentionFeedbackTone === 'error' ? 'text-status-error' : 'text-status-running',
+                    )
+                  "
+                  role="status"
+                  aria-live="polite"
+                >
+                  {{ logRetentionFeedback }}
+                </p>
               </div>
-
-              <div
-                v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
-                class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3"
-              >
-                <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
-                  {{ t.settings.projectLaunchServiceLogCompletedRuns }}
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    :value="logRetentionDraft.maxCompletedRunsPerProject"
-                    :disabled="!logRetentionReady || logRetentionSaving || logRetentionClearBusy"
-                    class="ui-field mt-1 h-9 w-full text-sm font-normal text-on-surface"
-                    @change="updateLogRetentionRuns"
-                  />
-                </label>
-                <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
-                  {{ t.settings.projectLaunchServiceLogPerRunSize }}
-                  <input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    :value="formatLogMiB(logRetentionDraft.maxBytesPerRun)"
-                    :disabled="!logRetentionReady || logRetentionSaving || logRetentionClearBusy"
-                    class="ui-field mt-1 h-9 w-full text-sm font-normal text-on-surface"
-                    @change="updateLogRetentionSize('maxBytesPerRun', $event)"
-                  />
-                </label>
-                <label class="min-w-0 text-xs font-semibold text-on-surface-variant">
-                  {{ t.settings.projectLaunchServiceLogTotalSize }}
-                  <input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    :value="formatLogMiB(logRetentionDraft.maxBytesTotal)"
-                    :disabled="!logRetentionReady || logRetentionSaving || logRetentionClearBusy"
-                    class="ui-field mt-1 h-9 w-full text-sm font-normal text-on-surface"
-                    @change="updateLogRetentionSize('maxBytesTotal', $event)"
-                  />
-                </label>
-              </div>
-              <div
-                v-if="logRetentionDraft && projectLaunchServiceLogRetentionStatus"
-                class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-on-surface-variant"
-              >
-                <span>
-                  {{ t.settings.projectLaunchServiceLogUsage }}:
-                  <strong class="font-semibold text-on-surface">
-                    {{ formatLogBytes(projectLaunchServiceLogRetentionStatus.usage.totalBytes) }} /
-                    {{ formatLogBytes(projectLaunchServiceLogRetentionStatus.policy.maxBytesTotal) }}
-                  </strong>
-                </span>
-                <span>
-                  {{ projectLaunchServiceLogRetentionStatus.usage.fileCount }}
-                  {{ t.settings.projectLaunchServiceLogFiles }}
-                </span>
-              </div>
-              <p v-else class="mt-2 text-[11px] leading-4 text-on-surface-variant">
-                {{ t.settings.projectLaunchServiceLogUnavailable }}
-              </p>
-              <p
-                v-if="logRetentionDraft && !logRetentionDraft.persist"
-                class="mt-2 text-[11px] leading-4 text-status-warning"
-              >
-                {{ t.settings.projectLaunchServiceLogPersistenceOff }}
-              </p>
-              <p
-                v-if="logRetentionFeedback"
-                :class="
-                  cn(
-                    'mt-2 text-[11px] leading-4',
-                    logRetentionFeedbackTone === 'error' ? 'text-status-error' : 'text-status-running',
-                  )
-                "
-                role="status"
-                aria-live="polite"
-              >
-                {{ logRetentionFeedback }}
-              </p>
             </div>
           </section>
 
@@ -2342,105 +2331,118 @@ watch(
           </section>
 
           <section id="settings-data" data-settings-section="data" tabindex="-1" class="min-w-0 py-6 outline-none">
-            <div class="mb-4 space-y-1">
-              <div class="flex shrink-0 items-center gap-2">
-                <Database :size="15" class="shrink-0 text-primary" />
-                <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.dataTools }}</h3>
+            <div>
+              <div class="mb-4 space-y-1">
+                <div class="flex shrink-0 items-center gap-2">
+                  <Database :size="15" class="shrink-0 text-primary" />
+                  <h3 class="text-sm font-semibold text-on-surface">{{ t.settings.dataTools }}</h3>
+                </div>
+                <p class="text-xs leading-5 text-on-surface-variant">{{ t.settings.dataToolsDescription }}</p>
               </div>
-              <p class="text-xs leading-5 text-on-surface-variant">{{ t.settings.dataToolsDescription }}</p>
-            </div>
-            <p v-if="store.localStateWriteError" class="ui-banner ui-banner--warning mb-3 px-3 py-2 text-xs leading-5">
-              {{ store.localStateWriteError }}
-            </p>
+              <p
+                v-if="store.localStateWriteError"
+                class="ui-banner ui-banner--warning mb-3 px-3 py-2 text-xs leading-5"
+              >
+                {{ store.localStateWriteError }}
+              </p>
 
-            <div class="space-y-3">
-              <div class="ui-card px-3 py-3">
-                <div class="mb-1.5 text-xs font-semibold text-on-surface-variant">{{ t.settings.storageOverview }}</div>
-                <dl
-                  class="settings-storage-grid grid grid-cols-1 gap-x-6 gap-y-2 text-xs leading-5 text-on-surface-variant md:grid-cols-2 xl:grid-cols-3"
-                >
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storageHostVersion }}</dt>
-                    <dd class="font-mono">{{ store.storageOverview?.hostVersion || "—" }}</dd>
+              <div class="space-y-3">
+                <div class="ui-card px-3 py-3">
+                  <div class="mb-1.5 text-xs font-semibold text-on-surface-variant">
+                    {{ t.settings.storageOverview }}
                   </div>
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storagePublicProjects }}</dt>
-                    <dd>{{ store.storageOverview?.projects.publicCount ?? "—" }}</dd>
-                  </div>
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storagePrivateProjects }}</dt>
-                    <dd>{{ store.storageOverview?.projects.privateLocalCount ?? "—" }}</dd>
-                  </div>
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storageLegacyPrivateDocs }}</dt>
-                    <dd>{{ store.storageOverview?.projects.legacyPrivateDocCount ?? "—" }}</dd>
-                  </div>
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storageOrphanDocs }}</dt>
-                    <dd>{{ store.storageOverview?.projects.orphanDocumentCount ?? "—" }}</dd>
-                  </div>
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storageLegacyKeys }}</dt>
-                    <dd>{{ store.storageOverview?.legacyDbStorageKeys.length ?? "—" }}</dd>
-                  </div>
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storageLocalDataSize }}</dt>
-                    <dd>
-                      {{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.localDataBytes) : "—" }}
-                    </dd>
-                  </div>
-                  <div class="flex items-center justify-between gap-3">
-                    <dt>{{ t.settings.projectLaunchServiceLogPersistence }}</dt>
-                    <dd>
-                      {{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.runtimeBytes || 0) : "—" }}
-                    </dd>
-                  </div>
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storageLegacySize }}</dt>
-                    <dd>{{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.legacyBytes) : "—" }}</dd>
-                  </div>
-                  <div class="flex justify-between gap-2">
-                    <dt>{{ t.settings.storageSyncEstimate }}</dt>
-                    <dd>
-                      {{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.syncDocumentBytes) : "—" }}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
+                  <dl
+                    class="settings-storage-grid grid grid-cols-1 gap-x-6 gap-y-2 text-xs leading-5 text-on-surface-variant md:grid-cols-2 xl:grid-cols-3"
+                  >
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storageHostVersion }}</dt>
+                      <dd class="font-mono">{{ store.storageOverview?.hostVersion || "—" }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storagePublicProjects }}</dt>
+                      <dd>{{ store.storageOverview?.projects.publicCount ?? "—" }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storagePrivateProjects }}</dt>
+                      <dd>{{ store.storageOverview?.projects.privateLocalCount ?? "—" }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storageLegacyPrivateDocs }}</dt>
+                      <dd>{{ store.storageOverview?.projects.legacyPrivateDocCount ?? "—" }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storageOrphanDocs }}</dt>
+                      <dd>{{ store.storageOverview?.projects.orphanDocumentCount ?? "—" }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storageLegacyKeys }}</dt>
+                      <dd>{{ store.storageOverview?.legacyDbStorageKeys.length ?? "—" }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storageLocalDataSize }}</dt>
+                      <dd>
+                        {{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.localDataBytes) : "—" }}
+                      </dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                      <dt>{{ t.settings.projectLaunchServiceLogPersistence }}</dt>
+                      <dd>
+                        {{
+                          store.storageOverview ? formatDataSize(store.storageOverview.sizes.runtimeBytes || 0) : "—"
+                        }}
+                      </dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storageLegacySize }}</dt>
+                      <dd>
+                        {{ store.storageOverview ? formatDataSize(store.storageOverview.sizes.legacyBytes) : "—" }}
+                      </dd>
+                    </div>
+                    <div class="flex justify-between gap-2">
+                      <dt>{{ t.settings.storageSyncEstimate }}</dt>
+                      <dd>
+                        {{
+                          store.storageOverview ? formatDataSize(store.storageOverview.sizes.syncDocumentBytes) : "—"
+                        }}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
 
-              <div class="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  :disabled="store.dataToolsBusy || migrationRetryDisabled"
-                  @click="store.retryStorageMigration"
-                  :class="serviceActionButtonClass()"
-                >
-                  <RotateCcw :size="14" />
-                  {{ store.dataToolsBusy ? t.settings.cleanupRunning : t.settings.migrationRetry }}
-                </button>
-                <span class="text-xs text-on-surface-variant">
-                  {{ t.settings.dataMigration }}: {{ migrationStatusLabel }}
-                  <template v-if="store.migrationProgress && store.migrationProgress.totalCount > 0">
-                    ({{ store.migrationProgress.verifiedCount }}/{{ store.migrationProgress.totalCount }})
-                  </template>
-                </span>
-              </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    :disabled="store.dataToolsBusy || migrationRetryDisabled"
+                    @click="store.retryStorageMigration"
+                    :class="serviceActionButtonClass()"
+                  >
+                    <RotateCcw :size="14" />
+                    {{ store.dataToolsBusy ? t.settings.cleanupRunning : t.settings.migrationRetry }}
+                  </button>
+                  <span class="text-xs text-on-surface-variant">
+                    {{ t.settings.dataMigration }}: {{ migrationStatusLabel }}
+                    <template v-if="store.migrationProgress && store.migrationProgress.totalCount > 0">
+                      ({{ store.migrationProgress.verifiedCount }}/{{ store.migrationProgress.totalCount }})
+                    </template>
+                  </span>
+                </div>
 
-              <div class="flex flex-wrap gap-2">
-                <button type="button" @click="openCleanupDialog" :class="serviceActionButtonClass()">
-                  <Trash2 :size="14" />
-                  {{ t.settings.dataCleanup }}
-                </button>
-                <button type="button" @click="store.openLocalDataDirectory" :class="serviceActionButtonClass()">
-                  <FolderOpen :size="14" />
-                  {{ t.settings.openLocalDataDirectory }}
-                </button>
-                <button type="button" @click="store.openLegacyDataDirectory" :class="serviceActionButtonClass()">
-                  <FolderOpen :size="14" />
-                  {{ t.settings.openLegacyDataDirectory }}
-                </button>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" @click="openCleanupDialog" :class="serviceActionButtonClass()">
+                    <Trash2 :size="14" />
+                    {{ t.settings.dataCleanup }}
+                  </button>
+                  <button type="button" @click="store.openLocalDataDirectory" :class="serviceActionButtonClass()">
+                    <FolderOpen :size="14" />
+                    {{ t.settings.openLocalDataDirectory }}
+                  </button>
+                  <button type="button" @click="store.openLegacyDataDirectory" :class="serviceActionButtonClass()">
+                    <FolderOpen :size="14" />
+                    {{ t.settings.openLegacyDataDirectory }}
+                  </button>
+                </div>
+                <p v-if="store.cleanupMessage" class="text-xs text-on-surface-variant">{{ store.cleanupMessage }}</p>
               </div>
-              <p v-if="store.cleanupMessage" class="text-xs text-on-surface-variant">{{ store.cleanupMessage }}</p>
             </div>
           </section>
 

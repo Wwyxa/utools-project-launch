@@ -59,18 +59,18 @@ const mountSettings = (configure?: (store: ReturnType<typeof useStore>) => void)
       () => new DOMRect(0, 74 + index * 400 - viewport.scrollTop, 600, 400),
     );
   });
-  const scrollTo = vi.spyOn(viewport, "scrollTo").mockImplementation(
-    (...args: [ScrollToOptions] | [number, number]) => {
+  const scrollTo = vi
+    .spyOn(viewport, "scrollTo")
+    .mockImplementation((...args: [ScrollToOptions] | [number, number]) => {
       viewport.scrollTop = typeof args[0] === "object" ? args[0].top || 0 : args[1] || 0;
-    },
-  );
+    });
   return { app, root, sections, viewport, scrollTo, store };
 };
 
 describe("settings sidebar navigation", () => {
   it("keeps a clicked group selected when its scroll position is clamped at the bottom", async () => {
     const { root, viewport, scrollTo } = mountSettings();
-    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 3800 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 3200 });
     scrollTo.mockImplementation((...args: [ScrollToOptions] | [number, number]) => {
       const top = typeof args[0] === "object" ? args[0].top || 0 : args[1] || 0;
       viewport.scrollTop = Math.min(top, viewport.scrollHeight - viewport.clientHeight);
@@ -78,14 +78,14 @@ describe("settings sidebar navigation", () => {
     root.querySelector<HTMLButtonElement>('nav [aria-controls="settings-data"]')!.click();
     viewport.dispatchEvent(new Event("scroll"));
     await nextTick();
-    expect(viewport.scrollTop).toBe(3200);
+    expect(viewport.scrollTop).toBe(2600);
     expect(root.querySelector('nav [aria-current="location"]')?.getAttribute("aria-controls")).toBe("settings-data");
     expect(document.activeElement?.id).toBe("settings-data");
 
-    viewport.scrollTop = 2800;
+    viewport.scrollTop = 2400;
     viewport.dispatchEvent(new Event("scroll"));
     await nextTick();
-    expect(root.querySelector('nav [aria-current="location"]')?.getAttribute("aria-controls")).toBe("settings-logs");
+    expect(root.querySelector('nav [aria-current="location"]')?.getAttribute("aria-controls")).toBe("settings-backup");
   });
 });
 
