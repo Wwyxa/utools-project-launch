@@ -23,6 +23,8 @@ each feature. The current file-icon implementation is `src/lib/fileIconTheme.ts`
   forms. Add fields through its default slot without nesting a form; keep draft
   state and business operations in the feature. Larger creation/edit forms stay
   in their feature. Stop nested action propagation on clickable cards.
+  `BaseModal.vue` owns opening-order stacking at z-index 80, including initially
+  open instances; do not fix nested dialogs with per-feature z-index overrides.
 - Before blocking host work, capture inputs, guard duplicate submissions, close
   the confirmation, publish loading, then await `waitForVisualFeedback` from
   `src/lib/visualFeedback.ts`. Save/retry dialogs may remain open while busy.

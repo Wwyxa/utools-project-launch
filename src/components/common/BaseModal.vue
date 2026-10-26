@@ -58,6 +58,7 @@ const emit = defineEmits<{
 
 const t = useI18n();
 const titleId = useId();
+const scrimRef = ref<HTMLElement | null>(null);
 const panelRef = ref<HTMLElement | null>(null);
 let previousActiveElement: HTMLElement | null = null;
 
@@ -136,6 +137,9 @@ watch(
       removeLayer = pushUiLayer(layer);
       document.addEventListener("keydown", handlePanelTabKey, true);
       void nextTick(() => {
+        if (!props.open) return;
+        const scrim = scrimRef.value;
+        if (scrim) scrim.parentNode?.appendChild(scrim);
         const target = panelRef.value?.querySelector<HTMLElement>("[autofocus]:not([disabled])");
         (target || getPanelFocusableElements()[0])?.focus();
       });
@@ -147,6 +151,7 @@ watch(
     if (previousActiveElement?.isConnected) previousActiveElement.focus();
     previousActiveElement = null;
   },
+  { immediate: true },
 );
 
 onUnmounted(() => {
@@ -164,6 +169,7 @@ stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
     <Transition name="scale" :css="transitionCss">
       <div
         v-if="open"
+        ref="scrimRef"
         class="fixed inset-0 z-[80] flex items-center justify-center bg-scrim/40 p-5"
         @click.self="handleScrimClick"
       >
