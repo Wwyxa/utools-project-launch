@@ -33,6 +33,9 @@ each feature. The current file-icon implementation is `src/lib/fileIconTheme.ts`
   Its paint path must yield to a timer task after frame callbacks rather than
   continue host work in their Promise microtask; retain the timeout fallback.
   This allows visual feedback but does not offload synchronous host work.
+  Animate the status spinner's fixed-size HTML wrapper with CSS `transform`
+  and `will-change: transform`, keeping its SVG static; verify animation
+  continuity during host work manually in uTools.
 - Teleport clipped overlays to `body`. Measure and clamp floating geometry after
   render and content changes; close it on context replacement, owner collapse,
   outside interaction, or unmount. Internal menu scrolling must not close the owner.

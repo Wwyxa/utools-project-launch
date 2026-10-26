@@ -1680,6 +1680,25 @@
   opacity: 0;
 }
 
+@keyframes action-status-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.action-status-spinner {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  will-change: transform;
+  animation: action-status-spin 1s linear infinite;
+}
+
 /* Indeterminate progress bar (action status toast, loading state) */
 @keyframes action-status-indeterminate {
   from {
