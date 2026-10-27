@@ -1201,6 +1201,13 @@ const fallbackBridge: ProjectBridge = {
       failure: { code: "network-error", message: "浏览器预览无法创建 GitHub PR。" },
     };
   },
+  async updateGithubPullRequest(): Promise<GithubApiResult<GithubPullRequestSummary>> {
+    return {
+      ok: false,
+      value: null,
+      failure: { code: "network-error", message: "浏览器预览无法保存 GitHub PR 修改。" },
+    };
+  },
   async readGithubPrContext(): Promise<ProjectGitReadResult<GithubPrContext>> {
     return {
       ok: false,

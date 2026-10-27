@@ -77,6 +77,7 @@ window.projectBridge = {
   readGithubOpenPullRequest: (owner, repository, headOwner, branch) =>
     readGithubOpenPullRequestResult(owner, repository, headOwner, branch),
   createGithubPullRequest: (input) => createGithubPullRequest(input),
+  updateGithubPullRequest: (input) => updateGithubPullRequest(input),
   readGithubPrContext: (projectPath, options) => readGithubPrContextResult(projectPath, options),
   loadProjectLaunchServicePreferences: readProjectLaunchServicePreferences,
   saveProjectLaunchServicePreferences,
@@ -242,6 +243,7 @@ const runtimeOperationLabels = {
   testAiConnection: "测试 AI 连接",
   verifyGithubAuthToken: "验证 GitHub 凭证",
   createGithubPullRequest: "创建 GitHub PR",
+  updateGithubPullRequest: "保存 GitHub PR 修改",
   analyzeWithAi: "AI 分析",
   analyzeWithAiStream: "流式 AI 分析",
 };

@@ -262,6 +262,7 @@ function normalizeGithubPullRequestPayload(payload) {
   return {
     number: numberValue,
     title: typeof payload.title === 'string' ? payload.title : `#${numberValue}`,
+    body: typeof payload.body === 'string' ? payload.body : '',
     url: resolvedUrl,
     isDraft: payload.draft === true || payload.isDraft === true,
     state: payload.state === 'closed' || payload.state === 'merged' ? 'closed' : 'open',
@@ -305,6 +306,38 @@ async function readGithubOpenPullRequestResult(owner, repository, headOwner, bra
     .map((item) => normalizeGithubPullRequestPayload(item))
     .find((item) => item && item.state === 'open' && (!item.headBranch || item.headBranch === normalizedBranch));
   return { ok: true, value: match || null };
+}
+
+async function updateGithubPullRequest(input) {
+  const owner = String(input?.owner || '').trim();
+  const repository = String(input?.repository || '').trim();
+  const number = input?.number;
+  const title = typeof input?.title === 'string' ? input.title.trim() : '';
+  if (
+    !isGithubRepositoryNameValid(owner) ||
+    !isGithubRepositoryNameValid(repository) ||
+    !Number.isSafeInteger(number) || number <= 0 ||
+    !title ||
+    typeof input?.body !== 'string'
+  ) {
+    return { ok: false, value: null, failure: githubPrFailure('invalid-input', '更新 PR 的参数无效，标题不能为空。') };
+  }
+  let response;
+  try {
+    response = await fetchGithubPrRequest(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/pulls/${number}`,
+      { method: 'PATCH', body: JSON.stringify({ title, body: input.body }) },
+    );
+  } catch (error) {
+    return { ok: false, value: null, failure: githubPrFailure('network-error', error.message || '保存 PR 修改失败。') };
+  }
+  if (!response.ok) return { ok: false, value: null, failure: githubPrHttpFailure(response) };
+  const payload = await readGithubPrResponseJson(response);
+  const pullRequest = normalizeGithubPullRequestPayload(payload);
+  if (!pullRequest || pullRequest.number !== number || typeof payload.title !== 'string' || !payload.title.trim() || (payload.body !== null && typeof payload.body !== 'string')) {
+    return { ok: false, value: null, failure: githubPrFailure('invalid-response', 'GitHub 更新 PR 响应格式无效。') };
+  }
+  return { ok: true, value: pullRequest };
 }
 
 async function createGithubPullRequest(input) {

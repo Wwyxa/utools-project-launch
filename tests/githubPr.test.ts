@@ -40,6 +40,11 @@ const forkMetadataPayload = {
 };
 
 type LoadedGithubPr = {
+  updateGithubPullRequest: (input: Record<string, unknown>) => Promise<{
+    ok: boolean;
+    value: unknown;
+    failure?: { code: string; message: string };
+  }>;
   readGithubRepositoryMetadataResult: (owner: string, repository: string) => Promise<{
     ok: boolean;
     value: any;
@@ -110,6 +115,7 @@ const loadGithubPr = (options: LoadGithubPrOptions = {}) => {
 
   return {
     githubPr: {
+      updateGithubPullRequest: load('updateGithubPullRequest'),
       readGithubRepositoryMetadataResult: load('readGithubRepositoryMetadataResult'),
       readGithubPullRequestTemplatesResult: load('readGithubPullRequestTemplatesResult'),
       readGithubOpenPullRequestResult: load('readGithubOpenPullRequestResult'),
@@ -233,6 +239,7 @@ describe('readGithubOpenPullRequestResult', () => {
           {
             number: 7,
             title: 'Existing PR',
+            body: '## Existing description\n\n- [ ] Review',
             html_url: 'https://github.com/wyxa/app/pull/7',
             draft: true,
             state: 'open',
@@ -246,6 +253,7 @@ describe('readGithubOpenPullRequestResult', () => {
     expect(result.value).toEqual({
       number: 7,
       title: 'Existing PR',
+      body: '## Existing description\n\n- [ ] Review',
       url: 'https://github.com/wyxa/app/pull/7',
       isDraft: true,
       state: 'open',
@@ -256,6 +264,30 @@ describe('readGithubOpenPullRequestResult', () => {
       'https://api.github.com/repos/wyxa/app/pulls?head=wyxa%3Afeat%2Fx&state=open&per_page=10',
       expect.anything(),
     );
+  });
+});
+
+describe('updateGithubPullRequest', () => {
+  const updateInput = { owner: 'wyxa', repository: 'app', number: 357, title: 'Updated title', body: 'Updated' };
+
+  it.each(['## Updated\n\n- [x] Reviewed', ''])('saves title and description, including an empty body: %j', async (body) => {
+    const { githubPr, fetchMock } = loadGithubPr({
+      fetchImpl: async () => jsonResponse({ number: 357, title: updateInput.title, body: body || null, state: 'open' }),
+    });
+    const result = await githubPr.updateGithubPullRequest({ ...updateInput, title: '  Updated title  ', body });
+    expect(result.ok).toBe(true);
+    expect(result.value).toMatchObject({ number: 357, title: updateInput.title, body });
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      'https://api.github.com/repos/wyxa/app/pulls/357',
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ title: updateInput.title, body }) }),
+    );
+  });
+
+  it('rejects an empty title without making a write request', async () => {
+    const { githubPr, fetchMock } = loadGithubPr();
+    expect(await githubPr.updateGithubPullRequest({ ...updateInput, title: '   ' }))
+      .toMatchObject({ ok: false, failure: { code: 'invalid-input' } });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

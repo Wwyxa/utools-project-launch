@@ -8,6 +8,7 @@ import {
   ExternalLink,
   GitPullRequest,
   RefreshCw,
+  Save,
   Sparkles,
 } from "lucide-vue-next";
 import type {
@@ -80,6 +81,7 @@ const createdPr = ref<GithubPullRequestSummary | null>(null);
 const copiedValue = ref("");
 const copiedTimer = ref<number | undefined>();
 const isPushingBranch = ref(false);
+const isSavingPullRequest = ref(false);
 let requestGeneration = 0;
 
 const snapshot = computed(() => store.gitSnapshotForRepository(props.projectId, props.repositoryTarget));
@@ -162,6 +164,15 @@ const createBlockedReason = computed(() => {
   return "";
 });
 const canCreate = computed(() => phase.value === "ready" && !createBlockedReason.value);
+const hasPullRequestChanges = computed(() =>
+  Boolean(openPullRequest.value && (
+    prTitle.value.trim() !== openPullRequest.value.title ||
+    prDescription.value !== (openPullRequest.value.body || "")
+  )),
+);
+const canSavePullRequest = computed(() =>
+  phase.value === "ready" && Boolean(prTitle.value.trim()) && hasPullRequestChanges.value && !isSavingPullRequest.value && !isPushingBranch.value && !isAiGenerating.value,
+);
 
 const reportFeedback = (
   state: FeedbackState,
@@ -176,6 +187,12 @@ const finishBootSteps = (generation: number) => {
 };
 
 const applyPrefill = () => {
+  if (openPullRequest.value) {
+    if (!titleTouched.value) prTitle.value = openPullRequest.value.title;
+    if (!descriptionTouched.value) prDescription.value = openPullRequest.value.body || "";
+    isDraft.value = openPullRequest.value.isDraft;
+    return;
+  }
   const context = prContext.value;
   if (!context || !baseRepo.value) return;
   const prefill = composeGithubPrPrefill({
@@ -264,6 +281,11 @@ const loadOpenPullRequest = async (generation: number) => {
   const result = await store.readGithubOpenPullRequest(base.owner, base.repository, head.owner, branch);
   if (generation !== requestGeneration) return;
   openPullRequest.value = result.ok ? result.value : null;
+  if (openPullRequest.value) {
+    baseBranchName.value = openPullRequest.value.baseBranch || baseBranchName.value;
+    descriptionMode.value = "preview";
+    applyPrefill();
+  }
 };
 
 const loadPrContext = async (generation: number) => {
@@ -305,6 +327,7 @@ const runBoot = async () => {
   prDescription.value = "";
   titleTouched.value = false;
   descriptionTouched.value = false;
+  descriptionMode.value = "edit";
   isDraft.value = false;
   aiState.value = "idle";
   aiMessage.value = "";
@@ -314,6 +337,7 @@ const runBoot = async () => {
   aiFollowUp.value = "";
   aiAbortRequested.value = false;
   createdPr.value = null;
+  isSavingPullRequest.value = false;
 
   if (!snapshot.value?.repositoryPath) {
     bootError.value = "Git 快照未就绪，请稍后重试。";
@@ -347,7 +371,9 @@ const runBoot = async () => {
     await loadBaseRepoData(generation);
     if (generation !== requestGeneration || bootError.value) return;
     bootStep("正在读取提交范围与已有 PR...");
-    await Promise.all([loadOpenPullRequest(generation), loadPrContext(generation)]);
+    await loadOpenPullRequest(generation);
+    if (generation !== requestGeneration) return;
+    await loadPrContext(generation);
     if (generation !== requestGeneration) return;
     if (contextError.value) bootWarning.value = contextError.value;
     phase.value = "ready";
@@ -384,7 +410,9 @@ const changeBaseRemote = async (remoteName: string) => {
       return;
     }
     bootStep("正在读取提交范围与已有 PR...");
-    await Promise.all([loadOpenPullRequest(generation), loadPrContext(generation)]);
+    await loadOpenPullRequest(generation);
+    if (generation !== requestGeneration) return;
+    await loadPrContext(generation);
     if (generation !== requestGeneration) return;
     if (contextError.value) bootWarning.value = contextError.value;
     phase.value = "ready";
@@ -504,10 +532,10 @@ const selectAiVersion = (offset: -1 | 1) => {
   descriptionTouched.value = true;
 };
 
-const renderedDescription = computed(() => renderMarkdown(prDescription.value, { interactiveTasks: true }));
+const renderedDescription = computed(() => renderMarkdown(prDescription.value, { interactiveTasks: !isSavingPullRequest.value }));
 
 const handlePreviewTaskClick = (event: MouseEvent) => {
-  if (isAiGenerating.value || phase.value === "creating") return;
+  if (isSavingPullRequest.value || isAiGenerating.value || phase.value === "creating") return;
   const target = event.target;
   if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
   if (!target.classList.contains("markdown-task-checkbox")) return;
@@ -521,8 +549,44 @@ const handlePreviewTaskClick = (event: MouseEvent) => {
   }
 };
 
+const savePullRequest = async () => {
+  const pullRequest = openPullRequest.value;
+  const base = baseRepo.value;
+  if (!canSavePullRequest.value || !pullRequest || !base) return;
+  const generation = requestGeneration;
+  const title = prTitle.value.trim();
+  const body = prDescription.value;
+  isSavingPullRequest.value = true;
+  reportFeedback("loading", `正在保存 PR #${pullRequest.number} 修改...`);
+  try {
+    const result = await store.updateGithubPullRequest({
+      owner: base.owner,
+      repository: base.repository,
+      number: pullRequest.number,
+      title,
+      body,
+    });
+    if (generation !== requestGeneration) return;
+    if (result.ok) {
+      openPullRequest.value = result.value;
+      prTitle.value = result.value.title;
+      prDescription.value = result.value.body ?? body;
+      titleTouched.value = false;
+      descriptionTouched.value = false;
+      reportFeedback("success", `PR #${pullRequest.number} 修改已保存。`);
+    } else {
+      reportFeedback("error", result.failure.message);
+    }
+  } catch (error) {
+    if (generation !== requestGeneration) return;
+    reportFeedback("error", error instanceof Error ? error.message : "保存 PR 修改失败。");
+  } finally {
+    if (generation === requestGeneration) isSavingPullRequest.value = false;
+  }
+};
+
 const pushBranch = async () => {
-  if (isPushingBranch.value || !headRemote.value) return;
+  if (isPushingBranch.value || isSavingPullRequest.value || !headRemote.value) return;
   isPushingBranch.value = true;
   reportFeedback("loading", needsPublish.value ? "正在发布分支..." : "正在推送提交...", { retainRemoteProgress: true });
   try {
@@ -533,11 +597,14 @@ const pushBranch = async () => {
       reportFeedback("warning", "当前项目不可用，无法推送分支。", { retainRemoteProgress: true });
       return;
     }
-    reportFeedback(result.ok ? "success" : "error", result.message, { retainRemoteProgress: true });
     if (result.ok) {
       await store.refreshGitSnapshot(props.projectId, { force: true }, props.repositoryTarget);
-      await loadPrContext(requestGeneration);
+      if (!openPullRequest.value) await loadPrContext(requestGeneration);
     }
+    const message = result.ok && openPullRequest.value
+      ? `提交已推送到源分支，PR #${openPullRequest.value.number} 已更新。`
+      : result.message;
+    reportFeedback(result.ok ? "success" : "error", message, { retainRemoteProgress: true });
   } catch (error) {
     reportFeedback("error", error instanceof Error ? error.message : "推送分支失败。", { retainRemoteProgress: true });
   } finally {
@@ -621,7 +688,7 @@ onBeforeUnmount(() => {
     title="创建 GitHub PR"
     aria-label="创建 GitHub PR"
     body-class="p-0"
-    :can-close="phase !== 'creating'"
+    :can-close="phase !== 'creating' && !isPushingBranch && !isSavingPullRequest"
     @close="emit('close')"
   >
     <template #header>
@@ -629,7 +696,7 @@ onBeforeUnmount(() => {
         <h3 class="text-sm font-bold text-on-surface">创建 GitHub PR</h3>
         <p class="truncate text-[10px] font-medium text-on-surface-variant">
           {{ baseRepoLabel || "解析 GitHub 仓库中..." }}
-          <template v-if="currentBranch && baseBranchName"> · {{ currentBranch }} → {{ baseBranchName }}</template>
+          <template v-if="currentBranch && baseBranchName"> · {{ currentBranch }} → {{ openPullRequest?.baseBranch || baseBranchName }}</template>
         </p>
       </div>
     </template>
@@ -659,47 +726,37 @@ onBeforeUnmount(() => {
       </template>
 
       <template v-else-if="phase !== 'boot' || !bootError">
-        <div v-if="openPullRequest" class="ui-banner ui-banner--warning flex items-center justify-between gap-2 px-2 py-1.5 text-[11px] font-bold">
-          <span class="min-w-0 truncate">
-            当前分支已有 open PR #{{ openPullRequest.number }}：{{ openPullRequest.title }}
-          </span>
-          <span class="flex shrink-0 items-center gap-1">
-            <button
-              v-if="openPullRequest.url"
-              type="button"
-              class="ui-btn ui-btn--secondary ui-btn--sm"
-              @click="openUrl(openPullRequest.url)"
-            >
-              打开
-            </button>
-            <button
-              v-if="openPullRequest.url"
-              type="button"
-              class="ui-btn ui-btn--ghost ui-btn--sm"
-              @click="copyText(openPullRequest.url)"
-            >
-              {{ copiedValue === openPullRequest.url ? "已复制" : "复制" }}
-            </button>
-          </span>
+        <div v-if="openPullRequest" class="ui-banner ui-banner--positive flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-[11px] font-semibold" role="status">
+          <span class="min-w-0 flex-1">当前分支已有 PR #{{ openPullRequest.number }}{{ openPullRequest.isDraft ? "（草稿）" : "（待合并）" }}</span>
+          <button v-if="openPullRequest.url" type="button" class="ui-btn ui-btn--ghost ui-btn--sm" @click="copyText(openPullRequest.url)">
+            {{ copiedValue === openPullRequest.url ? "已复制" : "复制链接" }}
+          </button>
+          <button v-if="openPullRequest.url" type="button" class="ui-btn ui-btn--secondary ui-btn--sm" @click="openUrl(openPullRequest.url)">
+            <ExternalLink :size="12" />
+            打开 PR
+          </button>
         </div>
-
-        <div v-if="needsPublish || needsPush" class="ui-banner ui-banner--warning flex items-center justify-between gap-2 px-2 py-1.5 text-[11px] font-bold">
+        <div v-if="needsPublish || needsPush" class="ui-banner ui-banner--warning flex shrink-0 items-center justify-between gap-2 px-2 py-1.5 text-[11px] font-bold">
           <span class="min-w-0">
             {{
               needsPublish
-                ? `当前分支未跟踪 ${headRemote?.remoteName || "远端"}，创建 PR 前需要发布分支。`
-                : `本地有 ${upstream?.ahead ?? 0} 个未推送提交，创建 PR 前需要推送。`
+                ? openPullRequest
+                  ? `当前分支未跟踪 ${headRemote?.remoteName || "远端"}，发布分支后将更新 PR #${openPullRequest.number}。`
+                  : `当前分支未跟踪 ${headRemote?.remoteName || "远端"}，创建 PR 前需要发布分支。`
+                : openPullRequest
+                  ? `${upstream?.ahead ?? 0} 个本地提交待推送，推送后将更新 PR #${openPullRequest.number}。`
+                  : `本地有 ${upstream?.ahead ?? 0} 个未推送提交，创建 PR 前需要推送。`
             }}
           </span>
           <button
             type="button"
             class="ui-btn ui-btn--secondary ui-btn--sm shrink-0"
-            :disabled="isPushingBranch"
+            :disabled="isPushingBranch || isSavingPullRequest || (!needsPublish && !needsPush)"
             :aria-busy="isPushingBranch"
             @click="pushBranch"
           >
             <CloudUpload :size="12" />
-            {{ isPushingBranch ? "推送中" : needsPublish ? "发布分支" : "推送提交" }}
+            {{ isPushingBranch ? "推送中..." : needsPublish ? "发布分支" : openPullRequest ? `推送 ${upstream?.ahead ?? 0} 个提交` : "推送提交" }}
           </button>
         </div>
 
@@ -710,7 +767,7 @@ onBeforeUnmount(() => {
               v-model="baseRemoteSelectModel"
               class="mt-1"
               :options="baseRemoteOptions"
-              :disabled="phase === 'boot' || baseRemoteOptions.length <= 1"
+              :disabled="phase === 'boot' || !!openPullRequest || baseRemoteOptions.length <= 1"
               aria-label="PR 目标仓库"
               compact
             />
@@ -721,7 +778,7 @@ onBeforeUnmount(() => {
               v-model="baseBranchSelectModel"
               class="mt-1"
               :options="baseBranchOptions"
-              :disabled="phase === 'boot' || !baseRepo"
+              :disabled="phase === 'boot' || !!openPullRequest || !baseRepo"
               searchable
               aria-label="PR 目标分支"
               compact
@@ -733,7 +790,7 @@ onBeforeUnmount(() => {
               v-model="selectedTemplateSelectModel"
               class="mt-1"
               :options="templateOptions.length > 0 ? templateOptions : [{ value: '0', label: '无模板' }]"
-              :disabled="phase === 'boot' || templateOptions.length === 0"
+              :disabled="phase === 'boot' || !!openPullRequest || templateOptions.length === 0"
               aria-label="PR 描述模板"
               compact
             />
@@ -756,7 +813,7 @@ onBeforeUnmount(() => {
             type="text"
             class="ui-field mt-1 w-full"
             placeholder="PR 标题"
-            :disabled="phase === 'boot' || phase === 'creating'"
+            :disabled="phase === 'boot' || phase === 'creating' || isSavingPullRequest"
             aria-label="PR 标题"
             @input="titleTouched = true"
           />
@@ -789,7 +846,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="ui-btn ui-btn--ghost ui-btn--sm"
-                :disabled="phase === 'boot' || !prContext"
+                :disabled="phase === 'boot' || !!openPullRequest || !prContext"
                 title="按模板与提交记录重新预填"
                 @click="reprefill"
               >
@@ -799,7 +856,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="ui-btn ui-btn--secondary ui-btn--sm"
-                :disabled="isAiGenerating || phase === 'boot' || !prContext"
+                :disabled="isAiGenerating || phase === 'boot' || !!openPullRequest || !prContext"
                 :aria-busy="isAiGenerating"
                 @click="generateWithAi"
               >
@@ -813,7 +870,7 @@ onBeforeUnmount(() => {
             v-model="prDescription"
             class="ui-field themed-scrollbar min-h-0 w-full flex-1 resize-none font-mono text-[11px] leading-5"
             placeholder="PR 描述（模板 + 提交记录自动预填，可用 AI 生成）"
-            :disabled="phase === 'creating' || isAiGenerating"
+            :disabled="phase === 'creating' || isAiGenerating || isSavingPullRequest"
             :aria-busy="isAiGenerating || undefined"
             aria-label="PR 描述"
             @input="descriptionTouched = true"
@@ -907,17 +964,29 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <div class="flex shrink-0 items-center justify-between gap-2">
+        <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
           <label class="inline-flex h-8 items-center gap-1.5 text-[11px] font-semibold text-on-surface-variant">
-            <input v-model="isDraft" type="checkbox" class="h-4 w-4 accent-primary" :disabled="phase === 'creating'" />
+            <input v-model="isDraft" type="checkbox" class="h-4 w-4 accent-primary" :disabled="phase === 'creating' || !!openPullRequest" />
             创建为草稿
           </label>
-          <div class="flex items-center gap-2">
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
             <span v-if="createBlockedReason" class="max-w-64 truncate text-[10px] font-semibold text-on-surface-variant" :title="createBlockedReason">
               {{ createBlockedReason }}
             </span>
-            <button type="button" class="ui-btn ui-btn--ghost" :disabled="phase === 'creating'" @click="emit('close')">
+            <button type="button" class="ui-btn ui-btn--ghost" :disabled="phase === 'creating' || isPushingBranch || isSavingPullRequest" @click="emit('close')">
               关闭
+            </button>
+            <button
+              v-if="openPullRequest"
+              type="button"
+              class="ui-btn ui-btn--secondary"
+              :disabled="!canSavePullRequest"
+              :aria-busy="isSavingPullRequest"
+              :title="!prTitle.trim() ? '请填写 PR 标题' : hasPullRequestChanges ? '保存标题和描述到当前 PR' : '标题和描述没有修改'"
+              @click="savePullRequest"
+            >
+              <Save :size="13" />
+              {{ isSavingPullRequest ? "保存中..." : "保存修改" }}
             </button>
             <button
               type="button"

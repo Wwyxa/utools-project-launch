@@ -341,6 +341,9 @@ export interface AppActions {
     input: import("../types").GithubPrCreateInput,
   ): Promise<import("../types").GithubApiResult<import("../types").GithubPullRequestSummary>>;
   openExternalUrl(url: string): Promise<void>;
+  updateGithubPullRequest(
+    input: import("../types").GithubPrUpdateInput,
+  ): Promise<import("../types").GithubApiResult<import("../types").GithubPullRequestSummary>>;
   readGithubPrContext(
     projectId: string,
     target: ProjectGitRepositoryTarget,

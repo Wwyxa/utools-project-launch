@@ -2,6 +2,7 @@ import type {
   GithubApiResult,
   GithubPrContext,
   GithubPrCreateInput,
+  GithubPrUpdateInput,
   GithubPullRequestSummary,
   GithubRepositoryMetadata,
   ProjectGitReadResult,
@@ -43,6 +44,10 @@ export const githubPrActions = {
 
     async createGithubPullRequest(this: AppStore, input: GithubPrCreateInput) {
       return bridge.createGithubPullRequest(input);
+    },
+
+    async updateGithubPullRequest(this: AppStore, input: GithubPrUpdateInput) {
+      return bridge.updateGithubPullRequest(input);
     },
 
     async openExternalUrl(this: AppStore, url: string) {

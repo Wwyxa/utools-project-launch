@@ -691,6 +691,7 @@ export interface GithubRepositoryMetadata {
 export interface GithubPullRequestSummary {
   number: number;
   title: string;
+  body?: string;
   url: string;
   isDraft: boolean;
   state: "open" | "closed";
@@ -709,6 +710,14 @@ export interface GithubPrCreateInput {
   title: string;
   body: string;
   draft: boolean;
+}
+
+export interface GithubPrUpdateInput {
+  owner: string;
+  repository: string;
+  number: number;
+  title: string;
+  body: string;
 }
 
 export interface GithubPrContextCommit {
@@ -1987,6 +1996,7 @@ export interface ProjectBridge {
     branch: string,
   ): Promise<GithubApiResult<GithubPullRequestSummary | null>>;
   createGithubPullRequest(input: GithubPrCreateInput): Promise<GithubApiResult<GithubPullRequestSummary>>;
+  updateGithubPullRequest(input: GithubPrUpdateInput): Promise<GithubApiResult<GithubPullRequestSummary>>;
   readGithubPrContext(
     projectPath: string,
     options: { baseRemote: string; baseBranch: string; headBranch: string },
