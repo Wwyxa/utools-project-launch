@@ -1,5 +1,5 @@
 import { createGitRepositoryContextKey } from "../../lib/gitRepositoryTarget";
-import type { ProjectGitActionResult, ProjectGitMergeResult, ProjectGitPushOptions, ProjectGitRepositoryContext, ProjectGitRepositoryTarget, ProjectGitStashOptions } from "../../types";
+import type { ProjectGitActionResult, ProjectGitConflictPrediction, ProjectGitIntegrationKind, ProjectGitIntegrationPlan, ProjectGitIntegrationPreview, ProjectGitMergeResult, ProjectGitPushOptions, ProjectGitRepositoryContext, ProjectGitRepositoryTarget, ProjectGitStashOptions } from "../../types";
 import type { AppStore } from "../appStoreShape";
 import { bridge } from "../helpers/bridge";
 import { bumpGitMutationVersion, bumpGitRefMutationVersion, clearGitRepositoryCoordination, clearGitRepositoryRecord, gitWorkspaceRefreshPromises, gitWorkspaceRefreshTokens, queueGitWriteLock } from "../helpers/gitHelpers";
@@ -107,14 +107,17 @@ export const gitMutationsActions = {
           });
         }
 
+        const refresh = options.refresh === "working-tree" && this.gitSnapshotForRepository(projectId, context.target)?.rebaseInProgress
+          ? "status"
+          : options.refresh;
         const refreshes: Array<Promise<void> | undefined> = [
-          options.refresh === "working-tree"
+          refresh === "working-tree"
             ? this.refreshGitWorkingTreeSnapshot(projectId, context.target)
-            : options.refresh === "status"
+            : refresh === "status"
               ? this.refreshGitStatusSnapshot(projectId, context.target)
               : this.refreshGitSnapshot(projectId, { force: true }, context.target),
         ];
-        if (options.refresh === "working-tree") {
+        if (refresh === "working-tree") {
           void this.refreshGitWorkspace(projectId, { force: true });
         } else {
           refreshes.push(this.refreshGitWorkspace(projectId, { force: true }));
@@ -130,6 +133,54 @@ export const gitMutationsActions = {
         }
         writeLock.release();
       }
+    },
+
+    async prepareGitIntegration(this: AppStore,
+      projectId: string,
+      kind: ProjectGitIntegrationKind,
+      targetRef: string,
+      targetLabel: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitIntegrationPreview | null> {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
+      const result = await bridge.prepareGitIntegration(context.repositoryPath, kind, targetRef, targetLabel);
+      return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey ? result : null;
+    },
+
+    async predictGitIntegrationConflicts(this: AppStore,
+      projectId: string,
+      plan: ProjectGitIntegrationPlan,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitConflictPrediction | null> {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      if (!context) return null;
+      const result = await bridge.predictGitIntegrationConflicts(context.repositoryPath, plan);
+      return this.resolveGitRepositoryContext(projectId, context.target)?.contextKey === context.contextKey ? result : null;
+    },
+
+    async integrateGitCommit(this: AppStore,
+      projectId: string,
+      plan: ProjectGitIntegrationPlan,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.integrateGitCommit(context.repositoryPath, plan),
+        { refresh: "full", refs: true, refreshOnFailure: true });
+    },
+
+    async continueGitRebase(this: AppStore, projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.continueGitRebase(context.repositoryPath),
+        { refresh: "full", refs: true, refreshOnFailure: true });
+    },
+
+    async skipGitRebase(this: AppStore, projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.skipGitRebase(context.repositoryPath),
+        { refresh: "full", refs: true, refreshOnFailure: true });
+    },
+
+    async abortGitRebase(this: AppStore, projectId: string, target: ProjectGitRepositoryTarget = { kind: "main" }): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(projectId, target, (context) => bridge.abortGitRebase(context.repositoryPath),
+        { refresh: "full", refs: true, refreshOnFailure: true });
     },
 
     async stageGitFile(this: AppStore,

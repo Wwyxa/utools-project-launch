@@ -17,6 +17,7 @@ const props = withDefaults(
     secondaryLabel?: string;
     cancelLabel?: string;
     busy?: boolean;
+    primaryDisabled?: boolean;
     busyLabel?: string;
     /** 面板宽度（px），默认 24rem。 */
     width?: number;
@@ -45,7 +46,7 @@ const skipLeaveTransition = ref(false);
 let submitting = false;
 
 const submit = (action: "primary" | "secondary") => {
-  if (props.busy || submitting) return;
+  if (props.busy || submitting || (action === "primary" && props.primaryDisabled)) return;
   submitting = true;
   skipLeaveTransition.value = true;
   if (action === "primary") emit("primary");
@@ -137,7 +138,7 @@ watch(
             tone === 'warning' ? 'ui-btn--primary' : 'ui-btn--danger',
           )
         "
-        :disabled="busy"
+        :disabled="busy || primaryDisabled"
         :aria-busy="busy"
       >
         <LoaderCircle v-if="busy" :size="13" class="animate-spin" />

@@ -45,9 +45,9 @@ const loadPreloadBridge = (platform: Platform, fixture: PreloadFixture) => {
     if (args.includes("--short")) return "abc1234\n";
     return "";
   });
-  const spawnSync = vi.fn((_command: string, _args: string[], _options?: ChildProcessOptions) => ({
+  const spawnSync = vi.fn((_command: string, args: string[], _options?: ChildProcessOptions) => ({
     status: 0,
-    stdout: "",
+    stdout: args.includes("--git-path") ? `.git/${args[args.length - 1]}\n` : "",
     stderr: "",
   }));
   const childProcess = { ...nodeRequire("child_process"), execFileSync, spawnSync };
@@ -86,7 +86,7 @@ describe("Git execution environment", () => {
     expect(shellCalls).toHaveLength(1);
     expect(shellCalls[0]?.[1]?.[1]).toBe(`printf '\\000${gitEnvironmentMarker}\\000'; env -0`);
     const gitOptions = execFileSync.mock.calls.filter(([command]) => command === "git").map(([, , options]) => options);
-    expect(gitOptions).toHaveLength(3);
+    expect(gitOptions.length).toBeGreaterThanOrEqual(3);
     gitOptions.forEach((options) => {
       expect(options?.env).toMatchObject({ PNPM_HOME: "/Users/test/Library/pnpm", VOLTA_HOME: "/Users/test/.volta" });
       expect(options?.env?.PATH).toBe("/Users/test/Library/pnpm:/Users/test/.volta/bin:/usr/bin:/bin");

@@ -2531,3 +2531,49 @@ describe("browser Git workspace fallback", () => {
     expect(store.gitWritesInProgress[project.id]).toBe(0);
   });
 });
+
+describe("Git integration store contracts", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("preserves rebase state through refreshes and refreshes it after staging", async () => {
+    vi.stubGlobal("window", {
+      navigator: { platform: "Win32", userAgent: "vitest" },
+      localStorage: { getItem: () => null, setItem: () => undefined },
+      projectBridge: undefined,
+    });
+    const projectPath = "C:\\project";
+    const stopped = { branch: "feature", onto: "b".repeat(40), canContinue: false };
+    const fullSnapshot = { ...gitSnapshot(projectPath, "HEAD"), rebaseInProgress: stopped };
+    const readGitSnapshotResult = vi.fn<ProjectBridge["readGitSnapshotResult"]>(async () => ({ ok: true, value: fullSnapshot }));
+    const readGitStatusSnapshotResult = vi.fn<ProjectBridge["readGitStatusSnapshotResult"]>(async () => ({
+      ok: true,
+      value: { ...fullSnapshot, rebaseInProgress: { ...stopped, canContinue: true } },
+    }));
+    const stageGitFile = vi.fn<ProjectBridge["stageGitFile"]>(async () => ({ ok: true, message: "staged" }));
+    window.projectBridge = {
+      ...getProjectBridge(),
+      readGitSnapshotResult,
+      readGitStatusSnapshotResult,
+      stageGitFile,
+      readGitWorkspaceSnapshot: async () => workspaceSnapshot(projectPath, "2026-08-01T10:00:00.000Z"),
+    };
+    const { useStore } = await import("../src/store/useStore");
+    setActivePinia(createPinia());
+    const store = useStore();
+    const project = createProject("rebase-state", projectPath);
+    store.projects = [project];
+    await store.refreshGitSnapshot(project.id, { force: true });
+    expect(project.git?.rebaseInProgress).toEqual(stopped);
+    await store.stageGitFile(project.id, "conflict.txt");
+    expect(stageGitFile).toHaveBeenCalledWith(projectPath, "conflict.txt");
+    expect(readGitStatusSnapshotResult).toHaveBeenCalledTimes(1);
+    expect(project.git?.rebaseInProgress?.canContinue).toBe(true);
+    readGitStatusSnapshotResult.mockResolvedValueOnce({ ok: true, value: { ...fullSnapshot, rebaseInProgress: null } });
+    await store.refreshGitStatusSnapshot(project.id);
+    expect(project.git?.rebaseInProgress).toBeNull();
+  });
+
+});

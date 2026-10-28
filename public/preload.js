@@ -21,6 +21,7 @@ const preloadModuleFiles = [
   "backups.js",
   "agent-tools.js",
   "git-diff.js",
+  "git-integration.js",
   "processes.js",
   "bridge.js",
 ];

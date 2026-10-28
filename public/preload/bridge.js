@@ -147,6 +147,12 @@ window.projectBridge = {
   pushGitRemote,
   mergeGitBaseBranch,
   abortGitMerge,
+  prepareGitIntegration,
+  predictGitIntegrationConflicts,
+  integrateGitCommit,
+  continueGitRebase,
+  skipGitRebase,
+  abortGitRebase,
   initializeGitRepository,
   publishGitBranch,
   addGitRemote,
@@ -215,6 +221,10 @@ const runtimeOperationLabels = {
   pushGitRemote: "Git Push",
   mergeGitBaseBranch: "Git 合并分支",
   abortGitMerge: "Git 中止合并",
+  integrateGitCommit: "Git 合并或变基",
+  continueGitRebase: "Git 继续变基",
+  skipGitRebase: "Git 跳过变基提交",
+  abortGitRebase: "Git 中止变基",
   initializeGitRepository: "Git 初始化仓库",
   publishGitBranch: "Git 发布分支",
   addGitRemote: "Git 添加远端",
@@ -247,6 +257,26 @@ const runtimeOperationLabels = {
   analyzeWithAi: "AI 分析",
   analyzeWithAiStream: "流式 AI 分析",
 };
+[
+  "unstageGitFile", "unstageGitFiles", "discardGitFile", "discardGitFiles", "commitGitStaged", "amendGitCommit", "undoLastGitCommit",
+  "cherryPickGitCommit", "revertGitCommit", "createGitStash", "applyGitStash", "popGitStash", "dropGitStash",
+  "switchGitBranch", "checkoutGitCommit", "createGitBranch", "renameGitBranch", "deleteGitBranch",
+  "checkoutGitRemoteBranch", "createGitTag", "deleteGitTag", "pushGitTag", "pullGitRemote", "pushGitRemote",
+  "mergeGitBaseBranch", "abortGitMerge", "initializeGitRepository", "publishGitBranch", "addGitRemote",
+  "setGitRemoteUrl", "removeGitRemote", "deleteGitRemoteBranch",
+].forEach((method) => {
+  const original = window.projectBridge[method];
+  window.projectBridge[method] = (projectPath, ...args) => {
+    const repositoryPath = findGitRoot(projectPath);
+    if (repositoryPath) {
+      const rebase = readGitRebasePresence(repositoryPath);
+      if (!rebase.ok) return rebase;
+      if (rebase.inProgress) return { ok: false, message: "变基进行中，请先继续、跳过或中止变基。" };
+    }
+    return original(projectPath, ...args);
+  };
+});
+
 Object.entries(runtimeOperationLabels).forEach(([method, label]) => {
   window.projectBridge[method] = wrapRuntimeOperation(label, window.projectBridge[method]);
 });

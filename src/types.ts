@@ -903,6 +903,7 @@ export interface ProjectGitFileChange {
   additions: number;
   deletions: number;
   status: "MODIFIED" | "ADDED" | "DELETED" | "RENAMED" | "UNTRACKED";
+  conflicted?: boolean;
   staged?: boolean;
   unstaged?: boolean;
 }
@@ -977,6 +978,37 @@ export interface ProjectGitMergeResult extends ProjectGitActionResult {
   conflictedFiles?: string[];
   mergeCommitMessage?: string;
   mergeInProgress?: boolean;
+}
+
+export type ProjectGitIntegrationKind = "merge" | "rebase";
+
+export interface ProjectGitIntegrationPlan {
+  kind: ProjectGitIntegrationKind;
+  branch: string;
+  headHash: string;
+  targetHash: string;
+  targetRef: string;
+  targetLabel: string;
+  hasMergeCommits: boolean;
+}
+
+export interface ProjectGitIntegrationPreview extends ProjectGitActionResult {
+  plan?: ProjectGitIntegrationPlan;
+}
+
+export interface ProjectGitConflictPrediction {
+  state: "clean" | "conflicts" | "unknown" | "unsupported";
+  message: string;
+}
+
+export interface ProjectGitRebaseState {
+  branch: string;
+  onto: string;
+  stoppedCommit?: string;
+  step?: number;
+  total?: number;
+  interactive?: boolean;
+  canContinue?: boolean;
 }
 
 export interface ProjectGitBulkFileActionOptions {
@@ -1217,6 +1249,7 @@ export interface ProjectGitSnapshot {
   base?: ProjectGitBaseSummary | null;
   mergeInProgress?: boolean;
   mergeCommitMessage?: string | null;
+  rebaseInProgress?: ProjectGitRebaseState | null;
   hasMoreCommits?: boolean;
   nextCommitSkip?: number;
   repositoryPath: string;
@@ -1238,6 +1271,7 @@ export interface ProjectGitStatusSnapshot {
   base?: ProjectGitBaseSummary | null;
   mergeInProgress?: boolean;
   mergeCommitMessage?: string | null;
+  rebaseInProgress?: ProjectGitRebaseState | null;
   repositoryPath: string;
   lastRefreshedAt: string;
   statusText: string;
@@ -1599,6 +1633,7 @@ export interface ProjectBridgeGitStatusSnapshot extends ProjectGitStatusSnapshot
 
 export interface ProjectBridgeGitWorkingTreeSnapshot {
   files: ProjectGitFileChange[];
+  rebaseInProgress?: ProjectGitRebaseState | null;
   repositoryPath: string;
   lastRefreshedAt: string;
   statusText: string;
@@ -2171,6 +2206,12 @@ export interface ProjectBridge {
   pushGitRemote(projectPath: string, options?: ProjectGitPushOptions): Promise<ProjectGitActionResult>;
   mergeGitBaseBranch(projectPath: string): Promise<ProjectGitMergeResult>;
   abortGitMerge(projectPath: string): Promise<ProjectGitActionResult>;
+  prepareGitIntegration(projectPath: string, kind: ProjectGitIntegrationKind, targetRef: string, targetLabel: string): Promise<ProjectGitIntegrationPreview>;
+  predictGitIntegrationConflicts(projectPath: string, plan: ProjectGitIntegrationPlan): Promise<ProjectGitConflictPrediction>;
+  integrateGitCommit(projectPath: string, plan: ProjectGitIntegrationPlan): Promise<ProjectGitActionResult>;
+  continueGitRebase(projectPath: string): Promise<ProjectGitActionResult>;
+  skipGitRebase(projectPath: string): Promise<ProjectGitActionResult>;
+  abortGitRebase(projectPath: string): Promise<ProjectGitActionResult>;
   initializeGitRepository(projectPath: string): Promise<ProjectGitActionResult>;
   publishGitBranch(projectPath: string, remoteName: string): Promise<ProjectGitActionResult>;
   addGitRemote(projectPath: string, remoteName: string, remoteUrl: string): Promise<ProjectGitActionResult>;

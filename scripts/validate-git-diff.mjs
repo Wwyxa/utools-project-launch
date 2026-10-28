@@ -185,6 +185,12 @@ try {
   assert.equal(beforeMergeSnapshot.base?.ref, `origin/${baseBranchName}`);
   assert.equal(beforeMergeSnapshot.base?.behind, 1);
 
+  runGit("config", "merge.ff", "false");
+  runGit("config", "merge.autoStash", "true");
+  runGit("config", "status.showUntrackedFiles", "no");
+  fs.writeFileSync(path.join(projectRoot, "hidden-untracked.txt"), "untracked\n");
+  assert.equal((await bridge.mergeGitBaseBranch(projectRoot)).blockReason, "dirty-worktree");
+  fs.unlinkSync(path.join(projectRoot, "hidden-untracked.txt"));
   const fastForward = await bridge.mergeGitBaseBranch(projectRoot);
   assert.equal(fastForward.ok, true);
   assert.match(fastForward.message, /已快进合并/);

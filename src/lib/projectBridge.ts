@@ -41,6 +41,7 @@ import type {
   ProjectGitFileDiffOptions,
   ProjectGitStash,
   ProjectGitActionResult,
+  ProjectGitConflictPrediction,
   ProjectGitMergeResult,
   ProjectBridgeGitStatusSnapshot,
   ProjectBridgeGitSnapshot,
@@ -1545,6 +1546,24 @@ const fallbackBridge: ProjectBridge = {
   },
   async abortGitMerge(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法放弃 Git 合并。");
+  },
+  async prepareGitIntegration(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法准备 Git 合并或变基。");
+  },
+  async predictGitIntegrationConflicts(): Promise<ProjectGitConflictPrediction> {
+    return { state: "unsupported", message: "浏览器预览无法预测 Git 合并或变基冲突。" };
+  },
+  async integrateGitCommit(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法执行 Git 合并或变基。");
+  },
+  async continueGitRebase(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法继续 Git 变基。");
+  },
+  async skipGitRebase(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法跳过 Git 变基提交。");
+  },
+  async abortGitRebase(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法中止 Git 变基。");
   },
   async initializeGitRepository(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法初始化 Git 仓库。");

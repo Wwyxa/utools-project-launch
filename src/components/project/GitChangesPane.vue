@@ -156,6 +156,7 @@ const headCommit = computed(
 const headCommitMessage = computed(() => (headCommit.value?.body || headCommit.value?.message || "").trim());
 const headActionBlockedMessage = computed(() => {
   if (props.disabled) return "当前仓库不可用，无法执行 Git 操作。";
+  if (snapshot.value?.rebaseInProgress) return "请使用继续变基完成当前提交，或中止变基。";
   if (isChangesWriteBusy.value) return "正在执行 Git 操作。";
   if (!activeRepositoryContext.value || !snapshot.value?.repositoryPath) return "未检测到 Git 仓库。";
   if (snapshot.value.isDetachedHead) return "当前 HEAD 处于 detached 状态，请使用外部 Git 工具处理。";
@@ -200,7 +201,7 @@ const stashFiles = (scope: ProjectGitStashScope) => {
   return files.value;
 };
 const canCreateStash = (scope: ProjectGitStashScope) =>
-  !props.disabled && !isChangesWriteBusy.value && stashFiles(scope).length > 0;
+  !props.disabled && !snapshot.value?.rebaseInProgress && !isChangesWriteBusy.value && stashFiles(scope).length > 0;
 const stashActionTitle = (scope: ProjectGitStashScope) => {
   if (scope === "staged") return t.value.git.stashStagedChanges;
   if (scope === "unstaged") return t.value.git.stashUnstagedChanges;
@@ -214,6 +215,7 @@ const stashDialogDescription = computed(() => {
 const composerCommitMessage = computed(() => (isAmendMode.value ? amendCommitMessage.value : props.commitMessage));
 const amendMessageChanged = computed(() => composerCommitMessage.value.trim() !== amendOriginalMessage.value);
 const canCommitStaged = computed(() => {
+  if (snapshot.value?.rebaseInProgress) return false;
   if (props.disabled || isChangesWriteBusy.value || !composerCommitMessage.value.trim()) return false;
   if (!isAmendMode.value) return hasStagedChanges.value || props.mergeInProgress;
   return !headActionBlockedMessage.value && (hasStagedChanges.value || amendMessageChanged.value);
@@ -230,6 +232,7 @@ const amendActionTitle = computed(() =>
 );
 const undoLastCommitTitle = computed(() => headActionBlockedMessage.value || "撤销上次提交");
 const commitActionTitle = computed(() => {
+  if (snapshot.value?.rebaseInProgress) return "暂存冲突解决结果后，使用顶部的继续变基。";
   if (isCommitActionActive.value) {
     return isAmendMode.value
       ? "正在修订上次提交"

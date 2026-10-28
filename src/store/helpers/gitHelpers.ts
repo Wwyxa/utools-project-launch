@@ -41,6 +41,7 @@ export function normalizeGitSnapshot(snapshot: ProjectGitSnapshot | null | undef
     base: snapshot.base || null,
     mergeInProgress: Boolean(snapshot.mergeInProgress),
     mergeCommitMessage: snapshot.mergeCommitMessage || null,
+    rebaseInProgress: snapshot.rebaseInProgress || null,
     hasMoreCommits: snapshot.hasMoreCommits || false,
     nextCommitSkip: normalizeGitCommitSkip(snapshot.nextCommitSkip, commits.length),
     repositoryPath: snapshot.repositoryPath || "",
@@ -112,6 +113,7 @@ export function mergeGitSnapshotPreservingHistory(
   currentSnapshot.base = nextSnapshot.base;
   currentSnapshot.mergeInProgress = nextSnapshot.mergeInProgress;
   currentSnapshot.mergeCommitMessage = nextSnapshot.mergeCommitMessage;
+  currentSnapshot.rebaseInProgress = nextSnapshot.rebaseInProgress;
   currentSnapshot.repositoryPath = nextSnapshot.repositoryPath;
   currentSnapshot.lastRefreshedAt = nextSnapshot.lastRefreshedAt;
   currentSnapshot.statusText = nextSnapshot.statusText;
@@ -141,6 +143,7 @@ export function mergeGitStatusSnapshot(
     base: statusSnapshot.base || null,
     mergeInProgress: statusSnapshot.mergeInProgress ?? (currentSnapshot.mergeInProgress || false),
     mergeCommitMessage: statusSnapshot.mergeCommitMessage ?? currentSnapshot.mergeCommitMessage ?? null,
+    rebaseInProgress: statusSnapshot.rebaseInProgress === undefined ? currentSnapshot.rebaseInProgress : statusSnapshot.rebaseInProgress,
     hasMoreCommits: currentSnapshot.hasMoreCommits || false,
     nextCommitSkip: currentSnapshot.nextCommitSkip ?? currentSnapshot.commits.length,
     repositoryPath: statusSnapshot.repositoryPath || currentSnapshot.repositoryPath || "",
@@ -153,6 +156,7 @@ export function mergeGitStatusSnapshot(
     currentSnapshot.base = nextSnapshot.base;
     currentSnapshot.mergeInProgress = nextSnapshot.mergeInProgress;
     currentSnapshot.mergeCommitMessage = nextSnapshot.mergeCommitMessage;
+    currentSnapshot.rebaseInProgress = nextSnapshot.rebaseInProgress;
     currentSnapshot.repositoryPath = nextSnapshot.repositoryPath;
     currentSnapshot.lastRefreshedAt = nextSnapshot.lastRefreshedAt;
     currentSnapshot.statusText = nextSnapshot.statusText;
@@ -173,6 +177,7 @@ export function mergeGitStatusSnapshot(
     base: nextSnapshot.base,
     mergeInProgress: nextSnapshot.mergeInProgress,
     mergeCommitMessage: nextSnapshot.mergeCommitMessage,
+    rebaseInProgress: nextSnapshot.rebaseInProgress,
     repositoryPath: nextSnapshot.repositoryPath,
     lastRefreshedAt: nextSnapshot.lastRefreshedAt,
     statusText: nextSnapshot.statusText,

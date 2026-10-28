@@ -19,11 +19,14 @@ import {
   Filter,
   GitBranch,
   GitCommitHorizontal,
+  GitMerge,
+  GitPullRequestArrow,
   Github,
   List,
   ListChecks,
   ListTree,
   ListX,
+  LoaderCircle,
   MoreHorizontal,
   Pencil,
   Tag,
@@ -37,7 +40,10 @@ import type {
   ProjectGitActionResult,
   ProjectGitCommitRef,
   ProjectGitCommitSummary,
+  ProjectGitConflictPrediction,
   ProjectGitFileChange,
+  ProjectGitIntegrationKind,
+  ProjectGitIntegrationPlan,
   ProjectGitRepositoryTarget,
   ProjectGitTagInfo,
 } from '../../types';
@@ -148,6 +154,8 @@ type AppActionDialog = {
   detail?: string;
   confirmLabel: string;
   cancelLabel?: string;
+  primaryDisabled?: boolean;
+  integrationCheck?: { state: 'checking' | ProjectGitConflictPrediction['state']; message: string };
   onConfirm: () => Promise<void> | void;
 };
 
@@ -258,7 +266,7 @@ const isLoadingMore = computed(() => {
 const localWriteRunning = computed(
   () => Boolean(activeAction.value) || (store.gitWritesInProgress[props.projectId] || 0) > 0,
 );
-const isInteractionDisabled = computed(() => props.disabled || localWriteRunning.value);
+const isInteractionDisabled = computed(() => props.disabled || localWriteRunning.value || Boolean(snapshot.value?.rebaseInProgress));
 const hasCommitFilters = computed(() =>
   Boolean(
     commitKeyword.value.trim() ||
@@ -794,6 +802,14 @@ const isCommitDetachedHead = (commit: ProjectGitCommitSummary) =>
   Boolean(snapshot.value?.isDetachedHead && commitHashMatches(commit.hash, snapshot.value.headHash));
 const canCheckoutDetachedCommit = (commit: ProjectGitCommitSummary) => !isCommitDetachedHead(commit);
 const hasAttachedLocalGitHead = () => snapshot.value?.branches?.some((branch) => branch.current) === true;
+const integrationUnavailableReason = computed(() => {
+  if (!context.value || !snapshot.value?.repositoryPath) return '未检测到 Git 仓库';
+  if (snapshot.value.rebaseInProgress) return '请先完成或中止当前变基';
+  if (snapshot.value.mergeInProgress) return '请先完成或放弃当前合并';
+  if (snapshot.value.isDetachedHead || !hasAttachedLocalGitHead()) return '当前 HEAD 未指向本地分支';
+  if (snapshot.value.files.length) return '请先提交或贮藏工作区修改';
+  return '';
+});
 const gitHistoryActionUnavailableReason = (action: GitHistoryAction, commit: ProjectGitCommitSummary) => {
   if (isGitStashCommit(commit)) return 'stash 提交不能用于 Cherry-pick 或 Revert';
   if ((commit.parents?.length || 0) > 1) return '合并提交暂不支持 Cherry-pick 或 Revert';
@@ -1335,7 +1351,7 @@ const closeConfirmationDialog = () => {
 };
 const confirmAction = async () => {
   const dialog = confirmationDialog.value;
-  if (!dialog || confirmationBusy.value) return;
+  if (!dialog || dialog.primaryDisabled || confirmationBusy.value) return;
   confirmationBusy.value = true;
   confirmationDialog.value = null;
   try {
@@ -1408,6 +1424,78 @@ const requestGitHistoryAction = (action: GitHistoryAction, commit: ProjectGitCom
     },
   });
 };
+const requestIntegration = async (kind: ProjectGitIntegrationKind, targetRef: string, targetLabel: string) => {
+  if (isInteractionDisabled.value || integrationUnavailableReason.value) return;
+  closeCommitContextMenu(false);
+  const contextKey = context.value?.contextKey;
+  const repositoryTarget = props.repositoryTarget;
+  const branch = snapshot.value?.branch || '';
+  let plan: ProjectGitIntegrationPlan | undefined;
+  requestConfirmation({
+    tone: 'warning',
+    title: kind === 'merge' ? '合并到当前分支' : '变基当前分支',
+    message: kind === 'merge'
+      ? '优先快进，否则创建合并提交。'
+      : '将改写当前分支历史；已推送的提交可能需要带租约强制推送。',
+    detail: `当前分支：${branch}\n目标：${targetLabel}`,
+    confirmLabel: kind === 'merge' ? '开始合并' : '开始变基',
+    cancelLabel: t.value.common.cancel,
+    primaryDisabled: true,
+    integrationCheck: { state: 'checking', message: '正在检查仓库…' },
+    onConfirm: async () => {
+      if (!plan || context.value?.contextKey !== contextKey) return;
+      const confirmedPlan = plan;
+      const result = await runAction(`integrate:${kind}`, () =>
+        store.integrateGitCommit(props.projectId, confirmedPlan, repositoryTarget),
+      );
+      if (result?.ok) clearCommitSelection();
+    },
+  });
+  const dialog = confirmationDialog.value!;
+  const isCurrent = () => confirmationDialog.value === dialog && context.value?.contextKey === contextKey;
+  await waitForVisualFeedback();
+  if (!isCurrent()) return;
+  try {
+    const preview = await store.prepareGitIntegration(props.projectId, kind, targetRef, targetLabel, repositoryTarget);
+    if (!isCurrent()) return;
+    if (!preview?.ok || !preview.plan) {
+      dialog.integrationCheck = { state: 'unknown', message: preview?.message || '当前仓库不可用。' };
+      return;
+    }
+    plan = preview.plan;
+    dialog.detail = `当前分支：${plan.branch}\n目标：${plan.targetLabel}\n目标提交：${shortCommitHash(plan.targetHash)}`;
+    if (kind === 'rebase' && plan.hasMergeCommits) {
+      dialog.message += '\n合并结构将展开，冲突可能需重新解决。';
+    }
+    dialog.primaryDisabled = false;
+    dialog.integrationCheck = { state: 'checking', message: '正在预测冲突…' };
+    const prediction = await store.predictGitIntegrationConflicts(props.projectId, plan, repositoryTarget);
+    if (isCurrent()) {
+      dialog.integrationCheck = prediction || { state: 'unknown', message: '当前仓库不可用，无法预测冲突。' };
+    }
+  } catch (error) {
+    if (isCurrent()) {
+      dialog.integrationCheck = { state: 'unknown', message: error instanceof Error ? error.message : 'Git 检查失败。' };
+    }
+  }
+};
+const integrationMenuItems = (
+  targetRef: string,
+  targetLabel: string,
+  kinds: ProjectGitIntegrationKind[] = ['merge', 'rebase'],
+  isBranch = false,
+): UiContextMenuItem[] =>
+  kinds.map((kind) => ({
+    type: 'item',
+    key: `integrate:${kind}`,
+    label: kind === 'merge'
+      ? isBranch ? `合并 ${targetLabel} 到当前分支` : '合并此提交到当前分支'
+      : '将当前分支变基到此提交',
+    icon: kind === 'merge' ? GitMerge : GitPullRequestArrow,
+    disabled: isInteractionDisabled.value || Boolean(integrationUnavailableReason.value),
+    title: integrationUnavailableReason.value || (kind === 'merge' ? `保留分支历史并合并 ${targetLabel}` : `将当前分支提交重放到 ${targetLabel}`),
+    onSelect: () => requestIntegration(kind, targetRef, targetLabel),
+  }));
 const requestStartAmend = () => {
   if (isInteractionDisabled.value || props.amendModeActive) return;
   closeMoreMenu(false);
@@ -1731,6 +1819,11 @@ const commitContextMenuItems = computed<UiContextMenuItem[]>(() => {
   const state = commitContextMenu.value;
   if (!state) return [];
   const commit = state.commit;
+  const branches = commitBranchRefs(commit);
+  const targetBranch = branches.find((branch) => branch.kind === 'local')
+    || branches.find((branch) => !/\/HEAD$/i.test(branch.name));
+  const integrationTargetLabel = targetBranch?.name
+    || `${shortCommitHash(commit.hash)} · ${commit.message || '（无标题）'}`;
   const items: UiContextMenuItem[] = [
     {
       type: 'item',
@@ -1776,6 +1869,9 @@ const commitContextMenuItems = computed<UiContextMenuItem[]>(() => {
       onSelect: () => checkoutCommit(commit),
     },
   ];
+  if (!isGitStashCommit(commit)) {
+    items.splice(3, 0, ...integrationMenuItems(commit.hash, integrationTargetLabel));
+  }
   if (commitStashRef(commit)) {
     items.push(
       { type: 'separator' },
@@ -1806,7 +1902,6 @@ const commitContextMenuItems = computed<UiContextMenuItem[]>(() => {
       },
     );
   }
-  const branches = commitBranchRefs(commit);
   const tags = commitTagRefs(commit);
   if (branches.length || tags.length) items.push({ type: 'separator' });
   for (const branch of branches) {
@@ -1853,6 +1948,17 @@ const branchSubmenuItems = (branch: CommitBranchRef): UiContextMenuItem[] => {
       onSelect: () => (branch.kind === 'local' ? checkoutLocalBranch(branch.name) : checkoutRemoteBranch(branch.name)),
     },
   ];
+  if (!branch.current) {
+    items.push(
+      { type: 'separator' },
+      ...integrationMenuItems(
+        `refs/${branch.kind === 'local' ? 'heads' : 'remotes'}/${branch.name}`,
+        branch.name,
+        ['merge'],
+        true,
+      ),
+    );
+  }
   if (branch.kind === 'local') {
     items.push(
       { type: 'separator' },
@@ -2893,8 +2999,25 @@ onBeforeUnmount(() => {
     :primary-label="confirmationDialog?.confirmLabel || ''"
     :cancel-label="confirmationDialog?.cancelLabel"
     :busy="confirmationBusy"
+    :primary-disabled="confirmationDialog?.primaryDisabled"
     busy-label="处理中"
     @cancel="confirmationDialog = null"
     @primary="confirmAction"
-  />
+  >
+    <div
+      v-if="confirmationDialog?.integrationCheck"
+      role="status"
+      aria-live="polite"
+      :aria-busy="confirmationDialog.integrationCheck.state === 'checking'"
+      :class="cn(
+        'flex min-h-8 items-start gap-2 text-xs leading-5',
+        confirmationDialog.integrationCheck.state === 'clean' ? 'text-status-running' : 'text-on-surface-variant',
+        confirmationDialog.integrationCheck.state === 'conflicts' && 'text-status-warning',
+      )"
+    >
+      <LoaderCircle v-if="confirmationDialog.integrationCheck.state === 'checking'" :size="14" class="mt-0.5 shrink-0 animate-spin" />
+      <Check v-else-if="confirmationDialog.integrationCheck.state === 'clean'" :size="14" class="mt-0.5 shrink-0" />
+      <span class="min-w-0 break-words">{{ confirmationDialog.integrationCheck.message }}</span>
+    </div>
+  </ActionDialog>
 </template>

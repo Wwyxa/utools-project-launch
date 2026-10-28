@@ -143,6 +143,11 @@ Service enable/disable barriers and failure ownership are specified once in
   branch with no existing operation. A failed status probe is not a clean tree.
   Abort only the matching operation whose ref equals the requested target; never
   reset/clean or abort an unrelated operation. Preserve original/recovery errors.
+- Merge/rebase confirmations open before async preparation; conflict predictions
+  are advisory and must not update refs, HEAD, index, or worktree. Execute only a
+  revalidated `ProjectGitIntegrationPlan`. Preserve `rebaseInProgress` across
+  snapshot refreshes; staging must refresh `canContinue`. Resume via rebase
+  controls, never ordinary commit or automatic abort. See `validate:git-integration`.
 - Serialize writes by repository context through refresh, reauthorize queued
   targets, and fully refresh refs/state after failed history mutations.
 

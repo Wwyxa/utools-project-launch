@@ -68,9 +68,13 @@ import type {
   ProjectGitActivityOptions,
   ProjectGitActivityReport,
   ProjectGitCommitMessageDiffResult,
+  ProjectGitConflictPrediction,
   ProjectGitFileChange,
   ProjectGitFileDiffOptions,
   ProjectGitFileDiffResult,
+  ProjectGitIntegrationKind,
+  ProjectGitIntegrationPlan,
+  ProjectGitIntegrationPreview,
   ProjectGitMergeResult,
   ProjectGitPushOptions,
   ProjectGitReadFailure,
@@ -634,6 +638,12 @@ export interface AppActions {
   ): Promise<ProjectGitActionResult | null>;
   mergeGitBaseBranch(projectId: string, target?: ProjectGitRepositoryTarget): Promise<ProjectGitMergeResult | null>;
   abortGitMerge(projectId: string, target?: ProjectGitRepositoryTarget): Promise<ProjectGitActionResult | null>;
+  prepareGitIntegration(projectId: string, kind: ProjectGitIntegrationKind, targetRef: string, targetLabel: string, target?: ProjectGitRepositoryTarget): Promise<ProjectGitIntegrationPreview | null>;
+  predictGitIntegrationConflicts(projectId: string, plan: ProjectGitIntegrationPlan, target?: ProjectGitRepositoryTarget): Promise<ProjectGitConflictPrediction | null>;
+  integrateGitCommit(projectId: string, plan: ProjectGitIntegrationPlan, target?: ProjectGitRepositoryTarget): Promise<ProjectGitActionResult | null>;
+  continueGitRebase(projectId: string, target?: ProjectGitRepositoryTarget): Promise<ProjectGitActionResult | null>;
+  skipGitRebase(projectId: string, target?: ProjectGitRepositoryTarget): Promise<ProjectGitActionResult | null>;
+  abortGitRebase(projectId: string, target?: ProjectGitRepositoryTarget): Promise<ProjectGitActionResult | null>;
   publishGitBranch(
     projectId: string,
     remoteName: string,

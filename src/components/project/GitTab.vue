@@ -310,16 +310,18 @@ const openGithubPrDialog = () => {
   if (!canCreateGithubPullRequest.value) return;
   isPrDialogOpen.value = true;
 };
-const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWriteRunning.value);
+const canRunRemoteOperation = computed(() => hasUpstream.value && !isAnyGitWriteRunning.value && !snapshot.value?.rebaseInProgress);
 const baseBranch = computed(() => snapshot.value?.base || null);
 const canMergeBaseBranch = computed(
   () =>
     Boolean(baseBranch.value) &&
     baseBranch.value?.ref !== snapshot.value?.upstream?.ref &&
     !isAnyGitWriteRunning.value &&
+    !snapshot.value?.rebaseInProgress &&
     !snapshot.value?.mergeInProgress,
 );
 const mergeBaseBranchTitle = computed(() => {
+  if (snapshot.value?.rebaseInProgress) return "请先完成或中止当前变基";
   if (!snapshot.value?.repositoryPath) return "未检测到 Git 仓库，无法合并基点分支";
   if (!baseBranch.value) return "未识别到当前分支的基点分支，无法合并";
   if (baseBranch.value.ref === snapshot.value?.upstream?.ref) {
@@ -1030,7 +1032,61 @@ const activeMergeConflict = computed(() =>
     : null,
 );
 const mergeBannerVisible = computed(() => Boolean(snapshot.value?.mergeInProgress) || Boolean(activeMergeConflict.value));
-const mergeBannerFiles = computed(() => activeMergeConflict.value?.files || []);
+const mergeBannerFiles = computed(() => files.value.filter((file) => file.conflicted).map((file) => file.path));
+const rebaseState = computed(() => snapshot.value?.rebaseInProgress);
+const rebaseBannerText = computed(() => {
+  const state = rebaseState.value;
+  if (!state) return "";
+  const progress = state.step && state.total ? ` · ${state.step}/${state.total}` : "";
+  const commit = state.stoppedCommit ? ` · 提交 ${state.stoppedCommit.slice(0, 7)}` : "";
+  return `${state.branch} 正在变基到 ${state.onto.slice(0, 7)}${progress}${commit}`;
+});
+const rebaseContinueTitle = computed(() => {
+  if (rebaseState.value?.interactive) return "外部交互式变基请在 Git 工具中继续";
+  if (!rebaseState.value?.canContinue) return "请先解决并暂存所有冲突";
+  return "继续重放后续提交";
+});
+const executeRebaseControl = async (action: "continue" | "skip" | "abort") => {
+  if (isAnyGitWriteRunning.value || !rebaseState.value) return;
+  const label = action === "continue" ? "继续变基" : action === "skip" ? "跳过当前提交" : "中止变基";
+  activeGitAction.value = `rebase:${action}`;
+  setGitActionResult("loading", `正在${label}...`);
+  await waitForVisualFeedback();
+  try {
+    const result = action === "continue"
+      ? await store.continueGitRebase(props.project.id, activeRepositoryTarget.value)
+      : action === "skip"
+        ? await store.skipGitRebase(props.project.id, activeRepositoryTarget.value)
+        : await store.abortGitRebase(props.project.id, activeRepositoryTarget.value);
+    setGitActionResult(result?.ok ? "success" : "error", result?.message || "当前仓库不可用。");
+    if (result?.ok) clearCommitSelection();
+  } catch (error) {
+    setGitActionResult("error", error instanceof Error ? error.message : `${label}失败。`);
+  } finally {
+    activeGitAction.value = "";
+  }
+};
+const requestRebaseControl = (action: "skip" | "abort") => {
+  if (isAnyGitWriteRunning.value || !rebaseState.value) return;
+  const contextKey = activeRepositoryContext.value?.contextKey;
+  const stoppedCommit = rebaseState.value.stoppedCommit;
+  confirmationDialog.value = {
+    kind: "warning",
+    title: action === "skip" ? "跳过当前提交" : "中止变基",
+    message: action === "skip"
+      ? "将丢弃当前提交在本次变基中的改动及其冲突解决结果，并继续处理后续提交。"
+      : "将撤回本次变基及期间的冲突解决修改，恢复到变基开始前的分支状态。",
+    confirmLabel: action === "skip" ? "跳过此提交" : "中止变基",
+    cancelLabel: t.value.common.cancel,
+    onConfirm: async () => {
+      if (contextKey !== activeRepositoryContext.value?.contextKey || stoppedCommit !== rebaseState.value?.stoppedCommit) {
+        setGitActionResult("warning", "仓库或当前提交已变化，请重新确认。");
+        return;
+      }
+      await executeRebaseControl(action);
+    },
+  };
+};
 
 watch(
   () => snapshot.value?.mergeInProgress,
@@ -2446,11 +2502,12 @@ watch(
       </div>
 
       <div
-        v-if="mergeBannerVisible"
+        v-if="mergeBannerVisible || rebaseState"
         class="flex flex-wrap items-center gap-1.5 border-t border-status-warning/30 bg-status-warning/10 px-2.5 py-1.5 text-[11px] font-semibold text-status-warning"
       >
         <GitMerge :size="12" class="shrink-0" aria-hidden="true" />
-        <span class="min-w-0 shrink-0">合并进行中，请解决冲突后提交，或放弃合并。</span>
+        <span class="min-w-0 break-words">{{ rebaseState ? rebaseBannerText : "合并进行中，请解决冲突后提交，或放弃合并。" }}</span>
+        <span v-if="rebaseState?.interactive" class="min-w-0">请在外部 Git 工具中继续交互式变基，或在此中止。</span>
         <span
           v-for="file in mergeBannerFiles.slice(0, 4)"
           :key="file"
@@ -2473,12 +2530,32 @@ watch(
             @launch="resolveMergeConflictInEditor"
           />
           <button
+            v-if="rebaseState"
+            type="button"
+            class="ui-btn ui-btn--warning-ghost ui-btn--sm"
+            :disabled="isAnyGitWriteRunning || !rebaseState.canContinue"
+            :title="rebaseContinueTitle"
+            @click="executeRebaseControl('continue')"
+          >
+            继续变基
+          </button>
+          <button
+            v-if="rebaseState"
+            type="button"
+            class="ui-btn ui-btn--warning-ghost ui-btn--sm"
+            :disabled="isAnyGitWriteRunning || rebaseState.interactive"
+            :title="rebaseState.interactive ? '请在外部 Git 工具中跳过' : '舍弃当前提交并继续变基'"
+            @click="requestRebaseControl('skip')"
+          >
+            跳过此提交
+          </button>
+          <button
             type="button"
             class="ui-btn ui-btn--warning-ghost ui-btn--sm"
             :disabled="isAnyGitWriteRunning"
-            @click="executeAbortGitMerge"
+            @click="rebaseState ? requestRebaseControl('abort') : executeAbortGitMerge()"
           >
-            放弃合并
+            {{ rebaseState ? "中止变基" : "放弃合并" }}
           </button>
         </div>
       </div>
