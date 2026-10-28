@@ -730,7 +730,6 @@ watch(
           class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-container-low text-xs leading-5 text-on-surface-variant"
         >
           <div
-            v-overlay-scrollbar
             :class="['ai-result-panel min-h-0 flex-1 overflow-auto p-3', aiDialogHasVersions && 'pb-16']"
             :aria-busy="isAiDialogGenerating"
           >

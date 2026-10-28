@@ -113,14 +113,25 @@ desktop apps opened by scripts; GUI classification is a heuristic, not ownership
 Stop selected members with handle-based Job membership checks, not the whole Job.
 Use a completion port plus member queries. The service owns the Job
 and refuses shutdown with active runs (`409 active_runs`); do not add cross-restart
-Job recovery or helper processes. Exit status represents the root only. Keep
+Job recovery or persistent helper processes. Exit status represents the root only. Keep
 stdout/stderr decoding stateful across chunks, drain output after the process group
 ends, and own stdin pipes until then. Preserve quotes in the raw `cmd /d /s /c`
 command line. Other platforms retain root-process lifecycle semantics.
 
+Windows service commands use a hidden console. Stop reuses the service executable
+to send Ctrl+C only to a console whose members have validated script identities;
+no PowerShell or additional executable is required. Allow 3.5 seconds for exit,
+then log and force remaining Job members; force directly if no safe signal is
+possible. Ignore exited Job members. The preload stop timeout is 15 seconds.
+Direct Windows execution uses `taskkill /PID <pid> /T /F` without PowerShell or a
+grace period; without Job ownership it cannot guarantee tracking orphaned children.
+Unix owners retain SIGTERM, 3.5-second grace and SIGKILL. Manual stop stays stopped,
+regardless of exit code. Never infer completion from a retained daemon's name.
+
 Regression coverage must include sync wake/cancellation and old-service fallback;
 notification serialization, timeout and queue bounds; ignored durable history;
-and Windows child lifetime, redirected output, stdin, group stop, and shutdown
+and Windows child lifetime, redirected output, stdin, graceful cleanup, ignored
+signals with forced fallback, GUI-child preservation, group stop, and shutdown
 rejection. Real OS notification visibility requires host validation.
 
 ## Verification

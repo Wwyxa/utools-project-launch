@@ -1624,6 +1624,7 @@ async function stopProjectLaunchServiceRun(runId) {
     'POST',
     `/v1/runs/${encodeURIComponent(runId)}/stop`,
     {},
+    { timeoutMs: 15000 },
   );
   if (response.statusCode !== 202 && response.statusCode !== 200) {
     throw projectLaunchServiceResponseError(response, '项目启动服务停止脚本失败。');

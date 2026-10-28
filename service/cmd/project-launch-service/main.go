@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"project-launch-service/internal/process"
 	"project-launch-service/internal/service"
 )
 
@@ -36,6 +37,13 @@ func serviceVersion() string {
 }
 
 func main() {
+	if handled, err := process.RunConsoleStopHelper(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	var stateDir string
 	var runtimeDir string
 	flag.StringVar(&stateDir, "state-dir", "", "directory for Project Launch Service state")

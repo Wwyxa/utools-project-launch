@@ -222,29 +222,10 @@ function getAutomationProcessResult(projectId, scriptId, automationRunId) {
 }
 
 function stopWindowsProcessTree(pid) {
-  const script = [
-    "$root = [int]$env:UTOOLS_STOP_PID",
-    "$seen = New-Object 'System.Collections.Generic.HashSet[int]'",
-    "$queue = New-Object 'System.Collections.Generic.Queue[int]'",
-    "$queue.Enqueue($root) | Out-Null",
-    "while ($queue.Count -gt 0) {",
-    "  $current = $queue.Dequeue()",
-    '  Get-CimInstance Win32_Process -Filter "ParentProcessId = $current" | ForEach-Object {',
-    "    $processId = [int]$_.ProcessId",
-    "    if ($seen.Add($processId)) {",
-    "      $queue.Enqueue($processId) | Out-Null",
-    "    }",
-    "  }",
-    "}",
-    "$seen | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }",
-    "Stop-Process -Id $root -Force -ErrorAction SilentlyContinue",
-  ].join("\n");
-
   return new Promise((resolve) => {
     let killer;
     try {
-      killer = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-        env: { ...process.env, UTOOLS_STOP_PID: String(pid) },
+      killer = spawn(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], {
         stdio: "ignore",
         windowsHide: true,
       });

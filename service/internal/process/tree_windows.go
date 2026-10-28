@@ -8,16 +8,19 @@ import (
 	"fmt"
 	"os/exec"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
 const createNoWindow = 0x08000000
+const createNewConsole = 0x00000010
+const processStopGracePeriod = 3500 * time.Millisecond
 
 var queryFullProcessImageName = syscall.NewLazyDLL("kernel32.dll").NewProc("QueryFullProcessImageNameW")
 
 func configureCommandProcess(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | createNoWindow,
+		CreationFlags: createNewConsole,
 		HideWindow:    true,
 		CmdLine:       syscall.EscapeArg(command.Path) + ` /d /s /c "` + command.Args[len(command.Args)-1] + `"`,
 	}
@@ -36,7 +39,25 @@ func terminateProcessTree(pid int) error {
 	if err != nil {
 		return err
 	}
+	if requestWindowsConsoleStop(processIDs) {
+		waitForWindowsProcesses(processIDs)
+	}
 	return terminateWindowsProcessIDs(processIDs, 0)
+}
+
+func waitForWindowsProcesses(processIDs []int) {
+	deadline := time.Now().Add(processStopGracePeriod)
+	for _, pid := range processIDs {
+		handle, err := syscall.OpenProcess(syscall.SYNCHRONIZE, false, uint32(pid))
+		if err != nil {
+			continue
+		}
+		remaining := time.Until(deadline)
+		if remaining > 0 {
+			_, _ = syscall.WaitForSingleObject(handle, uint32(remaining.Milliseconds()))
+		}
+		_ = syscall.CloseHandle(handle)
+	}
 }
 
 func terminateWindowsProcessIDs(processIDs []int, job syscall.Handle) error {

@@ -71,7 +71,7 @@ type managedProcess struct {
 
 type processGroup interface {
 	wait() error
-	stop() error
+	stop(onForce func()) error
 	close()
 }
 
@@ -141,7 +141,7 @@ func (supervisor *Supervisor) Start(request StartRequest) (state.Run, bool, erro
 		_ = stdin.Close()
 		_ = stdout.Close()
 		_ = stderr.Close()
-		_ = supervisor.stopProcess(group, pid)
+		_ = supervisor.stopProcess(group, pid, nil)
 		_ = command.Wait()
 		if group != nil {
 			group.close()
@@ -157,7 +157,7 @@ func (supervisor *Supervisor) Start(request StartRequest) (state.Run, bool, erro
 		_ = stdin.Close()
 		_ = stdout.Close()
 		_ = stderr.Close()
-		_ = supervisor.stopProcess(group, pid)
+		_ = supervisor.stopProcess(group, pid, nil)
 		_ = command.Wait()
 		if group != nil {
 			group.close()
@@ -252,7 +252,9 @@ func (supervisor *Supervisor) StopWithOptions(runID string, options StopOptions)
 	if !run.Status.IsActive() {
 		return run, nil
 	}
-	if err := supervisor.stopProcess(managed.group, run.PID); err != nil {
+	if err := supervisor.stopProcess(managed.group, run.PID, func() {
+		supervisor.appendEvent(run, "stderr", state.Event{PID: run.PID, Message: "[process] Graceful stop did not complete; forcing remaining processes to stop.\n"})
+	}); err != nil {
 		return run, fmt.Errorf("stop process tree: %w", err)
 	}
 
@@ -614,9 +616,9 @@ func (supervisor *Supervisor) managedIdentityMatches(run state.Run, managed *man
 	return supervisor.identityMatches(run.PID, run.ProcessIdentity)
 }
 
-func (supervisor *Supervisor) stopProcess(group processGroup, pid int) error {
+func (supervisor *Supervisor) stopProcess(group processGroup, pid int, onForce func()) error {
 	if group != nil {
-		return group.stop()
+		return group.stop(onForce)
 	}
 	return supervisor.terminateTree(pid)
 }

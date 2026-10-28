@@ -5,6 +5,7 @@ package process
 import (
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -13,6 +14,95 @@ import (
 
 	"project-launch-service/internal/state"
 )
+
+func TestMain(tests *testing.M) {
+	if handled, err := RunConsoleStopHelper(os.Args[1:]); handled {
+		if err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	os.Exit(tests.Run())
+}
+
+func TestSupervisorWindowsGracefulStop(t *testing.T) {
+	if os.Getenv("PROJECT_LAUNCH_SIGNAL_HELPER") == "1" {
+		interrupted := make(chan os.Signal, 1)
+		signal.Notify(interrupted, os.Interrupt)
+		if err := os.WriteFile(os.Getenv("PROJECT_LAUNCH_SIGNAL_READY"), nil, 0600); err != nil {
+			os.Exit(2)
+		}
+		select {
+		case <-interrupted:
+			if os.Getenv("PROJECT_LAUNCH_SIGNAL_IGNORE") != "1" {
+				if err := os.WriteFile(os.Getenv("PROJECT_LAUNCH_SIGNAL_CLEAN"), []byte("clean"), 0600); err != nil {
+					os.Exit(3)
+				}
+				return
+			}
+		case <-time.After(20 * time.Second):
+			return
+		}
+		<-time.After(20 * time.Second)
+		return
+	}
+	for _, ignore := range []bool{false, true} {
+		t.Run(strconv.FormatBool(ignore), func(t *testing.T) {
+			store := openStore(t)
+			supervisor, err := NewSupervisor(store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			directory := t.TempDir()
+			request := testStartRequest(t, `"`+executable+`" -test.run=^TestSupervisorWindowsGracefulStop$`)
+			request.Env["PROJECT_LAUNCH_SIGNAL_HELPER"] = "1"
+			request.Env["PROJECT_LAUNCH_SIGNAL_READY"] = filepath.Join(directory, "ready")
+			request.Env["PROJECT_LAUNCH_SIGNAL_CLEAN"] = filepath.Join(directory, "clean")
+			if ignore {
+				request.Env["PROJECT_LAUNCH_SIGNAL_IGNORE"] = "1"
+			}
+			run, _, err := supervisor.Start(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _, _ = supervisor.Stop(run.ID) })
+			deadline := time.After(5 * time.Second)
+			ticker := time.NewTicker(20 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				if _, err := os.Stat(request.Env["PROJECT_LAUNCH_SIGNAL_READY"]); err == nil {
+					break
+				}
+				select {
+				case <-deadline:
+					t.Fatal("signal helper did not become ready")
+				case <-ticker.C:
+				}
+			}
+			started := time.Now()
+			if _, err := supervisor.Stop(run.ID); err != nil {
+				t.Fatal(err)
+			}
+			waitForRunStatus(t, store, run.ID, state.RunStatusStopped)
+			contents, cleanErr := os.ReadFile(request.Env["PROJECT_LAUNCH_SIGNAL_CLEAN"])
+			if ignore {
+				if time.Since(started) < processStopGracePeriod || !os.IsNotExist(cleanErr) {
+					t.Fatalf("unresponsive process was not escalated after grace period: %v", cleanErr)
+				}
+			} else if cleanErr != nil || string(contents) != "clean" {
+				t.Fatalf("graceful stop did not execute cleanup: %q, %v", contents, cleanErr)
+			}
+			events := store.EventsAfter(0).Events
+			if hasEvent(events, run.ID, "stderr", "forcing remaining processes") != ignore {
+				t.Fatalf("forced stop diagnostic mismatch: %#v", events)
+			}
+		})
+	}
+}
 
 func TestSupervisorWindowsPreservesGUIChildren(t *testing.T) {
 	if os.Getenv("PROJECT_LAUNCH_GUI_LAUNCHER") == "1" {

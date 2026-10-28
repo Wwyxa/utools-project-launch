@@ -4,7 +4,6 @@ package process
 
 import (
 	"os"
-	"syscall"
 	"testing"
 )
 
@@ -28,7 +27,7 @@ func TestNewCommandIsolatesWindowsConsole(t *testing.T) {
 	if !command.SysProcAttr.HideWindow {
 		t.Fatal("Windows service command must hide its console window")
 	}
-	requiredFlags := uint32(syscall.CREATE_NEW_PROCESS_GROUP | createNoWindow)
+	requiredFlags := uint32(createNewConsole)
 	if command.SysProcAttr.CreationFlags&requiredFlags != requiredFlags {
 		t.Fatalf("creation flags = %#x, want %#x", command.SysProcAttr.CreationFlags, requiredFlags)
 	}

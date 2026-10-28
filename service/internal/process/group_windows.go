@@ -76,7 +76,7 @@ func startProcessGroup(command *exec.Cmd) (processGroup, error) {
 		err = resumeCommandProcess(command.Process.Pid)
 	}
 	if err != nil {
-		_ = group.stop()
+		_ = group.stop(nil)
 		_ = command.Process.Kill()
 		_ = command.Wait()
 		group.close()
@@ -156,7 +156,9 @@ func (group *windowsProcessGroup) scriptProcessPIDs() ([]int, error) {
 		identifiers := unsafe.Slice((*uintptr)(unsafe.Add(unsafe.Pointer(&buffer[0]), 8)), int(counts[1]))
 		processIDs := make([]int, 0, len(identifiers))
 		for _, pid := range identifiers {
-			processIDs = append(processIDs, int(pid))
+			if processExists(int(pid)) {
+				processIDs = append(processIDs, int(pid))
+			}
 		}
 		return windowsScriptProcessPIDs(processIDs, group.rootPID, group.guiExecutables)
 	}
@@ -191,11 +193,18 @@ func (group *windowsProcessGroup) wait() error {
 	}
 }
 
-func (group *windowsProcessGroup) stop() error {
+func (group *windowsProcessGroup) stop(onForce func()) error {
 	group.mutex.Lock()
 	defer group.mutex.Unlock()
 	if group.handle == 0 {
 		return errors.New("run job is closed")
+	}
+	processIDs, err := group.scriptProcessPIDs()
+	if err != nil {
+		return err
+	}
+	if requestWindowsConsoleStop(processIDs) {
+		waitForWindowsProcesses(processIDs)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -205,6 +214,10 @@ func (group *windowsProcessGroup) stop() error {
 		}
 		if time.Now().After(deadline) {
 			return errors.New("timed out stopping script job members")
+		}
+		if onForce != nil {
+			onForce()
+			onForce = nil
 		}
 		if err := terminateWindowsProcessIDs(processIDs, group.handle); err != nil {
 			return err
