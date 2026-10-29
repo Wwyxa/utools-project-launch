@@ -125,7 +125,7 @@ async function readGitIntegrationHead(repositoryPath) {
 }
 
 async function readGitIntegrationOperationState(repositoryPath) {
-  const refs = ['CHERRY_PICK_HEAD', 'REVERT_HEAD', 'MERGE_HEAD', 'REBASE_HEAD'];
+  const refs = ['CHERRY_PICK_HEAD', 'REVERT_HEAD', 'MERGE_HEAD'];
   const names = [...refs, 'rebase-apply', 'rebase-merge', 'sequencer', 'BISECT_LOG', 'index.lock'];
   const [result, ...resolvedRefs] = await Promise.all([
     runGitIntegrationCommand(repositoryPath, ['rev-parse', ...names.flatMap((name) => ['--git-path', name])]),

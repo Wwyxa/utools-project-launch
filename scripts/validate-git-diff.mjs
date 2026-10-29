@@ -191,8 +191,12 @@ try {
   fs.writeFileSync(path.join(projectRoot, "hidden-untracked.txt"), "untracked\n");
   assert.equal((await bridge.mergeGitBaseBranch(projectRoot)).blockReason, "dirty-worktree");
   fs.unlinkSync(path.join(projectRoot, "hidden-untracked.txt"));
+  fs.writeFileSync(
+    path.resolve(projectRoot, runGit("rev-parse", "--git-path", "REBASE_HEAD").trim()),
+    `${divergeHash}\n`,
+  );
   const fastForward = await bridge.mergeGitBaseBranch(projectRoot);
-  assert.equal(fastForward.ok, true);
+  assert.equal(fastForward.ok, true, fastForward.message);
   assert.match(fastForward.message, /已快进合并/);
   assert.equal(runGit("rev-parse", "HEAD").trim(), runGit("rev-parse", `origin/${baseBranchName}`).trim());
 

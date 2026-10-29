@@ -101,6 +101,15 @@ try {
   const gitVersion = /git version (\d+)\.(\d+)/.exec(git(fastForward, "--version"));
   assert.ok(gitVersion, "unable to determine Git version for real prediction tests");
   const supports = (minor) => Number(gitVersion[1]) > 2 || (Number(gitVersion[1]) === 2 && Number(gitVersion[2]) >= minor);
+  const residualRebaseHead = path.resolve(fastForward, git(fastForward, "rev-parse", "--git-path", "REBASE_HEAD"));
+  const residualRebaseHash = git(fastForward, "rev-parse", "HEAD");
+  fs.writeFileSync(residualRebaseHead, `${residualRebaseHash}\n`);
+  const residualSnapshot = repositorySnapshot(fastForward);
+  for (const kind of ["merge", "rebase"]) {
+    await preview(fastForward, kind);
+    assert.deepEqual(repositorySnapshot(fastForward), residualSnapshot);
+    assert.equal(fs.readFileSync(residualRebaseHead, "utf8"), `${residualRebaseHash}\n`);
+  }
   const fastForwardPlan = await preview(fastForward, "merge");
   const fastForwardSnapshot = repositorySnapshot(fastForward);
   assert.equal((await bridge.predictGitIntegrationConflicts(fastForward, fastForwardPlan)).state, supports(38) ? "clean" : "unsupported");
@@ -129,12 +138,14 @@ try {
   git(dirty, "switch", "--detach", "HEAD");
   assert.equal((await bridge.prepareGitIntegration(dirty, "merge", "refs/heads/target", "target")).ok, false);
   git(dirty, "switch", "main");
-  for (const stateName of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD", "rebase-merge", "rebase-apply", "sequencer", "BISECT_LOG", "index.lock"]) {
+  for (const stateName of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "BISECT_LOG", "index.lock"]) {
     const statePath = path.resolve(dirty, git(dirty, "rev-parse", "--git-path", stateName));
     fs.writeFileSync(statePath, "in progress");
-    const blocked = await bridge.prepareGitIntegration(dirty, "merge", "refs/heads/target", "target");
-    assert.equal(blocked.ok, false, stateName);
-    assert.match(blocked.message, /未完成/, stateName);
+    for (const kind of ["merge", "rebase"]) {
+      const blocked = await bridge.prepareGitIntegration(dirty, kind, "refs/heads/target", "target");
+      assert.equal(blocked.ok, false, `${kind}: ${stateName}`);
+      assert.match(blocked.message, /未完成/, `${kind}: ${stateName}`);
+    }
     fs.unlinkSync(statePath);
   }
   git(dirty, "branch", "CHERRY_PICK_HEAD");
@@ -215,6 +226,7 @@ try {
   git(rebase, "switch", "feature");
   for (const key of ["rebase.autoStash", "rebase.autoSquash", "rebase.updateRefs", "rebase.rebaseMerges"]) git(rebase, "config", key, "true");
   git(rebase, "config", "replay.refAction", "update");
+  fs.writeFileSync(path.resolve(rebase, git(rebase, "rev-parse", "--git-path", "REBASE_HEAD")), `${oldFeature}\n`);
   const rebasePlan = await preview(rebase, "rebase");
   const hostileEnvironment = simulatedBridge(() => null);
   hostileEnvironment.isolated.process.env.GIT_REPLAY_UPDATE_REFS = "1";

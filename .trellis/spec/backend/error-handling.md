@@ -48,6 +48,9 @@ the full environment.
 - Remote Git processes are asynchronous, time-limited, and noninteractive.
   Refresh after partial or failed mutations because Git may already have changed
   local refs or worktree state.
+- Git operation guards must allow an isolated `REBASE_HEAD`, which can remain
+  after a rebase; active `rebase-merge` / `rebase-apply` directories still block.
+  Preflight checks must not delete residual metadata.
 
 ## Optional Service
 

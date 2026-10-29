@@ -3702,7 +3702,7 @@ function gitHistoryActionInProgressMessage(repositoryPath, action) {
     return `仓库已有未完成的 ${matchingLabel} 操作，请先使用专业 Git 工具处理。`;
   }
 
-  const otherRefs = ['CHERRY_PICK_HEAD', 'REVERT_HEAD', 'MERGE_HEAD', 'REBASE_HEAD'].filter(
+  const otherRefs = ['CHERRY_PICK_HEAD', 'REVERT_HEAD', 'MERGE_HEAD'].filter(
     (refName) => refName !== matchingRef,
   );
   if (
