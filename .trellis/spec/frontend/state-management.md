@@ -176,8 +176,6 @@ Service enable/disable barriers and failure ownership are specified once in
 
 ## Verification Entry Points
 
-Use existing tests by ownership: `projectRuntimeState`, `automationTask`,
-`automationScheduler`, `projectBridge.workspace`, `projectBridge.uiPreferences`,
-`projectBridge.launchers`, `environmentTools`, `useStore.aiStream`, and
-`workActivity` under `tests/`. Native regression scripts are listed in
-`package.json`; choose the script matching the touched boundary.
+Use existing suites in `tests/` for Store behavior and async contracts; native
+validation scripts are listed in `package.json`. Choose checks matching the
+touched boundary. Test selection policy lives in `quality-guidelines.md`.

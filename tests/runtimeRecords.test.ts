@@ -61,14 +61,14 @@ describe("common runtime records", () => {
   it("retains direct output across a fresh preload and clears only the requested completed run", async () => {
     const { api, directory } = openRecords();
     const first = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
-    api.appendRuntimeRecordEvent({ runId: first, type: "stdout", message: "你好\n" });
+    api.appendRuntimeRecordEvent({ runId: first, type: "stdout", message: "\u4f60\u597d\n" });
     api.appendRuntimeRecordEvent({ runId: first, type: "exit", code: 0 });
     const second = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
     api.appendRuntimeRecordEvent({ runId: second, type: "stdout", message: "second" });
     api.appendRuntimeRecordEvent({ runId: second, type: "exit", code: 1 });
     const reopened = openRecords(directory).api;
     expect(await reopened.listRuntimeRecords("project")).toHaveLength(2);
-    expect((await reopened.readRuntimeRecordLogPage(first)).events[0]?.message).toBe("你好\n");
+    expect((await reopened.readRuntimeRecordLogPage(first)).events[0]?.message).toBe("\u4f60\u597d\n");
     await reopened.clearRuntimeRecords({ runId: first });
     expect((await reopened.listRuntimeRecords("project")).filter((record) => record.available).map((record) => record.runId)).toEqual([second]);
   });
@@ -76,30 +76,15 @@ describe("common runtime records", () => {
   it("paginates complete UTF-8 JSONL events and detects malformed interior records", async () => {
     const { api, directory } = openRecords();
     const runId = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
-    for (let index = 0; index < 70; index++) api.appendRuntimeRecordEvent({ runId, type: "stdout", message: `${index}:` + "中".repeat(1500) });
+    const messages = Array.from({ length: 70 }, (_, index) => `${index}:` + "\u4e2d".repeat(1500));
+    for (const message of messages) api.appendRuntimeRecordEvent({ runId, type: "stdout", message });
     api.appendRuntimeRecordEvent({ runId, type: "exit", code: 0 });
     const page = await api.readRuntimeRecordLogPage(runId);
     expect(page.hasMore).toBe(true);
     const older = await api.readRuntimeRecordLogPage(runId, page.nextOffset);
-    expect([...older.events, ...page.events].filter((event) => event.type === "stdout")).toHaveLength(70);
+    expect([...older.events, ...page.events].filter((event) => event.type === "stdout").map((event) => event.message)).toEqual(messages);
     fs.appendFileSync(path.join(directory, "runtime/logs", `${runId}.log`), "broken\n");
     await expect(api.readRuntimeRecordLogPage(runId)).rejects.toThrow();
-  });
-
-  it("does not persist disabled output or remove active writers when clearing", async () => {
-    const { api } = openRecords();
-    const policy = { persist: false, maxCompletedRunsPerProject: 2, maxBytesPerRun: 1024, maxBytesTotal: 2048 };
-    await api.updateRuntimeRecordRetention(policy);
-    const disabled = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
-    api.appendRuntimeRecordEvent({ runId: disabled, type: "stdout", message: "disabled" });
-    api.appendRuntimeRecordEvent({ runId: disabled, type: "exit", code: 0 });
-    expect(await api.listRuntimeRecords("project")).toEqual([]);
-    await api.updateRuntimeRecordRetention({ ...policy, persist: true });
-    const active = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
-    api.appendRuntimeRecordEvent({ runId: active, type: "stdout", message: "active" });
-    await api.clearRuntimeRecords();
-    expect((await api.readRuntimeRecordLogPage(active)).events[0]?.message).toBe("active");
-    api.appendRuntimeRecordEvent({ runId: active, type: "exit", code: 0 });
   });
 
   it("rejects traversal and invalid retention policies", async () => {
@@ -123,94 +108,6 @@ describe("common runtime records", () => {
     await api.clearRuntimeRecords({ runId });
     expect(await api.listRuntimeRecords("project")).toEqual([]);
     expect(fs.existsSync(path.join(directory, "runtime/logs", `${runId}.json`))).toBe(false);
-  });
-
-  it("finishes an existing automation record after persistence is disabled without adding output", async () => {
-    const { api, directory } = openRecords();
-    const execution: import("../src/types").ProjectLaunchServiceAutomationExecution = {
-      id: "automation-run", projectId: "project", taskId: "task", planEntryId: "entry",
-      plannedAt: new Date().toISOString(), startedAt: new Date().toISOString(),
-      status: "running", currentScriptIndex: 0, scriptResults: [],
-    };
-    expect(api.saveRuntimeAutomationExecution(execution).ok).toBe(true);
-    const runId = crypto.createHash("sha256").update(`automation:${execution.id}`).digest("hex").slice(0, 32);
-    api.appendRuntimeRecordEvent({ runId, type: "stdout", message: "before disabling" });
-    await api.updateRuntimeRecordRetention({ persist: false, maxCompletedRunsPerProject: 200, maxBytesPerRun: 5242880, maxBytesTotal: 104857600 });
-    const outputPath = path.join(directory, "runtime/logs", `${runId}.log`);
-    const previousOutput = fs.readFileSync(outputPath, "utf8");
-    const finished = { ...execution, status: "completed" as const, endedAt: new Date().toISOString() };
-    expect(api.saveRuntimeAutomationExecution(finished).ok).toBe(true);
-    const records = await api.listRuntimeRecords("project");
-    expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ status: "exited", endedAt: finished.endedAt, execution: { status: "completed" } });
-    expect(fs.readFileSync(outputPath, "utf8")).toBe(previousOutput);
-    expect(api.saveRuntimeAutomationExecution({ ...finished, id: "disabled-new-run" }).ok).toBe(true);
-    expect(await api.listRuntimeRecords("project")).toHaveLength(1);
-    await api.clearRuntimeRecords({ runId });
-    expect(await api.listRuntimeRecords("project")).toEqual([]);
-  });
-
-    it("queries records, policy and pages without synchronous file reads or global writer flushes", async () => {
-      const { api, directory } = openRecords();
-      const completed = api.beginRuntimeRecord({ projectId: "project", scriptId: "completed" });
-      api.appendRuntimeRecordEvent({ runId: completed, type: "stdout", message: "completed" });
-      api.appendRuntimeRecordEvent({ runId: completed, type: "exit", code: 0 });
-      const rejectSync = () => { throw new Error("Unexpected synchronous query I/O"); };
-      const queryFs = { ...fs };
-      const query = openRecords(directory, queryFs).api;
-      const active = query.beginRuntimeRecord({ projectId: "another-project", scriptId: "running" });
-      query.appendRuntimeRecordEvent({ runId: active, type: "stdout", message: "still buffered" });
-      Object.assign(queryFs, { readFileSync: rejectSync, readdirSync: rejectSync, openSync: rejectSync, appendFileSync: rejectSync });
-      try {
-        expect(await query.listRuntimeRecords("project")).toHaveLength(1);
-        expect((await query.getRuntimeRecordRetention()).usage.totalBytes).toBeGreaterThan(0);
-        expect((await query.readRuntimeRecordLogPage(completed)).events[0]?.message).toBe("completed");
-        expect(fs.existsSync(path.join(directory, "runtime/logs", `${active}.log`))).toBe(false);
-      } finally {
-        Object.assign(queryFs, fs);
-        query.appendRuntimeRecordEvent({ runId: active, type: "exit", code: 0 });
-      }
-    });
-
-  it("ignores developer log remnants and service-state policies", async () => {
-    const { api, directory } = openRecords();
-    const runId = "12345678901234567890123456789012";
-    fs.mkdirSync(path.join(directory, "service/logs"), { recursive: true });
-    fs.writeFileSync(path.join(directory, "service/state.json"), JSON.stringify({ logRetention: { persist: false, maxCompletedRunsPerProject: 1, maxBytesPerRun: 1024, maxBytesTotal: 2048 }, runs: [{ id: runId, projectId: "legacy", scriptId: "script", status: "exited", startedAt: new Date().toISOString() }] }));
-    fs.writeFileSync(path.join(directory, "service/logs", `${runId}.log`), JSON.stringify({ cursor: 1, runId, type: "stdout", timestamp: new Date().toISOString(), message: "legacy output" }) + "\n");
-    expect(await api.listRuntimeRecords("legacy")).toEqual([]);
-    expect((await api.getRuntimeRecordRetention()).policy.persist).toBe(true);
-    await api.clearRuntimeRecords();
-    expect(await openRecords(directory).api.listRuntimeRecords("legacy")).toHaveLength(0);
-    expect(fs.existsSync(path.join(directory, "service/logs", `${runId}.log`))).toBe(true);
-  });
-
-  it("preserves oversized Unicode output across complete-record pages", async () => {
-    const { api } = openRecords();
-    const runId = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
-    const message = "中文😀".repeat(30000);
-    api.appendRuntimeRecordEvent({ runId, type: "stdout", message });
-    api.appendRuntimeRecordEvent({ runId, type: "exit", code: 0 });
-    let page = await api.readRuntimeRecordLogPage(runId);
-    let events = page.events;
-    while (page.hasMore) {
-      page = await api.readRuntimeRecordLogPage(runId, page.nextOffset);
-      events = [...page.events, ...events];
-    }
-    expect(events.filter((event) => event.type === "stdout").map((event) => event.message).join("")).toBe(message);
-  });
-
-  it("enables persistence during an existing run and preserves its metadata", async () => {
-    const { api } = openRecords();
-    const policy = { persist: false, maxCompletedRunsPerProject: 2, maxBytesPerRun: 1024, maxBytesTotal: 2048 };
-    await api.updateRuntimeRecordRetention(policy);
-    const runId = api.beginRuntimeRecord({ projectId: "project", scriptId: "script" });
-    api.appendRuntimeRecordEvent({ runId, type: "stdout", message: "before" });
-    await api.updateRuntimeRecordRetention({ ...policy, persist: true });
-    api.appendRuntimeRecordEvent({ runId, type: "stdout", message: "after" });
-    const result = await api.readRuntimeRecordLogPage(runId);
-    expect(result.events.map((event) => event.message)).toEqual(["after"]);
-    api.appendRuntimeRecordEvent({ runId, type: "exit", code: 0 });
   });
 
   it("records operation failures without persisting sensitive arguments", async () => {

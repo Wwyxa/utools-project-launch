@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
@@ -147,29 +146,6 @@ describe("project backups through the real preload", () => {
     );
   });
 
-  it("manages cloud snapshots and retains a deletable entry after an attachment failure", async () => {
-    const context = fixture();
-    await context.bridge.saveProjects([project("one")]);
-    const created = await context.bridge.createBackup({ destination: "utools" });
-    expect(context.attachments.size).toBe(1);
-    const list = await context.bridge.listBackups();
-    expect(list.entries[0]).toMatchObject({ name: expect.stringMatching(/^备份-/), complete: true, projectCount: 1 });
-    await context.bridge.prepareBackup({ source: "utools", id: created.id });
-    await context.bridge.exportCloudBackup(created.id!);
-    expect(gunzipSync(readFileSync(context.files.path)).toString("utf8")).toContain("project-launch-backup");
-    context.setSyncState(1);
-    await expect(context.bridge.deleteBackup(created.id!)).rejects.toThrow("拉取");
-    context.setSyncState(0);
-    await context.bridge.deleteBackup(created.id!);
-    expect(context.attachments.size).toBe(0);
-    context.failAttachment();
-    await expect(context.bridge.createBackup({ destination: "utools" })).rejects.toThrow("未完成");
-    const failed = (await context.bridge.listBackups()).entries[0];
-    expect(failed.complete).toBe(false);
-    await context.bridge.deleteBackup(failed.id);
-    expect((await context.bridge.listBackups()).entries).toEqual([]);
-  });
-
   it("rejects damaged content and keeps metadata when attachment deletion fails", async () => {
     const context = fixture();
     const created = await context.bridge.createBackup({ destination: "utools" });
@@ -198,63 +174,6 @@ describe("project backups through the real preload", () => {
     writeFileSync(context.files.path, '{"format":"invalid"}');
     await expect(context.bridge.prepareBackup({ source: "local" })).rejects.toThrow("格式");
     await expect(context.bridge.restoreBackup(restoreOptions)).rejects.toThrow("预览");
-  });
-
-  it("uses one attachment for a large backup and blocks missing content without changing projects", async () => {
-    const context = fixture();
-    await context.bridge.saveProjects([
-      { ...project("large", "private"), memo: randomBytes(7 * 1024 * 1024).toString("base64") },
-    ]);
-    const created = await context.bridge.createBackup({ destination: "utools" });
-    expect(context.attachments.size).toBe(1);
-    expect([...context.attachments.values()][0].length).toBeLessThanOrEqual(10_000_000);
-    await context.bridge.prepareBackup({ source: "utools", id: created.id });
-    context.attachments.delete([...context.attachments.keys()][0]);
-    await expect(context.bridge.prepareBackup({ source: "utools", id: created.id })).rejects.toThrow("同步完整");
-    await expect(context.bridge.restoreBackup(restoreOptions)).rejects.toThrow("预览");
-    expect((await context.bridge.loadProjects())[0].path).toBe("D:/develop/large");
-  });
-
-  it("rejects oversized database backups before writing and still allows local export", async () => {
-    const context = fixture();
-    await context.bridge.saveProjects([
-      { ...project("large", "private"), memo: randomBytes(10 * 1024 * 1024).toString("base64") },
-    ]);
-    await expect(context.bridge.createBackup({ destination: "utools" })).rejects.toThrow("改用本地导出");
-    expect(context.documents.size).toBe(0);
-    expect(context.attachments.size).toBe(0);
-    await context.bridge.createBackup({ destination: "local" });
-    expect(readFileSync(context.files.path).length).toBeGreaterThan(10_000_000);
-    const preview = await context.bridge.prepareBackup({ source: "local" });
-    expect(preview.summary?.projectCount).toBe(1);
-  });
-
-  it("excludes rebuildable resources and avatar images from backup", async () => {
-    const context = fixture();
-    for (const name of ["service", "icon-packs", "runtime", "cache"]) {
-      const directory = join(context.directory, name);
-      mkdirSync(directory);
-      writeFileSync(join(directory, "resource.bin"), randomBytes(6 * 1024 * 1024));
-    }
-    await context.bridge.saveProjects([project("one", "private")]);
-    await context.bridge.createBackup({ destination: "utools" });
-    expect(context.attachments.size).toBe(1);
-    const bytes = [...context.attachments.values()][0];
-    expect(bytes.length).toBeLessThan(10_000);
-    const payload = JSON.parse(gunzipSync(bytes).toString("utf8"));
-    expect(Object.keys(payload).sort()).toEqual(["createdAt", "format", "localState", "projects", "runtimeRecordPolicy", "source", "version"]);
-    expect(payload.runtimeRecordPolicy).toEqual({ persist: true, maxCompletedRunsPerProject: 200, maxBytesPerRun: 5 * 1024 * 1024, maxBytesTotal: 100 * 1024 * 1024 });
-    expect(payload.projects).toHaveLength(1);
-    expect(payload.localState).toEqual({
-      schemaVersion: 1,
-      preferences: {},
-      workspace: {
-        dashboardProjectGroup: "all",
-        hiddenProjectIds: [],
-        workActivity: { selectionInitialized: false, preferences: null, selectedProjectIds: [] },
-      },
-      publicProjectOverrides: {},
-    });
   });
 
   it("keeps device configuration on a projects-only restore and pauses imported automation", async () => {

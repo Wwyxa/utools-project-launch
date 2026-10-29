@@ -38,6 +38,22 @@ Run the smallest relevant check first, then the normal frontend gates:
 - `npm test` for cross-feature changes
 - `node --check public/preload.js` when the preload boundary changes
 
-Use focused scripts and Vitest files for Git, storage, process, AI, or icon-pack
-changes. Manual uTools checks are required only when the change depends on host
-behavior or a real filesystem/process.
+Use existing focused scripts and Vitest files for the touched boundary.
+Manual uTools checks are required only when the change depends on host behavior
+or a real filesystem/process; the developer performs interactive checks.
+
+## Test Selection
+
+Keep tests proportional to regression risk and maintenance cost. Retain safety
+boundaries, core workflows, nontrivial parsing/transformation, persistence,
+async ordering/completion, and frontend/preload/service contracts. A UI-related
+test is useful when it protects behavior, not just appearance.
+
+- Prefer a few independent, representative cases in existing suites. Include
+  relevant failures and edge cases; add a bug regression when recurrence is
+  plausible and the test can reproduce it reliably.
+- Remove redundant cases, trivial forwarding and brittle implementation/style
+  assertions. Avoid duplicating Go or native-script checks unless the plugin
+  boundary adds a distinct risk. Reuse fixtures and remove unused test support.
+- Do not target a count, reduction percentage or coverage score, or hide the
+  same bulk of assertions inside fewer tests. Preserve meaningful coverage.

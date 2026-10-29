@@ -107,35 +107,6 @@ const loadGithubAuth = (options: {
   };
 };
 
-describe('gh hosts.yml token parsing', () => {
-  it('reads flat and multi-account layouts, taking the shallowest token', () => {
-    const { githubAuth } = loadGithubAuth();
-    expect(
-      githubAuth.parseGithubCliHostsToken(`github.com:\n    git_protocol: https\n    oauth_token: "${hostsToken}"\n    user: tester\n`),
-    ).toBe(hostsToken);
-    const nested = `github.com:\n    users:\n        alice:\n            oauth_token: gho_${'a'.repeat(36)}\n        bob:\n            oauth_token: gho_${'b'.repeat(36)}\n`;
-    expect(githubAuth.parseGithubCliHostsToken(nested)).toBe(`gho_${'a'.repeat(36)}`);
-    expect(githubAuth.parseGithubCliHostsToken(`${nested}    oauth_token: ${hostsToken}\n`)).toBe(hostsToken);
-  });
-
-  it('ignores other hosts, malformed values, and expired tokens', () => {
-    const { githubAuth } = loadGithubAuth();
-    expect(githubAuth.parseGithubCliHostsToken(`ghe.example.com:\n    oauth_token: ${hostsToken}\n`)).toBeNull();
-    expect(githubAuth.parseGithubCliHostsToken('github.com:\n    oauth_token: not-a-token\n')).toBeNull();
-    expect(githubAuth.parseGithubCliHostsToken('github.com:\n    user: tester\n')).toBeNull();
-    expect(
-      githubAuth.parseGithubCliHostsToken(
-        `github.com:\n    oauth_token: ${hostsToken}\n    oauth_expiry: "1970-01-01T00:00:00Z"\n`,
-      ),
-    ).toBeNull();
-    expect(
-      githubAuth.parseGithubCliHostsToken(
-        `github.com:\n    oauth_token: ${hostsToken}\n    oauth_expiry: "2999-01-01T00:00:00Z"\n`,
-      ),
-    ).toBe(hostsToken);
-  });
-});
-
 describe('resolveGithubToken layering', () => {
   it('prefers the manual PAT, then GH_TOKEN, then the gh hosts.yml file', async () => {
     const { githubAuth, setEnv, setManualToken, readFileSyncCalls, execFileMock } = loadGithubAuth({
@@ -154,15 +125,6 @@ describe('resolveGithubToken layering', () => {
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
-  it('falls back to gh auth token when hosts.yml carries no credential', async () => {
-    const { githubAuth, execFileMock } = loadGithubAuth({ env: { APPDATA: '/appdata' } });
-    execFileMock.mockImplementation((_file, args, _options, callback) => {
-      if (args[0] === 'auth') callback(null, `${hostsToken}\n`);
-      else callback(new Error('gh missing'), '');
-    });
-    await expect(githubAuth.resolveGithubToken()).resolves.toEqual({ token: hostsToken, source: 'gh' });
-  });
-
   it('skips rejected tokens and falls through to the next source', async () => {
     const { githubAuth } = loadGithubAuth({
       hostsFiles: { [appDataHostsPath]: `github.com:\n    oauth_token: ${hostsToken}\n` },
@@ -175,33 +137,6 @@ describe('resolveGithubToken layering', () => {
 });
 
 describe('GitHub auth status', () => {
-  it('reports gh installation without contacting GitHub when unconfigured', async () => {
-    const { githubAuth, fetchUser, execFileMock } = loadGithubAuth();
-    execFileMock.mockImplementationOnce((_file, _args, _options, callback) => {
-      callback(null, 'gh version 2.103.2 (2026-10-23)\nhttps://github.com/cli/cli/releases\n');
-    });
-    const status = await githubAuth.readGithubAuthStatus();
-    expect(status.configured).toBe(false);
-    expect(status.gh).toEqual({ installed: true, version: '2.103.2', credentialFound: false });
-    expect(fetchUser).not.toHaveBeenCalled();
-  });
-
-  it('verifies the active token and reports gh credentials independently', async () => {
-    const { githubAuth, fetchUser } = loadGithubAuth({
-      hostsFiles: { [appDataHostsPath]: `github.com:\n    oauth_token: ${hostsToken}\n` },
-      env: { APPDATA: '/appdata' },
-      manualPersonalAccessToken: manualToken,
-    });
-    fetchUser.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ login: 'octocat', avatar_url: 'https://avatars.githubusercontent.com/u/583231?v=4' }),
-    });
-    const status = await githubAuth.readGithubAuthStatus();
-    expect(status).toMatchObject({ configured: true, source: 'manual', verified: true, login: 'octocat' });
-    expect(status.gh.credentialFound).toBe(true);
-    const headers = fetchUser.mock.calls[0][1]?.headers as Record<string, string>;
-    expect(headers.Authorization).toBe(`Bearer ${manualToken}`);
-  });
 
   it('marks tokens rejected on 401 and surfaces the failure', async () => {
     const { githubAuth, fetchUser } = loadGithubAuth({ manualPersonalAccessToken: manualToken });

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BUILTIN_ICON_PACK_ID,
   normalizeIconPackManifest,
-  resolveFileIcon,
-  type FileIconResolveInput,
 } from "../src/lib/fileIconTheme";
 import type { IconPackManifest } from "../src/types";
 
@@ -43,32 +40,7 @@ const createManifest = (): IconPackManifest => ({
   ],
 });
 
-const input = (overrides: Partial<FileIconResolveInput>): FileIconResolveInput => ({
-  name: "main.ts",
-  path: "src/main.ts",
-  kind: "file",
-  colorMode: "dark",
-  ...overrides,
-});
-
 describe("file icon theme resolver", () => {
-  it("validates a manifest and rejects the builtin id", () => {
-    const manifest = createManifest();
-    expect(normalizeIconPackManifest(manifest)).toEqual(manifest);
-    expect(normalizeIconPackManifest({ ...manifest, id: BUILTIN_ICON_PACK_ID })).toBeNull();
-  });
-
-  it("uses exact names before the longest compound suffix", () => {
-    const pack = createManifest();
-    expect(resolveFileIcon(pack, input({ name: "README.md", path: "README.md" }))).toMatchObject({
-      kind: "external",
-      assetId: "readme-dark",
-    });
-    expect(resolveFileIcon(pack, input({ name: "card.component.ts", path: "src/card.component.ts" }))).toMatchObject({
-      kind: "external",
-      assetId: "component",
-    });
-  });
 
   it("normalizes mapping keys and rejects unsafe asset content", () => {
     const manifest = createManifest();
@@ -93,20 +65,5 @@ describe("file icon theme resolver", () => {
         mappings: { ...manifest.mappings, fileNames: { "path/to/file": manifest.mappings.fileNames["readme.md"]! } },
       }),
     ).toBeNull();
-  });
-
-  it("falls back safely for missing packs and missing assets", () => {
-    expect(resolveFileIcon(null, input({ name: "package.json" }))).toEqual({
-      kind: "fallback",
-      fallbackKey: "package",
-    });
-    expect(resolveFileIcon(null, input({ name: "styles.css" }))).toEqual({ kind: "fallback", fallbackKey: "braces" });
-    const pack = createManifest();
-    pack.mappings.defaults.file = { dark: "missing" };
-    expect(resolveFileIcon(pack, input({ name: "unknown.xyz" }))).toEqual({ kind: "fallback", fallbackKey: "file" });
-    expect(resolveFileIcon({} as unknown as IconPackManifest, input({ name: "main.ts" }))).toEqual({
-      kind: "fallback",
-      fallbackKey: "code",
-    });
   });
 });

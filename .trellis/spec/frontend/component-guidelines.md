@@ -98,8 +98,8 @@ directives where callers need the instance during mount; otherwise new ordinary
 scrollers need only the overflow class. Textareas, native form controls,
 `.scrollbar-hide`, and `[data-native-scrollbar]` retain native behavior; shared
 native scrollbar styling lives in `src/index.css`. Preserve hidden axes and
-fixed/absolute/sticky positioning. Regression coverage is in
-`tests/overlayScrollbar.test.ts` and `tests/GitDiffViewer.test.ts`.
+fixed/absolute/sticky positioning. Check visual changes during developer host
+validation.
 For fixed menus and date pickers, keep positioning and measurement refs on the
 outer shell and constrain an inner scroller with `min-h-0` in a flex column.
 
@@ -137,10 +137,8 @@ outer shell and constrain an inner scroller with `min-h-0` in a flex column.
   shrink after resizing. Disconnect observers and cancel animation frames on
   teardown. Mode changes preserve the visible source-row anchor.
 - `\ No newline at end of file` annotations retain their side and do not split
-  replacement blocks. Keep regression coverage in `tests/gitDiff.test.ts` and
-  `tests/GitDiffViewer.test.ts` for syntax state, source preservation, annotation
-  pairing, keyboard navigation, wrapping, and scroll synchronization.
+  replacement blocks. Core diff parsing and graph topology checks live in
+  `tests/gitDiff.test.ts` and `tests/gitCommitGraph.test.ts`.
 
 Sources: `src/lib/gitCommitGraph.ts`, `src/lib/gitCommitRefs.ts`,
-`src/lib/gitCommitTooltipSession.ts`, `src/lib/gitDiff.ts`, and their `tests/`
-counterparts. Keep exact geometry, timings, and regression fixtures there.
+`src/lib/gitCommitTooltipSession.ts`, and `src/lib/gitDiff.ts`.

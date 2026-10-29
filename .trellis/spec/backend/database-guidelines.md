@@ -61,8 +61,10 @@ queries or cleanup. Shared records and policy survive service-directory deletion
 
 ## Verification
 
-- `tests/storageMigration.test.ts` covers v8 preflight and migration.
-- `tests/projectBridge.uiPreferences.test.ts` covers local preferences and Store loading.
+- `tests/storageMigration.test.ts` covers the migration/service-stop interlock
+  and cleanup scanning without following symbolic links.
+- `tests/projectBridge.uiPreferences.test.ts` covers preferences across preload
+  reloads and catalog persistence with a loaded baseline and explicit deletions.
 - `npm run validate:project-storage` covers catalog compatibility, concurrent
   mutations, explicit deletion, read-back, and fresh-preload persistence.
 

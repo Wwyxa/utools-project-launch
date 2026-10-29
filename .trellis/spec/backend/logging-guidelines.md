@@ -131,21 +131,16 @@ claims and repeats an already-started task.
 
 ### 6. Tests Required
 
-`tests/runtimeRecords.test.ts` covers fresh preload reads, UTF-8 pagination,
-mid-run policy changes, project-scoped cleanup isolation and active-writer protection,
-terminal state after output write failure, automation
-completion after persistence is disabled, argument omission, claims, asynchronous
-query I/O and ignoring developer log remnants and service-state policy.
+`tests/runtimeRecords.test.ts` covers persisted output across reloads, UTF-8
+pagination, cleanup isolation and active-writer protection, write-failure
+recovery, input validation, sensitive argument omission, and automation claims.
 `validate:project-storage` covers initial migration of running output, orphan logs,
 Unicode diagnostic pagination, policy preservation, lock failure and conflict
 retry without duplicate records or intermediate directories. It also covers
 preserved logs, policy and scheduler state after service deletion, and absence
 of a developer-only cleanup entry.
-`tests/runtimeHistoryUi.test.ts` mounts the history-only entry and source menu;
-`tests/storageMigration.test.ts` verifies settings scans start after first paint.
-`tests/automationTask.test.ts` verifies startup restoration from shared execution
-records with service mode on/off, matching dashboard/project summary timestamps,
-project isolation, deduplication and full dialog history beyond the task cache.
+`tests/automationTask.test.ts` checks continuous-script execution without
+relaunching an already running task script.
 Go state tests cover the common schema/policy and completed metadata.
 `npm run validate:runtime-records` builds/starts a real Go binary and verifies
 the default runtime path without `--runtime-dir`, offline reads, direct output,
@@ -159,8 +154,7 @@ record files through the public runtime bridge; Pinia remains the live UI index.
 
 ## Verification
 
-`tests/projectBridge.uiPreferences.test.ts` covers aligned live-log eviction.
-`tests/projectBridge.scriptDiscovery.test.ts` and the Go process tests cover
-output decoding. Go state/API tests cover retention and historical reads.
+Go process tests cover output decoding. Go state/API tests cover retention and
+historical reads.
 Run `npm run validate:process-results` for process-result boundary changes and
 `npm run validate:runtime-records` for cross-language persistence changes.
