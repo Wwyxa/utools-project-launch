@@ -261,11 +261,84 @@ describe("native project launchers", () => {
     });
   });
 
+  it("preserves quoted and empty arguments with literal POSIX paths", async () => {
+    const projectPath = "/Projects/中文 user's $HOME & $(workspace)";
+    const executable = "/opt/Agent Tools/agent";
+    const { bridge, spawn } = loadPreloadBridge("linux", { directories: [projectPath] });
+
+    await expect(
+      bridge.openExternalApplication({
+        projectPath,
+        application: {
+          id: "custom-agent",
+          name: "Agent",
+          kind: "custom",
+          command: `"${executable}" --agents --profile "Agent Mode" --title "" "{path}" --target={projectPath}`,
+          enabled: true,
+        },
+      }),
+    ).resolves.toMatchObject({ launched: true, code: "launched" });
+    expect(spawn).toHaveBeenCalledExactlyOnceWith(
+      executable,
+      ["--agents", "--profile", "Agent Mode", "--title", "", projectPath, `--target=${projectPath}`],
+      { cwd: projectPath, detached: true, stdio: "ignore" },
+    );
+  });
+
+  it.each([
+    { executable: "code", app: "/Applications/Visual Studio Code.app" },
+    { executable: "cursor", app: "/Applications/Cursor.app" },
+  ] as const)("resolves macOS $executable commands from the installed app bundle", async ({ executable, app }) => {
+    const projectPath = "/Projects/中文 project";
+    const cliPath = `${app}/Contents/Resources/app/bin/${executable}`;
+    const { bridge, spawn } = loadPreloadBridge("darwin", {
+      directories: [projectPath, app],
+      files: [cliPath],
+    });
+    await expect(bridge.openExternalApplication({
+      projectPath,
+      application: {
+        id: "custom-agent", name: "Agent", kind: "custom",
+        command: `${executable} --agents "{path}"`, enabled: true,
+      },
+    })).resolves.toMatchObject({ launched: true, code: "launched" });
+    expect(spawn).toHaveBeenCalledExactlyOnceWith(cliPath, ["--agents", projectPath], {
+      cwd: projectPath, detached: true, stdio: "ignore",
+    });
+  });
+
+  it("resolves custom Windows commands to batch launchers instead of extensionless shims", async () => {
+    const projectPath = "C:\\Projects\\中文 & %USERPROFILE% !workspace!";
+    const executable = "C:\\Tools\\VS Code\\bin\\code.cmd";
+    const shim = executable.slice(0, -4);
+    const { bridge, spawn } = loadPreloadBridge("win32", {
+      directories: [projectPath], files: [executable, shim], where: { code: `${shim}\r\n${executable}` },
+    });
+    await expect(bridge.openExternalApplication({
+      projectPath,
+      application: { id: "custom-agent", name: "Agent", kind: "custom", command: "code --agents", enabled: true },
+    })).resolves.toMatchObject({ launched: true, code: "launched" });
+    const [spawnExecutable, args, options] = spawn.mock.calls[0]!;
+    expect(spawnExecutable).toBe("C:\\Windows\\System32\\cmd.exe");
+    expect(args.slice(0, 4)).toEqual(["/d", "/v:off", "/s", "/c"]);
+    expect(options.env?.UTOOLS_PROJECT_LAUNCH_COMMAND).toBe(executable);
+    expect(options.env?.UTOOLS_PROJECT_LAUNCH_ARGUMENT_0).toBe("--agents");
+  });
+
   it.runIf(process.platform === "win32")("passes literal paths through a real Windows batch launcher", async () => {
     const projectPath = mkdtempSync(join(tmpdir(), "project launcher & %USERPROFILE% !unsafe! "));
     const scriptPath = join(projectPath, "launcher.cmd");
     try {
-      writeFileSync(scriptPath, '@echo off\r\nsetlocal DisableDelayedExpansion\r\nset "received=%~1"\r\nset received\r\n');
+      writeFileSync(scriptPath, [
+        "@echo off",
+        "setlocal DisableDelayedExpansion",
+        'set "receivedFlag=%~1"',
+        'set "receivedProfile=%~2"',
+        'set "receivedEmpty=[%~3]"',
+        'set "receivedPath=%~4"',
+        "set received",
+        "",
+      ].join("\r\n"));
       const { bridge, spawn } = loadPreloadBridge("win32", {
         directories: [projectPath],
         files: [scriptPath],
@@ -273,7 +346,10 @@ describe("native project launchers", () => {
       });
       await bridge.openExternalApplication({
         projectPath,
-        application: { id: "vscode", name: "VS Code", kind: "vscode", command: `"${scriptPath}" "{path}"`, enabled: true },
+        application: {
+          id: "custom-agent", name: "Agent", kind: "custom",
+          command: `"${scriptPath}" --agents "Agent Mode" "" "{path}"`, enabled: true,
+        },
       });
       const [executable, args, options] = spawn.mock.calls[0]!;
       const result = spawnSync(executable, args, {
@@ -286,7 +362,12 @@ describe("native project launchers", () => {
       });
       expect(result.error).toBeUndefined();
       expect(result.status).toBe(0);
-      expect(result.stdout.trim()).toBe(`received=${projectPath}`);
+      expect(result.stdout.trim().split(/\r?\n/)).toEqual([
+        "receivedEmpty=[]",
+        "receivedFlag=--agents",
+        `receivedPath=${projectPath}`,
+        "receivedProfile=Agent Mode",
+      ]);
     } finally {
       rmSync(projectPath, { recursive: true, force: true });
     }

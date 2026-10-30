@@ -15,6 +15,11 @@ successful empty values or throw raw process errors into templates.
 - Launch results distinguish `launched: false` from a spawned process. Validate
   paths and selected launchers before spawning; a failed selection does not
   silently try another application.
+- Custom launchers preserve quoted/empty arguments and substitute path placeholders
+  after tokenization. Windows resolves bare commands with `where.exe`, skipping
+  extensionless shims; batch launchers use literal argument transport. macOS
+  `code`/`cursor` can use the app bundle CLI, otherwise retain PATH lookup as on
+  Linux. Never evaluate substituted paths as shell code.
 - Script discovery reports malformed package/Makefile input while keeping manual
   editing usable. Makefile discovery parses targets without executing `make`.
 - Storage write/read-back failures remain failures. See

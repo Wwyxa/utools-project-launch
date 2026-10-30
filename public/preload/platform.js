@@ -19,6 +19,7 @@ function splitCommandLine(commandLine) {
   const tokens = [];
   let current = "";
   let quote = null;
+  let tokenStarted = false;
 
   for (let index = 0; index < commandLine.length; index += 1) {
     const character = commandLine[index];
@@ -35,21 +36,24 @@ function splitCommandLine(commandLine) {
 
     if (character === '"' || character === "'") {
       quote = character;
+      tokenStarted = true;
       continue;
     }
 
     if (/\s/.test(character)) {
-      if (current) {
+      if (tokenStarted) {
         tokens.push(current);
         current = "";
+        tokenStarted = false;
       }
       continue;
     }
 
     current += character;
+    tokenStarted = true;
   }
 
-  if (current) {
+  if (tokenStarted) {
     tokens.push(current);
   }
 
@@ -213,32 +217,40 @@ function findMacApplication(kind) {
   }
 }
 
+function findWindowsCommand(command) {
+  try {
+    const decode = createProcessOutputDecoder();
+    const output = decode(execFileSync("where.exe", [command], { encoding: "buffer", timeout: 1500 })) + decode();
+    return output
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .find(
+        (targetPath) =>
+          /\.(?:exe|com|cmd|bat)$/i.test(targetPath) &&
+          (fileExists(targetPath) || isWindowsAppExecutionAlias(targetPath)),
+      ) || "";
+  } catch (error) {
+    return "";
+  }
+}
+
 function findWindowsExecutable(kind) {
   const candidate = windowsExecutables[kind];
   if (!candidate) return "";
   const direct = candidate.paths().find(fileExists);
   if (direct) return direct;
   for (const command of candidate.commands) {
-    try {
-      const decode = createProcessOutputDecoder();
-      const output = decode(execFileSync("where.exe", [command], { encoding: "buffer", timeout: 1500 })) + decode();
-      const executable = output
-        .split(/\r?\n/)
-        .map((item) => item.trim())
-        .find((targetPath) => fileExists(targetPath) || isWindowsAppExecutionAlias(targetPath));
-      if (executable) {
-        if ((kind === "vscode" || kind === "cursor") && /\.(?:cmd|bat)$/i.test(executable)) {
-          const editorExecutable = path.resolve(
-            path.dirname(executable),
-            "..",
-            kind === "vscode" ? "Code.exe" : "Cursor.exe",
-          );
-          if (fileExists(editorExecutable)) return editorExecutable;
-        }
-        return executable;
+    const executable = findWindowsCommand(command);
+    if (executable) {
+      if ((kind === "vscode" || kind === "cursor") && /\.(?:cmd|bat)$/i.test(executable)) {
+        const editorExecutable = path.resolve(
+          path.dirname(executable),
+          "..",
+          kind === "vscode" ? "Code.exe" : "Cursor.exe",
+        );
+        if (fileExists(editorExecutable)) return editorExecutable;
       }
-    } catch (error) {
-      // Try the next known executable without exposing a shell to the user path.
+      return executable;
     }
   }
   return "";
@@ -291,7 +303,7 @@ function launchCommandExecutable(executable, args, cwd) {
     for (const [index, argument] of args.entries()) {
       const argumentVariable = `${argumentPrefix}${index}`;
       environment[argumentVariable] = argument;
-      commandParts.push(`"%${argumentVariable}%"`);
+      commandParts.push(argument === "" ? '""' : `"%${argumentVariable}%"`);
     }
     return launchDetachedProcess(
       commandInterpreter,
@@ -310,9 +322,17 @@ function launchCustomCommand(command, resolvedPath, kind) {
   );
   const [executable, ...args] = commandTokens;
   if (!executable) return Promise.resolve(null);
-  const resolvedExecutable = isWindowsApplicationCommand(kind, executable)
-    ? findWindowsExecutable(kind) || executable
-    : executable;
+  const platform = getHostPlatform();
+  let resolvedExecutable = executable;
+  if (isWindowsApplicationCommand(kind, executable)) {
+    resolvedExecutable = findWindowsExecutable(kind) || executable;
+  } else if (platform === "win32" && !/[\\/]/.test(executable)) {
+    resolvedExecutable = findWindowsCommand(executable) || executable;
+  } else if (platform === "darwin" && (executable === "code" || executable === "cursor")) {
+    const appPath = findMacApplication(executable === "code" ? "vscode" : "cursor");
+    const cliPath = appPath ? path.join(appPath, "Contents", "Resources", "app", "bin", executable) : "";
+    if (fileExists(cliPath)) resolvedExecutable = cliPath;
+  }
   return launchCommandExecutable(resolvedExecutable, args, resolvedPath);
 }
 
