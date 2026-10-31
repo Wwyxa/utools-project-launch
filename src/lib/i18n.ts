@@ -495,6 +495,9 @@ const messages = {
       inputPlaceholder: "向当前运行脚本输入一行…",
       inputDisabled: "选择运行中的脚本后可输入",
       sendInput: "发送输入",
+      notifyOnFinish: "结束后通知",
+      notifyOnFinishArmed: "已开启结束后通知，再次点击取消",
+      notifyOnFinishDisabled: "脚本运行中才可开启结束后通知",
     },
     settings: {
       general: "通用设置",
@@ -1276,6 +1279,9 @@ const messages = {
       inputPlaceholder: "Send a line to the running script…",
       inputDisabled: "Select a running script to send input",
       sendInput: "Send input",
+      notifyOnFinish: "Notify when finished",
+      notifyOnFinishArmed: "Finish notification armed; click again to cancel",
+      notifyOnFinishDisabled: "Available only while the script is running",
     },
     settings: {
       general: "General",

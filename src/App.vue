@@ -285,6 +285,15 @@ const updateTheme = () => {
 
 watch(theme, updateTheme);
 watch(isDashboard, syncPluginSearchInput);
+watch(
+  () =>
+    store.projects.flatMap((project) =>
+      project.scripts.map((script) => `${project.id}:${script.id}:${script.status}`),
+    ),
+  () => {
+    store.notifyFinishedArmedScriptRuns();
+  },
+);
 
 onMounted(() => {
   updateTheme();

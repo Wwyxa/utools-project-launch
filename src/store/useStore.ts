@@ -174,6 +174,7 @@ export const useStore = defineStore("app", {
           ],
         },
       } as Record<string, Record<string, LogEntry[]>>,
+      scriptRunNotificationArmed: {} as Record<string, true>,
       stagedFiles: {
         "project-node-1": [
           { path: "src/components/MemoTab.vue", additions: 12, deletions: 4, status: "MODIFIED" },

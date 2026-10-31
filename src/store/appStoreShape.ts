@@ -199,6 +199,7 @@ export interface AppState {
   } | null;
   logs: Record<string, LogEntry[]>;
   scriptLogs: Record<string, Record<string, LogEntry[]>>;
+  scriptRunNotificationArmed: Record<string, true>;
   stagedFiles: Record<string, ProjectGitFileChange[]>;
   gitRefreshing: Record<string, boolean>;
   gitStatusRefreshing: Record<string, boolean>;
@@ -736,6 +737,8 @@ export interface AppActions {
   stopScript(projectId: string, scriptId: string, stopOptions?: ProjectBridgeStopProcessOptions): Promise<void>;
   stopRunningScriptsForPluginExit(): void;
   sendScriptInput(projectId: string, scriptId: string, input: string): Promise<ProjectBridgeSendInputResult>;
+  toggleScriptRunNotification(projectId: string, scriptId: string): boolean;
+  notifyFinishedArmedScriptRuns(): void;
   openProjectFolder(projectId: string): Promise<void>;
   showGitRepositoryInFolder(projectId: string, target: ProjectGitRepositoryTarget): Promise<void>;
   openGitRepositoryInTerminal(projectId: string, target: ProjectGitRepositoryTarget): Promise<void>;

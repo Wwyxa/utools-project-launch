@@ -8,6 +8,8 @@ import { serviceOwnershipState } from "../helpers/serviceAutomationState";
 
 let runtimeReconciliationPromise: Promise<void> | null = null;
 
+const scriptRunNotificationKey = (projectId: string, scriptId: string) => `${projectId}:${scriptId}`;
+
 export const scriptRuntimeActions = {
     reconcileRuntimeProcessState(this: AppStore) {
       if (runtimeReconciliationPromise) {
@@ -364,5 +366,49 @@ export const scriptRuntimeActions = {
         this.addLog(projectId, createLogEntry(result.message || "输入发送失败。", "WARN"), scriptId);
       }
       return result;
+    },
+
+    toggleScriptRunNotification(this: AppStore, projectId: string, scriptId: string) {
+      const key = scriptRunNotificationKey(projectId, scriptId);
+      if (this.scriptRunNotificationArmed[key]) {
+        delete this.scriptRunNotificationArmed[key];
+        return false;
+      }
+      this.scriptRunNotificationArmed[key] = true;
+      return true;
+    },
+
+    notifyFinishedArmedScriptRuns(this: AppStore) {
+      const armedKeys = Object.keys(this.scriptRunNotificationArmed);
+      if (armedKeys.length === 0) {
+        return;
+      }
+
+      const staleKeys = new Set(armedKeys);
+      const finishedKeys: string[] = [];
+      const finishedBodies: string[] = [];
+      this.projects.forEach((project) => {
+        project.scripts.forEach((script) => {
+          const key = scriptRunNotificationKey(project.id, script.id);
+          if (!this.scriptRunNotificationArmed[key]) {
+            return;
+          }
+          staleKeys.delete(key);
+          if (script.status === "RUNNING" || script.status === "STOPPING") {
+            return;
+          }
+          const outcome = script.status === "ERROR" ? "失败" : script.status === "STOPPED" ? "已停止" : "已完成";
+          finishedKeys.push(key);
+          finishedBodies.push(`项目“${project.name}”脚本“${script.name}”${outcome}`);
+        });
+      });
+
+      finishedKeys.forEach((key) => delete this.scriptRunNotificationArmed[key]);
+      staleKeys.forEach((key) => delete this.scriptRunNotificationArmed[key]);
+      finishedBodies.forEach((body) => {
+        try {
+          window.utools?.showNotification?.(body);
+        } catch {}
+      });
     },
 };

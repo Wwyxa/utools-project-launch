@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Bell,
+  BellRing,
   ClipboardCopy,
   Eraser,
   History,
@@ -384,6 +386,23 @@ const closeTarget = (scriptId: string) => {
   };
 };
 
+const isRunNotificationArmed = (scriptId: string) =>
+  Boolean(store.scriptRunNotificationArmed[`${props.projectId}:${scriptId}`]);
+
+const runNotificationLabel = (scriptId: string, status: ProjectScript["status"]) => {
+  if (isRunNotificationArmed(scriptId)) {
+    return t.value.terminal.notifyOnFinishArmed;
+  }
+  if (status !== "RUNNING") {
+    return t.value.terminal.notifyOnFinishDisabled;
+  }
+  return t.value.terminal.notifyOnFinish;
+};
+
+const handleToggleRunNotification = (scriptId: string) => {
+  store.toggleScriptRunNotification(props.projectId, scriptId);
+};
+
 const handleClear = () => {
   store.clearLogs(props.projectId);
   closedAt.value = {};
@@ -580,6 +599,22 @@ onBeforeUnmount(() => {
               />
               <span class="max-w-28 truncate">{{ target.name }}</span>
               <span class="text-[9px] opacity-70">{{ target.count }}</span>
+            </button>
+            <button
+              type="button"
+              class="h-full px-1 flex items-center transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              :class="
+                isRunNotificationArmed(target.id)
+                  ? 'text-primary hover:bg-primary/10'
+                  : 'text-on-surface-variant/50 hover:bg-on-surface/10 hover:text-primary'
+              "
+              :disabled="target.status !== 'RUNNING'"
+              :title="runNotificationLabel(target.id, target.status)"
+              :aria-label="runNotificationLabel(target.id, target.status)"
+              @click="handleToggleRunNotification(target.id)"
+            >
+              <BellRing v-if="isRunNotificationArmed(target.id)" :size="10" />
+              <Bell v-else :size="10" />
             </button>
             <button
               @click="closeTarget(target.id)"
