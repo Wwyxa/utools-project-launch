@@ -18,6 +18,10 @@ type taskNotification struct {
 
 const notificationAppName = "\u5f00\u53d1\u5de5\u4f5c\u53f0"
 
+// notificationServiceTitle marks notifications emitted by the standalone
+// service so they are distinguishable from the ones sent by the plugin.
+const notificationServiceTitle = notificationAppName + " \u00b7 \u72ec\u7acb\u670d\u52a1"
+
 var errNotificationBusy = errors.New("notification backend is still busy")
 
 type notificationRequest struct {
@@ -92,7 +96,7 @@ func (service *Service) startNotifications(ctx context.Context, schedulerRuntime
 			body = string(message[:1024])
 		}
 		select {
-		case queue <- taskNotification{Title: notificationAppName, Body: body}:
+		case queue <- taskNotification{Title: notificationServiceTitle, Body: body}:
 		default:
 			service.log("notification.failed", map[string]any{"executionId": execution.ID, "reason": "queue_full"})
 		}

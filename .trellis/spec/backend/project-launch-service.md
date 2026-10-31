@@ -97,9 +97,13 @@ Health `nativeNotifications` means the service owns notification delivery, not
 that the OS displayed it. The service queues at most 32 completion notices and
 sends serially with an 8-second wait. Underlying library calls cannot be cancelled;
 do not start overlapping calls when one exceeds its wait. No durable retry exists.
-Use `beeep` as the single cross-platform notification API and set its application
-name once. Set task text as data. Platform backend behavior and OS policy may
-suppress display or control notification history.
+Windows sends toasts through `go-toast` directly because `beeep` hard-codes silent
+audio there; other platforms use `beeep` with the application name set once. The
+embedded plugin logo materializes to a temp file for the toast icon. The registry
+AppUserModelId keeps the plain app name (renaming it resets Windows grouping and
+user notification settings); the standalone-service marker lives only in the
+displayed title. Set task text as data. Platform backend behavior and OS policy
+may suppress display or control notification history.
 
 Ignore-missed validates and updates either the bounded execution or its exact
 durable automation record; reject cleared/invalid records and do not emit another
