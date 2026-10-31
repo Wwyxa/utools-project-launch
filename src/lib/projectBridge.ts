@@ -1577,6 +1577,9 @@ const fallbackBridge: ProjectBridge = {
   async setGitRemoteUrl(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法修改 Git remote URL。");
   },
+  async renameGitRemote(): Promise<ProjectGitActionResult> {
+    return unavailableGitAction("浏览器预览无法重命名 Git remote。");
+  },
   async removeGitRemote(): Promise<ProjectGitActionResult> {
     return unavailableGitAction("浏览器预览无法删除 Git remote。");
   },

@@ -304,6 +304,7 @@ describe("browser Git workspace fallback", () => {
     const fetchGitRemoteByName = vi.fn<ProjectBridge["fetchGitRemoteByName"]>(async () => success);
     const publishGitBranch = vi.fn<ProjectBridge["publishGitBranch"]>(async () => success);
     const addGitRemote = vi.fn<ProjectBridge["addGitRemote"]>(async () => success);
+    const renameGitRemote = vi.fn<ProjectBridge["renameGitRemote"]>(async () => success);
     const deleteGitRemoteBranch = vi.fn<ProjectBridge["deleteGitRemoteBranch"]>(async () => success);
     const readGitStatusSnapshot = vi.fn<ProjectBridge["readGitStatusSnapshot"]>(async (repositoryPath) =>
       gitSnapshot(repositoryPath, repositoryPath),
@@ -329,6 +330,7 @@ describe("browser Git workspace fallback", () => {
       fetchGitRemoteByName,
       publishGitBranch,
       addGitRemote,
+      renameGitRemote,
       deleteGitRemoteBranch,
       readGitStatusSnapshot,
       readGitSnapshot,
@@ -353,6 +355,7 @@ describe("browser Git workspace fallback", () => {
     await store.revertGitCommit(project.id, "g".repeat(40), submoduleTarget);
     await store.checkoutGitCommit(project.id, "d".repeat(40), {}, { kind: "main" });
     await store.addGitRemote(project.id, "fork", "../fork.git", worktreeTarget);
+    await store.renameGitRemote(project.id, "fork", "upstream", worktreeTarget);
     await store.checkoutGitCommit(project.id, "e".repeat(40), {}, worktreeTarget);
     await store.addGitRemote(project.id, "mirror", "../mirror.git", submoduleTarget);
     await store.publishGitBranch(project.id, "mirror", worktreeTarget);
@@ -387,6 +390,7 @@ describe("browser Git workspace fallback", () => {
     expect(checkoutGitCommit.mock.calls[1]?.[0]).toBe(worktreePath);
     expect(addGitRemote).toHaveBeenCalledWith(worktreePath, "fork", "../fork.git");
     expect(addGitRemote).toHaveBeenCalledWith(submodulePath, "mirror", "../mirror.git");
+    expect(renameGitRemote).toHaveBeenCalledWith(worktreePath, "fork", "upstream");
     expect(publishGitBranch).toHaveBeenCalledWith(worktreePath, "mirror");
     expect(createGitBranch).toHaveBeenCalledWith(worktreePath, "feature", "a".repeat(40), { checkout: true });
     expect(createGitTag).toHaveBeenCalledWith(submodulePath, "v1", "b".repeat(40), {
@@ -398,7 +402,7 @@ describe("browser Git workspace fallback", () => {
     expect(checkoutGitRemoteBranch).toHaveBeenCalledWith(worktreePath, "origin/feature", { force: true });
     expect(fetchGitRemoteByName).toHaveBeenCalledWith(worktreePath, "mirror");
     expect(deleteGitRemoteBranch).toHaveBeenCalledWith(submodulePath, "mirror", "feature/remote-delete");
-    expect(readGitWorkspaceSnapshot).toHaveBeenCalledTimes(19);
+    expect(readGitWorkspaceSnapshot).toHaveBeenCalledTimes(20);
     expect(store.gitWritesInProgress[project.id]).toBe(0);
   });
 

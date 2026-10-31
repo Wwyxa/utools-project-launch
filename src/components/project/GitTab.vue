@@ -161,6 +161,8 @@ const isRemoteDialogOpen = ref(false);
 const remoteDialogMode = ref<RemoteDialogMode>("add");
 const remoteFormName = ref("");
 const remoteFormUrl = ref("");
+const remoteFormOriginalName = ref("");
+const remoteFormOriginalUrl = ref("");
 const activeGitAction = ref("");
 const isChangesPaneBusy = ref(false);
 const isCommitHistoryBusy = ref(false);
@@ -1444,6 +1446,8 @@ const openAddRemoteDialog = () => {
   remoteDialogMode.value = "add";
   remoteFormName.value = "";
   remoteFormUrl.value = "";
+  remoteFormOriginalName.value = "";
+  remoteFormOriginalUrl.value = "";
   isRemoteDialogOpen.value = true;
 };
 
@@ -1453,6 +1457,8 @@ const openEditRemoteDialog = (remote: ProjectGitRemoteSummary) => {
   remoteDialogMode.value = "edit";
   remoteFormName.value = remote.name;
   remoteFormUrl.value = remote.fetchUrl || remote.pushUrl;
+  remoteFormOriginalName.value = remote.name;
+  remoteFormOriginalUrl.value = remoteFormUrl.value;
   isRemoteDialogOpen.value = true;
 };
 
@@ -1467,6 +1473,11 @@ const validateRemoteForm = () => {
   if (!name) return "请输入 remote 名称。";
   if (name.startsWith("-")) return "remote 名称不能以 - 开头。";
   if (!/^[A-Za-z0-9._-]+$/.test(name)) return "remote 名称只能包含字母、数字、点、下划线和短横线。";
+  if (remoteDialogMode.value === "add" || name !== remoteFormOriginalName.value) {
+    if (remotes.value.some((remote) => remote.name === name)) {
+      return `remote ${name} 已存在，请换一个名称。`;
+    }
+  }
   if (!url) return "请输入 remote URL。";
   if (/[\u0000-\u001f\u007f]/.test(url)) return "remote URL 不能包含控制字符。";
   return "";
@@ -1482,15 +1493,43 @@ const submitRemoteDialog = async () => {
 
   const name = remoteFormName.value.trim();
   const url = remoteFormUrl.value.trim();
-  const action = remoteDialogMode.value === "add" ? "add" : "set-url";
+  const isAdd = remoteDialogMode.value === "add";
+  const isRename = !isAdd && name !== remoteFormOriginalName.value;
+  const isUrlChanged = !isAdd && url !== remoteFormOriginalUrl.value;
+  const action = isAdd ? "add" : isRename ? "rename" : "set-url";
   activeGitAction.value = `remote:${action}:${name}`;
-  setGitActionResult("loading", remoteDialogMode.value === "add" ? "正在添加 remote..." : "正在更新 remote URL...");
+  setGitActionResult(
+    "loading",
+    isAdd ? "正在添加 remote..." : isRename ? `正在将 remote 重命名为 ${name}...` : "正在更新 remote URL...",
+  );
   await waitForVisualFeedback();
   try {
-    const result =
-      remoteDialogMode.value === "add"
-        ? await store.addGitRemote(props.project.id, name, url, activeRepositoryTarget.value)
-        : await store.setGitRemoteUrl(props.project.id, name, url, activeRepositoryTarget.value);
+    let result: ProjectGitActionResult | null;
+    if (isAdd) {
+      result = await store.addGitRemote(props.project.id, name, url, activeRepositoryTarget.value);
+    } else if (isRename) {
+      result = await store.renameGitRemote(
+        props.project.id,
+        remoteFormOriginalName.value,
+        name,
+        activeRepositoryTarget.value,
+      );
+      if (result?.ok) {
+        remoteFormOriginalName.value = name;
+        if (isUrlChanged) {
+          setGitActionResult("loading", "正在更新 remote URL...");
+          result = await store.setGitRemoteUrl(props.project.id, name, url, activeRepositoryTarget.value);
+          if (result?.ok) {
+            remoteFormOriginalUrl.value = url;
+          }
+        }
+      }
+    } else {
+      result = await store.setGitRemoteUrl(props.project.id, name, url, activeRepositoryTarget.value);
+      if (result?.ok) {
+        remoteFormOriginalUrl.value = url;
+      }
+    }
     if (!result) {
       setGitActionResult("warning", "当前项目不可用，无法更新 remote。");
       return;
@@ -2972,7 +3011,7 @@ watch(
             {{ remoteDialogMode === "add" ? "添加 Git remote" : "编辑 Git remote" }}
           </h3>
           <p class="truncate text-[10px] font-medium text-on-surface-variant">
-            {{ remoteDialogMode === "add" ? "配置远程仓库地址" : remoteFormName }}
+            {{ remoteDialogMode === "add" ? "配置远程仓库地址" : "修改 remote 名称或 URL" }}
           </p>
         </div>
       </template>
@@ -2982,7 +3021,7 @@ watch(
           v-model="remoteFormName"
           type="text"
           class="ui-field mt-1 w-full font-mono"
-          :disabled="remoteDialogMode === 'edit' || isAnyGitWriteRunning"
+          :disabled="isAnyGitWriteRunning"
           placeholder="origin"
         />
       </label>

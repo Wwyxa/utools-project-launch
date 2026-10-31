@@ -661,6 +661,12 @@ export interface AppActions {
     remoteUrl: string,
     target?: ProjectGitRepositoryTarget,
   ): Promise<ProjectGitActionResult | null>;
+  renameGitRemote(
+    projectId: string,
+    remoteName: string,
+    newRemoteName: string,
+    target?: ProjectGitRepositoryTarget,
+  ): Promise<ProjectGitActionResult | null>;
   removeGitRemote(
     projectId: string,
     remoteName: string,

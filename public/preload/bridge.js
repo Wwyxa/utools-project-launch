@@ -157,6 +157,7 @@ window.projectBridge = {
   publishGitBranch,
   addGitRemote,
   setGitRemoteUrl,
+  renameGitRemote,
   removeGitRemote,
   deleteGitRemoteBranch,
   listProjectFiles,
@@ -229,6 +230,7 @@ const runtimeOperationLabels = {
   publishGitBranch: "Git 发布分支",
   addGitRemote: "Git 添加远端",
   setGitRemoteUrl: "Git 修改远端",
+  renameGitRemote: "Git 重命名远端",
   removeGitRemote: "Git 删除远端",
   deleteGitRemoteBranch: "Git 删除远端分支",
   createProjectEntry: "创建项目文件",
@@ -263,7 +265,7 @@ const runtimeOperationLabels = {
   "switchGitBranch", "checkoutGitCommit", "createGitBranch", "renameGitBranch", "deleteGitBranch",
   "checkoutGitRemoteBranch", "createGitTag", "deleteGitTag", "pushGitTag", "pullGitRemote", "pushGitRemote",
   "mergeGitBaseBranch", "abortGitMerge", "initializeGitRepository", "publishGitBranch", "addGitRemote",
-  "setGitRemoteUrl", "removeGitRemote", "deleteGitRemoteBranch",
+  "setGitRemoteUrl", "renameGitRemote", "removeGitRemote", "deleteGitRemoteBranch",
 ].forEach((method) => {
   const original = window.projectBridge[method];
   window.projectBridge[method] = (projectPath, ...args) => {

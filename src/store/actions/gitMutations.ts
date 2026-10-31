@@ -628,6 +628,20 @@ export const gitMutationsActions = {
       );
     },
 
+    async renameGitRemote(this: AppStore,
+      projectId: string,
+      remoteName: string,
+      newRemoteName: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): Promise<ProjectGitActionResult | null> {
+      return this.runAuthorizedGitWrite(
+        projectId,
+        target,
+        (context) => bridge.renameGitRemote(context.repositoryPath, remoteName, newRemoteName),
+        { refresh: "full", refs: true, refreshOnFailure: true },
+      );
+    },
+
     async removeGitRemote(this: AppStore,
       projectId: string,
       remoteName: string,

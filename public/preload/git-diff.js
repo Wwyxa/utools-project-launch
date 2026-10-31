@@ -985,6 +985,36 @@ async function setGitRemoteUrl(projectPath, remoteName, remoteUrl) {
     : { ok: false, remote: name, message: firstGitError(result, "更新 remote URL 失败。") };
 }
 
+async function renameGitRemote(projectPath, remoteName, newRemoteName) {
+  const repositoryPath = await findGitRootAsync(projectPath);
+  const name = normalizeGitRemoteName(remoteName);
+  const newName = normalizeGitRemoteName(newRemoteName);
+  const nameError = validateGitRemoteName(name);
+  const newNameError = validateGitRemoteName(newName);
+  if (!repositoryPath) {
+    return { ok: false, remote: name, message: "未检测到 Git 仓库。" };
+  }
+  if (nameError) {
+    return { ok: false, remote: name, message: nameError };
+  }
+  if (newNameError) {
+    return { ok: false, remote: newName, message: newNameError };
+  }
+
+  const remotes = await readGitRemotesAsync(repositoryPath);
+  if (!remotes.some((remote) => remote.name === name)) {
+    return { ok: false, remote: name, message: `未找到 remote：${name}。` };
+  }
+  if (name !== newName && remotes.some((remote) => remote.name === newName)) {
+    return { ok: false, remote: newName, message: `remote ${newName} 已存在，请换一个名称。` };
+  }
+
+  const result = runGitResult(repositoryPath, ["remote", "rename", name, newName]);
+  return result.status === 0
+    ? { ok: true, remote: newName, message: `已将 remote ${name} 重命名为 ${newName}。` }
+    : { ok: false, remote: newName, message: firstGitError(result, "重命名 remote 失败。") };
+}
+
 async function unsetGitUpstreamsForDeletedRemoteBranch(repositoryPath, remoteName, branchName) {
   const fieldSeparator = "\x1f";
   const deletedRemoteRef = `${remoteName}/${branchName}`;
