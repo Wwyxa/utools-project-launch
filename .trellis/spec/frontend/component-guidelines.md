@@ -25,6 +25,7 @@ each feature. The current file-icon implementation is `src/lib/fileIconTheme.ts`
   in their feature. Stop nested action propagation on clickable cards.
   `BaseModal.vue` owns opening-order stacking at z-index 80, including initially
   open instances; do not fix nested dialogs with per-feature z-index overrides.
+  Its slots are `header`, `footer-left`, and `footer`; slot names must match exactly.
 - Before blocking host work, capture inputs, guard duplicate submissions, close
   the confirmation, publish loading, then await `waitForVisualFeedback` from
   `src/lib/visualFeedback.ts`. Save/retry dialogs may remain open while busy.
@@ -88,7 +89,8 @@ axis variants), plus rendered Markdown code blocks and tables. It shares the
 as viewport/event target, and handles dynamic content and teardown. Existing
 instances use `autoHide: "move"`, `autoHideDelay: 400`, and
 `autoHideSuspend: false`: hide before the first scroll and after interaction stops.
-Both automatic initialization and explicit directives share these options.
+Both automatic initialization and explicit directives share these options and
+use the target as viewport to avoid reparenting Vue-managed children.
 Automatic observation filters class mutations to scroll-container and exclusion
 classes, including the Markdown ancestor class; animation and color class changes
 must not schedule scans. Preserve cleanup for removals without added nodes and

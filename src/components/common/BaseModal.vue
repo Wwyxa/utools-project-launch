@@ -215,11 +215,11 @@ stopAppEscapeListener = addAppEscapeRequestListener(handleAppEscape);
             <slot />
           </div>
           <div
-            v-if="$slots.footer || $slots.footerLeft"
+            v-if="$slots.footer || $slots['footer-left']"
             class="flex shrink-0 items-center gap-2 border-t border-border-subtle px-4 py-3"
-            :class="$slots.footerLeft ? 'justify-between' : 'justify-end'"
+            :class="$slots['footer-left'] ? 'justify-between' : 'justify-end'"
           >
-            <slot name="footerLeft" />
+            <slot name="footer-left" />
             <div class="flex items-center justify-end gap-2">
               <slot name="footer" />
             </div>

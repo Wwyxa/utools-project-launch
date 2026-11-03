@@ -142,7 +142,10 @@ export const overlayScrollbar: Directive<HTMLElement> = {
     instances.set(
       element,
       withOverlayScrollbarTiming("mount", () =>
-        OverlayScrollbars(element, scrollbarOptions),
+        OverlayScrollbars({
+          target: element,
+          elements: { viewport: element },
+        }, scrollbarOptions),
       ),
     );
   },
