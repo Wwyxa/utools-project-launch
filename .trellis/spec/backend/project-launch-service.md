@@ -136,7 +136,9 @@ Regression coverage must include sync wake/cancellation and old-service fallback
 notification serialization, timeout and queue bounds; ignored durable history;
 and Windows child lifetime, redirected output, stdin, graceful cleanup, ignored
 signals with forced fallback, GUI-child preservation, group stop, and shutdown
-rejection. Real OS notification visibility requires host validation.
+rejection. Windows signal-test helpers must clear inherited Ctrl+C suppression with
+`SetConsoleCtrlHandler(NULL, FALSE)` before readiness; `signal.Notify` does not clear it.
+Real OS notification visibility requires host validation.
 
 ## Verification
 

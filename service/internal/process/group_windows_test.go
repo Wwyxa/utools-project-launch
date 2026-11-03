@@ -29,6 +29,10 @@ func TestSupervisorWindowsGracefulStop(t *testing.T) {
 	if os.Getenv("PROJECT_LAUNCH_SIGNAL_HELPER") == "1" {
 		interrupted := make(chan os.Signal, 1)
 		signal.Notify(interrupted, os.Interrupt)
+		// signal.Notify does not clear inherited Ctrl+C suppression on Windows.
+		if enabled, _, err := syscall.NewLazyDLL("kernel32.dll").NewProc("SetConsoleCtrlHandler").Call(0, 0); enabled == 0 {
+			t.Fatalf("enable Ctrl+C handling: %v", err)
+		}
 		if err := os.WriteFile(os.Getenv("PROJECT_LAUNCH_SIGNAL_READY"), nil, 0600); err != nil {
 			os.Exit(2)
 		}
