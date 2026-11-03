@@ -127,12 +127,27 @@ npm run build
 
 更多模块级校验和基准命令可在 `package.json` 的 `scripts` 中查看。
 
+### 版本管理
+
+插件版本统一维护在 `package.json` 的 `version` 字段，设置页自动读取该值，构建时打包进前端产物，无需手动修改页面或在运行时读取文件。
+
+准备发布时，使用 npm 同步更新 `package.json` 和 `package-lock.json`，例如发布次版本：
+
+```bash
+npm version minor --no-git-tag-version
+npm run lint
+npm run build
+```
+
+修复版本使用 `patch`，不兼容变更使用 `major`，也可将 `minor` 替换为明确的版本号。上述升版命令不创建 Git 提交或标签；确认版本和产物后，再按同一版本创建 `v<version>` 发布标签，并在 uTools 发布时填写相同版本号。
+
 ## 技术栈
 
 Vue 3、TypeScript、Vite、Pinia、Tailwind CSS、Vitest，以及可选的 Go 项目启动服务。
 
 ## 版本历程
 
+- **v2.0.0**：适配 uTools 8，完善本地数据迁移、备份恢复和运行记录管理；加入 Git 合并与变基、GitHub PR 创建与编辑、完整项目列表和脚本结束通知，优化首页、设置页与差异查看体验。升级需使用 uTools 8，已启用独立服务的用户需同步更新服务。
 - **v1.9.0**：加入可独立安装的文件图标包和 uTools AI Agent 项目管理工具；优化 Git 批量操作、日志搜索、确认交互与下载进度。
 - **v1.8.x**：增强 Git 文件树、stash 与标签操作，支持项目默认标签页；改善卡片排序、服务稳定性和 Windows 脚本输出兼容性。
 - **v1.7.x**：发布可选项目启动服务，加入服务安装更新、持久化日志和运行恢复；扩展自动任务与 Git 远端操作。
