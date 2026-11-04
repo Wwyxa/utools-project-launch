@@ -11,6 +11,7 @@ const emit = defineEmits<{ (event: "ready"): void }>();
 const currentPreflight = ref(preflight);
 
 const running = ref(false);
+const deferring = ref(false);
 const stopping = ref(false);
 const stopProgress = ref<MigrationServiceStopProgress | null>(null);
 const stopFailed = ref(false);
@@ -27,9 +28,17 @@ const isReady = computed(
 );
 const canEnter = computed(() => isReady.value && !running.value && !stopping.value);
 const itemsProcessed = computed(() => Boolean(progress.value && progress.value.pendingCount === 0 && progress.value.failedCount === 0));
+const canDefer = computed(() => isMigrationBlocked.value && !running.value && !stopping.value &&
+  progress.value?.status === "failed" && progress.value.pendingCount === 0 && progress.value.failedCount > 0);
 const skippedCount = computed(() => progress.value?.items.filter((item) => item.status === "skipped").length ?? 0);
 const successfulCount = computed(() => Math.max(0, (progress.value?.verifiedCount ?? 0) - skippedCount.value));
 const processedCount = computed(() => (progress.value?.verifiedCount ?? 0) + (progress.value?.failedCount ?? 0));
+const progressStatusText = computed(() => {
+  if (!running.value && progress.value && progress.value.failedCount > 0) {
+    return `迁移未完成：${progress.value.failedCount} 项失败，请重试迁移。`;
+  }
+  return `处理进度：${processedCount.value}/${progress.value?.totalCount ?? 0} 项`;
+});
 const stopStatusText = computed(() => {
   const count = stopProgress.value?.activeRunCount ?? 0;
   switch (stopProgress.value?.stage) {
@@ -44,6 +53,7 @@ const stopStatusText = computed(() => {
 
 const headline = computed(() => {
   if (isUpgradeRequired.value) return "需要升级 uTools";
+  if (deferring.value) return "正在确认进入插件";
   if (stopping.value) {
     const stage = stopProgress.value?.stage;
     if (stage === "checking-service" || !stage) return "正在检查服务";
@@ -51,7 +61,7 @@ const headline = computed(() => {
     return "正在停止服务";
   }
   if (stopFailed.value) return "停止服务失败";
-  if (isReady.value) return "数据迁移已完成";
+  if (isReady.value) return currentPreflight.value?.migrationDeferred ? "可以进入插件" : "数据迁移已完成";
   if (running.value) return itemsProcessed.value ? "正在确认迁移结果" : "正在迁移数据";
   if (errorMessage.value) return "迁移需要处理";
   if (isMigrationBlocked.value) {
@@ -67,7 +77,9 @@ const description = computed(() => {
   }
   if (stopping.value) return stopStatusText.value;
   if (stopFailed.value) return "服务尚未确认停止，请重试停止服务。";
-  if (isReady.value) return "迁移结果已保存，现在可以进入插件。";
+  if (isReady.value) return currentPreflight.value?.migrationDeferred
+    ? "迁移尚未全部完成，进入后可到设置 → 数据工具查看失败项并重试。"
+    : "迁移结果已保存，现在可以进入插件。";
   if (running.value && itemsProcessed.value) return "各项数据已处理，正在保存并确认整体迁移结果。";
   if (isMigrationBlocked.value) {
     return "检测到旧版本存放在同步数据库与本机目录中的数据。迁移会把设备配置、私有项目、服务数据与图标包移动到 uTools v8 的插件本地数据目录；公共项目仍保持跨设备同步。迁移过程会先写入并校验新位置，确认无误后才清理对应同步文档，旧目录会完整保留。";
@@ -115,6 +127,28 @@ const enterPlugin = () => {
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "无法确认迁移结果，请重试。";
   }
+};
+
+const deferAndEnter = async () => {
+  if (!canDefer.value) return;
+  running.value = true;
+  deferring.value = true;
+  errorMessage.value = "";
+  try {
+    const result = await bridge.deferMigration();
+    if (!result.ok) {
+      errorMessage.value = result.error || "无法保存稍后处理的选择，请重试。";
+      return;
+    }
+    refreshStartupStatus();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "无法进入插件，请重试。";
+    return;
+  } finally {
+    running.value = false;
+    deferring.value = false;
+  }
+  enterPlugin();
 };
 
 const startMigration = async () => {
@@ -194,12 +228,13 @@ const stopService = async () => {
       <template v-if="isMigrationBlocked || isReady">
         <div v-if="progress" class="mb-4">
           <div class="mb-2 flex items-center justify-between text-xs text-on-surface-variant">
-            <span>处理进度：{{ processedCount }}/{{ progress.totalCount }} 项</span>
-            <span>{{ progressPercent }}%</span>
+            <span :class="{ 'text-status-error': progress.failedCount > 0 }">{{ progressStatusText }}</span>
+            <span v-if="running || progress.failedCount === 0">{{ progressPercent }}%</span>
           </div>
           <div class="h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high">
             <div
-              class="h-full rounded-full bg-primary transition-all"
+              class="h-full rounded-full transition-all"
+              :class="progress.failedCount > 0 ? 'bg-status-error' : 'bg-primary'"
               :style="{ width: `${progressPercent}%` }"
             />
           </div>
@@ -250,7 +285,20 @@ const stopService = async () => {
           {{ errorMessage }}
         </p>
 
+        <p v-if="canDefer" class="mb-3 text-xs leading-5 text-status-warning">
+          已迁移的数据可以继续使用，未迁移的项目或配置可能暂不可用。可先进入插件，稍后到设置 → 数据工具重试迁移；完成前请保留旧数据和备份。
+        </p>
+
         <div class="flex flex-wrap items-center gap-3">
+          <button
+            v-if="canDefer"
+            type="button"
+            class="ui-btn ui-btn--secondary"
+            @click="deferAndEnter"
+          >
+            <ArrowRight :size="14" />
+            先进入插件，稍后处理
+          </button>
           <button
             v-if="isReady"
             type="button"
@@ -297,7 +345,7 @@ const stopService = async () => {
           <span v-if="serviceStopMessage" role="status" class="text-xs text-on-surface-variant">
             {{ serviceStopMessage }}
           </span>
-          <span v-if="running" class="text-xs text-on-surface-variant">正在迁移，请不要关闭 uTools…</span>
+          <span v-if="running" class="text-xs text-on-surface-variant">{{ deferring ? "正在确认进入插件…" : "正在迁移，请不要关闭 uTools…" }}</span>
           <span v-if="stopping" role="status" class="text-xs text-on-surface-variant">
             {{ stopStatusText }}
           </span>

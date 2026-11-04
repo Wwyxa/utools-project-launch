@@ -159,7 +159,7 @@ async function buildCleanupPlan() {
   const { publicProjects, legacyPrivateProjects, orphanDocuments } = collectProjectDocumentsByKind();
   const serviceRunning = await projectLaunchServiceIsRunning();
   const ledger = readMigrationLedger();
-  const migrationCompleted = ledger?.status === "completed";
+  const migrationUnfinished = Boolean(ledger && ledger.status !== "completed" && ledger.status !== "abandoned");
   const legacyDirectory = legacyPluginDataDirectory();
   const legacyDirectoryExists = safeDirectoryNameExists(legacyDirectory);
   const tempDirectory = pluginTempDirectory();
@@ -175,6 +175,10 @@ async function buildCleanupPlan() {
     }
   })();
   const syncDisabledReason = syncReplicating ? "正在从云端拉取同步数据，暂不能清理同步数据。" : "";
+  const legacyCleanupOptions = {
+    requiresMigrationConfirmation: migrationUnfinished,
+    disabledReason: syncDisabledReason,
+  };
 
   const privateProjectCount = readLocalPrivateProjects().length;
   const legacyPrivateProjectCount = readLegacyStoredProjects().filter(
@@ -209,7 +213,7 @@ async function buildCleanupPlan() {
           (total, document) => total + estimateProjectDocumentBytes(document),
           0,
         ),
-        disabledReason: syncDisabledReason,
+        ...legacyCleanupOptions,
       },
     ),
     cleanupItem("sync-legacy-dbstorage", "sync", "遗留 dbStorage 配置", "旧版本同步数据库中的设备配置键。", {
@@ -218,7 +222,7 @@ async function buildCleanupPlan() {
       keys: collectLegacyDbStorageKeySummaries().map((entry) => entry.key),
       kind: "dbstorage-keys",
       count: collectLegacyDbStorageKeySummaries().length,
-      disabledReason: syncDisabledReason,
+      ...legacyCleanupOptions,
     }),
     cleanupItem("sync-orphan-documents", "sync", "孤立项目文档", "项目数据缺失或 ID 不匹配的同步文档。", {
       recommendation: "review",
@@ -226,7 +230,7 @@ async function buildCleanupPlan() {
       kind: "db-docs",
       count: orphanDocuments.length,
       estimatedBytes: orphanDocuments.reduce((total, document) => total + estimateProjectDocumentBytes(document), 0),
-      disabledReason: syncDisabledReason,
+      ...legacyCleanupOptions,
     }),
     cleanupItem(
       "local-private-projects",
@@ -284,11 +288,8 @@ async function buildCleanupPlan() {
       safetyHint: "确认迁移完成并备份后再删除；未迁移的文件可能仍在其中。",
       paths: legacyDirectoryExists ? [legacyDirectory] : [],
       estimatedBytes: await directoryEntrySizeBytes(legacyDirectory),
-      disabledReason: legacyDirectoryExists
-        ? migrationCompleted
-          ? ""
-          : "迁移完成并通过校验后才能清理旧目录。"
-        : "旧数据目录不存在。",
+      requiresMigrationConfirmation: migrationUnfinished,
+      disabledReason: legacyDirectoryExists ? "" : "旧数据目录不存在。",
     }),
     cleanupItem("cache-temp-directory", "cache", "临时目录", "插件临时目录中的全部文件。", {
       safetyHint: "确认没有下载或更新任务后再清理；不影响长期配置。",
@@ -482,9 +483,27 @@ async function executeCleanupItem(item) {
   return { ok: false, message: "该清理项没有可执行的操作。" };
 }
 
-async function executeCleanup(selectedItemIds) {
+async function executeCleanup(selectedItemIds, options = {}) {
   const plan = await buildCleanupPlan();
   const selectedIds = new Set(Array.isArray(selectedItemIds) ? selectedItemIds : []);
+  if (selectedIds.has('local-legacy-directory')) {
+    const guard = await guardProjectLaunchServiceForMigration();
+    if (!guard.ok) return { ok: false, partial: false, results: [{
+      id: 'local-legacy-directory', label: '旧版本数据目录', ok: false, message: guard.message,
+    }] };
+  }
+  const migrationSources = plan.items.filter((item) => selectedIds.has(item.id) &&
+    !item.disabledReason && item.requiresMigrationConfirmation);
+  if (migrationSources.length > 0) {
+    let error = options.confirmDiscardUnmigratedData === true
+      ? '' : '旧数据可能包含尚未恢复的项目或配置。请确认放弃未完成的迁移后再清理。';
+    if (!error) error = abandonMigration().error || '';
+    if (error) {
+      return { ok: false, partial: false, results: migrationSources.map((item) => ({
+        id: item.id, label: item.label, ok: false, message: error,
+      })) };
+    }
+  }
   const results = [];
   for (const item of plan.items) {
     if (!selectedIds.has(item.id)) continue;

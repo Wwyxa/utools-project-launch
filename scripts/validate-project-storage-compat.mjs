@@ -1374,6 +1374,140 @@ for (const failurePoint of ["copy-checkpoint", "delete-checkpoint"]) {
   cleanupBridge(restartedMigration);
 }
 
+// The migration ledger can outlive its enumerated source; read the exact document
+// before using an owned legacy aggregate, and never silently skip missing data.
+for (const recoveryMode of ['legacy-aggregate', 'foreign']) {
+  const project = { ...recoverablePrivateProject, id: `migration-${recoveryMode}` };
+  const documentId = `${projectDocPrefix}${project.id}`;
+  const fixture = createBridge({ docs: [{ _id: documentId, project }] });
+  let sourceChanged = false;
+  const result = await fixture.bridge.runMigration({
+    onProgress() {
+      if (sourceChanged) return;
+      sourceChanged = true;
+      fixture.docsById.delete(documentId);
+    },
+  });
+  assert.equal(result.ok, false, 'unavailable sources must leave a retryable failure');
+  fixture.dbStorageValues.set(storageKey, { projects: [{
+    ...project, ownerDeviceId: recoveryMode === 'foreign' ? 'another-device' : 'device-current',
+  }] });
+  const retried = await fixture.bridge.runMigration();
+  assert.equal(retried.ok, recoveryMode === 'legacy-aggregate', 'only owned private fallback data may recover');
+  assert.equal(fixture.dbStorageValues.has(storageKey), true, 'fallback must retain the aggregate');
+  assert.equal(
+    privateProjectFileExists(fixture.localDataDir, project.id),
+    recoveryMode === 'legacy-aggregate',
+    'missing or differently owned sources must not be written as migrated projects',
+  );
+  cleanupBridge(fixture);
+}
+
+// Explicit deferral keeps failed items retryable across preload restarts.
+for (const editedAfterEntry of [false, true]) {
+  const project = { ...recoverablePrivateProject, id: `deferred-${editedAfterEntry}` };
+  const documentId = `${projectDocPrefix}${project.id}`;
+  const fixture = createBridge({ docs: [{ _id: documentId, project }] });
+  assert.equal((await fixture.bridge.deferMigration()).ok, false, 'entry requires an attempted migration');
+  let removed = false;
+  assert.equal((await fixture.bridge.runMigration({ onProgress() {
+    if (!removed) { removed = true; fixture.docsById.delete(documentId); }
+  } })).ok, false);
+  const failedLedger = JSON.parse(fs.readFileSync(path.join(fixture.localDataDir, 'migration.v1.json'), 'utf8'));
+  assert.equal((await fixture.bridge.deferMigration()).ok, true, 'a failed item must not permanently block entry');
+  assert.equal(fixture.bridge.preflightStartup().status, 'ready');
+  assert.equal(fixture.bridge.preflightStartup().migrationDeferred, true);
+  const deferredLedger = JSON.parse(fs.readFileSync(path.join(fixture.localDataDir, 'migration.v1.json'), 'utf8'));
+  assert.equal(deferredLedger.status, 'failed', 'deferral must not mark migration completed');
+  assert.deepEqual(deferredLedger.items, failedLedger.items, 'deferral must preserve failures');
+  const cleanupPlan = await fixture.bridge.getCleanupPlan();
+  for (const id of ['sync-legacy-private-projects', 'sync-legacy-dbstorage', 'sync-orphan-documents', 'local-legacy-directory']) {
+    const item = cleanupPlan.items.find((candidate) => candidate.id === id);
+    assert.equal(item?.requiresMigrationConfirmation, true, 'incomplete sources require explicit confirmation');
+    if (id !== 'local-legacy-directory') assert.equal(item.disabledReason, '', 'migration failure must not permanently disable cleanup');
+  }
+  const restarted = createBridge({
+    localDataDir: fixture.localDataDir, legacyDataDir: fixture.legacyDataDir, tempDataDir: fixture.tempDataDir,
+    docs: [{ _id: documentId, project }],
+  });
+  assert.equal(restarted.bridge.preflightStartup().status, 'ready', 'deferral must survive preload restart');
+  if (editedAfterEntry) {
+    fs.mkdirSync(path.join(fixture.localDataDir, 'projects'), { recursive: true });
+    fs.writeFileSync(path.join(fixture.localDataDir, 'projects', `${project.id}.json`), JSON.stringify({
+      schemaVersion: 1, project: { ...project, name: 'Edited after entry' },
+    }));
+  }
+  const retried = await restarted.bridge.runMigration();
+  assert.equal(retried.ok, !editedAfterEntry);
+  assert.equal(restarted.bridge.preflightStartup().status, 'ready', 'failed retry must not revoke entry');
+  assert.equal(restarted.bridge.preflightStartup().migrationDeferred === true, editedAfterEntry);
+  if (editedAfterEntry) {
+    assert.equal(restarted.bridge.loadProjects()[0].name, 'Edited after entry');
+    assert.equal(restarted.docsById.has(documentId), true, 'conflicts must retain the old source');
+  } else {
+    assert.equal(restarted.bridge.loadProjects()[0].id, project.id);
+    assert.equal(restarted.docsById.has(documentId), false);
+  }
+  cleanupBridge(restarted);
+}
+
+const deferredService = createBridge({ legacyDbStorage: {
+  'utools-project-launch.project-launch-service.v1': { schemaVersion: 1, enabled: true },
+} });
+const brokenServiceSource = path.join(deferredService.legacyDataDir, 'service');
+fs.mkdirSync(brokenServiceSource);
+fs.writeFileSync(path.join(brokenServiceSource, 'state.json'), '{}');
+assert.equal((await deferredService.bridge.runMigration()).ok, false);
+assert.equal((await deferredService.bridge.deferMigration()).ok, true);
+assert.equal(deferredService.bridge.loadProjectLaunchServicePreferences().enabled, false, 'failed service migration must not enable an unusable runtime');
+assert.equal(deferredService.bridge.preflightStartup().status, 'ready');
+cleanupBridge(deferredService);
+
+// Ending migration preserves the failed evidence while stopping future reminders.
+for (const closeMode of ['explicit', 'cleanup', 'write-failure']) {
+  let rejectCloseWrite = false;
+  const fixture = createBridge({ legacyDbStorage: {
+    'utools-project-launch.ui-preferences.v1': { schemaVersion: 1 },
+  }, fsOverrides: {
+    renameSync(source, target) {
+      if (rejectCloseWrite && path.basename(target) === 'migration.v1.json') throw new Error('closure write failed');
+      return fs.renameSync(source, target);
+    },
+  } });
+  const ledgerPath = path.join(fixture.localDataDir, 'migration.v1.json');
+  const items = [{ id: 'project-doc:' + projectDocPrefix + 'missing', kind: 'private-project', status: 'failed',
+    owningDeviceId: 'device-current', label: 'Missing project', error: 'source missing' }];
+  fs.writeFileSync(ledgerPath, JSON.stringify({ schemaVersion: 1, status: 'failed', deferred: true, items }));
+  const key = 'utools-project-launch.ui-preferences.v1';
+  const unconfirmed = await fixture.bridge.executeCleanup(['sync-legacy-dbstorage']);
+  assert.equal(unconfirmed.ok, false, 'unconfirmed cleanup must preserve unfinished migration data');
+  assert.equal(fixture.dbStorageValues.has(key), true);
+  assert.equal(fixture.bridge.readMigrationSummary().status, 'failed');
+  rejectCloseWrite = closeMode === 'write-failure';
+  if (closeMode === 'explicit') {
+    assert.equal(fixture.bridge.abandonMigration().ok, true);
+    assert.equal(fixture.dbStorageValues.has(key), true, 'ending migration alone must not delete old data');
+  } else {
+    const result = await fixture.bridge.executeCleanup(['sync-legacy-dbstorage'], { confirmDiscardUnmigratedData: true });
+    assert.equal(result.ok, closeMode === 'cleanup');
+    assert.equal(fixture.dbStorageValues.has(key), closeMode !== 'cleanup', 'closure must persist before deleting data');
+  }
+  const stored = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+  assert.deepEqual(stored.items, items, 'closed migration must retain historical failure evidence');
+  if (closeMode !== 'write-failure') {
+    assert.equal(stored.status, 'abandoned');
+    assert.equal((await fixture.bridge.runMigration()).blocked, 'migration-ended', 'ended sources must not be restored by retry');
+    const restarted = createBridge({ localDataDir: fixture.localDataDir, legacyDataDir: fixture.legacyDataDir,
+      tempDataDir: fixture.tempDataDir, docs: [{ _id: projectDocPrefix + 'late-private', project: recoverablePrivateProject }] });
+    assert.equal(restarted.bridge.preflightStartup().status, 'ready', 'late old data must not reopen a closed migration');
+    assert.notEqual(restarted.bridge.preflightStartup().migrationDeferred, true);
+    cleanupBridge(restarted);
+  } else {
+    assert.equal(stored.status, 'failed');
+    cleanupBridge(fixture);
+  }
+}
+
 let rejectPrivateRemoval = true;
 const retryRemovalBridge = createBridge({
   docs: [{ _id: `${projectDocPrefix}${recoverablePrivateProject.id}`, project: recoverablePrivateProject }],
@@ -1422,6 +1556,7 @@ for (const installedFiles of [
 
 for (const serviceMode of [
   "idle",
+  "protocol-2",
   "active",
   "health-failure",
   "invalid-state",
@@ -1439,7 +1574,7 @@ for (const serviceMode of [
   fs.writeFileSync(path.join(targetDirectory, "token"), "c".repeat(64));
   fs.writeFileSync(path.join(sourceDirectory, "state.json"), JSON.stringify({ beforeShutdown: true }));
   const discovery = {
-    protocolVersion: 3,
+    protocolVersion: serviceMode === 'protocol-2' ? 2 : 3,
     serviceVersion: "test",
     instanceId: "legacy-instance",
     processIdentity: "legacy-identity",
@@ -1460,9 +1595,10 @@ for (const serviceMode of [
     if (serviceMode === "unknown-identity" || (shutdownRequested && serviceMode === "unconfirmed-stop")) return null;
     return !shutdownRequested;
   };
-  serviceBridge.sandbox.requestProjectLaunchService = async (candidate, token, method, requestPath) => {
+  serviceBridge.sandbox.requestProjectLaunchService = async (candidate, token, method, requestPath, body, options) => {
     assert.equal(candidate.instanceId, "legacy-instance");
     assert.equal(token, "b".repeat(64), "migration must authenticate with the old service token");
+    assert.equal(options?.protocolVersion, discovery.protocolVersion, 'all migration service requests must use the old protocol');
     requestedPaths.push(requestPath);
     if (requestPath === "/v1/health") {
       return { statusCode: serviceMode === "health-failure" ? 500 : 200, payload: discovery };
@@ -1484,12 +1620,12 @@ for (const serviceMode of [
   const result = await serviceBridge.bridge.runMigration();
   assert.equal(
     result.ok,
-    serviceMode === "idle",
+    serviceMode === "idle" || serviceMode === "protocol-2",
     `migration must block on ${serviceMode} unless an idle service exits`,
   );
   assert.equal(
     fs.existsSync(path.join(targetDirectory, "state.json")),
-    serviceMode === "idle",
+    serviceMode === "idle" || serviceMode === "protocol-2",
     "no runtime state may be copied before shutdown confirmation",
   );
   if (result.ok) {
@@ -1506,6 +1642,7 @@ for (const serviceMode of [
 
 for (const stopMode of [
   "success",
+  "protocol-2",
   "stop-failure",
   "state-failure",
   "invalid-id",
@@ -1520,7 +1657,7 @@ for (const stopMode of [
     fs.mkdirSync(directory);
     fs.writeFileSync(path.join(directory, "token"), "b".repeat(64));
     const discovery = {
-      protocolVersion: 3,
+      protocolVersion: stopMode === 'protocol-2' ? 2 : 3,
       serviceVersion: "test",
       instanceId: "legacy-stop-instance",
       processIdentity: "legacy-stop-identity",
@@ -1554,7 +1691,8 @@ for (const stopMode of [
       if (stopMode === "unknown-identity") return null;
       return stopMode !== "already-stopped" && !shutdownRequested;
     };
-    stoppingBridge.sandbox.requestProjectLaunchService = async (candidate, token, method, requestPath) => {
+    stoppingBridge.sandbox.requestProjectLaunchService = async (candidate, token, method, requestPath, body, options) => {
+      assert.equal(options?.protocolVersion, discovery.protocolVersion);
       assert.equal(candidate.tokenPath, path.join(directory, "token"));
       assert.equal(token, "b".repeat(64));
       requested.push(requestPath);
@@ -1595,8 +1733,8 @@ for (const stopMode of [
     const stopped = await stoppingBridge.bridge.stopMigrationService({
       onProgress: (update) => stopProgress.push(clone(update)),
     });
-    assert.equal(stopped.ok, stopMode === "success" || stopMode === "already-stopped");
-    if (stopMode === "success") {
+    assert.equal(stopped.ok, stopMode === "success" || stopMode === "protocol-2" || stopMode === "already-stopped");
+    if (stopMode === "success" || stopMode === "protocol-2") {
       assert.deepEqual(requested, [
         "/v1/health",
         "/v1/state",

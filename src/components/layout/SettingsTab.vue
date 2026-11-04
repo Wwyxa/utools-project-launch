@@ -149,6 +149,8 @@ const cleanupDialogOpen = ref(false);
 const cleanupScanning = ref(false);
 const cleanupSubmitting = ref(false);
 const cleanupConfirmOpen = ref(false);
+const migrationEndConfirmOpen = ref(false);
+const migrationEnding = ref(false);
 const cleanupSelection = ref<Record<string, boolean>>({});
 const formatDataSize = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -164,13 +166,26 @@ const formatDataSize = (bytes: number): string => {
 
 const migrationStatusLabel = computed(() => {
   const status = store.storageOverview?.migration?.status;
+  if (status === "abandoned") return "已结束（未迁移数据不再处理）";
   if (status === "completed") return t.value.settings.migrationStatusCompleted;
   if (status === "in-progress") return t.value.settings.migrationStatusInProgress;
   if (status === "failed") return t.value.settings.migrationStatusFailed;
   return t.value.settings.migrationStatusNone;
 });
 
-const migrationRetryDisabled = computed(() => store.dataToolsBusy || store.storageOverview?.serviceRunning === true);
+const migrationEnded = computed(() => store.storageOverview?.migration?.status === "abandoned");
+const migrationRetryDisabled = computed(() => store.dataToolsBusy || store.storageOverview?.serviceRunning === true || migrationEnded.value);
+
+const endMigration = async () => {
+  if (migrationEnding.value || store.dataToolsBusy) return;
+  migrationEnding.value = true;
+  try {
+    const result = await store.endStorageMigration();
+    if (result?.ok) migrationEndConfirmOpen.value = false;
+  } finally {
+    migrationEnding.value = false;
+  }
+};
 
 const openCleanupDialog = async () => {
   cleanupDialogOpen.value = true;
@@ -203,19 +218,28 @@ const cleanupHasSyncSelection = computed(() =>
     (item) => cleanupSelection.value[item.id] && !item.disabledReason && item.category === "sync",
   ),
 );
+const cleanupHasUnmigratedSelection = computed(() => cleanupItems.value.some(
+  (item) => cleanupSelectedIds.value.includes(item.id) && item.requiresMigrationConfirmation,
+));
+const cleanupConfirmationMessage = computed(() => [
+  cleanupHasSyncSelection.value ? t.value.settings.cleanupSyncWarning : "",
+  cleanupHasUnmigratedSelection.value
+    ? "所选旧数据可能包含尚未恢复的项目或配置。继续将结束本次旧数据迁移，不再显示迁移失败提醒，并清理所选数据；未恢复的数据可能无法找回。请先备份，需要恢复时请取消并重试迁移。"
+    : "",
+].filter(Boolean).join("\n\n"));
 const cleanupRunnable = computed(
   () =>
     cleanupSelectedIds.value.length > 0 && !cleanupScanning.value && !cleanupSubmitting.value && !store.cleanupRunning,
 );
 
-const runSelectedCleanup = async () => {
+const runSelectedCleanup = async (confirmed = false) => {
   if (!cleanupRunnable.value) return;
   cleanupSubmitting.value = true;
   store.cleanupSelectedIds = cleanupSelectedIds.value;
   showActionStatus({ state: "loading", message: t.value.common.processing });
   try {
     await waitForVisualFeedback();
-    const result = await store.runCleanup();
+    const result = await store.runCleanup(confirmed && cleanupHasUnmigratedSelection.value);
     showActionStatus({
       state: result?.ok ? "success" : result?.partial ? "warning" : "error",
       message: store.cleanupMessage || (result?.ok ? t.value.common.completed : t.value.common.error),
@@ -229,7 +253,7 @@ const runSelectedCleanup = async () => {
 
 const requestCleanupRun = () => {
   if (!cleanupRunnable.value) return;
-  if (cleanupHasSyncSelection.value) {
+  if (cleanupHasSyncSelection.value || cleanupHasUnmigratedSelection.value) {
     cleanupConfirmOpen.value = true;
     return;
   }
@@ -2428,10 +2452,25 @@ watch(
                   </button>
                   <span class="text-xs text-on-surface-variant">
                     {{ t.settings.dataMigration }}: {{ migrationStatusLabel }}
-                    <template v-if="store.migrationProgress && store.migrationProgress.totalCount > 0">
+                    <template v-if="!migrationEnded && store.migrationProgress && store.migrationProgress.totalCount > 0">
                       ({{ store.migrationProgress.verifiedCount }}/{{ store.migrationProgress.totalCount }})
                     </template>
                   </span>
+                </div>
+
+                <div v-if="!migrationEnded && store.migrationProgress?.failedCount" class="text-xs leading-5 text-status-warning" role="status">
+                  <p>仍有 {{ store.migrationProgress.failedCount }} 项迁移失败，未迁移的项目或配置可能暂不可用。可重试迁移；确认不再恢复时，可结束旧数据迁移并停止提醒。</p>
+                  <button type="button" class="ui-btn ui-btn--ghost mt-1" :disabled="store.dataToolsBusy" @click="migrationEndConfirmOpen = true">
+                    结束旧数据迁移，不再提醒
+                  </button>
+                  <details class="mt-1">
+                    <summary class="cursor-pointer">查看失败项</summary>
+                    <ul class="mt-1 space-y-1">
+                      <li v-for="item in store.migrationProgress.failedItems" :key="item.id" class="break-all">
+                        {{ item.label }}：{{ item.error }}
+                      </li>
+                    </ul>
+                  </details>
                 </div>
 
                 <div class="flex flex-wrap gap-2">
@@ -2875,18 +2914,29 @@ watch(
 
   <Teleport to="body">
     <ActionDialog
+      :open="migrationEndConfirmOpen"
+      tone="warning"
+      title="结束旧数据迁移？"
+      message="结束后将保留已迁移的数据和历史记录，不再重试剩余项或显示迁移失败提醒。此操作不会恢复缺失项目，也不会删除旧数据；以后需要恢复时请通过备份导入。"
+      primary-label="确认结束，不再提醒"
+      :cancel-label="t.common.cancel"
+      :busy="migrationEnding"
+      @cancel="migrationEndConfirmOpen = false"
+      @primary="endMigration"
+    />
+    <ActionDialog
       :open="cleanupConfirmOpen"
       tone="danger"
       icon="trash"
       :title="t.settings.cleanupConfirm"
-      :message="t.settings.cleanupSyncWarning"
+      :message="cleanupConfirmationMessage"
       :primary-label="t.settings.cleanupConfirm"
       :cancel-label="t.common.cancel"
       @cancel="cleanupConfirmOpen = false"
       @primary="
         () => {
           cleanupConfirmOpen = false;
-          runSelectedCleanup();
+          runSelectedCleanup(true);
         }
       "
     />

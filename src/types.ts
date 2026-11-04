@@ -1824,6 +1824,7 @@ export interface MigrationSummary {
 export interface StartupPreflightResult {
   status: StartupPreflightStatus;
   browserPreview?: boolean;
+  migrationDeferred?: boolean;
   appVersion: string;
   capabilities: StartupPreflightCapabilities;
   migration: MigrationSummary | null;
@@ -1833,7 +1834,7 @@ export interface StartupPreflightResult {
 
 export interface MigrationRunResult {
   ok: boolean;
-  blocked?: "unsupported-host" | "active-runs" | "items-failed" | "service-unavailable";
+  blocked?: "unsupported-host" | "active-runs" | "items-failed" | "service-unavailable" | "migration-ended";
   message?: string;
   ledger: MigrationSummary | null;
 }
@@ -1950,6 +1951,7 @@ export interface CleanupPlanItem {
   kind: string;
   paths: string[];
   disabledReason: string;
+  requiresMigrationConfirmation?: boolean;
   selectedByDefault: boolean;
   estimatedBytes: number;
   count: number | null;
@@ -1977,6 +1979,8 @@ export interface CleanupResult {
 export interface ProjectBridge {
   preflightStartup(): StartupPreflightResult;
   runMigration(options?: { onProgress?: (summary: MigrationSummary) => void }): Promise<MigrationRunResult>;
+  deferMigration(): Promise<LocalStateWriteResult>;
+  abandonMigration(): LocalStateWriteResult;
   stopMigrationService(options?: {
     onProgress?: (progress: MigrationServiceStopProgress) => void;
   }): Promise<LocalStateWriteResult>;
@@ -1999,7 +2003,7 @@ export interface ProjectBridge {
   saveProjectEnvironmentOverrides(projectId: string, override: ProjectEnvironmentOverride): LocalStateWriteResult;
   getStorageOverview(): Promise<StorageOverview>;
   getCleanupPlan(): Promise<CleanupPlan>;
-  executeCleanup(itemIds: string[]): Promise<CleanupResult>;
+  executeCleanup(itemIds: string[], options?: { confirmDiscardUnmigratedData?: boolean }): Promise<CleanupResult>;
   openPluginLocalDataDirectory(): Promise<void>;
   openLegacyDataDirectory(): Promise<void>;
   listBackups(): Promise<{ entries: BackupEntry[]; syncState: null | 0 | 1 }>;

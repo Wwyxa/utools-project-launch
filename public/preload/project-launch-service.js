@@ -785,7 +785,7 @@ function requestProjectLaunchService(discovery, token, method, requestPath, body
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
-          'X-Protocol-Version': String(projectLaunchServiceProtocolVersion),
+          'X-Protocol-Version': String(options.protocolVersion ?? projectLaunchServiceProtocolVersion),
           ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
           ...(body === undefined
             ? {}
@@ -866,17 +866,17 @@ async function projectLaunchServiceConnection() {
   return { discovery, token };
 }
 
-function validateProjectLaunchServiceHealth(health, connection) {
+function validateProjectLaunchServiceHealth(health, connection, protocolVersion = projectLaunchServiceProtocolVersion) {
   if (
     !health ||
-    health.protocolVersion !== projectLaunchServiceProtocolVersion ||
+    health.protocolVersion !== protocolVersion ||
     health.instanceId !== connection.discovery.instanceId ||
     health.pid !== connection.discovery.pid ||
     health.processIdentity !== connection.discovery.processIdentity
   ) {
     const error = new Error('项目启动服务身份或协议校验失败。');
     error.code =
-      health?.protocolVersion !== projectLaunchServiceProtocolVersion ? 'protocol-mismatch' : 'identity-mismatch';
+      health?.protocolVersion !== protocolVersion ? 'protocol-mismatch' : 'identity-mismatch';
     throw error;
   }
   return health;
@@ -899,12 +899,12 @@ function projectLaunchServiceEventBatch(payload, after) {
   );
 }
 
-async function requestProjectLaunchServiceHealth(connection) {
-  const response = await requestProjectLaunchService(connection.discovery, connection.token, 'GET', '/v1/health');
+async function requestProjectLaunchServiceHealth(connection, options = {}) {
+  const response = await requestProjectLaunchService(connection.discovery, connection.token, 'GET', '/v1/health', undefined, options);
   if (response.statusCode !== 200) {
     throw projectLaunchServiceResponseError(response, '项目启动服务健康检查失败。');
   }
-  return validateProjectLaunchServiceHealth(response.payload, connection);
+  return validateProjectLaunchServiceHealth(response.payload, connection, options.protocolVersion);
 }
 
 async function requestProjectLaunchServiceState(connection) {

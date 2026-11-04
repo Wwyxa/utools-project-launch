@@ -38,7 +38,7 @@ const checkStorageMigration = () => {
   if (store.dataToolsBusy) return;
   try {
     const preflight = getProjectBridge().preflightStartup();
-    if (preflight.status !== "migration-required" && preflight.status !== "migration-incomplete") {
+    if (!preflight.migrationDeferred && preflight.status !== "migration-required" && preflight.status !== "migration-incomplete") {
       migrationPromptShown = false;
       return;
     }
@@ -50,6 +50,13 @@ const checkStorageMigration = () => {
     console.warn("[utools-project-launch] Unable to check pending storage migration.", error);
   }
 };
+
+watch(() => store.migrationProgress?.status, (status) => {
+  if (status === "abandoned" || status === "completed") {
+    migrationPromptOpen.value = false;
+    migrationPromptShown = false;
+  }
+});
 
 const handleDatabasePull = () => {
   checkStorageMigration();

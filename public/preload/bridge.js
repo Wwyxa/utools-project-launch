@@ -24,6 +24,8 @@ registerProcessCleanupHooks();
 window.projectBridge = {
   preflightStartup,
   runMigration,
+  deferMigration,
+  abandonMigration,
   stopMigrationService,
   readMigrationSummary,
   loadProjects: readProjects,
@@ -251,6 +253,8 @@ const runtimeOperationLabels = {
   deleteBackup: "删除备份",
   exportCloudBackup: "导出备份",
   runMigration: "迁移存储",
+  deferMigration: "稍后处理迁移",
+  abandonMigration: "结束旧数据迁移",
   executeCleanup: "清理数据",
   testAiConnection: "测试 AI 连接",
   verifyGithubAuthToken: "验证 GitHub 凭证",

@@ -254,7 +254,8 @@ export interface AppActions {
   setProjectHidden(projectId: string, hidden: boolean): boolean;
   refreshStorageOverview(): Promise<void>;
   loadCleanupPlan(): Promise<void>;
-  runCleanup(): Promise<CleanupResult | null>;
+  runCleanup(confirmDiscardUnmigratedData?: boolean): Promise<CleanupResult | null>;
+  endStorageMigration(): Promise<LocalStateWriteResult | null>;
   retryStorageMigration(): Promise<MigrationRunResult | null>;
   openLocalDataDirectory(): Promise<void>;
   openLegacyDataDirectory(): Promise<void>;

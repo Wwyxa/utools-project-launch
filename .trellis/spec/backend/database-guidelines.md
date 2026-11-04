@@ -59,6 +59,27 @@ maintenance fail visibly and are retryable. Existing current policy is preserved
 Old-format conversion is confined to initial migration, never normal runtime
 queries or cleanup. Shared records and policy survive service-directory deletion.
 
+### Recovery, Partial Entry and Closure
+
+- Read `project-doc:` sources by exact `db.get` ID. Recover from a verified local
+  copy or matching owned private aggregate; missing data remains a visible failure.
+  Preserve ID/visibility/device checks and `projectHash` validation before deletion.
+- Migration shutdown alone may use protocol 2; normal requests and health checks
+  remain protocol 3. Retain token, OS process and health identity validation.
+- `deferMigration()` persists `deferred: true` only after all items were attempted.
+  Preflight permits entry with `migrationDeferred: true`, retaining failed items.
+  Failed service migration disables service mode. Deferred retries preserve newer
+  local data; refresh the catalog even after partially successful retries.
+- `abandonMigration()` persists terminal `status: 'abandoned'`, retaining historical
+  errors without claiming completion. Stop startup/Settings failure reminders and
+  late-data discovery; reject retries with `migration-ended`. Recovery uses import.
+- Cleanup items with `requiresMigrationConfirmation` require
+  `executeCleanup(ids, { confirmDiscardUnmigratedData: true })`; persist closure
+  before deletion and abort on write failure. Ending alone deletes nothing; cache
+  cleanup does not end migration. Keep cloud-sync and old-service shutdown guards.
+- Do not equate all items attempted with success, erase the ledger to hide failures,
+  or log project contents in diagnostics.
+
 ## Verification
 
 - `tests/storageMigration.test.ts` covers the migration/service-stop interlock

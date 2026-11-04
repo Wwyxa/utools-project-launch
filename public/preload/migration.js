@@ -64,6 +64,7 @@ function readMigrationLedger() {
     status: typeof stored.status === 'string' ? stored.status : 'in-progress',
     startedAt: typeof stored.startedAt === 'string' ? stored.startedAt : '',
     completedAt: typeof stored.completedAt === 'string' ? stored.completedAt : '',
+    deferred: stored.deferred === true,
     items: Array.isArray(stored.items) ? stored.items : [],
   };
 }
@@ -212,14 +213,17 @@ function preflightStartup() {
 
   const ledger = readMigrationLedger();
   const migration = ledger ? migrationProgressSnapshot({ ...ledger }) : null;
-  if (ledger && ledger.status !== 'completed') {
+  if (ledger && ledger.status !== 'completed' && ledger.status !== 'abandoned') {
     return {
-      status: 'migration-incomplete',
+      status: ledger.deferred ? 'ready' : 'migration-incomplete',
+      migrationDeferred: ledger.deferred,
       appVersion,
       capabilities,
       migration,
       legacy,
-      message: '上一次数据迁移未完成，旧数据仍完整保留，请继续或重试迁移。',
+      message: ledger.deferred
+        ? '数据迁移尚未完成，未迁移的项目或配置可能暂不可用。已迁移的数据可以继续使用，请到设置 → 数据工具查看失败项并重试迁移；完成前请保留旧数据和备份。'
+        : '上一次数据迁移未完成，可重试迁移，或先进入插件，稍后到设置 → 数据工具继续处理。',
     };
   }
   if (!ledger && hasLegacyData(legacy)) {
@@ -232,7 +236,7 @@ function preflightStartup() {
       message: '检测到旧版本数据，需要先完成迁移才能使用。',
     };
   }
-  if (ledger && pendingMigrationPlanItems(ledger, collectLegacyDeviceId()).length > 0) {
+  if (ledger && ledger.status !== 'abandoned' && pendingMigrationPlanItems(ledger, collectLegacyDeviceId()).length > 0) {
     return {
       status: 'migration-required',
       appVersion,
@@ -445,9 +449,13 @@ async function guardProjectLaunchServiceForMigration(stopActiveRuns = false, onP
       return { ok: true };
     }
     if (matches !== true) throw new Error('无法确认旧项目启动服务的进程身份。请停止旧服务后重试迁移。');
+    if (discovery.protocolVersion !== 2 && discovery.protocolVersion !== projectLaunchServiceProtocolVersion) {
+      throw new Error('旧项目启动服务协议不受迁移支持，请先停止旧服务后重试。');
+    }
     const connection = { discovery, token: readProjectLaunchServiceToken(directoryPath) };
-    await requestProjectLaunchServiceHealth(connection);
-    const stateResponse = await requestProjectLaunchService(discovery, connection.token, 'GET', '/v1/state');
+    const requestOptions = { protocolVersion: discovery.protocolVersion };
+    await requestProjectLaunchServiceHealth(connection, requestOptions);
+    const stateResponse = await requestProjectLaunchService(discovery, connection.token, 'GET', '/v1/state', undefined, requestOptions);
     if (stateResponse.statusCode !== 200)
       throw projectLaunchServiceResponseError(stateResponse, '旧项目启动服务状态读取失败。');
     let state = stateResponse.payload;
@@ -470,7 +478,7 @@ async function guardProjectLaunchServiceForMigration(stopActiveRuns = false, onP
             throw new Error('旧项目启动服务返回了无效的脚本运行 ID。');
           }
           const stopped = await requestProjectLaunchService(
-            discovery, connection.token, 'POST', `/v1/runs/${run.id}/stop`, {},
+            discovery, connection.token, 'POST', `/v1/runs/${run.id}/stop`, {}, requestOptions,
           );
           if (stopped.statusCode !== 200 && stopped.statusCode !== 202) {
             throw projectLaunchServiceResponseError(stopped, '旧项目启动服务停止脚本失败。');
@@ -482,7 +490,7 @@ async function guardProjectLaunchServiceForMigration(stopActiveRuns = false, onP
         }
         reportProgress('waiting-scripts', serviceRunCount(state.runs));
         await new Promise((resolve) => setTimeout(resolve, 100));
-        const updated = await requestProjectLaunchService(discovery, connection.token, 'GET', '/v1/state');
+        const updated = await requestProjectLaunchService(discovery, connection.token, 'GET', '/v1/state', undefined, requestOptions);
         if (updated.statusCode !== 200) {
           throw projectLaunchServiceResponseError(updated, '旧项目启动服务状态读取失败。');
         }
@@ -491,7 +499,7 @@ async function guardProjectLaunchServiceForMigration(stopActiveRuns = false, onP
       }
     }
     reportProgress('stopping-service');
-    const response = await requestProjectLaunchService(discovery, connection.token, 'POST', '/v1/shutdown', {});
+    const response = await requestProjectLaunchService(discovery, connection.token, 'POST', '/v1/shutdown', {}, requestOptions);
     if (response.statusCode !== 200 && response.statusCode !== 202) {
       throw projectLaunchServiceResponseError(response, '旧项目启动服务停止失败。');
     }
@@ -522,7 +530,7 @@ async function stopMigrationService(options = {}) {
   return result.ok ? { ok: true } : { ok: false, error: result.message };
 }
 
-function migratePreferenceFamilyItem(item) {
+function migratePreferenceFamilyItem(item, ledger) {
   const family = item.id.startsWith('dbstorage:') ? item.id.slice('dbstorage:'.length) : item.id;
   let normalizedValue = null;
   const targetSection = family;
@@ -569,6 +577,10 @@ function migratePreferenceFamilyItem(item) {
     throw new Error(`未知的偏好迁移分组：${item.id}`);
   }
 
+  const existingValue = readLocalState().preferences[targetSection];
+  if (ledger.deferred && existingValue !== undefined && !storedValueEquals(existingValue, normalizedValue)) {
+    throw new Error('本机已有不同的配置，已保留当前配置和旧数据，未覆盖。');
+  }
   const writeResult = saveLocalStatePreference(targetSection, normalizedValue, (value) => value);
   if (!writeResult.ok) {
     throw new Error(writeResult.error || '写入本地状态文件失败。');
@@ -584,13 +596,31 @@ function migratePreferenceFamilyItem(item) {
 }
 
 function migratePrivateProjectItem(item, ledger) {
-  const sourceProject = readMigrationSourceProject(item);
   const projectId = migrationItemProjectId(item);
-  const project = sourceProject || readLocalPrivateProject(projectId);
+  const localProject = readLocalPrivateProject(projectId);
+  const sourceProject = readMigrationSourceProject(item) ||
+    (!localProject && readLegacyStoredProjects().find((project) => project?.id === projectId));
+  const project = sourceProject || localProject;
   if (!project) {
-    throw new Error(`无法读取私有项目 ${item.id}。`);
+    const document = readCurrentProjectDocument(projectId);
+    const documentState = document ? '文档存在但没有项目内容' : '未找到文档';
+    const localState = fs.existsSync(privateProjectFilePath(projectId))
+      ? '文件存在但无法读取为对应项目（请检查 JSON 格式和项目 ID）' : '未找到文件';
+    throw new Error(`无法读取私有项目 ${projectId}：旧数据库文档、本机迁移副本和旧项目汇总中均无可用数据。读取诊断：旧文档：${documentState}；本机副本：${localState}；旧汇总：未找到对应项目。迁移记录不包含项目正文，无法仅凭记录恢复。可从旧版导出或备份恢复后重试，也可在设置 → 数据工具确认结束旧数据迁移。`);
+  }
+  if (
+    project.id !== projectId || project.visibility !== 'private' ||
+    (sourceProject && project[legacyOwnerDeviceIdField] !== item.owningDeviceId)
+  ) {
+    throw new Error(`私有项目 ${projectId} 的 ID、可见性或设备归属已变化，已保留原数据，请确认后重试。`);
   }
   const storedProject = toStoredProject(project);
+  if (ledger.deferred && sourceProject && (
+    readCurrentProjectDocument(projectId)?.project?.visibility === 'public' ||
+    (localProject && !storedValueEquals(toPlainJson(storedProject), localProject))
+  )) {
+    throw new Error(`项目 ${projectId} 已有不同的本机数据，已保留当前项目和旧数据，未覆盖。`);
+  }
   const projectHash = crypto.createHash('sha256').update(JSON.stringify(storedProject)).digest('hex');
   if (
     !sourceProject &&
@@ -621,8 +651,8 @@ function migratePrivateProjectItem(item, ledger) {
 
 function readMigrationSourceProject(item) {
   if (item.id.startsWith('project-doc:')) {
-    const documentId = item.id.slice('project-doc:'.length);
-    const document = readProjectDocs().find((candidate) => candidate?._id === documentId);
+    const projectId = migrationItemProjectId(item);
+    const document = readCurrentProjectDocument(projectId);
     return document?.project || null;
   }
   if (item.id.startsWith('legacy-aggregate:')) {
@@ -660,7 +690,7 @@ function copyMigrationFile(sourcePath, targetPath) {
   fs.copyFileSync(sourcePath, targetPath);
 }
 
-function migrateServiceDirectoryItem(item) {
+function migrateServiceDirectoryItem(item, ledger) {
   const sourceDirectory = item.source;
   const targetDirectory = item.target;
   const entries = [
@@ -673,6 +703,18 @@ function migrateServiceDirectoryItem(item) {
     throw new Error('旧服务状态缺少 token，无法安全迁移。');
   }
 
+  if (ledger.deferred) {
+    entries.forEach((entryName) => {
+      const sourcePath = path.join(sourceDirectory, entryName);
+      const targetPath = path.join(targetDirectory, entryName);
+      if (fs.existsSync(targetPath) && (
+        !fs.statSync(sourcePath).isFile() || !fs.statSync(targetPath).isFile() ||
+        !fs.readFileSync(sourcePath).equals(fs.readFileSync(targetPath))
+      )) {
+        throw new Error(`服务文件 ${entryName} 已有不同的本机数据，已保留当前文件和旧数据，未覆盖。`);
+      }
+    });
+  }
   fs.mkdirSync(targetDirectory, { recursive: true });
   entries.forEach((entryName) => {
     const sourcePath = path.join(sourceDirectory, entryName);
@@ -803,7 +845,10 @@ async function migrateServiceRuntimeRecords(sourceDirectory) {
   }, true);
 }
 
-function migrateIconPackDirectoryItem(item) {
+function migrateIconPackDirectoryItem(item, ledger) {
+  if (ledger.deferred && legacyDirectoryHasEntry(item.target)) {
+    throw new Error('本机已有图标包，已保留当前图标包和旧数据，未覆盖。');
+  }
   fs.cpSync(item.source, item.target, { recursive: true });
   const packagePath = path.join(item.target, 'vscode-icons-derived', 'pack.json.gz');
   const metadataPath = path.join(item.target, 'vscode-icons-derived', 'install.json');
@@ -834,18 +879,18 @@ async function migrateLedgerItem(item, legacyDeviceId, ledger) {
     return;
   }
   if (item.kind === 'preferences') {
-    migratePreferenceFamilyItem(item);
+    migratePreferenceFamilyItem(item, ledger);
     item.status = 'verified';
     return;
   }
   if (item.kind === 'service-directory') {
-    migrateServiceDirectoryItem(item);
+    migrateServiceDirectoryItem(item, ledger);
     await migrateServiceRuntimeRecords(item.source);
     item.status = 'verified';
     return;
   }
   if (item.kind === 'icon-pack-directory') {
-    migrateIconPackDirectoryItem(item);
+    migrateIconPackDirectoryItem(item, ledger);
     item.status = 'verified';
     return;
   }
@@ -871,6 +916,9 @@ async function runMigration(options = {}) {
 
   const legacyDeviceId = collectLegacyDeviceId();
   const existingLedger = readMigrationLedger();
+  if (existingLedger?.status === 'abandoned') {
+    return { ok: false, blocked: 'migration-ended', message: '旧数据迁移已由用户结束，不再自动恢复旧数据。需要的数据请通过备份导入。', ledger: migrationProgressSnapshot(existingLedger) };
+  }
   let ledger = existingLedger || {
     schemaVersion: migrationLedgerSchemaVersion,
     status: 'in-progress',
@@ -933,6 +981,46 @@ async function runMigration(options = {}) {
     message: `${failedItems.length} 项迁移失败，旧数据保持完整，可重试迁移。`,
     ledger: migrationProgressSnapshot(ledger),
   };
+}
+
+async function deferMigration() {
+  const preflight = preflightStartup();
+  const ledger = readMigrationLedger();
+  if (preflight.status === 'upgrade-required' || !ledger || ledger.status !== 'failed') {
+    return { ok: false, error: '请先执行迁移，等待处理结束后再选择进入插件。' };
+  }
+  const summary = migrationProgressSnapshot(ledger);
+  if (summary.pendingCount > 0 || summary.failedCount === 0) {
+    return { ok: false, error: '仍有迁移项尚未处理，请先重试迁移。' };
+  }
+  const serviceGuard = await guardProjectLaunchServiceForMigration();
+  if (!serviceGuard.ok) return { ok: false, error: serviceGuard.message };
+  try {
+    if (ledger.items.some((item) => item.kind === 'service-directory' && item.status === 'failed')) {
+      const disabled = saveProjectLaunchServicePreferences({ schemaVersion: 1, enabled: false });
+      if (!disabled.ok) return disabled;
+    }
+    ledger.deferred = true;
+    writeMigrationLedger(ledger);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function abandonMigration() {
+  const ledger = readMigrationLedger();
+  if (!ledger || ledger.status === 'completed' || ledger.status === 'abandoned') return { ok: true };
+  if (ledger.status !== 'failed' || migrationProgressSnapshot(ledger).pendingCount > 0) {
+    return { ok: false, error: '迁移尚未结束，请等待处理完成后再结束旧数据迁移。' };
+  }
+  try {
+    ledger.status = 'abandoned';
+    writeMigrationLedger(ledger);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function readMigrationSummary() {

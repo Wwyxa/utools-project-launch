@@ -521,6 +521,7 @@ export const projectCatalogActions = {
   async refreshStorageOverview(this: AppStore) {
     this.dataToolsBusy = true;
     try {
+      this.migrationProgress = bridge.readMigrationSummary();
       this.storageOverview = await bridge.getStorageOverview();
     } catch (error) {
       this.cleanupMessage = error instanceof Error ? error.message : "无法读取存储概览。";
@@ -538,13 +539,13 @@ export const projectCatalogActions = {
     }
   },
 
-  async runCleanup(this: AppStore) {
+  async runCleanup(this: AppStore, confirmDiscardUnmigratedData = false) {
     if (this.cleanupRunning || this.cleanupSelectedIds.length === 0) return null;
     this.cleanupRunning = true;
     this.cleanupMessage = "";
     this.cleanupResults = [];
     try {
-      const result = await bridge.executeCleanup(this.cleanupSelectedIds);
+      const result = await bridge.executeCleanup(this.cleanupSelectedIds, { confirmDiscardUnmigratedData });
       this.cleanupResults = result.results;
       this.cleanupMessage = result.ok
         ? "清理完成。"
@@ -561,6 +562,24 @@ export const projectCatalogActions = {
     }
   },
 
+  async endStorageMigration(this: AppStore) {
+    if (this.dataToolsBusy) return null;
+    this.dataToolsBusy = true;
+    try {
+      const result = bridge.abandonMigration();
+      this.cleanupMessage = result.ok
+        ? "已结束旧数据迁移，不再提醒。未迁移的数据未被恢复，现有数据保持不变。"
+        : result.error || "无法结束旧数据迁移，请重试。";
+      await this.refreshStorageOverview();
+      return result;
+    } catch (error) {
+      this.cleanupMessage = error instanceof Error ? error.message : "无法结束旧数据迁移。";
+      return null;
+    } finally {
+      this.dataToolsBusy = false;
+    }
+  },
+
   async retryStorageMigration(this: AppStore) {
     if (this.dataToolsBusy) return null;
     this.dataToolsBusy = true;
@@ -573,9 +592,7 @@ export const projectCatalogActions = {
       });
       this.migrationProgress = result.ledger;
       this.cleanupMessage = result.ok ? "迁移完成。" : result.message || "迁移失败，请重试。";
-      if (result.ok) {
-        await this.reloadProjectsFromStorage();
-      }
+      await this.reloadProjectsFromStorage();
       await this.refreshStorageOverview();
       return result;
     } catch (error) {

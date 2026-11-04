@@ -955,6 +955,12 @@ const fallbackBridge: ProjectBridge = {
   async runMigration(): Promise<MigrationRunResult> {
     throw browserPreviewError("执行数据迁移");
   },
+  async deferMigration() {
+    throw browserPreviewError("稍后处理数据迁移");
+  },
+  abandonMigration() {
+    throw browserPreviewError("结束旧数据迁移");
+  },
   async stopMigrationService() {
     throw browserPreviewError("停止迁移服务");
   },
