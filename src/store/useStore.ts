@@ -30,6 +30,7 @@ import type {
 import { aiActions } from "./actions/ai";
 import { githubAuthActions } from "./actions/githubAuth";
 import { githubPrActions } from "./actions/githubPr";
+import type { GithubPrSession } from "./helpers/githubPrSession";
 import { automationRunActions } from "./actions/automationRun";
 import { automationScheduleActions } from "./actions/automationSchedule";
 import { bridgeEventsActions } from "./actions/bridgeEvents";
@@ -79,6 +80,7 @@ export const useStore = defineStore("app", {
       githubAuthPreferences: bridge.loadGithubAuthPreferences(),
       githubAuthStatus: null as GithubAuthStatus | null,
       githubAuthStatusLoading: false,
+      githubPrSessions: {} as Record<string, GithubPrSession>,
       aiModels: [] as AiModelInfo[],
       aiModelRefreshing: false,
       aiModelRefreshMessage: "",

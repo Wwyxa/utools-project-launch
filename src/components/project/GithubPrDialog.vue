@@ -1,44 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
-import {
-  ChevronLeft,
-  ChevronRight,
-  CloudUpload,
-  CornerDownLeft,
-  ExternalLink,
-  GitPullRequest,
-  RefreshCw,
-  Save,
-  Sparkles,
-} from "lucide-vue-next";
-import type {
-  GithubPrContext,
-  GithubPullRequestSummary,
-  GithubRepositoryMetadata,
-  ProjectGitRepositoryTarget,
-} from "../../types";
-import { AI_PR_DESCRIPTION_MODE_ID, DEFAULT_AI_PR_DESCRIPTION_PROMPT } from "../../types";
+import { onBeforeUnmount, ref, watch } from "vue";
+import { ChevronLeft, ChevronRight, CloudUpload, CornerDownLeft, ExternalLink, GitPullRequest, RefreshCw, Save, Sparkles } from "lucide-vue-next";
+import type { ProjectGitRepositoryTarget } from "../../types";
 import BaseModal from "../common/BaseModal.vue";
-import UiSelect, { type UiSelectOption } from "../common/UiSelect.vue";
-import { appendAiStreamChunk, createAiReasoningStreamState } from "../../lib/aiReasoning";
-import { renderMarkdown } from "../../lib/markdown";
-import { toggleMarkdownTaskAt } from "../../lib/markdownTasks";
+import ActionDialog from "../common/ActionDialog.vue";
+import UiSelect from "../common/UiSelect.vue";
 import { cn } from "../../lib/utils";
-import {
-  orderGithubBaseRemotes,
-  resolveDefaultGithubHeadRemote,
-  type GithubRemoteRepository,
-} from "../../lib/githubRepository";
-import {
-  composeGithubPrAiPrompt,
-  composeGithubPrPrefill,
-  githubPrTemplateName,
-  splitGithubPrAiContent,
-} from "../../lib/githubPrPrefill";
 import { useStore } from "../../store/useStore";
+import type { GithubPrFeedbackListener } from "../../store/helpers/githubPrSession";
 
-type DialogPhase = "boot" | "ready" | "creating" | "created";
-type FeedbackState = "idle" | "loading" | "success" | "warning" | "error";
+type FeedbackState = Parameters<GithubPrFeedbackListener>[0];
 
 const props = defineProps<{
   open: boolean;
@@ -52,601 +23,61 @@ const emit = defineEmits<{
 }>();
 
 const store = useStore();
-const phase = ref<DialogPhase>("boot");
-const bootError = ref("");
-const bootWarning = ref("");
-const baseRemoteName = ref("");
-const baseRepo = ref<GithubRepositoryMetadata | null>(null);
-const headRemote = ref<GithubRemoteRepository | null>(null);
-const baseBranchName = ref("");
-const templates = ref<string[]>([]);
-const selectedTemplateIndex = ref(0);
-const prContext = ref<GithubPrContext | null>(null);
-const contextError = ref("");
-const openPullRequest = ref<GithubPullRequestSummary | null>(null);
-const prTitle = ref("");
-const prDescription = ref("");
-const isDraft = ref(false);
-const titleTouched = ref(false);
-const descriptionTouched = ref(false);
-const aiState = ref<"idle" | "loading" | "error">("idle");
-const aiMessage = ref("");
-const aiResult = ref(createAiReasoningStreamState());
-const aiVersions = ref<Array<{ title: string; description: string }>>([]);
-const aiActiveVersionIndex = ref(-1);
-const aiFollowUp = ref("");
-const aiAbortRequested = ref(false);
-const descriptionMode = ref<"edit" | "preview">("edit");
-const createdPr = ref<GithubPullRequestSummary | null>(null);
+const session = store.githubPrSession(props.projectId, props.repositoryTarget);
+const {
+  phase,
+  bootError,
+  bootWarning,
+  baseBranchName,
+  openPullRequest,
+  prTitle,
+  prDescription,
+  isDraft,
+  aiState,
+  aiMessage,
+  aiVersions,
+  aiActiveVersionIndex,
+  aiFollowUp,
+  descriptionMode,
+  createdPr,
+  isPushingBranch,
+  isSavingPullRequest,
+  currentBranch,
+  baseRepoLabel,
+  baseRemoteSelectModel,
+  baseBranchSelectModel,
+  selectedTemplateSelectModel,
+  needsPublish,
+  needsPush,
+  isAiGenerating,
+  canCreate,
+  hasPullRequestChanges,
+  canSavePullRequest,
+  reprefill,
+  generateWithAi,
+  submitAiFollowUp,
+  regenerateAi,
+  stopAiGeneration,
+  selectAiVersion,
+  renderedDescription,
+  handlePreviewTaskClick,
+  savePullRequest,
+  pushBranch,
+  createPullRequest,
+  baseRemoteOptions,
+  baseBranchOptions,
+  templateOptions,
+  headRemote,
+  upstream,
+  baseRepo,
+  prContext,
+  titleTouched,
+  descriptionTouched,
+  createBlockedReason,
+} = session;
 const copiedValue = ref("");
 const copiedTimer = ref<number | undefined>();
-const isPushingBranch = ref(false);
-const isSavingPullRequest = ref(false);
-let requestGeneration = 0;
-
-const snapshot = computed(() => store.gitSnapshotForRepository(props.projectId, props.repositoryTarget));
-const currentBranch = computed(() => snapshot.value?.branch || "");
-const githubBaseRemotes = computed(() => orderGithubBaseRemotes(snapshot.value?.remotes || []));
-const baseRepoLabel = computed(() => {
-  if (baseRepo.value) return `${baseRepo.value.owner}/${baseRepo.value.repository}`;
-  const remote = githubBaseRemotes.value.find((item) => item.remoteName === baseRemoteName.value);
-  return remote ? `${remote.owner}/${remote.repository}` : "";
-});
-const baseRemoteOptions = computed<UiSelectOption[]>(() =>
-  githubBaseRemotes.value.map((remote) => ({
-    value: remote.remoteName,
-    label: remote.remoteName,
-    hint: `${remote.owner}/${remote.repository}`,
-  })),
-);
-const baseBranchOptions = computed<UiSelectOption[]>(() => {
-  const remoteName = baseRemoteName.value;
-  const branches = new Set(
-    (snapshot.value?.remoteBranches || [])
-      .filter((branch) => branch.remote === remoteName)
-      .map((branch) => branch.branch),
-  );
-  if (baseRepo.value?.defaultBranch) branches.add(baseRepo.value.defaultBranch);
-  if (baseBranchName.value) branches.add(baseBranchName.value);
-  return [...branches].sort((left, right) => left.localeCompare(right)).map((branch) => ({ value: branch, label: branch }));
-});
-const templateOptions = computed<UiSelectOption[]>(() =>
-  templates.value.map((body, index) => ({ value: String(index), label: githubPrTemplateName(body, index) })),
-);
-const selectedTemplate = computed(() => templates.value[selectedTemplateIndex.value] || "");
-const baseRemoteSelectModel = computed({
-  get: () => baseRemoteName.value,
-  set: (value: string | null) => {
-    const remoteName = String(value || "");
-    if (remoteName && remoteName !== baseRemoteName.value) void changeBaseRemote(remoteName);
-  },
-});
-const baseBranchSelectModel = computed({
-  get: () => baseBranchName.value,
-  set: (value: string | null) => {
-    const branch = String(value || "");
-    if (branch && branch !== baseBranchName.value) void changeBaseBranch(branch);
-  },
-});
-const selectedTemplateSelectModel = computed({
-  get: () => String(selectedTemplateIndex.value),
-  set: (value: string | null) => {
-    const index = Number(value ?? 0);
-    const nextIndex = Number.isSafeInteger(index) && index >= 0 && index < templates.value.length ? index : 0;
-    if (nextIndex === selectedTemplateIndex.value) return;
-    selectedTemplateIndex.value = nextIndex;
-    if (!descriptionTouched.value) applyPrefill();
-  },
-});
-const upstream = computed(() => snapshot.value?.upstream || null);
-const isBranchTrackedOnHeadRemote = computed(
-  () => Boolean(upstream.value && headRemote.value && upstream.value.remote === headRemote.value.remoteName),
-);
-const needsPublish = computed(() => Boolean(headRemote.value && !isBranchTrackedOnHeadRemote.value));
-const needsPush = computed(
-  () => Boolean(isBranchTrackedOnHeadRemote.value && (upstream.value?.ahead ?? 0) > 0),
-);
-const hasCommitsAgainstBase = computed(() => (prContext.value?.totalCommits ?? 0) > 0);
-const isAiGenerating = computed(() => aiState.value === "loading");
-const aiModePrompt = computed(() => {
-  const mode =
-    store.aiPreferences.modes.find((item) => item.id === AI_PR_DESCRIPTION_MODE_ID) ||
-    store.aiPreferences.modes.find((item) => item.kind === "pr-description");
-  return mode?.prompt?.trim() || DEFAULT_AI_PR_DESCRIPTION_PROMPT;
-});
-const createBlockedReason = computed(() => {
-  if (phase.value === "created") return "";
-  if (needsPublish.value) return `分支尚未发布到 ${headRemote.value?.remoteName || "远端"}，请先推送。`;
-  if (needsPush.value) return "本地还有未推送的提交，请先推送。";
-  if (openPullRequest.value) return `当前分支已有 PR #${openPullRequest.value.number}。`;
-  if (prContext.value && !hasCommitsAgainstBase.value) return "源分支相对目标分支没有新的提交。";
-  if (!prTitle.value.trim()) return "请填写 PR 标题。";
-  return "";
-});
-const canCreate = computed(() => phase.value === "ready" && !createBlockedReason.value);
-const hasPullRequestChanges = computed(() =>
-  Boolean(openPullRequest.value && (
-    prTitle.value.trim() !== openPullRequest.value.title ||
-    prDescription.value !== (openPullRequest.value.body || "")
-  )),
-);
-const canSavePullRequest = computed(() =>
-  phase.value === "ready" && Boolean(prTitle.value.trim()) && hasPullRequestChanges.value && !isSavingPullRequest.value && !isPushingBranch.value && !isAiGenerating.value,
-);
-
-const reportFeedback = (
-  state: FeedbackState,
-  message: string,
-  options?: { retainRemoteProgress?: boolean },
-) => emit("feedback", state, message, options);
-
-/** 弹窗引导各阶段的浮层提示；idle 用于收起。 */
-const bootStep = (message: string) => reportFeedback("loading", message);
-const finishBootSteps = (generation: number) => {
-  if (generation === requestGeneration) reportFeedback("idle", "");
-};
-
-const applyPrefill = () => {
-  if (openPullRequest.value) {
-    if (!titleTouched.value) prTitle.value = openPullRequest.value.title;
-    if (!descriptionTouched.value) prDescription.value = openPullRequest.value.body || "";
-    isDraft.value = openPullRequest.value.isDraft;
-    return;
-  }
-  const context = prContext.value;
-  if (!context || !baseRepo.value) return;
-  const prefill = composeGithubPrPrefill({
-    headBranch: context.headBranch,
-    repoDefaultBranch: baseRepo.value.defaultBranch,
-    nonMergeCommitCount: context.nonMergeCommitCount,
-    commits: context.commits,
-    template: selectedTemplate.value,
-  });
-  if (!titleTouched.value) prTitle.value = prefill.title;
-  if (!descriptionTouched.value) prDescription.value = prefill.description;
-};
-
-const loadRemoteBranches = async () => {
-  // 目标分支候选来自远端分支列表；quiet fetch 不占用全局远端进度浮层，
-  // 失败也不阻塞流程，仅使用现有快照。
-  try {
-    await store.fetchGitRemoteByName(props.projectId, baseRemoteName.value, props.repositoryTarget, {
-      quiet: true,
-    });
-  } catch {
-    /* 使用当前快照中的远端分支 */
-  }
-};
-
-const loadBaseRepoData = async (generation: number) => {
-  const remote = githubBaseRemotes.value.find((item) => item.remoteName === baseRemoteName.value);
-  if (!remote) {
-    bootError.value = "未找到可用的 GitHub 远端。";
-    return;
-  }
-  const metadataResult = await store.readGithubRepositoryMetadata(remote.owner, remote.repository);
-  if (generation !== requestGeneration) return;
-  if (!metadataResult.ok) {
-    bootError.value = metadataResult.failure.message;
-    return;
-  }
-  let metadata = metadataResult.value;
-  let effectiveRemoteName = remote.remoteName;
-  // fork 仓库：PR 默认目标为上游父仓库；若本地配置了指向父仓库的 remote，则用它读取基点引用。
-  if (metadata.isFork && metadata.parent) {
-    const parentRemote = githubBaseRemotes.value.find(
-      (item) =>
-        item.owner.toLowerCase() === metadata.parent!.owner.toLowerCase() &&
-        item.repository.toLowerCase() === metadata.parent!.repository.toLowerCase(),
-    );
-    if (parentRemote) effectiveRemoteName = parentRemote.remoteName;
-    metadata = {
-      ...metadata,
-      owner: metadata.parent.owner,
-      repository: metadata.parent.repository,
-      nodeId: metadata.parent.nodeId || metadata.nodeId,
-      defaultBranch: metadata.parent.defaultBranch || metadata.defaultBranch,
-    };
-  }
-  baseRemoteName.value = effectiveRemoteName;
-  baseRepo.value = metadata;
-
-  if (!baseBranchName.value) {
-    baseBranchName.value =
-      snapshot.value?.base?.remote === effectiveRemoteName
-        ? snapshot.value.base.branch
-        : metadata.defaultBranch;
-  }
-
-  if (generation === requestGeneration) bootStep("正在获取 PR 模板...");
-  const templatesResult = await store.readGithubPullRequestTemplates(metadata.owner, metadata.repository);
-  if (generation !== requestGeneration) return;
-  let bodies = templatesResult.ok ? templatesResult.value : [];
-  if (templatesResult.ok && bodies.length === 0) {
-    // 回退 owner 级模板仓库 {owner}/.github。
-    if (generation === requestGeneration) bootStep("正在获取 owner 级 PR 模板...");
-    const fallback = await store.readGithubPullRequestTemplates(metadata.owner, ".github");
-    if (generation !== requestGeneration) return;
-    if (fallback.ok) bodies = fallback.value;
-  }
-  templates.value = bodies;
-  selectedTemplateIndex.value = 0;
-};
-
-const loadOpenPullRequest = async (generation: number) => {
-  const head = headRemote.value;
-  const base = baseRepo.value;
-  const branch = currentBranch.value;
-  if (!head || !base || !branch) return;
-  const result = await store.readGithubOpenPullRequest(base.owner, base.repository, head.owner, branch);
-  if (generation !== requestGeneration) return;
-  openPullRequest.value = result.ok ? result.value : null;
-  if (openPullRequest.value) {
-    baseBranchName.value = openPullRequest.value.baseBranch || baseBranchName.value;
-    descriptionMode.value = "preview";
-    applyPrefill();
-  }
-};
-
-const loadPrContext = async (generation: number) => {
-  const branch = currentBranch.value;
-  const base = baseBranchName.value;
-  if (!branch || !base || !baseRemoteName.value) return;
-  const result = await store.readGithubPrContext(props.projectId, props.repositoryTarget, {
-    baseRemote: baseRemoteName.value,
-    baseBranch: base,
-    headBranch: branch,
-  });
-  if (generation !== requestGeneration) return;
-  if (!result) {
-    contextError.value = "当前项目不可用，无法读取 PR 上下文。";
-    return;
-  }
-  if (result.ok) {
-    prContext.value = result.value;
-    contextError.value = "";
-  } else {
-    prContext.value = null;
-    contextError.value = result.failure.message;
-  }
-  applyPrefill();
-};
-
-const runBoot = async () => {
-  const generation = ++requestGeneration;
-  phase.value = "boot";
-  bootError.value = "";
-  bootWarning.value = "";
-  contextError.value = "";
-  baseRepo.value = null;
-  templates.value = [];
-  selectedTemplateIndex.value = 0;
-  prContext.value = null;
-  openPullRequest.value = null;
-  prTitle.value = "";
-  prDescription.value = "";
-  titleTouched.value = false;
-  descriptionTouched.value = false;
-  descriptionMode.value = "edit";
-  isDraft.value = false;
-  aiState.value = "idle";
-  aiMessage.value = "";
-  aiResult.value = createAiReasoningStreamState();
-  aiVersions.value = [];
-  aiActiveVersionIndex.value = -1;
-  aiFollowUp.value = "";
-  aiAbortRequested.value = false;
-  createdPr.value = null;
-  isSavingPullRequest.value = false;
-
-  if (!snapshot.value?.repositoryPath) {
-    bootError.value = "Git 快照未就绪，请稍后重试。";
-    phase.value = "ready";
-    return;
-  }
-
-  const headCandidate = resolveDefaultGithubHeadRemote(snapshot.value?.remotes || [], upstream.value);
-  if (!headCandidate) {
-    bootError.value = "当前仓库没有配置 GitHub 远端，无法创建 PR。";
-    return;
-  }
-  headRemote.value = headCandidate;
-  if (!currentBranch.value) {
-    bootError.value = snapshot.value?.isDetachedHead ? "当前处于 detached HEAD，请先切回分支。" : "未检测到当前分支。";
-    return;
-  }
-  const baseCandidate = githubBaseRemotes.value[0];
-  if (!baseCandidate) {
-    bootError.value = "当前仓库没有配置 GitHub 远端，无法创建 PR。";
-    return;
-  }
-  baseRemoteName.value = baseCandidate.remoteName;
-  baseBranchName.value = "";
-
-  try {
-    bootStep("正在刷新远端分支...");
-    await loadRemoteBranches();
-    if (generation !== requestGeneration) return;
-    bootStep("正在获取仓库信息...");
-    await loadBaseRepoData(generation);
-    if (generation !== requestGeneration || bootError.value) return;
-    bootStep("正在读取提交范围与已有 PR...");
-    await loadOpenPullRequest(generation);
-    if (generation !== requestGeneration) return;
-    await loadPrContext(generation);
-    if (generation !== requestGeneration) return;
-    if (contextError.value) bootWarning.value = contextError.value;
-    phase.value = "ready";
-  } catch (error) {
-    if (generation !== requestGeneration) return;
-    bootError.value = error instanceof Error ? error.message : "初始化 GitHub PR 信息失败。";
-    phase.value = "ready";
-  } finally {
-    finishBootSteps(generation);
-  }
-};
-
-const changeBaseRemote = async (remoteName: string) => {
-  if (remoteName === baseRemoteName.value || phase.value === "boot") return;
-  // 使在途的旧请求失效，避免旧仓库数据写回新选择。
-  const generation = ++requestGeneration;
-  baseRemoteName.value = remoteName;
-  baseRepo.value = null;
-  baseBranchName.value = "";
-  templates.value = [];
-  openPullRequest.value = null;
-  prContext.value = null;
-  bootWarning.value = "";
-  contextError.value = "";
-  phase.value = "boot";
-  try {
-    bootStep(`正在刷新 ${remoteName} 远端分支...`);
-    await loadRemoteBranches();
-    if (generation !== requestGeneration) return;
-    bootStep("正在获取仓库信息...");
-    await loadBaseRepoData(generation);
-    if (generation !== requestGeneration || bootError.value) {
-      phase.value = "ready";
-      return;
-    }
-    bootStep("正在读取提交范围与已有 PR...");
-    await loadOpenPullRequest(generation);
-    if (generation !== requestGeneration) return;
-    await loadPrContext(generation);
-    if (generation !== requestGeneration) return;
-    if (contextError.value) bootWarning.value = contextError.value;
-    phase.value = "ready";
-  } finally {
-    finishBootSteps(generation);
-  }
-};
-
-const changeBaseBranch = async (branch: string) => {
-  if (branch === baseBranchName.value || phase.value === "boot") return;
-  baseBranchName.value = branch;
-  prContext.value = null;
-  contextError.value = "";
-  const generation = requestGeneration;
-  await loadPrContext(generation);
-  if (contextError.value) bootWarning.value = contextError.value;
-};
-
-const reprefill = () => {
-  titleTouched.value = false;
-  descriptionTouched.value = false;
-  applyPrefill();
-};
-
-const runAiGeneration = async (options: { instruction?: string; previous?: { title: string; description: string } | null }) => {
-  if (isAiGenerating.value) return;
-  const context = prContext.value;
-  const base = baseRepo.value;
-  if (!context || !base) {
-    aiMessage.value = "PR 上下文未就绪，无法生成。";
-    aiState.value = "error";
-    return;
-  }
-  const generation = requestGeneration;
-  const snapshotBefore = { title: prTitle.value, description: prDescription.value };
-  aiState.value = "loading";
-  aiMessage.value = "";
-  aiAbortRequested.value = false;
-  aiResult.value = createAiReasoningStreamState();
-  const prompt = composeGithubPrAiPrompt({
-    modePrompt: aiModePrompt.value,
-    context,
-    repositoryLabel: baseRepoLabel.value,
-    template: selectedTemplate.value,
-    remoteName: headRemote.value?.remoteName || baseRemoteName.value,
-    previous: options.previous ?? null,
-    instruction: options.instruction,
-  });
-  await store.analyzeGitWithAiStream(props.projectId, prompt, {
-    onChunk: (chunk) => {
-      if (generation !== requestGeneration || aiAbortRequested.value) return;
-      aiResult.value = appendAiStreamChunk(aiResult.value, chunk);
-      // 生成过程实时写入描述区，完成后会被解析结果替换。
-      if (aiResult.value.content) prDescription.value = aiResult.value.content;
-    },
-    onDone: (result) => {
-      if (generation !== requestGeneration) return;
-      if (aiAbortRequested.value) {
-        aiState.value = "idle";
-        aiMessage.value = "已停止生成，描述区保留已生成的内容。";
-        return;
-      }
-      if (result.ok) {
-        const content = result.content || aiResult.value.content;
-        const { title, description } = splitGithubPrAiContent(content);
-        prTitle.value = title || snapshotBefore.title;
-        prDescription.value = description || aiResult.value.content || snapshotBefore.description;
-        titleTouched.value = true;
-        descriptionTouched.value = true;
-        aiVersions.value = [...aiVersions.value, { title: prTitle.value, description: prDescription.value }].slice(-5);
-        aiActiveVersionIndex.value = aiVersions.value.length - 1;
-        aiState.value = "idle";
-        aiMessage.value = "";
-        return;
-      }
-      prTitle.value = snapshotBefore.title;
-      prDescription.value = snapshotBefore.description;
-      aiState.value = "error";
-      aiMessage.value = result.message || "AI 生成失败。";
-    },
-  });
-};
-
-const generateWithAi = () =>
-  runAiGeneration({
-    previous: null,
-    instruction: undefined,
-  });
-
-const submitAiFollowUp = () => {
-  if (isAiGenerating.value || aiVersions.value.length === 0) return;
-  const instruction = aiFollowUp.value.trim();
-  if (!instruction) return;
-  void runAiGeneration({ instruction, previous: aiVersions.value[aiActiveVersionIndex.value] || null });
-  aiFollowUp.value = "";
-};
-
-const regenerateAi = () => {
-  if (isAiGenerating.value || aiVersions.value.length === 0) return;
-  void runAiGeneration({ instruction: undefined, previous: aiVersions.value[aiActiveVersionIndex.value] || null });
-};
-
-const stopAiGeneration = () => {
-  if (!isAiGenerating.value) return;
-  aiAbortRequested.value = true;
-};
-
-const selectAiVersion = (offset: -1 | 1) => {
-  if (isAiGenerating.value) return;
-  const nextIndex = aiActiveVersionIndex.value + offset;
-  const version = aiVersions.value[nextIndex];
-  if (!version) return;
-  aiActiveVersionIndex.value = nextIndex;
-  prTitle.value = version.title;
-  prDescription.value = version.description;
-  titleTouched.value = true;
-  descriptionTouched.value = true;
-};
-
-const renderedDescription = computed(() => renderMarkdown(prDescription.value, { interactiveTasks: !isSavingPullRequest.value }));
-
-const handlePreviewTaskClick = (event: MouseEvent) => {
-  if (isSavingPullRequest.value || isAiGenerating.value || phase.value === "creating") return;
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
-  if (!target.classList.contains("markdown-task-checkbox")) return;
-  const index = Number(target.getAttribute("data-task-index"));
-  if (!Number.isSafeInteger(index) || index < 0) return;
-  event.preventDefault();
-  const next = toggleMarkdownTaskAt(prDescription.value, index);
-  if (next !== prDescription.value) {
-    prDescription.value = next;
-    descriptionTouched.value = true;
-  }
-};
-
-const savePullRequest = async () => {
-  const pullRequest = openPullRequest.value;
-  const base = baseRepo.value;
-  if (!canSavePullRequest.value || !pullRequest || !base) return;
-  const generation = requestGeneration;
-  const title = prTitle.value.trim();
-  const body = prDescription.value;
-  isSavingPullRequest.value = true;
-  reportFeedback("loading", `正在保存 PR #${pullRequest.number} 修改...`);
-  try {
-    const result = await store.updateGithubPullRequest({
-      owner: base.owner,
-      repository: base.repository,
-      number: pullRequest.number,
-      title,
-      body,
-    });
-    if (generation !== requestGeneration) return;
-    if (result.ok) {
-      openPullRequest.value = result.value;
-      prTitle.value = result.value.title;
-      prDescription.value = result.value.body ?? body;
-      titleTouched.value = false;
-      descriptionTouched.value = false;
-      reportFeedback("success", `PR #${pullRequest.number} 修改已保存。`);
-    } else {
-      reportFeedback("error", result.failure.message);
-    }
-  } catch (error) {
-    if (generation !== requestGeneration) return;
-    reportFeedback("error", error instanceof Error ? error.message : "保存 PR 修改失败。");
-  } finally {
-    if (generation === requestGeneration) isSavingPullRequest.value = false;
-  }
-};
-
-const pushBranch = async () => {
-  if (isPushingBranch.value || isSavingPullRequest.value || !headRemote.value) return;
-  isPushingBranch.value = true;
-  reportFeedback("loading", needsPublish.value ? "正在发布分支..." : "正在推送提交...", { retainRemoteProgress: true });
-  try {
-    const result = needsPublish.value
-      ? await store.publishGitBranch(props.projectId, headRemote.value.remoteName, props.repositoryTarget)
-      : await store.pushGitRemote(props.projectId, props.repositoryTarget);
-    if (!result) {
-      reportFeedback("warning", "当前项目不可用，无法推送分支。", { retainRemoteProgress: true });
-      return;
-    }
-    if (result.ok) {
-      await store.refreshGitSnapshot(props.projectId, { force: true }, props.repositoryTarget);
-      if (!openPullRequest.value) await loadPrContext(requestGeneration);
-    }
-    const message = result.ok && openPullRequest.value
-      ? `提交已推送到源分支，PR #${openPullRequest.value.number} 已更新。`
-      : result.message;
-    reportFeedback(result.ok ? "success" : "error", message, { retainRemoteProgress: true });
-  } catch (error) {
-    reportFeedback("error", error instanceof Error ? error.message : "推送分支失败。", { retainRemoteProgress: true });
-  } finally {
-    isPushingBranch.value = false;
-  }
-};
-
-const createPullRequest = async () => {
-  if (!canCreate.value || !baseRepo.value || !headRemote.value) return;
-  phase.value = "creating";
-  reportFeedback("loading", "正在创建 GitHub PR...");
-  try {
-    const result = await store.createGithubPullRequest({
-      owner: baseRepo.value.owner,
-      repository: baseRepo.value.repository,
-      repositoryId: baseRepo.value.nodeId,
-      base: baseBranchName.value,
-      headOwner: headRemote.value.owner,
-      headRepository: headRemote.value.repository,
-      headBranch: currentBranch.value,
-      title: prTitle.value.trim(),
-      body: prDescription.value,
-      draft: isDraft.value,
-    });
-    if (result.ok) {
-      createdPr.value = result.value;
-      openPullRequest.value = result.value;
-      phase.value = "created";
-      reportFeedback("success", `PR #${result.value.number} 创建成功。`);
-      return;
-    }
-    const failureMessage = /no commits between/i.test(result.failure.message)
-      ? "GitHub 提示源分支与目标分支没有差异，请确认分支已推送且包含新提交。"
-      : result.failure.message;
-    bootWarning.value = "";
-    reportFeedback("error", failureMessage);
-    phase.value = "ready";
-  } catch (error) {
-    reportFeedback("error", error instanceof Error ? error.message : "创建 GitHub PR 失败。");
-    phase.value = "ready";
-  }
-};
+let unsubscribe: (() => unknown) | undefined;
 
 const copyText = async (value: string) => {
   if (!value) return;
@@ -666,16 +97,38 @@ const openUrl = (url: string) => {
   void store.openExternalUrl(url);
 };
 
+const discardDialogOpen = ref(false);
+const isBusy = session.isBusy;
+const refreshInformation = () => void session.initialize(true);
+const discardDraft = () => {
+  discardDialogOpen.value = false;
+  session.resetDraft();
+  emit("close");
+};
+
 watch(
   () => props.open,
   (open) => {
-    if (open) void runBoot();
-    else requestGeneration += 1;
+    unsubscribe?.();
+    unsubscribe = undefined;
+    if (open) {
+      unsubscribe = session.subscribe((state, message, options) => emit("feedback", state, message, options));
+      void session.initialize();
+    } else {
+      discardDialogOpen.value = false;
+      emit("feedback", "idle", "");
+    }
   },
+  { immediate: true },
 );
 
+watch(session.informationSignature, () => {
+  if (props.open) void session.initialize();
+});
+
 onBeforeUnmount(() => {
-  requestGeneration += 1;
+  unsubscribe?.();
+  if (props.open) emit("feedback", "idle", "");
   window.clearTimeout(copiedTimer.value);
 });
 </script>
@@ -692,12 +145,26 @@ onBeforeUnmount(() => {
     @close="emit('close')"
   >
     <template #header>
-      <div class="min-w-0">
-        <h3 class="text-sm font-bold text-on-surface">创建 GitHub PR</h3>
-        <p class="truncate text-[10px] font-medium text-on-surface-variant">
-          {{ baseRepoLabel || "解析 GitHub 仓库中..." }}
-          <template v-if="currentBranch && baseBranchName"> · {{ currentBranch }} → {{ openPullRequest?.baseBranch || baseBranchName }}</template>
-        </p>
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex min-w-0 items-center gap-2">
+            <h3 class="shrink-0 text-sm font-bold text-on-surface">创建 GitHub PR</h3>
+            <span class="truncate text-[10px] text-on-surface-variant" title="关闭后保留当前编辑内容">关闭后保留当前编辑内容</span>
+          </div>
+          <p class="truncate text-[10px] font-medium text-on-surface-variant">
+            {{ baseRepoLabel || "解析 GitHub 仓库中..." }}
+            <template v-if="currentBranch && baseBranchName"> · {{ currentBranch }} → {{ openPullRequest?.baseBranch || baseBranchName }}</template>
+          </p>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <button v-if="!openPullRequest && phase !== 'created'" type="button" class="ui-btn ui-btn--ghost ui-btn--sm" :disabled="isBusy" @click="discardDialogOpen = true">
+            放弃草稿
+          </button>
+          <button type="button" class="ui-btn ui-btn--secondary ui-btn--sm" :disabled="isBusy" title="刷新仓库、分支和 PR 信息，保留已编辑内容" @click="refreshInformation">
+            <RefreshCw :size="12" />
+            刷新信息
+          </button>
+        </div>
       </div>
     </template>
 
@@ -1004,4 +471,14 @@ onBeforeUnmount(() => {
       </template>
     </div>
   </BaseModal>
+  <ActionDialog
+    :open="discardDialogOpen"
+    title="放弃 PR 草稿"
+    message="将清空标题、描述、分支选择和 AI 生成记录。再次打开时会重新初始化。"
+    primary-label="放弃草稿"
+    cancel-label="保留草稿"
+    :primary-disabled="isBusy"
+    @primary="discardDraft"
+    @cancel="discardDialogOpen = false"
+  />
 </template>

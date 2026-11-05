@@ -3057,6 +3057,7 @@ watch(
     />
 
     <GithubPrDialog
+      :key="JSON.stringify([props.project.id, activeRepositoryTarget, snapshot?.repositoryPath, snapshot?.branch])"
       :open="isPrDialogOpen"
       :project-id="props.project.id"
       :repository-target="activeRepositoryTarget"

@@ -101,6 +101,9 @@ Service enable/disable barriers and failure ownership are specified once in
 - Ref mutations invalidate related history with the shared-ref epoch. Project
   path replacement invalidates workspace, snapshots, failures, and request tokens,
   including an A-to-B-to-A path transition.
+- PR drafts and in-flight initialization survive dialog unmounts in transient
+  Pinia sessions keyed by repository context/source branch. Refresh preserves
+  edits; discard resets. Clear sessions on project deletion/path replacement.
 
 ## Git Reads and Writes
 

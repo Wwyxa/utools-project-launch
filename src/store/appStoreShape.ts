@@ -105,6 +105,7 @@ import type {
 } from "../types";
 import type { AutomationScriptRuntimeContext } from "./helpers/automationHelpers";
 import type { Store } from "pinia";
+import type { GithubPrSession } from "./helpers/githubPrSession";
 
 export type AiAnalysisState = "idle" | "loading" | "success" | "warning" | "error";
 
@@ -145,6 +146,7 @@ export interface AppState {
   githubAuthPreferences: GithubAuthPreferences;
   githubAuthStatus: GithubAuthStatus | null;
   githubAuthStatusLoading: boolean;
+  githubPrSessions: Record<string, GithubPrSession>;
   aiAnalysisState: AiAnalysisState;
   supportsBridge: boolean;
   projectsLoaded: boolean;
@@ -329,6 +331,8 @@ export interface AppActions {
   setGithubAuthPreferences(patch: Partial<GithubAuthPreferences>): void;
   refreshGithubAuthStatus(): Promise<void>;
   verifyGithubAuthToken(token: string): Promise<GithubAuthTokenVerification>;
+  githubPrSession(projectId: string, target?: ProjectGitRepositoryTarget): GithubPrSession;
+  clearGithubPrSessions(projectId: string): void;
   readGithubRepositoryMetadata(
     owner: string,
     repository: string,

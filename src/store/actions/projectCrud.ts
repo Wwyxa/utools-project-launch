@@ -82,6 +82,7 @@ export const projectCrudActions = {
         this.workActivityUnavailableProjectIds = this.workActivityUnavailableProjectIds.filter(
           (unavailableProjectId) => unavailableProjectId !== projectId,
         );
+        this.clearGithubPrSessions(projectId);
         clearGitRepositoryCoordination(projectId);
         clearGitRepositoryRecord(this.gitRepositorySnapshots, projectId);
         clearGitRepositoryRecord(this.gitRepositoryRefreshing, projectId);
@@ -158,6 +159,7 @@ export const projectCrudActions = {
       );
       delete this.gitWorkspaces[projectId];
       delete this.gitWorkspaceRefreshing[projectId];
+      this.clearGithubPrSessions(projectId);
       clearGitRepositoryCoordination(projectId);
       clearGitRepositoryRecord(this.gitRepositorySnapshots, projectId);
       clearGitRepositoryRecord(this.gitRepositoryRefreshing, projectId);

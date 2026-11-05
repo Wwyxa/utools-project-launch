@@ -10,12 +10,29 @@ import type {
 } from "../../types";
 import type { AppStore } from "../appStoreShape";
 import { bridge } from "../helpers/bridge";
+import { createGithubPrSession, type GithubPrSession } from "../helpers/githubPrSession";
 
-/**
- * GitHub PR 相关的桥接动作。状态（加载中/错误草稿）留在弹窗组件本地，
- * 这里只负责解析仓库上下文、调用桥接并拒绝过期结果。
- */
+/** GitHub PR 桥接动作与当前应用运行期间的创建会话。 */
 export const githubPrActions = {
+    githubPrSession(
+      this: AppStore,
+      projectId: string,
+      target: ProjectGitRepositoryTarget = { kind: "main" },
+    ): GithubPrSession {
+      const context = this.resolveGitRepositoryContext(projectId, target);
+      const branch = this.gitSnapshotForRepository(projectId, target)?.branch || "";
+      if (!context || !branch) return createGithubPrSession(this, projectId, target, branch);
+      const key = JSON.stringify([context.contextKey, branch]);
+      return this.githubPrSessions[key] ??= createGithubPrSession(this, projectId, context.target, branch);
+    },
+
+    clearGithubPrSessions(this: AppStore, projectId: string) {
+      for (const [key, session] of Object.entries(this.githubPrSessions)) {
+        if (session.projectId !== projectId) continue;
+        session.dispose();
+        delete this.githubPrSessions[key];
+      }
+    },
     async readGithubRepositoryMetadata(
       this: AppStore,
       owner: string,

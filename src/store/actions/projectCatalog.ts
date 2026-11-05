@@ -133,6 +133,10 @@ export const projectCatalogActions = {
           };
           return { ...mergedProject, status: deriveProjectStatus(mergedProject) };
         });
+        for (const previousProject of previousProjectsById.values()) {
+          const nextProject = this.projects.find((project) => project.id === previousProject.id);
+          if (!nextProject || nextProject.path !== previousProject.path) this.clearGithubPrSessions(previousProject.id);
+        }
         this.selectedProjectId = this.projects.some((project) => project.id === this.selectedProjectId)
           ? this.selectedProjectId
           : null;
