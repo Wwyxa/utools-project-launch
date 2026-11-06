@@ -304,53 +304,6 @@ func TestSupervisorStopsRecoveredRunAndRecordsExit(t *testing.T) {
 	}
 }
 
-func TestSupervisorSendInputRedactsPersistedEvent(t *testing.T) {
-	stateDir := t.TempDir()
-	store := openStoreAt(t, stateDir)
-	run := createActiveRun(t, store)
-	stdin := &recordingWriteCloser{}
-	supervisor := &Supervisor{
-		store: store,
-		processes: map[string]*managedProcess{
-			run.ID: {runID: run.ID, pid: run.PID, stdin: stdin},
-		},
-	}
-	secret := "super-secret-stdin-value"
-
-	result, err := supervisor.SendInput(run.ID, secret)
-	if err != nil {
-		t.Fatalf("send input: %v", err)
-	}
-	if !result.Sent || result.Message != stdinEventMessage {
-		t.Fatalf("send input result = %#v", result)
-	}
-	if got := string(stdin.contents); got != secret+"\n" {
-		t.Fatalf("stdin contents = %q, want %q", got, secret+"\n")
-	}
-	for _, event := range store.EventsAfter(0).Events {
-		if event.RunID == run.ID && event.Type == "stdin" && event.Message != stdinEventMessage {
-			t.Fatalf("stdin event message = %q, want redacted status", event.Message)
-		}
-	}
-	contents, err := os.ReadFile(state.StatePath(stateDir))
-	if err != nil {
-		t.Fatalf("read persisted state: %v", err)
-	}
-	if strings.Contains(string(contents), secret) {
-		t.Fatal("stdin secret was persisted")
-	}
-	if err := store.Flush(); err != nil {
-		t.Fatalf("flush persisted stdin status: %v", err)
-	}
-	logContents, err := os.ReadFile(filepath.Join(stateDir, state.LogDirectoryName, run.ID+".log"))
-	if err != nil {
-		t.Fatalf("read persisted run log: %v", err)
-	}
-	if strings.Contains(string(logContents), secret) {
-		t.Fatal("stdin secret was persisted in the run log")
-	}
-}
-
 func TestSupervisorSendInputBoundsUnreadPipe(t *testing.T) {
 	store := openStore(t)
 	run := createActiveRun(t, store)
@@ -467,7 +420,7 @@ func TestSupervisorKeepsRunningWhileChildOutlivesLauncher(t *testing.T) {
 	}
 	waitForRunStatus(t, store, run.ID, state.RunStatusExited)
 	events := store.EventsAfter(0).Events
-	if !hasEvent(events, run.ID, "stdout", "received:child-input") || !hasEvent(events, run.ID, "stdin", "") {
+	if !hasEvent(events, run.ID, "stdout", "received:child-input") || !hasEvent(events, run.ID, "stdin", "child-input") {
 		t.Fatalf("child did not receive input before exit: %#v", events)
 	}
 	if _, err := io.WriteString(managed.stdin, "after-exit\n"); !errors.Is(err, os.ErrClosed) {
@@ -602,19 +555,6 @@ func createActiveRun(t *testing.T, store *state.Store) state.Run {
 		t.Fatalf("create active run: run=%#v created=%t err=%v", run, created, err)
 	}
 	return run
-}
-
-type recordingWriteCloser struct {
-	contents []byte
-}
-
-func (writer *recordingWriteCloser) Write(contents []byte) (int, error) {
-	writer.contents = append(writer.contents, contents...)
-	return len(contents), nil
-}
-
-func (writer *recordingWriteCloser) Close() error {
-	return nil
 }
 
 func testStartRequest(t *testing.T, command string) StartRequest {

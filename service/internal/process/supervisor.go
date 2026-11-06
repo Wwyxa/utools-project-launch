@@ -298,7 +298,7 @@ func (supervisor *Supervisor) SendInput(runID string, input string) (SendInputRe
 	if !found {
 		return SendInputResult{Sent: false, Message: "The selected process is no longer available."}, nil
 	}
-	supervisor.appendEvent(run, "stdin", state.Event{PID: run.PID, Message: stdinEventMessage})
+	supervisor.appendEvent(run, "stdin", state.Event{PID: run.PID, Message: input})
 	return SendInputResult{Sent: true, Message: stdinEventMessage}, nil
 }
 

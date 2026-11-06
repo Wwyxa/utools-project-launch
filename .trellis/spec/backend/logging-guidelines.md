@@ -53,6 +53,7 @@ or history reads. `public/preload/runtime-records.js` and
   control.
 - `.log` files contain complete JSONL process-shaped events: cursor, timestamp,
   type, run/project/script identities and optional message/result/level.
+  Both owners record `stdin` as submitted, without the appended delivery newline or automatic redaction.
 - `runtime/policy.v1.json` wraps the shared policy. Defaults: persistence on,
   200 completed records/project, 5 MiB/run, 100 MiB total. Counts exclude tombstones.
   Config backups include this policy as optional `runtimeRecordPolicy`; they
