@@ -16,7 +16,7 @@ import {
 } from "lucide-vue-next";
 import { useStore } from "../../store/useStore";
 import { useI18n } from "../../lib/i18n";
-import { getOverlayScrollbarScrollElements } from "../../lib/overlayScrollbar";
+import { getOverlayScrollbarScrollElements, updateOverlayScrollbar } from "../../lib/overlayScrollbar";
 import { cn, scrollToBoundary, transferWheelAtScrollBoundary } from "../../lib/utils";
 import type { LogEntry, RuntimeRecord, ProjectScript } from "../../types";
 import ActionDialog from "../common/ActionDialog.vue";
@@ -40,7 +40,9 @@ const query = ref("");
 const inputLine = ref("");
 const selectedScriptId = ref("");
 const closedAt = ref<Record<string, number>>({});
-const shouldFollowLogs = ref(true);
+// Per-script scroll memory: the log tabs share one scroll container, so the
+// offset/follow state must be tracked per script id and restored on tab switch.
+const scriptScrollStates = new Map<string, { scrollTop: number; follow: boolean }>();
 const copiedTerminal = ref(false);
 const copiedTimer = ref<number | null>(null);
 const contextMenuPosition = ref<{ x: number; y: number } | null>(null);
@@ -77,6 +79,17 @@ const getLogScrollElement = () => getOverlayScrollbarScrollElements(scrollRef.va
 
 const isNearBottom = (element: HTMLElement) =>
   element.scrollHeight - element.scrollTop - element.clientHeight <= logFollowThreshold;
+
+const recordScriptScrollState = (scriptId: string, scrollElement: HTMLElement) => {
+  if (!scriptId) return;
+  scriptScrollStates.set(scriptId, { scrollTop: scrollElement.scrollTop, follow: isNearBottom(scrollElement) });
+};
+
+const recordScriptFollow = (scriptId: string, follow: boolean) => {
+  if (!scriptId) return;
+  const previous = scriptScrollStates.get(scriptId);
+  scriptScrollStates.set(scriptId, { scrollTop: previous?.scrollTop ?? 0, follow });
+};
 
 const logTargets = computed(() =>
   (props.scripts || [])
@@ -176,27 +189,33 @@ const resolveLogTone = (message: string, type: string) => {
 };
 
 const scrollToTop = async () => {
+  const scriptId = selectedScriptId.value;
   await nextTick();
+  if (selectedScriptId.value !== scriptId) return;
   const scrollElement = getLogScrollElement();
   if (scrollElement) {
     scrollToBoundary(scrollElement, "top");
-    shouldFollowLogs.value = false;
+    recordScriptScrollState(scriptId, scrollElement);
+    recordScriptFollow(scriptId, false);
   }
 };
 
 const scrollToBottom = async () => {
+  const scriptId = selectedScriptId.value;
   await nextTick();
+  if (selectedScriptId.value !== scriptId) return;
+  updateOverlayScrollbar(scrollRef.value);
   const scrollElement = getLogScrollElement();
   if (scrollElement) {
     scrollToBoundary(scrollElement, "bottom");
-    shouldFollowLogs.value = true;
+    recordScriptFollow(scriptId, true);
   }
 };
 
 const handleLogScroll = () => {
   const scrollElement = getLogScrollElement();
   if (scrollElement) {
-    shouldFollowLogs.value = isNearBottom(scrollElement);
+    recordScriptScrollState(selectedScriptId.value, scrollElement);
   }
 };
 
@@ -384,6 +403,7 @@ const closeTarget = (scriptId: string) => {
     ...closedAt.value,
     [scriptId]: store.scriptLogs[props.projectId]?.[scriptId]?.length || 0,
   };
+  scriptScrollStates.delete(scriptId);
 };
 
 const isRunNotificationArmed = (scriptId: string) =>
@@ -406,6 +426,7 @@ const handleToggleRunNotification = (scriptId: string) => {
 const handleClear = () => {
   store.clearLogs(props.projectId);
   closedAt.value = {};
+  scriptScrollStates.clear();
   selectedScriptId.value = "";
   closeContextMenu();
 };
@@ -416,6 +437,7 @@ const handleClearCurrent = () => {
   }
 
   store.clearScriptLogs(props.projectId, selectedScriptId.value);
+  scriptScrollStates.delete(selectedScriptId.value);
   closeContextMenu();
 };
 
@@ -496,17 +518,25 @@ watch(historySource, () => {
   }
 });
 
+watch(selectedScriptId, (_scriptId, previousScriptId) => {
+  const scrollElement = getLogScrollElement();
+  if (previousScriptId && scrollElement) {
+    recordScriptScrollState(previousScriptId, scrollElement);
+  }
+});
 watch(
-  () => filteredLogs.value.length,
-  () => {
-    if (shouldFollowLogs.value) {
-      void scrollToBottom();
-    }
+  [selectedScriptId, () => filteredLogs.value.length, query],
+  async ([scriptId]) => {
+    const state = scriptScrollStates.get(scriptId);
+    await nextTick();
+    if (selectedScriptId.value !== scriptId) return;
+    updateOverlayScrollbar(scrollRef.value);
+    const scrollElement = getLogScrollElement();
+    if (!scrollElement) return;
+    const max = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+    scrollElement.scrollTop = !state || state.follow ? max : Math.min(state.scrollTop, max);
   },
 );
-watch(selectedScriptId, () => {
-  void scrollToBottom();
-});
 watch(
   () => (props.scripts || []).map((script) => ({ id: script.id, status: script.status })),
   (statuses, previousStatuses) => {

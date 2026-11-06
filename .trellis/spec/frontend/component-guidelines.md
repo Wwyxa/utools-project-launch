@@ -91,6 +91,9 @@ instances use `autoHide: "move"`, `autoHideDelay: 400`, and
 `autoHideSuspend: false`: hide before the first scroll and after interaction stops.
 Both automatic initialization and explicit directives share these options and
 use the target as viewport to avoid reparenting Vue-managed children.
+The shared adapter resets scrollbar offsets before measuring shrinking content;
+call `updateOverlayScrollbar` before reading bounds that must be current. Keep
+scroll-range corrections here rather than calculating content heights in views.
 Automatic observation filters class mutations to scroll-container and exclusion
 classes, including the Markdown ancestor class; animation and color class changes
 must not schedule scans. Preserve cleanup for removals without added nodes and

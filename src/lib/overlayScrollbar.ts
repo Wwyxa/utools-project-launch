@@ -3,6 +3,7 @@ import {
   ClickScrollPlugin,
   OverlayScrollbars,
   type OverlayScrollbars as OverlayScrollbarsInstance,
+  type PartialOptions,
 } from "overlayscrollbars";
 
 const instances = new WeakMap<HTMLElement, OverlayScrollbarsInstance>();
@@ -39,6 +40,62 @@ const withOverlayScrollbarTiming = <Result>(phase: "mount" | "update", operation
   });
   return result;
 };
+
+const resetScrollbarOffsets = (instance: OverlayScrollbarsInstance) => {
+  const { scrollbarHorizontal, scrollbarVertical } = instance.elements();
+  // In-viewport scrollbars must not keep a shrunken document at its old scroll extent.
+  for (const { scrollbar } of [scrollbarHorizontal, scrollbarVertical]) {
+    if (scrollbar.style.transform !== "none") scrollbar.style.transform = "none";
+  }
+};
+
+const createOverlayScrollbar = (element: HTMLElement, options: PartialOptions = {}) => {
+  const instance = withOverlayScrollbarTiming("mount", () => OverlayScrollbars({
+    target: element,
+    elements: { viewport: element },
+  }, { ...scrollbarOptions, ...options }));
+  let frame: number | undefined;
+  const scheduleUpdate = () => {
+    if (frame !== undefined) return;
+    frame = requestAnimationFrame(() => {
+      frame = undefined;
+      updateOverlayScrollbar(element);
+    });
+  };
+  const resizeObserver = new ResizeObserver(scheduleUpdate);
+  resizeObserver.observe(element);
+  element.addEventListener("load", scheduleUpdate, true);
+  const observer = new MutationObserver((records) => {
+    const contentChanged = records.some((record) => {
+      const target = record.target instanceof Element ? record.target : record.target.parentElement;
+      return target && !target.closest(".os-scrollbar") &&
+        !(record.type === "attributes" && target === element);
+    });
+    if (contentChanged) scheduleUpdate();
+  });
+  observer.observe(element, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["class", "style", "hidden", "open", "src", "width", "height"],
+  });
+  instance.on("destroyed", () => {
+    observer.disconnect();
+    resizeObserver.disconnect();
+    element.removeEventListener("load", scheduleUpdate, true);
+    if (frame !== undefined) cancelAnimationFrame(frame);
+  });
+  return instance;
+};
+
+export function updateOverlayScrollbar(element: HTMLElement | null) {
+  const instance = element && instances.get(element);
+  if (instance) {
+    resetScrollbarOffsets(instance);
+    withOverlayScrollbarTiming("update", () => instance.update(true));
+  }
+}
 
 export function getOverlayScrollbarScrollElements(element: HTMLElement | null) {
   if (!element) {
@@ -84,16 +141,12 @@ export function observeOverlayScrollbars(root: HTMLElement = document.body) {
         element.closest(".os-scrollbar")
       ) continue;
       const style = getComputedStyle(element);
-      const instance = withOverlayScrollbarTiming("mount", () => OverlayScrollbars({
-        target: element,
-        elements: { viewport: element },
-      }, {
-        ...scrollbarOptions,
+      const instance = createOverlayScrollbar(element, {
         overflow: {
           x: /^(hidden|clip)$/.test(style.overflowX) ? "hidden" : "scroll",
           y: /^(hidden|clip)$/.test(style.overflowY) ? "hidden" : "scroll",
         },
-      }));
+      });
       instances.set(element, instance);
       automaticInstances.set(element, instance);
     }
@@ -139,21 +192,10 @@ export const overlayScrollbar: Directive<HTMLElement> = {
     element.setAttribute("data-overlayscrollbars-initialize", "");
   },
   mounted(element) {
-    instances.set(
-      element,
-      withOverlayScrollbarTiming("mount", () =>
-        OverlayScrollbars({
-          target: element,
-          elements: { viewport: element },
-        }, scrollbarOptions),
-      ),
-    );
+    instances.set(element, createOverlayScrollbar(element));
   },
   updated(element) {
-    const instance = instances.get(element);
-    if (instance) {
-      withOverlayScrollbarTiming("update", () => instance.update());
-    }
+    updateOverlayScrollbar(element);
   },
   unmounted(element) {
     instances.get(element)?.destroy();
