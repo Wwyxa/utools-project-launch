@@ -1270,6 +1270,7 @@ const executeDeleteGitRemoteBranch = async (remoteName: string, branchName: stri
 const requestDeleteGitRemoteBranch = (remote: ProjectGitRemoteSummary, branch: ProjectGitRemoteBranchSummary) => {
   if (isAnyGitWriteRunning.value) return;
 
+  closeFloatingControls();
   const trackingWarning =
     upstream.value?.ref === branch.ref ? "当前分支正在跟踪此远端分支；删除后将解除本地 upstream。" : "";
   confirmationDialog.value = {
@@ -1566,6 +1567,7 @@ const executeRemoveRemote = async (remoteName: string) => {
 
 const requestRemoveRemote = (remote: ProjectGitRemoteSummary) => {
   if (isAnyGitWriteRunning.value) return;
+  closeFloatingControls();
   confirmationDialog.value = {
     kind: "danger",
     icon: "trash",
