@@ -366,6 +366,15 @@ const gitFileStatusLabel = (status: ProjectGitFileChange['status']) => {
   if (status === 'UNTRACKED') return t.value.git.untracked;
   return t.value.git.modified;
 };
+const fileStatusBadgeClass = (status: ProjectGitFileChange['status']) =>
+  cn(
+    'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border font-mono text-[9px] font-black leading-none',
+    status === 'ADDED' && 'border-status-running/30 bg-status-running/10 text-status-running',
+    status === 'DELETED' && 'border-status-error/30 bg-status-error/10 text-status-error',
+    status === 'RENAMED' && 'border-secondary/30 bg-secondary/10 text-secondary',
+    status === 'UNTRACKED' && 'border-primary/30 bg-primary/10 text-primary',
+    status === 'MODIFIED' && 'border-border-subtle bg-surface-variant text-on-surface-variant',
+  );
 const gitFileDirectory = (file: ProjectGitFileChange) =>
   file.path.split(/[\\/]/).filter(Boolean).slice(0, -1).join('/');
 const toggleCommitDirectory = (hash: string, path: string) => {
@@ -2663,16 +2672,7 @@ onBeforeUnmount(() => {
                           >-{{ item.file.deletions }}</span
                         ></span
                       ><span
-                        :class="
-                          cn(
-                            'w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4',
-                            item.file.status === 'ADDED' && 'text-status-running',
-                            item.file.status === 'DELETED' && 'text-status-error',
-                            item.file.status === 'RENAMED' && 'text-secondary',
-                            item.file.status === 'UNTRACKED' && 'text-primary',
-                            item.file.status === 'MODIFIED' && 'text-on-surface-variant',
-                          )
-                        "
+                        :class="fileStatusBadgeClass(item.file.status)"
                         :title="gitFileStatusLabel(item.file.status)"
                         :aria-label="gitFileStatusLabel(item.file.status)"
                         >{{ gitFileStatusCode(item.file.status) }}</span

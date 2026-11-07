@@ -522,12 +522,13 @@ const fileStatusCode = (status: string) => {
 
 const fileStatusClass = (status: string) =>
   cn(
-    "w-3 shrink-0 text-center font-mono text-[10px] font-black leading-4",
-    status === "ADDED" && "text-status-running",
-    status === "DELETED" && "text-status-error",
-    status === "RENAMED" && "text-secondary",
-    status === "UNTRACKED" && "text-primary",
-    (status === "MODIFIED" || status === "MIXED") && "text-on-surface-variant",
+    "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border font-mono text-[9px] font-black leading-none",
+    status === "ADDED" && "border-status-running/30 bg-status-running/10 text-status-running",
+    status === "DELETED" && "border-status-error/30 bg-status-error/10 text-status-error",
+    status === "RENAMED" && "border-secondary/30 bg-secondary/10 text-secondary",
+    status === "UNTRACKED" && "border-primary/30 bg-primary/10 text-primary",
+    (status === "MODIFIED" || status === "MIXED") &&
+      "border-border-subtle bg-surface-variant text-on-surface-variant",
   );
 
 const worktreeDirectoryStatuses = computed(() => {
@@ -549,6 +550,46 @@ const worktreeDirectoryStatuses = computed(() => {
 
 const directoryStatus = (group: WorktreeGroup, path: string) =>
   worktreeDirectoryStatuses.value[group.scope].get(path) || "MODIFIED";
+
+const worktreeDirectoryStats = computed(() => {
+  const stats: Record<WorktreeDiffScope, Map<string, { additions: number; deletions: number }>> = {
+    staged: new Map(),
+    unstaged: new Map(),
+  };
+  for (const group of worktreeGroups.value) {
+    const groupStats = stats[group.scope];
+    for (const file of group.files) {
+      const directories = normalizeCommitFilePath(file.path).split("/").slice(0, -1);
+      while (directories.length > 0) {
+        const path = directories.join("/");
+        const current = groupStats.get(path) || { additions: 0, deletions: 0 };
+        current.additions += file.additions;
+        current.deletions += file.deletions;
+        groupStats.set(path, current);
+        directories.pop();
+      }
+    }
+  }
+  return stats;
+});
+
+const directoryStats = (group: WorktreeGroup, path: string) =>
+  worktreeDirectoryStats.value[group.scope].get(path) || { additions: 0, deletions: 0 };
+
+const worktreeGroupTotals = computed(() => {
+  const totals: Record<WorktreeDiffScope, { additions: number; deletions: number }> = {
+    staged: { additions: 0, deletions: 0 },
+    unstaged: { additions: 0, deletions: 0 },
+  };
+  for (const group of worktreeGroups.value) {
+    const total = totals[group.scope];
+    for (const file of group.files) {
+      total.additions += file.additions;
+      total.deletions += file.deletions;
+    }
+  }
+  return totals;
+});
 
 const gitFileDisplayPath = (file: ProjectGitFileChange) =>
   file.originalPath && file.originalPath !== file.path ? `${file.originalPath} -> ${file.path}` : file.path;
@@ -1265,6 +1306,14 @@ onBeforeUnmount(() => {
               <Undo :size="12" :class="isBulkGitActionActive('discard') ? 'animate-pulse' : ''" />
             </button>
           </div>
+          <span class="flex shrink-0 items-center gap-px text-[10px] font-bold leading-4">
+            <span v-if="worktreeGroupTotals[group.scope].additions > 0" class="text-status-running"
+              >+{{ worktreeGroupTotals[group.scope].additions }}</span
+            >
+            <span v-if="worktreeGroupTotals[group.scope].deletions > 0" class="text-status-error"
+              >-{{ worktreeGroupTotals[group.scope].deletions }}</span
+            >
+          </span>
           <span
             :class="
               cn(
@@ -1303,6 +1352,17 @@ onBeforeUnmount(() => {
                 />
                 <span class="min-w-0 truncate font-mono">{{ item.name }}</span>
               </button>
+              <span
+                v-if="directoryStats(group, item.path).additions > 0 || directoryStats(group, item.path).deletions > 0"
+                class="flex shrink-0 items-center gap-px text-[10px] font-bold leading-4"
+              >
+                <span v-if="directoryStats(group, item.path).additions > 0" class="text-status-running"
+                  >+{{ directoryStats(group, item.path).additions }}</span
+                >
+                <span v-if="directoryStats(group, item.path).deletions > 0" class="text-status-error"
+                  >-{{ directoryStats(group, item.path).deletions }}</span
+                >
+              </span>
               <span
                 :class="fileStatusClass(directoryStatus(group, item.path))"
                 :title="fileLabel(directoryStatus(group, item.path))"

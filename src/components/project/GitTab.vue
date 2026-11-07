@@ -32,7 +32,6 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  FileDiff,
   Minus,
   Plus,
   MoreHorizontal,
@@ -264,6 +263,21 @@ const topBarStatusText = computed(() => {
 
   const detachedHeadPrefix = `detached HEAD @ ${headHash} · `;
   return statusText.startsWith(detachedHeadPrefix) ? statusText.slice(detachedHeadPrefix.length) : statusText;
+});
+const topBarStatChipClass =
+  "inline-flex shrink-0 items-center rounded px-1 text-[10px] font-bold leading-4 tabular-nums whitespace-nowrap";
+const topBarChangeStats = computed(() => {
+  const entries = files.value;
+  if (entries.length === 0) return null;
+  // 合并/变基进行中时 statusText 携带流程提示，保持文本展示
+  if (snapshot.value?.mergeInProgress || snapshot.value?.rebaseInProgress) return null;
+  const staged = entries.filter((file) => file.staged).length;
+  // 与 GitChangesPane 的 stageableFiles 口径一致：未显式标记 unstaged 的旧桥接数据按未暂存计
+  const unstaged = entries.filter((file) => file.unstaged || (!file.staged && file.unstaged !== false)).length;
+  const conflicted = entries.filter((file) => file.conflicted).length;
+  // 三类计数均为 0 时（桥接数据口径异常）退回 statusText 文本展示
+  if (staged + unstaged + conflicted === 0) return null;
+  return { staged, unstaged, conflicted };
 });
 const remotes = computed(() => snapshot.value?.remotes || []);
 const remoteBranches = computed(() => snapshot.value?.remoteBranches || []);
@@ -2122,7 +2136,7 @@ watch(
               {{ gitWorkspaceRelatedCount }}
             </span>
           </button>
-          <div class="min-w-0 max-w-full" data-git-refresh-exempt @click.stop>
+          <div class="min-w-0 max-w-40" data-git-refresh-exempt @click.stop>
             <UiSelect
               :model-value="snapshot?.branch ?? null"
               :options="gitBranchSelectOptions"
@@ -2429,11 +2443,27 @@ watch(
             </Teleport>
           </div>
           <span
-            class="flex min-w-0 flex-1 items-center gap-1 border-l border-border-subtle pl-2 text-[10px] text-on-surface-variant"
+            class="flex min-w-24 flex-1 items-center gap-1 overflow-hidden border-l border-border-subtle pl-2 text-[10px] text-on-surface-variant"
             :title="topBarStatusText"
           >
-            <FileDiff :size="12" class="shrink-0" aria-hidden="true" />
-            <span class="min-w-0 truncate">{{ topBarStatusText }}</span>
+            <template v-if="topBarChangeStats">
+              <span
+                v-if="topBarChangeStats.staged > 0"
+                :class="`${topBarStatChipClass} bg-status-running/10 text-status-running`"
+                >已暂存 {{ topBarChangeStats.staged }}</span
+              >
+              <span
+                v-if="topBarChangeStats.unstaged > 0"
+                :class="`${topBarStatChipClass} bg-primary/10 text-primary`"
+                >未暂存 {{ topBarChangeStats.unstaged }}</span
+              >
+              <span
+                v-if="topBarChangeStats.conflicted > 0"
+                :class="`${topBarStatChipClass} bg-status-error/10 text-status-error`"
+                >冲突 {{ topBarChangeStats.conflicted }}</span
+              >
+            </template>
+            <span v-else class="min-w-0 truncate">{{ topBarStatusText }}</span>
           </span>
           <span
             v-if="isGitSnapshotRefreshing || isGitStatusRefreshing"
